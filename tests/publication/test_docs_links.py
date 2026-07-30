@@ -58,6 +58,21 @@ class DocsLinksTest(unittest.TestCase):
                 ["README.md: missing anchor: #missing-heading"],
             )
 
+    def test_rejects_a_case_mismatched_target(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "docs").mkdir()
+            (root / "docs" / "Guide.md").write_text("# Guide\n", encoding="utf-8")
+            (root / "README.md").write_text(
+                "[guide](docs/guide.md)\n",
+                encoding="utf-8",
+            )
+
+            self.assertEqual(
+                find_broken_links(root),
+                ["README.md: target case mismatch: docs/guide.md"],
+            )
+
     def test_public_repository_links_are_valid(self) -> None:
         self.assertEqual(find_broken_links(REPO_ROOT), [])
 
