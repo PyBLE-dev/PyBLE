@@ -761,12 +761,26 @@ class BuildScriptFixture:
             printf '%s\n' "${MICROPY_MPYCROSS-}" \
               >> "$PYBLE_MPY_CROSS_ENV_LOG"
             output=""
+            command_directory=""
+            previous=""
             for argument in "$@"; do
+              if [ "$previous" = "-C" ]; then
+                command_directory="$argument"
+              fi
               case "$argument" in
                 BUILD=*) output="${argument#BUILD=}" ;;
               esac
+              previous="$argument"
             done
-            if [ -n "$output" ]; then
+            if [ "$(basename "$command_directory")" = "mpy-cross" ]; then
+              case "$output" in
+                /*) compiler="$output/mpy-cross" ;;
+                *) compiler="$command_directory/$output/mpy-cross" ;;
+              esac
+              mkdir -p "$(dirname "$compiler")"
+              printf '#!/bin/sh\nexit 0\n' > "$compiler"
+              chmod 755 "$compiler"
+            elif [ -n "$output" ]; then
               mkdir -p "$output"
               cp -R "$PYBLE_FAKE_ARTIFACTS"/. "$output"/
             fi
@@ -842,6 +856,7 @@ class BuildScriptFixture:
                 "PYBLE_MPY_CROSS_ENV_LOG": str(self.mpy_cross_environment_log),
                 "PYBLE_ESPTOOL_LOG": str(self.esptool_log),
                 "BUILD": str(self.root / "hostile-mpy-cross-build"),
+                "MICROPY_MPYCROSS": str(self.root / "hostile-mpy-cross"),
                 "CFLAGS_EXTRA": (
                     "-ffile-prefix-map=/ambient/source=/HOSTILE "
                     "-DHOSTILE_BUILD_FLAG=1"

@@ -238,8 +238,17 @@ unset \
   MAKEFLAGS \
   MFLAGS \
   GNUMAKEFLAGS \
-  MAKEOVERRIDES
-make -C "$UPSTREAM_DIR/mpy-cross" || { echo "build.sh: mpy-cross build failed" >&2; exit 1; }
+  MAKEOVERRIDES \
+  BUILD \
+  MICROPY_MPYCROSS
+make -C "$UPSTREAM_DIR/mpy-cross" BUILD=build ||
+  { echo "build.sh: mpy-cross build failed" >&2; exit 1; }
+MICROPY_MPYCROSS="$UPSTREAM_DIR/mpy-cross/build/mpy-cross"
+if [ ! -x "$MICROPY_MPYCROSS" ]; then
+  echo "build.sh: rebuilt mpy-cross is missing or not executable" >&2
+  exit 1
+fi
+export MICROPY_MPYCROSS
 
 # ESP-IDF maps its project, build, component, and toolchain paths when
 # CONFIG_APP_REPRODUCIBLE_BUILD=y, but MicroPython sources above ports/esp32
