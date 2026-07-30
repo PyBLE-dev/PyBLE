@@ -1329,6 +1329,10 @@ class BuildProvenanceValidationTests(unittest.TestCase):
                         _git(
                             checkout,
                             "-c",
+                            "user.name=PyBLE Test",
+                            "-c",
+                            "user.email=test@pyble.invalid",
+                            "-c",
                             "commit.gpgsign=false",
                             "commit",
                             "-q",
