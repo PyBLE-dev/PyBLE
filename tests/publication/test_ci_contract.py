@@ -323,6 +323,49 @@ class CiContractTest(unittest.TestCase):
             android,
         )
 
+    def test_android_blockly_smoke_reveals_ime_occluded_action(self) -> None:
+        suite = (
+            REPO_ROOT / "app" / "integration_test" / "blockly_webview_suite.dart"
+        ).read_text(encoding="utf-8")
+
+        enter_gpio = suite.index(
+            "await tester.enterText("
+            "find.widgetWithText(TextField, 'LED GPIO'), '17');"
+        )
+        required_snippets = (
+            "final Finder replaceWorkspaceAction = find.byKey(",
+            "kBlocksExampleReplaceWorkspaceButtonKey",
+            "await tester.ensureVisible(replaceWorkspaceAction);",
+            "expect(replaceWorkspaceAction.hitTestable(), findsOneWidget);",
+            "await tester.tap(replaceWorkspaceAction);",
+        )
+        for snippet in required_snippets:
+            self.assertTrue(
+                snippet in suite,
+                f"missing Android Blockly interaction contract: {snippet}",
+            )
+
+        define_action = suite.index(required_snippets[0], enter_gpio)
+        action_key = suite.index(required_snippets[1], define_action)
+        reveal_action = suite.index(
+            required_snippets[2],
+            action_key,
+        )
+        hit_test = suite.index(
+            required_snippets[3],
+            reveal_action,
+        )
+        tap_action = suite.index(
+            required_snippets[4],
+            hit_test,
+        )
+
+        self.assertLess(enter_gpio, define_action)
+        self.assertLess(define_action, action_key)
+        self.assertLess(action_key, reveal_action)
+        self.assertLess(reveal_action, hit_test)
+        self.assertLess(hit_test, tap_action)
+
     def test_workflow_has_no_adjacent_duplicate_shell_key(self) -> None:
         workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(
             encoding="utf-8"
