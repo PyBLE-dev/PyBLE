@@ -219,9 +219,28 @@ class CiContractTest(unittest.TestCase):
             android,
         )
         self.assertIn("--set 'hw.ramSize=2048'", android)
-        self.assertIn("--set 'hw.cpu.ncore=1'", android)
+        self.assertIn("--set 'hw.cpu.ncore=2'", android)
         self.assertIn("-memory 2048", android)
-        self.assertIn("-cores 1", android)
+        self.assertIn("-cores 2", android)
+        self.assertIn(
+            "settings put global device_provisioned 1",
+            android,
+        )
+        self.assertIn(
+            "settings put secure user_setup_complete 1",
+            android,
+        )
+        self.assertIn(
+            "settings put system accelerometer_rotation 0",
+            android,
+        )
+        self.assertIn(
+            "settings put system user_rotation 0",
+            android,
+        )
+        self.assertIn("getprop init.svc.bootanim", android)
+        self.assertIn("getprop sys.user.0.ce_available", android)
+        self.assertIn("sleep 20", android)
 
         prebuild = android.index(
             "- name: Prebuild Android integration application"
@@ -232,6 +251,11 @@ class CiContractTest(unittest.TestCase):
         )
         self.assertLess(prebuild, boot)
         self.assertLess(boot, integration)
+        self.assertLess(
+            android.index("getprop init.svc.bootanim"),
+            integration,
+        )
+        self.assertLess(android.index("sleep 20"), integration)
         self.assertEqual(1, android.count("flutter build apk"))
         self.assertIn(
             "flutter build apk \\\n"
