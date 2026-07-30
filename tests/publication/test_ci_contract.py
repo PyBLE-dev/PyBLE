@@ -70,6 +70,7 @@ class CiContractTest(unittest.TestCase):
 
         self.assertIn("../tools/ci/android_avd_config.py", android)
         self.assertIn("'disk.dataPartition.size=2048M'", android)
+        self.assertIn("-partition-size 2048", android)
 
     def test_workflow_has_no_adjacent_duplicate_shell_key(self) -> None:
         workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(
