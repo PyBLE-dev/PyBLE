@@ -370,7 +370,7 @@ jobs:
           # cannot select an earlier device-profile value from a duplicate.
           python3 ../tools/ci/android_avd_config.py "$AVD_CONFIG" \
             --set 'hw.ramSize=2048' \
-            --set 'hw.cpu.ncore=1' \
+            --set 'hw.cpu.ncore=2' \
             --set 'vm.heapSize=384' \
             --set 'disk.dataPartition.size=6144M' \
             --set 'hw.lcd.width=2560' \
@@ -426,7 +426,7 @@ jobs:
             -accel on \
             -gpu swiftshader_indirect \
             -memory 2048 \
-            -cores 1 \
+            -cores 2 \
             >"$PYBLE_ANDROID_RAW_EMULATOR_LOG" 2>&1 &
           EMULATOR_PID=$!
           printf '%s\n' "$EMULATOR_PID" \
@@ -465,6 +465,16 @@ jobs:
           "$PYBLE_ANDROID_ADB" -s "$PYBLE_ANDROID_SERIAL" shell \
             input keyevent 82
           "$PYBLE_ANDROID_ADB" -s "$PYBLE_ANDROID_SERIAL" shell \
+            wm dismiss-keyguard
+          "$PYBLE_ANDROID_ADB" -s "$PYBLE_ANDROID_SERIAL" shell \
+            settings put global device_provisioned 1
+          "$PYBLE_ANDROID_ADB" -s "$PYBLE_ANDROID_SERIAL" shell \
+            settings put secure user_setup_complete 1
+          "$PYBLE_ANDROID_ADB" -s "$PYBLE_ANDROID_SERIAL" shell \
+            settings put system accelerometer_rotation 0
+          "$PYBLE_ANDROID_ADB" -s "$PYBLE_ANDROID_SERIAL" shell \
+            settings put system user_rotation 0
+          "$PYBLE_ANDROID_ADB" -s "$PYBLE_ANDROID_SERIAL" shell \
             settings put global window_animation_scale 0
           "$PYBLE_ANDROID_ADB" -s "$PYBLE_ANDROID_SERIAL" shell \
             settings put global transition_animation_scale 0
@@ -472,6 +482,52 @@ jobs:
             settings put global animator_duration_scale 0
           "$PYBLE_ANDROID_ADB" -s "$PYBLE_ANDROID_SERIAL" shell \
             svc power stayon true
+
+          READY_FOR_DRIVER=0
+          for ATTEMPT in $(seq 1 60); do
+            BOOT_ANIMATION="$(
+              "$PYBLE_ANDROID_ADB" -s "$PYBLE_ANDROID_SERIAL" shell \
+                getprop init.svc.bootanim 2>/dev/null | tr -d '\r' || true
+            )"
+            BOOT_ANIMATION_EXIT="$(
+              "$PYBLE_ANDROID_ADB" -s "$PYBLE_ANDROID_SERIAL" shell \
+                getprop service.bootanim.exit 2>/dev/null | tr -d '\r' || true
+            )"
+            CE_AVAILABLE="$(
+              "$PYBLE_ANDROID_ADB" -s "$PYBLE_ANDROID_SERIAL" shell \
+                getprop sys.user.0.ce_available 2>/dev/null \
+                | tr -d '\r' || true
+            )"
+            USER_UNLOCKED="$(
+              "$PYBLE_ANDROID_ADB" -s "$PYBLE_ANDROID_SERIAL" shell \
+                cmd user is-user-unlocked 0 2>/dev/null \
+                | tr -d '\r' || true
+            )"
+            if {
+              [ "$BOOT_ANIMATION" = "stopped" ] ||
+              [ "$BOOT_ANIMATION_EXIT" = "1" ]
+            } && {
+              [ "$CE_AVAILABLE" = "true" ] ||
+              [ "$CE_AVAILABLE" = "1" ] ||
+              [ "$USER_UNLOCKED" = "true" ]
+            }; then
+              READY_FOR_DRIVER=1
+              echo "Android services stabilized after $ATTEMPT poll(s)."
+              break
+            fi
+            sleep 2
+          done
+          if [ "$READY_FOR_DRIVER" -ne 1 ]; then
+            echo "Android services did not stabilize within 120 seconds" >&2
+            echo "bootanim=$BOOT_ANIMATION exit=$BOOT_ANIMATION_EXIT" >&2
+            echo "ce_available=$CE_AVAILABLE unlocked=$USER_UNLOCKED" >&2
+            exit 1
+          fi
+
+          # A cold Google APIs image keeps dispatching setup broadcasts after
+          # sys.boot_completed. Let them settle before the prebuilt app is
+          # installed, so driver attachment cannot race an Activity relaunch.
+          sleep 20
           "$PYBLE_ANDROID_ADB" -s "$PYBLE_ANDROID_SERIAL" logcat -c
       - name: Real About + Blockly integration (Android API 34)
         shell: bash
