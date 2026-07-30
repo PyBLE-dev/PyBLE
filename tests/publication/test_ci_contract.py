@@ -152,6 +152,65 @@ class CiContractTest(unittest.TestCase):
             harness,
         )
 
+    def test_android_integration_prebuilds_with_bounded_runner_resources(
+        self,
+    ) -> None:
+        workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(
+            encoding="utf-8"
+        )
+        android_start = workflow.index("  android-webview:")
+        build_start = workflow.index("\n  build:", android_start)
+        android = workflow[android_start:build_start]
+        gradle_properties = (
+            REPO_ROOT / "app" / "android" / "gradle.properties"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            "org.gradle.jvmargs=-Xmx3072m "
+            "-XX:MaxMetaspaceSize=1024m "
+            "-XX:ReservedCodeCacheSize=256m",
+            gradle_properties,
+        )
+        self.assertIn(
+            "GRADLE_OPTS: -Dorg.gradle.daemon=false "
+            "-Dorg.gradle.workers.max=1",
+            android,
+        )
+        self.assertIn("--set 'hw.ramSize=2048'", android)
+        self.assertIn("--set 'hw.cpu.ncore=1'", android)
+        self.assertIn("-memory 2048", android)
+        self.assertIn("-cores 1", android)
+
+        prebuild = android.index(
+            "- name: Prebuild Android integration application"
+        )
+        boot = android.index("- name: Boot headless emulator")
+        integration = android.index(
+            "- name: Real About + Blockly integration"
+        )
+        self.assertLess(prebuild, boot)
+        self.assertLess(boot, integration)
+        self.assertIn(
+            "flutter build apk \\\n"
+            "            --debug \\\n"
+            "            --no-pub \\\n"
+            "            --target integration_test/android_smoke_test.dart",
+            android,
+        )
+        self.assertIn(
+            '>"$PYBLE_ANDROID_LOG_DIR/flutter-build.log" 2>&1',
+            android,
+        )
+        self.assertIn("./android/gradlew --stop", android)
+        self.assertIn(
+            '>"$PYBLE_ANDROID_LOG_DIR/flutter-test.log" 2>&1',
+            android,
+        )
+        self.assertNotIn(
+            '2>&1 | tee "$PYBLE_ANDROID_LOG_DIR/flutter-test.log"',
+            android,
+        )
+
     def test_workflow_has_no_adjacent_duplicate_shell_key(self) -> None:
         workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(
             encoding="utf-8"
