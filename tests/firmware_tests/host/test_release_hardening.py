@@ -627,6 +627,7 @@ class BuildScriptFixture:
         self.fake_artifacts = self.root / "fake-artifacts"
         self.make_log = self.root / "make-invocations.log"
         self.make_environment_log = self.root / "make-environment.log"
+        self.mpy_cross_environment_log = self.root / "mpy-cross-environment.log"
         self.esptool_log = self.root / "esptool-invocations.log"
         scripts = self.firmware / "scripts"
         scripts.mkdir(parents=True)
@@ -757,6 +758,8 @@ class BuildScriptFixture:
               "${MFLAGS-}" \
               "${GNUMAKEFLAGS-}" \
               "${MAKEOVERRIDES-}" >> "$PYBLE_MAKE_ENV_LOG"
+            printf '%s\n' "${MICROPY_MPYCROSS-}" \
+              >> "$PYBLE_MPY_CROSS_ENV_LOG"
             output=""
             for argument in "$@"; do
               case "$argument" in
@@ -836,7 +839,9 @@ class BuildScriptFixture:
                 "PYBLE_FAKE_ARTIFACTS": str(self.fake_artifacts),
                 "PYBLE_MAKE_LOG": str(self.make_log),
                 "PYBLE_MAKE_ENV_LOG": str(self.make_environment_log),
+                "PYBLE_MPY_CROSS_ENV_LOG": str(self.mpy_cross_environment_log),
                 "PYBLE_ESPTOOL_LOG": str(self.esptool_log),
+                "BUILD": str(self.root / "hostile-mpy-cross-build"),
                 "CFLAGS_EXTRA": (
                     "-ffile-prefix-map=/ambient/source=/HOSTILE "
                     "-DHOSTILE_BUILD_FLAG=1"
@@ -882,6 +887,13 @@ class BuildScriptFixture:
             line.split("|")
             for line in self.esptool_log.read_text(encoding="utf-8").splitlines()
         ]
+
+    def mpy_cross_environments(self) -> list[str]:
+        if not self.mpy_cross_environment_log.exists():
+            return []
+        return self.mpy_cross_environment_log.read_text(
+            encoding="utf-8"
+        ).splitlines()
 
 
 class BuildProvenanceEmissionTests(unittest.TestCase):
@@ -977,6 +989,28 @@ class BuildProvenanceEmissionTests(unittest.TestCase):
                 "submodule configuration and the final application build must "
                 "share exact runner-owned path maps; ambient flags may not be "
                 "inherited or appended",
+            )
+        finally:
+            fixture.cleanup()
+
+    def test_port_build_reuses_the_explicitly_built_host_mpy_cross(self):
+        fixture = BuildScriptFixture()
+        try:
+            completed = fixture.build()
+            self.assertEqual(completed.returncode, 0, completed.stdout)
+            self.assertEqual(
+                fixture.make_invocations()[0].count("BUILD=build"),
+                1,
+                "the host compiler build must ignore an ambient BUILD path",
+            )
+            expected = str(
+                fixture.upstream.resolve() / "mpy-cross" / "build" / "mpy-cross"
+            )
+            self.assertEqual(
+                fixture.mpy_cross_environments(),
+                ["", expected, expected],
+                "port phases must use the admitted host compiler instead of "
+                "rebuilding it with the target BUILD inherited through make",
             )
         finally:
             fixture.cleanup()
