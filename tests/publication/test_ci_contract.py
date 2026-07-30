@@ -319,7 +319,7 @@ class CiContractTest(unittest.TestCase):
             android,
         )
         self.assertIn(
-            "Current WebView package (name, version):",
+            "Current WebView package (name, version): (com.android.webview,",
             android,
         )
 

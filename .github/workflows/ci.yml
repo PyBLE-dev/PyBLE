@@ -18,7 +18,7 @@
 #   - docs            : every repository-local Markdown target exists.
 #   - firmware-host   : shell gates plus the complete Python host/release suite.
 #   - android-webview : real Blockly platform-WebView integration on a clean,
-#                       pinned Android 14 / API 34 Google APIs x86_64 AVD.
+#                       pinned Android 14 / API 34 AOSP x86_64 AVD.
 #   - build           : cross-compile the empty agent for esp32 / esp32-s3 / esp32-c3
 #                       (BLD-3/4/5) — the REAL toolchain job (installs ESP-IDF + submodule).
 name: ci
@@ -226,11 +226,11 @@ jobs:
       run:
         working-directory: app
     env:
-      PYBLE_ANDROID_IMAGE: system-images;android-34;google_apis;x86_64
+      PYBLE_ANDROID_IMAGE: system-images;android-34;default;x86_64
       PYBLE_ANDROID_COMPILE_PLATFORM: platforms;android-36
       PYBLE_ANDROID_BUILD_TOOLS: build-tools;36.0.0
       PYBLE_ANDROID_NDK: ndk;28.2.13676358
-      PYBLE_ANDROID_AVD: pyble_api34_google_apis
+      PYBLE_ANDROID_AVD: pyble_api34_aosp
       PYBLE_ANDROID_SERIAL: emulator-5554
       PYBLE_ANDROID_LOG_DIR: /tmp/pyble-android-integration
       PYBLE_ANDROID_RAW_EMULATOR_LOG: /tmp/pyble-android-emulator.log
@@ -347,7 +347,7 @@ jobs:
             "ANDROID_NDK_PATH=$ANDROID_NDK_PATH" \
             "ANDROID_NDK_LATEST_HOME=$ANDROID_NDK_LATEST_HOME" \
             >> "$GITHUB_ENV"
-      - name: Create API 34 Google APIs x86_64 tablet AVD
+      - name: Create API 34 AOSP x86_64 tablet AVD
         shell: bash
         run: |
           set -euo pipefail
@@ -369,8 +369,8 @@ jobs:
           # avdmanager pre-populates these keys. Upsert them so the emulator
           # cannot select an earlier device-profile value from a duplicate.
           python3 ../tools/ci/android_avd_config.py "$AVD_CONFIG" \
-            --set 'hw.ramSize=2048' \
-            --set 'hw.cpu.ncore=2' \
+            --set 'hw.ramSize=4096' \
+            --set 'hw.cpu.ncore=4' \
             --set 'vm.heapSize=384' \
             --set 'disk.dataPartition.size=6144M' \
             --set 'hw.lcd.width=2560' \
@@ -425,8 +425,8 @@ jobs:
             -camera-front none \
             -accel on \
             -gpu swiftshader_indirect \
-            -memory 2048 \
-            -cores 2 \
+            -memory 4096 \
+            -cores 4 \
             >"$PYBLE_ANDROID_RAW_EMULATOR_LOG" 2>&1 &
           EMULATOR_PID=$!
           printf '%s\n' "$EMULATOR_PID" \
@@ -524,10 +524,35 @@ jobs:
             exit 1
           fi
 
-          # A cold Google APIs image keeps dispatching setup broadcasts after
-          # sys.boot_completed. Let them settle before the prebuilt app is
-          # installed, so driver attachment cannot race an Activity relaunch.
+          # Let the cold AOSP image settle before the prebuilt app is installed,
+          # so driver attachment cannot race an Activity relaunch.
           sleep 20
+
+          GMS_PACKAGES="$(
+            "$PYBLE_ANDROID_ADB" -s "$PYBLE_ANDROID_SERIAL" shell \
+              pm list packages com.google.android.gms 2>/dev/null \
+              | tr -d '\r' || true
+          )"
+          if [ -n "$GMS_PACKAGES" ]; then
+            echo "The Android integration image unexpectedly contains GMS:" >&2
+            printf '%s\n' "$GMS_PACKAGES" >&2
+            exit 1
+          fi
+
+          "$PYBLE_ANDROID_ADB" -s "$PYBLE_ANDROID_SERIAL" shell \
+            dumpsys webviewupdate \
+            >"$PYBLE_ANDROID_LOG_DIR/webview-provider.txt"
+          WEBVIEW_LINE="$(
+            grep -F \
+              'Current WebView package (name, version): (com.android.webview,' \
+              "$PYBLE_ANDROID_LOG_DIR/webview-provider.txt" || true
+          )"
+          if [ -z "$WEBVIEW_LINE" ]; then
+            echo "The AOSP WebView provider is not current:" >&2
+            cat "$PYBLE_ANDROID_LOG_DIR/webview-provider.txt" >&2
+            exit 1
+          fi
+          printf '%s\n' "$WEBVIEW_LINE"
           "$PYBLE_ANDROID_ADB" -s "$PYBLE_ANDROID_SERIAL" logcat -c
       - name: Real About + Blockly integration (Android API 34)
         shell: bash
@@ -561,7 +586,7 @@ jobs:
             echo "Installed Android package revisions:"
             for PROPERTIES in \
               "$PYBLE_ANDROID_SDK_ROOT/emulator/source.properties" \
-              "$PYBLE_ANDROID_SDK_ROOT/system-images/android-34/google_apis/x86_64/source.properties"
+              "$PYBLE_ANDROID_SDK_ROOT/system-images/android-34/default/x86_64/source.properties"
             do
               if [ -f "$PROPERTIES" ]; then
                 echo "[$PROPERTIES]"
