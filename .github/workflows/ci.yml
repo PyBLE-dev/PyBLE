@@ -336,6 +336,7 @@ jobs:
 
           nohup "$PYBLE_ANDROID_EMULATOR" \
             -avd "$PYBLE_ANDROID_AVD" \
+            -partition-size 2048 \
             -port 5554 \
             -no-window \
             -no-audio \
