@@ -1416,10 +1416,16 @@ About and Blockly scenarios from non-entrypoint suite modules, so Flutter
 has one integration application entrypoint and installs one bundle containing
 both scenarios. It runs in CI on a fresh Android 14 / API 34 Google APIs x86_64
 AVD with the pinned Flutter
-toolchain and NDK, 2 GiB RAM, one virtual CPU, KVM acceleration, a software
+toolchain and NDK, 2 GiB RAM, two virtual CPUs, KVM acceleration, a software
 GPU, a bounded `sys.boot_completed` wait, and always-uploaded bounded
 emulator/logcat diagnostics. The runner reclaims only unused side-by-side NDK
 revisions before creating the API 34 emulator's required 6 GiB userdata image.
+After `sys.boot_completed`, the device phase also requires the boot animation
+to stop and credential-encrypted user storage to become available, marks the
+ephemeral test user provisioned, locks the tablet's natural rotation, disables
+animations, and allows one bounded 20-second quiescence interval before
+installing the APK. That prevents delayed first-boot configuration events from
+recreating the Flutter activity while the host driver attaches.
 
 The hosted integration job uses an isolated Gradle user home whose
 `gradle.properties` bounds the build JVM to a 3 GiB heap, 1 GiB metaspace, and
