@@ -7,7 +7,6 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:integration_test/integration_test.dart';
 
 import 'package:pyble/app/providers.dart';
 import 'package:pyble/blocks/blocks.dart';
@@ -298,9 +297,7 @@ Widget _testApp(ProviderContainer container, {required bool showBlocks}) {
   );
 }
 
-void main() {
-  IntegrationTestWidgetsFlutterBinding.ensureInitialized();
-
+void registerBlocklyWebViewIntegrationTests() {
   testWidgets(
     'real offline WebView restores Blocks, generates Python, saves, and runs',
     (WidgetTester tester) async {

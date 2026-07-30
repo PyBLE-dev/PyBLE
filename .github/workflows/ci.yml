@@ -441,8 +441,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          timeout --signal=TERM --kill-after=30s 20m \
+          timeout --signal=TERM --kill-after=30s 30m \
             flutter test \
+            --no-pub \
             integration_test/android_smoke_test.dart \
             -d "$PYBLE_ANDROID_SERIAL" \
             --reporter expanded \

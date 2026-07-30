@@ -5,7 +5,6 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:integration_test/integration_test.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import 'package:pyble/app/licenses.dart';
@@ -13,9 +12,7 @@ import 'package:pyble/app/pages/about_page.dart';
 import 'package:pyble/localization/localization.dart';
 import 'package:pyble/theme/theme.dart';
 
-void main() {
-  IntegrationTestWidgetsFlutterBinding.ensureInitialized();
-
+void registerAboutPageIntegrationTests() {
   testWidgets('installed package metadata and licenses render offline', (
     WidgetTester tester,
   ) async {
