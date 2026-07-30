@@ -639,7 +639,13 @@ pixels.write()
         reason:
             'the real scratch Blockly workspace did not materialize the selected LED GPIO',
       );
-      await tester.tap(find.byKey(kBlocksExampleReplaceWorkspaceButtonKey));
+      final Finder replaceWorkspaceAction = find.byKey(
+        kBlocksExampleReplaceWorkspaceButtonKey,
+      );
+      await tester.ensureVisible(replaceWorkspaceAction);
+      await tester.pumpAndSettle();
+      expect(replaceWorkspaceAction.hitTestable(), findsOneWidget);
+      await tester.tap(replaceWorkspaceAction);
       await tester.pumpAndSettle();
       final Finder replaceDialog = find.byType(AlertDialog);
       expect(replaceDialog, findsOneWidget);
