@@ -1414,12 +1414,20 @@ The locale parity check fails on any missing/orphaned ARB key and blocks merges
 `integration_test/android_smoke_test.dart` platform boundary registers the
 About and Blockly scenarios from non-entrypoint suite modules, so Flutter
 has one integration application entrypoint and installs one bundle containing
-both scenarios. It runs in CI on a fresh Android 14 / API 34 Google APIs x86_64
+both scenarios. It runs in CI on a fresh Android 14 / API 34 full AOSP x86_64
 AVD with the pinned Flutter
-toolchain and NDK, 2 GiB RAM, two virtual CPUs, KVM acceleration, a software
+toolchain and NDK, 4 GiB RAM, four virtual CPUs, KVM acceleration, a software
 GPU, a bounded `sys.boot_completed` wait, and always-uploaded bounded
-emulator/logcat diagnostics. The runner reclaims only unused side-by-side NDK
-revisions before creating the API 34 emulator's required 6 GiB userdata image.
+emulator/logcat diagnostics. The full `default` image retains the platform
+rendering surface required by the real WebView test while excluding Google
+Play Services, which PyBLE does not use; the reduced-rendering `aosp_atd`
+variant is therefore not this platform-view gate. Before the APK is installed,
+CI verifies that no GMS package is present and that Android reports a current
+WebView provider. The declared 4 GiB/four-vCPU bound matches the Pixel Tablet
+profile's enforced memory floor and the emulator's recommended CPU count,
+rather than relying on a lower value that the emulator silently raises. The
+runner reclaims only unused side-by-side NDK revisions before creating the API
+34 emulator's required 6 GiB userdata image.
 After `sys.boot_completed`, the device phase also requires the boot animation
 to stop and credential-encrypted user storage to become available, marks the
 ephemeral test user provisioned, locks the tablet's natural rotation, disables
