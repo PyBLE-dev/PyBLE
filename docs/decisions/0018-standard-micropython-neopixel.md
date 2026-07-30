@@ -103,7 +103,7 @@ recorded by the existing footprint/build gates, and no new Flutter dependency.
 
 ## Related
 
-- [Firmware requirements](../specifications/Firmware/specs.md)
+- [Firmware requirements](../specifications/firmware/specs.md)
 - [App requirements §4.10](../specifications/App/specs.md)
 - [App TDD §4.6](../specifications/App/TDD.md)
 - [Hardware support](../specifications/hardware.md)

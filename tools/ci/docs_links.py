@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -61,8 +62,33 @@ def _markdown_anchors(markdown: Path) -> set[str]:
     return anchors
 
 
+def _path_case_status(root: Path, candidate: Path) -> str:
+    """Return whether every requested path component has exact disk casing."""
+    try:
+        relative = candidate.relative_to(root)
+    except ValueError:
+        return "outside"
+
+    current = root
+    for component in relative.parts:
+        try:
+            entries = {entry.name: entry for entry in current.iterdir()}
+        except OSError:
+            return "missing"
+
+        exact = entries.get(component)
+        if exact is not None:
+            current = exact
+            continue
+        if any(name.casefold() == component.casefold() for name in entries):
+            return "mismatch"
+        return "missing"
+    return "exact"
+
+
 def find_broken_links(root: Path) -> list[str]:
     """Return human-readable errors for missing repository-local targets."""
+    root = root.resolve()
     errors: list[str] = []
     for markdown in markdown_files(root):
         text = markdown.read_text(encoding="utf-8")
@@ -87,22 +113,31 @@ def find_broken_links(root: Path) -> list[str]:
 
             relative = unquote(parsed.path)
             if not relative:
-                target = markdown.resolve()
+                candidate = markdown
             else:
-                target = (
+                candidate = (
                     root / relative.lstrip("/")
                     if relative.startswith("/")
                     else markdown.parent / relative
-                ).resolve()
+                )
+            lexical_target = Path(os.path.normpath(str(candidate)))
+            target = lexical_target.resolve()
             try:
-                target.relative_to(root.resolve())
+                target.relative_to(root)
             except ValueError:
                 errors.append(
                     f"{markdown.relative_to(root)}: link escapes repository: "
                     f"{destination}"
                 )
                 continue
-            if not target.exists():
+            case_status = _path_case_status(root, lexical_target)
+            if case_status == "mismatch":
+                errors.append(
+                    f"{markdown.relative_to(root)}: target case mismatch: "
+                    f"{destination}"
+                )
+                continue
+            if case_status == "missing" or not target.exists():
                 errors.append(
                     f"{markdown.relative_to(root)}: missing target: {destination}"
                 )
