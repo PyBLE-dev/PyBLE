@@ -1452,7 +1452,11 @@ single-entrypoint, single-binary integration contract.
 The Blockly suite verifies the offline asset, JavaScript channel,
 restore/recreation, source generation, examples, sidecar reopen, bounded Python
 import, and fake-Connection Save/Run flow in Android's actual WebView rather
-than a host widget substitute. The About suite verifies actual installed
+than a host widget substitute. When an example GPIO field opens Android's real
+IME, the test keeps that reduced viewport and scrolls the footer action into a
+hit-testable region before tapping it; an off-screen coordinate is not accepted
+as evidence that the compact chooser works above the keyboard. The About suite
+verifies actual installed
 version/build metadata and the offline PyBLE license asset through the platform
 plugin boundary (FR-ABOUT-3/4). Integration suites also run end-to-end against a
 fake board and on-device smoke per chip (run/stop, multi-file upload,
