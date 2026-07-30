@@ -94,6 +94,7 @@ describe("production build contract", () => {
       notice,
       "node_modules/string.prototype.codepointat",
     );
+    const hexRgb = noticeSection(notice, "node_modules/hex-rgb");
     const pako = noticeSection(
       notice,
       "node_modules/esptool-js/node_modules/pako",
@@ -103,6 +104,7 @@ describe("production build contract", () => {
     expect.soft(base64).not.toContain("Meta Platforms");
     expect.soft(codePointAt).toContain("Copyright Mathias Bynens");
     expect.soft(codePointAt).not.toContain("Meta Platforms");
+    expect.soft(hexRgb).toContain("License file: license");
     expect.soft(pako).toContain("SPDX license: (MIT AND Zlib)");
     expect.soft(pako).toContain("Jean-loup Gailly and Mark Adler");
     expect
