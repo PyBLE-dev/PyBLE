@@ -275,6 +275,30 @@ jobs:
           # below remains the authoritative, unmasked failure boundary.
           yes | "$SDKMANAGER" --licenses \
             >"$PYBLE_ANDROID_LOG_DIR/sdk-licenses.log" 2>&1 || true
+
+          # API 34 first boot enforces a 6 GiB userdata minimum and also
+          # requires 20 percent free-space headroom. GitHub's runner carries
+          # several side-by-side NDKs, while PyBLE intentionally builds with
+          # exactly one pinned revision. Remove only the unused NDK packages
+          # before installing the pinned SDK set so the AVD has honest space.
+          df -h "$SDK_ROOT" \
+            | tee "$PYBLE_ANDROID_LOG_DIR/disk-before-prune.log"
+          "$SDKMANAGER" --list_installed \
+            | tee "$PYBLE_ANDROID_LOG_DIR/sdk-list-installed.log"
+          mapfile -t PYBLE_UNUSED_NDKS < <(
+            awk -F '|' -v keep="$PYBLE_ANDROID_NDK" '
+                {
+                  package = $1
+                  gsub(/^[[:space:]]+|[[:space:]]+$/, "", package)
+                }
+                package ~ /^ndk;/ && package != keep { print package }
+              ' "$PYBLE_ANDROID_LOG_DIR/sdk-list-installed.log"
+          )
+          if [ "${#PYBLE_UNUSED_NDKS[@]}" -gt 0 ]; then
+            "$SDKMANAGER" --uninstall "${PYBLE_UNUSED_NDKS[@]}" \
+              | tee "$PYBLE_ANDROID_LOG_DIR/sdk-prune.log"
+          fi
+
           "$SDKMANAGER" --channel=0 \
             platform-tools \
             emulator \
@@ -284,11 +308,30 @@ jobs:
             "$PYBLE_ANDROID_IMAGE" \
             | tee "$PYBLE_ANDROID_LOG_DIR/sdk-install.log"
 
+          PYBLE_PINNED_NDK_VERSION="${PYBLE_ANDROID_NDK##*;}"
+          PYBLE_PINNED_NDK_ROOT="$SDK_ROOT/ndk/$PYBLE_PINNED_NDK_VERSION"
+          if [ ! -d "$PYBLE_PINNED_NDK_ROOT" ]; then
+            echo "Pinned Android NDK is unavailable at $PYBLE_PINNED_NDK_ROOT" >&2
+            exit 1
+          fi
+          export ANDROID_NDK="$PYBLE_PINNED_NDK_ROOT"
+          export ANDROID_NDK_HOME="$PYBLE_PINNED_NDK_ROOT"
+          export ANDROID_NDK_ROOT="$PYBLE_PINNED_NDK_ROOT"
+          export ANDROID_NDK_PATH="$PYBLE_PINNED_NDK_ROOT"
+          export ANDROID_NDK_LATEST_HOME="$PYBLE_PINNED_NDK_ROOT"
+          df -h "$SDK_ROOT" \
+            | tee "$PYBLE_ANDROID_LOG_DIR/disk-after-install.log"
+
           printf '%s\n' \
             "PYBLE_ANDROID_SDK_ROOT=$SDK_ROOT" \
             "PYBLE_ANDROID_ADB=$SDK_ROOT/platform-tools/adb" \
             "PYBLE_ANDROID_EMULATOR=$SDK_ROOT/emulator/emulator" \
             "PYBLE_ANDROID_AVDMANAGER=$AVDMANAGER" \
+            "ANDROID_NDK=$ANDROID_NDK" \
+            "ANDROID_NDK_HOME=$ANDROID_NDK_HOME" \
+            "ANDROID_NDK_ROOT=$ANDROID_NDK_ROOT" \
+            "ANDROID_NDK_PATH=$ANDROID_NDK_PATH" \
+            "ANDROID_NDK_LATEST_HOME=$ANDROID_NDK_LATEST_HOME" \
             >> "$GITHUB_ENV"
       - name: Create API 34 Google APIs x86_64 tablet AVD
         shell: bash
@@ -307,15 +350,15 @@ jobs:
           fi
           # Pixel Tablet at 2560x1600 / 320 dpi gives a deterministic
           # 1280x800 logical tablet surface, matching the Android test geometry.
-          # Keep userdata at 2 GiB so the complete API 34 image fits the hosted
-          # runner after its pinned SDK, build-tools, and NDK are installed.
+          # API 34 first boot enforces a 6 GiB userdata minimum; state that
+          # requirement explicitly after reclaiming unused runner NDKs above.
           # avdmanager pre-populates these keys. Upsert them so the emulator
           # cannot select an earlier device-profile value from a duplicate.
           python3 ../tools/ci/android_avd_config.py "$AVD_CONFIG" \
             --set 'hw.ramSize=3072' \
             --set 'hw.cpu.ncore=2' \
             --set 'vm.heapSize=512' \
-            --set 'disk.dataPartition.size=2048M' \
+            --set 'disk.dataPartition.size=6144M' \
             --set 'hw.lcd.width=2560' \
             --set 'hw.lcd.height=1600' \
             --set 'hw.lcd.density=320' \
@@ -336,7 +379,7 @@ jobs:
 
           nohup "$PYBLE_ANDROID_EMULATOR" \
             -avd "$PYBLE_ANDROID_AVD" \
-            -partition-size 2048 \
+            -partition-size 6144 \
             -port 5554 \
             -no-window \
             -no-audio \
@@ -430,6 +473,9 @@ jobs:
             done
             echo
             "$PYBLE_ANDROID_ADB" devices -l
+            echo
+            echo "Runner disk usage:"
+            df -h "$PYBLE_ANDROID_SDK_ROOT"
           } >"$PYBLE_ANDROID_LOG_DIR/ci-context.txt" 2>&1
 
           if "$PYBLE_ANDROID_ADB" -s "$PYBLE_ANDROID_SERIAL" get-state \
@@ -447,7 +493,7 @@ jobs:
           fi
           AVD_CONFIG="$ANDROID_AVD_HOME/$PYBLE_ANDROID_AVD.avd/config.ini"
           if [ -f "$AVD_CONFIG" ]; then
-            grep -E '^(AvdId|PlayStore.enabled|abi.type|disk\.dataPartition\.size|hw\.(cpu\.ncore|device\.name|gpu\.(enabled|mode)|initialOrientation|lcd\.(density|height|width)|ramSize)|image\.sysdir\.1|tag\.(display|id)|vm\.heapSize)=' \
+            grep -E '^(AvdId|PlayStore.enabled|abi.type|disk\.dataPartition\.size|hw\.(cpu\.ncore|device\.name|gpu\.(enabled|mode)|initialOrientation|lcd\.(density|height|width)|ramSize)|image\.sysdir\.1|tag\.(display|id)|vm\.heapSize)[[:space:]]*=[[:space:]]*' \
               "$AVD_CONFIG" >"$PYBLE_ANDROID_LOG_DIR/avd-config.txt"
           fi
           exit 0
