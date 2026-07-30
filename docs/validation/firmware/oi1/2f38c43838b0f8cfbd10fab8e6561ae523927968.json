@@ -1,0 +1,525 @@
+{
+  "created_at": "2026-07-30T09:42:14Z",
+  "firmware_version": "0.4.1",
+  "measurement_contract": "oi1-pre-v1-v1",
+  "profile_order": [
+    "esp32-4mb",
+    "esp32-s3-n16r8"
+  ],
+  "profiles": [
+    {
+      "board_manufacturer": "Espressif Systems",
+      "board_model": "ESP32 development board, 4 MiB profile",
+      "device_flash_capacity_bytes": 4194304,
+      "device_psram_capacity_bytes": 0,
+      "environment": {
+        "ble_adapter": "Apple BCM_4388, PCIe, firmware 23.5.574.4414",
+        "ble_backend": "Bleak CoreBluetooth 3.0.2",
+        "desktop_os": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+        "python_version": "3.13.5"
+      },
+      "firmware_sha256": "3fbeaec7738ad9469b5057365454bbb6e402688f286519b98686a465483e8963",
+      "manifest_sha256": "1a30b4951443d318a7ffea3ece5b41011e7dec90bf0afaaa06243289445c91a4",
+      "module_marking": "ESP32-D0WD rev 1.0 (esptool-reported)",
+      "oi1_build": {
+        "application_headroom_bytes": 332624,
+        "application_image_bytes": 1698992,
+        "factory_partition_bytes": 2031616
+      },
+      "oi1_observation": {
+        "get_duration_ns": [
+          4770199334,
+          4534436791,
+          4502138333,
+          4563735958,
+          4561152209
+        ],
+        "get_offset_sequences_validated": 5,
+        "get_retransmitted_bytes": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "get_retransmitted_chunks": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "get_unique_verified_bytes": [
+          65536,
+          65536,
+          65536,
+          65536,
+          65536
+        ],
+        "get_verified_goodput_bytes_per_second": [
+          13738,
+          14452,
+          14556,
+          14360,
+          14368
+        ],
+        "heap_default_free_post_hello_bytes": [
+          86300,
+          86284,
+          86300,
+          86300,
+          86300,
+          86300,
+          86300,
+          86300,
+          86284,
+          86300
+        ],
+        "heap_post_hello": [
+          {
+            "gc_allocated_bytes": 1712,
+            "gc_free_bytes": 140304,
+            "idf_internal_free_bytes": 86300,
+            "idf_internal_largest_block_bytes": 86016,
+            "idf_internal_minimum_free_bytes": 86280
+          },
+          {
+            "gc_allocated_bytes": 1712,
+            "gc_free_bytes": 140304,
+            "idf_internal_free_bytes": 86284,
+            "idf_internal_largest_block_bytes": 86016,
+            "idf_internal_minimum_free_bytes": 86264
+          },
+          {
+            "gc_allocated_bytes": 1712,
+            "gc_free_bytes": 140304,
+            "idf_internal_free_bytes": 86300,
+            "idf_internal_largest_block_bytes": 86016,
+            "idf_internal_minimum_free_bytes": 86280
+          },
+          {
+            "gc_allocated_bytes": 1712,
+            "gc_free_bytes": 140304,
+            "idf_internal_free_bytes": 86300,
+            "idf_internal_largest_block_bytes": 86016,
+            "idf_internal_minimum_free_bytes": 86280
+          },
+          {
+            "gc_allocated_bytes": 1712,
+            "gc_free_bytes": 140304,
+            "idf_internal_free_bytes": 86300,
+            "idf_internal_largest_block_bytes": 86016,
+            "idf_internal_minimum_free_bytes": 86280
+          },
+          {
+            "gc_allocated_bytes": 1712,
+            "gc_free_bytes": 140304,
+            "idf_internal_free_bytes": 86300,
+            "idf_internal_largest_block_bytes": 86016,
+            "idf_internal_minimum_free_bytes": 86280
+          },
+          {
+            "gc_allocated_bytes": 1712,
+            "gc_free_bytes": 140304,
+            "idf_internal_free_bytes": 86300,
+            "idf_internal_largest_block_bytes": 86016,
+            "idf_internal_minimum_free_bytes": 86280
+          },
+          {
+            "gc_allocated_bytes": 1712,
+            "gc_free_bytes": 140304,
+            "idf_internal_free_bytes": 86300,
+            "idf_internal_largest_block_bytes": 86016,
+            "idf_internal_minimum_free_bytes": 86280
+          },
+          {
+            "gc_allocated_bytes": 1712,
+            "gc_free_bytes": 140304,
+            "idf_internal_free_bytes": 86284,
+            "idf_internal_largest_block_bytes": 86016,
+            "idf_internal_minimum_free_bytes": 86264
+          },
+          {
+            "gc_allocated_bytes": 1712,
+            "gc_free_bytes": 140304,
+            "idf_internal_free_bytes": 86300,
+            "idf_internal_largest_block_bytes": 86016,
+            "idf_internal_minimum_free_bytes": 86280
+          }
+        ],
+        "heap_post_reliability": {
+          "gc_allocated_bytes": 2128,
+          "gc_free_bytes": 139888,
+          "idf_internal_free_bytes": 86300,
+          "idf_internal_largest_block_bytes": 86016,
+          "idf_internal_minimum_free_bytes": 86256
+        },
+        "heap_post_roundtrip": [
+          {
+            "gc_allocated_bytes": 2128,
+            "gc_free_bytes": 139888,
+            "idf_internal_free_bytes": 86300,
+            "idf_internal_largest_block_bytes": 86016,
+            "idf_internal_minimum_free_bytes": 86256
+          },
+          {
+            "gc_allocated_bytes": 2128,
+            "gc_free_bytes": 139888,
+            "idf_internal_free_bytes": 86300,
+            "idf_internal_largest_block_bytes": 86016,
+            "idf_internal_minimum_free_bytes": 86256
+          },
+          {
+            "gc_allocated_bytes": 2128,
+            "gc_free_bytes": 139888,
+            "idf_internal_free_bytes": 86300,
+            "idf_internal_largest_block_bytes": 86016,
+            "idf_internal_minimum_free_bytes": 86256
+          },
+          {
+            "gc_allocated_bytes": 2128,
+            "gc_free_bytes": 139888,
+            "idf_internal_free_bytes": 86300,
+            "idf_internal_largest_block_bytes": 86016,
+            "idf_internal_minimum_free_bytes": 86256
+          },
+          {
+            "gc_allocated_bytes": 2128,
+            "gc_free_bytes": 139888,
+            "idf_internal_free_bytes": 86300,
+            "idf_internal_largest_block_bytes": 86016,
+            "idf_internal_minimum_free_bytes": 86256
+          }
+        ],
+        "observed_att_mtu": 247,
+        "observed_chunk_bytes": 229,
+        "observed_window": 8,
+        "physical_power_cycle_advertising": "passed",
+        "put_committed_goodput_bytes_per_second": [
+          7745,
+          7746,
+          7481,
+          7404,
+          7430
+        ],
+        "put_duration_ns": [
+          8461350750,
+          8459984875,
+          8760090333,
+          8850251416,
+          8819676042
+        ],
+        "put_retransmitted_bytes": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "put_retransmitted_chunks": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "put_unique_committed_bytes": [
+          65536,
+          65536,
+          65536,
+          65536,
+          65536
+        ],
+        "raw_log_sha256": "a4feac3ae2b8b8e76f8532fda21479bebf4294c1d8be1c8a282a7c1a4a659605",
+        "reliability": {
+          "attempted_files": 20,
+          "bytes_per_file": 16384,
+          "completed_files": 20,
+          "failed_statuses": 0,
+          "integrity_failures": 0,
+          "retransmitted_bytes": 0,
+          "retransmitted_chunks": 0,
+          "rewinds": 0,
+          "total_payload_bytes": 327680,
+          "unexpected_disconnects": 0,
+          "verified_files": 20
+        },
+        "reset_to_service_advertisement_ms": [
+          1463,
+          1083,
+          1451,
+          1158,
+          1195,
+          1178,
+          1127,
+          1304,
+          2378,
+          1188
+        ],
+        "roundtrip_integrity_failures": 0,
+        "roundtrip_integrity_verified": 5,
+        "roundtrip_unexpected_disconnects": 0
+      },
+      "profile_id": "esp32-4mb",
+      "target": "esp32"
+    },
+    {
+      "board_manufacturer": "Espressif Systems",
+      "board_model": "ESP32-S3 development board, N16R8 profile",
+      "device_flash_capacity_bytes": 16777216,
+      "device_psram_capacity_bytes": 8388608,
+      "environment": {
+        "ble_adapter": "Apple BCM_4388, PCIe, firmware 23.5.574.4414",
+        "ble_backend": "Bleak CoreBluetooth 3.0.2",
+        "desktop_os": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+        "python_version": "3.13.5"
+      },
+      "firmware_sha256": "54191bd2060b62cb23c0a8837fb2bbeb6c9174450a259bec4d4882efec8d0eb8",
+      "manifest_sha256": "ba7ef324deb36e53e4212d89a1963a57c75284d543a989c61ebf86e5f0d5ac7f",
+      "module_marking": "ESP32-S3 QFN56 rev 0.1, 8 MiB AP_3v3 PSRAM (esptool-reported)",
+      "oi1_build": {
+        "application_headroom_bytes": 404704,
+        "application_image_bytes": 1692448,
+        "factory_partition_bytes": 2097152
+      },
+      "oi1_observation": {
+        "get_duration_ns": [
+          2331742209,
+          3080404833,
+          3168034875,
+          2876490334,
+          3165352542
+        ],
+        "get_offset_sequences_validated": 5,
+        "get_retransmitted_bytes": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "get_retransmitted_chunks": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "get_unique_verified_bytes": [
+          65536,
+          65536,
+          65536,
+          65536,
+          65536
+        ],
+        "get_verified_goodput_bytes_per_second": [
+          28106,
+          21275,
+          20686,
+          22783,
+          20704
+        ],
+        "heap_default_free_post_hello_bytes": [
+          8470152,
+          8470152,
+          8470152,
+          8470152,
+          8470152,
+          8470152,
+          8470152,
+          8470152,
+          8470152,
+          8470152
+        ],
+        "heap_post_hello": [
+          {
+            "gc_allocated_bytes": 1712,
+            "gc_free_bytes": 8319824,
+            "idf_internal_free_bytes": 181811,
+            "idf_internal_largest_block_bytes": 106496,
+            "idf_internal_minimum_free_bytes": 181811
+          },
+          {
+            "gc_allocated_bytes": 1712,
+            "gc_free_bytes": 8319824,
+            "idf_internal_free_bytes": 181811,
+            "idf_internal_largest_block_bytes": 106496,
+            "idf_internal_minimum_free_bytes": 181811
+          },
+          {
+            "gc_allocated_bytes": 1712,
+            "gc_free_bytes": 8319824,
+            "idf_internal_free_bytes": 181811,
+            "idf_internal_largest_block_bytes": 106496,
+            "idf_internal_minimum_free_bytes": 181811
+          },
+          {
+            "gc_allocated_bytes": 1712,
+            "gc_free_bytes": 8319824,
+            "idf_internal_free_bytes": 181811,
+            "idf_internal_largest_block_bytes": 106496,
+            "idf_internal_minimum_free_bytes": 181811
+          },
+          {
+            "gc_allocated_bytes": 1712,
+            "gc_free_bytes": 8319824,
+            "idf_internal_free_bytes": 181811,
+            "idf_internal_largest_block_bytes": 106496,
+            "idf_internal_minimum_free_bytes": 181811
+          },
+          {
+            "gc_allocated_bytes": 1712,
+            "gc_free_bytes": 8319824,
+            "idf_internal_free_bytes": 181811,
+            "idf_internal_largest_block_bytes": 106496,
+            "idf_internal_minimum_free_bytes": 181811
+          },
+          {
+            "gc_allocated_bytes": 1712,
+            "gc_free_bytes": 8319824,
+            "idf_internal_free_bytes": 181811,
+            "idf_internal_largest_block_bytes": 106496,
+            "idf_internal_minimum_free_bytes": 181811
+          },
+          {
+            "gc_allocated_bytes": 1712,
+            "gc_free_bytes": 8319824,
+            "idf_internal_free_bytes": 181811,
+            "idf_internal_largest_block_bytes": 106496,
+            "idf_internal_minimum_free_bytes": 181811
+          },
+          {
+            "gc_allocated_bytes": 1712,
+            "gc_free_bytes": 8319824,
+            "idf_internal_free_bytes": 181811,
+            "idf_internal_largest_block_bytes": 106496,
+            "idf_internal_minimum_free_bytes": 181811
+          },
+          {
+            "gc_allocated_bytes": 1712,
+            "gc_free_bytes": 8319824,
+            "idf_internal_free_bytes": 181811,
+            "idf_internal_largest_block_bytes": 106496,
+            "idf_internal_minimum_free_bytes": 181811
+          }
+        ],
+        "heap_post_reliability": {
+          "gc_allocated_bytes": 2064,
+          "gc_free_bytes": 8319472,
+          "idf_internal_free_bytes": 181811,
+          "idf_internal_largest_block_bytes": 106496,
+          "idf_internal_minimum_free_bytes": 181679
+        },
+        "heap_post_roundtrip": [
+          {
+            "gc_allocated_bytes": 2064,
+            "gc_free_bytes": 8319472,
+            "idf_internal_free_bytes": 181811,
+            "idf_internal_largest_block_bytes": 106496,
+            "idf_internal_minimum_free_bytes": 181679
+          },
+          {
+            "gc_allocated_bytes": 2064,
+            "gc_free_bytes": 8319472,
+            "idf_internal_free_bytes": 181811,
+            "idf_internal_largest_block_bytes": 106496,
+            "idf_internal_minimum_free_bytes": 181679
+          },
+          {
+            "gc_allocated_bytes": 2064,
+            "gc_free_bytes": 8319472,
+            "idf_internal_free_bytes": 181811,
+            "idf_internal_largest_block_bytes": 106496,
+            "idf_internal_minimum_free_bytes": 181679
+          },
+          {
+            "gc_allocated_bytes": 2064,
+            "gc_free_bytes": 8319472,
+            "idf_internal_free_bytes": 181811,
+            "idf_internal_largest_block_bytes": 106496,
+            "idf_internal_minimum_free_bytes": 181679
+          },
+          {
+            "gc_allocated_bytes": 2064,
+            "gc_free_bytes": 8319472,
+            "idf_internal_free_bytes": 181811,
+            "idf_internal_largest_block_bytes": 106496,
+            "idf_internal_minimum_free_bytes": 181679
+          }
+        ],
+        "observed_att_mtu": 247,
+        "observed_chunk_bytes": 229,
+        "observed_window": 8,
+        "physical_power_cycle_advertising": "passed",
+        "put_committed_goodput_bytes_per_second": [
+          13026,
+          13025,
+          13329,
+          13253,
+          13026
+        ],
+        "put_duration_ns": [
+          5031166125,
+          5031239708,
+          4916483292,
+          4944937542,
+          5031122833
+        ],
+        "put_retransmitted_bytes": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "put_retransmitted_chunks": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "put_unique_committed_bytes": [
+          65536,
+          65536,
+          65536,
+          65536,
+          65536
+        ],
+        "raw_log_sha256": "a3a1cc4a49d0402caab2cc5166cafbce5aac24c63a9076001e46e17bb7d6a516",
+        "reliability": {
+          "attempted_files": 20,
+          "bytes_per_file": 16384,
+          "completed_files": 20,
+          "failed_statuses": 0,
+          "integrity_failures": 0,
+          "retransmitted_bytes": 0,
+          "retransmitted_chunks": 0,
+          "rewinds": 0,
+          "total_payload_bytes": 327680,
+          "unexpected_disconnects": 0,
+          "verified_files": 20
+        },
+        "reset_to_service_advertisement_ms": [
+          851,
+          1186,
+          850,
+          850,
+          1175,
+          843,
+          849,
+          844,
+          849,
+          850
+        ],
+        "roundtrip_integrity_failures": 0,
+        "roundtrip_integrity_verified": 5,
+        "roundtrip_unexpected_disconnects": 0
+      },
+      "profile_id": "esp32-s3-n16r8",
+      "target": "esp32-s3"
+    }
+  ],
+  "schema_version": 1,
+  "source_commit": "2f38c43838b0f8cfbd10fab8e6561ae523927968"
+}

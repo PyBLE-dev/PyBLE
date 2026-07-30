@@ -1,0 +1,69 @@
+# SPDX-License-Identifier: MIT
+name: Bug report
+description: Report a reproducible PyBLE app, firmware, protocol, or website problem
+title: "[Bug] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not disclose security vulnerabilities here. Use the private
+        vulnerability-reporting link in SECURITY.md.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - App
+        - Firmware
+        - PBLE/1 protocol
+        - Browser installer
+        - Website
+        - Documentation
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: App version, firmware version, or source commit
+    validations:
+      required: true
+  - type: input
+    id: hardware
+    attributes:
+      label: Hardware and platform
+      description: Exact board/profile and iPadOS, Android, browser, or desktop version
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      placeholder: |
+        1. …
+        2. …
+        3. …
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior and sanitized diagnostics
+      description: Remove device identifiers, personal files, keys, and credentials.
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues.
+          required: true
+        - label: This report contains no credential or private information.
+          required: true

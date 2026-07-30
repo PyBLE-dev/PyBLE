@@ -1,0 +1,50 @@
+# SPDX-License-Identifier: MIT
+name: Feature or board-port proposal
+description: Propose a user-facing improvement or a new compatible target
+title: "[Proposal] "
+labels:
+  - enhancement
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - App
+        - Firmware or new board port
+        - PBLE/1 protocol
+        - Browser installer
+        - Website or documentation
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Describe the user need without prescribing an implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed outcome
+    validations:
+      required: true
+  - type: textarea
+    id: compatibility
+    attributes:
+      label: Compatibility and validation
+      description: For a board port, include MicroPython, BLE peripheral, resource, and HIL details.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: checkboxes
+    id: boundary
+    attributes:
+      label: Contribution boundary
+      options:
+        - label: I can contribute this as fresh, appropriately licensed work.
+          required: true
+        - label: I have read AGENTS.md and the relevant public specification.
+          required: true

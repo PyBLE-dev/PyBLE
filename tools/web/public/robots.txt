@@ -1,0 +1,5 @@
+User-Agent: *
+Allow: /
+
+Host: https://pyble.dev
+Sitemap: https://pyble.dev/sitemap.xml

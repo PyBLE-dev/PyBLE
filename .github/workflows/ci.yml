@@ -1,0 +1,469 @@
+# SPDX-License-Identifier: MIT
+# Part of PyBLE (https://pyble.dev) — see /LICENSE.
+#
+# PyBLE CI — G0/G1 gate suite + 3-chip build matrix. Runs on every push and PR.
+#   - no-leak         : reject forbidden proprietary tokens in shippable code (CON-6).
+#   - spdx            : every source file carries SPDX-License-Identifier: MIT (NFR-MAINT-4).
+#   - dco             : every commit in the PR is Signed-off-by (CON-6).
+#   - import-boundary : no widget (lib/** outside lib/pble) imports lib/ble (NFR-MAINT-1, CON-8).
+#   - locale-parity   : ARB key parity vs en + ASCII technical-identifier rule + no
+#                       hard-coded display text in lib/app (BLD-5, CON-9, FR-I18N-1..4).
+#   - sha-drift       : checked-out submodule SHA == versions.lock, else refuse (BLD-1/2).
+#   - app             : Flutter app gate (X-03) — resolve against the TRACKED lockfile,
+#                       static analysis, and the unit/widget/golden/conformance suites (BLD-2).
+#   - web             : pinned-Node install, formatting, lint, type, unit, and
+#                       static-export build checks for tools/web.
+#   - docs            : every repository-local Markdown target exists.
+#   - firmware-host   : shell gates plus the complete Python host/release suite.
+#   - android-webview : real Blockly platform-WebView integration on a clean,
+#                       pinned Android 14 / API 34 Google APIs x86_64 AVD.
+#   - build           : cross-compile the empty agent for esp32 / esp32-s3 / esp32-c3
+#                       (BLD-3/4/5) — the REAL toolchain job (installs ESP-IDF + submodule).
+name: ci
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  no-leak:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: No-leak gate (CON-6)
+        run: tools/ci/no_leak.sh
+
+  spdx:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: SPDX-MIT header lint (NFR-MAINT-4)
+        run: tools/ci/spdx_lint.sh
+
+  web:
+    needs: [no-leak, spdx]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+    defaults:
+      run:
+        working-directory: tools/web
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up pinned Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: tools/web/.node-version
+          cache: npm
+          cache-dependency-path: tools/web/package-lock.json
+      - name: Install locked website dependencies
+        run: npm ci
+      - name: Website checks and static export
+        run: npm run check
+
+  import-boundary:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Import-boundary lint — only lib/pble may import lib/ble (NFR-MAINT-1, CON-8, FR-BLE-8)
+        run: tools/ci/import_boundary.sh
+
+  locale-parity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Locale-parity gate — ARB key parity vs en + technical-identifier + hard-coded-text (BLD-5, CON-9, FR-I18N-1..4)
+        run: tools/ci/locale_parity.sh
+
+  dco:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: DCO sign-off check (CON-6)
+        env:
+          # On a PR, inspect exactly the PR commits; on push, the pushed range.
+          GITHUB_BASE_REF: ${{ github.base_ref }}
+        run: |
+          if [ -n "${{ github.base_ref }}" ]; then
+            git fetch --no-tags origin "${{ github.base_ref }}"
+            PYBLE_DCO_RANGE="origin/${{ github.base_ref }}..HEAD" tools/ci/dco_check.sh
+          else
+            PYBLE_DCO_RANGE="${{ github.event.before }}..${{ github.sha }}" tools/ci/dco_check.sh
+          fi
+
+  sha-drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: SHA-drift gate — submodule pin == versions.lock (BLD-1/2)
+        run: tools/ci/sha_drift.sh
+
+  patches:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patches policy — default zero, each needs a written reason (CON-12/BLD-15)
+        run: tools/ci/patches_policy.sh firmware/patches
+
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Documentation link tests
+        run: python3 -m unittest discover -s tests/publication -p "test_*.py" -v
+      - name: Public Markdown link gate
+        run: python3 tools/ci/docs_links.py
+
+  firmware-host:
+    needs: [no-leak, spdx, patches]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Firmware shell and conformance gates
+        run: tests/firmware_tests/run_tests.sh
+      - name: Complete firmware host and release suite
+        run: python3 -m unittest discover -s tests/firmware_tests/host -p "test_*.py" -v
+
+  app:
+    # The Flutter app gate (X-03). Resolves strictly against the TRACKED
+    # app/pubspec.lock (BLD-2), runs static analysis, and runs the full test
+    # suite (unit/widget/golden/conformance — G1). Runs only after the fast
+    # bash gates pass, so a leak / SPDX / import-boundary / locale-parity failure
+    # short-circuits before the heavier toolchain setup. (dco runs as its own
+    # required check.)
+    needs: [no-leak, spdx, import-boundary, locale-parity]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache pub packages (keyed on the tracked lockfile)
+        uses: actions/cache@v4
+        with:
+          path: ~/.pub-cache
+          key: pub-${{ runner.os }}-${{ hashFiles('app/pubspec.lock') }}
+          restore-keys: |
+            pub-${{ runner.os }}-
+      - name: Set up Flutter 3.44.1 (pinned, stable) + SDK cache
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.44.1
+          channel: stable
+          cache: true
+      - name: Resolve deps against the TRACKED lockfile (BLD-2)
+        run: flutter pub get --enforce-lockfile
+      - name: Generate localizations from ARB (gen-l10n, X-12/FR-I18N-1)
+        # `generate: true` also regenerates on `flutter pub get`; this explicit
+        # step makes AppLocalizations generation a first-class, visible CI stage
+        # from app/l10n.yaml + lib/localization/arb before analysis/tests run.
+        run: flutter gen-l10n
+      - name: Dart formatting
+        run: dart format --output=none --set-exit-if-changed lib test integration_test
+      - name: Static analysis
+        run: flutter analyze
+      - name: Test suite — unit/widget/golden/conformance (G1)
+        run: flutter test
+
+  android-webview:
+    # Exercise the real Android WebView/JavaScript-channel boundary, not the
+    # host-side widget substitute. Keep the AVD construction in plain Android
+    # SDK tools so the image, memory, boot bound, and diagnostics are visible.
+    needs: app
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: app
+    env:
+      PYBLE_ANDROID_IMAGE: system-images;android-34;google_apis;x86_64
+      PYBLE_ANDROID_COMPILE_PLATFORM: platforms;android-36
+      PYBLE_ANDROID_BUILD_TOOLS: build-tools;36.0.0
+      PYBLE_ANDROID_NDK: ndk;28.2.13676358
+      PYBLE_ANDROID_AVD: pyble_api34_google_apis
+      PYBLE_ANDROID_SERIAL: emulator-5554
+      PYBLE_ANDROID_LOG_DIR: /tmp/pyble-android-integration
+      PYBLE_ANDROID_RAW_EMULATOR_LOG: /tmp/pyble-android-emulator.log
+      ANDROID_AVD_HOME: /tmp/pyble-android-avd
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Flutter 3.44.1 (pinned, stable) + SDK cache
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.44.1
+          channel: stable
+          cache: true
+      - name: Resolve deps against the TRACKED lockfile (BLD-2)
+        run: flutter pub get --enforce-lockfile
+      - name: Generate localizations from ARB (X-12/FR-I18N-1)
+        run: flutter gen-l10n
+      - name: Install pinned Android SDK packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -d "${JAVA_HOME_17_X64:-}" ]; then
+            export JAVA_HOME="$JAVA_HOME_17_X64"
+            export PATH="$JAVA_HOME/bin:$PATH"
+            printf '%s\n' "JAVA_HOME=$JAVA_HOME" >> "$GITHUB_ENV"
+            printf '%s\n' "$JAVA_HOME/bin" >> "$GITHUB_PATH"
+          fi
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          if [ -z "$SDK_ROOT" ]; then
+            echo "ANDROID_SDK_ROOT/ANDROID_HOME is not configured" >&2
+            exit 1
+          fi
+          SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          AVDMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/avdmanager"
+          if [ ! -x "$SDKMANAGER" ] || [ ! -x "$AVDMANAGER" ]; then
+            echo "Android command-line tools are unavailable under $SDK_ROOT" >&2
+            exit 1
+          fi
+
+          mkdir -p "$PYBLE_ANDROID_LOG_DIR" "$ANDROID_AVD_HOME"
+          # GitHub's image normally has accepted licenses. Feeding affirmative
+          # answers keeps a fresh image non-interactive; package installation
+          # below remains the authoritative, unmasked failure boundary.
+          yes | "$SDKMANAGER" --licenses \
+            >"$PYBLE_ANDROID_LOG_DIR/sdk-licenses.log" 2>&1 || true
+          "$SDKMANAGER" --channel=0 \
+            platform-tools \
+            emulator \
+            "$PYBLE_ANDROID_COMPILE_PLATFORM" \
+            "$PYBLE_ANDROID_BUILD_TOOLS" \
+            "$PYBLE_ANDROID_NDK" \
+            "$PYBLE_ANDROID_IMAGE" \
+            | tee "$PYBLE_ANDROID_LOG_DIR/sdk-install.log"
+
+          printf '%s\n' \
+            "PYBLE_ANDROID_SDK_ROOT=$SDK_ROOT" \
+            "PYBLE_ANDROID_ADB=$SDK_ROOT/platform-tools/adb" \
+            "PYBLE_ANDROID_EMULATOR=$SDK_ROOT/emulator/emulator" \
+            "PYBLE_ANDROID_AVDMANAGER=$AVDMANAGER" \
+            >> "$GITHUB_ENV"
+      - name: Create API 34 Google APIs x86_64 tablet AVD
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'no\n' | "$PYBLE_ANDROID_AVDMANAGER" create avd \
+            --force \
+            --name "$PYBLE_ANDROID_AVD" \
+            --package "$PYBLE_ANDROID_IMAGE" \
+            --device pixel_tablet
+
+          AVD_CONFIG="$ANDROID_AVD_HOME/$PYBLE_ANDROID_AVD.avd/config.ini"
+          if [ ! -f "$AVD_CONFIG" ]; then
+            echo "AVD config was not created at $AVD_CONFIG" >&2
+            exit 1
+          fi
+          # Pixel Tablet at 2560x1600 / 320 dpi gives a deterministic
+          # 1280x800 logical tablet surface, matching the Android test geometry.
+          printf '%s\n' \
+            'hw.ramSize=3072' \
+            'hw.cpu.ncore=2' \
+            'vm.heapSize=512' \
+            'disk.dataPartition.size=4096M' \
+            'hw.lcd.width=2560' \
+            'hw.lcd.height=1600' \
+            'hw.lcd.density=320' \
+            'hw.initialOrientation=landscape' \
+            'hw.gpu.enabled=yes' \
+            'hw.gpu.mode=swiftshader_indirect' \
+            >> "$AVD_CONFIG"
+      - name: Boot headless emulator (KVM + software GPU)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -e /dev/kvm ]; then
+            echo "This job requires the hosted runner's /dev/kvm device" >&2
+            exit 1
+          fi
+          sudo chmod 666 /dev/kvm
+          "$PYBLE_ANDROID_EMULATOR" -accel-check \
+            2>&1 | tee "$PYBLE_ANDROID_LOG_DIR/accel-check.log"
+
+          nohup "$PYBLE_ANDROID_EMULATOR" \
+            -avd "$PYBLE_ANDROID_AVD" \
+            -port 5554 \
+            -no-window \
+            -no-audio \
+            -no-boot-anim \
+            -no-snapshot \
+            -camera-back none \
+            -camera-front none \
+            -accel on \
+            -gpu swiftshader_indirect \
+            -memory 3072 \
+            -cores 2 \
+            >"$PYBLE_ANDROID_RAW_EMULATOR_LOG" 2>&1 &
+          EMULATOR_PID=$!
+          printf '%s\n' "$EMULATOR_PID" \
+            > "$PYBLE_ANDROID_LOG_DIR/emulator.pid"
+
+          "$PYBLE_ANDROID_ADB" start-server
+          BOOTED=0
+          for ATTEMPT in $(seq 1 180); do
+            if ! kill -0 "$EMULATOR_PID" 2>/dev/null; then
+              echo "Android emulator exited before boot completed" >&2
+              tail -n 200 "$PYBLE_ANDROID_RAW_EMULATOR_LOG" >&2 || true
+              exit 1
+            fi
+            DEVICE_STATE="$(
+              "$PYBLE_ANDROID_ADB" -s "$PYBLE_ANDROID_SERIAL" get-state \
+                2>/dev/null || true
+            )"
+            BOOT_COMPLETED="$(
+              "$PYBLE_ANDROID_ADB" -s "$PYBLE_ANDROID_SERIAL" shell \
+                getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true
+            )"
+            if [ "$DEVICE_STATE" = "device" ] && [ "$BOOT_COMPLETED" = "1" ]; then
+              BOOTED=1
+              echo "Android boot completed after $ATTEMPT poll(s)."
+              break
+            fi
+            sleep 2
+          done
+          if [ "$BOOTED" -ne 1 ]; then
+            echo "Android sys.boot_completed did not reach 1 within 360 seconds" >&2
+            "$PYBLE_ANDROID_ADB" devices -l >&2 || true
+            tail -n 200 "$PYBLE_ANDROID_RAW_EMULATOR_LOG" >&2 || true
+            exit 1
+          fi
+
+          "$PYBLE_ANDROID_ADB" -s "$PYBLE_ANDROID_SERIAL" shell \
+            input keyevent 82
+          "$PYBLE_ANDROID_ADB" -s "$PYBLE_ANDROID_SERIAL" shell \
+            settings put global window_animation_scale 0
+          "$PYBLE_ANDROID_ADB" -s "$PYBLE_ANDROID_SERIAL" shell \
+            settings put global transition_animation_scale 0
+          "$PYBLE_ANDROID_ADB" -s "$PYBLE_ANDROID_SERIAL" shell \
+            settings put global animator_duration_scale 0
+          "$PYBLE_ANDROID_ADB" -s "$PYBLE_ANDROID_SERIAL" shell \
+            svc power stayon true
+          "$PYBLE_ANDROID_ADB" -s "$PYBLE_ANDROID_SERIAL" logcat -c
+      - name: Real About + Blockly integration (Android API 34)
+        shell: bash
+        run: |
+          set -euo pipefail
+          timeout --signal=TERM --kill-after=30s 20m \
+            flutter test \
+            integration_test/about_page_test.dart \
+            integration_test/blockly_webview_test.dart \
+            -d "$PYBLE_ANDROID_SERIAL" \
+            --reporter expanded \
+            2>&1 | tee "$PYBLE_ANDROID_LOG_DIR/flutter-test.log"
+      - name: Collect bounded Android diagnostics
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          mkdir -p "$PYBLE_ANDROID_LOG_DIR"
+          {
+            date -u
+            uname -a
+            flutter --version
+            java -version
+            echo
+            echo "Installed Android package revisions:"
+            for PROPERTIES in \
+              "$PYBLE_ANDROID_SDK_ROOT/emulator/source.properties" \
+              "$PYBLE_ANDROID_SDK_ROOT/system-images/android-34/google_apis/x86_64/source.properties"
+            do
+              if [ -f "$PROPERTIES" ]; then
+                echo "[$PROPERTIES]"
+                grep -E '^(Pkg\.(Path|Revision|BuildId)|AndroidVersion|SystemImage)' \
+                  "$PROPERTIES"
+              fi
+            done
+            echo
+            "$PYBLE_ANDROID_ADB" devices -l
+          } >"$PYBLE_ANDROID_LOG_DIR/ci-context.txt" 2>&1
+
+          if "$PYBLE_ANDROID_ADB" -s "$PYBLE_ANDROID_SERIAL" get-state \
+              >/dev/null 2>&1; then
+            "$PYBLE_ANDROID_ADB" -s "$PYBLE_ANDROID_SERIAL" logcat \
+              -d -v threadtime -t 3000 \
+              >"$PYBLE_ANDROID_LOG_DIR/logcat-tail.txt" 2>&1
+            "$PYBLE_ANDROID_ADB" -s "$PYBLE_ANDROID_SERIAL" shell \
+              dumpsys webviewupdate \
+              >"$PYBLE_ANDROID_LOG_DIR/webview-provider.txt" 2>&1
+          fi
+          if [ -f "$PYBLE_ANDROID_RAW_EMULATOR_LOG" ]; then
+            tail -n 2000 "$PYBLE_ANDROID_RAW_EMULATOR_LOG" \
+              >"$PYBLE_ANDROID_LOG_DIR/emulator-tail.log"
+          fi
+          AVD_CONFIG="$ANDROID_AVD_HOME/$PYBLE_ANDROID_AVD.avd/config.ini"
+          if [ -f "$AVD_CONFIG" ]; then
+            grep -E '^(AvdId|PlayStore.enabled|abi.type|disk\.dataPartition\.size|hw\.(cpu\.ncore|device\.name|gpu\.(enabled|mode)|initialOrientation|lcd\.(density|height|width)|ramSize)|image\.sysdir\.1|tag\.(display|id)|vm\.heapSize)=' \
+              "$AVD_CONFIG" >"$PYBLE_ANDROID_LOG_DIR/avd-config.txt"
+          fi
+          exit 0
+      - name: Upload Android integration diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pyble-android-api34-webview-${{ github.run_attempt }}
+          path: /tmp/pyble-android-integration/
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Terminate Android emulator
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          if [ -n "${PYBLE_ANDROID_ADB:-}" ]; then
+            "$PYBLE_ANDROID_ADB" -s "$PYBLE_ANDROID_SERIAL" emu kill \
+              >/dev/null 2>&1
+          fi
+          PID_FILE="$PYBLE_ANDROID_LOG_DIR/emulator.pid"
+          if [ -f "$PID_FILE" ]; then
+            EMULATOR_PID="$(tr -dc '0-9' < "$PID_FILE")"
+            if [ -n "$EMULATOR_PID" ] && kill -0 "$EMULATOR_PID" 2>/dev/null; then
+              kill "$EMULATOR_PID" 2>/dev/null
+              for _ in $(seq 1 20); do
+                kill -0 "$EMULATOR_PID" 2>/dev/null || break
+                sleep 1
+              done
+              kill -9 "$EMULATOR_PID" 2>/dev/null || true
+            fi
+          fi
+          exit 0
+
+  build:
+    # The REAL 3-chip cross-compile. Installs the pinned ESP-IDF + initializes
+    # the pinned MicroPython submodule, then builds the agent per target.
+    # This is the toolchain job that the host gate environment cannot run.
+    needs: [no-leak, spdx, sha-drift, patches, firmware-host]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [esp32, esp32-s3, esp32-c3]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Fetch MicroPython lib submodules
+        run: git -C firmware/upstream/micropython submodule update --init --depth 1
+      - name: Install pinned ESP-IDF (BLD-11)
+        run: firmware/scripts/install_esp_idf.sh
+      - name: Build ${{ matrix.target }} (BLD-3/4/5)
+        run: firmware/scripts/build.sh ${{ matrix.target }}
+      - name: Collect artifacts (firmware.bin + bootloader + partition table)
+        uses: actions/upload-artifact@v4
+        with:
+          name: pyble-${{ matrix.target }}
+          path: |
+            firmware/build/${{ matrix.target }}/firmware.bin
+            firmware/build/${{ matrix.target }}/bootloader/bootloader.bin
+            firmware/build/${{ matrix.target }}/partition_table/partition-table.bin
+          if-no-files-found: error

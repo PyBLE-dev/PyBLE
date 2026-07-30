@@ -1,0 +1,417 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pyble.dev/firmware/release.schema.json",
+  "title": "PyBLE firmware release metadata v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "identity",
+    "provenance",
+    "installer",
+    "profiles",
+    "documents"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 2
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "tag",
+        "agent_version",
+        "protocol_version",
+        "built_at"
+      ],
+      "properties": {
+        "version": {
+          "type": "string",
+          "pattern": "^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+        },
+        "tag": {
+          "type": "string",
+          "pattern": "^firmware-v.+$"
+        },
+        "agent_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "protocol_version": {
+          "const": "PBLE/1"
+        },
+        "built_at": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pyble",
+        "micropython",
+        "esp_idf",
+        "patch_count",
+        "runner",
+        "tools"
+      ],
+      "properties": {
+        "pyble": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["commit", "clean"],
+          "properties": {
+            "commit": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}$"
+            },
+            "clean": {
+              "const": true
+            }
+          }
+        },
+        "micropython": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ref", "commit"],
+          "properties": {
+            "ref": {
+              "type": "string",
+              "minLength": 1
+            },
+            "commit": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}$"
+            }
+          }
+        },
+        "esp_idf": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ref", "commit"],
+          "properties": {
+            "ref": {
+              "type": "string",
+              "minLength": 1
+            },
+            "commit": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}$"
+            }
+          }
+        },
+        "patch_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "runner": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["os", "architecture"],
+          "properties": {
+            "os": {
+              "type": "string",
+              "minLength": 1
+            },
+            "architecture": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "tools": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "version"],
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "version": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    "installer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["package", "version"],
+      "properties": {
+        "package": {
+          "const": "esp-web-tools"
+        },
+        "version": {
+          "const": "10.4.0"
+        }
+      }
+    },
+    "profiles": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "chip_family",
+          "requirements",
+          "flash",
+          "silicon_revision",
+          "hil_status",
+          "manifest",
+          "install",
+          "components"
+        ],
+        "properties": {
+          "id": {
+            "enum": ["esp32-4mb", "esp32-s3-n16r8"]
+          },
+          "chip_family": {
+            "enum": ["ESP32", "ESP32-S3"]
+          },
+          "silicon_revision": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["minimum_full", "maximum_full"],
+            "properties": {
+              "minimum_full": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "maximum_full": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          },
+          "requirements": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["flash_size_bytes", "psram"],
+            "properties": {
+              "flash_size_bytes": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "psram": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["required", "size_bytes", "type"],
+                "properties": {
+                  "required": {
+                    "type": "boolean"
+                  },
+                  "size_bytes": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "type": {
+                    "enum": ["not-required", "octal"]
+                  }
+                }
+              }
+            }
+          },
+          "flash": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["mode", "frequency_hz"],
+            "properties": {
+              "mode": {
+                "const": "dio"
+              },
+              "frequency_hz": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          },
+          "hil_status": {
+            "enum": ["pending", "passed"]
+          },
+          "manifest": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "size", "sha256"],
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?(?:/|$))(?!.*[\\\\?#])(?!.*://).+$"
+              },
+              "size": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            }
+          },
+          "install": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "size", "sha256", "offset"],
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?(?:/|$))(?!.*[\\\\?#])(?!.*://).+$"
+              },
+              "size": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "offset": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          },
+          "components": {
+            "type": "array",
+            "minItems": 3,
+            "maxItems": 3,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["role", "path", "size", "sha256", "offset"],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?(?:/|$))(?!.*[\\\\?#])(?!.*://).+$"
+                },
+                "size": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "offset": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "role": {
+                  "enum": ["bootloader", "partition-table", "application"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "documents": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "third_party_licenses",
+        "release_notes",
+        "recovery",
+        "hil_report"
+      ],
+      "properties": {
+        "third_party_licenses": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "size", "sha256"],
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?(?:/|$))(?!.*[\\\\?#])(?!.*://).+$"
+            },
+            "size": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        },
+        "release_notes": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "size", "sha256"],
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?(?:/|$))(?!.*[\\\\?#])(?!.*://).+$"
+            },
+            "size": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        },
+        "recovery": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "size", "sha256"],
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?(?:/|$))(?!.*[\\\\?#])(?!.*://).+$"
+            },
+            "size": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        },
+        "hil_report": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "size", "sha256"],
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?(?:/|$))(?!.*[\\\\?#])(?!.*://).+$"
+            },
+            "size": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        }
+      }
+    }
+  }
+}

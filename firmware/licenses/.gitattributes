@@ -1,0 +1,2 @@
+texts/*.txt -diff
+evidence/* -diff

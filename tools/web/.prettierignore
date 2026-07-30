@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: MIT
+# Part of PyBLE (https://pyble.dev) — see /LICENSE.
+
+.next/
+node_modules/
+out/
+coverage/
+dist/
+public/brand/
+package-lock.json

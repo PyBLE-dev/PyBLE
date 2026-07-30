@@ -1,0 +1,2 @@
+This firmware contains portions of newlib. Retain the complete, component-wise
+newlib license compilation exactly as reviewed from the pinned toolchain.

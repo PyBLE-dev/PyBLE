@@ -1,0 +1,93 @@
+# SPDX-License-Identifier: MIT
+# Part of PyBLE (https://pyble.dev) — see /LICENSE (MIT) at the repo root.
+#
+# PyBLE — single Flutter package (iPadOS + Android), BLE-only MicroPython IDE.
+#
+# Dependency governance (BLD-2): every dependency is MIT / BSD / Apache-2.0
+# compatible, with a recorded rationale + minimum version (see the inline notes
+# below); pubspec.lock is TRACKED and CI builds against it. Dependencies remain
+# sprint-scoped: a package is admitted only when the feature that needs it lands.
+name: pyble
+description: "PyBLE — a free, MIT, tablet-first IDE for compatible MicroPython boards over BLE (PBLE/1)."
+homepage: https://pyble.dev
+publish_to: 'none'
+
+# SemVer app version. Pre-1.0 through milestones M0–M3; v1.0.0 ships at the
+# at-parity App Store + Play release (story X-11). Build number after '+'.
+version: 0.1.0+2
+
+environment:
+  sdk: ^3.12.1
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Localization framework (X-12) — Flutter's ARB/gen-l10n runtime + the
+  # GlobalMaterial/Widgets/Cupertino localization delegates. License:
+  # BSD-3-Clause (ships with the Flutter SDK). Enables `generate: true` below and
+  # is wired into MaterialApp when the shell migrates (FR-I18N-1..5, BLD-5).
+  flutter_localizations:
+    sdk: flutter
+
+  # State management — the single declarative approach fixed by ADR-0007
+  # (NFR-MAINT-2). License: MIT. Min version: 2.6.1 (2.x working constraint);
+  # a 3.x major bump requires a dependency-ledger entry with rationale.
+  flutter_riverpod: ^2.6.1
+
+  # BLE transport (A-02) — the SOLE importer lives under lib/ble/; no other
+  # layer may import flutter_blue_plus (enforced by tools/ci/import_boundary.sh,
+  # CON-8). License: BSD-3-Clause. Min version: 1.35.0 (the floor carrying the
+  # GATT scan-filter + requestMtu(247) + write-without-response surface A-02
+  # binds to; FR-BLE-1/2/3/5).
+  flutter_blue_plus: ^1.35.0
+
+  # ARB message runtime for gen-l10n (X-12). License: BSD-3-Clause. The version
+  # is constrained to the exact intl the pinned flutter_localizations SDK admits
+  # (reconciled at resolve time against Flutter 3.44.1).
+  intl: ^0.20.2
+
+  # Installed package metadata (X-11 About subset). License: BSD-3-Clause. The
+  # sole adapter lives in lib/app/app_build_info.dart and reads the actual
+  # iOS/Android version + build number; PBLE/1 HELLO keeps its static ASCII
+  # identity constants. Min 10.2.1 supports the pinned Flutter 3.44.1 /
+  # Dart 3.12.1 / iOS 13 / Java 17 toolchain.
+  package_info_plus: ^10.2.1
+
+  # Offline Blockly host (A-31). License: BSD-3-Clause. Min version: 4.14.1,
+  # whose Android 24 / iOS 13 floors match PyBLE's pinned platform floors and
+  # whose WebViewController supports loadFlutterAsset + JavaScript channels.
+  # The sole importer lives in lib/blocks/; all board actions remain in Dart.
+  webview_flutter: ^4.14.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  # On-device WebView parity tests (A-31). License: BSD-3-Clause; ships with the
+  # pinned Flutter SDK and is test-only.
+  integration_test:
+    sdk: flutter
+
+  # Recommended Flutter lint set, activated via analysis_options.yaml.
+  # License: BSD-3-Clause. Min version: 6.0.0 (toolchain default for the
+  # pinned Flutter 3.44.1).
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+
+  # Turn on gen-l10n so AppLocalizations is generated from app/l10n.yaml
+  # (arb-dir lib/localization/arb, template app_en.arb → lib/localization/gen).
+  # en ships day-one; translation parity is CI-enforced (X-12, FR-I18N-1/CON-9).
+  generate: true
+
+  # A-31 offline Blockly runtime. Flutter directory entries are not recursive,
+  # so nested vendor message/media directories are listed explicitly.
+  assets:
+    - assets/licenses/
+    - assets/blockly/
+    - assets/blockly/examples/
+    - assets/blockly/vendor/
+    - assets/blockly/vendor/msg/
+    - assets/blockly/vendor/media/

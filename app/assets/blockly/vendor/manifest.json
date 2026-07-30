@@ -1,0 +1,18 @@
+{
+  "SPDX-License-Identifier": "MIT",
+  "name": "Blockly offline runtime",
+  "source": "https://github.com/RaspberryPiFoundation/blockly",
+  "commit": "f4ad3f5117d6744120b05ccc5af666fcdc29df5f",
+  "release": "blockly-v13.1.0",
+  "upstreamLicense": "Apache-2.0",
+  "upstreamLicenseFile": "LICENSE",
+  "generatedBy": "tools/build_blockly_assets.sh",
+  "contents": [
+    "blockly_compressed.js",
+    "blocks_compressed.js",
+    "python_compressed.js",
+    "msg/en.js",
+    "msg/categories_en.js",
+    "media/"
+  ]
+}

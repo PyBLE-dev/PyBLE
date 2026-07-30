@@ -1,0 +1,5 @@
+# Platform-parity golden baselines (A-05+). PNGs are generated with
+# `flutter test --update-goldens` once the shell lands (green) and committed
+# here: shell_ipad_landscape.png, shell_ipad_portrait.png,
+# shell_android_tablet_landscape.png, shell_android_tablet_portrait.png,
+# shell_phone_portrait.png. Owner: app-test-author.

@@ -1,0 +1,29 @@
+{
+  "_license": "MIT — Part of PyBLE (https://pyble.dev), see /LICENSE.",
+  "_doc": "PBLE/1 conformance corpus (SHARED, cross-language). This is the single byte-level guard that the firmware `pyble_proto` codec and the Dart `pble` client agree on the wire. Both ends assert: encode(fields) == bytes(frame_hex) AND decode(bytes(frame_hex)) == fields. Frames reference protocol.md §3.1 (frame) / §4 (opcodes) / §8 (status), all FROZEN v1.0 (2026-07-01). PAYLOADS ARE OPAQUE: this corpus tests the FRAME CODEC + IEEE CRC-32 + fragmentation, NOT per-opcode payload semantics (those encodings are not frozen at S2). CRC32 is IEEE (zlib-compatible) over VER..PAYLOAD, little-endian. Do NOT hand-edit crc32/frame_hex — they are generated from the field tuple by the zlib oracle.",
+  "_meta": {
+    "protocol": "PBLE/1",
+    "frozen": "protocol.md §2/§3 (G0 2026-07-01), §4/§8 (G1 2026-07-01)",
+    "ver": 1,
+    "types": {"CMD": 1, "RSP": 2, "EVT": 3},
+    "crc": "IEEE CRC-32 (zlib) over VER..PAYLOAD, 4B little-endian"
+  },
+  "frames": [
+    {"name": "hello_cmd_empty",            "type": 1, "opcode": 1,  "id": 1,   "payload_hex": "",   "frame_hex": "010101010000e45680fe",   "crc32": 4269823716},
+    {"name": "device_info_rsp_ok",         "type": 2, "opcode": 2,  "id": 7,   "payload_hex": "00", "frame_hex": "010202070100002f740690", "crc32": 2416342063},
+    {"name": "run_state_evt_running",      "type": 3, "opcode": 64, "id": 0,   "payload_hex": "01", "frame_hex": "010340000100018ca4b993", "crc32": 2478417036},
+    {"name": "file_put_data_cmd",          "type": 1, "opcode": 22, "id": 200, "payload_hex": "000102030405060708090a0b0c0d0e0f", "frame_hex": "010116c81000000102030405060708090a0b0c0d0e0f76bc5096", "crc32": 2521873526},
+    {"name": "stop_rsp_ebusy",             "type": 2, "opcode": 33, "id": 42,  "payload_hex": "07", "frame_hex": "0102212a010007bbc35bda", "crc32": 3663446971},
+    {"name": "identify_rsp_eunsupported",  "type": 2, "opcode": 82, "id": 9,   "payload_hex": "0a", "frame_hex": "0102520901000ac9251fa8", "crc32": 2820613577},
+    {"name": "console_data_evt",           "type": 3, "opcode": 48, "id": 0,   "payload_hex": "68690a", "frame_hex": "01033000030068690ae47b1082", "crc32": 2182118372},
+    {"name": "run_cmd_source_opaque_250b", "type": 1, "opcode": 32, "id": 255, "payload_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9", "frame_hex": "010120fffa00000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f960e3ca82", "crc32": 2194334560},
+    {"name": "run_rsp_ok",                 "type": 2, "opcode": 32, "id": 3,   "payload_hex": "00", "frame_hex": "010220030100001c9f65a4", "crc32": 2758123292},
+    {"name": "run_rsp_ebusy",              "type": 2, "opcode": 32, "id": 4,   "payload_hex": "07", "frame_hex": "010220040100070632d6a7", "crc32": 2815832582},
+    {"name": "set_label_rsp_ok",           "type": 2, "opcode": 80, "id": 5,   "payload_hex": "00", "frame_hex": "010250050100000f20dc78", "crc32": 2027692047},
+    {"name": "set_label_rsp_erange",       "type": 2, "opcode": 80, "id": 6,   "payload_hex": "09", "frame_hex": "010250060100094537b513", "crc32": 330643269}
+  ],
+  "_s3_note": "run_rsp_* (0x20) and set_label_rsp_* (0x50) are FRAME-LEVEL vectors only: opcode is §4-frozen, payload[0] is a §8-frozen status per the frozen handler ABI (RSP payload = [status][extra]). They are NOT per-opcode PAYLOAD-SEMANTIC vectors — the HELLO/caps (§7), RUN{mode,path} (§6), and SET_LABEL body encodings are still DRAFT and MUST NOT be added here until §6/§7/§9 freeze (see s3_pending.json).",
+  "crc_reject": [
+    {"name": "hello_cmd_empty_corrupt_crc", "opcode": 1, "frame_hex": "010101010000e4568001", "note": "last CRC byte flipped from FE to 01; decode MUST reject and the dispatch path MUST answer EVT ERROR(ECRC) referencing opcode 0x01 (FR-PROTO-3)"}
+  ]
+}

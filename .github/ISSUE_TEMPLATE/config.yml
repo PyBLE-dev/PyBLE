@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: MIT
+blank_issues_enabled: false
+contact_links:
+  - name: PyBLE support
+    url: https://pyble.dev/support
+    about: Setup, flashing, Bluetooth, and recovery guidance
+  - name: Security vulnerability
+    url: https://github.com/PyBLE-dev/PyBLE/security/advisories/new
+    about: Report security-sensitive findings privately

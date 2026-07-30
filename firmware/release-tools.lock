@@ -1,0 +1,125 @@
+# SPDX-License-Identifier: MIT
+# Reviewed offline Python closure for the firmware license audit.
+schema_version = 1
+
+[tool]
+name = "esp-idf-sbom"
+version = "1.2.0"
+tag = "v1.2.0"
+commit = "d46a159ac239b9f843c59e0b4bfcfaff1859b862"
+filename = "esp_idf_sbom-1.2.0-py3-none-any.whl"
+sha256 = "a1444a7f23740c44cacbce4845efb5cbcb08927878b6a3852c33a52d8b2b5da9"
+
+[inputs]
+excluded_cves_path = "firmware/licenses/excluded-cves.yaml"
+excluded_cves_sha256 = "77c02542775c018c5f32c0dcb6e88050adb0e69dbcd95e84ad7be128e0f536e5"
+license_policy_path = "firmware/licenses/license-policy.json"
+license_policy_sha256 = "ea1077f5ea9d8986fa2d1522d1552508d64712e4e0e930f8837c2a19a60938a8"
+
+[[artifacts]]
+name = "esp-idf-sbom"
+version = "1.2.0"
+filename = "esp_idf_sbom-1.2.0-py3-none-any.whl"
+sha256 = "a1444a7f23740c44cacbce4845efb5cbcb08927878b6a3852c33a52d8b2b5da9"
+requires = [
+  "PyYAML==6.0.3",
+  "schema==0.7.8",
+  "license-expression==30.4.4",
+  "rich==15.0.0",
+  "pyparsing==3.3.2",
+  "esp-pylib==1.1.2",
+]
+
+[[artifacts]]
+name = "PyYAML"
+version = "6.0.3"
+filename = "pyyaml-6.0.3-cp313-cp313-macosx_11_0_arm64.whl"
+sha256 = "2283a07e2c21a2aa78d9c4442724ec1eb15f5e42a723b99cb3d822d48f5f7ad1"
+requires = []
+
+[[artifacts]]
+name = "schema"
+version = "0.7.8"
+filename = "schema-0.7.8-py2.py3-none-any.whl"
+sha256 = "00bd977fadc7d9521bf289850cd8a8aa5f4948f575476b8daaa5c1b57af2dce1"
+requires = []
+
+[[artifacts]]
+name = "license-expression"
+version = "30.4.4"
+filename = "license_expression-30.4.4-py3-none-any.whl"
+sha256 = "421788fdcadb41f049d2dc934ce666626265aeccefddd25e162a26f23bcbf8a4"
+requires = ["boolean.py==5.0"]
+
+[[artifacts]]
+name = "boolean.py"
+version = "5.0"
+filename = "boolean_py-5.0-py3-none-any.whl"
+sha256 = "ef28a70bd43115208441b53a045d1549e2f0ec6e3d08a9d142cbc41c1938e8d9"
+requires = []
+
+[[artifacts]]
+name = "rich"
+version = "15.0.0"
+filename = "rich-15.0.0-py3-none-any.whl"
+sha256 = "33bd4ef74232fb73fe9279a257718407f169c09b78a87ad3d296f548e27de0bb"
+requires = [
+  "markdown-it-py==4.2.0",
+  "Pygments==2.20.0",
+]
+
+[[artifacts]]
+name = "markdown-it-py"
+version = "4.2.0"
+filename = "markdown_it_py-4.2.0-py3-none-any.whl"
+sha256 = "9f7ebbcd14fe59494226453aed97c1070d83f8d24b6fc3a3bcf9a38092641c4a"
+requires = ["mdurl==0.1.2"]
+
+[[artifacts]]
+name = "mdurl"
+version = "0.1.2"
+filename = "mdurl-0.1.2-py3-none-any.whl"
+sha256 = "84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8"
+requires = []
+
+[[artifacts]]
+name = "Pygments"
+version = "2.20.0"
+filename = "pygments-2.20.0-py3-none-any.whl"
+sha256 = "81a9e26dd42fd28a23a2d169d86d7ac03b46e2f8b59ed4698fb4785f946d0176"
+requires = []
+
+[[artifacts]]
+name = "pyparsing"
+version = "3.3.2"
+filename = "pyparsing-3.3.2-py3-none-any.whl"
+sha256 = "850ba148bd908d7e2411587e247a1e4f0327839c40e2e5e6d05a007ecc69911d"
+requires = []
+
+[[artifacts]]
+name = "esp-pylib"
+version = "1.1.2"
+filename = "esp_pylib-1.1.2-py3-none-any.whl"
+sha256 = "82dd62684f3cdac662bea4135de858d068ab41c4e46ba96acaa9f6f4d4f3a443"
+requires = [
+  "rich==15.0.0",
+  "rich-click==1.9.8",
+  "click==8.4.2",
+]
+
+[[artifacts]]
+name = "rich-click"
+version = "1.9.8"
+filename = "rich_click-1.9.8-py3-none-any.whl"
+sha256 = "12873865396e6927835d4eabb1cc3996edcd65b7ac9b2391a29eca4f335a2f93"
+requires = [
+  "click==8.4.2",
+  "rich==15.0.0",
+]
+
+[[artifacts]]
+name = "click"
+version = "8.4.2"
+filename = "click-8.4.2-py3-none-any.whl"
+sha256 = "e6f9f66136c816745b9d65817da91d61d957fb16e02e4dcd0552553c5a197b76"
+requires = []

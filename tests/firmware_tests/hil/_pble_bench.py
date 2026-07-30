@@ -1,0 +1,1375 @@
+# SPDX-License-Identifier: MIT
+# Part of PyBLE (https://pyble.dev) — see /LICENSE.
+#
+# Shared PBLE/1 hardware-bench operations.  This module is host-side HIL
+# tooling; it is not firmware and does not ship to a board.
+
+import asyncio
+import hashlib
+import json
+import os
+import re
+import stat
+import struct
+import tempfile
+import time
+from dataclasses import dataclass
+from pathlib import Path
+
+import _pble_wire as wire
+from _pble_central import rsp_status, status_name
+
+
+PROFILE_ORDER = ("esp32-4mb", "esp32-s3-n16r8")
+PROFILE_TARGETS = {
+    "esp32-4mb": "esp32",
+    "esp32-s3-n16r8": "esp32-s3",
+}
+
+WORKLOAD = {
+    "reset_samples": 10,
+    "reset_hold_ms": 1000,
+    "advertising_timeout_ms": 15000,
+    "post_hello_heap_samples": 10,
+    "roundtrip_samples": 5,
+    "roundtrip_payload_bytes": 65536,
+    "payload_generator": "sha256-counter-v1",
+    "post_roundtrip_heap_samples": 5,
+    "reliability_files": 20,
+    "reliability_file_bytes": 16384,
+    "post_reliability_heap_samples": 1,
+    "required_att_mtu": 247,
+    "required_put_window": 8,
+    "required_chunk_bytes": 229,
+}
+
+DERIVATION = {
+    "application_image": "exact-byte-identical-two-root-v1",
+    "application_headroom": "factory-minus-application-v1",
+    "heap_floor": "floor-min-1024-v1",
+    "boot_ceiling": "ceil-max-10-v1",
+    "goodput_floor": "floor-min-100-v1",
+}
+
+HEAP_KEYS = (
+    "gc_free_bytes",
+    "gc_allocated_bytes",
+    "idf_internal_free_bytes",
+    "idf_internal_largest_block_bytes",
+    "idf_internal_minimum_free_bytes",
+)
+
+THRESHOLD_KEYS = (
+    "application_image_max_bytes",
+    "application_headroom_min_bytes",
+    "gc_free_min_bytes",
+    "idf_internal_free_min_bytes",
+    "idf_internal_largest_block_min_bytes",
+    "idf_internal_minimum_free_min_bytes",
+    "reset_to_service_advertisement_max_ms",
+    "put_committed_goodput_min_bytes_per_second",
+    "get_verified_goodput_min_bytes_per_second",
+)
+
+OBSERVATION_KEYS = (
+    "observed_att_mtu",
+    "observed_window",
+    "observed_chunk_bytes",
+    "reset_to_service_advertisement_ms",
+    "heap_default_free_post_hello_bytes",
+    "heap_post_hello",
+    "put_unique_committed_bytes",
+    "put_duration_ns",
+    "put_committed_goodput_bytes_per_second",
+    "get_unique_verified_bytes",
+    "get_duration_ns",
+    "get_verified_goodput_bytes_per_second",
+    "put_retransmitted_chunks",
+    "put_retransmitted_bytes",
+    "get_retransmitted_chunks",
+    "get_retransmitted_bytes",
+    "roundtrip_integrity_verified",
+    "get_offset_sequences_validated",
+    "roundtrip_unexpected_disconnects",
+    "roundtrip_integrity_failures",
+    "heap_post_roundtrip",
+    "reliability",
+    "heap_post_reliability",
+    "physical_power_cycle_advertising",
+    "raw_log_sha256",
+)
+
+RELIABILITY_KEYS = (
+    "attempted_files",
+    "completed_files",
+    "verified_files",
+    "bytes_per_file",
+    "total_payload_bytes",
+    "unexpected_disconnects",
+    "integrity_failures",
+    "failed_statuses",
+    "retransmitted_chunks",
+    "retransmitted_bytes",
+    "rewinds",
+)
+
+HELLO_PAYLOAD = (
+    b"proto_versions=1\n"
+    b"app_name=hil-oi1\n"
+    b"app_version=0"
+)
+
+FRAME_OVERHEAD = 18
+DEFAULT_ACK_TIMEOUT_S = 0.75
+DEFAULT_OPERATION_TIMEOUT_S = 120.0
+DEFAULT_EVENT_TIMEOUT_S = 15.0
+HEAP_MARKER_PREFIX = "__PYBLE_OI1_HEAP_"
+
+
+class BenchError(RuntimeError):
+    """A qualification failure with operator-safe text."""
+
+
+class StatusFailure(BenchError):
+    def __init__(self, operation, status):
+        self.operation = operation
+        self.status = int(status)
+        super().__init__("%s -> %s" % (operation, status_name(self.status)))
+
+
+class IntegrityFailure(BenchError):
+    pass
+
+
+def _require_nonnegative_int(value, label):
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise BenchError("%s must be a non-negative JSON integer" % label)
+    return value
+
+
+def _require_positive_int(value, label):
+    value = _require_nonnegative_int(value, label)
+    if value == 0:
+        raise BenchError("%s must be positive" % label)
+    return value
+
+
+def _require_exact_keys(value, keys, label):
+    if not isinstance(value, dict) or set(value) != set(keys):
+        missing = sorted(set(keys) - set(value) if isinstance(value, dict) else set(keys))
+        extra = sorted(set(value) - set(keys) if isinstance(value, dict) else set())
+        raise BenchError(
+            "%s has wrong keys (missing=%s extra=%s)" % (label, missing, extra)
+        )
+
+
+def canonical_json_bytes(value):
+    """Frozen OI-1 canonical form: sorted keys, indent 2, UTF-8, final LF."""
+    try:
+        text = json.dumps(
+            value,
+            ensure_ascii=False,
+            sort_keys=True,
+            indent=2,
+            allow_nan=False,
+        )
+    except (TypeError, ValueError) as exc:
+        raise BenchError("value is not canonical JSON: %s" % exc) from exc
+    return (text + "\n").encode("utf-8")
+
+
+def atomic_write_canonical_json(path, value):
+    """Atomically replace ``path`` with canonical JSON and fsync both levels."""
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    payload = canonical_json_bytes(value)
+    fd, temporary = tempfile.mkstemp(
+        prefix=".%s." % target.name,
+        suffix=".tmp",
+        dir=str(target.parent),
+    )
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, target)
+        try:
+            directory_fd = os.open(str(target.parent), os.O_RDONLY)
+        except OSError:
+            directory_fd = None
+        if directory_fd is not None:
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+    except Exception:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+        raise
+    return hashlib.sha256(payload).hexdigest()
+
+
+def sha256_file(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as stream:
+        while True:
+            block = stream.read(1024 * 1024)
+            if not block:
+                break
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def deterministic_payload(profile_id, sample_index, size):
+    """Generate frozen ``sha256-counter-v1`` payload bytes."""
+    if profile_id not in PROFILE_ORDER:
+        raise ValueError("profile is outside the current OI-1 order")
+    if isinstance(sample_index, bool) or not isinstance(sample_index, int):
+        raise ValueError("sample index must be an integer")
+    if sample_index < 0 or sample_index > 0xFFFFFFFF:
+        raise ValueError("sample index is outside u32")
+    if isinstance(size, bool) or not isinstance(size, int) or size < 0:
+        raise ValueError("payload size must be a non-negative integer")
+    prefix = (
+        b"PyBLE-OI1-v1\0"
+        + profile_id.encode("utf-8")
+        + b"\0"
+        + sample_index.to_bytes(4, "little")
+    )
+    output = bytearray()
+    block_index = 0
+    while len(output) < size:
+        output.extend(
+            hashlib.sha256(prefix + block_index.to_bytes(4, "little")).digest()
+        )
+        block_index += 1
+    return bytes(output[:size])
+
+
+def _parse_partition_table(data):
+    """Parse enough of an ESP-IDF binary table to prove factory arithmetic.
+
+    This intentionally validates the table's binary/MD5 structure, unique
+    labels, non-overlap, and exactly one factory application.  Release
+    candidate validation separately enforces the profile's full frozen layout;
+    the HIL runner does not duplicate that release-policy allowlist.
+    """
+    data = bytes(data)
+    if len(data) < 64 or len(data) % 32:
+        raise BenchError("partition table has invalid size")
+    entries = []
+    encoded_entries = bytearray()
+    saw_md5 = False
+    terminated = False
+    for position in range(0, len(data), 32):
+        chunk = data[position : position + 32]
+        if chunk == b"\xff" * 32:
+            terminated = True
+            continue
+        if terminated:
+            raise BenchError("partition table contains data after its terminator")
+        if chunk[:2] == b"\xeb\xeb":
+            if saw_md5:
+                raise BenchError("partition table has duplicate MD5 records")
+            if chunk[:16] != b"\xeb\xeb" + b"\xff" * 14:
+                raise BenchError("partition table has malformed MD5 record")
+            expected = hashlib.md5(bytes(encoded_entries)).digest()  # nosec: format
+            if chunk[16:] != expected:
+                raise BenchError("partition table MD5 is incorrect")
+            saw_md5 = True
+            terminated = True
+            continue
+        if saw_md5:
+            raise BenchError("partition follows partition-table MD5")
+        magic, part_type, subtype, offset, size, raw_label, flags = struct.unpack(
+            "<HBBII16sI", chunk
+        )
+        if magic != 0x50AA:
+            raise BenchError("partition table has invalid entry magic")
+        if size <= 0:
+            raise BenchError("partition table contains an empty partition")
+        try:
+            label = raw_label.split(b"\0", 1)[0].decode("ascii", errors="strict")
+        except UnicodeDecodeError as exc:
+            raise BenchError("partition table has a non-ASCII label") from exc
+        if not label:
+            raise BenchError("partition table contains an unnamed partition")
+        if any(entry["label"] == label for entry in entries):
+            raise BenchError("partition table contains duplicate label %s" % label)
+        entries.append(
+            {
+                "type": part_type,
+                "subtype": subtype,
+                "offset": offset,
+                "size": size,
+                "label": label,
+                "flags": flags,
+            }
+        )
+        encoded_entries.extend(chunk)
+    if not saw_md5:
+        raise BenchError("partition table lacks its MD5 record")
+    ordered = sorted(entries, key=lambda item: item["offset"])
+    for left, right in zip(ordered, ordered[1:]):
+        if left["offset"] + left["size"] > right["offset"]:
+            raise BenchError(
+                "partition table entries %s and %s overlap"
+                % (left["label"], right["label"])
+            )
+    factories = [
+        entry
+        for entry in entries
+        if entry["type"] == 0 and entry["subtype"] == 0
+    ]
+    if len(factories) != 1:
+        raise BenchError("partition table must contain exactly one factory app")
+    return entries, factories[0]
+
+
+def oi1_build_from_bytes(application, partition_table):
+    application = bytes(application)
+    _, factory = _parse_partition_table(partition_table)
+    application_size = len(application)
+    factory_size = factory["size"]
+    if application_size > factory_size:
+        raise BenchError(
+            "application image (%d bytes) does not fit factory partition (%d bytes)"
+            % (application_size, factory_size)
+        )
+    return {
+        "application_image_bytes": application_size,
+        "factory_partition_bytes": factory_size,
+        "application_headroom_bytes": factory_size - application_size,
+    }
+
+
+def _read_regular_file(path, label):
+    path = Path(path)
+    try:
+        metadata = path.lstat()
+    except OSError as exc:
+        raise BenchError("cannot stat %s: %s" % (label, exc)) from exc
+    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+        raise BenchError("%s must be a regular non-symlink file" % label)
+    try:
+        return path.read_bytes()
+    except OSError as exc:
+        raise BenchError("cannot read %s: %s" % (label, exc)) from exc
+
+
+def oi1_build_from_paths(application_path, partition_table_path):
+    return oi1_build_from_bytes(
+        _read_regular_file(application_path, "application image"),
+        _read_regular_file(partition_table_path, "partition table"),
+    )
+
+
+def floor_quantum(value, quantum):
+    _require_nonnegative_int(value, "value")
+    _require_positive_int(quantum, "quantum")
+    return (value // quantum) * quantum
+
+
+def ceil_quantum(value, quantum):
+    _require_nonnegative_int(value, "value")
+    _require_positive_int(quantum, "quantum")
+    return ((value + quantum - 1) // quantum) * quantum
+
+
+def _validated_heap(snapshot, label):
+    _require_exact_keys(snapshot, HEAP_KEYS, label)
+    return {
+        key: _require_nonnegative_int(snapshot[key], "%s.%s" % (label, key))
+        for key in HEAP_KEYS
+    }
+
+
+def derive_thresholds(oi1_build, observation):
+    _require_exact_keys(
+        oi1_build,
+        (
+            "application_image_bytes",
+            "factory_partition_bytes",
+            "application_headroom_bytes",
+        ),
+        "oi1_build",
+    )
+    application_size = _require_nonnegative_int(
+        oi1_build["application_image_bytes"], "application_image_bytes"
+    )
+    factory_size = _require_nonnegative_int(
+        oi1_build["factory_partition_bytes"], "factory_partition_bytes"
+    )
+    headroom = _require_nonnegative_int(
+        oi1_build["application_headroom_bytes"], "application_headroom_bytes"
+    )
+    if factory_size - application_size != headroom:
+        raise BenchError("application headroom arithmetic does not agree")
+
+    post_hello = observation.get("heap_post_hello")
+    post_roundtrip = observation.get("heap_post_roundtrip")
+    post_reliability = observation.get("heap_post_reliability")
+    if not isinstance(post_hello, list) or len(post_hello) != 10:
+        raise BenchError("heap_post_hello must contain 10 snapshots")
+    if not isinstance(post_roundtrip, list) or len(post_roundtrip) != 5:
+        raise BenchError("heap_post_roundtrip must contain 5 snapshots")
+    snapshots = [
+        _validated_heap(item, "heap snapshot")
+        for item in post_hello + post_roundtrip
+    ]
+    snapshots.append(_validated_heap(post_reliability, "heap_post_reliability"))
+
+    reset_samples = observation.get("reset_to_service_advertisement_ms")
+    put_goodput = observation.get("put_committed_goodput_bytes_per_second")
+    get_goodput = observation.get("get_verified_goodput_bytes_per_second")
+    if not isinstance(reset_samples, list) or len(reset_samples) != 10:
+        raise BenchError("reset latency must contain 10 samples")
+    if not isinstance(put_goodput, list) or len(put_goodput) != 5:
+        raise BenchError("PUT goodput must contain 5 samples")
+    if not isinstance(get_goodput, list) or len(get_goodput) != 5:
+        raise BenchError("GET goodput must contain 5 samples")
+    reset_samples = [
+        _require_nonnegative_int(value, "reset latency") for value in reset_samples
+    ]
+    put_goodput = [
+        _require_positive_int(value, "PUT goodput") for value in put_goodput
+    ]
+    get_goodput = [
+        _require_positive_int(value, "GET goodput") for value in get_goodput
+    ]
+
+    return {
+        "application_image_max_bytes": application_size,
+        "application_headroom_min_bytes": headroom,
+        "gc_free_min_bytes": floor_quantum(
+            min(item["gc_free_bytes"] for item in snapshots), 1024
+        ),
+        "idf_internal_free_min_bytes": floor_quantum(
+            min(item["idf_internal_free_bytes"] for item in snapshots), 1024
+        ),
+        "idf_internal_largest_block_min_bytes": floor_quantum(
+            min(
+                item["idf_internal_largest_block_bytes"]
+                for item in snapshots
+            ),
+            1024,
+        ),
+        "idf_internal_minimum_free_min_bytes": floor_quantum(
+            min(item["idf_internal_minimum_free_bytes"] for item in snapshots),
+            1024,
+        ),
+        "reset_to_service_advertisement_max_ms": ceil_quantum(
+            max(reset_samples), 10
+        ),
+        "put_committed_goodput_min_bytes_per_second": floor_quantum(
+            min(put_goodput), 100
+        ),
+        "get_verified_goodput_min_bytes_per_second": floor_quantum(
+            min(get_goodput), 100
+        ),
+    }
+
+
+def evaluate_thresholds(oi1_build, observation, thresholds):
+    _require_exact_keys(thresholds, THRESHOLD_KEYS, "thresholds")
+    for key in THRESHOLD_KEYS:
+        _require_positive_int(thresholds[key], "thresholds.%s" % key)
+    derived = derive_thresholds(oi1_build, observation)
+    failures = []
+    ceiling_checks = {
+        "application_image_max_bytes": oi1_build["application_image_bytes"],
+        "reset_to_service_advertisement_max_ms": max(
+            observation["reset_to_service_advertisement_ms"]
+        ),
+    }
+    floor_checks = {
+        "application_headroom_min_bytes": oi1_build["application_headroom_bytes"],
+        "gc_free_min_bytes": min(
+            item["gc_free_bytes"]
+            for item in (
+                observation["heap_post_hello"]
+                + observation["heap_post_roundtrip"]
+                + [observation["heap_post_reliability"]]
+            )
+        ),
+        "idf_internal_free_min_bytes": min(
+            item["idf_internal_free_bytes"]
+            for item in (
+                observation["heap_post_hello"]
+                + observation["heap_post_roundtrip"]
+                + [observation["heap_post_reliability"]]
+            )
+        ),
+        "idf_internal_largest_block_min_bytes": min(
+            item["idf_internal_largest_block_bytes"]
+            for item in (
+                observation["heap_post_hello"]
+                + observation["heap_post_roundtrip"]
+                + [observation["heap_post_reliability"]]
+            )
+        ),
+        "idf_internal_minimum_free_min_bytes": min(
+            item["idf_internal_minimum_free_bytes"]
+            for item in (
+                observation["heap_post_hello"]
+                + observation["heap_post_roundtrip"]
+                + [observation["heap_post_reliability"]]
+            )
+        ),
+        "put_committed_goodput_min_bytes_per_second": min(
+            observation["put_committed_goodput_bytes_per_second"]
+        ),
+        "get_verified_goodput_min_bytes_per_second": min(
+            observation["get_verified_goodput_bytes_per_second"]
+        ),
+    }
+    for key, actual in ceiling_checks.items():
+        if actual > thresholds[key]:
+            failures.append("%s=%d exceeds %d" % (key, actual, thresholds[key]))
+    for key, actual in floor_checks.items():
+        if actual < thresholds[key]:
+            failures.append("%s=%d is below %d" % (key, actual, thresholds[key]))
+    if failures:
+        raise BenchError("OI-1 threshold failure: " + "; ".join(failures))
+    return derived
+
+
+def parse_caps(payload):
+    try:
+        text = bytes(payload).decode("ascii", errors="strict")
+    except (UnicodeDecodeError, TypeError, ValueError) as exc:
+        raise BenchError("HELLO caps are not strict ASCII") from exc
+    caps = {}
+    for line in text.splitlines():
+        if not line:
+            continue
+        if "=" not in line:
+            raise BenchError("HELLO caps contain a non key=value line")
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if not key or key in caps:
+            raise BenchError("HELLO caps contain an empty or duplicate key")
+        caps[key] = value.strip()
+    return caps
+
+
+def _integer_cap(caps, key, *, allow_zero=False):
+    raw = caps.get(key)
+    if raw is None:
+        raise BenchError("HELLO caps are missing %s" % key)
+    if not re.fullmatch(r"[0-9]+", raw):
+        raise BenchError("HELLO cap %s is not an unsigned integer" % key)
+    value = int(raw, 10)
+    if value == 0 and not allow_zero:
+        raise BenchError("HELLO cap %s must be positive" % key)
+    return value
+
+
+def validate_oi1_caps(caps, *, expected_chip, backend_mtu):
+    chip = caps.get("chip", "")
+    if chip != expected_chip:
+        raise BenchError(
+            "HELLO chip=%s does not match expected %s" % (chip or "<missing>", expected_chip)
+        )
+    mtu = _integer_cap(caps, "mtu")
+    window = _integer_cap(caps, "window")
+    chunk = _integer_cap(caps, "chunk")
+    free_mem = _integer_cap(caps, "free_mem", allow_zero=True)
+    required = (
+        WORKLOAD["required_att_mtu"],
+        WORKLOAD["required_put_window"],
+        WORKLOAD["required_chunk_bytes"],
+    )
+    if (mtu, window, chunk) != required:
+        raise BenchError(
+            "HELLO transport caps are mtu=%d window=%d chunk=%d; required %d/%d/%d"
+            % ((mtu, window, chunk) + required)
+        )
+    if isinstance(backend_mtu, bool):
+        raise BenchError("backend MTU evidence is not an integer")
+    if backend_mtu is not None:
+        try:
+            backend_mtu = int(backend_mtu)
+        except (TypeError, ValueError) as exc:
+            raise BenchError("backend MTU evidence is not an integer") from exc
+        if backend_mtu != mtu:
+            raise BenchError(
+                "backend ATT MTU %d disagrees with HELLO mtu=%d"
+                % (backend_mtu, mtu)
+            )
+    return mtu, window, chunk, free_mem
+
+
+def heap_probe_source(nonce):
+    if not isinstance(nonce, str) or not re.fullmatch(r"[0-9A-Za-z_-]{1,64}", nonce):
+        raise BenchError("heap-probe nonce is invalid")
+    marker = HEAP_MARKER_PREFIX + nonce
+    return (
+        "import gc,esp32\n"
+        "gc.collect()\n"
+        "_gf=gc.mem_free();_ga=gc.mem_alloc()\n"
+        "_hi=esp32.idf_heap_info(2052)\n"
+        "_hf=0;_hl=0;_hm=0\n"
+        "for _hr in _hi:\n"
+        " _hf+=_hr[1];_hl=max(_hl,_hr[2]);_hm+=_hr[3]\n"
+        'print("%s=%%d,%%d,%%d,%%d,%%d"%%(_gf,_ga,_hf,_hl,_hm))\n'
+        % marker
+    )
+
+
+def parse_heap_probe_output(chunks, nonce):
+    if not isinstance(chunks, (list, tuple)):
+        raise BenchError("heap-probe output must be a chunk sequence")
+    try:
+        output = b"".join(bytes(chunk) for chunk in chunks).decode(
+            "ascii", errors="strict"
+        )
+    except (TypeError, ValueError, UnicodeDecodeError) as exc:
+        raise BenchError("heap-probe output is not strict ASCII") from exc
+    pattern = re.compile(
+        r"^"
+        + re.escape(HEAP_MARKER_PREFIX + nonce)
+        + r"=([0-9]+),([0-9]+),([0-9]+),([0-9]+),([0-9]+)$"
+    )
+    matches = []
+    for line in output.splitlines():
+        match = pattern.fullmatch(line)
+        if match:
+            matches.append(tuple(int(value, 10) for value in match.groups()))
+    if len(matches) != 1:
+        raise BenchError(
+            "heap probe produced %d matching marker lines; expected one" % len(matches)
+        )
+    values = matches[0]
+    snapshot = dict(zip(HEAP_KEYS, values))
+    return _validated_heap(snapshot, "heap probe")
+
+
+def goodput_bps(unique_bytes, duration_ns):
+    unique_bytes = _require_nonnegative_int(unique_bytes, "unique bytes")
+    duration_ns = _require_positive_int(duration_ns, "duration_ns")
+    return (unique_bytes * 1_000_000_000) // duration_ns
+
+
+class DownloadVerifier:
+    """Strict contiguous/unique offset, byte, size, and CRC verifier."""
+
+    def __init__(self, expected):
+        self.expected = bytes(expected)
+        self._buffer = bytearray()
+        self.retransmitted_chunks = 0
+        self.retransmitted_bytes = 0
+        self.offset_sequence_validated = False
+
+    @property
+    def unique_bytes(self):
+        return len(self._buffer)
+
+    def feed(self, offset, data):
+        if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
+            raise IntegrityFailure("GET offset is not a non-negative integer")
+        data = bytes(data)
+        if not data:
+            raise IntegrityFailure("GET_DATA contains no file bytes")
+        expected_offset = len(self._buffer)
+        if offset < expected_offset:
+            self.retransmitted_chunks += 1
+            self.retransmitted_bytes += len(data)
+            raise IntegrityFailure(
+                "GET offset %d duplicates/replays verified offset %d"
+                % (offset, expected_offset)
+            )
+        if offset > expected_offset:
+            raise IntegrityFailure(
+                "GET offset gap: received %d, expected %d"
+                % (offset, expected_offset)
+            )
+        if offset + len(data) > len(self.expected):
+            raise IntegrityFailure("GET_DATA overruns advertised file size")
+        wanted = self.expected[offset : offset + len(data)]
+        if data != wanted:
+            raise IntegrityFailure("GET_DATA bytes differ at offset %d" % offset)
+        self._buffer.extend(data)
+
+    def finish(self, end_crc):
+        if isinstance(end_crc, bool) or not isinstance(end_crc, int):
+            raise IntegrityFailure("GET_END CRC is not an integer")
+        if len(self._buffer) != len(self.expected):
+            raise IntegrityFailure(
+                "GET ended at %d/%d bytes"
+                % (len(self._buffer), len(self.expected))
+            )
+        expected_crc = wire.crc32(self.expected)
+        if end_crc != expected_crc:
+            raise IntegrityFailure(
+                "GET_END CRC 0x%08x differs from 0x%08x"
+                % (end_crc, expected_crc)
+            )
+        self.offset_sequence_validated = True
+        return bytes(self._buffer)
+
+
+class PutAccounting:
+    def __init__(self):
+        self._sent_offsets = set()
+        self.retransmitted_chunks = 0
+        self.retransmitted_bytes = 0
+        self.rewinds = 0
+
+    def note_send(self, offset, size):
+        if offset in self._sent_offsets:
+            self.retransmitted_chunks += 1
+            self.retransmitted_bytes += int(size)
+        else:
+            self._sent_offsets.add(offset)
+
+    def note_rewind(self):
+        self.rewinds += 1
+
+
+class CommandIds:
+    def __init__(self):
+        self._value = 0
+
+    def next(self):
+        self._value = (self._value % 255) + 1
+        return self._value
+
+
+@dataclass(frozen=True)
+class PutResult:
+    unique_committed_bytes: int
+    duration_ns: int
+    retransmitted_chunks: int
+    retransmitted_bytes: int
+    rewinds: int
+
+
+@dataclass(frozen=True)
+class GetResult:
+    unique_verified_bytes: int
+    duration_ns: int
+    retransmitted_chunks: int
+    retransmitted_bytes: int
+    offset_sequence_validated: bool
+
+
+def _u16(value):
+    return int(value).to_bytes(2, "little")
+
+
+def _u32(value):
+    return int(value).to_bytes(4, "little")
+
+
+def path_payload(path):
+    encoded = path.encode("utf-8")
+    if not encoded or len(encoded) > 128:
+        raise BenchError("PBLE path must contain 1..128 UTF-8 bytes")
+    return _u16(len(encoded)) + encoded
+
+
+async def hello(central, next_id, *, expected_chip, timeout_s=10.0):
+    response = await central.send_cmd(
+        wire.OP_HELLO,
+        next_id(),
+        HELLO_PAYLOAD,
+        timeout=timeout_s,
+    )
+    status = rsp_status(response)
+    if status != wire.ST_OK:
+        raise StatusFailure("HELLO", status)
+    caps = parse_caps(response.payload[1:])
+    observed = validate_oi1_caps(
+        caps,
+        expected_chip=expected_chip,
+        backend_mtu=central.backend_mtu,
+    )
+    try:
+        central.confirm_caps_mtu(observed[0])
+    except ValueError as exc:
+        raise BenchError(str(exc)) from exc
+    return caps, observed
+
+
+async def run_heap_probe(
+        central,
+        next_id,
+        *,
+        nonce=None,
+        timeout_s=DEFAULT_EVENT_TIMEOUT_S,
+        sleep=asyncio.sleep):
+    if nonce is None:
+        nonce = hashlib.sha256(
+            ("%d:%d" % (time.monotonic_ns(), os.getpid())).encode("ascii")
+        ).hexdigest()[:16]
+    source = heap_probe_source(nonce).encode("utf-8")
+    cursor = central.event_cursor()
+    response = await central.send_cmd(
+        wire.OP_RUN,
+        next_id(),
+        b"\x01" + source,
+        timeout=timeout_s,
+    )
+    status = rsp_status(response)
+    if status != wire.ST_OK:
+        raise StatusFailure("RUN heap probe", status)
+    stdout_chunks = []
+    deadline = time.monotonic() + timeout_s
+    terminal = None
+    while terminal is None:
+        cursor, events = central.events_since(cursor)
+        for event in events:
+            if event.opcode == wire.OP_CONSOLE_DATA:
+                if not event.payload:
+                    raise BenchError("heap probe emitted malformed CONSOLE_DATA")
+                stream = event.payload[0]
+                if stream == 1:
+                    raise BenchError(
+                        "heap probe emitted stderr: %s"
+                        % event.payload[1:].decode("utf-8", errors="replace")
+                    )
+                if stream == 0:
+                    stdout_chunks.append(event.payload[1:])
+            elif event.opcode == wire.OP_RUN_STATE:
+                if len(event.payload) != 1:
+                    raise BenchError("heap probe emitted malformed RUN_STATE")
+                state = event.payload[0]
+                if state == 2:
+                    terminal = "done"
+                elif state == 3:
+                    raise BenchError("heap probe ended in RUN_STATE(error)")
+        if terminal is None:
+            if time.monotonic() >= deadline:
+                raise BenchError("heap probe timed out before RUN_STATE(done)")
+            await sleep(0.002)
+    return parse_heap_probe_output(stdout_chunks, nonce)
+
+
+async def _require_status(central, opcode, next_id, payload, operation, timeout=10.0):
+    response = await central.send_cmd(opcode, next_id(), payload, timeout=timeout)
+    status = rsp_status(response)
+    if status != wire.ST_OK:
+        raise StatusFailure(operation, status)
+    return response
+
+
+async def remove_if_present(central, path, next_id):
+    response = await central.send_cmd(
+        wire.OP_FILE_DELETE,
+        next_id(),
+        path_payload(path),
+        timeout=10.0,
+    )
+    status = rsp_status(response)
+    if status not in (wire.ST_OK, wire.ST_ENOENT):
+        raise StatusFailure("FILE_DELETE", status)
+
+
+async def ensure_directory(central, path, next_id):
+    await _require_status(
+        central,
+        wire.OP_MKDIR,
+        next_id,
+        path_payload(path),
+        "MKDIR",
+    )
+
+
+async def put_file(
+        central,
+        path,
+        data,
+        *,
+        window,
+        chunk,
+        next_id,
+        ack_timeout_s=DEFAULT_ACK_TIMEOUT_S,
+        operation_timeout_s=DEFAULT_OPERATION_TIMEOUT_S,
+        clock_ns=time.monotonic_ns,
+        sleep=asyncio.sleep):
+    data = bytes(data)
+    if window != WORKLOAD["required_put_window"]:
+        raise BenchError("OI-1 PUT requires window=8 with no override")
+    if chunk != WORKLOAD["required_chunk_bytes"]:
+        raise BenchError("OI-1 PUT requires chunk=229 with no override")
+    total = len(data)
+    crc = wire.crc32(data)
+    begin_payload = _u32(total) + _u32(crc) + path_payload(path)
+
+    start_ns = clock_ns()
+    response = await central.send_cmd(
+        wire.OP_FILE_PUT_BEGIN,
+        next_id(),
+        begin_payload,
+        timeout=10.0,
+    )
+    status = rsp_status(response)
+    if status != wire.ST_OK:
+        raise StatusFailure("FILE_PUT_BEGIN", status)
+    resume = int.from_bytes(response.payload[1:5], "little") if len(response.payload) >= 5 else 0
+    if resume != 0:
+        raise BenchError(
+            "OI-1 requires a fresh PUT path; board returned resume_offset=%d" % resume
+        )
+
+    ack_scope = central.begin_ack_scope(0)
+    accounting = PutAccounting()
+    watermark = 0
+    next_offset = 0
+    valid_ack_offsets = {0}
+    overall_deadline = time.monotonic() + operation_timeout_s
+    progress_deadline = time.monotonic() + ack_timeout_s
+    while watermark < total:
+        while (
+            next_offset < total
+            and next_offset - watermark < window * chunk
+        ):
+            piece = data[next_offset : next_offset + chunk]
+            accounting.note_send(next_offset, len(piece))
+            await central.send_cmd_no_rsp(
+                wire.OP_FILE_PUT_DATA,
+                0,
+                _u32(next_offset) + piece,
+            )
+            next_offset += len(piece)
+            valid_ack_offsets.add(next_offset)
+
+        try:
+            observed = ack_scope.poll(
+                sent_limit=next_offset,
+                total=total,
+                valid_offsets=valid_ack_offsets,
+            )
+        except ValueError as exc:
+            raise BenchError(str(exc)) from exc
+        now = time.monotonic()
+        if observed > watermark:
+            watermark = observed
+            progress_deadline = now + ack_timeout_s
+        elif now >= overall_deadline:
+            raise BenchError(
+                "PUT timed out at watermark %d/%d" % (watermark, total)
+            )
+        elif now >= progress_deadline:
+            accounting.note_rewind()
+            next_offset = watermark
+            progress_deadline = now + ack_timeout_s
+        await sleep(0.002)
+
+    response = await central.send_cmd(
+        wire.OP_FILE_PUT_END,
+        next_id(),
+        _u32(crc),
+        timeout=10.0,
+    )
+    status = rsp_status(response)
+    if status != wire.ST_OK:
+        raise StatusFailure("FILE_PUT_END", status)
+    end_ns = clock_ns()
+    duration_ns = end_ns - start_ns
+    _require_positive_int(duration_ns, "PUT duration_ns")
+
+    # Whole-file verification is intentionally outside the frozen PUT timer.
+    response = await central.send_cmd(
+        wire.OP_FILE_STAT,
+        next_id(),
+        path_payload(path),
+        timeout=10.0,
+    )
+    status = rsp_status(response)
+    if status != wire.ST_OK:
+        raise StatusFailure("FILE_STAT after PUT", status)
+    if len(response.payload) != 9:
+        raise IntegrityFailure("FILE_STAT response has the wrong length")
+    got_size = int.from_bytes(response.payload[1:5], "little")
+    got_crc = int.from_bytes(response.payload[5:9], "little")
+    if got_size != total or got_crc != crc:
+        raise IntegrityFailure(
+            "FILE_STAT mismatch size=%d/%d crc=0x%08x/0x%08x"
+            % (got_size, total, got_crc, crc)
+        )
+    return PutResult(
+        unique_committed_bytes=total,
+        duration_ns=duration_ns,
+        retransmitted_chunks=accounting.retransmitted_chunks,
+        retransmitted_bytes=accounting.retransmitted_bytes,
+        rewinds=accounting.rewinds,
+    )
+
+
+async def get_file(
+        central,
+        path,
+        expected,
+        *,
+        next_id,
+        event_timeout_s=DEFAULT_EVENT_TIMEOUT_S,
+        clock_ns=time.monotonic_ns,
+        sleep=asyncio.sleep):
+    expected = bytes(expected)
+    verifier = DownloadVerifier(expected)
+    cursor = central.event_cursor()
+    start_ns = clock_ns()
+    response = await central.send_cmd(
+        wire.OP_FILE_GET_BEGIN,
+        next_id(),
+        _u32(0) + path_payload(path),
+        timeout=10.0,
+    )
+    status = rsp_status(response)
+    if status != wire.ST_OK:
+        raise StatusFailure("FILE_GET_BEGIN", status)
+    if len(response.payload) != 5:
+        raise IntegrityFailure("FILE_GET_BEGIN response has the wrong length")
+    total = int.from_bytes(response.payload[1:5], "little")
+    if total != len(expected):
+        raise IntegrityFailure(
+            "FILE_GET_BEGIN total=%d, expected=%d" % (total, len(expected))
+        )
+
+    deadline = time.monotonic() + event_timeout_s
+    while True:
+        cursor, events = central.events_since(cursor)
+        progressed = False
+        for event in events:
+            if event.opcode == wire.OP_FILE_GET_DATA:
+                if len(event.payload) <= 4:
+                    raise IntegrityFailure("FILE_GET_DATA payload is truncated")
+                offset = int.from_bytes(event.payload[:4], "little")
+                verifier.feed(offset, event.payload[4:])
+                progressed = True
+            elif event.opcode == wire.OP_FILE_GET_END:
+                if len(event.payload) != 4:
+                    raise IntegrityFailure("FILE_GET_END payload has the wrong length")
+                end_crc = int.from_bytes(event.payload, "little")
+                verifier.finish(end_crc)
+                end_ns = clock_ns()
+                duration_ns = end_ns - start_ns
+                _require_positive_int(duration_ns, "GET duration_ns")
+                return GetResult(
+                    unique_verified_bytes=verifier.unique_bytes,
+                    duration_ns=duration_ns,
+                    retransmitted_chunks=verifier.retransmitted_chunks,
+                    retransmitted_bytes=verifier.retransmitted_bytes,
+                    offset_sequence_validated=verifier.offset_sequence_validated,
+                )
+        if progressed:
+            deadline = time.monotonic() + event_timeout_s
+        if time.monotonic() >= deadline:
+            raise BenchError(
+                "GET timed out after %d/%d verified bytes"
+                % (verifier.unique_bytes, len(expected))
+            )
+        await sleep(0.002)
+
+
+async def roundtrip_file(
+        central,
+        path,
+        payload,
+        *,
+        next_id,
+        clock_ns=time.monotonic_ns):
+    await remove_if_present(central, path, next_id)
+    put = await put_file(
+        central,
+        path,
+        payload,
+        window=WORKLOAD["required_put_window"],
+        chunk=WORKLOAD["required_chunk_bytes"],
+        next_id=next_id,
+        clock_ns=clock_ns,
+    )
+    get = await get_file(
+        central,
+        path,
+        payload,
+        next_id=next_id,
+        clock_ns=clock_ns,
+    )
+    await remove_if_present(central, path, next_id)
+    return {
+        "put_unique_committed_bytes": put.unique_committed_bytes,
+        "put_duration_ns": put.duration_ns,
+        "put_retransmitted_chunks": put.retransmitted_chunks,
+        "put_retransmitted_bytes": put.retransmitted_bytes,
+        "put_rewinds": put.rewinds,
+        "get_unique_verified_bytes": get.unique_verified_bytes,
+        "get_duration_ns": get.duration_ns,
+        "get_retransmitted_chunks": get.retransmitted_chunks,
+        "get_retransmitted_bytes": get.retransmitted_bytes,
+        "integrity_verified": True,
+        "offset_sequence_validated": get.offset_sequence_validated,
+    }
+
+
+async def run_reliability(central, profile_id, *, next_id, clock_ns=time.monotonic_ns):
+    attempted = WORKLOAD["reliability_files"]
+    size = WORKLOAD["reliability_file_bytes"]
+    completed = 0
+    verified = 0
+    put_rtx_chunks = 0
+    put_rtx_bytes = 0
+    get_rtx_chunks = 0
+    get_rtx_bytes = 0
+    rewinds = 0
+    await ensure_directory(central, "oi1", next_id)
+    for index in range(attempted):
+        payload = deterministic_payload(
+            profile_id,
+            WORKLOAD["roundtrip_samples"] + index,
+            size,
+        )
+        path = "oi1/reliability_%02d.bin" % index
+        await remove_if_present(central, path, next_id)
+        try:
+            put = await put_file(
+                central,
+                path,
+                payload,
+                window=WORKLOAD["required_put_window"],
+                chunk=WORKLOAD["required_chunk_bytes"],
+                next_id=next_id,
+                clock_ns=clock_ns,
+            )
+            completed += 1
+            get = await get_file(
+                central,
+                path,
+                payload,
+                next_id=next_id,
+                clock_ns=clock_ns,
+            )
+            verified += 1
+            put_rtx_chunks += put.retransmitted_chunks
+            put_rtx_bytes += put.retransmitted_bytes
+            get_rtx_chunks += get.retransmitted_chunks
+            get_rtx_bytes += get.retransmitted_bytes
+            rewinds += put.rewinds
+        except StatusFailure:
+            raise
+        except IntegrityFailure:
+            raise
+        finally:
+            if central.is_connected:
+                await remove_if_present(central, path, next_id)
+    if completed != attempted or verified != attempted:
+        raise BenchError(
+            "reliability completed=%d verified=%d attempted=%d"
+            % (completed, verified, attempted)
+        )
+    return {
+        "attempted_files": attempted,
+        "completed_files": completed,
+        "verified_files": verified,
+        "bytes_per_file": size,
+        "total_payload_bytes": attempted * size,
+        "unexpected_disconnects": 0,
+        "integrity_failures": 0,
+        "failed_statuses": 0,
+        "retransmitted_chunks": put_rtx_chunks + get_rtx_chunks,
+        "retransmitted_bytes": put_rtx_bytes + get_rtx_bytes,
+        "rewinds": rewinds,
+    }
+
+
+async def measure_reset_to_advertisement(
+        reset,
+        watcher,
+        *,
+        hold_ms=WORKLOAD["reset_hold_ms"],
+        timeout_ms=WORKLOAD["advertising_timeout_ms"],
+        sleep=asyncio.sleep,
+        monotonic_ns=time.monotonic_ns):
+    """Measure controlled reset release to first fresh matching advertisement."""
+    if hold_ms != WORKLOAD["reset_hold_ms"]:
+        raise BenchError("OI-1 reset hold must be exactly 1000 ms")
+    if timeout_ms != WORKLOAD["advertising_timeout_ms"]:
+        raise BenchError("OI-1 advertisement timeout must be exactly 15000 ms")
+    await watcher.start()
+    try:
+        reset.assert_reset()
+        await sleep(hold_ms / 1000.0)
+        if watcher.first_match_ns is not None:
+            raise BenchError(
+                "matching advertisement observed while reset was asserted"
+            )
+        release_ns = monotonic_ns()
+        reset.release_reset()
+        try:
+            match_ns = await watcher.wait_for_match(timeout_ms)
+        except asyncio.TimeoutError as exc:
+            raise BenchError(
+                "no fresh PyBLE advertisement within %d ms" % timeout_ms
+            ) from exc
+        if match_ns <= release_ns:
+            raise BenchError("advertisement timestamp is not after reset release")
+        elapsed_ns = match_ns - release_ns
+        return (elapsed_ns + 999_999) // 1_000_000
+    finally:
+        await watcher.stop()
+
+
+def validate_reliability(value):
+    _require_exact_keys(value, RELIABILITY_KEYS, "reliability")
+    normalized = {
+        key: _require_nonnegative_int(value[key], "reliability.%s" % key)
+        for key in RELIABILITY_KEYS
+    }
+    expected = {
+        "attempted_files": 20,
+        "completed_files": 20,
+        "verified_files": 20,
+        "bytes_per_file": 16384,
+        "total_payload_bytes": 327680,
+        "unexpected_disconnects": 0,
+        "integrity_failures": 0,
+        "failed_statuses": 0,
+    }
+    for key, required in expected.items():
+        if normalized[key] != required:
+            raise BenchError(
+                "reliability.%s=%d, required %d"
+                % (key, normalized[key], required)
+            )
+    return normalized
+
+
+def validate_observation(value):
+    _require_exact_keys(value, OBSERVATION_KEYS, "oi1_observation")
+    for key, required in (
+        ("observed_att_mtu", 247),
+        ("observed_window", 8),
+        ("observed_chunk_bytes", 229),
+        ("roundtrip_integrity_verified", 5),
+        ("get_offset_sequences_validated", 5),
+        ("roundtrip_unexpected_disconnects", 0),
+        ("roundtrip_integrity_failures", 0),
+    ):
+        actual = _require_nonnegative_int(value[key], key)
+        if actual != required:
+            raise BenchError("%s=%d, required %d" % (key, actual, required))
+    arrays = {
+        "reset_to_service_advertisement_ms": 10,
+        "heap_default_free_post_hello_bytes": 10,
+        "heap_post_hello": 10,
+        "put_unique_committed_bytes": 5,
+        "put_duration_ns": 5,
+        "put_committed_goodput_bytes_per_second": 5,
+        "get_unique_verified_bytes": 5,
+        "get_duration_ns": 5,
+        "get_verified_goodput_bytes_per_second": 5,
+        "put_retransmitted_chunks": 5,
+        "put_retransmitted_bytes": 5,
+        "get_retransmitted_chunks": 5,
+        "get_retransmitted_bytes": 5,
+        "heap_post_roundtrip": 5,
+    }
+    for key, length in arrays.items():
+        if not isinstance(value[key], list) or len(value[key]) != length:
+            raise BenchError("%s must contain %d entries" % (key, length))
+    for key in (
+        "reset_to_service_advertisement_ms",
+        "heap_default_free_post_hello_bytes",
+        "put_retransmitted_chunks",
+        "put_retransmitted_bytes",
+        "get_retransmitted_chunks",
+        "get_retransmitted_bytes",
+    ):
+        for item in value[key]:
+            _require_nonnegative_int(item, key)
+    for key in (
+        "put_unique_committed_bytes",
+        "get_unique_verified_bytes",
+    ):
+        for item in value[key]:
+            if _require_nonnegative_int(item, key) != 65536:
+                raise BenchError("%s entries must equal 65536" % key)
+    for duration_key, goodput_key in (
+        ("put_duration_ns", "put_committed_goodput_bytes_per_second"),
+        ("get_duration_ns", "get_verified_goodput_bytes_per_second"),
+    ):
+        for duration, reported in zip(value[duration_key], value[goodput_key]):
+            _require_positive_int(duration, duration_key)
+            _require_positive_int(reported, goodput_key)
+            expected = goodput_bps(65536, duration)
+            if reported != expected:
+                raise BenchError(
+                    "%s=%d does not match duration-derived %d"
+                    % (goodput_key, reported, expected)
+                )
+    for index, snapshot in enumerate(value["heap_post_hello"]):
+        _validated_heap(snapshot, "heap_post_hello[%d]" % index)
+    for index, snapshot in enumerate(value["heap_post_roundtrip"]):
+        _validated_heap(snapshot, "heap_post_roundtrip[%d]" % index)
+    _validated_heap(value["heap_post_reliability"], "heap_post_reliability")
+    validate_reliability(value["reliability"])
+    if value["physical_power_cycle_advertising"] != "passed":
+        raise BenchError("physical power-cycle advertising must be passed")
+    if not isinstance(value["raw_log_sha256"], str) or not re.fullmatch(
+        r"[0-9a-f]{64}", value["raw_log_sha256"]
+    ):
+        raise BenchError("raw_log_sha256 must be lowercase SHA-256")
+    return value
+
+
+class RedactedRawLog:
+    """Access-controlled JSONL log that deliberately excludes transport IDs."""
+
+    def __init__(self, path):
+        self.path = Path(path)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            self._stream = open(self.path, "x", encoding="utf-8", newline="\n")
+        except FileExistsError as exc:
+            raise BenchError(
+                "raw log already exists; choose a new retained path"
+            ) from exc
+        self._closed = False
+        self._sequence = 0
+
+    def write(self, event, **fields):
+        if self._closed:
+            raise BenchError("raw log is closed")
+        if not isinstance(event, str) or not event:
+            raise BenchError("raw-log event name is invalid")
+        forbidden = {"address", "reset_port", "serial_port", "device_id", "label"}
+        if forbidden & set(fields):
+            raise BenchError("raw log fields include a non-redacted identifier")
+        self._sequence += 1
+        record = {"event": event, "sequence": self._sequence}
+        record.update(fields)
+        self._stream.write(
+            json.dumps(
+                record,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+                allow_nan=False,
+            )
+            + "\n"
+        )
+        self._stream.flush()
+
+    def sha256(self):
+        if not self._closed:
+            self._stream.flush()
+            os.fsync(self._stream.fileno())
+        return sha256_file(self.path)
+
+    def close(self):
+        if not self._closed:
+            self._stream.flush()
+            os.fsync(self._stream.fileno())
+            self._stream.close()
+            self._closed = True
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, traceback):
+        self.close()

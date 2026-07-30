@@ -1,0 +1,51 @@
+PyBLE linked GCC/newlib runtime copyright notices
+
+Scope: runtime object code proven linked by the six hash-bound profile/role maps.
+GCC source commit: 673953b409379e2250f831307ba79579535b1b85
+newlib source commit: 9a0d39153510ec5cbb51eb8c70cecbfeffdbb6ba
+
+Exact deduplicated source-header statements:
+
+Copyright (C) 1989-2024 Free Software Foundation, Inc.
+Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.
+Copyright (C) 1994-2024 Free Software Foundation, Inc.
+Copyright (C) 1996-2024 Free Software Foundation, Inc.
+Copyright (C) 1997-2022 Free Software Foundation, Inc.
+Copyright (C) 1997-2024 Free Software Foundation, Inc.
+Copyright (C) 1998 by Lucent Technologies
+Copyright (C) 1998-2001 by Lucent Technologies
+Copyright (C) 2000 by Lucent Technologies
+Copyright (C) 2001-2024 Free Software Foundation, Inc.
+Copyright (C) 2002,2007 by  Red Hat, Incorporated. All rights reserved.
+Copyright (C) 2002-2024 Free Software Foundation, Inc.
+Copyright (C) 2006-2022 Free Software Foundation, Inc.
+Copyright (C) 2006-2024 Free Software Foundation, Inc.
+Copyright (C) 2010-2024 Free Software Foundation, Inc.
+Copyright (C) 2021-2022 Free Software Foundation, Inc.
+Copyright (c) 1987 Regents of the University of California.
+Copyright (c) 1988 Regents of the University of California.
+Copyright (c) 1989 The Regents of the University of California.
+Copyright (c) 1990 Regents of the University of California.
+Copyright (c) 1990 The Regents of the University of California.
+Copyright (c) 1990, 2007 The Regents of the University of California.
+Copyright (c) 1991 by AT&T.
+Copyright (c) 1991, 1993
+Copyright (c) 1992, 1993
+Copyright (c) 1995, 1996, 2002 Red Hat Incorporated.
+Copyright (c) 1996 - 2002 FreeBSD Project
+Copyright (c) 1998, 2015 Todd C. Miller <millert@openbsd.org>
+Copyright (c) 2001-20012 Tensilica Inc.
+Copyright (c) 2001-2006 by Tensilica Inc.
+Copyright (c) 2001-2008 Tensilica Inc.
+Copyright (c) 2002-2008 Tensilica Inc.
+Copyright (c) 2012-2014 ARM Ltd
+Copyright (c) 2017  SiFive Inc. All rights reserved.
+Copyright (c) 2017-2018 Arm Ltd.  All rights reserved.
+Copyright (c) 2018 Arm Ltd.  All rights reserved.
+Copyright (c) 2019  SiFive Inc. All rights reserved.
+Copyright (c) 2020 Kito Cheng
+Copyright © 2020 Keith Packard
+these modifications are Copyright (C) 1991 DJ Delorie.
+
+Header-silent newlib sources are governed by the complete hash-bound
+firmware/licenses/texts/COPYING.NEWLIB.toolchain.txt compilation.

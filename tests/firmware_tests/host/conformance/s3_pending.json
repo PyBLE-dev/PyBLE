@@ -1,0 +1,18 @@
+{
+  "_license": "MIT — Part of PyBLE (https://pyble.dev), see /LICENSE.",
+  "_doc": "PENDING S3 payload-semantic conformance vectors — NOT YET WIRED. These describe the PER-OPCODE PAYLOAD vectors the S3 stories (F-03 HELLO/caps, F-16 version negotiation, F-22 SET_LABEL body, F-04 RUN{mode,path}/RUN_STATE) will pin in the SHARED cross-language corpus. They carry NO frame_hex on purpose: the byte encodings they depend on live in protocol.md §6 (Run/Console), §7 (HELLO/caps), and §9 (Versioning), which are STILL DRAFT (freeze ledger, 2026-07-01). Fabricating frame bytes here would REDEFINE draft wire — forbidden (wire is referenced, never redefined). Each entry states the frozen SEMANTIC obligation and the exact freeze it is BLOCKED on. When protocol.md §6/§7/§9 + the specs.md FR mirror freeze, firmware-test-author fills in field tuples + zlib-oracle frame_hex and promotes these into corpus.json (byte-identical guard for firmware pble_* and the Dart pble client).",
+  "_blocked_on": {
+    "protocol.md_§6": "RUN{mode,path} payload shape; RSP-then-RUN_STATE(running) sequence; running->done/error transitions; RUN_STATE state-enum byte values",
+    "protocol.md_§7": "HELLO{proto_versions[],app_name,app_version} + RSP{proto_version,caps} caps serialization; DEVICE_INFO/INFO payload encoding; SET_LABEL label body framing; device_id/label field encoding",
+    "protocol.md_§9": "accept-only-VER-0x01 negotiation wire; refuse-unsatisfiable-version wire; additive-caps rule",
+    "specs.md_OI-6": "SET_LABEL max byte-length freeze (architect froze PBLE_LABEL_MAX=24 in the native contract; the specs.md/protocol.md [docs] mirror has not landed)"
+  },
+  "pending_vectors": [
+    {"name": "hello_rsp_caps_complete", "story": "F-03", "obligation": "RSP{0x01} caps MUST contain every FR-INFO-3 field: chip, mpy_version, fs_root, max_file_size, put_window(W), chunk_size, has_sd, free_mem, device_id, label, has_identify, identify_led — typed per §7.", "blocked_on": "protocol.md_§7"},
+    {"name": "device_info_rsp_fields", "story": "F-03", "obligation": "RSP{0x02}/INFO-read MUST report chip, mpy_version, free_mem, fs_root, mtu, device_id, label (FR-INFO-1) and MUST be byte-identical to the INFO-characteristic read value (FR-INFO-4).", "blocked_on": "protocol.md_§7"},
+    {"name": "hello_refuse_unsatisfiable_version", "story": "F-16", "obligation": "HELLO offering only versions the agent cannot satisfy MUST be refused (not silently mis-spoken) — FR-INFO-5.", "blocked_on": "protocol.md_§9 + protocol.md_§7"},
+    {"name": "decode_reject_ver_not_0x01", "story": "F-16", "obligation": "A frame with VER != 0x01 MUST be rejected per the versioning policy — FR-PROTO-7. (VER byte is §3.1-frozen; the REFUSAL POLICY wording is §9-DRAFT.)", "blocked_on": "protocol.md_§9"},
+    {"name": "set_label_body_persists_and_renames", "story": "F-22", "obligation": "SET_LABEL{utf8<=PBLE_LABEL_MAX} stored to NVS, becomes advertised name + DEVICE_INFO.label; over-length -> ERANGE not stored; empty clears to PyBLE-XXXX — FR-IDENT-1/FR-BLE-12.", "blocked_on": "protocol.md_§7 + specs.md_OI-6"},
+    {"name": "run_file_lifecycle", "story": "F-04", "obligation": "RUN{mode:file,path} -> RSP{OK} then RUN_STATE(running); normal end -> RUN_STATE(done); uncaught -> RUN_STATE(error); RUN while running -> EBUSY — FR-RUN-1/4/7/9.", "blocked_on": "protocol.md_§6"}
+  ]
+}

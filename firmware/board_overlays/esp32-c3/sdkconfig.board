@@ -1,0 +1,37 @@
+# SPDX-License-Identifier: MIT
+# Part of PyBLE (https://pyble.dev) — see /LICENSE.
+#
+# Layer-2 sdkconfig fragment for the ESP32-C3 (RISC-V). BLE (NimBLE) primary
+# transport (PBLE/1 §2). The C3 is the binding footprint constraint (NFR-FP-C3):
+# it commonly has 4 MB flash and the tightest heap — the size/heap gate freezes
+# its ceilings on HIL.
+
+CONFIG_BT_ENABLED=y
+CONFIG_BT_NIMBLE_ENABLED=y
+
+# sdkconfig.base carries an ESP32-only AUTO choice. C3 has a fixed 40 MHz
+# crystal choice; make the final defaults assignment explicit and warning-free.
+# CONFIG_XTAL_FREQ_AUTO is not set
+CONFIG_XTAL_FREQ_40=y
+
+# Strip build time and host paths from release bytes (BLD-14).
+CONFIG_APP_REPRODUCIBLE_BUILD=y
+
+# BLE throughput: this uses the same newer-controller family as the S3. Fill
+# connection events (self-determined CE length) and use a static LL TX
+# pool, so board→app streaming matches the classic BTDM controller's pace.
+CONFIG_BT_CTRL_CE_LENGTH_TYPE_SD=y
+CONFIG_BT_CTRL_BLE_STATIC_ACL_TX_BUF_NB=12
+
+# Frozen browser-release image configuration.
+CONFIG_ESPTOOLPY_FLASHMODE_DIO=y
+CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# Initial C3 profile supports silicon revision v0.3 through the pinned IDF's
+# maximum v1.99. Keep the RISC-V NLR hardware-stack-guard workaround explicit.
+CONFIG_ESP32C3_REV_MIN_3=y
+CONFIG_ESP_SYSTEM_HW_STACK_GUARD=n

@@ -1,0 +1,19 @@
+[submodule "firmware/upstream/micropython"]
+	path = firmware/upstream/micropython
+	url = https://github.com/micropython/micropython
+	# Layer 1 — pinned, PRISTINE (CON-1/2). Populate with:
+	#   git submodule update --init firmware/upstream/micropython
+	# then checkout the ref in firmware/versions.lock. The SHA-drift gate
+	# (tools/ci/sha_drift.sh) refuses to build unless the checked-out HEAD
+	# matches the [micropython] commit in versions.lock. The Espressif SDK is
+	# deliberately NOT a submodule — it installs from its pin in versions.lock
+	# into a gitignored dir (BLD-11).
+[submodule "app/upstream/blockly"]
+	path = app/upstream/blockly
+	url = https://github.com/RaspberryPiFoundation/blockly
+	# Vendored upstream for the A-31 Blockly block editor (WebView asset source,
+	# PRD §17.2 / FR-BLOCKS) — pinned at the release tag recorded in
+	# app/DEPENDENCIES.md (RaspberryPiFoundation/blockly, Apache-2.0; attribution
+	# ships in THIRD_PARTY_LICENSES at X-11). PRISTINE — never edited in place;
+	# the asset bundle is built FROM the pin when A-31 (S8) starts. Populate with:
+	#   git submodule update --init app/upstream/blockly

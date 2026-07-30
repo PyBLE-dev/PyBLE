@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: MIT
+# PyBLE ESP32-C3 partition table (4 MB flash). NVS + phy_init + factory app + a
+# FAT vfs for the user workspace. The C3 is the binding footprint target.
+# Name,   Type, SubType, Offset,   Size,     Flags
+nvs,      data, nvs,     0x9000,   0x6000,
+phy_init, data, phy,     0xf000,   0x1000,
+factory,  app,  factory, 0x10000,  0x1F0000,
+vfs,      data, fat,     0x200000, 0x200000,

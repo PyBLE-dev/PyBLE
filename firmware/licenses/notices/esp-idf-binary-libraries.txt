@@ -1,0 +1,4 @@
+This firmware redistributes binary libraries from the pinned ESP-IDF source
+release. Retain Espressif's complete Apache-2.0 license text, copyright
+notices, source/ref attribution, and every library-specific notice supplied
+by that release.

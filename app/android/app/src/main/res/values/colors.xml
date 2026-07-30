@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<!-- Part of PyBLE (https://pyble.dev) — see /LICENSE. -->
+<resources>
+    <color name="ic_launcher_background">#081B35</color>
+</resources>

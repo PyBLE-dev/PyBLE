@@ -1,0 +1,2 @@
+# Test harness dir (owner: app-test-author). Suites land here per story.
+# unit · widget · golden · conformance (see docs/specifications/app.md §7).

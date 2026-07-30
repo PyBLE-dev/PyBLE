@@ -1,0 +1,6 @@
+# Intentionally empty.
+#
+# esp-idf-sbom requires this input during the fully offline release audit.
+# Its exact SHA-256 is pinned in firmware/release-tools.lock; exclusions may
+# only be added through an explicit reviewed policy change.
+{}

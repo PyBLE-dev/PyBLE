@@ -1,0 +1,4 @@
+This firmware contains portions of the GCC runtime libraries. Retain the
+complete GNU General Public License version 3 text together with the GCC
+Runtime Library Exception version 3.1. The exception governs eligible
+independent-module combinations; it does not replace the GPL text.

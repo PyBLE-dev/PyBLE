@@ -1,0 +1,62 @@
+# SPDX-License-Identifier: MIT
+# Part of PyBLE (https://pyble.dev) — see /LICENSE.
+#
+# Layer-2 sdkconfig fragment for the ESP32-S3. NimBLE (BLE) is enabled via
+# boards/sdkconfig.ble; Octal-SPIRAM + 240 MHz come from the spiram_oct / 240mhz
+# includes in mpconfigboard.cmake (this N16R8-class module has Octal PSRAM).
+# Only the flash mode/freq is set here, matching the known-good upstream
+# ESP32_GENERIC_S3 (SPIRAM_OCT) — required for the bootloader to bring up PSRAM
+# and boot. The default (4 MiB-plus) partition table from sdkconfig.base is used.
+#
+# NOTE: a larger PyBLE workspace partition for the full flash is a deferred
+# refinement (must match CONFIG_ESPTOOLPY_FLASHSIZE and be validated on HW).
+
+CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
+CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
+
+# sdkconfig.base selects ESP32-only automatic crystal detection. Override that
+# inherited default for S3 so Kconfig receives one applicable, warning-free
+# 40 MHz selection.
+# CONFIG_XTAL_FREQ_AUTO is not set
+CONFIG_XTAL_FREQ_40=y
+
+# Strip build time and host paths from release bytes (BLD-14).
+CONFIG_APP_REPRODUCIBLE_BUILD=y
+
+# BLE throughput: the S3 controller defaults to the conservative ORIG
+# connection-event-length policy — a few TX PDUs per
+# event, radio idle the rest — which made board→app streaming measurably SLOWER
+# than the classic ESP32's BTDM controller (which fills events inherently).
+# Self-determined CE length lets the controller extend the event and pack it;
+# the static LL ACL TX pool gives it queue depth to pack from.
+CONFIG_BT_CTRL_CE_LENGTH_TYPE_SD=y
+
+# Download-ceiling pool depth. Two pools feed the board→app NOTIFY stream at the
+# 2M-PHY + DLE + 15 ms-interval rate
+# the deferred ladder reaches; the shipped GAP-2 AGAIN/NULL-mbuf counter in
+# pble_notify_packet detects when they starve:
+#  - Static LL ACL TX pool: ESP-IDF v5.5.1's shared C3/S3 BLE controller caps this
+#    at `range 0 12` (components/bt/controller/esp32c3/Kconfig.in). 12 is ALREADY
+#    the ceiling — a higher value is out of range and Kconfig SILENTLY resets it to
+#    0, which disables the static pool. So it is pinned at the max, 12. (Raising
+#    this cap needs an upstream controller change — outside the build plane.)
+#  - NimBLE msys-1 mbuf pool: the host-side os_mbuf pool the NOTIFY os_mbuf
+#    allocations draw from (no Kconfig range) — deepened 12->20 so the shipped
+#    NOTIFY_TX pacer has queue depth to pack a full 2M connection event.
+# Cost ~+2 KB INTERNAL DRAM: NimBLE is MEM_ALLOC_MODE_INTERNAL, so SPIRAM headroom
+# does NOT back this pool — the S3 (N16R8, ~19% flash free) absorbs it. HIL-staged
+# per OI-1: keep msys-1=20 only if the on-air AGAIN/NULL-mbuf counter shows
+# starvation at 2M; otherwise revert to 12. The C3 pins the same static ACL
+# maximum but keeps its host mbuf pool at the default (binding footprint,
+# NFR-FP-C3); classic ESP32 (BTDM, BLE 4.2) has neither key.
+CONFIG_BT_CTRL_BLE_STATIC_ACL_TX_BUF_NB=12
+CONFIG_BT_NIMBLE_MSYS_1_BLOCK_COUNT=20
+
+# This board has 16 MB flash — use it all (2 MB app + ~13.9 MB vfs workspace).
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+
+# Use PyBLE's partition table — it has the explicit `vfs` partition flashbdev.py
+# needs (the stock partitions-4MiBplus.csv has none, so there'd be no filesystem).
+# prepare.sh copies this overlay's partitions.csv into the port dir.
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"

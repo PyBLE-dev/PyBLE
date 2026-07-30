@@ -1,0 +1,48 @@
+# PyBLE — pinned upstream versions.
+#
+# SPDX-License-Identifier: MIT
+# Part of PyBLE (https://pyble.dev) — see /LICENSE.
+#
+# Single source of truth for the upstream versions every PyBLE firmware build
+# pins. See docs/specifications/firmware.md §6 (Build & distribution) and the
+# sibling note in firmware/upstream/README.md.
+#
+# CANDIDATE-FROZEN for firmware v0.4.1. These exact bytes select the reviewed
+# MicroPython and ESP-IDF inputs before reproducible builds, license audit, and
+# HIL. Promotion cannot change them; a pin change starts a new candidate. The
+# commit SHAs are authoritative, and the build gate verifies both upstream
+# checkouts against this file.
+#
+# Update only via the controlled upgrade workflow
+# (firmware/scripts/upgrade_micropython.sh) — never by hand during a build.
+
+[micropython]
+repo   = "https://github.com/micropython/micropython"
+ref    = "v1.28.0"
+commit = "e0e9fbb17ed6fd06bb76e266ae554784c9c80804"
+
+[esp_idf]
+repo   = "https://github.com/espressif/esp-idf"
+ref    = "v5.5.1"
+commit = "fcae32885b0296b32044cb99ecbdc50d98dddb83"
+
+# Build targets — one MicroPython + ESP-IDF pin drives all three chips.
+# Maps the PyBLE target name to its ESP-IDF target. Per-chip differences live
+# in the board overlays (Layer 2: firmware/board_overlays/<target>/), not here.
+[targets]
+"esp32"    = "esp32"
+"esp32-s3" = "esp32s3"
+"esp32-c3" = "esp32c3"
+
+[toolchain]
+# Compilers come from the pinned ESP-IDF install (xtensa-esp for esp32/-s3,
+# riscv32-esp for -c3). mpy-cross is rebuilt from the pinned MicroPython.
+source    = "pinned-esp-idf"
+mpy_cross = "rebuilt-from-pinned-micropython"
+
+[pyble]
+# Deliberately no board/board_profile/routing fields: PyBLE targets generic
+# ESP32 boards and exposes hardware to user code via standard MicroPython
+# (machine), not via the agent.
+agent_version    = "0.4.1"
+protocol_version = "PBLE/1"

@@ -1,0 +1,1564 @@
+{
+  "@@locale": "en",
+
+  "appTitle": "PyBLE",
+  "@appTitle": {
+    "description": "The application wordmark, used as the MaterialApp title and shown in the toolbar. A brand proper noun — rendered verbatim, never translated."
+  },
+
+  "navConnect": "Connect",
+  "@navConnect": {
+    "description": "Navigation label for the Connect surface (BLE device connection)."
+  },
+  "navEditor": "Editor",
+  "@navEditor": {
+    "description": "Navigation label for the Editor surface (the MicroPython code editor)."
+  },
+  "navConsole": "Console",
+  "@navConsole": {
+    "description": "Navigation label for the Console surface (the REPL/output console)."
+  },
+  "navFiles": "Files",
+  "@navFiles": {
+    "description": "Navigation label for the Files surface (the on-device filesystem browser)."
+  },
+  "navBlocks": "Blocks",
+  "@navBlocks": {
+    "description": "Navigation label for the Blocks surface (the visual programming workspace)."
+  },
+
+  "toolbarConnect": "Connect",
+  "@toolbarConnect": {
+    "description": "Tooltip for the toolbar Connect action (open the BLE device picker)."
+  },
+  "toolbarRun": "Run",
+  "@toolbarRun": {
+    "description": "Tooltip for the toolbar Run action (execute the current program on the board)."
+  },
+  "toolbarStop": "Stop",
+  "@toolbarStop": {
+    "description": "Tooltip for the toolbar Stop action (interrupt the running program)."
+  },
+  "toolbarSoftReboot": "Soft-reboot",
+  "@toolbarSoftReboot": {
+    "description": "Tooltip for the toolbar Soft-reboot action (restart the MicroPython runtime on the board)."
+  },
+  "toolbarAbout": "About PyBLE",
+  "@toolbarAbout": {
+    "description": "Tooltip and compact overflow-menu label for the global About PyBLE action."
+  },
+  "toolbarMore": "More actions",
+  "@toolbarMore": {
+    "description": "Tooltip and semantics label for the compact global-toolbar overflow containing Soft-reboot and About."
+  },
+
+  "aboutTitle": "About PyBLE",
+  "@aboutTitle": {
+    "description": "App-bar title of the full About route."
+  },
+  "aboutTagline": "Python over Bluetooth Low Energy",
+  "@aboutTagline": {
+    "description": "Concise expansion of the PyBLE product name shown in the About hero."
+  },
+  "aboutVersionLabel": "Loading version…",
+  "@aboutVersionLabel": {
+    "description": "Truthful pending label while installed package metadata is loading."
+  },
+  "aboutVersion": "Version {version}",
+  "@aboutVersion": {
+    "description": "Installed package version when the platform reports no build number. The value is runtime package metadata and remains ASCII.",
+    "placeholders": {
+      "version": {
+        "type": "String",
+        "example": "0.1.0"
+      }
+    }
+  },
+  "aboutVersionWithBuild": "Version {version} ({buildNumber})",
+  "@aboutVersionWithBuild": {
+    "description": "Installed package version and build number from runtime platform metadata. Both values remain ASCII.",
+    "placeholders": {
+      "version": {
+        "type": "String",
+        "example": "0.1.0"
+      },
+      "buildNumber": {
+        "type": "String",
+        "example": "1"
+      }
+    }
+  },
+  "aboutVersionUnavailable": "Version unavailable",
+  "@aboutVersionUnavailable": {
+    "description": "Truthful fallback when installed package metadata cannot be read."
+  },
+  "aboutProductBody": "A free, open-source, tablet-first IDE for editing, saving, and running MicroPython on compatible boards over BLE.",
+  "@aboutProductBody": {
+    "description": "Clean-room product summary in the About hero."
+  },
+  "aboutPlatformTitle": "Designed for MicroPython + BLE",
+  "@aboutPlatformTitle": {
+    "description": "About section heading for board-neutral compatibility."
+  },
+  "aboutPlatformBody": "PyBLE is designed for boards that can run MicroPython and host a compatible PBLE/1 agent. ESP32, ESP32-S3, and ESP32-C3 are the initial firmware targets; support expands through validated open ports. Board-specific pin defaults and hardware profiles are never assumed.",
+  "@aboutPlatformBody": {
+    "description": "Board-neutral About copy; technical target and protocol identifiers are rendered separately as ASCII chips."
+  },
+  "aboutOpenSourceTitle": "Free and open source",
+  "@aboutOpenSourceTitle": {
+    "description": "About section heading for PyBLE's MIT and community posture."
+  },
+  "aboutOpenSourceBody": "PyBLE is community-driven software released under the MIT License. Third-party license information is available offline in the app.",
+  "@aboutOpenSourceBody": {
+    "description": "Open-source posture and offline-notices summary."
+  },
+  "aboutOpenSourceLicensesAction": "Open-source licenses",
+  "@aboutOpenSourceLicensesAction": {
+    "description": "Action that opens Flutter's local LicenseRegistry page."
+  },
+  "aboutPrivacyTitle": "Private by default",
+  "@aboutPrivacyTitle": {
+    "description": "About section heading for the frozen security and privacy posture."
+  },
+  "aboutPrivacyBody": "PyBLE requires no account and sends no telemetry by default. Your work stays on your tablet and connected board unless you explicitly export it. A user-started public GitHub import is the only optional network workflow.",
+  "@aboutPrivacyBody": {
+    "description": "Truthful offline-first privacy summary, including the sole optional network workflow."
+  },
+  "aboutProjectTitle": "Project",
+  "@aboutProjectTitle": {
+    "description": "About section heading for project provenance and canonical website."
+  },
+  "aboutProjectBody": "A SciLabPro open-source project, created for a public and community-driven PyBLE ecosystem.",
+  "@aboutProjectBody": {
+    "description": "Project attribution derived from the repository's MIT license and governance."
+  },
+  "aboutProjectWebsiteLabel": "Website",
+  "@aboutProjectWebsiteLabel": {
+    "description": "Label above the selectable canonical pyble.dev technical URL."
+  },
+  "aboutLegalese": "Copyright © 2026 Viwat Vchirawongkwin\nA SciLabPro open-source project · MIT License",
+  "@aboutLegalese": {
+    "description": "Visible About footer and LicensePage legalese, derived from the repository's MIT license."
+  },
+
+  "connStatusDisconnected": "Disconnected",
+  "@connStatusDisconnected": {
+    "description": "Connection-status indicator label: no board is connected."
+  },
+  "connStatusConnecting": "Connecting…",
+  "@connStatusConnecting": {
+    "description": "Connection-status indicator label: a connection and HELLO handshake are in progress."
+  },
+  "connStatusReady": "Ready",
+  "@connStatusReady": {
+    "description": "Connection-status indicator label: connected and idle, ready to run."
+  },
+  "connStatusRunning": "Running",
+  "@connStatusRunning": {
+    "description": "Connection-status indicator label: a program is currently running on the board."
+  },
+
+  "consoleTitle": "Console",
+  "@consoleTitle": {
+    "description": "Title of the console strip along the bottom of the landscape (three-pane) layout."
+  },
+
+  "pinReferenceTitle": "Pin reference",
+  "@pinReferenceTitle": {
+    "description": "Title of the read-only, informational pin-reference pane."
+  },
+  "pinReferenceDetailGeneric": "Read-only chip pin reference (informational).",
+  "@pinReferenceDetailGeneric": {
+    "description": "Pin-reference detail shown before the connected chip is known."
+  },
+  "pinReferenceDetailForChip": "Read-only pin reference for {chip} (informational).",
+  "@pinReferenceDetailForChip": {
+    "description": "Pin-reference detail for a known chip. The {chip} placeholder is a technical identifier (e.g. esp32, esp32-s3, esp32-c3); it stays ASCII and is never translated (FR-I18N-4).",
+    "placeholders": {
+      "chip": {
+        "type": "String",
+        "example": "esp32-s3"
+      }
+    }
+  },
+
+  "connectPageDetail": "BLE device connection — arrives with lib/connect (S2).",
+  "@connectPageDetail": {
+    "description": "Placeholder body for the Connect surface, shown until the real lib/connect feature package lands. 'lib/connect' is a package path — a technical identifier that stays ASCII and is never localized (FR-I18N-4)."
+  },
+  "editorPageDetail": "MicroPython editor — arrives with lib/editor.",
+  "@editorPageDetail": {
+    "description": "Placeholder body for the Editor surface, shown until the real lib/editor feature package lands. 'lib/editor' is a package path — a technical identifier that stays ASCII and is never localized (FR-I18N-4)."
+  },
+  "consolePageDetail": "REPL console — arrives with lib/console.",
+  "@consolePageDetail": {
+    "description": "Placeholder body for the Console surface, shown until the real lib/console feature package lands. 'lib/console' is a package path — a technical identifier that stays ASCII and is never localized (FR-I18N-4)."
+  },
+  "filesPageDetail": "On-device files — arrives with lib/files.",
+  "@filesPageDetail": {
+    "description": "Placeholder body for the Files surface, shown until the real lib/files feature package lands. 'lib/files' is a package path — a technical identifier that stays ASCII and is never localized (FR-I18N-4)."
+  },
+
+  "toolbarDisconnect": "Disconnect",
+  "@toolbarDisconnect": {
+    "description": "Tooltip/label for the toolbar Disconnect action — the exit half of the Connect/Disconnect toggle, shown while a board is connected (drops the link)."
+  },
+
+  "connStatusSemanticLabel": "Connection status: {status}",
+  "@connStatusSemanticLabel": {
+    "description": "Screen-reader (Semantics) label for the connection-status pill, giving the state context. {status} is the localized state word (e.g. Disconnected, Connecting…, Ready, Running).",
+    "placeholders": {
+      "status": {
+        "type": "String",
+        "example": "Ready"
+      }
+    }
+  },
+
+  "connectEmptyTitle": "No board connected",
+  "@connectEmptyTitle": {
+    "description": "Title of the Connect surface empty state, shown when no board is connected (first-run / disconnected)."
+  },
+  "connectEmptyDetail": "Connect over Bluetooth to edit and run MicroPython on your board. Only boards running the PyBLE agent appear here.",
+  "@connectEmptyDetail": {
+    "description": "Detail line of the Connect empty state. Explains the BLE-only connection and that the scan is filtered to PyBLE boards (no raw device list). 'PyBLE' is the app wordmark — a brand proper noun, rendered verbatim."
+  },
+  "connectEmptyCta": "Connect a board",
+  "@connectEmptyCta": {
+    "description": "Primary call-to-action button on the Connect empty state; opens the BLE device picker. Shares the bluetooth icon and connect action with the toolbar Connect."
+  },
+
+  "editorEmptyTitle": "No file open",
+  "@editorEmptyTitle": {
+    "description": "Title of the Editor surface empty state, shown when no file is open."
+  },
+  "editorEmptyDetail": "Create a new file or open one from your board to start editing.",
+  "@editorEmptyDetail": {
+    "description": "Detail line of the Editor empty state."
+  },
+  "editorEmptyCta": "New file",
+  "@editorEmptyCta": {
+    "description": "Primary call-to-action on the Editor empty state; creates a new file."
+  },
+  "editorEmptyCtaOpen": "Open from Files",
+  "@editorEmptyCtaOpen": {
+    "description": "Secondary call-to-action on the Editor empty state; opens an existing on-device file."
+  },
+
+  "consoleEmptyTitle": "Console is idle",
+  "@consoleEmptyTitle": {
+    "description": "Title of the Console surface empty state, shown when no program output has arrived. The console is observational — no call-to-action."
+  },
+  "consoleEmptyDetail": "Output from your program appears here when you run it.",
+  "@consoleEmptyDetail": {
+    "description": "Detail line of the Console empty state."
+  },
+
+  "filesEmptyTitle": "No files yet",
+  "@filesEmptyTitle": {
+    "description": "Title of the Files surface empty state when a board is connected but has no files."
+  },
+  "filesEmptyDetail": "Files you create or import will appear here.",
+  "@filesEmptyDetail": {
+    "description": "Detail line of the connected-but-empty Files state."
+  },
+  "filesEmptyCta": "New file",
+  "@filesEmptyCta": {
+    "description": "Call-to-action on the connected Files empty state; creates a new file on the board. Enabled only once a board is connected."
+  },
+
+  "filesDisconnectedTitle": "No board connected",
+  "@filesDisconnectedTitle": {
+    "description": "Title of the Files surface empty state while disconnected — a distinct state from connected-but-empty, since there is no on-device filesystem to browse."
+  },
+  "filesDisconnectedDetail": "Connect a board to browse and manage its files.",
+  "@filesDisconnectedDetail": {
+    "description": "Detail line of the disconnected Files state. No create/import call-to-action (nothing to browse yet)."
+  },
+
+  "rightPaneBlocks": "Blocks",
+  "@rightPaneBlocks": {
+    "description": "Segment label for the landscape right-pane content switcher selecting the Blocks (visual block editor) view."
+  },
+  "rightPanePlots": "Plots",
+  "@rightPanePlots": {
+    "description": "Segment label for the landscape right-pane content switcher selecting the Plots (live data plotting) view."
+  },
+
+  "blocksLoading": "Loading Blocks…",
+  "@blocksLoading": {
+    "description": "Progress label shown while the local visual block workspace is loading."
+  },
+  "blocksLoadFailedTitle": "Blocks couldn't load",
+  "@blocksLoadFailedTitle": {
+    "description": "Title of the error state shown when the local visual block workspace fails to load."
+  },
+  "blocksLoadFailed": "Blocks couldn't load: {reason}",
+  "@blocksLoadFailed": {
+    "description": "Detail of the visual block workspace load error. {reason} is a localized or platform-provided diagnostic.",
+    "placeholders": {
+      "reason": {
+        "type": "String",
+        "example": "The local workspace file is unavailable."
+      }
+    }
+  },
+  "blocksStartupTimeout": "The local Blocks runtime didn't start.",
+  "@blocksStartupTimeout": {
+    "description": "Reason shown when the bundled Blockly page loads but does not publish any JavaScript-channel message before the startup watchdog expires."
+  },
+  "blocksRetry": "Retry",
+  "@blocksRetry": {
+    "description": "Action that retries loading the visual block workspace after a load failure."
+  },
+  "blocksStartFresh": "Start fresh",
+  "@blocksStartFresh": {
+    "description": "Destructive action that discards a retained visual block workspace after it cannot be restored."
+  },
+  "blocksStartFreshTitle": "Discard the saved block workspace?",
+  "@blocksStartFreshTitle": {
+    "description": "Title of the confirmation dialog shown before an unrecoverable retained visual block workspace is discarded."
+  },
+  "blocksStartFreshDetail": "Your saved blocks in this app session will be removed. The file already on the board is not changed.",
+  "@blocksStartFreshDetail": {
+    "description": "Detail of the confirmation dialog for starting with an empty block workspace. Clarifies that the in-process workspace is discarded without mutating the board."
+  },
+  "blocksPreview": "Preview code",
+  "@blocksPreview": {
+    "description": "Action that opens a read-only preview of the Python generated from the visual block workspace."
+  },
+  "blocksOpenInEditor": "Open in editor",
+  "@blocksOpenInEditor": {
+    "description": "Action that copies generated Python from the visual block workspace into the text editor."
+  },
+  "blocksSave": "Save",
+  "@blocksSave": {
+    "description": "Action that saves the Python generated from the visual block workspace to the connected board."
+  },
+  "blocksRun": "Run",
+  "@blocksRun": {
+    "description": "Action that runs the Python generated from the visual block workspace on the connected board."
+  },
+  "blocksEmptyHint": "Add blocks to generate Python.",
+  "@blocksEmptyHint": {
+    "description": "Hint shown when the visual block workspace has no blocks and therefore generates no Python."
+  },
+  "blocksCodePreviewTitle": "Generated Python",
+  "@blocksCodePreviewTitle": {
+    "description": "Title of the read-only generated-Python preview."
+  },
+  "blocksInspectorEmptyHint": "Generated Python will appear here.",
+  "@blocksInspectorEmptyHint": {
+    "description": "Quiet placeholder in the optional wide generated-Python inspector before the workspace produces source."
+  },
+  "blocksSaved": "Saved {path}",
+  "@blocksSaved": {
+    "description": "Success message after generated Python is saved. {path} is the on-board filesystem path and remains an ASCII technical identifier (FR-I18N-4).",
+    "placeholders": {
+      "path": {
+        "type": "String",
+        "example": "/blocks.py"
+      }
+    }
+  },
+  "blocksRunStarted": "Running {path}",
+  "@blocksRunStarted": {
+    "description": "Success message after generated Python starts running. {path} is the source filename or on-board filesystem path and remains an ASCII technical identifier (FR-I18N-4).",
+    "placeholders": {
+      "path": {
+        "type": "String",
+        "example": "blocks.py"
+      }
+    }
+  },
+  "blocksActionFailed": "Blocks action failed: {reason}",
+  "@blocksActionFailed": {
+    "description": "Error message when previewing, opening, saving, or running generated Python fails. {reason} is a localized or platform-provided diagnostic.",
+    "placeholders": {
+      "reason": {
+        "type": "String",
+        "example": "No board is connected."
+      }
+    }
+  },
+  "blocksBundleIncomplete": "{sourcePath} may have been updated, but its Blocks record at {companionPath} was not saved. Save again before reopening it as Blocks.",
+  "@blocksBundleIncomplete": {
+    "description": "Specific torn-pair explanation after the Python upload succeeded but its adjacent Blocks companion upload failed.",
+    "placeholders": {
+      "sourcePath": {
+        "type": "String",
+        "example": "/main.py"
+      },
+      "companionPath": {
+        "type": "String",
+        "example": "/main.py.pyble-blocks.json"
+      }
+    }
+  },
+  "blocksBundleSessionChangedBeforeCompanion": "The board connection changed after {sourcePath} was uploaded. Its Blocks record at {companionPath} was not written, and nothing was sent to the new board. Check the connected board, then save again.",
+  "@blocksBundleSessionChangedBeforeCompanion": {
+    "description": "Specific fail-closed explanation when the connected board changes after the Python upload but before its adjacent Blocks companion can be written.",
+    "placeholders": {
+      "sourcePath": {
+        "type": "String",
+        "example": "/main.py"
+      },
+      "companionPath": {
+        "type": "String",
+        "example": "/main.py.pyble-blocks.json"
+      }
+    }
+  },
+  "blocksBundleSessionChangedBeforeRun": "The board connection changed after {sourcePath} and its Blocks record were saved. Run was cancelled before it could be sent to another board. Check the connected board, then run again.",
+  "@blocksBundleSessionChangedBeforeRun": {
+    "description": "Specific fail-closed explanation when the connected board changes after a complete source/Blocks pair is saved but before Run can be dispatched.",
+    "placeholders": {
+      "sourcePath": {
+        "type": "String",
+        "example": "/main.py"
+      }
+    }
+  },
+  "blocksTargetPathTooLong": "The Blocks target path is invalid or too long for PBLE/1: {path}",
+  "@blocksTargetPathTooLong": {
+    "description": "Specific error when a generated Python or companion path fails the PBLE/1 path preflight.",
+    "placeholders": {
+      "path": {
+        "type": "String",
+        "example": "/main.py"
+      }
+    }
+  },
+  "blocksGenerationFailed": "Blocks couldn't generate Python: {reason}",
+  "@blocksGenerationFailed": {
+    "description": "Non-blocking error shown over a live visual workspace when its current blocks cannot be serialized or converted to Python. The workspace remains editable so the user can repair it.",
+    "placeholders": {
+      "reason": {
+        "type": "String",
+        "example": "A block input is invalid."
+      }
+    }
+  },
+  "blocksReplaceEditorTitle": "Replace unsaved changes?",
+  "@blocksReplaceEditorTitle": {
+    "description": "Title of the confirmation dialog shown before generated Python replaces a dirty text-editor document."
+  },
+  "blocksReplaceEditorDetail": "This will replace unsaved changes in {name} with generated Python.",
+  "@blocksReplaceEditorDetail": {
+    "description": "Detail of the confirmation dialog shown before generated Python replaces a dirty text-editor document. {name} is the current filename and remains an ASCII technical identifier (FR-I18N-4).",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "main.py"
+      }
+    }
+  },
+  "blocksReplaceEditorConfirm": "Replace",
+  "@blocksReplaceEditorConfirm": {
+    "description": "Destructive confirmation action that replaces the dirty text-editor document with generated Python."
+  },
+  "blocksNotReady": "Blocks is still loading.",
+  "@blocksNotReady": {
+    "description": "Message shown when a Blocks action is requested before the visual workspace is ready."
+  },
+  "blocksWorkspaceSemantics": "Visual block workspace",
+  "@blocksWorkspaceSemantics": {
+    "description": "Screen-reader label for the embedded visual block workspace."
+  },
+  "blocksExamples": "Examples",
+  "@blocksExamples": {
+    "description": "Persistent action and catalog title for the bundled beginner Blocks examples."
+  },
+  "blocksExamplesEmptyAction": "Examples",
+  "@blocksExamplesEmptyAction": {
+    "description": "Prominent action shown beside the empty Blocks-workspace hint."
+  },
+  "blocksExamplesEmptyTitle": "Start with an example",
+  "@blocksExamplesEmptyTitle": {
+    "description": "Prominent title above the beginner-example action in a structurally empty Blocks workspace."
+  },
+  "blocksExamplesEmptyDetail": "Explore a small editable program and its generated Python. Loading an example never runs it on your board.",
+  "@blocksExamplesEmptyDetail": {
+    "description": "Supporting safety copy in the empty Blocks-workspace beginner-example prompt."
+  },
+  "blocksExamplesOpen": "Browse examples",
+  "@blocksExamplesOpen": {
+    "description": "Primary action in the empty Blocks-workspace beginner-example prompt."
+  },
+  "blocksMoreActions": "More Blocks actions",
+  "@blocksMoreActions": {
+    "description": "Tooltip and semantics label for the accessible narrow-width Blocks action overflow."
+  },
+  "blocksExamplesIntro": "Choose a small program, inspect its generated Python, then create an editable copy.",
+  "@blocksExamplesIntro": {
+    "description": "Introductory text at the top of the beginner-example chooser."
+  },
+  "blocksExamplesConcepts": "Concepts",
+  "@blocksExamplesConcepts": {
+    "description": "Heading above the concepts taught by the selected example."
+  },
+  "blocksExamplesWiring": "Wiring",
+  "@blocksExamplesWiring": {
+    "description": "Heading above generic wiring guidance for a selected example."
+  },
+  "blocksExamplesChoosePins": "GPIO numbers vary by board. Enter every GPIO number to generate a preview; PyBLE never assumes a safe pin.",
+  "@blocksExamplesChoosePins": {
+    "description": "Safety guidance shown before a hardware example can be previewed or copied."
+  },
+  "blocksExamplesPinHint": "Use a non-negative GPIO number from your board documentation.",
+  "@blocksExamplesPinHint": {
+    "description": "Helper text below each hardware-example GPIO input."
+  },
+  "blocksExamplesPinInvalid": "Enter a non-negative whole GPIO number.",
+  "@blocksExamplesPinInvalid": {
+    "description": "Validation message for a missing, negative, fractional, or non-numeric example GPIO."
+  },
+  "blocksExamplesPinsMustDiffer": "Choose different GPIO numbers for the button and LED.",
+  "@blocksExamplesPinsMustDiffer": {
+    "description": "Cross-field validation message when separate hardware roles use the same GPIO number."
+  },
+  "blocksExamplesPreview": "Preview",
+  "@blocksExamplesPreview": {
+    "description": "Non-mutating action that opens a larger view of Python generated for the selected example."
+  },
+  "blocksExamplesCreateCopy": "Create copy",
+  "@blocksExamplesCreateCopy": {
+    "description": "Action that loads an editable copy of an example into a semantically empty Blocks workspace."
+  },
+  "blocksExamplesReplace": "Replace workspace",
+  "@blocksExamplesReplace": {
+    "description": "Action offered instead of Create copy when loading an example would replace existing blocks."
+  },
+  "blocksExamplesReplaceTitle": "Replace the current block workspace?",
+  "@blocksExamplesReplaceTitle": {
+    "description": "Confirmation title before an example replaces a non-empty Blocks workspace."
+  },
+  "blocksExamplesReplaceDetail": "Your current blocks will be replaced by an editable copy of this example. Nothing is saved to or run on the board.",
+  "@blocksExamplesReplaceDetail": {
+    "description": "Confirmation detail for replacing a non-empty workspace with an example copy."
+  },
+  "blocksExamplesLoaded": "Example loaded. Review and edit the blocks, then use Run only when you are ready.",
+  "@blocksExamplesLoaded": {
+    "description": "Success announcement after an example copy is loaded; explicitly states that loading did not run it."
+  },
+  "blocksExamplesLoadFailed": "Examples couldn't load: {reason}",
+  "@blocksExamplesLoadFailed": {
+    "description": "Non-destructive error when the bundled example catalog, materialization, or generated preview fails.",
+    "placeholders": {
+      "reason": {
+        "type": "String",
+        "example": "The catalog is invalid."
+      }
+    }
+  },
+  "blocksExamplesPreviewWaiting": "Generated Python appears after every required GPIO is entered.",
+  "@blocksExamplesPreviewWaiting": {
+    "description": "Placeholder in the example source pane while a GPIO role is missing or invalid."
+  },
+  "blocksExamplesPreviewLoading": "Generating Python…",
+  "@blocksExamplesPreviewLoading": {
+    "description": "Progress text while the production Blockly generator prepares an example preview."
+  },
+  "blocksExamplesCatalogSemantics": "Beginner block examples",
+  "@blocksExamplesCatalogSemantics": {
+    "description": "Screen-reader container label for the example chooser."
+  },
+  "blocksExampleLedGpio": "LED GPIO",
+  "@blocksExampleLedGpio": {
+    "description": "Input label for the explicit external-LED GPIO role in a hardware example."
+  },
+  "blocksExampleButtonGpio": "Button GPIO",
+  "@blocksExampleButtonGpio": {
+    "description": "Input label for the explicit button GPIO role in a hardware example."
+  },
+  "blocksExampleNeoPixelGpio": "NeoPixel data GPIO",
+  "@blocksExampleNeoPixelGpio": {
+    "description": "Input label for the explicit addressable-pixel data GPIO role in the NeoPixel example."
+  },
+  "blocksExampleNoWiring": "No external wiring is required.",
+  "@blocksExampleNoWiring": {
+    "description": "Wiring note for examples that only use the console and standard language blocks."
+  },
+  "blocksExampleBlinkWiring": "Connect an external LED through an appropriate current-limiting resistor. Verify the GPIO, voltage, polarity, and wiring against your board documentation; no onboard LED is assumed.",
+  "@blocksExampleBlinkWiring": {
+    "description": "Board-neutral safety note for the Blink LED example."
+  },
+  "blocksExampleNeoPixelWiring": "Connect one WS2812-compatible pixel data input to the selected GPIO and power it according to its manufacturer and your board documentation. Verify voltage and logic-level requirements; PyBLE assumes neither a built-in pixel nor a GPIO.",
+  "@blocksExampleNeoPixelWiring": {
+    "description": "Board-neutral wiring and voltage note for the Blink a NeoPixel example."
+  },
+  "blocksExampleButtonWiring": "This example enables the input pull-up, so connect the button to pull the selected GPIO to ground when pressed. Verify the GPIO, voltage, and wiring against your board documentation.",
+  "@blocksExampleButtonWiring": {
+    "description": "Board-neutral safety note for the Read button example."
+  },
+  "blocksExampleButtonLedWiring": "Connect the button between its pull-up input GPIO and ground. Connect an external LED through an appropriate current-limiting resistor. Verify both GPIOs, voltage, polarity, and wiring against your board documentation.",
+  "@blocksExampleButtonLedWiring": {
+    "description": "Board-neutral safety note for the Button controls LED example."
+  },
+  "blocksExampleHelloTitle": "Hello PyBLE",
+  "@blocksExampleHelloTitle": {
+    "description": "Title of the first beginner Blocks example."
+  },
+  "blocksExampleHelloSummary": "Print a greeting and see it in the console.",
+  "@blocksExampleHelloSummary": {
+    "description": "Summary of the Hello PyBLE example."
+  },
+  "blocksExampleCountTitle": "Count repeatedly",
+  "@blocksExampleCountTitle": {
+    "description": "Title of the paced counting beginner example."
+  },
+  "blocksExampleCountSummary": "Count from 1 to 5, printing each value with a short pause.",
+  "@blocksExampleCountSummary": {
+    "description": "Summary of the Count repeatedly example."
+  },
+  "blocksExampleBlinkTitle": "Blink an LED",
+  "@blocksExampleBlinkTitle": {
+    "description": "Title of the external LED beginner example."
+  },
+  "blocksExampleBlinkSummary": "Configure an output and alternate it HIGH and LOW ten times.",
+  "@blocksExampleBlinkSummary": {
+    "description": "Summary of the Blink an LED example."
+  },
+  "blocksExampleNeoPixelTitle": "Blink a NeoPixel",
+  "@blocksExampleNeoPixelTitle": {
+    "description": "Title of the standard addressable-RGB-pixel beginner example."
+  },
+  "blocksExampleNeoPixelSummary": "Create one pixel, alternate dim red and off ten times, and explicitly write each buffer change.",
+  "@blocksExampleNeoPixelSummary": {
+    "description": "Summary of the finite standard NeoPixel buffer-and-write example."
+  },
+  "blocksExampleReadButtonTitle": "Read a button",
+  "@blocksExampleReadButtonTitle": {
+    "description": "Title of the digital-input beginner example."
+  },
+  "blocksExampleReadButtonSummary": "Continuously print a pulled-up button input with a short polling delay. It continues until you press Stop.",
+  "@blocksExampleReadButtonSummary": {
+    "description": "Summary of the Read a button example, including its infinite-loop behavior."
+  },
+  "blocksExampleButtonLedTitle": "Button controls LED",
+  "@blocksExampleButtonLedTitle": {
+    "description": "Title of the conditional input-to-output beginner example."
+  },
+  "blocksExampleButtonLedSummary": "Turn an external LED on while an active-low button is pressed. It continues until you press Stop.",
+  "@blocksExampleButtonLedSummary": {
+    "description": "Summary of the Button controls LED example, including its infinite-loop behavior."
+  },
+  "blocksExampleFunctionTitle": "Reusable function",
+  "@blocksExampleFunctionTitle": {
+    "description": "Title of the beginner procedure-and-parameter example."
+  },
+  "blocksExampleFunctionSummary": "Define a message-printing function and call it with an argument.",
+  "@blocksExampleFunctionSummary": {
+    "description": "Summary of the Reusable function example."
+  },
+  "blocksExampleConceptText": "Text",
+  "@blocksExampleConceptText": {
+    "description": "Concept chip for text values."
+  },
+  "blocksExampleConceptConsole": "Console output",
+  "@blocksExampleConceptConsole": {
+    "description": "Concept chip for printed console output."
+  },
+  "blocksExampleConceptVariables": "Variables",
+  "@blocksExampleConceptVariables": {
+    "description": "Concept chip for variables."
+  },
+  "blocksExampleConceptLoops": "Loops",
+  "@blocksExampleConceptLoops": {
+    "description": "Concept chip for loop control."
+  },
+  "blocksExampleConceptTiming": "Timing",
+  "@blocksExampleConceptTiming": {
+    "description": "Concept chip for paced delay."
+  },
+  "blocksExampleConceptGpioOutput": "GPIO output",
+  "@blocksExampleConceptGpioOutput": {
+    "description": "Concept chip for digital GPIO output."
+  },
+  "blocksExampleConceptGpioInput": "GPIO input",
+  "@blocksExampleConceptGpioInput": {
+    "description": "Concept chip for digital GPIO input."
+  },
+  "blocksExampleConceptAddressableRgb": "Addressable RGB",
+  "@blocksExampleConceptAddressableRgb": {
+    "description": "Concept chip for a WS2812-compatible addressable RGB pixel using the standard NeoPixel API."
+  },
+  "blocksExampleConceptConditions": "Conditions",
+  "@blocksExampleConceptConditions": {
+    "description": "Concept chip for conditional branching."
+  },
+  "blocksExampleConceptFunctions": "Functions",
+  "@blocksExampleConceptFunctions": {
+    "description": "Concept chip for reusable procedures."
+  },
+  "blocksExampleConceptParameters": "Parameters",
+  "@blocksExampleConceptParameters": {
+    "description": "Concept chip for function parameters and arguments."
+  },
+  "blocksGpioCategory": "GPIO",
+  "@blocksGpioCategory": {
+    "description": "Localized Blockly toolbox category containing generic digital GPIO blocks."
+  },
+  "blocksGpioPin": "GPIO pin {gpio} mode {mode} pull {pull}",
+  "@blocksGpioPin": {
+    "description": "Localized Blockly GPIO constructor label. The placeholders are replaced by Blockly's visible socket and dropdown markers.",
+    "placeholders": {
+      "gpio": {
+        "type": "String",
+        "example": "%1"
+      },
+      "mode": {
+        "type": "String",
+        "example": "%2"
+      },
+      "pull": {
+        "type": "String",
+        "example": "%3"
+      }
+    }
+  },
+  "blocksGpioWrite": "set {pin} digital value {level}",
+  "@blocksGpioWrite": {
+    "description": "Localized Blockly digital-write label. The placeholders are replaced by Blockly's visible socket and dropdown markers.",
+    "placeholders": {
+      "pin": {
+        "type": "String",
+        "example": "%1"
+      },
+      "level": {
+        "type": "String",
+        "example": "%2"
+      }
+    }
+  },
+  "blocksGpioRead": "read digital value from {pin}",
+  "@blocksGpioRead": {
+    "description": "Localized Blockly digital-read label. The placeholder is replaced by Blockly's visible Pin socket marker.",
+    "placeholders": {
+      "pin": {
+        "type": "String",
+        "example": "%1"
+      }
+    }
+  },
+  "blocksGpioModeInput": "input",
+  "@blocksGpioModeInput": {
+    "description": "GPIO constructor mode dropdown label for digital input."
+  },
+  "blocksGpioModeOutput": "output",
+  "@blocksGpioModeOutput": {
+    "description": "GPIO constructor mode dropdown label for digital output."
+  },
+  "blocksGpioPullNone": "none",
+  "@blocksGpioPullNone": {
+    "description": "GPIO constructor pull dropdown label for no internal pull resistor."
+  },
+  "blocksGpioPullUp": "pull up",
+  "@blocksGpioPullUp": {
+    "description": "GPIO constructor pull dropdown label for the internal pull-up."
+  },
+  "blocksGpioPullDown": "pull down",
+  "@blocksGpioPullDown": {
+    "description": "GPIO constructor pull dropdown label for the internal pull-down."
+  },
+  "blocksGpioLevelLow": "low",
+  "@blocksGpioLevelLow": {
+    "description": "Digital-write level dropdown label for logic low."
+  },
+  "blocksGpioLevelHigh": "high",
+  "@blocksGpioLevelHigh": {
+    "description": "Digital-write level dropdown label for logic high."
+  },
+  "blocksGpioPinTooltip": "Create a MicroPython GPIO pin. Pin availability is board-specific; the Pins reference is informational.",
+  "@blocksGpioPinTooltip": {
+    "description": "Tooltip for the generic MicroPython GPIO constructor block."
+  },
+  "blocksGpioWriteTooltip": "Write a low or high digital value to an output pin.",
+  "@blocksGpioWriteTooltip": {
+    "description": "Tooltip for the generic digital GPIO write block."
+  },
+  "blocksGpioReadTooltip": "Read 0 or 1 from a digital input pin.",
+  "@blocksGpioReadTooltip": {
+    "description": "Tooltip for the generic digital GPIO read block."
+  },
+  "blocksGpioPinRequired": "GPIO pin number is required.",
+  "@blocksGpioPinRequired": {
+    "description": "Generator validation shown when a GPIO constructor has no pin number."
+  },
+  "blocksGpioPinInvalid": "GPIO pin number must be a finite non-negative integer literal.",
+  "@blocksGpioPinInvalid": {
+    "description": "Generator validation shown when a GPIO constructor pin number is invalid."
+  },
+  "blocksGpioModeInvalid": "GPIO pin mode is invalid.",
+  "@blocksGpioModeInvalid": {
+    "description": "Generator validation shown when a GPIO constructor mode token is invalid."
+  },
+  "blocksGpioPullInvalid": "GPIO pull selection is invalid.",
+  "@blocksGpioPullInvalid": {
+    "description": "Generator validation shown when a GPIO constructor pull token is invalid."
+  },
+  "blocksGpioWritePinRequired": "GPIO write requires a Pin input.",
+  "@blocksGpioWritePinRequired": {
+    "description": "Generator validation shown when a digital-write block has no Pin input."
+  },
+  "blocksGpioLevelInvalid": "GPIO output level is invalid.",
+  "@blocksGpioLevelInvalid": {
+    "description": "Generator validation shown when a digital-write level token is invalid."
+  },
+  "blocksGpioReadPinRequired": "GPIO read requires a Pin input.",
+  "@blocksGpioReadPinRequired": {
+    "description": "Generator validation shown when a digital-read block has no Pin input."
+  },
+  "blocksGpioRestoreModeInvalid": "Restored GPIO pin mode is invalid.",
+  "@blocksGpioRestoreModeInvalid": {
+    "description": "Restore validation shown when serialized GPIO mode state is invalid."
+  },
+  "blocksGpioRestorePullInvalid": "Restored GPIO pull selection is invalid.",
+  "@blocksGpioRestorePullInvalid": {
+    "description": "Restore validation shown when serialized GPIO pull state is invalid."
+  },
+  "blocksGpioRestoreLevelInvalid": "Restored GPIO output level is invalid.",
+  "@blocksGpioRestoreLevelInvalid": {
+    "description": "Restore validation shown when serialized GPIO output state is invalid."
+  },
+  "blocksValueMultilineInvalid": "Multiline values are not accepted.",
+  "@blocksValueMultilineInvalid": {
+    "description": "Generator validation appended when a Blockly value socket produces multiline code."
+  },
+  "blocksTimeCategory": "Time",
+  "@blocksTimeCategory": {
+    "description": "Localized Blockly toolbox category containing generic program timing blocks."
+  },
+  "blocksTimeWait": "wait {milliseconds} milliseconds",
+  "@blocksTimeWait": {
+    "description": "Localized Blockly block label. The placeholder is replaced by Blockly's visible value socket marker.",
+    "placeholders": {
+      "milliseconds": {
+        "type": "String",
+        "example": "%1"
+      }
+    }
+  },
+  "blocksTimeTooltip": "Pause this program for an explicit number of milliseconds.",
+  "@blocksTimeTooltip": {
+    "description": "Tooltip for the generic MicroPython millisecond delay block."
+  },
+  "blocksTimeRequired": "Delay duration is required.",
+  "@blocksTimeRequired": {
+    "description": "Generator validation shown when a Time block has no duration value."
+  },
+  "blocksTimeInvalid": "Delay duration must be a finite non-negative integer literal.",
+  "@blocksTimeInvalid": {
+    "description": "Generator validation shown when a Time block duration is not an explicit non-negative integer literal."
+  },
+  "blocksNeoPixelCategory": "NeoPixel",
+  "@blocksNeoPixelCategory": {
+    "description": "Localized Blockly toolbox category containing standard MicroPython NeoPixel blocks."
+  },
+  "blocksNeoPixelCreate": "NeoPixel strip pin {pin} pixels {pixels}",
+  "@blocksNeoPixelCreate": {
+    "description": "Localized standard NeoPixel constructor label. Placeholders are Blockly value sockets.",
+    "placeholders": {
+      "pin": {
+        "type": "String",
+        "example": "%1"
+      },
+      "pixels": {
+        "type": "String",
+        "example": "%2"
+      }
+    }
+  },
+  "blocksNeoPixelRgb": "RGB red {red} green {green} blue {blue}",
+  "@blocksNeoPixelRgb": {
+    "description": "Localized three-channel RGB tuple block label. Placeholders are Blockly value sockets.",
+    "placeholders": {
+      "red": {
+        "type": "String",
+        "example": "%1"
+      },
+      "green": {
+        "type": "String",
+        "example": "%2"
+      },
+      "blue": {
+        "type": "String",
+        "example": "%3"
+      }
+    }
+  },
+  "blocksNeoPixelSetPixel": "set {strip} pixel {index} to {color}",
+  "@blocksNeoPixelSetPixel": {
+    "description": "Localized NeoPixel indexed buffer-assignment block label.",
+    "placeholders": {
+      "strip": {
+        "type": "String",
+        "example": "%1"
+      },
+      "index": {
+        "type": "String",
+        "example": "%2"
+      },
+      "color": {
+        "type": "String",
+        "example": "%3"
+      }
+    }
+  },
+  "blocksNeoPixelFill": "fill {strip} with {color}",
+  "@blocksNeoPixelFill": {
+    "description": "Localized NeoPixel buffer-fill block label.",
+    "placeholders": {
+      "strip": {
+        "type": "String",
+        "example": "%1"
+      },
+      "color": {
+        "type": "String",
+        "example": "%2"
+      }
+    }
+  },
+  "blocksNeoPixelWrite": "show {strip}",
+  "@blocksNeoPixelWrite": {
+    "description": "Localized explicit NeoPixel buffer-transmission block label.",
+    "placeholders": {
+      "strip": {
+        "type": "String",
+        "example": "%1"
+      }
+    }
+  },
+  "blocksNeoPixelCreateTooltip": "Create a standard MicroPython NeoPixel buffer from an explicit Pin and pixel count.",
+  "@blocksNeoPixelCreateTooltip": {
+    "description": "Tooltip for the standard NeoPixel constructor block."
+  },
+  "blocksNeoPixelRgbTooltip": "Build a red, green, blue color tuple. The running board validates channel values.",
+  "@blocksNeoPixelRgbTooltip": {
+    "description": "Tooltip for the composable NeoPixel RGB tuple block."
+  },
+  "blocksNeoPixelSetPixelTooltip": "Change one pixel in the buffer. Use Show to transmit the change.",
+  "@blocksNeoPixelSetPixelTooltip": {
+    "description": "Tooltip for indexed NeoPixel buffer assignment; calls out that it does not write automatically."
+  },
+  "blocksNeoPixelFillTooltip": "Fill the pixel buffer with one color. Use Show to transmit the change.",
+  "@blocksNeoPixelFillTooltip": {
+    "description": "Tooltip for the NeoPixel fill block; calls out that it does not write automatically."
+  },
+  "blocksNeoPixelWriteTooltip": "Transmit the current pixel buffer with the standard write method.",
+  "@blocksNeoPixelWriteTooltip": {
+    "description": "Tooltip for the explicit NeoPixel write block."
+  },
+  "blocksNeoPixelPinRequired": "NeoPixel creation requires a Pin input.",
+  "@blocksNeoPixelPinRequired": {
+    "description": "Generator validation shown when the standard NeoPixel constructor has no Pin."
+  },
+  "blocksNeoPixelPixelsRequired": "NeoPixel creation requires a pixel count.",
+  "@blocksNeoPixelPixelsRequired": {
+    "description": "Generator validation shown when the standard NeoPixel constructor has no pixel count."
+  },
+  "blocksNeoPixelPixelsInvalid": "Pixel count must be a finite positive integer literal.",
+  "@blocksNeoPixelPixelsInvalid": {
+    "description": "Generator validation shown when the standard NeoPixel constructor count is invalid."
+  },
+  "blocksNeoPixelRedRequired": "RGB red value is required.",
+  "@blocksNeoPixelRedRequired": {
+    "description": "Generator validation shown when the RGB block has no red value."
+  },
+  "blocksNeoPixelGreenRequired": "RGB green value is required.",
+  "@blocksNeoPixelGreenRequired": {
+    "description": "Generator validation shown when the RGB block has no green value."
+  },
+  "blocksNeoPixelBlueRequired": "RGB blue value is required.",
+  "@blocksNeoPixelBlueRequired": {
+    "description": "Generator validation shown when the RGB block has no blue value."
+  },
+  "blocksNeoPixelStripRequired": "NeoPixel operation requires a strip input.",
+  "@blocksNeoPixelStripRequired": {
+    "description": "Generator validation shown when a NeoPixel mutation or write has no strip."
+  },
+  "blocksNeoPixelIndexRequired": "NeoPixel assignment requires a pixel index.",
+  "@blocksNeoPixelIndexRequired": {
+    "description": "Generator validation shown when indexed NeoPixel assignment has no index."
+  },
+  "blocksNeoPixelColorRequired": "NeoPixel operation requires an RGB color.",
+  "@blocksNeoPixelColorRequired": {
+    "description": "Generator validation shown when a NeoPixel assignment or fill has no RGB color."
+  },
+
+  "connectAdapterOffTitle": "Bluetooth is off",
+  "@connectAdapterOffTitle": {
+    "description": "Connect surface readiness banner title, shown when the Bluetooth adapter is powered off (BleReadiness.adapterOff)."
+  },
+  "connectAdapterOffDetail": "Turn on Bluetooth to scan for boards.",
+  "@connectAdapterOffDetail": {
+    "description": "Connect surface readiness banner detail for the adapter-off state; tells the user to enable Bluetooth."
+  },
+  "connectUnauthorizedTitle": "Bluetooth permission needed",
+  "@connectUnauthorizedTitle": {
+    "description": "Connect surface readiness banner title, shown when Bluetooth permission was denied or not yet granted (BleReadiness.unauthorized)."
+  },
+  "connectUnauthorizedDetail": "Allow Bluetooth access so PyBLE can find your board. You can change this in Settings.",
+  "@connectUnauthorizedDetail": {
+    "description": "Connect surface readiness banner detail for the unauthorized state. 'PyBLE' is the app wordmark (brand proper noun, rendered verbatim); 'Settings' is the OS settings app."
+  },
+  "connectUnsupportedTitle": "Bluetooth unavailable",
+  "@connectUnsupportedTitle": {
+    "description": "Connect surface readiness banner title, shown when the device has no usable BLE radio (BleReadiness.unsupported)."
+  },
+  "connectUnsupportedDetail": "This device has no supported Bluetooth LE radio.",
+  "@connectUnsupportedDetail": {
+    "description": "Connect surface readiness banner detail for the unsupported state."
+  },
+
+  "connectScanCta": "Scan for boards",
+  "@connectScanCta": {
+    "description": "Primary call-to-action on the Connect surface that starts a filtered BLE scan for PyBLE boards."
+  },
+  "connectScanning": "Scanning…",
+  "@connectScanning": {
+    "description": "Label shown while a BLE scan is in progress."
+  },
+  "connectStopScan": "Stop scan",
+  "@connectStopScan": {
+    "description": "Action that stops an in-progress BLE scan."
+  },
+  "connectRescan": "Scan again",
+  "@connectRescan": {
+    "description": "Action that restarts a BLE scan after one finished (e.g. from the no-boards-found state)."
+  },
+  "connectNoBoardsTitle": "No boards found",
+  "@connectNoBoardsTitle": {
+    "description": "Empty-result title shown when a completed scan found no PyBLE boards."
+  },
+  "connectNoBoardsDetail": "Make sure your board is powered on and running the PyBLE agent, then scan again.",
+  "@connectNoBoardsDetail": {
+    "description": "Empty-result detail for the no-boards-found state. 'PyBLE' is the app wordmark (brand proper noun, rendered verbatim)."
+  },
+  "connectRssiDbm": "{rssi} dBm",
+  "@connectRssiDbm": {
+    "description": "Signal-strength readout for a scanned board. {rssi} is the RSSI in decibel-milliwatts; 'dBm' is a technical unit rendered verbatim and never localized (FR-I18N-4).",
+    "placeholders": {
+      "rssi": {
+        "type": "int",
+        "example": "-52"
+      }
+    }
+  },
+
+  "connectConnectButton": "Connect",
+  "@connectConnectButton": {
+    "description": "Button that connects to a scanned board (runs the GATT + HELLO handshake gate)."
+  },
+  "connectConnecting": "Connecting to {name}…",
+  "@connectConnecting": {
+    "description": "Progress label shown while the handshake to a chosen board runs. {name} is the board's advertised name (label else PyBLE-XXXX), rendered verbatim.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "PyBLE-8F3A"
+      }
+    }
+  },
+  "connectConnected": "Connected to {name}",
+  "@connectConnected": {
+    "description": "Confirmation shown once a board is connected. {name} is the board's advertised name (label else PyBLE-XXXX), rendered verbatim.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "PyBLE-8F3A"
+      }
+    }
+  },
+  "connectDisconnect": "Disconnect",
+  "@connectDisconnect": {
+    "description": "Action that drops the link to the connected board and returns to the scan state."
+  },
+
+  "connectDeviceInfoTitle": "Board info",
+  "@connectDeviceInfoTitle": {
+    "description": "Title of the connected-board information card, which proves the round-trip by showing live DeviceInfo."
+  },
+  "connectDeviceChip": "Chip",
+  "@connectDeviceChip": {
+    "description": "Label for the board's chip target in the board-info card. The value (e.g. esp32, esp32-s3, esp32-c3) is a technical identifier rendered verbatim (FR-I18N-4)."
+  },
+  "connectDeviceMpyVersion": "MicroPython",
+  "@connectDeviceMpyVersion": {
+    "description": "Label for the board's MicroPython version in the board-info card. 'MicroPython' is a product proper noun, rendered verbatim."
+  },
+  "connectDeviceFreeMem": "Free memory",
+  "@connectDeviceFreeMem": {
+    "description": "Label for the board's free heap in the board-info card."
+  },
+  "connectFreeMemBytes": "{bytes} B",
+  "@connectFreeMemBytes": {
+    "description": "Free-memory readout in bytes. {bytes} is the byte count; 'B' is the technical unit for bytes, rendered verbatim (FR-I18N-4).",
+    "placeholders": {
+      "bytes": {
+        "type": "int",
+        "example": "48000"
+      }
+    }
+  },
+
+  "connectUnsupportedFirmwareTitle": "Firmware not compatible",
+  "@connectUnsupportedFirmwareTitle": {
+    "description": "Title of the prompt shown when a board's PBLE/1 proto_version does not match the app (UnsupportedProtocolException)."
+  },
+  "connectUnsupportedFirmwareDetail": "This board's firmware doesn't match this app's protocol. Update the firmware or the app.",
+  "@connectUnsupportedFirmwareDetail": {
+    "description": "Detail of the incompatible-firmware prompt, telling the user to update firmware or app."
+  },
+
+  "connectFailed": "Couldn't connect to the board.",
+  "@connectFailed": {
+    "description": "Error message shown when a connection attempt fails (link drop, timeout, or handshake failure)."
+  },
+  "connectErrorDetailLabel": "Details",
+  "@connectErrorDetailLabel": {
+    "description": "Label preceding the raw diagnostic error text under a connect failure (for HIL debugging)."
+  },
+
+  "connectDiagnosticsTitle": "Diagnostics",
+  "@connectDiagnosticsTitle": {
+    "description": "Title of the live connect diagnostics panel shown for on-hardware debugging."
+  },
+  "connectDiagAdapter": "Bluetooth",
+  "@connectDiagAdapter": {
+    "description": "Diagnostics row label for the Bluetooth adapter state."
+  },
+  "connectDiagAdapterOn": "On",
+  "@connectDiagAdapterOn": {
+    "description": "Diagnostics value: the Bluetooth adapter is powered on and authorized (BleReadiness.ready)."
+  },
+  "connectDiagAdapterOff": "Off",
+  "@connectDiagAdapterOff": {
+    "description": "Diagnostics value: the Bluetooth adapter is powered off (BleReadiness.adapterOff)."
+  },
+  "connectDiagAdapterUnauthorized": "Not permitted",
+  "@connectDiagAdapterUnauthorized": {
+    "description": "Diagnostics value: Bluetooth permission was denied (BleReadiness.unauthorized)."
+  },
+  "connectDiagAdapterUnsupported": "Unsupported",
+  "@connectDiagAdapterUnsupported": {
+    "description": "Diagnostics value: the device has no usable BLE radio (BleReadiness.unsupported)."
+  },
+  "connectDiagScan": "Scan",
+  "@connectDiagScan": {
+    "description": "Diagnostics row label for whether a scan is currently running."
+  },
+  "connectDiagScanIdle": "Idle",
+  "@connectDiagScanIdle": {
+    "description": "Diagnostics value: no scan is currently running."
+  },
+  "connectDiagHitCount": "Boards seen: {count}",
+  "@connectDiagHitCount": {
+    "description": "Diagnostics readout of how many distinct boards the current scan has seen.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+  "connectDiagLastError": "Last error",
+  "@connectDiagLastError": {
+    "description": "Diagnostics row label preceding the most recent error text (empty when there is none)."
+  },
+
+  "runDisconnectedHint": "Connect a board to run.",
+  "@runDisconnectedHint": {
+    "description": "Hint shown for the Run/Stop/Soft-reboot toolbar actions while no board is connected — the run actions are disabled (FR-RUN-5)."
+  },
+  "runBusyMessage": "A program is already running.",
+  "@runBusyMessage": {
+    "description": "Notice shown when a Run is attempted while the board is already running (the board answered EBUSY). Surfaced honestly, never swallowed (FR-RUN-3)."
+  },
+  "runFailed": "Run failed: {reason}",
+  "@runFailed": {
+    "description": "Notice shown when a run-control action (Run/Stop/Soft-reboot) fails for any reason other than EBUSY. {reason} is the typed PBLE/1 status name, a technical identifier rendered verbatim (FR-I18N-4). Surfaced honestly, never swallowed (FR-RUN-3).",
+    "placeholders": {
+      "reason": { "type": "String" }
+    }
+  },
+  "runStateIdle": "Idle",
+  "@runStateIdle": {
+    "description": "Run-state indicator label: no program is running on the board (RunState.idle)."
+  },
+  "runStateRunning": "Running",
+  "@runStateRunning": {
+    "description": "Run-state indicator label: user code is executing on the board (RunState.running)."
+  },
+  "runStateDone": "Finished",
+  "@runStateDone": {
+    "description": "Run-state indicator label: the last run finished normally (RunState.done)."
+  },
+  "runStateError": "Error",
+  "@runStateError": {
+    "description": "Run-state indicator label: the last run ended with an uncaught error/traceback (RunState.error). The raw traceback still renders in the console (FR-ERR-2)."
+  },
+
+  "editorHintText": "Write MicroPython here…",
+  "@editorHintText": {
+    "description": "Placeholder hint shown in the empty editor buffer. 'MicroPython' is a product proper noun, rendered verbatim."
+  },
+  "editorUnsavedLabel": "Unsaved changes",
+  "@editorUnsavedLabel": {
+    "description": "Indicator shown when the current editor document has unsaved edits (EditorDocument.dirty)."
+  },
+  "editorSmartPunctuationWarning": "{count, plural, one{1 curly quote or dash will not compile} other{{count} curly quotes or dashes will not compile}}",
+  "@editorSmartPunctuationWarning": {
+    "description": "Warning shown when the editor buffer contains typographic characters (curly quotes, en/em dashes, non-breaking spaces) that MicroPython cannot parse — usually from pasted text or iPadOS Smart Punctuation. Tapping it converts them to ASCII (FR-ERR).",
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "editorFixSmartPunctuation": "Convert to plain quotes",
+  "@editorFixSmartPunctuation": {
+    "description": "Action that rewrites typographic characters in the editor buffer to their ASCII equivalents so the code compiles."
+  },
+  "editorSmartPunctuationFixed": "{count, plural, one{Converted 1 character to plain ASCII} other{Converted {count} characters to plain ASCII}}",
+  "@editorSmartPunctuationFixed": {
+    "description": "Confirmation after converting typographic characters in the editor buffer to ASCII.",
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "editorSave": "Save to board",
+  "@editorSave": {
+    "description": "Tooltip/label for the editor Save action, which writes the current buffer to the board over the Connection seam (FR-EDIT-2)."
+  },
+  "editorSaveDisconnectedHint": "Connect a board to save.",
+  "@editorSaveDisconnectedHint": {
+    "description": "Tooltip shown for the disabled editor Save action while no board is connected (FR-EDIT-2)."
+  },
+  "editorSaved": "Saved {path}",
+  "@editorSaved": {
+    "description": "Confirmation shown after the editor buffer is written to the board and CRC-verified. {path} is a board filesystem path — a technical identifier rendered verbatim, never localized (FR-I18N-4).",
+    "placeholders": {
+      "path": { "type": "String" }
+    }
+  },
+  "editorSaveFailed": "Could not save to the board: {reason}",
+  "@editorSaveFailed": {
+    "description": "Error shown when writing the editor buffer to the board fails. {reason} is the typed PBLE/1 failure reason. Surfaced honestly, never swallowed (FR-EDIT-2, FR-RUN-3).",
+    "placeholders": {
+      "reason": { "type": "String" }
+    }
+  },
+  "editorDiscardTitle": "Discard unsaved changes?",
+  "@editorDiscardTitle": {
+    "description": "Title of the confirmation dialog shown when an action (New file) would discard a dirty editor buffer."
+  },
+  "editorDiscardDetail": "This buffer has edits that have not been written to the board. Starting a new file will lose them.",
+  "@editorDiscardDetail": {
+    "description": "Body of the discard-unsaved-changes confirmation dialog."
+  },
+  "editorDiscardConfirm": "Discard",
+  "@editorDiscardConfirm": {
+    "description": "Destructive confirm button on the discard-unsaved-changes dialog."
+  },
+
+  "consoleInputHint": "Type input, then send…",
+  "@consoleInputHint": {
+    "description": "Placeholder hint in the console stdin input row, where the user types text to send to the running program's stdin (FR-CONSOLE-4)."
+  },
+  "consoleSendTooltip": "Send input",
+  "@consoleSendTooltip": {
+    "description": "Tooltip for the console send action (sends the typed input line to the program's stdin)."
+  },
+  "consoleClearTooltip": "Clear console",
+  "@consoleClearTooltip": {
+    "description": "Tooltip for the console clear action (empties the console output buffer)."
+  },
+  "consoleCopyTooltip": "Copy output",
+  "@consoleCopyTooltip": {
+    "description": "Tooltip for the console copy action (copies the console output to the clipboard). Optional affordance (FR-CONSOLE-6)."
+  },
+  "consoleExpandTooltip": "Expand console",
+  "@consoleExpandTooltip": {
+    "description": "Tooltip for expanding the on-demand console beneath focused landscape Blocks."
+  },
+  "consoleCollapseTooltip": "Collapse console",
+  "@consoleCollapseTooltip": {
+    "description": "Tooltip for collapsing the on-demand console beneath focused landscape Blocks."
+  },
+  "consoleResumeAutoscroll": "Resume auto-scroll",
+  "@consoleResumeAutoscroll": {
+    "description": "Action shown when the user has scrolled up (scroll-lock engaged); tapping it re-enables auto-scroll to the latest output (FR-CONSOLE-5)."
+  },
+  "consoleInputDisabledHint": "Connect a board to send input.",
+  "@consoleInputDisabledHint": {
+    "description": "Hint shown in place of the console stdin row while no board is connected — input is disabled."
+  },
+
+  "filesActionUpload": "Upload current file",
+  "@filesActionUpload": {
+    "description": "Action that uploads the current editor buffer to the connected board's current folder (putFile)."
+  },
+  "filesActionRefresh": "Refresh",
+  "@filesActionRefresh": {
+    "description": "Action that re-lists the current board folder (listDir)."
+  },
+  "filesActionNewFolder": "New folder",
+  "@filesActionNewFolder": {
+    "description": "Action that creates a new directory in the current board folder (mkdir)."
+  },
+  "filesGoUp": "Up one folder",
+  "@filesGoUp": {
+    "description": "Tooltip for the navigate-up action in the file explorer; bounded at the board's filesystem root."
+  },
+  "filesOpenInEditor": "Open in editor",
+  "@filesOpenInEditor": {
+    "description": "Action that downloads a board file (getFile) and opens it in the editor buffer."
+  },
+  "filesOpenAsBlocks": "Open as Blocks",
+  "@filesOpenAsBlocks": {
+    "description": "Action for a Python board file that downloads a read-only snapshot and starts the guarded Python-to-Blocks preview."
+  },
+  "filesFolderEmpty": "This folder is empty.",
+  "@filesFolderEmpty": {
+    "description": "Message shown when a listed board folder contains no entries."
+  },
+  "filesSizeBytes": "{bytes} B",
+  "@filesSizeBytes": {
+    "description": "File-size readout for a listed board file. {bytes} is the byte count; 'B' is the technical unit for bytes, rendered verbatim and never localized (FR-I18N-4).",
+    "placeholders": {
+      "bytes": {
+        "type": "int",
+        "example": "1024"
+      }
+    }
+  },
+  "filesNameFieldLabel": "Name",
+  "@filesNameFieldLabel": {
+    "description": "Field label in the new-file / new-folder / rename dialogs for the entry name. The value the user types (a filename) is a technical identifier and stays ASCII (FR-I18N-4)."
+  },
+
+  "filesUploadingProgress": "Uploading {name}…",
+  "@filesUploadingProgress": {
+    "description": "Progress label shown while uploading the current buffer to the board. {name} is the target filename, a technical identifier rendered verbatim (FR-I18N-4).",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "main.py"
+      }
+    }
+  },
+  "filesOpeningProgress": "Opening {name}…",
+  "@filesOpeningProgress": {
+    "description": "Progress label shown while downloading a board file into the editor. {name} is the filename, a technical identifier rendered verbatim (FR-I18N-4).",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "main.py"
+      }
+    }
+  },
+
+  "filesNewFileTitle": "New file",
+  "@filesNewFileTitle": {
+    "description": "Title of the create-new-file dialog."
+  },
+  "filesNewFolderTitle": "New folder",
+  "@filesNewFolderTitle": {
+    "description": "Title of the create-new-folder dialog."
+  },
+  "filesRenameTitle": "Rename {name}",
+  "@filesRenameTitle": {
+    "description": "Title of the rename dialog. {name} is the current filename, a technical identifier rendered verbatim (FR-I18N-4).",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "old.py"
+      }
+    }
+  },
+  "filesDeleteConfirmTitle": "Delete {name}?",
+  "@filesDeleteConfirmTitle": {
+    "description": "Title of the delete-confirmation dialog. {name} is the entry being deleted, a technical identifier rendered verbatim (FR-I18N-4).",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "main.py"
+      }
+    }
+  },
+  "filesDeleteConfirmBody": "This permanently removes it from the board.",
+  "@filesDeleteConfirmBody": {
+    "description": "Body of the delete-confirmation dialog, warning the deletion is permanent."
+  },
+
+  "commonCancel": "Cancel",
+  "@commonCancel": {
+    "description": "Generic Cancel button, shared across dialogs."
+  },
+  "commonCreate": "Create",
+  "@commonCreate": {
+    "description": "Generic Create button, used to confirm the new-file / new-folder dialogs."
+  },
+  "commonRename": "Rename",
+  "@commonRename": {
+    "description": "Generic Rename button, used to confirm the rename dialog."
+  },
+  "commonDelete": "Delete",
+  "@commonDelete": {
+    "description": "Generic Delete button, used to confirm the delete dialog."
+  },
+
+  "filesErrorNotFound": "That item no longer exists on the board.",
+  "@filesErrorNotFound": {
+    "description": "File-operation error message for FileErrorKind.notFound (typed ENOENT)."
+  },
+  "filesErrorPermission": "The board wouldn't allow that.",
+  "@filesErrorPermission": {
+    "description": "File-operation error message for FileErrorKind.permission (typed EACCES, e.g. deleting a non-empty directory)."
+  },
+  "filesErrorStorageFull": "The board's storage is full.",
+  "@filesErrorStorageFull": {
+    "description": "File-operation error message for FileErrorKind.storageFull (typed ENOSPC)."
+  },
+  "filesErrorIo": "A storage error occurred on the board.",
+  "@filesErrorIo": {
+    "description": "File-operation error message for FileErrorKind.io (typed EIO)."
+  },
+  "filesErrorCrc": "The transfer was corrupted — nothing was changed.",
+  "@filesErrorCrc": {
+    "description": "File-operation error message for FileErrorKind.crc (typed ECRC); the transfer failed its whole-file CRC/size check and made no change (FR-FILES-4)."
+  },
+  "filesErrorBusy": "The board is busy. Stop the running program and try again.",
+  "@filesErrorBusy": {
+    "description": "File-operation error message for FileErrorKind.busy (typed EBUSY, e.g. a program is running or a transfer is active)."
+  },
+  "filesErrorUnsupported": "The board doesn't support that operation.",
+  "@filesErrorUnsupported": {
+    "description": "File-operation error message for FileErrorKind.unsupported (typed EUNSUPPORTED)."
+  },
+  "filesErrorRange": "The transfer didn't complete.",
+  "@filesErrorRange": {
+    "description": "File-operation error message for FileErrorKind.range (typed ERANGE, e.g. an incomplete transfer or an over-long path)."
+  },
+  "filesErrorBadRequest": "That request wasn't valid.",
+  "@filesErrorBadRequest": {
+    "description": "File-operation error message for FileErrorKind.badRequest (typed EBADREQ)."
+  },
+  "filesErrorNotConnected": "Connect a board to manage files.",
+  "@filesErrorNotConnected": {
+    "description": "File-operation error message for FileErrorKind.notConnected (a verb reached while the session was not connected)."
+  },
+  "filesErrorGeneric": "Something went wrong. Please try again.",
+  "@filesErrorGeneric": {
+    "description": "File-operation error message for FileErrorKind.generic (any other/internal failure, e.g. EINTERNAL)."
+  },
+
+  "filesPaneCollapse": "Collapse files",
+  "@filesPaneCollapse": {
+    "description": "Tooltip for the button that collapses the landscape left-hand Files sidebar to a thin rail."
+  },
+  "filesPaneExpand": "Show files",
+  "@filesPaneExpand": {
+    "description": "Tooltip for the button that re-expands the collapsed landscape left-hand Files sidebar."
+  },
+
+  "filesErrorTimeout": "The transfer stalled. Check the board and try again.",
+  "@filesErrorTimeout": {
+    "description": "File-operation error message for FileErrorKind.timeout (the transfer's data stream went silent past the inactivity ceiling — typed PbleTimeoutException)."
+  },
+  "filesTransferStatus": "{done} of {total} · {speed}",
+  "@filesTransferStatus": {
+    "description": "Live transfer status line under the progress bar. The placeholders are pre-formatted technical values rendered verbatim (FR-I18N-4): done/total are byte counts like '4.1 kB', speed is a rate like '3.2 kB/s' (or '…' before the first measurement).",
+    "placeholders": {
+      "done": {"type": "String", "example": "4.1 kB"},
+      "total": {"type": "String", "example": "11.9 kB"},
+      "speed": {"type": "String", "example": "3.2 kB/s"}
+    }
+  },
+
+  "editorConvertToBlocks": "Convert Python to Blocks",
+  "@editorConvertToBlocks": {
+    "description": "Tooltip for the explicit Editor action that prepares a bounded local Python-to-Blockly conversion."
+  },
+  "pythonBlocksCannotConvertTitle": "This Python cannot be converted yet",
+  "@pythonBlocksCannotConvertTitle": {
+    "description": "Title of the strict Python-to-Blocks diagnostic dialog."
+  },
+  "pythonBlocksErrorCount": "{count, plural, =1{1 conversion error} other{{count} conversion errors}}",
+  "@pythonBlocksErrorCount": {
+    "description": "Accessible summary shown above the Python-to-Blocks diagnostic list.",
+    "placeholders": {
+      "count": {"type": "int", "example": "2"}
+    }
+  },
+  "pythonBlocksDiagnostic": "Line {line}, column {column}: this construct is outside the supported beginner subset ({code}).",
+  "@pythonBlocksDiagnostic": {
+    "description": "Localized source-positioned explanation of one strict importer diagnostic. The stable code is a technical identifier rendered verbatim.",
+    "placeholders": {
+      "line": {"type": "int", "example": "3"},
+      "column": {"type": "int", "example": "5"},
+      "code": {"type": "String", "example": "unsupported_call"}
+    }
+  },
+  "pythonBlocksInvalidTargetPath": "This file cannot become a Blocks target because its Python or companion path is invalid or exceeds PBLE/1's 128-byte limit: {path}",
+  "@pythonBlocksInvalidTargetPath": {
+    "description": "Diagnostic for a non-canonical, non-Python, or overlong dynamic Blocks target path.",
+    "placeholders": {
+      "path": {"type": "String", "example": "/main.py"}
+    }
+  },
+  "pythonBlocksExactTitle": "Review the saved block workspace",
+  "@pythonBlocksExactTitle": {
+    "description": "Title shown when an exact source-bound Blockly companion was recovered."
+  },
+  "pythonBlocksExactDetail": "PyBLE found the exact block workspace saved with this Python file. Review the regenerated Python before restoring it.",
+  "@pythonBlocksExactDetail": {
+    "description": "Explanation for exact companion recovery."
+  },
+  "pythonBlocksImportTitle": "Review the converted blocks",
+  "@pythonBlocksImportTitle": {
+    "description": "Title shown for a bounded Python-to-Blocks conversion preview."
+  },
+  "pythonBlocksImportDetail": "PyBLE converted only the supported beginner subset. Compare this Python generated by the real block workspace before continuing.",
+  "@pythonBlocksImportDetail": {
+    "description": "Explanation for the bounded importer preview."
+  },
+  "pythonBlocksNoBoardAction": "Previewing or converting does not save or run anything on the board.",
+  "@pythonBlocksNoBoardAction": {
+    "description": "Safety note in the Python-to-Blocks review."
+  },
+  "pythonBlocksCompanionInvalid": "The saved block record was invalid, so PyBLE used the strict Python importer.",
+  "@pythonBlocksCompanionInvalid": {
+    "description": "Notice when a malformed exact-workspace companion was rejected."
+  },
+  "pythonBlocksCompanionStale": "The Python has changed since its block workspace was saved, so PyBLE used the strict Python importer.",
+  "@pythonBlocksCompanionStale": {
+    "description": "Notice when the companion no longer matches the exact Python source."
+  },
+  "pythonBlocksCompanionUnreadable": "The saved block record could not be read, so PyBLE used the strict Python importer.",
+  "@pythonBlocksCompanionUnreadable": {
+    "description": "Notice when the companion board read failed for a reason other than not-found."
+  },
+  "pythonBlocksCreate": "Create blocks",
+  "@pythonBlocksCreate": {
+    "description": "Confirmation action when the current Blocks workspace is structurally empty."
+  },
+  "pythonBlocksReplace": "Replace workspace",
+  "@pythonBlocksReplace": {
+    "description": "Destructive confirmation action when imported Python will replace a nonempty Blocks workspace."
+  },
+  "pythonBlocksSourceChanged": "The Editor source changed while the preview was being prepared. Convert again to review the latest code.",
+  "@pythonBlocksSourceChanged": {
+    "description": "Stale-candidate warning; the old preview is never committed."
+  },
+  "pythonBlocksLoaded": "Blocks are ready. Nothing has been saved or run.",
+  "@pythonBlocksLoaded": {
+    "description": "Success announcement after production-host acknowledgement and explicit commit."
+  },
+  "pythonBlocksFailed": "Could not prepare blocks: {reason}",
+  "@pythonBlocksFailed": {
+    "description": "Contained conversion/host failure. Reason is a technical exception identifier.",
+    "placeholders": {
+      "reason": {"type": "String", "example": "BlocksSnapshotTimeout"}
+    }
+  }
+}

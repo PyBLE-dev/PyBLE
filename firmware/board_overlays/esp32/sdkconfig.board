@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: MIT
+# Part of PyBLE (https://pyble.dev) — see /LICENSE.
+#
+# Layer-2 sdkconfig fragment for the classic ESP32. BLE (NimBLE) is the primary
+# transport (PBLE/1 §2). Custom partition table sized for the empty agent.
+
+CONFIG_BT_ENABLED=y
+CONFIG_BT_NIMBLE_ENABLED=y
+
+# Strip build time and host paths from release bytes (BLD-14).
+CONFIG_APP_REPRODUCIBLE_BUILD=y
+
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y

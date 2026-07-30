@@ -1,0 +1,318 @@
+<!-- SPDX-License-Identifier: MIT -->
+<!-- Part of PyBLE (https://pyble.dev) — see /LICENSE. -->
+
+# Website deployment runbook
+
+The canonical site is a static Next.js export served by Nginx on the production
+VPS behind Cloudflare. A successful build does not by itself authorize a public
+deployment.
+
+## Architecture
+
+```text
+visitor → Cloudflare → HTTPS origin → Nginx → /srv/pyble/current
+                                                   ↓
+                         /srv/pyble/releases/<timestamp>-<commit>
+
+versioned firmware → /srv/pyble/firmware/v<version>/
+```
+
+`out/` is the VPS production artifact. `dist/` is the separately tested
+Sites/vinext owner-preview artifact; never deploy it to Nginx.
+Website releases and the persistent firmware store have separate lifecycles so
+a website-only deployment cannot remove or replace an immutable firmware URL.
+
+The VPS needs no Node.js process, application service, database, runtime
+environment variable, or repository checkout.
+
+## Release input
+
+From `tools/web/`:
+
+```sh
+npm ci
+NEXT_TELEMETRY_DISABLED=1 npm run check
+```
+
+Review at least:
+
+- home at phone, portrait-tablet, landscape-tablet, and desktop widths;
+- home and metadata clearly separate the capability-defined MicroPython + BLE
+  platform vision from the targets validated by the current release;
+- `/privacy`, including the effective date and public contact address;
+- `/support`, including the public contact address;
+- `/flash`, confirming the install button is still disabled unless the
+  firmware release gate is fully satisfied;
+- `out/robots.txt`, `out/sitemap.xml`, and `out/manifest.webmanifest`;
+- `out/WEBSITE_THIRD_PARTY_LICENSES.txt`, generated from the exact production
+  dependency closure;
+- the generated canonical URL on every route;
+- the absence of third-party runtime scripts, fonts, analytics, and trackers;
+  and
+- `dist/` only as the owner-preview compatibility gate described in the
+  package README.
+
+The immutable deployment input is the exact committed source revision that
+produced the checked `out/` export.
+
+## Stage a qualified firmware release
+
+The normal build and deploy path contains no firmware and keeps the installer
+unavailable. Do not put release bytes in `tools/web/public/`. Generate the
+firmware release bundle outside this package, including `release.json`,
+`release.schema.json`, both current exact profile directories, release and
+recovery documents, and conventional full-coverage `SHA256SUMS`. The deferred
+`esp32-c3-4mb` directory must be absent from the current pre-v1 bundle.
+
+For an all-HIL-passed public bundle:
+
+```sh
+staged_root=$(mktemp -d)
+export PYBLE_FIRMWARE_LICENSE_EVIDENCE_DIR=/absolute/path/to/license-evidence
+export PYBLE_FIRMWARE_LICENSE_BUILD_ROOT=/absolute/path/to/release-build-root
+
+PYBLE_FIRMWARE_BUNDLE_DIR=/absolute/path/to/firmware-bundle \
+PYBLE_FIRMWARE_OUTPUT_DIR="${staged_root}" \
+PYBLE_FLASH_DEPLOYMENT=public \
+npm run firmware:stage
+
+PYBLE_FIRMWARE_STAGED_ROOT="${staged_root}" \
+deploy/vps/deploy.sh <ssh-user>@<vps-host>
+```
+
+Before this command, the exact local tag `firmware-v<version>` must exist as an
+annotated tag and peel directly to the full commit recorded by `release.json`
+at `provenance.pyble.commit`. The helper binds the tag object and peeled commit
+before and after the website build and again before upload.
+
+Public and protected-candidate validation require the explicit license-evidence
+and release-build paths shown above. The evidence directory must be the fresh,
+reviewed output for those exact build inputs and must remain outside both the
+source and build trees. Keep both variables exported through deployment because
+the helper repeats canonical public validation for the private trusted staged
+snapshot.
+
+The deploy helper canonically validates the caller staging, requires an
+all-HIL-passed public descriptor, and copies exactly that tree into a mode-0700
+private snapshot. It revalidates the snapshot and uses it for the production
+build, never the mutable caller directory.
+
+Immediately before upload, the helper reruns canonical public validation and
+file-for-file parity against the final `out/firmware` tree. It then copies all
+of final `out/` to a separate mode-0700, read-only upload snapshot, revalidates
+firmware there, and generates a whole-site SHA-256 inventory. Only that
+snapshot is passed to `rsync`. The inventory's digest travels separately; the
+VPS authenticates it, rejects non-regular nodes, compares the exact remote file
+set, and verifies every listed hash before publishing firmware or changing any
+website symlink. Firmware and upload evidence remain available through this
+remote verification. A caller-supplied evidence or inventory directory is
+never trusted. The helper retrieves every published byte afterward.
+
+For a pending release candidate, stage with both explicit controls:
+
+```sh
+PYBLE_FIRMWARE_BUNDLE_DIR=/absolute/path/to/firmware-bundle \
+PYBLE_FIRMWARE_OUTPUT_DIR="${staged_root}" \
+PYBLE_FIRMWARE_LICENSE_EVIDENCE_DIR=/absolute/path/to/license-evidence \
+PYBLE_FIRMWARE_LICENSE_BUILD_ROOT=/absolute/path/to/release-build-root \
+PYBLE_FLASH_DEPLOYMENT=candidate \
+PYBLE_FLASH_ACCESS_CONTROLLED=1 \
+npm run firmware:stage
+```
+
+Build the protected Sites artifact from the external tree without copying
+firmware into the source `public/` directory:
+
+```sh
+PYBLE_FIRMWARE_STAGED_ROOT="${staged_root}" \
+PYBLE_FLASH_SELECTION_FILE="${staged_root}/.pyble-firmware-release-selection.json" \
+PYBLE_FIRMWARE_LICENSE_EVIDENCE_DIR=/absolute/path/to/license-evidence \
+PYBLE_FIRMWARE_LICENSE_BUILD_ROOT=/absolute/path/to/release-build-root \
+NEXT_TELEMETRY_DISABLED=1 \
+npm run check
+```
+
+The Sites adapter revalidates the staged descriptor, checksums, manifests, and
+bytes immediately before it copies the immutable tree into `dist/client/`.
+The staged root and `PYBLE_FLASH_SELECTION_FILE` are an inseparable pair: the
+selector must be the exact descriptor inside that root, and supplying either
+one without the other is rejected.
+Deploy that artifact only behind enforced authentication. The boolean is an
+attestation to the fail-closed build policy, not access control itself. Never
+send a candidate through the public VPS helper; it accepts only public releases
+whose two final-byte HIL statuses are both `passed`.
+
+## First-time VPS bootstrap
+
+Use Ubuntu 24.04 LTS or an equivalent release with systemd 254 or newer. Install
+the distribution's Nginx, Certbot, and rsync packages. Create:
+
+```text
+/srv/pyble/releases/
+/srv/pyble/firmware/
+/var/lib/letsencrypt/.well-known/acme-challenge/
+```
+
+Install the repository-owned Nginx files:
+
+| Repository file                            | Server path                                                        |
+| ------------------------------------------ | ------------------------------------------------------------------ |
+| `deploy/nginx/pyble-security-headers.conf` | `/etc/nginx/snippets/pyble-security-headers.conf`                  |
+| `deploy/nginx/00-pyble-http.conf`          | `/etc/nginx/sites-available/00-pyble-http.conf`                    |
+| `deploy/nginx/05-default-deny.conf`        | `/etc/nginx/sites-available/05-default-deny.conf`                  |
+| `deploy/nginx/10-pyble-dev-https.conf`     | `/etc/nginx/sites-available/10-pyble-dev-https.conf`               |
+| `deploy/nginx/20-pyble-org-https.conf`     | `/etc/nginx/sites-available/20-pyble-org-https.conf`               |
+| `deploy/vps/reload-nginx-after-renewal.sh` | `/etc/letsencrypt/renewal-hooks/deploy/reload-nginx-after-renewal` |
+
+Enable only `00-pyble-http.conf` and `05-default-deny.conf` before certificate
+issuance. Remove the distribution's default site, run `nginx -t`, and reload
+Nginx.
+
+Issue the canonical certificate through the persistent webroot:
+
+```sh
+certbot certonly \
+  --webroot \
+  --webroot-path /var/lib/letsencrypt \
+  --domain pyble.dev \
+  --domain www.pyble.dev
+```
+
+Then enable `10-pyble-dev-https.conf`, run `nginx -t`, reload Nginx, and verify
+that `certbot renew --dry-run --run-deploy-hooks` succeeds. The Certbot timer
+owns renewal, and the deploy hook validates and reloads Nginx after Certbot
+installs a renewed certificate.
+
+At Cloudflare:
+
+- proxy the website records;
+- use SSL/TLS mode **Full (strict)**, never Flexible;
+- preserve the origin's `Cache-Control: no-transform` directive so launch-route
+  HTML remains byte-identical to the checked export and Cloudflare does not
+  rewrite contact addresses or inject an email-decoder script;
+- keep `pyble.dev` as the canonical content host; and
+- configure the `.org` redirect at the edge after `.org` DNS is active.
+
+The `.dev` registry is HTTPS-enforced. Do not announce the site until a fresh
+browser can load it without a certificate warning.
+
+## Deploy a release
+
+The deploy helper refuses every `tools/web/.env*` filesystem node before it
+chooses a deployment mode, so Next cannot inject an inherited selector or
+other unreviewed build input. It also refuses a dirty source tree, freezes the
+full 40-character HEAD before the build, and proves the same clean HEAD again
+after building and immediately before upload. It records that identity in
+`out/.pyble-source-commit`, which the VPS validates before activation. The
+helper runs the complete release gate, uploads only the private trusted
+snapshot into a new immutable website release directory, validates the
+whole-site inventory, required files, optional firmware checksums, and Nginx
+configuration,
+publishes a new firmware version atomically under `/srv/pyble/firmware/`,
+atomically switches `/srv/pyble/current`, reloads Nginx, and performs public
+smoke tests. Existing firmware versions are retained; exact reuse is a no-op,
+and a byte difference under an existing version is release-blocking. Before
+the symlink switch, it starts a systemd rollback watchdog independent of the
+SSH session. The watchdog restores the preceding website release unless the
+complete public smoke suite succeeds. Confirmation itself runs as a detached,
+waited systemd transaction, stops the watchdog, and proves both transient units
+inactive before activation is reported successful. Both transient jobs disable
+systemd's command-argument environment expansion so their embedded shell
+programs arrive byte-for-byte and expand variables only inside Bash.
+The helper rejects a caller-supplied `PYBLE_FLASH_SELECTION_FILE`; it derives
+that path only from a freshly verified staged root. A website-only run clears
+and then proves the absence of `out/firmware` before packaging.
+
+From the repository root:
+
+```sh
+tools/web/deploy/vps/deploy.sh <ssh-user>@<vps-host>
+```
+
+The SSH target is an argument so no host address or private-key path is stored
+in the repository. Authentication must be non-interactive and key-based.
+
+## `pyble.org` activation
+
+`pyble.org` is not a second content origin. After both `pyble.org` and
+`www.pyble.org` have proxied Cloudflare DNS records targeting the production
+origin:
+
+```sh
+certbot certonly \
+  --webroot \
+  --webroot-path /var/lib/letsencrypt \
+  --domain pyble.org \
+  --domain www.pyble.org
+```
+
+Enable `20-pyble-org-https.conf`, validate and reload Nginx, then configure the
+Cloudflare redirect with these semantics:
+
+```text
+https://pyble.org/<path>?<query>
+  → 308 https://pyble.dev/<path>?<query>
+```
+
+Apply the same rule to `www.pyble.org`. Test `/`, `/privacy`, `/support`, and a
+URL containing a query string.
+
+## Security baseline
+
+- Permit only SSH, HTTP, and HTTPS through the host/provider firewalls.
+- Keep SSH key authentication working before disabling password authentication.
+- Test a second SSH connection before ending the bootstrap session.
+- Apply supported operating-system security updates and keep unattended
+  security upgrades enabled.
+- Keep SSH keys, TLS private keys, Cloudflare credentials, and backups outside
+  the repository.
+- Do not expose a Node.js port; Nginx is the only website process.
+
+Restricting origin web ports to Cloudflare address ranges or enabling
+Authenticated Origin Pulls is a useful later hardening step, but it must include
+an explicit recovery path so a Cloudflare configuration error cannot lock out
+certificate renewal.
+
+## Post-deploy smoke test
+
+```sh
+curl -fsSI https://pyble.dev/
+curl -fsSI https://pyble.dev/privacy
+curl -fsSI https://pyble.dev/support
+curl -fsSI https://pyble.dev/flash
+curl -fsSI 'https://www.pyble.dev/privacy?source=redirect-check'
+curl -fsSI 'https://pyble.org/privacy?source=redirect-check'
+test "$(curl -sS -o /dev/null -w '%{http_code}' \
+  https://pyble.dev/not-found-smoke)" = 404
+```
+
+Confirm:
+
+- the final URL is canonical and redirects preserve path/query;
+- HTML returns `Cache-Control: no-cache, no-transform`, remains byte-identical
+  to the checked export through Cloudflare, and revalidates while
+  `/_next/static/` assets are immutable;
+- versioned `/firmware/` assets, when present, are immutable and serve JSON and
+  binary files with their explicit safe MIME types;
+- the manifest uses `application/manifest+json`;
+- the reviewed security headers are present;
+- no third-party runtime request appears; and
+- Cloudflare reports the origin connection as Full (strict).
+
+Then inspect the pages in a real browser with JavaScript disabled,
+keyboard-only navigation, and reduced motion enabled.
+
+## Rollback
+
+List `/srv/pyble/releases/`, choose the preceding checked release, create a
+temporary symlink to that exact directory, and atomically replace
+`/srv/pyble/current`. Run `nginx -t` before the switch and reload Nginx after
+it.
+
+Never delete the active release. Retain at least one preceding known-good
+release until the replacement has passed public validation. Website rollback
+does not mutate `/srv/pyble/firmware/`: those version paths remain available
+and immutable independently of the selected website release. An interrupted
+deployment may leave a transient `pyble-activation-*.timer`; it restores the
+preceding release after 15 minutes unless the deploy helper has confirmed the
+successful production smoke test and stopped it.
