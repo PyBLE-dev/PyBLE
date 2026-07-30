@@ -443,8 +443,7 @@ jobs:
           set -euo pipefail
           timeout --signal=TERM --kill-after=30s 20m \
             flutter test \
-            integration_test/about_page_test.dart \
-            integration_test/blockly_webview_test.dart \
+            integration_test/android_smoke_test.dart \
             -d "$PYBLE_ANDROID_SERIAL" \
             --reporter expanded \
             2>&1 | tee "$PYBLE_ANDROID_LOG_DIR/flutter-test.log"
