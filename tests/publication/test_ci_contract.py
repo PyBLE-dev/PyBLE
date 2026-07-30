@@ -60,7 +60,7 @@ class CiContractTest(unittest.TestCase):
                 f"every testWidgets call in {relative} must carry the golden tag",
             )
 
-    def test_android_avd_uses_bounded_storage(self) -> None:
+    def test_android_avd_reclaims_runner_disk_for_its_required_storage(self) -> None:
         workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(
             encoding="utf-8"
         )
@@ -69,8 +69,43 @@ class CiContractTest(unittest.TestCase):
         android = workflow[android_start:build_start]
 
         self.assertIn("../tools/ci/android_avd_config.py", android)
-        self.assertIn("'disk.dataPartition.size=2048M'", android)
-        self.assertIn("-partition-size 2048", android)
+        self.assertIn("mapfile -t PYBLE_UNUSED_NDKS", android)
+        self.assertIn(
+            '"$SDKMANAGER" --uninstall "${PYBLE_UNUSED_NDKS[@]}"',
+            android,
+        )
+        self.assertIn('"$SDKMANAGER" --list_installed', android)
+        self.assertIn(
+            '| tee "$PYBLE_ANDROID_LOG_DIR/sdk-list-installed.log"',
+            android,
+        )
+        self.assertLess(
+            android.index('"$SDKMANAGER" --list_installed'),
+            android.index("mapfile -t PYBLE_UNUSED_NDKS"),
+        )
+        self.assertLess(
+            android.index('"$SDKMANAGER" --uninstall'),
+            android.index('"$SDKMANAGER" --channel=0'),
+        )
+        self.assertIn(
+            '[ ! -d "$PYBLE_PINNED_NDK_ROOT" ]',
+            android,
+        )
+        for variable in (
+            "ANDROID_NDK",
+            "ANDROID_NDK_HOME",
+            "ANDROID_NDK_ROOT",
+            "ANDROID_NDK_PATH",
+            "ANDROID_NDK_LATEST_HOME",
+        ):
+            self.assertIn(f'"{variable}=${variable}"', android)
+        self.assertIn("'disk.dataPartition.size=6144M'", android)
+        self.assertIn("-partition-size 6144", android)
+        self.assertNotIn("partition-size 2048", android)
+        self.assertIn(
+            "|vm\\.heapSize)[[:space:]]*=[[:space:]]*'",
+            android,
+        )
 
     def test_workflow_has_no_adjacent_duplicate_shell_key(self) -> None:
         workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(
