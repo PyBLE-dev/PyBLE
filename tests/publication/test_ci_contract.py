@@ -218,10 +218,10 @@ class CiContractTest(unittest.TestCase):
             '> "$GRADLE_USER_HOME/gradle.properties"',
             android,
         )
-        self.assertIn("--set 'hw.ramSize=2048'", android)
-        self.assertIn("--set 'hw.cpu.ncore=2'", android)
-        self.assertIn("-memory 2048", android)
-        self.assertIn("-cores 2", android)
+        self.assertIn("--set 'hw.ramSize=4096'", android)
+        self.assertIn("--set 'hw.cpu.ncore=4'", android)
+        self.assertIn("-memory 4096", android)
+        self.assertIn("-cores 4", android)
         self.assertIn(
             "settings put global device_provisioned 1",
             android,
@@ -285,6 +285,41 @@ class CiContractTest(unittest.TestCase):
         )
         self.assertNotIn(
             '2>&1 | tee "$PYBLE_ANDROID_LOG_DIR/flutter-drive.log"',
+            android,
+        )
+
+    def test_android_integration_uses_full_aosp_without_gms(self) -> None:
+        workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(
+            encoding="utf-8"
+        )
+        android_start = workflow.index("  android-webview:")
+        build_start = workflow.index("\n  build:", android_start)
+        android = workflow[android_start:build_start]
+
+        self.assertIn(
+            "PYBLE_ANDROID_IMAGE: system-images;android-34;default;x86_64",
+            android,
+        )
+        self.assertIn(
+            "PYBLE_ANDROID_AVD: pyble_api34_aosp",
+            android,
+        )
+        self.assertIn(
+            "- name: Create API 34 AOSP x86_64 tablet AVD",
+            android,
+        )
+        self.assertNotIn("google_apis", android)
+        self.assertNotIn("aosp_atd", android)
+        self.assertIn(
+            "pm list packages com.google.android.gms",
+            android,
+        )
+        self.assertIn(
+            "dumpsys webviewupdate",
+            android,
+        )
+        self.assertIn(
+            "Current WebView package (name, version):",
             android,
         )
 
