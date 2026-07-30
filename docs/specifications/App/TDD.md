@@ -1411,15 +1411,19 @@ The shared corpus ([§8.8](#88-shared-conformance-corpus-with-the-firmware)) run
 
 The locale parity check fails on any missing/orphaned ARB key and blocks merges
 (FR-I18N-2, BLD-5). The real
-`integration_test/blockly_webview_test.dart` platform boundary runs in CI on a
+`integration_test/android_smoke_test.dart` platform boundary registers the
+About and Blockly scenarios from non-entrypoint suite modules, so Flutter
+performs exactly one Android application build and install. It runs in CI on a
 fresh Android 14 / API 34 Google APIs x86_64 AVD with the pinned Flutter
-toolchain, 3 GiB RAM, KVM CPU acceleration, a software GPU, a bounded
+toolchain and NDK, 3 GiB RAM, KVM CPU acceleration, a software GPU, a bounded
 `sys.boot_completed` wait, and always-uploaded bounded emulator/logcat
-diagnostics. This verifies the offline Blockly asset, JavaScript channel,
+diagnostics. The runner reclaims only unused side-by-side NDK revisions before
+creating the API 34 emulator's required 6 GiB userdata image.
+
+The Blockly suite verifies the offline asset, JavaScript channel,
 restore/recreation, source generation, examples, sidecar reopen, bounded Python
 import, and fake-Connection Save/Run flow in Android's actual WebView rather
-than a host widget substitute. The same device job runs
-`integration_test/about_page_test.dart` to verify actual installed
+than a host widget substitute. The About suite verifies actual installed
 version/build metadata and the offline PyBLE license asset through the platform
 plugin boundary (FR-ABOUT-3/4). Integration suites also run end-to-end against a
 fake board and on-device smoke per chip (run/stop, multi-file upload,
