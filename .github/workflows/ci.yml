@@ -309,18 +309,19 @@ jobs:
           # 1280x800 logical tablet surface, matching the Android test geometry.
           # Keep userdata at 2 GiB so the complete API 34 image fits the hosted
           # runner after its pinned SDK, build-tools, and NDK are installed.
-          printf '%s\n' \
-            'hw.ramSize=3072' \
-            'hw.cpu.ncore=2' \
-            'vm.heapSize=512' \
-            'disk.dataPartition.size=2048M' \
-            'hw.lcd.width=2560' \
-            'hw.lcd.height=1600' \
-            'hw.lcd.density=320' \
-            'hw.initialOrientation=landscape' \
-            'hw.gpu.enabled=yes' \
-            'hw.gpu.mode=swiftshader_indirect' \
-            >> "$AVD_CONFIG"
+          # avdmanager pre-populates these keys. Upsert them so the emulator
+          # cannot select an earlier device-profile value from a duplicate.
+          python3 ../tools/ci/android_avd_config.py "$AVD_CONFIG" \
+            --set 'hw.ramSize=3072' \
+            --set 'hw.cpu.ncore=2' \
+            --set 'vm.heapSize=512' \
+            --set 'disk.dataPartition.size=2048M' \
+            --set 'hw.lcd.width=2560' \
+            --set 'hw.lcd.height=1600' \
+            --set 'hw.lcd.density=320' \
+            --set 'hw.initialOrientation=landscape' \
+            --set 'hw.gpu.enabled=yes' \
+            --set 'hw.gpu.mode=swiftshader_indirect'
       - name: Boot headless emulator (KVM + software GPU)
         shell: bash
         run: |
