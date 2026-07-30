@@ -24,6 +24,37 @@ class CiContractTest(unittest.TestCase):
             "          submodules: true\n",
             firmware_host,
         )
+        self.assertIn(
+            "      - name: Initialize pinned MicroPython host dependency\n"
+            "        run: |\n"
+            "          git -C firmware/upstream/micropython submodule update "
+            "--init --depth 1 \\\n"
+            "            lib/micropython-lib\n",
+            firmware_host,
+        )
+
+    def test_pixel_goldens_run_on_pinned_macos(self) -> None:
+        workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(
+            encoding="utf-8"
+        )
+        app_start = workflow.index("  app:")
+        goldens_start = workflow.index("\n  app-goldens:", app_start)
+        android_start = workflow.index("\n  android-webview:", goldens_start)
+        app = workflow[app_start:goldens_start]
+        goldens = workflow[goldens_start:android_start]
+        android = workflow[android_start:]
+
+        self.assertIn("run: flutter test --exclude-tags golden", app)
+        self.assertIn("runs-on: macos-15", goldens)
+        self.assertIn("run: flutter test --tags golden", goldens)
+        self.assertIn("needs: [app, app-goldens]", android)
+
+        for relative in (
+            "app/test/golden/app_shell_golden_test.dart",
+            "app/test/golden/about_page_golden_test.dart",
+        ):
+            source = (REPO_ROOT / relative).read_text(encoding="utf-8")
+            self.assertIn("tags: const ['golden']", source)
 
 
 if __name__ == "__main__":
