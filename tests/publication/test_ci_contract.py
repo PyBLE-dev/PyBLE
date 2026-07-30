@@ -107,6 +107,32 @@ class CiContractTest(unittest.TestCase):
             android,
         )
 
+    def test_android_integration_builds_one_application_bundle(self) -> None:
+        workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(
+            encoding="utf-8"
+        )
+        android_start = workflow.index("  android-webview:")
+        build_start = workflow.index("\n  build:", android_start)
+        android = workflow[android_start:build_start]
+
+        self.assertIn("integration_test/android_smoke_test.dart", android)
+        self.assertNotIn("integration_test/about_page_test.dart", android)
+        self.assertNotIn("integration_test/blockly_webview_test.dart", android)
+
+        harness = (
+            REPO_ROOT / "app" / "integration_test" / "android_smoke_test.dart"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            "import 'about_page_test.dart' as about_page;",
+            harness,
+        )
+        self.assertIn(
+            "import 'blockly_webview_test.dart' as blockly_webview;",
+            harness,
+        )
+        self.assertIn("about_page.main();", harness)
+        self.assertIn("blockly_webview.main();", harness)
+
     def test_workflow_has_no_adjacent_duplicate_shell_key(self) -> None:
         workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(
             encoding="utf-8"
