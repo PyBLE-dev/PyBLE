@@ -307,11 +307,13 @@ jobs:
           fi
           # Pixel Tablet at 2560x1600 / 320 dpi gives a deterministic
           # 1280x800 logical tablet surface, matching the Android test geometry.
+          # Keep userdata at 2 GiB so the complete API 34 image fits the hosted
+          # runner after its pinned SDK, build-tools, and NDK are installed.
           printf '%s\n' \
             'hw.ramSize=3072' \
             'hw.cpu.ncore=2' \
             'vm.heapSize=512' \
-            'disk.dataPartition.size=4096M' \
+            'disk.dataPartition.size=2048M' \
             'hw.lcd.width=2560' \
             'hw.lcd.height=1600' \
             'hw.lcd.density=320' \
