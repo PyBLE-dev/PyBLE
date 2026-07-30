@@ -1,6 +1,6 @@
 # PyBLE App — Technical Design Document (TDD)
 
-Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-07-29
+Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-07-30
 
 ## 0. Naming note (acronym clash)
 
@@ -1413,12 +1413,25 @@ The locale parity check fails on any missing/orphaned ARB key and blocks merges
 (FR-I18N-2, BLD-5). The real
 `integration_test/android_smoke_test.dart` platform boundary registers the
 About and Blockly scenarios from non-entrypoint suite modules, so Flutter
-performs exactly one Android application build and install. It runs in CI on a
-fresh Android 14 / API 34 Google APIs x86_64 AVD with the pinned Flutter
-toolchain and NDK, 3 GiB RAM, KVM CPU acceleration, a software GPU, a bounded
-`sys.boot_completed` wait, and always-uploaded bounded emulator/logcat
-diagnostics. The runner reclaims only unused side-by-side NDK revisions before
-creating the API 34 emulator's required 6 GiB userdata image.
+has one integration application entrypoint and installs one bundle containing
+both scenarios. It runs in CI on a fresh Android 14 / API 34 Google APIs x86_64
+AVD with the pinned Flutter
+toolchain and NDK, 2 GiB RAM, one virtual CPU, KVM acceleration, a software
+GPU, a bounded `sys.boot_completed` wait, and always-uploaded bounded
+emulator/logcat diagnostics. The runner reclaims only unused side-by-side NDK
+revisions before creating the API 34 emulator's required 6 GiB userdata image.
+
+The checked-in Android Gradle configuration bounds the build JVM to a 3 GiB
+heap, 1 GiB metaspace, and 256 MiB code cache. The hosted integration job
+additionally disables the persistent Gradle daemon and permits one Gradle
+worker. It prebuilds the sole integration entrypoint before starting the AVD,
+then stops the build daemon; the device-backed `flutter test` reuses that
+artifact cache for its build/install boundary. Prebuild and device test are
+separately time-bounded and write directly to retained diagnostic logs, so a
+failed timeout cannot be hidden behind a still-open shell pipeline. This keeps
+the compiler and emulator peak allocations sequential on the smallest
+supported hosted runner while preserving the single-entrypoint integration
+contract.
 
 The Blockly suite verifies the offline asset, JavaScript channel,
 restore/recreation, source generation, examples, sidecar reopen, bounded Python
