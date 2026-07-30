@@ -75,7 +75,13 @@ flutter pub get --enforce-lockfile
 flutter gen-l10n
 dart format --output=none --set-exit-if-changed lib test integration_test
 flutter analyze
-flutter test
+flutter test --exclude-tags golden
+```
+
+On macOS, also run the renderer-specific pixel baselines:
+
+```sh
+flutter test --tags golden
 ```
 
 Use a recent stable Flutter SDK matching the version pinned by CI.

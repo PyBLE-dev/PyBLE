@@ -54,7 +54,18 @@ class CiContractTest(unittest.TestCase):
             "app/test/golden/about_page_golden_test.dart",
         ):
             source = (REPO_ROOT / relative).read_text(encoding="utf-8")
-            self.assertIn("tags: const ['golden']", source)
+            self.assertEqual(
+                source.count("tags: const ['golden']"),
+                source.count("testWidgets("),
+                f"every testWidgets call in {relative} must carry the golden tag",
+            )
+
+    def test_workflow_has_no_adjacent_duplicate_shell_key(self) -> None:
+        workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertNotIn("        shell: bash\n        shell: bash\n", workflow)
 
 
 if __name__ == "__main__":

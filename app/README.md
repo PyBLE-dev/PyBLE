@@ -31,7 +31,13 @@ flutter pub get --enforce-lockfile
 flutter gen-l10n
 dart format --output=none --set-exit-if-changed lib test integration_test
 flutter analyze
-flutter test
+flutter test --exclude-tags golden
+```
+
+Pixel goldens use reviewed macOS baselines. Run them separately on macOS:
+
+```sh
+flutter test --tags golden
 ```
 
 Run on a connected device:
@@ -40,9 +46,9 @@ Run on a connected device:
 flutter run
 ```
 
-Platform WebView integration tests live under `integration_test/`. The normal
-unit, widget, golden, and PBLE/1 conformance suites run through
-`flutter test`.
+Platform WebView integration tests live under `integration_test/`. CI runs
+unit, widget, and PBLE/1 conformance tests on Linux, exact pixel goldens on a
+pinned macOS runner, and the real Blockly WebView integration on Android.
 
 ## Architecture and dependencies
 

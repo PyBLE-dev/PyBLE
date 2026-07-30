@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Part of PyBLE (https://pyble.dev) — see /LICENSE.
 
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, readdir, writeFile } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -21,6 +21,14 @@ const licenseNames = [
   "LICENCE",
   "LICENCE.md",
   "LICENCE.txt",
+  "license",
+  "license.md",
+  "license.txt",
+  "license.mit",
+  "license-mit.txt",
+  "licence",
+  "licence.md",
+  "licence.txt",
 ];
 const supplementalLicenseSources = {
   "node_modules/esptool-js/node_modules/pako": ["lib/zlib/README"],
@@ -187,8 +195,12 @@ function productionClosure(lock) {
 
 async function readLicense(packagePath, packageVersion) {
   const directory = join(packageRoot, packagePath);
+  const directoryEntries = new Set(await readdir(directory));
   let primary;
   for (const name of licenseNames) {
+    if (!directoryEntries.has(name)) {
+      continue;
+    }
     try {
       const text = await readFile(join(directory, name), "utf8");
       primary = { name, text: normalizeLicenseText(text) };

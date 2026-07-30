@@ -55,6 +55,7 @@ void main() {
         // Baselines seeded (see the header); skip stays available for a
         // future re-baseline window by flipping kGoldensReady back off.
         skip: !kGoldensReady,
+        tags: const ['golden'],
       );
     }
 
@@ -65,135 +66,160 @@ void main() {
       ipadLandscape,
       androidTabletLandscape,
     ]) {
-      testWidgets('focused Blocks @ ${surface.name}', (tester) async {
+      testWidgets(
+        'focused Blocks @ ${surface.name}',
+        (tester) async {
+          await pumpShell(
+            tester,
+            connection: fakeConnection(
+              initial: ConnState.ready,
+              info: fakeDeviceInfo(),
+            ),
+            surface: surface,
+          );
+
+          final Finder blocksDestination = find.descendant(
+            of: find.byType(NavigationRail),
+            matching: find.text('Blocks'),
+          );
+          expect(
+            blocksDestination,
+            findsOneWidget,
+            reason: 'Blocks is a first-class landscape rail destination',
+          );
+          await tester.tap(blocksDestination);
+          await tester.pump();
+
+          expect(
+            find.byKey(const ValueKey<String>('focusedBlocksWorkspace')),
+            findsOneWidget,
+          );
+          await expectLater(
+            find.byType(PybleApp),
+            matchesGoldenFile(
+              'goldens/shell_${surface.name}_blocks_focused.png',
+            ),
+          );
+        },
+        skip: !kGoldensReady,
+        tags: const ['golden'],
+      );
+    }
+
+    testWidgets(
+      'focused Blocks @ ipad_portrait',
+      (tester) async {
         await pumpShell(
           tester,
           connection: fakeConnection(
             initial: ConnState.ready,
             info: fakeDeviceInfo(),
           ),
-          surface: surface,
+          surface: ipadPortrait,
         );
 
-        final Finder blocksDestination = find.descendant(
-          of: find.byType(NavigationRail),
-          matching: find.text('Blocks'),
+        await tester.tap(
+          find.descendant(
+            of: find.byType(NavigationBar),
+            matching: find.text('Blocks'),
+          ),
         );
-        expect(
-          blocksDestination,
-          findsOneWidget,
-          reason: 'Blocks is a first-class landscape rail destination',
+        await tester.pump();
+
+        await expectLater(
+          find.byType(PybleApp),
+          matchesGoldenFile('goldens/shell_ipad_portrait_blocks_focused.png'),
         );
-        await tester.tap(blocksDestination);
+      },
+      skip: !kGoldensReady,
+      tags: const ['golden'],
+    );
+
+    testWidgets(
+      'focused Blocks @ 900 dp threshold',
+      (tester) async {
+        const ShellSurface threshold = ShellSurface(
+          'tablet_landscape_threshold',
+          Size(900, 600),
+          1,
+        );
+        await pumpShell(
+          tester,
+          connection: fakeConnection(initial: ConnState.ready),
+          surface: threshold,
+        );
+
+        await tester.tap(
+          find.descendant(
+            of: find.byType(NavigationRail),
+            matching: find.text('Blocks'),
+          ),
+        );
         await tester.pump();
 
         expect(
-          find.byKey(const ValueKey<String>('focusedBlocksWorkspace')),
-          findsOneWidget,
+          find.byKey(const ValueKey<String>('blocksGeneratedPythonInspector')),
+          findsNothing,
         );
         await expectLater(
           find.byType(PybleApp),
-          matchesGoldenFile('goldens/shell_${surface.name}_blocks_focused.png'),
+          matchesGoldenFile(
+            'goldens/shell_tablet_landscape_threshold_blocks_focused.png',
+          ),
         );
-      }, skip: !kGoldensReady);
-    }
+      },
+      skip: !kGoldensReady,
+      tags: const ['golden'],
+    );
 
-    testWidgets('focused Blocks @ ipad_portrait', (tester) async {
-      await pumpShell(
-        tester,
-        connection: fakeConnection(
-          initial: ConnState.ready,
-          info: fakeDeviceInfo(),
-        ),
-        surface: ipadPortrait,
-      );
+    testWidgets(
+      'focused Blocks @ ipad_landscape expanded console',
+      (tester) async {
+        await pumpShell(
+          tester,
+          connection: fakeConnection(initial: ConnState.ready),
+          surface: ipadLandscape,
+        );
 
-      await tester.tap(
-        find.descendant(
-          of: find.byType(NavigationBar),
-          matching: find.text('Blocks'),
-        ),
-      );
-      await tester.pump();
+        await tester.tap(
+          find.descendant(
+            of: find.byType(NavigationRail),
+            matching: find.text('Blocks'),
+          ),
+        );
+        await tester.pump();
+        await tester.tap(find.byKey(kConsoleStripToggleKey));
+        await tester.pump();
 
-      await expectLater(
-        find.byType(PybleApp),
-        matchesGoldenFile('goldens/shell_ipad_portrait_blocks_focused.png'),
-      );
-    }, skip: !kGoldensReady);
-
-    testWidgets('focused Blocks @ 900 dp threshold', (tester) async {
-      const ShellSurface threshold = ShellSurface(
-        'tablet_landscape_threshold',
-        Size(900, 600),
-        1,
-      );
-      await pumpShell(
-        tester,
-        connection: fakeConnection(initial: ConnState.ready),
-        surface: threshold,
-      );
-
-      await tester.tap(
-        find.descendant(
-          of: find.byType(NavigationRail),
-          matching: find.text('Blocks'),
-        ),
-      );
-      await tester.pump();
-
-      expect(
-        find.byKey(const ValueKey<String>('blocksGeneratedPythonInspector')),
-        findsNothing,
-      );
-      await expectLater(
-        find.byType(PybleApp),
-        matchesGoldenFile(
-          'goldens/shell_tablet_landscape_threshold_blocks_focused.png',
-        ),
-      );
-    }, skip: !kGoldensReady);
-
-    testWidgets('focused Blocks @ ipad_landscape expanded console', (
-      tester,
-    ) async {
-      await pumpShell(
-        tester,
-        connection: fakeConnection(initial: ConnState.ready),
-        surface: ipadLandscape,
-      );
-
-      await tester.tap(
-        find.descendant(
-          of: find.byType(NavigationRail),
-          matching: find.text('Blocks'),
-        ),
-      );
-      await tester.pump();
-      await tester.tap(find.byKey(kConsoleStripToggleKey));
-      await tester.pump();
-
-      await expectLater(
-        find.byType(PybleApp),
-        matchesGoldenFile(
-          'goldens/shell_ipad_landscape_blocks_console_expanded.png',
-        ),
-      );
-    }, skip: !kGoldensReady);
+        await expectLater(
+          find.byType(PybleApp),
+          matchesGoldenFile(
+            'goldens/shell_ipad_landscape_blocks_console_expanded.png',
+          ),
+        );
+      },
+      skip: !kGoldensReady,
+      tags: const ['golden'],
+    );
 
     // The pre-connection state (ADR-0011): with no board connected the shell is
     // a full-screen Connect experience — NO IDE chrome (Files sidebar / Pins /
     // console strip). Locked as its own baseline so the gated layout is covered.
-    testWidgets('shell @ ipad_landscape_disconnected', (tester) async {
-      await pumpShell(
-        tester,
-        connection: fakeConnection(initial: ConnState.disconnected),
-        surface: ipadLandscape,
-      );
-      await expectLater(
-        find.byType(PybleApp),
-        matchesGoldenFile('goldens/shell_ipad_landscape_disconnected.png'),
-      );
-    }, skip: !kGoldensReady);
+    testWidgets(
+      'shell @ ipad_landscape_disconnected',
+      (tester) async {
+        await pumpShell(
+          tester,
+          connection: fakeConnection(initial: ConnState.disconnected),
+          surface: ipadLandscape,
+        );
+        await expectLater(
+          find.byType(PybleApp),
+          matchesGoldenFile('goldens/shell_ipad_landscape_disconnected.png'),
+        );
+      },
+      skip: !kGoldensReady,
+      tags: const ['golden'],
+    );
   });
 }

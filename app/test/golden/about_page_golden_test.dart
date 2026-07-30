@@ -49,7 +49,7 @@ void main() {
           find.byType(AboutPage),
           matchesGoldenFile('goldens/about_${surface.name}.png'),
         );
-      });
+      }, tags: const ['golden']);
     }
   });
 }

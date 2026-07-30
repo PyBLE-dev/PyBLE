@@ -3391,7 +3391,7 @@ hex-rgb 4.3.0
 Installed path: node_modules/hex-rgb
 SPDX license: MIT
 Source: https://registry.npmjs.org/hex-rgb/-/hex-rgb-4.3.0.tgz
-License file: LICENSE
+License file: license
 
 MIT License
 
@@ -4016,7 +4016,7 @@ next 16.2.12
 Installed path: node_modules/next
 SPDX license: MIT
 Source: https://registry.npmjs.org/next/-/next-16.2.12.tgz
-License file: LICENSE.md
+License file: license.md
 
 The MIT License (MIT)
 
@@ -4950,7 +4950,7 @@ styled-jsx 5.1.6
 Installed path: node_modules/styled-jsx
 SPDX license: MIT
 Source: https://registry.npmjs.org/styled-jsx/-/styled-jsx-5.1.6.tgz
-License file: LICENSE.md
+License file: license.md
 
 MIT License
 

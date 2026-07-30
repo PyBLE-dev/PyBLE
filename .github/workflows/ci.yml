@@ -10,7 +10,9 @@
 #                       hard-coded display text in lib/app (BLD-5, CON-9, FR-I18N-1..4).
 #   - sha-drift       : checked-out submodule SHA == versions.lock, else refuse (BLD-1/2).
 #   - app             : Flutter app gate (X-03) — resolve against the TRACKED lockfile,
-#                       static analysis, and the unit/widget/golden/conformance suites (BLD-2).
+#                       static analysis, and unit/widget/conformance suites (BLD-2).
+#   - app-goldens     : exact pixel baselines on pinned macOS, matching the
+#                       renderer used to review and commit the reference PNGs.
 #   - web             : pinned-Node install, formatting, lint, type, unit, and
 #                       static-export build checks for tools/web.
 #   - docs            : every repository-local Markdown target exists.
@@ -129,6 +131,12 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: Initialize pinned MicroPython host dependency
+        run: |
+          git -C firmware/upstream/micropython submodule update --init --depth 1 \
+            lib/micropython-lib
       - name: Firmware shell and conformance gates
         run: tests/firmware_tests/run_tests.sh
       - name: Complete firmware host and release suite
@@ -137,7 +145,7 @@ jobs:
   app:
     # The Flutter app gate (X-03). Resolves strictly against the TRACKED
     # app/pubspec.lock (BLD-2), runs static analysis, and runs the full test
-    # suite (unit/widget/golden/conformance — G1). Runs only after the fast
+    # non-pixel suite (unit/widget/conformance — G1). Runs only after the fast
     # bash gates pass, so a leak / SPDX / import-boundary / locale-parity failure
     # short-circuits before the heavier toolchain setup. (dco runs as its own
     # required check.)
@@ -172,14 +180,46 @@ jobs:
         run: dart format --output=none --set-exit-if-changed lib test integration_test
       - name: Static analysis
         run: flutter analyze
-      - name: Test suite — unit/widget/golden/conformance (G1)
-        run: flutter test
+      - name: Test suite — unit/widget/conformance (G1)
+        run: flutter test --exclude-tags golden
+
+  app-goldens:
+    # Pixel goldens are renderer-specific. Run them on pinned Apple Silicon
+    # macOS, matching the environment used to review and commit the baselines;
+    # the Linux app job still runs every non-pixel Flutter test.
+    needs: [no-leak, spdx, locale-parity]
+    runs-on: macos-15
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache pub packages (keyed on OS and tracked lockfile)
+        uses: actions/cache@v4
+        with:
+          path: ~/.pub-cache
+          key: pub-${{ runner.os }}-${{ hashFiles('app/pubspec.lock') }}
+          restore-keys: |
+            pub-${{ runner.os }}-
+      - name: Set up Flutter 3.44.1 (pinned, stable) + SDK cache
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.44.1
+          channel: stable
+          cache: true
+      - name: Resolve deps against the TRACKED lockfile (BLD-2)
+        run: flutter pub get --enforce-lockfile
+      - name: Generate localizations from ARB (gen-l10n, X-12/FR-I18N-1)
+        run: flutter gen-l10n
+      - name: Pixel golden suite — reviewed macOS baselines (G1)
+        run: flutter test --tags golden
 
   android-webview:
     # Exercise the real Android WebView/JavaScript-channel boundary, not the
     # host-side widget substitute. Keep the AVD construction in plain Android
     # SDK tools so the image, memory, boot bound, and diagnostics are visible.
-    needs: app
+    needs: [app, app-goldens]
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     defaults:
