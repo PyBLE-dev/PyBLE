@@ -118,20 +118,39 @@ class CiContractTest(unittest.TestCase):
         self.assertIn("integration_test/android_smoke_test.dart", android)
         self.assertNotIn("integration_test/about_page_test.dart", android)
         self.assertNotIn("integration_test/blockly_webview_test.dart", android)
+        self.assertIn("timeout --signal=TERM --kill-after=30s 30m", android)
+        self.assertIn("--no-pub", android)
 
-        harness = (
-            REPO_ROOT / "app" / "integration_test" / "android_smoke_test.dart"
-        ).read_text(encoding="utf-8")
+        integration_root = REPO_ROOT / "app" / "integration_test"
+        self.assertEqual(
+            ["android_smoke_test.dart"],
+            sorted(path.name for path in integration_root.glob("*_test.dart")),
+        )
+        harness = (integration_root / "android_smoke_test.dart").read_text(
+            encoding="utf-8"
+        )
         self.assertIn(
-            "import 'about_page_test.dart' as about_page;",
+            "import 'about_page_suite.dart' as about_page;",
             harness,
         )
         self.assertIn(
-            "import 'blockly_webview_test.dart' as blockly_webview;",
+            "import 'blockly_webview_suite.dart' as blockly_webview;",
             harness,
         )
-        self.assertIn("about_page.main();", harness)
-        self.assertIn("blockly_webview.main();", harness)
+        self.assertEqual(
+            1,
+            harness.count(
+                "IntegrationTestWidgetsFlutterBinding.ensureInitialized();"
+            ),
+        )
+        self.assertIn(
+            "about_page.registerAboutPageIntegrationTests();",
+            harness,
+        )
+        self.assertIn(
+            "blockly_webview.registerBlocklyWebViewIntegrationTests();",
+            harness,
+        )
 
     def test_workflow_has_no_adjacent_duplicate_shell_key(self) -> None:
         workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(
