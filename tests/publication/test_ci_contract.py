@@ -118,8 +118,19 @@ class CiContractTest(unittest.TestCase):
         self.assertIn("integration_test/android_smoke_test.dart", android)
         self.assertNotIn("integration_test/about_page_test.dart", android)
         self.assertNotIn("integration_test/blockly_webview_test.dart", android)
-        self.assertIn("timeout --signal=TERM --kill-after=30s 30m", android)
+        self.assertIn("timeout --signal=TERM --kill-after=30s 12m", android)
         self.assertIn("--no-pub", android)
+        self.assertIn("flutter drive \\", android)
+        self.assertIn(
+            "--driver test_driver/integration_test.dart",
+            android,
+        )
+        self.assertIn(
+            "--use-application-binary "
+            "build/app/outputs/flutter-apk/app-debug.apk",
+            android,
+        )
+        self.assertNotIn("            flutter test \\", android)
 
         integration_root = REPO_ROOT / "app" / "integration_test"
         self.assertEqual(
@@ -151,6 +162,25 @@ class CiContractTest(unittest.TestCase):
             "blockly_webview.registerBlocklyWebViewIntegrationTests();",
             harness,
         )
+        driver = (
+            REPO_ROOT / "app" / "test_driver" / "integration_test.dart"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            "import 'package:integration_test/integration_test_driver.dart';",
+            driver,
+        )
+        self.assertIn(
+            "Future<void> main() => integrationDriver(",
+            driver,
+        )
+        self.assertIn(
+            "timeout: const Duration(minutes: 10),",
+            driver,
+        )
+        self.assertIn(
+            "writeResponseOnFailure: true,",
+            driver,
+        )
 
     def test_android_integration_prebuilds_with_bounded_runner_resources(
         self,
@@ -161,19 +191,31 @@ class CiContractTest(unittest.TestCase):
         android_start = workflow.index("  android-webview:")
         build_start = workflow.index("\n  build:", android_start)
         android = workflow[android_start:build_start]
-        gradle_properties = (
-            REPO_ROOT / "app" / "android" / "gradle.properties"
-        ).read_text(encoding="utf-8")
 
         self.assertIn(
-            "org.gradle.jvmargs=-Xmx3072m "
-            "-XX:MaxMetaspaceSize=1024m "
-            "-XX:ReservedCodeCacheSize=256m",
-            gradle_properties,
+            "GRADLE_USER_HOME: /tmp/pyble-gradle-home",
+            android,
         )
         self.assertIn(
-            "GRADLE_OPTS: -Dorg.gradle.daemon=false "
-            "-Dorg.gradle.workers.max=1",
+            "'org.gradle.jvmargs=-Xmx3072m "
+            "-XX:MaxMetaspaceSize=1024m "
+            "-XX:ReservedCodeCacheSize=256m'",
+            android,
+        )
+        self.assertIn(
+            "'org.gradle.daemon=false'",
+            android,
+        )
+        self.assertIn(
+            "'org.gradle.workers.max=1'",
+            android,
+        )
+        self.assertIn(
+            "'kotlin.compiler.execution.strategy=in-process'",
+            android,
+        )
+        self.assertIn(
+            '> "$GRADLE_USER_HOME/gradle.properties"',
             android,
         )
         self.assertIn("--set 'hw.ramSize=2048'", android)
@@ -190,10 +232,12 @@ class CiContractTest(unittest.TestCase):
         )
         self.assertLess(prebuild, boot)
         self.assertLess(boot, integration)
+        self.assertEqual(1, android.count("flutter build apk"))
         self.assertIn(
             "flutter build apk \\\n"
             "            --debug \\\n"
             "            --no-pub \\\n"
+            "            --target-platform android-x64 \\\n"
             "            --target integration_test/android_smoke_test.dart",
             android,
         )
@@ -201,13 +245,22 @@ class CiContractTest(unittest.TestCase):
             '>"$PYBLE_ANDROID_LOG_DIR/flutter-build.log" 2>&1',
             android,
         )
+        self.assertIn(
+            "test -s build/app/outputs/flutter-apk/app-debug.apk",
+            android,
+        )
         self.assertIn("./android/gradlew --stop", android)
         self.assertIn(
-            '>"$PYBLE_ANDROID_LOG_DIR/flutter-test.log" 2>&1',
+            '>"$PYBLE_ANDROID_LOG_DIR/flutter-drive.log" 2>&1',
+            android,
+        )
+        self.assertIn(
+            "--use-application-binary "
+            "build/app/outputs/flutter-apk/app-debug.apk",
             android,
         )
         self.assertNotIn(
-            '2>&1 | tee "$PYBLE_ANDROID_LOG_DIR/flutter-test.log"',
+            '2>&1 | tee "$PYBLE_ANDROID_LOG_DIR/flutter-drive.log"',
             android,
         )
 
