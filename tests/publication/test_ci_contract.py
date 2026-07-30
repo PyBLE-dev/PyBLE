@@ -60,6 +60,16 @@ class CiContractTest(unittest.TestCase):
                 f"every testWidgets call in {relative} must carry the golden tag",
             )
 
+    def test_android_avd_uses_bounded_storage(self) -> None:
+        workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(
+            encoding="utf-8"
+        )
+        android_start = workflow.index("  android-webview:")
+        build_start = workflow.index("\n  build:", android_start)
+        android = workflow[android_start:build_start]
+
+        self.assertIn("'disk.dataPartition.size=2048M'", android)
+
     def test_workflow_has_no_adjacent_duplicate_shell_key(self) -> None:
         workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(
             encoding="utf-8"
