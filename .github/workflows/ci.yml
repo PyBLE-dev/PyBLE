@@ -235,6 +235,7 @@ jobs:
       PYBLE_ANDROID_LOG_DIR: /tmp/pyble-android-integration
       PYBLE_ANDROID_RAW_EMULATOR_LOG: /tmp/pyble-android-emulator.log
       ANDROID_AVD_HOME: /tmp/pyble-android-avd
+      GRADLE_USER_HOME: /tmp/pyble-gradle-home
     steps:
       - uses: actions/checkout@v4
       - name: Set up Flutter 3.44.1 (pinned, stable) + SDK cache
@@ -247,6 +248,19 @@ jobs:
         run: flutter pub get --enforce-lockfile
       - name: Generate localizations from ARB (X-12/FR-I18N-1)
         run: flutter gen-l10n
+      - name: Bound Android Gradle resources
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$GRADLE_USER_HOME"
+          printf '%s\n' \
+            'org.gradle.jvmargs=-Xmx3072m -XX:MaxMetaspaceSize=1024m -XX:ReservedCodeCacheSize=256m' \
+            'org.gradle.daemon=false' \
+            'org.gradle.workers.max=1' \
+            'org.gradle.parallel=false' \
+            'systemProp.file.encoding=UTF-8' \
+            'kotlin.compiler.execution.strategy=in-process' \
+            > "$GRADLE_USER_HOME/gradle.properties"
       - name: Install pinned Android SDK packages
         shell: bash
         run: |
@@ -355,9 +369,9 @@ jobs:
           # avdmanager pre-populates these keys. Upsert them so the emulator
           # cannot select an earlier device-profile value from a duplicate.
           python3 ../tools/ci/android_avd_config.py "$AVD_CONFIG" \
-            --set 'hw.ramSize=3072' \
-            --set 'hw.cpu.ncore=2' \
-            --set 'vm.heapSize=512' \
+            --set 'hw.ramSize=2048' \
+            --set 'hw.cpu.ncore=1' \
+            --set 'vm.heapSize=384' \
             --set 'disk.dataPartition.size=6144M' \
             --set 'hw.lcd.width=2560' \
             --set 'hw.lcd.height=1600' \
@@ -365,6 +379,28 @@ jobs:
             --set 'hw.initialOrientation=landscape' \
             --set 'hw.gpu.enabled=yes' \
             --set 'hw.gpu.mode=swiftshader_indirect'
+      - name: Prebuild Android integration application
+        shell: bash
+        run: |
+          set -euo pipefail
+          PREBUILD_STATUS=0
+          timeout --signal=TERM --kill-after=30s 18m \
+            flutter build apk \
+            --debug \
+            --no-pub \
+            --target-platform android-x64 \
+            --target integration_test/android_smoke_test.dart \
+            >"$PYBLE_ANDROID_LOG_DIR/flutter-build.log" 2>&1 \
+            || PREBUILD_STATUS=$?
+          cat "$PYBLE_ANDROID_LOG_DIR/flutter-build.log"
+          timeout --signal=TERM --kill-after=5s 30s \
+            ./android/gradlew --stop \
+            >"$PYBLE_ANDROID_LOG_DIR/gradle-stop.log" 2>&1 || true
+          cat "$PYBLE_ANDROID_LOG_DIR/gradle-stop.log"
+          if [ "$PREBUILD_STATUS" -ne 0 ]; then
+            exit "$PREBUILD_STATUS"
+          fi
+          test -s build/app/outputs/flutter-apk/app-debug.apk
       - name: Boot headless emulator (KVM + software GPU)
         shell: bash
         run: |
@@ -389,8 +425,8 @@ jobs:
             -camera-front none \
             -accel on \
             -gpu swiftshader_indirect \
-            -memory 3072 \
-            -cores 2 \
+            -memory 2048 \
+            -cores 1 \
             >"$PYBLE_ANDROID_RAW_EMULATOR_LOG" 2>&1 &
           EMULATOR_PID=$!
           printf '%s\n' "$EMULATOR_PID" \
@@ -441,13 +477,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          timeout --signal=TERM --kill-after=30s 30m \
-            flutter test \
+          TEST_STATUS=0
+          timeout --signal=TERM --kill-after=30s 12m \
+            flutter drive \
             --no-pub \
-            integration_test/android_smoke_test.dart \
+            --driver test_driver/integration_test.dart \
+            --target integration_test/android_smoke_test.dart \
+            --use-application-binary build/app/outputs/flutter-apk/app-debug.apk \
+            --timeout 660 \
             -d "$PYBLE_ANDROID_SERIAL" \
-            --reporter expanded \
-            2>&1 | tee "$PYBLE_ANDROID_LOG_DIR/flutter-test.log"
+            >"$PYBLE_ANDROID_LOG_DIR/flutter-drive.log" 2>&1 \
+            || TEST_STATUS=$?
+          cat "$PYBLE_ANDROID_LOG_DIR/flutter-drive.log"
+          exit "$TEST_STATUS"
       - name: Collect bounded Android diagnostics
         if: always()
         shell: bash
