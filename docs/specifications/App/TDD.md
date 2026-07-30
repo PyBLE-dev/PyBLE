@@ -1421,17 +1421,19 @@ GPU, a bounded `sys.boot_completed` wait, and always-uploaded bounded
 emulator/logcat diagnostics. The runner reclaims only unused side-by-side NDK
 revisions before creating the API 34 emulator's required 6 GiB userdata image.
 
-The checked-in Android Gradle configuration bounds the build JVM to a 3 GiB
-heap, 1 GiB metaspace, and 256 MiB code cache. The hosted integration job
-additionally disables the persistent Gradle daemon and permits one Gradle
-worker. It prebuilds the sole integration entrypoint before starting the AVD,
-then stops the build daemon; the device-backed `flutter test` reuses that
-artifact cache for its build/install boundary. Prebuild and device test are
-separately time-bounded and write directly to retained diagnostic logs, so a
-failed timeout cannot be hidden behind a still-open shell pipeline. This keeps
-the compiler and emulator peak allocations sequential on the smallest
-supported hosted runner while preserving the single-entrypoint integration
-contract.
+The hosted integration job uses an isolated Gradle user home whose
+`gradle.properties` bounds the build JVM to a 3 GiB heap, 1 GiB metaspace, and
+256 MiB code cache, disables the persistent Gradle daemon, permits one Gradle
+worker, and keeps Kotlin compilation in that same process. It compiles the
+sole integration entrypoint once as an x86_64 debug APK before starting the
+AVD, verifies that artifact, and stops Gradle. The device phase invokes
+`flutter drive --use-application-binary` against that exact APK, so no Android
+assembly or compiler process overlaps the running emulator. Prebuild and
+device test are separately time-bounded and write directly to retained
+diagnostic logs, so a failed timeout cannot be hidden behind a still-open
+shell pipeline. This keeps compiler and emulator peak allocations sequential
+on the smallest supported hosted runner while preserving the
+single-entrypoint, single-binary integration contract.
 
 The Blockly suite verifies the offline asset, JavaScript channel,
 restore/recreation, source generation, examples, sidecar reopen, bounded Python
