@@ -18,6 +18,18 @@ telemetry.
   [join with TestFlight](https://testflight.apple.com/join/yU4e8s6d)
 - License: [MIT](LICENSE)
 
+<p align="center">
+  <img
+    src="tools/web/public/app/pyble-neopixel-gpio48-ipad-landscape.png"
+    alt="Actual PyBLE iPad app showing GPIO 48 NeoPixel Blocks beside generated MicroPython code"
+    width="960"
+  >
+</p>
+
+<p align="center">
+  <em>Actual PyBLE app: a GPIO 48 NeoPixel Blocks program and its generated MicroPython on the pictured ESP32-S3 board.</em>
+</p>
+
 ## What works
 
 ### App
@@ -52,11 +64,11 @@ BLE GATT peripheral. It supports:
 
 The public browser installer currently offers qualified images for:
 
-| Installer profile | Typical target | Availability |
-|---|---|---|
-| `esp32-4mb` | Classic ESP32, 4 MB flash | Available |
-| `esp32-s3-n16r8` | ESP32-S3, 16 MB flash / 8 MB PSRAM | Available |
-| `esp32-c3-4mb` | ESP32-C3, 4 MB flash | Source target; public installer pending HIL |
+| Installer profile | Typical target                     | Availability                                |
+| ----------------- | ---------------------------------- | ------------------------------------------- |
+| `esp32-4mb`       | Classic ESP32, 4 MB flash          | Available                                   |
+| `esp32-s3-n16r8`  | ESP32-S3, 16 MB flash / 8 MB PSRAM | Available                                   |
+| `esp32-c3-4mb`    | ESP32-C3, 4 MB flash               | Source target; public installer pending HIL |
 
 These are the initial validated ports, not a chip-family allowlist. A future
 board is compatible when it has a maintained PyBLE agent port, BLE GATT
