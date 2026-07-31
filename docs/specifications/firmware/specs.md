@@ -544,7 +544,7 @@ This is software-level safety of the IDE/agent, **not** hardware/actuator safety
 ## 8. Build, versioning & distribution (BLD)
 
 > **FROZEN v1.0 (amended) for the initial ESP32 v1 port (G0 · 2026-07-01;
-> browser-release amendments 2026-07-29 and 2026-07-30 · `[docs]`).**
+> browser-release amendments 2026-07-29 through 2026-07-31 · `[docs]`).**
 > BLD-1…22 are the build/versioning contract build-smith implements. The
 > 2026-07-29 amendments tighten BLD-5…8/13/14 and add BLD-17…22 before
 > X-10/X-11 code; the 2026-07-30 amendment freezes the two-profile pre-v1
@@ -619,7 +619,12 @@ This is software-level safety of the IDE/agent, **not** hardware/actuator safety
   [`versions.lock`](../../../firmware/versions.lock); verify: build; story:
   X-03)*
 - **BLD-11** — ESP-IDF MUST be installed from the pin into a **gitignored** directory (not an outer submodule); MicroPython `lib/` deps come from the standard port build. — *(source: PRD §10.9, §17.1; verify: build; story: X-03)*
-- **BLD-12** — The firmware agent MUST follow **SemVer** (`MAJOR.MINOR.PATCH`); a backward-incompatible change bumps MAJOR. — *(source: PRD §18.1; verify: build; story: X-11)*
+- **BLD-12** — The firmware agent MUST follow **SemVer**
+  (`MAJOR.MINOR.PATCH`); a backward-incompatible change bumps MAJOR.
+  `firmware/versions.lock` `[pyble].agent_version` is the canonical agent
+  version for a source commit, and the importable `pyble.__version__` used by
+  `DEVICE_INFO`/HELLO MUST equal it exactly. — *(source: PRD §18.1; verify:
+  build; story: X-11)*
 - **BLD-13** — A release MUST make the firmware-agent version, PBLE/1 version,
   upstream MicroPython/ESP-IDF versions and commits, PyBLE source commit, image
   profile, and artifact hashes recoverable from `DEVICE_INFO`/HELLO,
