@@ -1423,8 +1423,14 @@ Once a fully qualified public release is active, later website-only
 deployments MUST carry its exact selector and immutable firmware tree forward
 through authenticated retrieval and the canonical staged-release validation
 path. Each website release with an active installer retains an unserved
-canonical selector marker for this purpose. A deployment MUST fail before the
-build if that state cannot be retrieved or validated. Transitioning an active
-public installer to unavailable is a separate reviewed operation requiring an
-explicit truth-valued disable flag and a production smoke test of the disabled
-state; absence of staging input alone is never authorization to disable it.
+canonical selector marker for this purpose. The preserved-public validator
+MUST repeat every self-contained public bundle, schema, HIL, profile, artifact,
+path, size, digest, descriptor, and annotated-tag check. It MUST prove exact
+selected-byte continuity and MUST NOT accept a different version or byte. It
+does not repeat the source/build license audit whose passing evidence was
+required for the original activation of those same immutable bytes. A
+deployment MUST fail before the build if that state cannot be retrieved or
+validated. Transitioning an active public installer to unavailable is a
+separate reviewed operation requiring an explicit truth-valued disable flag
+and a production smoke test of the disabled state; absence of staging input
+alone is never authorization to disable it.

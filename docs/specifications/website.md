@@ -266,9 +266,13 @@ After the first qualified public installer is activated, an ordinary
 website-only deployment MUST preserve that exact immutable selected release.
 The deployment obtains the selector and firmware tree from the current managed
 release over the authenticated deployment transport, validates them through
-the same staged-release and checksum gates, and embeds the selector at build
-time. It MUST NOT infer availability from the mere presence of a firmware
-directory or accept a caller-supplied selector.
+the preserved-public staged-release and checksum gates, and embeds the selector
+at build time. That carry-forward gate repeats the self-contained bundle,
+schema, HIL, profile, artifact, path, size, digest, descriptor, and annotated-tag
+checks. It does not repeat the source/build license audit because the exact
+immutable bytes already passed that audit during their original activation.
+It MUST NOT infer availability from the mere presence of a firmware directory
+or accept a caller-supplied selector.
 
 Each release carrying an active selector MUST retain a hidden, unserved copy of
 the canonically validated selector as deployment state. A replacement staged
