@@ -41,9 +41,9 @@ export default function SupportPage() {
                   <h3>Install the matching firmware once</h3>
                   <p>
                     The public installer supports only esp32-4mb and
-                    esp32-s3-n16r8. ESP32-C3 is not currently available. Use
-                    the reviewed image supplied for your exact target; this
-                    initial step uses a cable.
+                    esp32-s3-n16r8. ESP32-C3 is not currently available. Use the
+                    reviewed image supplied for your exact target; this initial
+                    step uses a cable.
                   </p>
                 </div>
               </li>
