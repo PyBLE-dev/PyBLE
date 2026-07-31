@@ -1418,3 +1418,13 @@ status; availability MUST never be inferred from the mere presence of a
 manifest. Rollback changes the website's selected-release descriptor to a
 previous fully qualified immutable bundle and redeploys the site. It never
 mutates or partially replaces the active version directory.
+
+Once a fully qualified public release is active, later website-only
+deployments MUST carry its exact selector and immutable firmware tree forward
+through authenticated retrieval and the canonical staged-release validation
+path. Each website release with an active installer retains an unserved
+canonical selector marker for this purpose. A deployment MUST fail before the
+build if that state cannot be retrieved or validated. Transitioning an active
+public installer to unavailable is a separate reviewed operation requiring an
+explicit truth-valued disable flag and a production smoke test of the disabled
+state; absence of staging input alone is never authorization to disable it.

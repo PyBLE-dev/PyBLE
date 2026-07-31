@@ -116,6 +116,22 @@ redirect, embedded GitHub widget, remote badge, or client-side network request
 to present their primary information. If a link opens a new browsing context,
 it MUST use `noopener noreferrer`.
 
+### 3.3 Public-beta social metadata
+
+The home page MUST publish a local `1200 × 630` social image and large-card
+metadata suitable for the external beta announcement. The image MUST use the
+canonical prompt-chip mark and a privacy-reviewed capture of the real app
+described in §4. It MAY add authored brand text and framing, but MUST NOT
+retouch or generate the pictured app interface. Its claims MUST be limited to
+the current iPad external beta and the exact qualified installer profiles.
+
+The social image MUST have useful alternative text, remain legible under
+common center crops, and make no third-party runtime request. A QR code MUST
+NOT be the only invitation path or be embedded in the wide social card, where
+platform cropping can make it unreliable. A separate local square TestFlight
+card MAY include the exact invitation QR, visible destination, and plain-text
+instructions.
+
 ## 4. Brand and visual contract
 
 The canonical prompt-chip SVG in `app/assets/branding/` is the source asset. A
@@ -246,6 +262,25 @@ VPS origin. The origin MUST:
   Flexible mode; and
 - expose only the required web and key-authenticated administration ports.
 
+After the first qualified public installer is activated, an ordinary
+website-only deployment MUST preserve that exact immutable selected release.
+The deployment obtains the selector and firmware tree from the current managed
+release over the authenticated deployment transport, validates them through
+the same staged-release and checksum gates, and embeds the selector at build
+time. It MUST NOT infer availability from the mere presence of a firmware
+directory or accept a caller-supplied selector.
+
+Each release carrying an active selector MUST retain a hidden, unserved copy of
+the canonically validated selector as deployment state. A replacement staged
+public release supersedes this carry-forward state only after the full §7
+activation gate passes. Intentionally disabling an active installer requires a
+dedicated, truth-valued deployment flag; the deployment MUST reject ambiguous
+values and any invocation that both stages firmware and requests disablement.
+The public smoke test MUST prove whether the resulting `/flash` page embeds the
+expected active release or the explicitly disabled state. A missing selector,
+failed carry-forward validation, or unreviewed implicit transition from active
+to unavailable aborts before the website build or activation.
+
 The public edge MUST redirect `www.pyble.dev`, `pyble.org`, and
 `www.pyble.org` to the same path and query at `https://pyble.dev`. Origin
 configuration SHOULD mirror those redirects as defense in depth once their DNS
@@ -347,6 +382,9 @@ The v1 site is releasable when:
   pictured Blocks workspace or generated Python;
 - the current external iPad beta invitation is exposed as an operable link and
   a locally served, exact-URL QR code without claiming production availability;
+- the home page publishes a local `1200 × 630` real-app social card with useful
+  alternative text and large-card metadata, plus a separate local square
+  TestFlight invitation card;
 - the canonical public source repository is explained in a visible
   MIT-licensed-source section and linked from both that section and the global
   footer;
@@ -369,6 +407,9 @@ The v1 site is releasable when:
 - the VPS deployment contract is tested, the exact checked `out/` release is
   active through the atomic release symlink, and an origin configuration test
   passes before reload;
+- a website-only deployment after public installer activation carries the
+  exact selected release forward, while an intentional transition to the
+  unavailable state requires the explicit disable flag and production smoke;
 - rollback confirmation survives loss of its initiating SSH transport and
   executes its embedded shell variables without service-manager rewriting;
 - every public launch-route HTML response is byte-identical to the checked
