@@ -258,6 +258,9 @@ VPS origin. The origin MUST:
   firmware 4xx/5xx with `Cache-Control: no-store`, and use the selected
   `release.json` SHA-256 as the deterministic cache key for both verification
   and ESP Web Tools retrieval;
+- quarantine the burned pre-public `/firmware/v0.4.1/` candidate path with a
+  non-cacheable not-found response, without deleting the retained forensic
+  copy or allowing it to enter any active selector;
 - use a valid origin certificate with Cloudflare **Full (strict)** TLS, never
   Flexible mode; and
 - expose only the required web and key-authenticated administration ports.
