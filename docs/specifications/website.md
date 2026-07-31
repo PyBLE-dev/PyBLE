@@ -154,6 +154,17 @@ the truthful public-beta/pending-HIL state while that selector is active.
 present in the beta selector, release metadata, public firmware tree, or
 recovery commands.
 
+The repository README, home-page hero, provisioning workflow, exact-profile
+cards, TestFlight callout, support getting-started guide, and public roadmap
+MUST agree with that current state. Each current-profile status MUST name
+`v0.4.1`, **unqualified beta**, and **HIL pending**; installation instructions
+MUST direct users to the enabled `/flash` action while preserving the exact
+profile, backup, erase, cable/power, and port acknowledgements. The home and
+support surfaces MUST include **use at your own risk**. The roadmap MAY shorten
+the warning, but MUST put complete HIL qualification for the same two exact
+profiles in near-term work rather than claim they are qualified now. Every one
+of those surfaces MUST keep C3 explicitly unavailable.
+
 README getting-started instructions MUST gate destructive flashing on `/flash`
 showing an active version, exact profile, and enabled install action. While the
 installer is unavailable, they MUST NOT instruct a reader to select or flash a
