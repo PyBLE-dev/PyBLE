@@ -159,7 +159,7 @@ Each story selects the applicable categories; the protocol and firmware stories 
 - **Hardware-in-the-loop (HIL)** — on every exact profile claimed by the
   release: connect, `DEVICE_INFO`, run/stop, console streaming, and a clean
   multi-file upload without dropping the link, plus resume-on-reconnect and
-  the resource measurements above. The current pre-v1 matrix is exactly
+  the resource measurements above. The current pre-v1 candidate matrix is exactly
   `esp32-4mb` plus `esp32-s3-n16r8`; v1.0 additionally requires
   `esp32-c3-4mb`. A milestone is gated by a working HIL demo, not by merged
   code alone.
@@ -839,7 +839,7 @@ Each successful per-target build MUST emit a flashable artifact set ([firmware.m
   matrix. An unqualified profile MUST be absent from release metadata,
   artifacts, selection, and recovery commands and shown as unavailable, never
   silently marked supported.
-- The current pre-v1 release set is exactly `esp32-4mb` and
+- The current pre-v1 candidate set is exactly `esp32-4mb` and
   `esp32-s3-n16r8`; `esp32-c3-4mb` remains unavailable pending exact-profile
   real-hardware validation. Re-enabling it requires a new SemVer candidate and
   immutable bundle.
@@ -855,7 +855,7 @@ numbers are frozen. The detailed method, exact workload, metric meanings,
 rounding formulas, and evidence contract are normative in
 [firmware/specs.md §5.3](firmware/specs.md#53-footprint-gates-nfr-fp).
 
-| Gate | Metric and direction | Current pre-v1 profiles | ESP32-C3 / v1.0 |
+| Gate | Metric and direction | Current pre-v1 candidate profiles | ESP32-C3 / v1.0 |
 |---|---|---|---|
 | **FP-FLASH** | Total shipped application-image ceiling plus factory-partition headroom floor | Freeze separately for `esp32-4mb` and `esp32-s3-n16r8` | Remains open for `esp32-c3-4mb`; C3 is the hard constraint |
 | **FP-HEAP** | Python GC and internal-IDF current/largest/minimum heap floors after HELLO and transfer workloads | Freeze separately for both included profiles; default-capability `free_mem` is diagnostic only | Must leave usable user-code and control-plane headroom |
@@ -864,7 +864,7 @@ rounding formulas, and evidence contract are normative in
 
 Requirements:
 
-- The current pre-v1 public set is exactly the two profiles in §10.12. Their
+- The current pre-v1 candidate set is exactly the two profiles in §10.12. Their
   numeric thresholds and hash-locked final-candidate HIL are release-blocking.
   `esp32-c3-4mb` MUST remain absent from that release's policy, HIL rows,
   artifacts, recovery, and installer selection.
@@ -1101,7 +1101,7 @@ Exact per-package licenses MUST be generated mechanically at build time (not han
 ### §15.3 Distribution
 
 - The app MUST be distributed **free** on the **Apple App Store** and **Google Play**, at feature parity across iPadOS and Android tablets (see §13.6 and §19). No account, no paywall, no in-app purchase.
-- A browser-based **web flasher** MUST be hosted at `pyble.dev/flash`, built on **esp-web-tools**, with one profile-scoped, single-build manifest per exact profile included in that release (see [firmware.md §6](firmware.md#6-build--distribution)). It MUST allow a user to flash the agent from a supported desktop browser over USB without installing a toolchain, and MUST NOT give ESP Web Tools a multi-family manifest that could override the user's selected profile. The current pre-v1 set is the two profiles in §10.12; C3 is unavailable until separately qualified.
+- A browser-based **web flasher** MUST be hosted at `pyble.dev/flash`, built on **esp-web-tools**, with one profile-scoped, single-build manifest per exact profile included in that release (see [firmware.md §6](firmware.md#6-build--distribution)). It MUST allow a user to flash the agent from a supported desktop browser over USB without installing a toolchain, and MUST NOT give ESP Web Tools a multi-family manifest that could override the user's selected profile. The current pre-v1 candidate set is the two profiles in §10.12; C3 is unavailable until separately qualified.
 - Firmware binaries (`firmware.bin`, bootloader, partition table, profile-scoped
   `manifest.json` files, and `THIRD_PARTY_LICENSES`) MUST be published at the
   canonical immutable `pyble.dev/firmware/v<version>/` path, one set per exact
@@ -1390,7 +1390,7 @@ The entry flow is scan → connect → use, with no QR pairing, no account, and 
 These are the production targets the project measures itself against. Numeric
 BLE/throughput targets are validated on hardware for every exact profile
 included in a release and MUST be frozen per profile after measurement. The
-current pre-v1 matrix has two profiles; the v1.0 matrix has all three. Until a
+current pre-v1 candidate matrix has two profiles; the v1.0 matrix has all three. Until a
 profile's values are frozen, they are stated as intent, not asserted.
 
 | Metric | Definition | v1.0 target | Status |
@@ -1543,7 +1543,7 @@ The foundational product decisions are resolved and recorded as Architecture Dec
   file MUST first be candidate-frozen as the immutable release-build/HIL
   input; that state is not approval. The same candidate MUST then pass the
   complete exact-profile HIL matrix before its pins and resource gates are
-  approved. The current pre-v1 subset is exactly the two profiles in §10.12;
+  approved. The current pre-v1 candidate subset is exactly the two profiles in §10.12;
   all three, including C3, are required for v1.0 (§10.9, §17.1, §21.2). A pin
   change creates a new candidate. New ADRs are added if a pin or budget
   changes materially.
@@ -1564,4 +1564,4 @@ New significant decisions MUST be captured as additional ADRs (`docs/decisions/N
 | **Control plane** | The agent's protected layer that owns BLE, the runner, and the filesystem bridge. It MUST NOT be editable by user code; a frozen `while True` in user code MUST NOT be able to wedge BLE or block `STOP`. |
 | **Workspace** | The user's own files on the board — `/main.py`, `/lib/*.py`, `/data/*` (Layer 4). Just programs the agent runs; never the control plane. |
 | **Platform port / target adapter** | Layer-2 integration for a MicroPython target: BLE host, scheduler/interrupt boundary, storage/config, identity, build, and provisioning. The initial ESP32 port uses per-chip board overlays for `esp32` / `esp32-s3` / `esp32-c3`, copied into the upstream tree at build prep so the submodule stays pristine. |
-| **HIL** | Hardware-in-the-loop — validation and measurement performed on a real board (as opposed to host-side or fake-transport tests). Resource and BLE/goodput numbers are frozen only after HIL measurement for every exact profile claimed by a release. The current pre-v1 matrix is `esp32-4mb` plus `esp32-s3-n16r8`; v1.0 additionally requires `esp32-c3-4mb`. |
+| **HIL** | Hardware-in-the-loop — validation and measurement performed on a real board (as opposed to host-side or fake-transport tests). Resource and BLE/goodput numbers are frozen only after HIL measurement for every exact profile claimed by a release. The current pre-v1 candidate matrix is `esp32-4mb` plus `esp32-s3-n16r8`; v1.0 additionally requires `esp32-c3-4mb`. |

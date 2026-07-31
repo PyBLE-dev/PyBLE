@@ -118,13 +118,13 @@ MUST NOT require a known-chip allowlist.
 The measurement method is frozen in
 [firmware/specs.md §5.3](firmware/specs.md#53-footprint-gates-nfr-fp);
 numeric values remain provisional until derived from retained baseline samples.
-The current pre-v1 qualification is profile-scoped:
+The v0.4.2 candidate qualification scope is profile-scoped:
 
 | Profile | Current numeric status | Release effect |
 |---|---|---|
-| `esp32-4mb` | Measure, derive, freeze, and verify on the owned exact profile | Required for the current pre-v1 installer |
-| `esp32-s3-n16r8` | Measure, derive, freeze, and verify on the owned exact N16R8 profile | Required for the current pre-v1 installer |
-| `esp32-c3-4mb` | Deferred; no current threshold or HIL row | Blocks C3 enablement and v1.0, but not the two-profile pre-v1 release |
+| `esp32-4mb` | Measure, derive, freeze, and verify on the owned exact profile | Required before v0.4.2 candidate qualification and installer activation |
+| `esp32-s3-n16r8` | Measure, derive, freeze, and verify on the owned exact N16R8 profile | Required before v0.4.2 candidate qualification and installer activation |
+| `esp32-c3-4mb` | Deferred; no current threshold or HIL row | Blocks C3 enablement and v1.0, but not qualification of the two-profile candidate |
 
 The enforced metrics are:
 

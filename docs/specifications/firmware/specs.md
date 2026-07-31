@@ -90,7 +90,7 @@ Where this document and [TDD.md](TDD.md) touch the same topic, this document win
 - **Workspace jail** — the constraint that PBLE/1 file commands may only read/write within `fs_root`.
 - **Runner** — the task that executes user code (file or inline source).
 - **HIL** — hardware-in-the-loop testing on every exact real-hardware profile
-  claimed by a release. The current pre-v1 release matrix is exactly
+  claimed by a release. The current pre-v1 candidate matrix is exactly
   `esp32-4mb` and `esp32-s3-n16r8`; the v1.0 matrix additionally requires
   `esp32-c3-4mb` (PRD §1B.3, §10.12).
 - **Frozen-Python agent** — agent modules baked into the firmware image as `.py` (frozen at build); the recommended first implementation.
@@ -251,7 +251,7 @@ are screenless.
 - **FR-LIB-1** — Every `esp32`, `esp32-s3`, and `esp32-c3` firmware image MUST make the pinned upstream MicroPython `neopixel.NeoPixel` API importable offline by user file/source runs and after a soft reboot. MUST (*source: PRD §9.8, §11.3; verify: resolved-manifest/build/HIL; story: F-24/A-31*)
 - **FR-LIB-2** — The module MUST be selected from the pristine pinned MicroPython/micropython-lib tree through each target's frozen manifest; PyBLE MUST NOT copy, fork, patch, or replace it with a custom WS2812 driver. MUST (*source: PRD §1A, §10.9, §10.10; verify: build/structure; story: F-24*)
 - **FR-LIB-3** — Bundling NeoPixel MUST NOT add an agent GPIO abstraction, PBLE/1 opcode/capability, board/onboard-LED name, pin/count/colour default, or target-specific user-code routing. GPIO, pixel count, index, colour, timing, and physical suitability remain explicit user-program/runtime concerns. MUST (*source: PRD §9.8, §11.3; verify: unit/no-leak/HIL; story: F-24/A-31*)
-- **FR-LIB-4** — Release validation MUST resolve exactly one `neopixel.py` for each of the three build targets, record the per-target firmware-size delta, and run a runtime import smoke on every exact profile included in that release. The current pre-v1 runtime matrix is the two profiles in §2.2; `esp32-c3-4mb` runtime smoke remains required before that profile is enabled and before v1.0. Any visual LED smoke MUST take an operator-supplied GPIO, use a bounded dim sequence, and turn the pixel off on exit. MUST (*source: PRD §10.11, §10.13, §13.3; verify: build/size/HIL; story: F-24*)
+- **FR-LIB-4** — Release validation MUST resolve exactly one `neopixel.py` for each of the three build targets, record the per-target firmware-size delta, and run a runtime import smoke on every exact profile included in that release. The current pre-v1 candidate runtime matrix is the two profiles in §2.2; `esp32-c3-4mb` runtime smoke remains required before that profile is enabled and before v1.0. Any visual LED smoke MUST take an operator-supplied GPIO, use a bounded dim sequence, and turn the pixel off on exit. MUST (*source: PRD §10.11, §10.13, §13.3; verify: build/size/HIL; story: F-24*)
 
 This NeoPixel contract applies to the three initial ESP32-family images.
 A future platform port MUST NOT claim equivalent support until it validates the
@@ -283,7 +283,7 @@ upstream package and required runtime primitive for that target.
 > and evidence schema before any threshold is selected. It does not invent or
 > claim a numeric threshold.
 
-The current pre-v1 qualification set is exactly, and in this order,
+The current pre-v1 candidate qualification set is exactly, and in this order,
 `esp32-4mb` and `esp32-s3-n16r8`. Each MUST have a complete numeric policy and
 final-candidate HIL record before the current public installer can be enabled.
 `esp32-c3-4mb` MUST NOT have a threshold entry or HIL row in this pre-v1
@@ -322,7 +322,7 @@ matrix remains all three profiles.
   story: X-03, F-13/14)*
 - **NFR-FP-CLOSE** — Every exact profile included in a release is
   **release-blocking** until all of its thresholds are frozen and its
-  hash-locked final-candidate evidence passes. For the current pre-v1 release
+  hash-locked final-candidate evidence passes. For the current pre-v1 candidate
   this means exactly the two profiles above. The still-open C3 portion blocks
   any C3 release and v1.0, but it does not block an otherwise-qualified
   two-profile pre-v1 release. — *(source: PRD §10.12, §10.13, §7.1; verify:
@@ -586,8 +586,9 @@ This is software-level safety of the IDE/agent, **not** hardware/actuator safety
   bundle at the canonical versioned same-origin path. A v0.x mirror is optional
   and every corresponding file and byte MUST be identical when one is
   published. v1.0 and later MUST additionally publish the matching
-  byte-identical GitHub Release. The current pre-v1 bundle MUST cover exactly
-  the two qualified profiles; v1.0 MUST restore three-target release parity. —
+  byte-identical GitHub Release. The current pre-v1 candidate bundle MUST target
+  exactly the two profiles and MUST NOT become public until both qualify; v1.0
+  MUST restore three-target release parity. —
   *(source: PRD §10.12, §18.2,
   [browser-flashing §3](browser-flashing.md#3-same-origin-versioned-layout);
   verify: build, release; story: X-11)*
@@ -664,7 +665,7 @@ This is software-level safety of the IDE/agent, **not** hardware/actuator safety
   verification MUST inspect generated frozen content or the running image, not
   stale intermediate `.mpy` files. — *(source: FR-LIB, ADR-0018; verify:
   build/HIL; story: F-24)*
-- **BLD-17** — The current pre-v1 browser release MUST expose exactly
+- **BLD-17** — The current pre-v1 browser candidate MUST target exactly
   `esp32-4mb` and `esp32-s3-n16r8`, with the memory qualifications, merge
   settings, browser-image base offsets, and component offsets frozen in
   [browser-flashing §1](browser-flashing.md#1-release-image-profiles). Family
@@ -762,7 +763,7 @@ These are tracked, release-blocking where noted; they MUST be closed before the 
 
 - **OI-1 — Per-profile resource numbers pending HIL.** The measurement method,
   exact current scope, evidence contract, and threshold derivation are frozen
-  in §5.3. Numeric thresholds remain open. The current pre-v1 portion closes
+  in §5.3. Numeric thresholds remain open. The current pre-v1 candidate portion closes
   only when `esp32-4mb` and `esp32-s3-n16r8` each have committed
   evidence-derived policy values and passing final-candidate HIL. That state
   MUST be described as **“qualified for the current two-profile pre-v1
@@ -776,7 +777,7 @@ These are tracked, release-blocking where noted; they MUST be closed before the 
   Before release builds and HIL, its exact committed bytes MUST be selected as
   candidate-frozen immutable inputs. That selection is not hardware approval:
   the exact candidate MUST still pass HIL on every exact profile included in
-  that release. The current pre-v1 set is the two profiles in §5.3; C3 remains
+  that release. The current pre-v1 candidate set is the two profiles in §5.3; C3 remains
   mandatory before C3 enablement and before v1.0. A pin change creates a new
   candidate and resets all candidate-bound evidence. — *(verify: build, HIL)*
 - **OI-3 — Frozen → native split point TBD.** The agent starts frozen-Python; the decision of which hot paths (BLE I/O, framing, file chunking) move to a native `USER_C_MODULE`, and on which chip the budget forces it, is open and determined by HIL footprint/throughput measurement ([firmware.md §2](../firmware.md#2-agent-base-native-vs-frozen), [PRD §10.2](../prd.md)). The PBLE/1 wire contract MUST NOT change across the move (NFR-MAINT-3). — *(verify: size, conformance, HIL)*

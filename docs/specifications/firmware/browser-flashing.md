@@ -37,8 +37,9 @@ BLE and PBLE/1.
 
 ## 1. Release image profiles
 
-The current pre-v1 public bundle contains exactly these two qualified
-**provisioning image profiles**:
+The v0.4.2 release candidate targets exactly these two **provisioning image
+profiles**. Neither becomes a qualified public profile until the complete
+reproducibility, license, exact-byte HIL, and activation gate passes:
 
 | Profile ID | ESP Web Tools `chipFamily` | Required target configuration | ESP image silicon window (`min_chip_rev_full`…`max_chip_rev_full`) | Merge settings | Browser image and component map |
 |---|---|---|---|---|---|
@@ -163,7 +164,7 @@ as immutable inputs to one release candidate. Candidate-freezing MUST happen
 before the two clean release builds, license audit, candidate packaging,
 protected-site staging, or HIL. It is an input-selection state only: it does
 **not** assert that the pins work on hardware and does not approve them for a
-public release. Exact-profile HIL on both current release profiles,
+public release. Exact-profile HIL on both current candidate profiles,
 `esp32-4mb` and `esp32-s3-n16r8`, remains the pre-v1 public-release approval
 gate.
 
@@ -336,7 +337,7 @@ one build for its owning profile. For example,
 
 `<version>` above is a template substitution, not literal released JSON.
 The `esp32-4mb` manifest has the same shape and exactly one `ESP32` build with
-offset `4096`. There is no C3 manifest in the current release. The website MUST
+offset `4096`. There is no C3 manifest in the current candidate. The website MUST
 set the custom element's manifest URL to the verified manifest for the selected
 profile only. It MUST NOT pass an all-family catalog to ESP Web Tools or change
 manifests after the browser has selected a serial device.
@@ -389,7 +390,7 @@ beside their metadata:
   UTC `built_at`;
 - provenance: full PyBLE commit and clean state; MicroPython ref/commit;
   ESP-IDF ref/commit; patch count; runner and compiler/tool versions;
-- one entry for each current release profile in the first table of §1,
+- one entry for each current candidate profile in the first table of §1,
   including profile ID, `chip_family`,
   flash/PSRAM requirements, flash mode/frequency, required
   `silicon_revision.minimum_full` and `silicon_revision.maximum_full` integers
@@ -457,7 +458,7 @@ public notice.
 The conservative build audit runs against all six authoritative ESP-IDF
 descriptions: application and bootloader `project_description.json` for each
 of the three initial build targets. This preserves the v1 three-target build
-and license gate even while the pre-v1 public bundle contains two profiles.
+and license gate even while the pre-v1 candidate bundle targets two profiles.
 The released notice MUST classify as redistributed only the dependency union
 of the two packaged profiles; C3-only observations remain retained review
 evidence and MUST NOT be represented as a shipped C3 image or shipped profile.
@@ -1089,7 +1090,7 @@ Automated release tests MUST cover:
 - static-export and candidate/production-origin retrieval of every versioned
   byte.
 
-One HIL record MUST be completed for each of the two exact current release
+One HIL record MUST be completed for each of the two exact current candidate
 profiles using the final, hash-locked release candidate. The report contains
 exactly one embedded JSON object marked `PYBLE_HIL_RECORDS_V2`; a V1 marker,
 an additional marker, or keys not defined below are invalid.

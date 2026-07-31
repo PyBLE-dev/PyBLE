@@ -204,7 +204,7 @@ describe("browser firmware installer states", () => {
     render(<InstallerUnderTest capabilities={supportedCapabilities} />);
 
     expect(screen.getByRole("status")).toHaveTextContent(
-      /installer unavailable.*hardware validation.*both exact current release profiles/i,
+      /installer unavailable.*hardware validation.*both exact current candidate profiles/i,
     );
     expect(
       screen.getByRole("button", { name: /installer coming soon/i }),

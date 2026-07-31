@@ -10,7 +10,7 @@ import { pageMetadata } from "@/lib/site";
 export const metadata = pageMetadata({
   title: "Firmware installer",
   description:
-    "Release status and requirements for installing PyBLE firmware on qualified ESP32 and ESP32-S3 profiles, with ESP32-C3 planned.",
+    "Release status and requirements for candidate ESP32 and ESP32-S3 profiles, with ESP32-C3 planned.",
   path: "/flash",
 });
 
@@ -24,7 +24,7 @@ export default function FlashPage() {
           One-time wired provisioning installs PyBLE-enabled MicroPython. Then
           develop over Bluetooth Low Energy from the tablet-first PyBLE app. The
           public install action remains unavailable until the final bytes pass
-          hardware validation on both exact current release profiles.
+          hardware validation on both exact current candidate profiles.
         </p>
       </PageIntro>
 
