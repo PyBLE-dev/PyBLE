@@ -55,7 +55,7 @@ export function firmwareTargetsForRelease(
     if (target.planned) {
       status = "Planned · installer unavailable pending exact-profile HIL";
     } else if (release?.deployment === "public-beta") {
-      status = `v${release.version} unqualified beta · HIL pending`;
+      status = `v${release.version} hardware-tested beta · browser install/recovery passed · release qualification pending`;
     } else if (
       release?.deployment === "public" &&
       release.hilStatus === "passed"
@@ -75,7 +75,7 @@ export function absoluteUrl(path: string): string {
 }
 
 export const socialImage = {
-  url: absoluteUrl("/social/pyble-beta-og-7e7e037d-1200x630.png"),
+  url: absoluteUrl("/social/pyble-beta-og-277eee8a-1200x630.png"),
   width: 1200,
   height: 630,
   alt: "Actual PyBLE iPad app showing GPIO 48 NeoPixel Blocks and generated MicroPython code",

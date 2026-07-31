@@ -54,10 +54,11 @@ class PublicClaimsTest(unittest.TestCase):
 
     def test_readme_identifies_the_exact_hardware_tested_public_beta(self) -> None:
         firmware = markdown_section(self.readme, "What works")
+        normalized = " ".join(firmware.split())
 
         self.assertIn(
             "public browser installer currently offers the exact v0.4.2 hardware-tested beta",
-            firmware,
+            normalized,
         )
         self.assertIn("Production Chrome erase/install", firmware)
         self.assertIn("interrupted-flash recovery passed", firmware)
@@ -86,10 +87,14 @@ class PublicClaimsTest(unittest.TestCase):
 
     def test_readme_try_steps_use_the_hardware_tested_beta_safely(self) -> None:
         try_section = markdown_section(self.readme, "Try PyBLE")
+        normalized = " ".join(try_section.split())
 
-        self.assertIn("v0.4.2 hardware-tested beta", try_section)
-        self.assertIn("Browser installation and interrupted-flash recovery passed", try_section)
-        self.assertIn("complete release qualification continues", try_section)
+        self.assertIn("v0.4.2 hardware-tested beta", normalized)
+        self.assertIn(
+            "Browser installation and interrupted-flash recovery passed",
+            normalized,
+        )
+        self.assertIn("complete release qualification continues", normalized)
         self.assertNotIn("full HIL pending", try_section)
         self.assertNotIn("use it at your own risk", try_section)
         self.assertIn("exact profile", try_section)
@@ -156,7 +161,10 @@ class PublicClaimsTest(unittest.TestCase):
             self.assertEqual(profile["interruption_fetch_rounds"]["firmware"], 2)
             self.assertEqual(profile["recovery_fetch_rounds"]["firmware"], 2)
         self.assertTrue(
-            any("not the formal" in limitation for limitation in evidence["limitations"])
+            any(
+                "not the formal" in limitation
+                for limitation in evidence["limitations"]
+            )
         )
 
     def test_bug_template_collects_the_exact_installer_diagnostics(self) -> None:

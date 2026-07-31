@@ -27,7 +27,7 @@ export default function FlashPage() {
           One-time wired provisioning installs PyBLE-enabled MicroPython. Then
           develop over Bluetooth Low Energy from the tablet-first PyBLE app.
           {publicBeta
-            ? " The current v0.4.2 installer is an unqualified beta. It passed the audited-candidate release gate, but full hardware-in-the-loop validation is pending; use it at your own risk."
+            ? " The current v0.4.2 installer is a hardware-tested firmware beta. Production Chrome erase/install and deliberately interrupted-flash recovery passed on both exact profiles. Complete release qualification is still pending; this is not a qualified release."
             : qualifiedPublic
               ? ` Qualified v${release.version} firmware is available for both exact current release profiles.`
               : " The public install action remains unavailable until the final bytes pass hardware validation on both exact current release profiles."}

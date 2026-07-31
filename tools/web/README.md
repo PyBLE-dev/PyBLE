@@ -91,8 +91,10 @@ Enablement requires the release gate frozen in
 artifacts for both current exact profiles (`esp32-4mb` and
 `esp32-s3-n16r8`), the canonical audited-candidate and license gates, an
 annotated provenance tag, HTTPS, capability detection, and recovery
-instructions. It remains visibly unqualified while complete real-board HIL is
-pending. The S3 profile specifically requires an N16R8 module.
+instructions. Production Chrome install and interrupted-flash recovery passed
+on real hardware for both exact profiles; complete app, PBLE/1, resource, and
+remaining firmware release qualification continues. The S3 profile specifically
+requires an N16R8 module.
 `esp32-c3-4mb` remains visibly unavailable and has no public release bytes
 until a later exact-profile HIL-qualified candidate.
 

@@ -391,7 +391,7 @@ function FlashStatusForRelease({
             {candidate
               ? "Protected release candidate"
               : publicBeta
-                ? "Unqualified firmware beta"
+                ? "Hardware-tested firmware beta"
                 : "Qualified release"}
           </h2>
         </div>
@@ -404,7 +404,7 @@ function FlashStatusForRelease({
         {candidate
           ? "Protected release candidate: hardware validation is pending."
           : publicBeta
-            ? "Unqualified firmware beta: these exact v0.4.2 bytes passed the audited-candidate release gate, but full hardware-in-the-loop qualification is pending. They are not qualified. Use at your own risk."
+            ? "Hardware-tested firmware beta: exact PyBLE v0.4.2 browser installation and interrupted-flash recovery passed on real esp32-4mb and esp32-s3-n16r8 hardware. Complete release qualification is still pending; this is not a qualified release."
             : "Select and verify the exact module profile before installation."}
       </div>
 
@@ -499,8 +499,9 @@ function FlashStatusForRelease({
           </p>
           {publicBeta ? (
             <p className="flash-warning">
-              This is an unqualified beta with full HIL pending. Use at your own
-              risk.
+              Browser installation and interrupted-flash recovery passed on real
+              hardware for this exact profile. Complete release qualification is
+              still pending.
             </p>
           ) : null}
           <a className="text-link" href={activeRelease.recoveryPath}>
@@ -512,8 +513,9 @@ function FlashStatusForRelease({
               type="button"
               slot="activate"
             >
-              {publicBeta ? "Install unqualified beta PyBLE" : "Install PyBLE"}{" "}
-              {verified.version}
+              {publicBeta
+                ? `Install PyBLE ${verified.version} beta`
+                : `Install PyBLE ${verified.version}`}
             </button>
           </esp-web-install-button>
         </div>

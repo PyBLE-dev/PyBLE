@@ -321,7 +321,9 @@ describe("browser firmware installer states", () => {
       /hardware-tested firmware beta.*browser installation.*interrupted-flash recovery.*esp32-4mb.*esp32-s3-n16r8.*complete release qualification.*pending.*not a qualified release/i,
     );
     expect(screen.queryByText(/protected release candidate/i)).toBeNull();
-    expect(screen.queryByText(/qualified release/i)).toBeNull();
+    expect(
+      screen.queryByRole("heading", { name: /^qualified release$/i }),
+    ).toBeNull();
     expect(screen.queryByText(/full HIL pending/i)).toBeNull();
     expect(screen.queryByText(/use at your own risk/i)).toBeNull();
 

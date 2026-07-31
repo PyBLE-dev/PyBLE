@@ -9,13 +9,14 @@ promising dates; accepted work is tracked through GitHub issues and milestones.
 - PBLE/1 editing, run/stop, console, and file workflows over BLE
 - Offline Blockly with beginner GPIO and NeoPixel examples
 - Browser installation for the exact `esp32-4mb` and `esp32-s3-n16r8` profiles
-  as the v0.4.2 unqualified beta; HIL pending
+  as the v0.4.2 hardware-tested beta; production Chrome install/recovery passed
+  on both profiles
 - MIT-licensed app, agent firmware, protocol, website, tests, and release tools
 
 ## Near term
 
-- Complete full HIL qualification for the exact `esp32-4mb` and
-  `esp32-s3-n16r8` v0.4.2 bytes
+- Complete the app, PBLE/1, resource, and remaining firmware release
+  qualification for the exact v0.4.2 bytes
 - Complete real-hardware qualification before enabling the ESP32-C3 installer
 - Expand user-facing setup, recovery, and board-specific wiring guidance
 - Open and document the Android beta distribution path

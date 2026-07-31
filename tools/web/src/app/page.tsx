@@ -79,7 +79,7 @@ export default function HomePage() {
       number: "01",
       title: "Provision once",
       body: publicBeta
-        ? `Use USB once to install the exact matching v${firmwareRelease.version} unqualified beta. Full HIL is pending; use it at your own risk.`
+        ? `Use USB once to install the exact matching v${firmwareRelease.version} hardware-tested beta. Production Chrome install and interrupted-flash recovery passed on both exact profiles; complete release qualification continues.`
         : qualifiedPublic
           ? `Use USB once to install the exact matching qualified v${firmwareRelease.version} firmware.`
           : firmwareRelease
@@ -107,10 +107,11 @@ export default function HomePage() {
               MicroPython and support Bluetooth Low Energy.{" "}
               {publicBeta ? (
                 <>
-                  Public v{firmwareRelease.version} firmware is an unqualified
-                  beta for the exact esp32-4mb and esp32-s3-n16r8 profiles. Full
-                  hardware-in-the-loop qualification is pending; use it at your
-                  own risk.
+                  Public v{firmwareRelease.version} firmware is a
+                  hardware-tested beta for the exact esp32-4mb and
+                  esp32-s3-n16r8 profiles. Production Chrome install and
+                  interrupted-flash recovery passed on both exact profiles;
+                  complete release qualification continues.
                 </>
               ) : qualifiedPublic ? (
                 <>
@@ -392,9 +393,10 @@ export default function HomePage() {
               Install the free iPad beta through Apple TestFlight now.{" "}
               {publicBeta ? (
                 <>
-                  The exact v{firmwareRelease.version} unqualified firmware beta
-                  is available for esp32-4mb and esp32-s3-n16r8 while full HIL
-                  remains pending; use it at your own risk.
+                  The exact v{firmwareRelease.version} hardware-tested firmware
+                  beta is available for esp32-4mb and esp32-s3-n16r8. Production
+                  Chrome install and interrupted-flash recovery passed on both
+                  exact profiles; complete release qualification continues.
                 </>
               ) : qualifiedPublic ? (
                 <>

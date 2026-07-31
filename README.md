@@ -62,15 +62,17 @@ BLE GATT peripheral. It supports:
 - board naming and identify support; and
 - upstream MicroPython’s standard `neopixel` module.
 
-The public browser installer currently offers the exact v0.4.2 unqualified beta
-for both current profiles. The exact bytes pass the audited-candidate release
-gate, but full project HIL is pending:
+The public browser installer currently offers the exact v0.4.2 hardware-tested
+beta for both current profiles. Production Chrome erase/install and deliberately
+interrupted-flash recovery passed on real hardware for both exact profiles.
+Complete release qualification continues across the app, PBLE/1, resource, and
+remaining firmware matrices:
 
-| Installer profile | Exact target constraint                                      | Public status                                       |
-| ----------------- | ------------------------------------------------------------ | --------------------------------------------------- |
-| `esp32-4mb`       | Classic ESP32, 4 MiB external SPI flash; no PSRAM assumed     | Unqualified v0.4.2 beta; HIL pending                 |
-| `esp32-s3-n16r8`  | ESP32-S3, 16 MiB flash / 8 MiB Octal PSRAM; N16R8-class only | Unqualified v0.4.2 beta; HIL pending                 |
-| `esp32-c3-4mb`    | ESP32-C3, 4 MiB external SPI flash; no PSRAM assumed          | Planned; unavailable; no public image               |
+| Installer profile | Exact target constraint                                      | Public status                                                |
+| ----------------- | ------------------------------------------------------------ | ------------------------------------------------------------ |
+| `esp32-4mb`       | Classic ESP32, 4 MiB external SPI flash; no PSRAM assumed    | v0.4.2 hardware-tested beta; browser install/recovery passed |
+| `esp32-s3-n16r8`  | ESP32-S3, 16 MiB flash / 8 MiB Octal PSRAM; N16R8-class only | v0.4.2 hardware-tested beta; browser install/recovery passed |
+| `esp32-c3-4mb`    | ESP32-C3, 4 MiB external SPI flash; no PSRAM assumed         | Planned; unavailable; no public image                        |
 
 These are the initial port targets, not a chip-family allowlist. A future board
 is compatible when it has a maintained PyBLE agent port, BLE GATT
@@ -108,9 +110,10 @@ shared conformance corpus, documentation, and CI atomically.
    [TestFlight](https://testflight.apple.com/join/yU4e8s6d), or build the
    Flutter app locally.
 2. Open [pyble.dev/flash](https://pyble.dev/flash) in desktop Chrome or Edge.
-   The exact v0.4.2 unqualified beta is active while full HIL is pending; please
-   use it at your own risk. Confirm the active version, your exact profile, and
-   the enabled install action.
+   The exact v0.4.2 hardware-tested beta is active. Browser installation and
+   interrupted-flash recovery passed on both exact profiles; complete release
+   qualification continues. Confirm the active version, your exact profile,
+   and the enabled install action.
 3. Before flashing, back up the board, confirm its exact memory profile, and
    accept every safety acknowledgement before using the one-time wired
    installer. Flashing erases the board.

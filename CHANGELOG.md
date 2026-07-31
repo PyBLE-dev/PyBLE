@@ -10,6 +10,9 @@ are released independently from this monorepo.
   documentation.
 - Selected firmware agent `0.4.2` for fresh reproducible builds and
   two-profile qualification from the canonical public history.
+- Validated production Chrome installation, deliberate interruption, recovery,
+  and reset on real `esp32-4mb` and `esp32-s3-n16r8` hardware, and corrected
+  public beta copy to describe that completed scope.
 
 ## App 0.1.0-beta — 2026-07-30
 

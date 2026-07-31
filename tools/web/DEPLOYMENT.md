@@ -111,7 +111,7 @@ website symlink. Firmware and upload evidence remain available through this
 remote verification. A caller-supplied evidence or inventory directory is
 never trusted. The helper retrieves every published byte afterward.
 
-For the exact digest-bound v0.4.2 unqualified beta, use the same retained
+For the exact digest-bound v0.4.2 hardware-tested beta, use the same retained
 license inputs and annotated `firmware-v0.4.2` tag, but select the explicit
 public-beta mode:
 
@@ -133,7 +133,9 @@ deploy/vps/deploy.sh <ssh-user>@<vps-host>
 The staging and deployment helpers run the canonical `--audited-candidate`
 license gate, require both profile HIL states to remain pending, bind the exact
 reviewed `release.json` SHA-256, and keep ESP32-C3 absent. The public site must
-label these bytes unqualified, HIL-pending, and at the user's risk.
+identify these bytes as a hardware-tested beta, name the completed production
+Chrome installation and interrupted-flash recovery scope, and distinguish it
+from complete release qualification.
 
 For a pending release candidate, stage with both explicit controls:
 

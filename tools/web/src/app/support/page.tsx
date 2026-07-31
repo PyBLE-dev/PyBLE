@@ -53,10 +53,11 @@ export default function SupportPage() {
                   <p>
                     {publicBeta ? (
                       <>
-                        The v{firmwareRelease.version} unqualified beta is
+                        The v{firmwareRelease.version} hardware-tested beta is
                         available for the exact esp32-4mb and esp32-s3-n16r8
-                        profiles. Full HIL remains pending; use it at your own
-                        risk.
+                        profiles. Production Chrome install and
+                        interrupted-flash recovery passed on both exact
+                        profiles; complete release qualification continues.
                       </>
                     ) : qualifiedPublic ? (
                       <>

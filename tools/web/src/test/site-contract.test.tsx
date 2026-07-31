@@ -88,8 +88,8 @@ describe("public-site contract", () => {
   });
 
   it("publishes a real-app large social card and local TestFlight card", async () => {
-    const socialPngName = "pyble-beta-og-7e7e037d-1200x630.png";
-    const socialSvgName = "pyble-beta-og-48d458bd-1200x630.svg";
+    const socialPngName = "pyble-beta-og-277eee8a-1200x630.png";
+    const socialSvgName = "pyble-beta-og-b47b6d10-1200x630.svg";
     const socialUrl = `https://pyble.dev/social/${socialPngName}`;
     expect(rootMetadata.openGraph?.images).toEqual([
       {
@@ -135,10 +135,10 @@ describe("public-site contract", () => {
       .update(socialSvg)
       .digest("hex");
     expect(socialPngSha256).toBe(
-      "7e7e037d9bd2e58e2e66f516bfd6f1b753bda472c402b8130f8a8a6dd8f19ba9",
+      "277eee8ae859c3e26444df830cf1b03f624f2be1f1524bc3246ce2d946332023",
     );
     expect(socialSvgSha256).toBe(
-      "48d458bd5a6ee1e754bad7d7f9a7261361c0d8a3b13c4fc9cc8a9f5670e04b5d",
+      "b47b6d10d6de3e16a5687680d8f34f115f9a276d0fdbde06051751de2270ddfd",
     );
     expect(socialPngName).toContain(socialPngSha256.slice(0, 8));
     expect(socialSvgName).toContain(socialSvgSha256.slice(0, 8));
