@@ -12,6 +12,7 @@ import FlashPage, { metadata as flashMetadata } from "@/app/flash/page";
 import HomePage, { metadata as homeMetadata } from "@/app/page";
 import PrivacyPage, { metadata as privacyMetadata } from "@/app/privacy/page";
 import SupportPage, { metadata as supportMetadata } from "@/app/support/page";
+import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { initialFirmwareTargets, navigation, siteConfig } from "@/lib/site";
 
@@ -138,6 +139,41 @@ describe("public-site contract", () => {
     expect(
       screen.queryByText(/available on the app store/i),
     ).not.toBeInTheDocument();
+  });
+
+  it("publishes the canonical MIT source repository from the home page and global footer", () => {
+    const repositoryUrl = "https://github.com/PyBLE-dev/PyBLE";
+
+    expect(siteConfig.repositoryUrl).toBe(repositoryUrl);
+
+    render(
+      <>
+        <HomePage />
+        <SiteFooter />
+      </>,
+    );
+
+    const sourceSection = screen.getByRole("region", {
+      name: "See how PyBLE is built.",
+    });
+    expect(
+      within(sourceSection).getByText(
+        /tablet app, board-agent firmware, PBLE\/1 protocol, tests, and documentation/i,
+      ),
+    ).toHaveTextContent(/developed in public under the MIT license/i);
+
+    const sourceLink = within(sourceSection).getByRole("link", {
+      name: "Explore PyBLE on GitHub",
+    });
+    expect(sourceLink).toHaveAttribute("href", repositoryUrl);
+    expect(sourceLink).toHaveAttribute("target", "_blank");
+    expect(sourceLink).toHaveAttribute("rel", "noopener noreferrer");
+
+    const footer = screen.getByRole("navigation", { name: "Footer" });
+    const footerLink = within(footer).getByRole("link", { name: "GitHub" });
+    expect(footerLink).toHaveAttribute("href", repositoryUrl);
+    expect(footerLink).toHaveAttribute("target", "_blank");
+    expect(footerLink).toHaveAttribute("rel", "noopener noreferrer");
   });
 
   it("publishes the approved TestFlight invitation as a link and verified local QR code", async () => {
