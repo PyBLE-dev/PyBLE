@@ -32,6 +32,13 @@ export function absoluteUrl(path: string): string {
   return new URL(path, siteConfig.origin).toString();
 }
 
+export const socialImage = {
+  url: absoluteUrl("/social/pyble-beta-og-1200x630.png"),
+  width: 1200,
+  height: 630,
+  alt: "Actual PyBLE iPad app showing GPIO 48 NeoPixel Blocks and generated MicroPython code",
+} as const;
+
 export function pageMetadata({
   title,
   description,
@@ -55,20 +62,13 @@ export function pageMetadata({
       title,
       description,
       url,
-      images: [
-        {
-          url: absoluteUrl("/brand/pyble-prompt-chip-master.png"),
-          width: 1024,
-          height: 1024,
-          alt: "PyBLE Prompt Chip mark",
-        },
-      ],
+      images: [{ ...socialImage }],
     },
     twitter: {
-      card: "summary",
+      card: "summary_large_image",
       title,
       description,
-      images: [absoluteUrl("/brand/pyble-prompt-chip-master.png")],
+      images: [socialImage.url],
     },
   };
 }

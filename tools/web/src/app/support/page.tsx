@@ -40,9 +40,10 @@ export default function SupportPage() {
                 <div>
                   <h3>Install the matching firmware once</h3>
                   <p>
-                    The initial beta firmware supports ESP32, ESP32-S3, and
-                    ESP32-C3. Use the reviewed image supplied for your exact
-                    target; this initial step uses a cable.
+                    The public installer supports only esp32-4mb and
+                    esp32-s3-n16r8. ESP32-C3 is not currently available. Use
+                    the reviewed image supplied for your exact target; this
+                    initial step uses a cable.
                   </p>
                 </div>
               </li>
