@@ -26,6 +26,13 @@ _ASSERT_NAME="test_dco_signoff"
 run() {
   require_gate "$DCO_CHECK" "build-smith · tools/ci/dco_check.sh (or confirm GitHub DCO app)" || return 0
 
+  # GitHub checks out a synthetic merge commit for pull_request events. The DCO
+  # range must stop at the contributor-owned PR head, otherwise the unsigned
+  # GitHub-generated merge commit is incorrectly treated as contributor work.
+  check "PR DCO range ends at the contributor-owned head SHA" \
+    grep -Fq 'PYBLE_DCO_RANGE="origin/${{ github.base_ref }}..${{ github.event.pull_request.head.sha }}"' \
+      "$REPO_ROOT/.github/workflows/ci.yml"
+
   # Build a throwaway repo with one signed and one unsigned commit.
   local tmp; tmp="$(mk_tmp)"
   git init -q "$tmp"
