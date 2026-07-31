@@ -968,6 +968,7 @@ class BuildProvenanceEmissionTests(unittest.TestCase):
                         fixture.output.resolve() / "esp32"
                     ),
                     "-ffile-prefix-map={}=/MICROPYTHON".format(upstream),
+                    "-ffile-prefix-map={}=/IDF".format(fixture.idf.resolve()),
                 )
             )
             environments = fixture.make_environments()
