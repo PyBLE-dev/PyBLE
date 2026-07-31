@@ -103,10 +103,7 @@ describe("public-site contract", () => {
     const publicDirectory = join(process.cwd(), "public");
     const [socialPng, socialSvg, qrCardPng, qrCardSvg] = await Promise.all([
       readFile(join(publicDirectory, "social", socialPngName)),
-      readFile(
-        join(publicDirectory, "social", socialSvgName),
-        "utf8",
-      ),
+      readFile(join(publicDirectory, "social", socialSvgName), "utf8"),
       readFile(join(publicDirectory, "social", "pyble-testflight-qr-1080.png")),
       readFile(
         join(publicDirectory, "social", "pyble-testflight-qr-1080.svg"),
