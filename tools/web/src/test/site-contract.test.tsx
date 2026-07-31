@@ -9,6 +9,7 @@ import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import FlashPage, { metadata as flashMetadata } from "@/app/flash/page";
+import { metadata as rootMetadata } from "@/app/layout";
 import HomePage, { metadata as homeMetadata } from "@/app/page";
 import PrivacyPage, { metadata as privacyMetadata } from "@/app/privacy/page";
 import SupportPage, { metadata as supportMetadata } from "@/app/support/page";
@@ -73,6 +74,52 @@ describe("public-site contract", () => {
       start_url: "/",
       theme_color: "#081B35",
     });
+  });
+
+  it("publishes a real-app large social card and local TestFlight card", async () => {
+    const socialUrl =
+      "https://pyble.dev/social/pyble-beta-og-1200x630.png";
+    expect(rootMetadata.openGraph?.images).toEqual([
+      {
+        url: socialUrl,
+        width: 1200,
+        height: 630,
+        alt: "Actual PyBLE iPad app showing GPIO 48 NeoPixel Blocks and generated MicroPython code",
+      },
+    ]);
+    expect(rootMetadata.twitter).toMatchObject({
+      card: "summary_large_image",
+      images: [socialUrl],
+    });
+    expect(supportMetadata.openGraph?.images).toEqual(
+      rootMetadata.openGraph?.images,
+    );
+    expect(supportMetadata.twitter).toMatchObject({
+      card: "summary_large_image",
+      images: [socialUrl],
+    });
+
+    const publicDirectory = join(process.cwd(), "public");
+    const [socialPng, qrCardPng, qrCardSvg] = await Promise.all([
+      readFile(join(publicDirectory, "social", "pyble-beta-og-1200x630.png")),
+      readFile(
+        join(publicDirectory, "social", "pyble-testflight-qr-1080.png"),
+      ),
+      readFile(
+        join(publicDirectory, "social", "pyble-testflight-qr-1080.svg"),
+        "utf8",
+      ),
+    ]);
+    expect([
+      socialPng.readUInt32BE(16),
+      socialPng.readUInt32BE(20),
+    ]).toEqual([1200, 630]);
+    expect([
+      qrCardPng.readUInt32BE(16),
+      qrCardPng.readUInt32BE(20),
+    ]).toEqual([1080, 1080]);
+    expect(qrCardSvg).toContain("testflight.apple.com/join/yU4e8s6d");
+    expect(qrCardSvg).not.toMatch(/https?:\/\/[^<]*\.(?:png|svg|jpg)/i);
   });
 
   it("exposes accessible primary navigation", () => {
@@ -439,8 +486,11 @@ describe("public-site contract", () => {
     expect(screen.getByText("Board and chip family")).toBeInTheDocument();
     expect(
       screen.getByText(
-        /initial beta firmware supports ESP32, ESP32-S3, and ESP32-C3/i,
+        /public installer supports only esp32-4mb and esp32-s3-n16r8/i,
       ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/ESP32-C3 is not currently available/i),
     ).toBeInTheDocument();
     expect(
       screen.getByText(
