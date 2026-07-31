@@ -1,6 +1,6 @@
 # PyBLE ESP32-Family Browser Flashing and Release Bundle
 
-Status: **FROZEN v1.27** · Owner: project maintainer · Frozen:
+Status: **FROZEN v1.28** · Owner: project maintainer · Frozen:
 2026-07-31 (`[docs]`; pre-v1 two-profile release eligibility and explicit
 C3 deferral; evidence-derived resource policy and exact HIL V2 records;
 pre-policy two-root baseline-input staging and mechanical baseline/policy
@@ -20,7 +20,8 @@ component-owned linked outputs, lexical exact-path validation, nested-build
 logical paths, shell-free compiler/linker command receipts, executable
 version-matched recovery-command syntax, and the canonical pre-v1 same-origin
 publication channel with an optional byte-identical mirror, plus bounded
-completed-HIL report assembly, on the same date)
+completed-HIL report assembly, plus the exact one-version unqualified public
+beta exception, on the same date)
 
 This document is the source of truth for the initial browser-provisioning
 release bundle. It refines
@@ -37,8 +38,10 @@ BLE and PBLE/1.
 
 ## 1. Release image profiles
 
-The current pre-v1 public bundle contains exactly these two qualified
-**provisioning image profiles**:
+The current pre-v1 browser bundle contains exactly these two
+**provisioning image profiles**. The exact `v0.4.1` bytes may be offered only as
+the unqualified public beta defined in §10; they are not qualified profiles.
+A later qualified public bundle uses the same exact profile definitions:
 
 | Profile ID | ESP Web Tools `chipFamily` | Required target configuration | ESP image silicon window (`min_chip_rev_full`…`max_chip_rev_full`) | Merge settings | Browser image and component map |
 |---|---|---|---|---|---|
@@ -394,7 +397,7 @@ beside their metadata:
   flash/PSRAM requirements, flash mode/frequency, required
   `silicon_revision.minimum_full` and `silicon_revision.maximum_full` integers
   matching the §1 image window, and HIL status (`pending` for a candidate or
-  `passed` for a public bundle);
+  the exact `v0.4.1` public beta, or `passed` for a qualified public bundle);
 - one `manifest` entry per profile with its relative path, exact byte size, and
   lowercase 64-hex SHA-256;
 - one `install` entry per profile for the merged image, with relative `path`,
@@ -408,7 +411,8 @@ beside their metadata:
 
 All values are required; placeholders, `unknown`, and abbreviated commits fail
 any bundle. `pending` is accepted only on an access-controlled candidate used
-for HIL; an HIL status other than `passed` fails a public bundle.
+for HIL or the exact digest-bound `v0.4.1` `public-beta` exception in §10; an HIL
+status other than `passed` fails every ordinary public bundle.
 `release.schema.json`
 itself is versioned and immutable beside the metadata. `SHA256SUMS` MUST use the
 conventional lowercase-hex, two-space, relative-path format and cover every
@@ -1436,9 +1440,10 @@ requires the complete two-profile HIL matrix again.
 
 ## 10. Activation and rollback
 
-The public action progresses through `candidate` → `verified` → `published` →
-`active`. The public `pyble.dev/flash` action remains disabled while candidate
-HIL runs on the access-controlled production-equivalent HTTPS deployment. It
+The qualified public action progresses through `candidate` → `verified` →
+`published` → `active`. The public `pyble.dev/flash` action remains disabled
+while candidate HIL runs on the access-controlled production-equivalent HTTPS
+deployment. It
 is valid for that protected candidate deployment alone to expose the action
 with `hil_status: pending` after every non-HIL automated/integrity gate is
 green; the candidate-mode selection MUST be build-time explicit, inaccessible
@@ -1480,8 +1485,22 @@ separate reviewed operation requiring an explicit truth-valued disable flag
 and a production smoke test of the disabled state; absence of staging input
 alone is never authorization to disable it.
 
-The pre-public `v0.4.1` candidate path was exposed without the required access
-control and is permanently burned. The origin MUST quarantine
-`/firmware/v0.4.1/` with a non-cacheable not-found response, MUST NOT select or
-promote those bytes, and MUST retain any forensic copy outside public routing.
-A qualified public release therefore starts at a new immutable version.
+As a one-time transitional exception, the retained `v0.4.1` bundle MAY be
+published as an explicitly **unqualified public beta**. The selector deployment
+mode MUST be `public-beta`, `accessControlled` MUST be `false`, both profile HIL
+states and the aggregate `hilStatus` MUST remain `pending`, and the
+`release.json` SHA-256 MUST equal
+`8b84fbb65a0463d20369e1d86dac566ca7a2039ebc30f9186f55c05421962445`.
+The exact profile set is `esp32-4mb` plus `esp32-s3-n16r8`; C3 MUST remain
+absent. Before the install control appears, the website MUST say that these
+bytes were manually exercised on the maintainer's two boards but have not
+passed the complete project HIL matrix, and that installation is at the user's
+risk. It MUST NOT call the beta access-controlled, protected, qualified,
+validated, or generally available.
+
+The beta path MUST retain all existing schema, checksum, manifest, image,
+same-origin, browser-capability, profile-confirmation, consent, recovery, and
+production-smoke checks. The exception changes only publication policy; it does
+not allow byte mutation, substitute evidence, a different version/digest, or a
+new profile. A later qualified public release therefore starts at a new
+immutable version and still requires the complete gate above.
