@@ -5,9 +5,10 @@
 
 The statically authored Next.js site for `pyble.dev`. It explains the PyBLE
 workflow and capability-defined board vision, distinguishes that vision from
-the initial validated ESP32 / ESP32-S3 / ESP32-C3 firmware targets, publishes
-privacy and support information, and stages the future browser firmware
-installer without claiming that release artifacts are ready.
+the initial ESP-IDF build/reference targets (ESP32, ESP32-S3, and ESP32-C3),
+publishes privacy and support information, and stages the future browser
+firmware installer. The public installer remains unavailable pending v0.4.2 HIL
+on the exact release-candidate bytes for both selected profiles.
 
 ## Why Next.js
 

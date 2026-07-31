@@ -1530,7 +1530,8 @@ The foundational product decisions are resolved and recorded as Architecture Dec
 - **Initial app platforms** → iPadOS and Android tablet at parity, released together (§13.6).
 - **Wi-Fi / USB as primary transport** → no; BLE-first and BLE-only for v1 (this is what makes iPad first-class).
 - **Board scope** → capability-defined MicroPython + BLE platform; ESP32,
-  ESP32-S3, and ESP32-C3 are the initial validated firmware targets
+  ESP32-S3, and ESP32-C3 are the initial build/reference targets, while
+  release compatibility remains exact-profile and HIL-gated
   ([ADR-0021](../decisions/0021-capability-defined-board-scope.md)).
 
 **Pending (resolved by measurement, not debate):**

@@ -35,8 +35,8 @@ under the same PBLE/1 protocol.
 
 | Image profile | Required memory configuration | Installer family check | Release status | Public compatibility claim |
 |---|---|---|---|---|
-| `esp32-4mb` | Classic ESP32; 4 MiB external SPI flash; no PSRAM assumed | `ESP32` | Current pre-v1 release | Only boards whose module documentation confirms this flash layout |
-| `esp32-s3-n16r8` | ESP32-S3; 16 MiB flash; 8 MiB Octal PSRAM | `ESP32-S3` | Current pre-v1 release | N16R8-class modules only; not generic ESP32-S3 |
+| `esp32-4mb` | Classic ESP32; 4 MiB external SPI flash; no PSRAM assumed | `ESP32` | v0.4.2 HIL pending; installer unavailable | Only boards whose module documentation confirms this flash layout |
+| `esp32-s3-n16r8` | ESP32-S3; 16 MiB flash; 8 MiB Octal PSRAM | `ESP32-S3` | v0.4.2 HIL pending; installer unavailable | N16R8-class modules only; not generic ESP32-S3 |
 | `esp32-c3-4mb` | ESP32-C3 revision v0.3 or newer; 4 MiB external flash; no PSRAM assumed | `ESP32-C3` | Unavailable pending exact-profile HIL | No public installer compatibility claim yet |
 
 The installer family check cannot establish flash capacity, PSRAM type, USB
