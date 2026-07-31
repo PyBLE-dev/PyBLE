@@ -25,7 +25,7 @@ describe("self-hosted firmware activation", () => {
       /\b(?:ssh|rsync)\b[\s\S]{0,2400}\.pyble-firmware-release-selection\.json/,
     );
     const preservedValidation = script.indexOf(
-      "--verify-staged",
+      "--verify-preserved-staged",
       authenticatedRetrieval,
     );
 

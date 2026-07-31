@@ -638,6 +638,64 @@ describe("external firmware bundle staging", () => {
     ).rejects.toThrow();
   });
 
+  it("revalidates only an exact previously activated public staged release", async () => {
+    const fixture = createFirmwareReleaseFixture({
+      deployment: "public",
+      accessControlled: false,
+      hilStatus: "passed",
+    });
+    const bundleDirectory = await temporaryDirectory(
+      "preserved-public-source",
+    );
+    const stagedRoot = await temporaryDirectory("preserved-public-staged");
+    await writeExternalBundle(bundleDirectory, fixture);
+    const descriptor = await stageFixture({
+      accessControlled: false,
+      bundleDirectory,
+      deployment: "public",
+      outputDirectory: stagedRoot,
+    });
+
+    const stagingModule =
+      (await import("../../scripts/stage-firmware-release")) as unknown as {
+        validatePreservedPublicFirmwareRelease?: (
+          stagedRoot: string,
+          options: {
+            releaseValidator: typeof acceptSyntheticFixture;
+          },
+        ) => Promise<typeof descriptor>;
+      };
+    const validatePreserved =
+      stagingModule.validatePreservedPublicFirmwareRelease;
+    expect(validatePreserved).toBeTypeOf("function");
+    if (!validatePreserved) {
+      return;
+    }
+
+    await expect(
+      validatePreserved(stagedRoot, {
+        releaseValidator: acceptSyntheticFixture,
+      }),
+    ).resolves.toEqual(descriptor);
+
+    const selectionPath = join(
+      stagedRoot,
+      ".pyble-firmware-release-selection.json",
+    );
+    const selection = JSON.parse(await readFile(selectionPath, "utf8")) as {
+      deployment: string;
+      hilStatus: string;
+    };
+    selection.deployment = "candidate";
+    selection.hilStatus = "pending";
+    await writeFile(selectionPath, `${JSON.stringify(selection, null, 2)}\n`);
+    await expect(
+      validatePreserved(stagedRoot, {
+        releaseValidator: acceptSyntheticFixture,
+      }),
+    ).rejects.toThrow(/previously activated|public|passed/i);
+  });
+
   it("requires explicit published-GitHub evidence with byte equality before public activation", async () => {
     const fixture = createFirmwareReleaseFixture();
     const bundleDirectory = await temporaryDirectory(
