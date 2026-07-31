@@ -375,7 +375,7 @@ describe("public-site contract", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        /public install action remains unavailable until the final bytes pass hardware validation on both exact current release profiles/i,
+        /public install action remains unavailable until the final bytes pass hardware validation on both exact current candidate profiles/i,
       ),
     ).toBeInTheDocument();
     expect(screen.getByText(/esp32-s3-n16r8/i)).toBeInTheDocument();

@@ -63,7 +63,8 @@ The home page MAY make these verified claims:
 - Blocks runs offline, includes editable beginner examples, supports the
   current explicit numeric-GPIO and standard MicroPython NeoPixel subset, and
   can reopen exact sidecars or import a deliberately bounded Python subset.
-  Those hardware APIs are initially validated on ESP32-family firmware and
+  Those hardware APIs are implemented and exercised on the initial
+  ESP32-family builds; release support still requires exact-profile HIL and
   MUST NOT be promised for every future port.
 - PBLE/1 is an open PyBLE-owned protocol.
 
@@ -72,11 +73,13 @@ Compatibility copy MUST distinguish platform scope from current support:
 - hardware eligibility requires MicroPython, a PBLE/1-capable BLE peripheral
   stack, sufficient resources, and a conforming agent port;
 - actual support requires a released, validated firmware image for the target;
-- the current pre-v1 release list is the exact `esp32-4mb` and
-  `esp32-s3-n16r8` profiles; ESP32-C3 remains an initial firmware target but
-  is planned/unavailable until its exact profile passes real-hardware HIL;
-- browser provisioning is offered only for the exact qualified memory profiles
-  in §7, including N16R8-class hardware for the initial ESP32-S3 image;
+- the current v0.4.2 candidate set is the exact `esp32-4mb` and
+  `esp32-s3-n16r8` profiles, but neither is released or selectable until both
+  exact candidate images pass real-hardware HIL; ESP32-C3 remains an initial
+  firmware target but is planned/unavailable until its own exact profile
+  passes HIL;
+- browser provisioning is activated only for exact HIL-qualified memory
+  profiles in §7, including N16R8-class hardware for the ESP32-S3 image;
 - users select pins for their exact board and wiring.
 
 It MUST NOT imply that Bluetooth hardware or stock MicroPython alone is enough,
@@ -123,7 +126,8 @@ metadata suitable for the external beta announcement. The image MUST use the
 canonical prompt-chip mark and a privacy-reviewed capture of the real app
 described in §4. It MAY add authored brand text and framing, but MUST NOT
 retouch or generate the pictured app interface. Its claims MUST be limited to
-the current iPad external beta and the exact qualified installer profiles.
+the current iPad external beta, the exact selected candidate profiles, and
+their current qualification status.
 
 The social image MUST have useful alternative text, remain legible under
 common center crops, and make no third-party runtime request. A QR code MUST
@@ -347,9 +351,10 @@ image profiles, offsets, same-origin layout, manifest, integrity/provenance
 metadata, recovery content, and HIL matrix. This section owns the website state
 and user experience.
 
-The current pre-v1 public profiles are exactly `esp32-4mb` and
-`esp32-s3-n16r8`. The S3 image requires 16 MiB flash plus 8 MiB Octal PSRAM
-and MUST NOT be described as suitable for every ESP32-S3 board. The known
+The v0.4.2 candidate profiles are exactly `esp32-4mb` and
+`esp32-s3-n16r8`; neither is public or qualified before the complete gate below
+passes. The S3 image requires 16 MiB flash plus 8 MiB Octal PSRAM and MUST NOT
+be described as suitable for every ESP32-S3 board. The known
 `esp32-c3-4mb` profile remains an initial v1 target but is explicitly
 unavailable until exact-profile real-hardware validation is complete. It MUST
 be shown separately as planned/unavailable and MUST NOT appear in the active
@@ -361,7 +366,7 @@ The `/flash` action MUST fail closed and remain explicitly unavailable until
 all of the following are true for one exact immutable version:
 
 1. two clean, provenance-recorded, reproducible builds produced
-   byte-identical current release-profile artifact sets from the frozen
+   byte-identical current candidate-profile artifact sets from the frozen
    source/toolchain pins, while the three-target source/build audit remained
    green;
 2. the versioned, same-origin profile-scoped ESP Web Tools manifests and separate
@@ -369,7 +374,7 @@ all of the following are true for one exact immutable version:
    partition, path, schema, license, and integrity gates;
 3. the final hash-locked bytes passed the complete browser-install and
    interrupted-flash recovery HIL matrix on real hardware for both exact
-   current release profiles from an access-controlled,
+   current candidate profiles from an access-controlled,
    production-equivalent HTTPS candidate
    deployment, while the public action remained disabled;
 4. the exact bytes, release notes, licenses, recovery guide, and HIL report are
