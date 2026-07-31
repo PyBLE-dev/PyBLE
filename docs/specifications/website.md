@@ -132,6 +132,39 @@ platform cropping can make it unreliable. A separate local square TestFlight
 card MAY include the exact invitation QR, visible destination, and plain-text
 instructions.
 
+### 3.4 Pre-activation release claims and support intake
+
+Until the first v0.4.2 public firmware selector passes the complete gate in §7,
+the repository README and home page MUST say that the browser installer is
+unavailable pending v0.4.2 HIL on both exact current profiles. They MUST NOT
+describe either profile or its browser image as released, available, or
+qualified. The home-page target cards MUST identify the profiles and constraints
+as `esp32-4mb` (classic ESP32, 4 MiB external SPI flash, no PSRAM assumed) and
+`esp32-s3-n16r8` (ESP32-S3, 16 MiB flash, 8 MiB **Octal** PSRAM), and give each
+the truthful pending-HIL/unavailable state. `esp32-c3-4mb` remains a separate
+planned, unavailable profile.
+
+README getting-started instructions MUST gate destructive flashing on `/flash`
+showing an active version, exact profile, and enabled install action. While the
+installer is unavailable, they MUST NOT instruct a reader to select or flash a
+supposedly qualified public image. A real-app capture caption MUST describe only
+what is visible; it MUST NOT claim that a physical board is pictured when the
+capture shows only the app.
+
+While the installer is unavailable, the wide social card MUST describe the
+workflow as one-time USB setup followed by everyday use over BLE. It MUST NOT
+advertise an enabled web flasher; it MAY explicitly label firmware HIL as
+pending. Its mechanically rendered PNG and authored SVG MUST remain paired by
+reviewed content and exact-dimension tests.
+
+The support route MUST link directly to the preferred GitHub bug template at
+`https://github.com/PyBLE-dev/PyBLE/issues/new?template=bug.yml`. Installer
+intake MUST request the exact profile ID, board/model and module marking, flash
+capacity, PSRAM capacity and type, browser name/version, desktop operating
+system/version, failed installer stage, and redacted error text. The issue
+template and support-page checklist MUST agree on those fields and remind users
+to remove secrets and personal identifiers.
+
 ## 4. Brand and visual contract
 
 The canonical prompt-chip SVG in `app/assets/branding/` is the source asset. A
