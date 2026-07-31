@@ -77,7 +77,9 @@ describe("public-site contract", () => {
   });
 
   it("publishes a real-app large social card and local TestFlight card", async () => {
-    const socialUrl = "https://pyble.dev/social/pyble-beta-og-1200x630.png";
+    const socialPngName = "pyble-beta-og-7e7e037d-1200x630.png";
+    const socialSvgName = "pyble-beta-og-48d458bd-1200x630.svg";
+    const socialUrl = `https://pyble.dev/social/${socialPngName}`;
     expect(rootMetadata.openGraph?.images).toEqual([
       {
         url: socialUrl,
@@ -100,9 +102,9 @@ describe("public-site contract", () => {
 
     const publicDirectory = join(process.cwd(), "public");
     const [socialPng, socialSvg, qrCardPng, qrCardSvg] = await Promise.all([
-      readFile(join(publicDirectory, "social", "pyble-beta-og-1200x630.png")),
+      readFile(join(publicDirectory, "social", socialPngName)),
       readFile(
-        join(publicDirectory, "social", "pyble-beta-og-1200x630.svg"),
+        join(publicDirectory, "social", socialSvgName),
         "utf8",
       ),
       readFile(join(publicDirectory, "social", "pyble-testflight-qr-1080.png")),
@@ -118,9 +120,20 @@ describe("public-site contract", () => {
     expect(socialSvg).toContain("Everyday coding over BLE.");
     expect(socialSvg).toContain("FIRMWARE HIL PENDING");
     expect(socialSvg).not.toContain("WEB FLASHER");
-    expect(createHash("sha256").update(socialPng).digest("hex")).toBe(
+    const socialPngSha256 = createHash("sha256")
+      .update(socialPng)
+      .digest("hex");
+    const socialSvgSha256 = createHash("sha256")
+      .update(socialSvg)
+      .digest("hex");
+    expect(socialPngSha256).toBe(
       "7e7e037d9bd2e58e2e66f516bfd6f1b753bda472c402b8130f8a8a6dd8f19ba9",
     );
+    expect(socialSvgSha256).toBe(
+      "48d458bd5a6ee1e754bad7d7f9a7261361c0d8a3b13c4fc9cc8a9f5670e04b5d",
+    );
+    expect(socialPngName).toContain(socialPngSha256.slice(0, 8));
+    expect(socialSvgName).toContain(socialSvgSha256.slice(0, 8));
     expect([qrCardPng.readUInt32BE(16), qrCardPng.readUInt32BE(20)]).toEqual([
       1080, 1080,
     ]);
