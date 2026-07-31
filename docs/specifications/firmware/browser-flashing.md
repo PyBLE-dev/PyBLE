@@ -1434,3 +1434,9 @@ validated. Transitioning an active public installer to unavailable is a
 separate reviewed operation requiring an explicit truth-valued disable flag
 and a production smoke test of the disabled state; absence of staging input
 alone is never authorization to disable it.
+
+The pre-public `v0.4.1` candidate path was exposed without the required access
+control and is permanently burned. The origin MUST quarantine
+`/firmware/v0.4.1/` with a non-cacheable not-found response, MUST NOT select or
+promote those bytes, and MUST retain any forensic copy outside public routing.
+A qualified public release therefore starts at a new immutable version.
