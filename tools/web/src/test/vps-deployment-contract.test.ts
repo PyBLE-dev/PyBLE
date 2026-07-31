@@ -98,9 +98,7 @@ describe("Cloudflare-fronted VPS deployment", () => {
       /location \^~ \/firmware\/v0\.4\.1\/\s*\{([\s\S]*?)\n\s*\}/.exec(
         config,
       )?.[1];
-    const quarantineIndex = config.indexOf(
-      "location ^~ /firmware/v0.4.1/",
-    );
+    const quarantineIndex = config.indexOf("location ^~ /firmware/v0.4.1/");
     const generalFirmwareIndex = config.indexOf("location ^~ /firmware/ {");
 
     expect(quarantine).toBeDefined();

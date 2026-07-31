@@ -77,8 +77,7 @@ describe("public-site contract", () => {
   });
 
   it("publishes a real-app large social card and local TestFlight card", async () => {
-    const socialUrl =
-      "https://pyble.dev/social/pyble-beta-og-1200x630.png";
+    const socialUrl = "https://pyble.dev/social/pyble-beta-og-1200x630.png";
     expect(rootMetadata.openGraph?.images).toEqual([
       {
         url: socialUrl,
@@ -102,22 +101,18 @@ describe("public-site contract", () => {
     const publicDirectory = join(process.cwd(), "public");
     const [socialPng, qrCardPng, qrCardSvg] = await Promise.all([
       readFile(join(publicDirectory, "social", "pyble-beta-og-1200x630.png")),
-      readFile(
-        join(publicDirectory, "social", "pyble-testflight-qr-1080.png"),
-      ),
+      readFile(join(publicDirectory, "social", "pyble-testflight-qr-1080.png")),
       readFile(
         join(publicDirectory, "social", "pyble-testflight-qr-1080.svg"),
         "utf8",
       ),
     ]);
-    expect([
-      socialPng.readUInt32BE(16),
-      socialPng.readUInt32BE(20),
-    ]).toEqual([1200, 630]);
-    expect([
-      qrCardPng.readUInt32BE(16),
-      qrCardPng.readUInt32BE(20),
-    ]).toEqual([1080, 1080]);
+    expect([socialPng.readUInt32BE(16), socialPng.readUInt32BE(20)]).toEqual([
+      1200, 630,
+    ]);
+    expect([qrCardPng.readUInt32BE(16), qrCardPng.readUInt32BE(20)]).toEqual([
+      1080, 1080,
+    ]);
     expect(qrCardSvg).toContain("testflight.apple.com/join/yU4e8s6d");
     expect(qrCardSvg).not.toMatch(/https?:\/\/[^<]*\.(?:png|svg|jpg)/i);
   });

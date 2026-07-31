@@ -644,9 +644,7 @@ describe("external firmware bundle staging", () => {
       accessControlled: false,
       hilStatus: "passed",
     });
-    const bundleDirectory = await temporaryDirectory(
-      "preserved-public-source",
-    );
+    const bundleDirectory = await temporaryDirectory("preserved-public-source");
     const stagedRoot = await temporaryDirectory("preserved-public-staged");
     await writeExternalBundle(bundleDirectory, fixture);
     const descriptor = await stageFixture({
