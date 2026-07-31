@@ -639,6 +639,12 @@ pixels.write()
         reason:
             'the real scratch Blockly workspace did not materialize the selected LED GPIO',
       );
+      // A real Android IME can still cover the example action after enterText,
+      // even when ensureVisible has scrolled its RenderBox into the viewport.
+      // Close it before asserting hit-testability so the integration gate tests
+      // the action rather than emulator keyboard-animation timing.
+      tester.testTextInput.hide();
+      await tester.pumpAndSettle();
       final Finder replaceWorkspaceAction = find.byKey(
         kBlocksExampleReplaceWorkspaceButtonKey,
       );
