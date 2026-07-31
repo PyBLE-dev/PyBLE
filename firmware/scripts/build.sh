@@ -22,6 +22,12 @@
 
 set -u
 
+# Python helpers invoked by ESP-IDF must never write checkout-local bytecode.
+# Besides mutating the retained source tree, .pyc payloads embed host paths and
+# make otherwise identical license evidence depend on the checkout location.
+PYTHONDONTWRITEBYTECODE=1
+export PYTHONDONTWRITEBYTECODE
+
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd -P)"
 FW="$(cd "$HERE/.." && pwd -P)"
 REPO_ROOT="$(cd "$FW/.." && pwd -P)"
