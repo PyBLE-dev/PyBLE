@@ -1,7 +1,7 @@
 # PyBLE — Public Website Specification
 
 Status: **FROZEN (pre-v1 and v1 launch surface)** · Owner: project maintainer · Last updated:
-2026-07-30
+2026-07-31
 
 This document is the source of truth for the first public website at
 `pyble.dev`. It specifies only the public site; the Flutter app, PBLE/1, and
@@ -101,6 +101,20 @@ The QR code MUST be accompanied by an accessible link and visible instructions;
 it is an additional path, never the only way to open the invitation. A changed
 or withdrawn invitation requires the specification, content contract, and QR
 asset to change together before deployment.
+
+### 3.2 Public source repository
+
+The canonical public source repository is
+`https://github.com/PyBLE-dev/PyBLE`. The home page MUST identify the app,
+board-agent firmware, PBLE/1 protocol, tests, and documentation as public,
+MIT-licensed source and provide a prominent, accessible link to that exact
+repository. The global footer MUST provide the same repository link so it
+remains available from every launch route.
+
+Repository links MUST be ordinary HTTPS links and MUST NOT use a tracking
+redirect, embedded GitHub widget, remote badge, or client-side network request
+to present their primary information. If a link opens a new browsing context,
+it MUST use `noopener noreferrer`.
 
 ## 4. Brand and visual contract
 
@@ -333,6 +347,9 @@ The v1 site is releasable when:
   pictured Blocks workspace or generated Python;
 - the current external iPad beta invitation is exposed as an operable link and
   a locally served, exact-URL QR code without claiming production availability;
+- the canonical public source repository is explained in a visible
+  MIT-licensed-source section and linked from both that section and the global
+  footer;
 - lint, strict type checking, tests, static export, Sites vinext build, SPDX, and
   no-leak gates pass;
 - the Sites artifact contains `dist/server/index.js` and the exact project
