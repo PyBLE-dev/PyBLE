@@ -35,6 +35,30 @@ class PublicClaimsTest(unittest.TestCase):
         cls.website_readme = (
             REPO_ROOT / "tools" / "web" / "README.md"
         ).read_text(encoding="utf-8")
+        cls.website_specification = (
+            REPO_ROOT / "docs" / "specifications" / "website.md"
+        ).read_text(encoding="utf-8")
+        cls.firmware_requirements = (
+            REPO_ROOT / "docs" / "specifications" / "firmware" / "specs.md"
+        ).read_text(encoding="utf-8")
+        cls.browser_flashing = (
+            REPO_ROOT
+            / "docs"
+            / "specifications"
+            / "firmware"
+            / "browser-flashing.md"
+        ).read_text(encoding="utf-8")
+        cls.flash_page = (
+            REPO_ROOT / "tools" / "web" / "src" / "app" / "flash" / "page.tsx"
+        ).read_text(encoding="utf-8")
+        cls.flash_status = (
+            REPO_ROOT
+            / "tools"
+            / "web"
+            / "src"
+            / "components"
+            / "flash-status.tsx"
+        ).read_text(encoding="utf-8")
 
     def test_readme_is_truthful_before_v042_hil_completes(self) -> None:
         firmware = markdown_section(self.readme, "What works")
@@ -155,6 +179,76 @@ class PublicClaimsTest(unittest.TestCase):
             board_scope,
         )
         self.assertNotIn("initial validated firmware targets", board_scope)
+
+    def test_preactivation_profiles_are_candidates_not_current_releases(
+        self,
+    ) -> None:
+        self.assertIn(
+            "v0.4.2 candidate qualification scope is profile-scoped",
+            self.firmware_overview,
+        )
+        self.assertIn(
+            "current v0.4.2 candidate set is the exact `esp32-4mb`",
+            self.website_specification,
+        )
+        self.assertIn(
+            "v0.4.2 release candidate targets exactly these two",
+            self.browser_flashing,
+        )
+        self.assertIn(
+            "current pre-v1 candidate set is exactly `esp32-4mb`",
+            self.product_requirements,
+        )
+        self.assertIn(
+            "current pre-v1 candidate qualification set is exactly",
+            self.firmware_requirements,
+        )
+
+        prohibited_claims = (
+            "current pre-v1 qualification is profile-scoped",
+            "current pre-v1 release list is",
+            "current pre-v1 public set is",
+            "current pre-v1 release set is",
+            "current pre-v1 public bundle contains exactly these two qualified",
+            "current pre-v1 qualification set is exactly",
+        )
+        for claim in prohibited_claims:
+            for document in (
+                self.firmware_overview,
+                self.website_specification,
+                self.browser_flashing,
+                self.product_requirements,
+                self.firmware_requirements,
+            ):
+                self.assertNotIn(claim, document)
+
+    def test_preactivation_installer_ui_does_not_call_candidates_qualified(
+        self,
+    ) -> None:
+        self.assertIn(
+            "candidate ESP32 and ESP32-S3 profiles",
+            self.flash_page,
+        )
+        self.assertIn(
+            "both exact current candidate profiles",
+            self.flash_page,
+        )
+        self.assertIn(
+            "both exact current candidate profiles",
+            self.flash_status,
+        )
+        self.assertNotIn(
+            "qualified ESP32 and ESP32-S3 profiles",
+            self.flash_page,
+        )
+        self.assertNotIn(
+            "both exact current release profiles",
+            self.flash_page,
+        )
+        self.assertNotIn(
+            "both exact current release profiles",
+            self.flash_status,
+        )
 
 
 if __name__ == "__main__":
