@@ -29,6 +29,9 @@ import { isDeepStrictEqual, promisify } from "node:util";
 const execFile = promisify(execFileCallback);
 const canonicalSemverPattern =
   /^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
+const publicBetaVersion = "0.4.1";
+const publicBetaReleaseJsonSha256 =
+  "8b84fbb65a0463d20369e1d86dac566ca7a2039ebc30f9186f55c05421962445";
 
 function packageDirectory() {
   try {
@@ -241,6 +244,58 @@ export async function validateWithCanonicalReleaseTool(
       `canonical release_bundle.py validation rejected the bundle${detail}`,
     );
   }
+}
+
+/**
+ * Validate the identity root for the one retained public-beta bundle. The
+ * structural, schema, path, size, checksum, and profile checks still run in
+ * validateReleaseBundle; this function prevents any other self-consistent
+ * pending bundle from entering the exceptional deployment mode.
+ *
+ * @param {string} bundleDirectory
+ * @param {"public" | "candidate" | "public-beta"} deployment
+ */
+export async function validateAttestedPublicBetaBundle(
+  bundleDirectory,
+  deployment,
+) {
+  if (deployment !== "public-beta") {
+    failure("attested public-beta validation has an invalid deployment");
+  }
+  const releaseBytes = await readFile(
+    join(resolve(bundleDirectory), "release.json"),
+  );
+  if (sha256(releaseBytes) !== publicBetaReleaseJsonSha256) {
+    failure("bundle is not the exact attested v0.4.1 public beta");
+  }
+}
+
+/**
+ * @param {string} bundleDirectory
+ * @param {"public" | "candidate" | "public-beta"} deployment
+ */
+export async function validateFreshDeploymentBundle(
+  bundleDirectory,
+  deployment,
+) {
+  if (deployment === "public-beta") {
+    return validateAttestedPublicBetaBundle(bundleDirectory, deployment);
+  }
+  return validateWithCanonicalReleaseTool(bundleDirectory, deployment);
+}
+
+/**
+ * @param {string} bundleDirectory
+ * @param {"public" | "candidate" | "public-beta"} deployment
+ */
+async function validatePreservedDeploymentBundle(bundleDirectory, deployment) {
+  if (deployment === "public-beta") {
+    return validateAttestedPublicBetaBundle(bundleDirectory, deployment);
+  }
+  return validatePreviouslyActivatedPublicWithCanonicalReleaseTool(
+    bundleDirectory,
+    deployment,
+  );
 }
 
 /**
@@ -546,9 +601,9 @@ async function verifyManifest(bundleDirectory, version, profile, artifact) {
 
 /**
  * @param {string} bundleDirectory
- * @param {"public" | "candidate"} deployment
+ * @param {"public" | "candidate" | "public-beta"} deployment
  * @param {boolean} accessControlled
- * @param {(bundleDirectory: string, deployment: "public" | "candidate") => Promise<void>} releaseValidator
+ * @param {(bundleDirectory: string, deployment: "public" | "candidate" | "public-beta") => Promise<void>} releaseValidator
  */
 async function validateReleaseBundle(
   bundleDirectory,
@@ -754,6 +809,17 @@ async function validateReleaseBundle(
   if (deployment === "candidate" && !accessControlled) {
     failure("candidate bundles require explicit access control");
   }
+  if (deployment === "public-beta") {
+    if (version !== publicBetaVersion) {
+      failure("public beta must be the exact v0.4.1 version");
+    }
+    if (accessControlled) {
+      failure("public beta must be unrestricted, not access-controlled");
+    }
+    if (statuses.some((status) => status !== "pending")) {
+      failure("public beta HIL status must remain pending on both profiles");
+    }
+  }
   const hilStatus = statuses.every((status) => status === "passed")
     ? "passed"
     : "pending";
@@ -808,9 +874,9 @@ async function validateReleaseBundle(
  * @param {{
  *   accessControlled: boolean;
  *   bundleDirectory: string;
- *   deployment: "public" | "candidate";
+ *   deployment: "public" | "candidate" | "public-beta";
  *   outputDirectory: string;
- *   releaseValidator: (bundleDirectory: string, deployment: "public" | "candidate") => Promise<void>;
+ *   releaseValidator: (bundleDirectory: string, deployment: "public" | "candidate" | "public-beta") => Promise<void>;
  * }} options
  */
 export async function stageFirmwareRelease({
@@ -820,8 +886,12 @@ export async function stageFirmwareRelease({
   outputDirectory,
   releaseValidator,
 }) {
-  if (deployment !== "public" && deployment !== "candidate") {
-    failure("deployment must be public or candidate");
+  if (
+    deployment !== "public" &&
+    deployment !== "candidate" &&
+    deployment !== "public-beta"
+  ) {
+    failure("deployment must be public, candidate, or public-beta");
   }
   if (typeof releaseValidator !== "function") {
     failure("an explicit canonical release validator is required");
@@ -915,7 +985,7 @@ export async function stageFirmwareRelease({
  *
  * @param {string} stagedRoot
  * @param {{
- *   releaseValidator: (bundleDirectory: string, deployment: "public" | "candidate") => Promise<void>;
+ *   releaseValidator: (bundleDirectory: string, deployment: "public" | "candidate" | "public-beta") => Promise<void>;
  * }} options
  */
 export async function validateStagedFirmwareRelease(
@@ -957,7 +1027,11 @@ export async function validateStagedFirmwareRelease(
     failure("staged selection version is not canonical SemVer");
   }
   const deployment = selected.deployment;
-  if (deployment !== "public" && deployment !== "candidate") {
+  if (
+    deployment !== "public" &&
+    deployment !== "candidate" &&
+    deployment !== "public-beta"
+  ) {
     failure("staged selection deployment is invalid");
   }
   if (typeof selected.accessControlled !== "boolean") {
@@ -997,11 +1071,11 @@ export async function validateStagedFirmwareRelease(
  * Revalidate an exact staged tree recovered from the current managed website
  * release. Its original activation already supplied the fresh source/build
  * license evidence; this path accepts only the same all-HIL-passed public
- * bytes.
+ * bytes or the same exact digest-bound transitional public beta.
  *
  * @param {string} stagedRoot
  * @param {{
- *   releaseValidator: (bundleDirectory: string, deployment: "public" | "candidate") => Promise<void>;
+ *   releaseValidator: (bundleDirectory: string, deployment: "public" | "candidate" | "public-beta") => Promise<void>;
  * }} options
  */
 export async function validatePreservedPublicFirmwareRelease(
@@ -1011,13 +1085,19 @@ export async function validatePreservedPublicFirmwareRelease(
   const descriptor = await validateStagedFirmwareRelease(stagedRoot, {
     releaseValidator,
   });
-  if (
-    descriptor.deployment !== "public" ||
-    descriptor.hilStatus !== "passed" ||
-    descriptor.accessControlled
-  ) {
+  const qualifiedPublic =
+    descriptor.deployment === "public" &&
+    descriptor.hilStatus === "passed" &&
+    !descriptor.accessControlled;
+  const publicBeta =
+    descriptor.deployment === "public-beta" &&
+    descriptor.version === publicBetaVersion &&
+    descriptor.releaseJson.sha256 === publicBetaReleaseJsonSha256 &&
+    descriptor.hilStatus === "pending" &&
+    !descriptor.accessControlled;
+  if (!qualifiedPublic && !publicBeta) {
     failure(
-      "previously activated firmware must remain public, all-HIL-passed, and unrestricted",
+      "previously activated firmware must remain an unrestricted qualified public release or the exact public beta",
     );
   }
   return descriptor;
@@ -1034,7 +1114,7 @@ export async function validatePreservedPublicFirmwareRelease(
  * @param {{
  *   publishedBundleDirectory: string;
  *   packagedRoot?: string;
- *   releaseValidator: (bundleDirectory: string, deployment: "public" | "candidate") => Promise<void>;
+ *   releaseValidator: (bundleDirectory: string, deployment: "public" | "candidate" | "public-beta") => Promise<void>;
  * }} options
  */
 export async function validatePublishedFirmwareRelease(
@@ -1160,7 +1240,7 @@ async function run() {
     const descriptor = await validatePublishedFirmwareRelease(stagedRoot, {
       publishedBundleDirectory,
       packagedRoot: process.env.PYBLE_FIRMWARE_PACKAGED_ROOT,
-      releaseValidator: validateWithCanonicalReleaseTool,
+      releaseValidator: validateFreshDeploymentBundle,
     });
     process.stdout.write(
       `Verified published GitHub bytes for PyBLE firmware v${descriptor.version}.\n`,
@@ -1173,7 +1253,7 @@ async function run() {
       failure("PYBLE_FIRMWARE_STAGED_ROOT is required");
     }
     const descriptor = await validateStagedFirmwareRelease(stagedRoot, {
-      releaseValidator: validateWithCanonicalReleaseTool,
+      releaseValidator: validateFreshDeploymentBundle,
     });
     process.stdout.write(
       `Verified staged PyBLE firmware v${descriptor.version} for ${descriptor.deployment}.\n`,
@@ -1188,8 +1268,7 @@ async function run() {
     const descriptor = await validatePreservedPublicFirmwareRelease(
       stagedRoot,
       {
-        releaseValidator:
-          validatePreviouslyActivatedPublicWithCanonicalReleaseTool,
+        releaseValidator: validatePreservedDeploymentBundle,
       },
     );
     process.stdout.write(
@@ -1204,8 +1283,14 @@ async function run() {
     );
     return;
   }
-  if (deployment !== "public" && deployment !== "candidate") {
-    failure("PYBLE_FLASH_DEPLOYMENT must be public, candidate, or disabled");
+  if (
+    deployment !== "public" &&
+    deployment !== "candidate" &&
+    deployment !== "public-beta"
+  ) {
+    failure(
+      "PYBLE_FLASH_DEPLOYMENT must be public, candidate, public-beta, or disabled",
+    );
   }
   const bundleDirectory = process.env.PYBLE_FIRMWARE_BUNDLE_DIR;
   if (!bundleDirectory) {
@@ -1221,7 +1306,7 @@ async function run() {
     bundleDirectory,
     deployment,
     outputDirectory,
-    releaseValidator: validateWithCanonicalReleaseTool,
+    releaseValidator: validateFreshDeploymentBundle,
   });
   process.stdout.write(
     `Staged PyBLE firmware v${descriptor.version} for ${descriptor.deployment}.\n`,

@@ -211,7 +211,7 @@ describe("external firmware bundle staging", () => {
       validatePreservedPublicFirmwareRelease(stagedRoot, {
         releaseValidator: acceptSyntheticFixture,
       }),
-    ).resolves.toMatchObject({ deployment: "public-beta" });
+    ).rejects.toThrow(/exact public beta/i);
 
     await expect(
       stageFixture({

@@ -24,10 +24,13 @@ staged_firmware_root=
 firmware_evidence_root=
 upload_evidence_root=
 firmware_version=
+firmware_deployment=
 firmware_tag=
 firmware_provenance_commit=
 firmware_release_json_path=
 local_firmware_tag_object_before_build=
+local_firmware_tag_object_after_build=
+local_firmware_tag_object_before_upload=
 staged_validation_flag=--verify-staged
 
 cleanup_firmware_evidence() {
@@ -153,15 +156,6 @@ verify_local_firmware_tag() {
 }
 
 if [[ -n ${PYBLE_FIRMWARE_STAGED_ROOT:-} ]]; then
-    if [[ -z ${PYBLE_FIRMWARE_LICENSE_EVIDENCE_DIR:-} ]]; then
-        printf 'Refusing public firmware activation: PYBLE_FIRMWARE_LICENSE_EVIDENCE_DIR is required.\n' >&2
-        exit 65
-    fi
-    if [[ -z ${PYBLE_FIRMWARE_LICENSE_BUILD_ROOT:-} ]]; then
-        printf 'Refusing public firmware activation: PYBLE_FIRMWARE_LICENSE_BUILD_ROOT is required.\n' >&2
-        exit 65
-    fi
-
     staged_firmware_root=$(
         cd -- "${PYBLE_FIRMWARE_STAGED_ROOT}"
         pwd -P
@@ -169,14 +163,45 @@ if [[ -n ${PYBLE_FIRMWARE_STAGED_ROOT:-} ]]; then
     staged_selection="${staged_firmware_root}/.pyble-firmware-release-selection.json"
     test -f "${staged_selection}"
     test -d "${staged_firmware_root}/firmware"
+    firmware_deployment=$(
+        node -e '
+          const { readFileSync } = require("node:fs");
+          const descriptor = JSON.parse(readFileSync(process.argv[1], "utf8"));
+          if (!["public", "candidate", "public-beta"].includes(descriptor.deployment)) {
+            throw new Error("staged firmware deployment is invalid");
+          }
+          process.stdout.write(descriptor.deployment);
+        ' "${staged_selection}"
+    )
+    if [[ "${firmware_deployment}" != public-beta ]]; then
+        if [[ -z ${PYBLE_FIRMWARE_LICENSE_EVIDENCE_DIR:-} ]]; then
+            printf 'Refusing public firmware activation: PYBLE_FIRMWARE_LICENSE_EVIDENCE_DIR is required.\n' >&2
+            exit 65
+        fi
+        if [[ -z ${PYBLE_FIRMWARE_LICENSE_BUILD_ROOT:-} ]]; then
+            printf 'Refusing public firmware activation: PYBLE_FIRMWARE_LICENSE_BUILD_ROOT is required.\n' >&2
+            exit 65
+        fi
+    fi
     PYBLE_FIRMWARE_STAGED_ROOT="${staged_firmware_root}" \
         node "${web_directory}/scripts/stage-firmware-release.js" \
         --verify-staged
     node -e '
       const { readFileSync } = require("node:fs");
       const descriptor = JSON.parse(readFileSync(process.argv[1], "utf8"));
-      if (descriptor.deployment !== "public" || descriptor.hilStatus !== "passed") {
-        throw new Error("The public VPS accepts only an all-HIL-passed public release");
+      const qualifiedPublic =
+        descriptor.deployment === "public" &&
+        descriptor.hilStatus === "passed" &&
+        descriptor.accessControlled === false;
+      const exactPublicBeta =
+        descriptor.deployment === "public-beta" &&
+        descriptor.version === "0.4.1" &&
+        descriptor.hilStatus === "pending" &&
+        descriptor.accessControlled === false &&
+        descriptor.releaseJson?.sha256 ===
+          "8b84fbb65a0463d20369e1d86dac566ca7a2039ebc30f9186f55c05421962445";
+      if (!qualifiedPublic && !exactPublicBeta) {
+        throw new Error("The public VPS accepts only a qualified public release or the exact attested public beta");
       }
     ' "${staged_selection}"
 
@@ -200,7 +225,11 @@ if [[ -n ${PYBLE_FIRMWARE_STAGED_ROOT:-} ]]; then
           process.stdout.write(commit);
         ' "${staged_release_bundle}/release.json"
     )
-    local_firmware_tag_object_before_build=$(verify_local_firmware_tag)
+    if [[ "${firmware_deployment}" == public-beta ]]; then
+        printf 'The exact public-beta exception does not require an annotated tag; release identity is digest-bound.\n'
+    else
+        local_firmware_tag_object_before_build=$(verify_local_firmware_tag)
+    fi
 
     firmware_evidence_root=$(mktemp -d)
     chmod 0700 "${firmware_evidence_root}"
@@ -307,16 +336,32 @@ REMOTE
                   const { readFileSync } = require("node:fs");
                   const descriptor = JSON.parse(readFileSync(process.argv[1], "utf8"));
                   const semver = /^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
+                  const qualifiedPublic =
+                    descriptor.deployment === "public" &&
+                    descriptor.hilStatus === "passed" &&
+                    descriptor.accessControlled === false;
+                  const exactPublicBeta =
+                    descriptor.deployment === "public-beta" &&
+                    descriptor.version === "0.4.1" &&
+                    descriptor.hilStatus === "pending" &&
+                    descriptor.accessControlled === false &&
+                    descriptor.releaseJson?.sha256 ===
+                      "8b84fbb65a0463d20369e1d86dac566ca7a2039ebc30f9186f55c05421962445";
                   if (
-                    descriptor.deployment !== "public" ||
-                    descriptor.hilStatus !== "passed" ||
-                    descriptor.accessControlled !== false ||
+                    (!qualifiedPublic && !exactPublicBeta) ||
                     typeof descriptor.version !== "string" ||
                     !semver.test(descriptor.version)
                   ) {
-                    throw new Error("The preserved selector is not an unrestricted passed public release");
+                    throw new Error("The preserved selector is not an unrestricted qualified public release or the exact public beta");
                   }
                   process.stdout.write(descriptor.version);
+                ' "${preserved_selection}"
+            )
+            firmware_deployment=$(
+                node -e '
+                  const { readFileSync } = require("node:fs");
+                  const descriptor = JSON.parse(readFileSync(process.argv[1], "utf8"));
+                  process.stdout.write(descriptor.deployment);
                 ' "${preserved_selection}"
             )
             (
@@ -374,7 +419,11 @@ REMOTE
                   process.stdout.write(commit);
                 ' "${staged_firmware_root}/firmware/v${firmware_version}/release.json"
             )
-            local_firmware_tag_object_before_build=$(verify_local_firmware_tag)
+            if [[ "${firmware_deployment}" == public-beta ]]; then
+                printf 'Preserved public-beta state skips annotated tag validation because its exact release root is digest-bound.\n'
+            else
+                local_firmware_tag_object_before_build=$(verify_local_firmware_tag)
+            fi
 
             trusted_firmware_snapshot="${firmware_evidence_root}/trusted-preserved"
             mkdir -m 0700 -- "${trusted_firmware_snapshot}"
@@ -459,9 +508,11 @@ if [[ -n "${staged_firmware_root}" ]]; then
     install -m 0644 \
         "${staged_selection}" \
         out/.pyble-firmware-release-selection.json
-    readonly local_firmware_tag_object_after_build=$(
-        verify_local_firmware_tag "${local_firmware_tag_object_before_build}"
-    )
+    if [[ "${firmware_deployment}" != public-beta ]]; then
+        local_firmware_tag_object_after_build=$(
+            verify_local_firmware_tag "${local_firmware_tag_object_before_build}"
+        )
+    fi
 fi
 for firmware_release in out/firmware/v*; do
     if [[ ! -d "${firmware_release}" ]]; then
@@ -497,9 +548,11 @@ if [[ -n "${staged_firmware_root}" ]]; then
         "${staged_firmware_root}/firmware" \
         "${web_directory}/out/firmware" \
         "final packaged website firmware"
-    readonly local_firmware_tag_object_before_upload=$(
-        verify_local_firmware_tag "${local_firmware_tag_object_after_build}"
-    )
+    if [[ "${firmware_deployment}" != public-beta ]]; then
+        local_firmware_tag_object_before_upload=$(
+            verify_local_firmware_tag "${local_firmware_tag_object_after_build}"
+        )
+    fi
 fi
 upload_evidence_root=$(mktemp -d)
 chmod 0700 "${upload_evidence_root}"
