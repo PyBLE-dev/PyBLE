@@ -46,7 +46,7 @@ export const firmwareProfiles = [
 ] as const;
 
 export type FirmwareProfileId = (typeof firmwareProfiles)[number]["id"];
-export type FirmwareDeployment = "public" | "candidate";
+export type FirmwareDeployment = "public" | "candidate" | "public-beta";
 export type HilStatus = "pending" | "passed";
 
 interface TestArtifact {
@@ -708,6 +708,16 @@ export const passedPublicFirmwareRelease =
 export const pendingPublicFirmwareRelease = createFirmwareReleaseFixture({
   hilStatus: "pending",
 }).descriptor;
+export const publicBetaFirmwareRelease = {
+  ...structuredClone(pendingPublicFirmwareRelease),
+  deployment: "public-beta",
+  accessControlled: false,
+  releaseJson: {
+    path: "/firmware/v0.4.1/release.json",
+    sha256:
+      "8b84fbb65a0463d20369e1d86dac566ca7a2039ebc30f9186f55c05421962445",
+  },
+} satisfies FirmwareReleaseDescriptor;
 export const pendingCandidateFirmwareRelease = createFirmwareReleaseFixture({
   deployment: "candidate",
   accessControlled: true,

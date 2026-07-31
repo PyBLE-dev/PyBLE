@@ -24,6 +24,7 @@ import {
   passedPublicFirmwareRelease,
   pendingCandidateFirmwareRelease,
   pendingPublicFirmwareRelease,
+  publicBetaFirmwareRelease,
   type FirmwareProfileId,
   uncontrolledCandidateFirmwareRelease,
   verifiedProfile,
@@ -311,6 +312,35 @@ describe("browser firmware installer states", () => {
       }),
     ).toBeInTheDocument();
     expect(document.querySelector("esp-web-install-button")).toBeNull();
+  });
+
+  it("offers the exact unrestricted v0.4.1 beta with prominent unqualified warnings", async () => {
+    renderInstaller({ release: publicBetaFirmwareRelease });
+
+    expect(screen.getByRole("status")).toHaveTextContent(
+      /unqualified firmware beta.*full hardware-in-the-loop.*pending.*use at your own risk/i,
+    );
+    expect(screen.queryByText(/protected release candidate/i)).toBeNull();
+    expect(screen.queryByText(/qualified release/i)).toBeNull();
+
+    const profileGroup = screen.getByRole("radiogroup", {
+      name: /select the exact module profile/i,
+    });
+    expect(within(profileGroup).getAllByRole("radio")).toHaveLength(2);
+    expect(within(profileGroup).queryByText(/esp32-c3/i)).toBeNull();
+
+    selectS3Profile();
+    acceptEveryConsent();
+    startVerification();
+    await waitFor(() => {
+      expect(document.querySelector("esp-web-install-button")).not.toBeNull();
+    });
+    expect(screen.getByText(/unqualified beta.*use at your own risk/i)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", {
+        name: /install unqualified beta pyble 0\.4\.1/i,
+      }),
+    ).toBeInTheDocument();
   });
 
   it("starts disabled with exactly both qualified profiles and keeps deferred C3 out of the selector", () => {

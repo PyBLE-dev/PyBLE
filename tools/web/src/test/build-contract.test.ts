@@ -10,7 +10,10 @@ import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 
 import { firmwareReleaseSelectedAtBuild } from "@/lib/firmware-release-selection";
-import { pendingPublicFirmwareRelease } from "@/test/fixtures/firmware-release";
+import {
+  pendingPublicFirmwareRelease,
+  publicBetaFirmwareRelease,
+} from "@/test/fixtures/firmware-release";
 
 const execFile = promisify(execFileCallback);
 
@@ -159,6 +162,36 @@ describe("production build contract", () => {
     process.env.PYBLE_FLASH_SELECTION_FILE = selectionFile;
     try {
       expect(() => firmwareReleaseSelectedAtBuild()).toThrow(/deployment/i);
+    } finally {
+      if (previousSelection === undefined) {
+        delete process.env.PYBLE_FLASH_SELECTION_FILE;
+      } else {
+        process.env.PYBLE_FLASH_SELECTION_FILE = previousSelection;
+      }
+      await rm(selectionRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("accepts only the exact attested public-beta selector at the build boundary", async () => {
+    const selectionRoot = await mkdtemp(join(tmpdir(), "pyble-beta-selection-"));
+    const selectionFile = join(selectionRoot, "selection.json");
+    await writeFile(
+      selectionFile,
+      JSON.stringify(publicBetaFirmwareRelease),
+      "utf8",
+    );
+
+    const previousSelection = process.env.PYBLE_FLASH_SELECTION_FILE;
+    process.env.PYBLE_FLASH_SELECTION_FILE = selectionFile;
+    try {
+      expect(firmwareReleaseSelectedAtBuild()).toEqual(
+        publicBetaFirmwareRelease,
+      );
+
+      const altered = structuredClone(publicBetaFirmwareRelease);
+      altered.releaseJson.sha256 = "0".repeat(64);
+      await writeFile(selectionFile, JSON.stringify(altered), "utf8");
+      expect(() => firmwareReleaseSelectedAtBuild()).toThrow(/public beta/i);
     } finally {
       if (previousSelection === undefined) {
         delete process.env.PYBLE_FLASH_SELECTION_FILE;

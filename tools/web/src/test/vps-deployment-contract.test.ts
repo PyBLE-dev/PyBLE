@@ -89,23 +89,16 @@ describe("Cloudflare-fronted VPS deployment", () => {
     expect(headers).toContain("Strict-Transport-Security");
   });
 
-  it("quarantines the burned pre-public firmware candidate", async () => {
+  it("routes the exact v0.4.1 public beta through the immutable firmware boundary", async () => {
     const config = await readFile(
       join(deploymentRoot, "nginx", "10-pyble-dev-https.conf"),
       "utf8",
     );
-    const quarantine =
-      /location \^~ \/firmware\/v0\.4\.1\/\s*\{([\s\S]*?)\n\s*\}/.exec(
-        config,
-      )?.[1];
-    const quarantineIndex = config.indexOf("location ^~ /firmware/v0.4.1/");
-    const generalFirmwareIndex = config.indexOf("location ^~ /firmware/ {");
-
-    expect(quarantine).toBeDefined();
-    expect.soft(quarantine).toMatch(/Cache-Control\s+"no-store"/);
-    expect.soft(quarantine).toMatch(/return\s+404/);
-    expect(quarantineIndex).toBeGreaterThan(-1);
-    expect(quarantineIndex).toBeLessThan(generalFirmwareIndex);
+    expect(config).not.toContain("location ^~ /firmware/v0.4.1/");
+    expect(config).not.toContain("@burned_firmware_candidate");
+    expect(config).toMatch(
+      /location \^~ \/firmware\/\s*\{[\s\S]*?alias \/srv\/pyble\/firmware\//,
+    );
   });
 
   it("preserves path and query while canonicalizing every alternate host", async () => {
