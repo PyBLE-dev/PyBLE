@@ -53,7 +53,7 @@ export function absoluteUrl(path: string): string {
 }
 
 export const socialImage = {
-  url: absoluteUrl("/social/pyble-beta-og-1200x630.png"),
+  url: absoluteUrl("/social/pyble-beta-og-7e7e037d-1200x630.png"),
   width: 1200,
   height: 630,
   alt: "Actual PyBLE iPad app showing GPIO 48 NeoPixel Blocks and generated MicroPython code",
