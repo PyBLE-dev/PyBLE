@@ -386,6 +386,18 @@ def _write_json(path: Path, value: Any) -> None:
     )
 
 
+def _canonical_json_bytes(value: Any) -> bytes:
+    return (
+        json.dumps(
+            value,
+            indent=2,
+            sort_keys=True,
+            ensure_ascii=False,
+        )
+        + "\n"
+    ).encode("utf-8")
+
+
 def _sha256_bytes(value: bytes) -> str:
     return hashlib.sha256(value).hexdigest()
 
@@ -14320,6 +14332,60 @@ def _read_regular_file_bytes(path: Path, label: str) -> bytes:
     return value
 
 
+def _stage_regular_file_bytes(
+    destination: Path,
+    payload: bytes,
+    label: str,
+    *,
+    mode: int,
+) -> Path:
+    target = Path(destination)
+    parent = target.parent
+    try:
+        parent_mode = parent.lstat().st_mode
+    except OSError as exc:
+        raise ReleaseError("%s parent directory is unavailable" % label) from exc
+    _require(
+        stat_module.S_ISDIR(parent_mode)
+        and not stat_module.S_ISLNK(parent_mode),
+        "%s parent must be a regular non-symlink directory" % label,
+    )
+    descriptor: int | None = None
+    temporary: Path | None = None
+    staged = False
+    try:
+        descriptor, temporary_name = tempfile.mkstemp(
+            prefix=".%s." % target.name,
+            dir=os.fspath(parent),
+        )
+        temporary = Path(temporary_name)
+        os.fchmod(descriptor, mode)
+        with os.fdopen(descriptor, "wb") as handle:
+            descriptor = None
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        _require(
+            _read_regular_file_bytes(temporary, label + " staging")
+            == payload,
+            "%s staging bytes changed" % label,
+        )
+        staged = True
+        return temporary
+    except (OSError, UnicodeError) as exc:
+        raise ReleaseError("%s could not be staged safely" % label) from exc
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+        if temporary is not None and not staged:
+            try:
+                temporary.unlink()
+            except FileNotFoundError:
+                pass
+            except OSError:
+                pass
+
+
 def _sha256sum_records(bundle: Path) -> dict[str, str]:
     records: dict[str, str] = {}
     try:
@@ -14591,6 +14657,249 @@ def create_baseline_inputs(
     except (OSError, UnicodeError) as exc:
         shutil.rmtree(staging, ignore_errors=True)
         raise ReleaseError("baseline input staging failed safely") from exc
+
+
+def assemble_oi1_baseline(
+    *,
+    baseline_inputs_dir: Path,
+    profile_fragment_paths: list[Path],
+    repo_root: Path,
+    created_at: str,
+) -> tuple[Path, Path]:
+    """Assemble canonical OI-1 evidence and its mechanically derived policy."""
+
+    root = Path(repo_root)
+    inputs = Path(baseline_inputs_dir)
+    fragments = [Path(path) for path in profile_fragment_paths]
+    _require(
+        len(fragments) == len(RELEASE_PROFILE_ORDER),
+        "OI-1 baseline assembly requires exactly two profile fragments",
+    )
+    _require(
+        isinstance(created_at, str) and UTC_RE.fullmatch(created_at) is not None,
+        "OI-1 baseline created_at must be UTC RFC3339",
+    )
+    try:
+        root_mode = root.lstat().st_mode
+    except OSError as exc:
+        raise ReleaseError("OI-1 proof checkout is unavailable") from exc
+    _require(
+        stat_module.S_ISDIR(root_mode) and not stat_module.S_ISLNK(root_mode),
+        "OI-1 proof checkout must be a regular directory",
+    )
+    _require_checkout_clean(root, "PyBLE")
+    source_commit = _git_output(root, "PyBLE", "rev-parse", "HEAD")
+    _require(
+        COMMIT_RE.fullmatch(source_commit) is not None,
+        "OI-1 proof checkout HEAD must be full lowercase 40-hex",
+    )
+    firmware_version = _read_lock(root)["pyble"]["agent_version"]
+    input_snapshot = _release_tree_snapshot(inputs, "OI-1 baseline inputs")
+    expected_inputs = {
+        profile_id
+        for profile_id in RELEASE_PROFILE_ORDER
+    } | {
+        "%s/%s" % (profile_id, filename)
+        for profile_id in RELEASE_PROFILE_ORDER
+        for filename in (
+            "manifest.json",
+            "firmware.bin",
+            "application.bin",
+            "partition-table.bin",
+        )
+    }
+    _require(
+        set(input_snapshot) == expected_inputs,
+        "OI-1 baseline input tree layout is not exact",
+    )
+
+    fragment_by_id: dict[str, dict[str, Any]] = {}
+    for index, fragment_path in enumerate(fragments):
+        fragment = _read_json(
+            fragment_path,
+            "OI-1 baseline fragment %d" % index,
+        )
+        _require(
+            isinstance(fragment, dict),
+            "OI-1 baseline fragment %d must be an object" % index,
+        )
+        profile_id = fragment.get("profile_id")
+        _require(
+            profile_id in RELEASE_PROFILE_ORDER,
+            "OI-1 baseline fragment has an unknown profile",
+        )
+        _require(
+            profile_id not in fragment_by_id,
+            "OI-1 baseline fragments duplicate profile %s" % profile_id,
+        )
+        fragment_by_id[profile_id] = fragment
+    _require(
+        set(fragment_by_id) == set(RELEASE_PROFILE_ORDER),
+        "OI-1 baseline fragments do not cover the exact profile set",
+    )
+
+    policy_profiles: list[dict[str, Any]] = []
+    baseline_profiles: list[dict[str, Any]] = []
+    for profile_id in RELEASE_PROFILE_ORDER:
+        profile = fragment_by_id[profile_id]
+        profile_dir = inputs / profile_id
+        expected_manifest_bytes = (
+            json.dumps(
+                _manifest(firmware_version, profile_id),
+                indent=2,
+                sort_keys=False,
+            )
+            + "\n"
+        ).encode("utf-8")
+        manifest_bytes = _read_regular_file_bytes(
+            profile_dir / "manifest.json",
+            "OI-1 %s staged manifest" % profile_id,
+        )
+        firmware_bytes = _read_regular_file_bytes(
+            profile_dir / "firmware.bin",
+            "OI-1 %s staged firmware" % profile_id,
+        )
+        _require(
+            manifest_bytes == expected_manifest_bytes,
+            "OI-1 staged manifest differs from the production generator for %s"
+            % profile_id,
+        )
+        _require(
+            profile.get("manifest_sha256") == _sha256_bytes(manifest_bytes),
+            "OI-1 baseline manifest hash does not match staged bytes for %s"
+            % profile_id,
+        )
+        _require(
+            profile.get("firmware_sha256") == _sha256_bytes(firmware_bytes),
+            "OI-1 baseline firmware hash does not match staged bytes for %s"
+            % profile_id,
+        )
+        build = _validate_baseline_build(
+            profile.get("oi1_build"),
+            profile_id,
+        )
+        _require(
+            build == _qualification_build_measurement(inputs, profile_id),
+            "OI-1 baseline build measurements do not match staged bytes for %s"
+            % profile_id,
+        )
+        observation = _validate_qualification_observation(
+            profile.get("oi1_observation"),
+            None,
+            profile_id,
+        )
+        policy_profiles.append(
+            {
+                "profile_id": profile_id,
+                "target": PROFILE_SPECS[profile_id]["target"],
+                "thresholds": _derived_qualification_thresholds(
+                    build,
+                    observation,
+                ),
+            }
+        )
+        baseline_profiles.append(copy.deepcopy(profile))
+
+    baseline = {
+        "schema_version": 1,
+        "measurement_contract": "oi1-pre-v1-v1",
+        "source_commit": source_commit,
+        "firmware_version": firmware_version,
+        "created_at": created_at,
+        "profile_order": list(RELEASE_PROFILE_ORDER),
+        "profiles": baseline_profiles,
+    }
+    baseline_relative = (
+        "docs/validation/firmware/oi1/%s.json" % source_commit
+    )
+    baseline_path = root / baseline_relative
+    baseline_bytes = _canonical_json_bytes(baseline)
+    policy = {
+        "schema_version": 1,
+        "qualification_scope": "pre-v1",
+        "profile_order": list(RELEASE_PROFILE_ORDER),
+        "deferred_profiles": ["esp32-c3-4mb"],
+        "workload": copy.deepcopy(QUALIFICATION_WORKLOAD),
+        "derivation": copy.deepcopy(QUALIFICATION_DERIVATION),
+        "baseline_evidence": {
+            "path": baseline_relative,
+            "sha256": _sha256_bytes(baseline_bytes),
+        },
+        "profiles": policy_profiles,
+    }
+    policy_bytes = _canonical_json_bytes(policy)
+    _validate_qualification_baseline(
+        baseline,
+        source_commit,
+        policy,
+    )
+    _validate_qualification_policy(policy)
+
+    policy_path = root / QUALIFICATION_POLICY_RELATIVE
+    try:
+        policy_mode = policy_path.lstat().st_mode
+    except FileNotFoundError:
+        policy_original: bytes | None = None
+    except OSError as exc:
+        raise ReleaseError("OI-1 policy destination is unavailable") from exc
+    else:
+        _require(
+            stat_module.S_ISREG(policy_mode)
+            and not stat_module.S_ISLNK(policy_mode),
+            "OI-1 policy destination must be a regular non-symlink file",
+        )
+        policy_original = _read_regular_file_bytes(policy_path, "OI-1 policy")
+
+    try:
+        baseline_path.lstat()
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        raise ReleaseError("OI-1 baseline destination is unavailable") from exc
+    else:
+        raise ReleaseError("OI-1 baseline evidence already exists")
+
+    baseline_staging: Path | None = None
+    policy_staging: Path | None = None
+    try:
+        baseline_staging = _stage_regular_file_bytes(
+            baseline_path,
+            baseline_bytes,
+            "OI-1 baseline evidence",
+            mode=0o644,
+        )
+        policy_staging = _stage_regular_file_bytes(
+            policy_path,
+            policy_bytes,
+            "OI-1 qualification policy",
+            mode=0o644,
+        )
+        _atomic_publish_no_replace(
+            baseline_staging,
+            baseline_path,
+            "OI-1 baseline evidence",
+        )
+        baseline_staging = None
+        _validate_qualification_policy(policy, repo_root=root)
+        if policy_original is None:
+            _atomic_publish_no_replace(
+                policy_staging,
+                policy_path,
+                "OI-1 qualification policy",
+            )
+        else:
+            os.replace(policy_staging, policy_path)
+        policy_staging = None
+        return baseline_path, policy_path
+    finally:
+        for staging in (baseline_staging, policy_staging):
+            if staging is not None:
+                try:
+                    staging.unlink()
+                except FileNotFoundError:
+                    pass
+                except OSError:
+                    pass
 
 
 def create_bundle(
@@ -14894,6 +15203,211 @@ def _validate_hil_promotion_envelope(
                 "completed HIL changed candidate-frozen %s for %s"
                 % (key, candidate_record["profile_id"]),
             )
+
+
+def _completed_hil_report(payload: dict[str, Any]) -> bytes:
+    return (
+        "# PyBLE firmware HIL report\n\n"
+        "This completed report was mechanically assembled from the immutable "
+        "candidate and bounded per-profile evidence.\n\n"
+        "<!-- PYBLE_HIL_RECORDS_V2\n"
+    ).encode("utf-8") + _canonical_json_bytes(payload).rstrip(b"\n") + b"\n-->\n"
+
+
+def assemble_completed_hil_report(
+    *,
+    candidate_dir: Path,
+    profile_evidence_paths: list[Path],
+    output_path: Path,
+    qualification_repo_root: Path,
+) -> Path:
+    """Create a candidate-bound completed HIL V2 report without Markdown edits."""
+
+    candidate = Path(candidate_dir)
+    evidence_paths = [Path(path) for path in profile_evidence_paths]
+    output = Path(output_path)
+    qualification_root = Path(qualification_repo_root)
+    _require(
+        len(evidence_paths) == len(RELEASE_PROFILE_ORDER),
+        "completed HIL assembly requires exactly two profile evidence files",
+    )
+    operator_checks = (
+        "browser_erase_install",
+        "family_offsets_reset",
+        "advertising_info_hello",
+        "app_workflow",
+        "neopixel_reboot",
+        "interrupted_flash_recovery",
+    )
+    all_checks = (
+        *operator_checks[:-1],
+        "footprint_reliability",
+        operator_checks[-1],
+    )
+    mutable_fields = (
+        "board_manufacturer",
+        "board_model",
+        "module_marking",
+        "device_flash_capacity_bytes",
+        "device_psram_capacity_bytes",
+        "tested_at",
+        "operator",
+        "maintainer_signoff",
+        "desktop_os",
+        "chromium_version",
+        "ble_backend",
+        "ble_adapter",
+        "python_version",
+        "redacted_console_log",
+    )
+    completion_fields = {
+        "profile_id",
+        "checks",
+        "oi1_observation",
+        *mutable_fields,
+    }
+    try:
+        output.lstat()
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        raise ReleaseError("completed HIL output cannot be inspected") from exc
+    else:
+        raise ReleaseError("completed HIL output already exists")
+    try:
+        candidate_root = candidate.resolve(strict=True)
+        output_parent = output.parent.resolve(strict=True)
+    except OSError as exc:
+        raise ReleaseError(
+            "candidate or completed HIL output parent is unavailable"
+        ) from exc
+    _require(
+        not output_parent.is_relative_to(candidate_root),
+        "completed HIL output must not be inside the candidate",
+    )
+
+    release = validate_bundle(
+        candidate,
+        public=False,
+        qualification_repo_root=qualification_root,
+    )
+    _require(
+        all(
+            profile["hil_status"] == "pending"
+            for profile in release["profiles"]
+        ),
+        "completed HIL assembly requires a fully pending candidate",
+    )
+    candidate_release_digest = _sha256_path(candidate / "release.json")
+    try:
+        pending_report_text = (candidate / "HIL_REPORT.md").read_text(
+            encoding="utf-8", errors="strict"
+        )
+    except (OSError, UnicodeError) as exc:
+        raise ReleaseError("candidate HIL report is not UTF-8") from exc
+    pending_payload = _parse_hil_report(pending_report_text)
+
+    evidence_by_id: dict[str, dict[str, Any]] = {}
+    for index, evidence_path in enumerate(evidence_paths):
+        evidence = _read_json(
+            evidence_path,
+            "HIL completion evidence %d" % index,
+        )
+        completion = _exact_keys(
+            evidence,
+            completion_fields,
+            "HIL completion evidence %d" % index,
+        )
+        profile_id = completion["profile_id"]
+        _require(
+            profile_id in RELEASE_PROFILE_ORDER,
+            "HIL completion evidence has an unknown profile",
+        )
+        _require(
+            profile_id not in evidence_by_id,
+            "HIL completion evidence duplicates profile %s" % profile_id,
+        )
+        evidence_by_id[profile_id] = completion
+    _require(
+        set(evidence_by_id) == set(RELEASE_PROFILE_ORDER),
+        "HIL completion evidence does not cover the exact profile set",
+    )
+
+    completed_payload = copy.deepcopy(pending_payload)
+    completed_payload["candidate_release_json_sha256"] = (
+        candidate_release_digest
+    )
+    policy_by_id = {
+        item["profile_id"]: item
+        for item in completed_payload["qualification_policy"]["profiles"]
+    }
+    for record in completed_payload["records"]:
+        profile_id = record["profile_id"]
+        completion = evidence_by_id[profile_id]
+        checks = _exact_keys(
+            completion["checks"],
+            set(operator_checks),
+            "HIL completion checks for %s" % profile_id,
+        )
+        _require(
+            all(checks[name] == "passed" for name in operator_checks),
+            "HIL operator checks are incomplete for %s" % profile_id,
+        )
+        _validate_qualification_observation(
+            completion["oi1_observation"],
+            policy_by_id[profile_id]["thresholds"],
+            profile_id,
+        )
+
+        record["status"] = "passed"
+        for field in mutable_fields:
+            record[field] = completion[field]
+        record["checks"] = {name: "passed" for name in all_checks}
+        record["oi1_observation"] = copy.deepcopy(
+            completion["oi1_observation"]
+        )
+
+    _validate_hil_promotion_envelope(pending_payload, completed_payload)
+    report_bytes = _completed_hil_report(completed_payload)
+
+    staging: Path | None = None
+    try:
+        staging = _stage_regular_file_bytes(
+            output,
+            report_bytes,
+            "completed HIL report",
+            mode=0o600,
+        )
+        passed_profiles = copy.deepcopy(release["profiles"])
+        for profile in passed_profiles:
+            profile["hil_status"] = "passed"
+        identity = copy.deepcopy(release["identity"])
+        identity["_source_commit"] = release["provenance"]["pyble"][
+            "commit"
+        ]
+        _validate_hil(
+            candidate,
+            staging,
+            passed_profiles,
+            identity,
+            True,
+            repo_root=qualification_root,
+        )
+        _atomic_publish_no_replace(
+            staging,
+            output,
+            "completed HIL report",
+        )
+        staging = None
+        return output
+    finally:
+        if staging is not None:
+            try:
+                staging.unlink()
+            except FileNotFoundError:
+                pass
+            except OSError:
+                pass
 
 
 def finalize_public_bundle(
@@ -15215,6 +15729,25 @@ def _main(argv: list[str] | None = None) -> int:
     )
     baseline_parser.add_argument("--repo-root", required=True, type=Path)
 
+    baseline_assembly_parser = subparsers.add_parser(
+        "assemble-oi1-baseline"
+    )
+    baseline_assembly_parser.add_argument(
+        "baseline_inputs_dir",
+        type=Path,
+    )
+    baseline_assembly_parser.add_argument(
+        "profile_fragment_paths",
+        nargs=2,
+        type=Path,
+    )
+    baseline_assembly_parser.add_argument(
+        "--repo-root",
+        required=True,
+        type=Path,
+    )
+    baseline_assembly_parser.add_argument("--created-at", required=True)
+
     create_parser = subparsers.add_parser("create-candidate")
     create_parser.add_argument("build_root", type=Path)
     create_parser.add_argument("output_dir", type=Path)
@@ -15257,6 +15790,20 @@ def _main(argv: list[str] | None = None) -> int:
         type=Path,
     )
     finalize_parser.add_argument("--repo-root", required=True, type=Path)
+
+    hil_assembly_parser = subparsers.add_parser("assemble-hil-report")
+    hil_assembly_parser.add_argument("candidate_dir", type=Path)
+    hil_assembly_parser.add_argument(
+        "profile_evidence_paths",
+        nargs=2,
+        type=Path,
+    )
+    hil_assembly_parser.add_argument("output_path", type=Path)
+    hil_assembly_parser.add_argument(
+        "--qualification-repo-root",
+        required=True,
+        type=Path,
+    )
 
     args = parser.parse_args(argv)
     if args.command == "validate-build":
@@ -15339,6 +15886,15 @@ def _main(argv: list[str] | None = None) -> int:
             repo_root=args.repo_root,
         )
         print(output)
+    elif args.command == "assemble-oi1-baseline":
+        baseline_path, policy_path = assemble_oi1_baseline(
+            baseline_inputs_dir=args.baseline_inputs_dir,
+            profile_fragment_paths=args.profile_fragment_paths,
+            repo_root=args.repo_root,
+            created_at=args.created_at,
+        )
+        print(baseline_path)
+        print(policy_path)
     elif args.command == "create-candidate":
         provenance = (
             _read_json(args.provenance_json, "provenance JSON")
@@ -15368,6 +15924,14 @@ def _main(argv: list[str] | None = None) -> int:
             license_evidence_dir=args.license_evidence_dir,
             license_build_root=args.license_build_root,
             repo_root=args.repo_root,
+        )
+        print(output)
+    elif args.command == "assemble-hil-report":
+        output = assemble_completed_hil_report(
+            candidate_dir=args.candidate_dir,
+            profile_evidence_paths=args.profile_evidence_paths,
+            output_path=args.output_path,
+            qualification_repo_root=args.qualification_repo_root,
         )
         print(output)
     return 0
