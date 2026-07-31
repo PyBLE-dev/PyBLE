@@ -13,6 +13,7 @@ import {
   CheckIcon,
   CodeIcon,
   ConsoleIcon,
+  ExternalIcon,
   ProtocolIcon,
   RadioIcon,
   ShieldIcon,
@@ -265,6 +266,66 @@ export default function HomePage() {
               ))}
             </div>
           </div>
+        </div>
+      </section>
+
+      <section
+        className="section source-section"
+        aria-labelledby="source-section-title"
+      >
+        <div className="container source-section__card">
+          <div className="source-section__copy">
+            <p className="eyebrow">Free and open source</p>
+            <h2 id="source-section-title">See how PyBLE is built.</h2>
+            <p className="source-section__lede">
+              The tablet app, board-agent firmware, PBLE/1 protocol, tests, and
+              documentation are developed in public under the MIT license.
+              Explore how the pieces fit together, build from source, or help
+              bring PyBLE to another MicroPython + BLE board.
+            </p>
+            <a
+              className="button button--primary source-section__action"
+              href={siteConfig.repositoryUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Explore PyBLE on GitHub
+              <ExternalIcon />
+            </a>
+          </div>
+
+          <aside
+            className="source-repository"
+            aria-label="Inside the PyBLE repository"
+          >
+            <div className="source-repository__heading">
+              <span className="source-repository__icon" aria-hidden="true">
+                <CodeIcon />
+              </span>
+              <p>
+                <strong>PyBLE-dev / PyBLE</strong>
+                <small>Public repository · MIT license</small>
+              </p>
+            </div>
+            <ul>
+              <li>
+                <code>app/</code>
+                <span>Flutter tablet IDE</span>
+              </li>
+              <li>
+                <code>firmware/</code>
+                <span>MicroPython + BLE agent</span>
+              </li>
+              <li>
+                <code>docs/</code>
+                <span>PBLE/1 and public specifications</span>
+              </li>
+              <li>
+                <code>tests/</code>
+                <span>Conformance and release gates</span>
+              </li>
+            </ul>
+          </aside>
         </div>
       </section>
 

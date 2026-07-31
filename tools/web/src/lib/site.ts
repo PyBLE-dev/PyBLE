@@ -12,6 +12,7 @@ export const siteConfig = {
     "A free, open-source, tablet-first IDE for MicroPython boards with compatible Bluetooth Low Energy agent firmware.",
   supportEmail: "viwat.v@chula.ac.th",
   testFlightUrl: "https://testflight.apple.com/join/yU4e8s6d",
+  repositoryUrl: "https://github.com/PyBLE-dev/PyBLE",
 } as const;
 
 export const navigation = [

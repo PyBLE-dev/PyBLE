@@ -16,6 +16,13 @@ export function SiteFooter() {
         </div>
 
         <nav className="site-footer__links" aria-label="Footer">
+          <a
+            href={siteConfig.repositoryUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            GitHub
+          </a>
           <Link href="/flash">Firmware</Link>
           <Link href="/support">Support</Link>
           <Link href="/privacy">Privacy</Link>
