@@ -159,7 +159,7 @@ describe("public-site contract", () => {
     );
   });
 
-  it("states the vendor-neutral vision and the truthful pre-activation firmware state", () => {
+  it("states the vendor-neutral vision and the truthful public-beta firmware state", () => {
     render(<HomePage />);
 
     expect(
@@ -173,11 +173,11 @@ describe("public-site contract", () => {
         /designed for boards that run MicroPython and support Bluetooth Low Energy/i,
       ),
     ).toBeInTheDocument();
-    expect(screen.getByText(/public v0\.4\.2 firmware/i)).toHaveTextContent(
-      /pending HIL for the exact esp32-4mb and esp32-s3-n16r8 profiles/i,
+    expect(screen.getByText(/public v0\.4\.1 firmware/i)).toHaveTextContent(
+      /unqualified beta for the exact esp32-4mb and esp32-s3-n16r8 profiles/i,
     );
-    expect(screen.getByText(/public v0\.4\.2 firmware/i)).toHaveTextContent(
-      /public browser installer stays unavailable until both exact profiles pass HIL/i,
+    expect(screen.getByText(/public v0\.4\.1 firmware/i)).toHaveTextContent(
+      /full hardware-in-the-loop qualification is pending.*use it at your own risk/i,
     );
     expect(
       screen.getByText(
@@ -332,14 +332,14 @@ describe("public-site contract", () => {
         id: "esp32-4mb",
         target: "Classic ESP32",
         constraint: "4 MiB external SPI flash · no PSRAM assumed",
-        status: "v0.4.2 HIL pending · installer unavailable",
+        status: "v0.4.1 unqualified beta · HIL pending",
         planned: false,
       },
       {
         id: "esp32-s3-n16r8",
         target: "ESP32-S3 N16R8",
         constraint: "16 MiB flash · 8 MiB Octal PSRAM",
-        status: "v0.4.2 HIL pending · installer unavailable",
+        status: "v0.4.1 unqualified beta · HIL pending",
         planned: false,
       },
       {
@@ -359,6 +359,12 @@ describe("public-site contract", () => {
       expect(targetCard).toHaveTextContent(target.constraint);
       expect(targetCard).toHaveTextContent(target.status);
     }
+    expect(screen.getByText(/provision once/i).closest("li")).toHaveTextContent(
+      /v0\.4\.1 unqualified beta.*full HIL is pending.*use it at your own risk/i,
+    );
+    expect(
+      screen.getByRole("link", { name: /open firmware installer/i }),
+    ).toHaveAttribute("href", "/flash");
   });
 
   it("keeps the public installer unavailable while explaining exact profiles, BLE use, and recovery", () => {
@@ -543,8 +549,11 @@ describe("public-site contract", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        /public installer is unavailable while v0\.4\.2 HIL runs for esp32-4mb and esp32-s3-n16r8/i,
+        /v0\.4\.1 unqualified beta is available for the exact esp32-4mb and esp32-s3-n16r8 profiles/i,
       ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/full HIL remains pending.*use it at your own risk/i),
     ).toBeInTheDocument();
     expect(
       screen.getByText(/ESP32-C3 is not currently available/i),

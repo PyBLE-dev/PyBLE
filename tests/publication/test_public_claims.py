@@ -23,20 +23,41 @@ class PublicClaimsTest(unittest.TestCase):
         cls.bug_template = (
             REPO_ROOT / ".github" / "ISSUE_TEMPLATE" / "bug.yml"
         ).read_text(encoding="utf-8")
+        cls.roadmap = (REPO_ROOT / "docs" / "ROADMAP.md").read_text(
+            encoding="utf-8"
+        )
+        cls.home_page = (
+            REPO_ROOT / "tools" / "web" / "src" / "app" / "page.tsx"
+        ).read_text(encoding="utf-8")
+        cls.site_copy = (
+            REPO_ROOT / "tools" / "web" / "src" / "lib" / "site.ts"
+        ).read_text(encoding="utf-8")
+        cls.support_page = (
+            REPO_ROOT
+            / "tools"
+            / "web"
+            / "src"
+            / "app"
+            / "support"
+            / "page.tsx"
+        ).read_text(encoding="utf-8")
 
-    def test_readme_is_truthful_before_v042_hil_completes(self) -> None:
+    def test_readme_identifies_the_exact_unqualified_public_beta(self) -> None:
         firmware = markdown_section(self.readme, "What works")
 
         self.assertIn(
-            "public browser installer is currently unavailable pending v0.4.2 HIL",
+            "public browser installer currently offers the exact v0.4.1 unqualified beta",
             firmware,
         )
+        self.assertIn("full project HIL is pending", firmware)
         self.assertIn("`esp32-4mb`", firmware)
         self.assertIn("Classic ESP32, 4 MiB external SPI flash", firmware)
         self.assertIn("`esp32-s3-n16r8`", firmware)
         self.assertIn("16 MiB flash / 8 MiB Octal PSRAM", firmware)
+        self.assertIn("Unqualified v0.4.1 beta; HIL pending", firmware)
+        self.assertIn("Planned; unavailable", firmware)
         self.assertNotIn("currently offers qualified images", firmware)
-        self.assertNotIn("| Available", firmware)
+        self.assertNotIn("v0.4.2 HIL pending; installer unavailable", firmware)
 
     def test_readme_caption_describes_only_the_visible_app(self) -> None:
         caption_start = self.readme.index("<em>Actual PyBLE app")
@@ -48,13 +69,47 @@ class PublicClaimsTest(unittest.TestCase):
         self.assertIn("generated MicroPython", caption)
         self.assertNotRegex(caption, r"(?i)pictured|board|module")
 
-    def test_readme_try_steps_are_gated_on_an_active_installer(self) -> None:
+    def test_readme_try_steps_use_the_active_beta_safely(self) -> None:
         try_section = markdown_section(self.readme, "Try PyBLE")
 
-        self.assertIn("currently unavailable pending v0.4.2 HIL", try_section)
-        self.assertIn("active release version", try_section)
+        self.assertIn("v0.4.1 unqualified beta", try_section)
+        self.assertIn("full HIL is pending", try_section)
+        self.assertIn("use it at your own risk", try_section)
+        self.assertIn("exact profile", try_section)
+        self.assertIn("back up", try_section)
         self.assertIn("enabled install action", try_section)
-        self.assertNotRegex(try_section, r"(?is)select .*qualified\s+agent firmware")
+        self.assertIn("Flashing erases the board", try_section)
+        self.assertNotIn("wait for that page", try_section.lower())
+
+    def test_current_public_surfaces_agree_on_beta_and_c3_state(self) -> None:
+        combined = "\n".join(
+            (self.home_page, self.site_copy, self.support_page, self.roadmap)
+        )
+
+        for wording in (
+            "v0.4.1",
+            "unqualified beta",
+            "HIL pending",
+            "esp32-4mb",
+            "esp32-s3-n16r8",
+        ):
+            self.assertIn(wording, combined)
+        self.assertIn("use it at your own risk", combined.lower())
+        self.assertIn("ESP32-C3", combined)
+        self.assertRegex(combined, r"(?is)ESP32-C3.{0,180}unavailable")
+        for stale in (
+            "public browser installer stays unavailable",
+            "public installer is unavailable while v0.4.2 HIL runs",
+            "board provisioning will open only after v0.4.2",
+            "Browser installation for qualified `esp32-4mb`",
+        ):
+            self.assertNotIn(stale, combined)
+
+        near_term = markdown_section(self.roadmap, "Near term")
+        self.assertIn(
+            "Complete full HIL qualification for the exact `esp32-4mb` and",
+            near_term,
+        )
 
     def test_bug_template_collects_the_exact_installer_diagnostics(self) -> None:
         for field_id in (
