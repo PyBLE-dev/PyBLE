@@ -99,8 +99,12 @@ describe("public-site contract", () => {
     });
 
     const publicDirectory = join(process.cwd(), "public");
-    const [socialPng, qrCardPng, qrCardSvg] = await Promise.all([
+    const [socialPng, socialSvg, qrCardPng, qrCardSvg] = await Promise.all([
       readFile(join(publicDirectory, "social", "pyble-beta-og-1200x630.png")),
+      readFile(
+        join(publicDirectory, "social", "pyble-beta-og-1200x630.svg"),
+        "utf8",
+      ),
       readFile(join(publicDirectory, "social", "pyble-testflight-qr-1080.png")),
       readFile(
         join(publicDirectory, "social", "pyble-testflight-qr-1080.svg"),
@@ -110,6 +114,13 @@ describe("public-site contract", () => {
     expect([socialPng.readUInt32BE(16), socialPng.readUInt32BE(20)]).toEqual([
       1200, 630,
     ]);
+    expect(socialSvg).toContain("One-time USB setup.");
+    expect(socialSvg).toContain("Everyday coding over BLE.");
+    expect(socialSvg).toContain("FIRMWARE HIL PENDING");
+    expect(socialSvg).not.toContain("WEB FLASHER");
+    expect(createHash("sha256").update(socialPng).digest("hex")).not.toBe(
+      "c6ff10039c00780909b79b0e557c46b843d9994bc0d545a9a098488c3157ff1d",
+    );
     expect([qrCardPng.readUInt32BE(16), qrCardPng.readUInt32BE(20)]).toEqual([
       1080, 1080,
     ]);
@@ -138,7 +149,7 @@ describe("public-site contract", () => {
     );
   });
 
-  it("states the vendor-neutral vision and separates it from initial firmware support", () => {
+  it("states the vendor-neutral vision and the truthful pre-activation firmware state", () => {
     render(<HomePage />);
 
     expect(
@@ -152,11 +163,9 @@ describe("public-site contract", () => {
         /designed for boards that run MicroPython and support Bluetooth Low Energy/i,
       ),
     ).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        /current firmware release supports qualified classic ESP32 and ESP32-S3 module profiles/i,
-      ),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/v0\.4\.2 firmware candidate/i)).toHaveTextContent(
+      /public browser installer stays unavailable until both exact profiles pass HIL/i,
+    );
     expect(
       screen.getByText(
         /ESP32-C3 and more microcontroller families remain planned/i,
@@ -304,17 +313,39 @@ describe("public-site contract", () => {
     expect(capture.readUInt32BE(20)).toBe(2732);
   });
 
-  it("distinguishes current firmware families from the planned ESP32-C3 target", () => {
+  it("names every exact profile, memory constraint, and qualification state", () => {
     expect(initialFirmwareTargets).toEqual([
-      { name: "ESP32", availability: "Released profile" },
-      { name: "ESP32-S3", availability: "Released profile" },
-      { name: "ESP32-C3", availability: "Planned profile" },
+      {
+        id: "esp32-4mb",
+        target: "Classic ESP32",
+        constraint: "4 MiB external SPI flash · no PSRAM assumed",
+        status: "v0.4.2 HIL pending · installer unavailable",
+        planned: false,
+      },
+      {
+        id: "esp32-s3-n16r8",
+        target: "ESP32-S3 N16R8",
+        constraint: "16 MiB flash · 8 MiB Octal PSRAM",
+        status: "v0.4.2 HIL pending · installer unavailable",
+        planned: false,
+      },
+      {
+        id: "esp32-c3-4mb",
+        target: "ESP32-C3",
+        constraint: "4 MiB external SPI flash · no PSRAM assumed",
+        status: "Planned · installer unavailable pending exact-profile HIL",
+        planned: true,
+      },
     ]);
 
     render(<HomePage />);
 
-    const esp32C3Target = screen.getByText("ESP32-C3").closest("div");
-    expect(esp32C3Target).toHaveTextContent("Planned profile");
+    for (const target of initialFirmwareTargets) {
+      const targetCard = screen.getByText(target.id).closest("div");
+      expect(targetCard).toHaveTextContent(target.target);
+      expect(targetCard).toHaveTextContent(target.constraint);
+      expect(targetCard).toHaveTextContent(target.status);
+    }
   });
 
   it("keeps the public installer unavailable while explaining exact profiles, BLE use, and recovery", () => {
@@ -472,16 +503,30 @@ describe("public-site contract", () => {
     expect(screen.getByText(/ordinary request data/i)).toBeInTheDocument();
   });
 
-  it("gives beta users a concrete support checklist and contact", () => {
+  it("gives beta users an exact installer intake and preferred bug template", () => {
     render(<SupportPage />);
 
     expect(
       screen.getByRole("heading", { level: 1, name: "Support" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("Board and chip family")).toBeInTheDocument();
+    expect(
+      screen.getByText(/exact installer profile ID/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/exact board model and module marking/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/flash capacity, PSRAM capacity, and PSRAM type/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/browser name\/version and desktop OS name\/version/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/failed installer stage and redacted error text/i),
+    ).toBeInTheDocument();
     expect(
       screen.getByText(
-        /public installer supports only esp32-4mb and esp32-s3-n16r8/i,
+        /public installer is unavailable while v0\.4\.2 HIL runs for esp32-4mb and esp32-s3-n16r8/i,
       ),
     ).toBeInTheDocument();
     expect(
@@ -495,8 +540,14 @@ describe("public-site contract", () => {
     expect(
       screen.getByText("PyBLE app and agent versions"),
     ).toBeInTheDocument();
-    expect(
-      screen.getByRole("link", { name: "viwat.v@chula.ac.th" }),
-    ).toHaveAttribute("href", "mailto:viwat.v@chula.ac.th");
+    expect(siteConfig.bugReportUrl).toBe(
+      "https://github.com/PyBLE-dev/PyBLE/issues/new?template=bug.yml",
+    );
+    const preferredReport = screen.getByRole("link", {
+      name: "Open the GitHub bug template",
+    });
+    expect(preferredReport).toHaveAttribute("href", siteConfig.bugReportUrl);
+    expect(preferredReport).toHaveAttribute("target", "_blank");
+    expect(preferredReport).toHaveAttribute("rel", "noopener noreferrer");
   });
 });
