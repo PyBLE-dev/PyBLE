@@ -335,7 +335,9 @@ describe("browser firmware installer states", () => {
     await waitFor(() => {
       expect(document.querySelector("esp-web-install-button")).not.toBeNull();
     });
-    expect(screen.getByText(/unqualified beta.*use at your own risk/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/unqualified beta.*use at your own risk/i),
+    ).toBeInTheDocument();
     expect(
       screen.getByRole("button", {
         name: /install unqualified beta pyble 0\.4\.1/i,

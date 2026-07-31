@@ -9,6 +9,7 @@ import { installReleaseKeyedArtifactFetch } from "@/lib/firmware-fetch-cache";
 import { verifyFirmwareProfile } from "@/lib/firmware-integrity";
 import {
   hasExactFirmwareProfileDescriptors,
+  isExactPublicBetaFirmwareRelease,
   type FirmwareProfileDescriptor,
   type FirmwareProfileId,
   type FirmwareReleaseDescriptor,
@@ -126,9 +127,23 @@ function policyFailure(release: FirmwareReleaseDescriptor | null | undefined) {
     };
   }
   if (release.deployment !== "public" && release.deployment !== "candidate") {
+    if (
+      release.deployment !== "public-beta" ||
+      !isExactPublicBetaFirmwareRelease(release)
+    ) {
+      return {
+        heading: "Installer unavailable",
+        body: "The selected firmware deployment mode is invalid, so installation remains unavailable.",
+      };
+    }
+  }
+  if (
+    release.deployment === "public-beta" &&
+    !isExactPublicBetaFirmwareRelease(release)
+  ) {
     return {
       heading: "Installer unavailable",
-      body: "The selected firmware deployment mode is invalid, so installation remains unavailable.",
+      body: "The public beta does not match the exact attested v0.4.1 firmware, so installation remains unavailable.",
     };
   }
   if (!hasExactFirmwareProfileDescriptors(release.version, release.profiles)) {
@@ -285,6 +300,7 @@ function FlashStatusForRelease({
   );
   const everyConsent = consentItems.every(({ id }) => consents[id]);
   const candidate = activeRelease.deployment === "candidate";
+  const publicBeta = activeRelease.deployment === "public-beta";
 
   function chooseProfile(profileId: FirmwareProfileId) {
     verificationAttempt.current += 1;
@@ -372,18 +388,24 @@ function FlashStatusForRelease({
         <div>
           <p className="flash-status__eyebrow">Installer status</p>
           <h2 id="installer-status-title">
-            {candidate ? "Protected release candidate" : "Qualified release"}
+            {candidate
+              ? "Protected release candidate"
+              : publicBeta
+                ? "Unqualified firmware beta"
+                : "Qualified release"}
           </h2>
         </div>
       </div>
 
       <div
-        role={candidate ? "status" : undefined}
+        role={candidate || publicBeta ? "status" : undefined}
         className="flash-status__message"
       >
         {candidate
           ? "Protected release candidate: hardware validation is pending."
-          : "Select and verify the exact module profile before installation."}
+          : publicBeta
+            ? "Unqualified firmware beta: full hardware-in-the-loop qualification is pending. These exact v0.4.1 bytes were manually exercised on the maintainer's ESP32 and ESP32-S3 boards, but they are not qualified. Use at your own risk."
+            : "Select and verify the exact module profile before installation."}
       </div>
 
       <div
@@ -475,6 +497,12 @@ function FlashStatusForRelease({
             Installation erases the device. Keep stable power connected and
             select only the serial port for this board.
           </p>
+          {publicBeta ? (
+            <p className="flash-warning">
+              This is an unqualified beta with full HIL pending. Use at your own
+              risk.
+            </p>
+          ) : null}
           <a className="text-link" href={activeRelease.recoveryPath}>
             {`Version ${verified.version} recovery instructions`}
           </a>
@@ -484,7 +512,8 @@ function FlashStatusForRelease({
               type="button"
               slot="activate"
             >
-              Install PyBLE {verified.version}
+              {publicBeta ? "Install unqualified beta PyBLE" : "Install PyBLE"}{" "}
+              {verified.version}
             </button>
           </esp-web-install-button>
         </div>

@@ -173,7 +173,9 @@ describe("production build contract", () => {
   });
 
   it("accepts only the exact attested public-beta selector at the build boundary", async () => {
-    const selectionRoot = await mkdtemp(join(tmpdir(), "pyble-beta-selection-"));
+    const selectionRoot = await mkdtemp(
+      join(tmpdir(), "pyble-beta-selection-"),
+    );
     const selectionFile = join(selectionRoot, "selection.json");
     await writeFile(
       selectionFile,

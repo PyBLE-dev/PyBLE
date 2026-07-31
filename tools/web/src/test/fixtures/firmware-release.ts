@@ -714,8 +714,7 @@ export const publicBetaFirmwareRelease = {
   accessControlled: false,
   releaseJson: {
     path: "/firmware/v0.4.1/release.json",
-    sha256:
-      "8b84fbb65a0463d20369e1d86dac566ca7a2039ebc30f9186f55c05421962445",
+    sha256: "8b84fbb65a0463d20369e1d86dac566ca7a2039ebc30f9186f55c05421962445",
   },
 } satisfies FirmwareReleaseDescriptor;
 export const pendingCandidateFirmwareRelease = createFirmwareReleaseFixture({
