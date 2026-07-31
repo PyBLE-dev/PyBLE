@@ -118,8 +118,8 @@ describe("public-site contract", () => {
     expect(socialSvg).toContain("Everyday coding over BLE.");
     expect(socialSvg).toContain("FIRMWARE HIL PENDING");
     expect(socialSvg).not.toContain("WEB FLASHER");
-    expect(createHash("sha256").update(socialPng).digest("hex")).not.toBe(
-      "c6ff10039c00780909b79b0e557c46b843d9994bc0d545a9a098488c3157ff1d",
+    expect(createHash("sha256").update(socialPng).digest("hex")).toBe(
+      "7e7e037d9bd2e58e2e66f516bfd6f1b753bda472c402b8130f8a8a6dd8f19ba9",
     );
     expect([qrCardPng.readUInt32BE(16), qrCardPng.readUInt32BE(20)]).toEqual([
       1080, 1080,
@@ -163,7 +163,10 @@ describe("public-site contract", () => {
         /designed for boards that run MicroPython and support Bluetooth Low Energy/i,
       ),
     ).toBeInTheDocument();
-    expect(screen.getByText(/v0\.4\.2 firmware candidate/i)).toHaveTextContent(
+    expect(screen.getByText(/public v0\.4\.2 firmware/i)).toHaveTextContent(
+      /pending HIL for the exact esp32-4mb and esp32-s3-n16r8 profiles/i,
+    );
+    expect(screen.getByText(/public v0\.4\.2 firmware/i)).toHaveTextContent(
       /public browser installer stays unavailable until both exact profiles pass HIL/i,
     );
     expect(
@@ -509,9 +512,7 @@ describe("public-site contract", () => {
     expect(
       screen.getByRole("heading", { level: 1, name: "Support" }),
     ).toBeInTheDocument();
-    expect(
-      screen.getByText(/exact installer profile ID/i),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/exact installer profile ID/i)).toBeInTheDocument();
     expect(
       screen.getByText(/exact board model and module marking/i),
     ).toBeInTheDocument();
@@ -523,6 +524,12 @@ describe("public-site contract", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByText(/failed installer stage and redacted error text/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/exact tablet or device model/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/iPadOS or Android name\/version/i),
     ).toBeInTheDocument();
     expect(
       screen.getByText(

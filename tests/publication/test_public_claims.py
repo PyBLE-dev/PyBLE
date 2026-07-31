@@ -64,6 +64,8 @@ class PublicClaimsTest(unittest.TestCase):
             "browser",
             "operating_system",
             "installer_stage",
+            "tablet",
+            "tablet_os",
         ):
             self.assertIn(f"    id: {field_id}\n", self.bug_template)
 
@@ -74,6 +76,8 @@ class PublicClaimsTest(unittest.TestCase):
             "Browser name and exact version",
             "Desktop operating system and exact version",
             "Failed installer stage",
+            "Exact tablet or device model",
+            "Tablet operating system and exact version",
         ):
             self.assertIn(wording, self.bug_template)
 
