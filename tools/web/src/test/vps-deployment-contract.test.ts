@@ -89,12 +89,12 @@ describe("Cloudflare-fronted VPS deployment", () => {
     expect(headers).toContain("Strict-Transport-Security");
   });
 
-  it("routes the exact v0.4.1 public beta through the immutable firmware boundary", async () => {
+  it("routes the exact v0.4.2 public beta through the immutable firmware boundary", async () => {
     const config = await readFile(
       join(deploymentRoot, "nginx", "10-pyble-dev-https.conf"),
       "utf8",
     );
-    expect(config).not.toContain("location ^~ /firmware/v0.4.1/");
+    expect(config).not.toContain("location ^~ /firmware/v0.4.2/");
     expect(config).not.toContain("@burned_firmware_candidate");
     expect(config).toMatch(
       /location \^~ \/firmware\/\s*\{[\s\S]*?alias \/srv\/pyble\/firmware\//,
@@ -154,19 +154,29 @@ describe("Cloudflare-fronted VPS deployment", () => {
   });
 
   it("accepts only the exact unrestricted pending public beta in the activation path", async () => {
-    const script = await readFile(
-      join(deploymentRoot, "vps", "deploy.sh"),
-      "utf8",
-    );
+    const [script, staging] = await Promise.all([
+      readFile(join(deploymentRoot, "vps", "deploy.sh"), "utf8"),
+      readFile(
+        join(process.cwd(), "scripts", "stage-firmware-release.js"),
+        "utf8",
+      ),
+    ]);
 
     expect(script).toContain('descriptor.deployment === "public-beta"');
     expect(script).toContain('descriptor.hilStatus === "pending"');
     expect(script).toContain("descriptor.accessControlled === false");
     expect(script).toContain(
-      "8b84fbb65a0463d20369e1d86dac566ca7a2039ebc30f9186f55c05421962445",
+      "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
     );
-    expect(script).toMatch(
-      /public-beta[\s\S]*?(?:skip|does not require)[\s\S]*?annotated tag/i,
+    expect(staging).toMatch(
+      /public-beta[\s\S]*?--audited-candidate[\s\S]*?--license-evidence-dir[\s\S]*?--license-build-root/,
+    );
+    expect(script).toContain("PYBLE_FIRMWARE_LICENSE_EVIDENCE_DIR");
+    expect(script).toContain("PYBLE_FIRMWARE_LICENSE_BUILD_ROOT");
+    expect(script).toContain("PYBLE_FIRMWARE_SOURCE_ROOT");
+    expect(script).toContain("local_firmware_tag_object_before_build");
+    expect(script).not.toMatch(
+      /public-beta[\s\S]{0,180}(?:skip|does not require)[\s\S]{0,180}annotated tag/i,
     );
   });
 
