@@ -157,6 +157,13 @@ advertise an enabled web flasher; it MAY explicitly label firmware HIL as
 pending. Its mechanically rendered PNG and authored SVG MUST remain paired by
 reviewed content and exact-dimension tests.
 
+Every changed social-card byte set MUST use a new content-versioned public
+pathname before its metadata is deployed. Replacing a PNG or SVG at an existing
+pathname is forbidden because the public CDN may retain the previous bytes
+after an origin release changes. Tests MUST bind the metadata URL, local
+pathname, dimensions, and reviewed SHA-256; production verification MUST fetch
+that exact URL and compare the deployed bytes.
+
 The support route MUST link directly to the preferred GitHub bug template at
 `https://github.com/PyBLE-dev/PyBLE/issues/new?template=bug.yml`. Installer
 intake MUST request the exact profile ID, board/model and module marking, flash
