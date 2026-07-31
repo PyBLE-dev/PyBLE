@@ -109,12 +109,26 @@ For the owned N16R8 S3, change the identity arguments to:
 
 Baseline output is deliberately one **profile fragment**, not a release
 approval and not a malformed one-profile substitute for the frozen
-two-profile baseline envelope. Retain both successful fragments and assemble
-them, in policy order, with the common source commit, firmware version, and
-UTC timestamp before committing the baseline evidence. The command prints the
-mechanically derived profile thresholds for review; those numbers do not
-become policy until the retained two-profile baseline and its digest are
-committed.
+two-profile baseline envelope. Retain both successful fragments, then assemble
+the envelope and policy without hand-editing JSON:
+
+```sh
+python3 ../../../firmware/scripts/release_bundle.py \
+  assemble-oi1-baseline \
+  <private>/oi1-inputs \
+  <private>/esp32-4mb-baseline-profile.json \
+  <private>/esp32-s3-n16r8-baseline-profile.json \
+  --repo-root ../../.. \
+  --created-at 2026-08-01T00:00:00Z
+```
+
+The helper obtains the common source commit and firmware version from the
+clean proof checkout, binds both fragments to the staged bytes, creates the
+canonical commit-scoped evidence file, and atomically updates
+`firmware/qualification/oi1-gates.json` with mechanically derived thresholds.
+Review and commit both generated files together. The individual bench command
+also prints its derived thresholds for review; neither fragment nor assembled
+baseline is release approval.
 
 After that policy exists, run the exact final candidate in verify mode:
 
@@ -145,6 +159,26 @@ Verify output is the exact `oi1_observation` object for insertion by the
 release finalizer. It does not edit a policy, release bundle, or HIL report.
 Any workload, integrity, threshold, or physical-power-cycle failure exits
 non-zero without writing a successful observation.
+
+After all other protected-candidate checks pass, put each verify observation
+and that profile's bounded operator metadata/checks into one completion JSON
+fragment, then create the completed report without editing Markdown:
+
+```sh
+python3 ../../../firmware/scripts/release_bundle.py \
+  assemble-hil-report \
+  <private>/candidate-v0.4.2 \
+  <private>/esp32-4mb-hil-completion.json \
+  <private>/esp32-s3-n16r8-hil-completion.json \
+  <private>/completed-HIL_REPORT.md \
+  --qualification-repo-root ../../..
+```
+
+The completion fragment has only mutable board/operator/environment fields,
+six operator-demonstration checks (all `passed`), `oi1_observation`, and the
+redacted console log. The helper computes the selected candidate digest,
+copies every frozen identity/policy/build field, and derives the
+`footprint_reliability` pass only after validating the observation.
 
 The C3 profile is intentionally refused by the CLI. A source build or license
 audit for `esp32-c3-4mb` is not HIL evidence and cannot enable that profile.
