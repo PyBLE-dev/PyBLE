@@ -461,6 +461,33 @@ class PolicyV2HardeningTests(unittest.TestCase):
         )
         self.assert_rejected()
 
+    def test_supplemental_source_hash_excludes_but_audit_rejects_python_caches(self):
+        source_hash = RELEASE._audit_sha256_source_tree
+        source_tree = self.fixture.mbedtls_tree
+        expected = source_hash(source_tree)
+
+        cache = source_tree / "mbedcrypto" / "__pycache__" / "config.cpython-313.pyc"
+        legacy_cache = source_tree / "mbedcrypto" / "legacy.pyc"
+        cache.parent.mkdir(parents=True)
+        cache.write_bytes(b"cache containing /first/checkout/path\n")
+        legacy_cache.write_bytes(b"legacy cache containing /first/checkout/path\n")
+        self.assertEqual(source_hash(source_tree), expected)
+        cache.write_bytes(b"cache containing /second/checkout/path\n")
+        legacy_cache.write_bytes(b"legacy cache containing /second/checkout/path\n")
+        self.assertEqual(source_hash(source_tree), expected)
+        self.assert_rejected()
+
+        cache.unlink()
+        legacy_cache.unlink()
+        cache.parent.rmdir()
+        real_source = source_tree / "mbedcrypto" / "mbedcrypto.c"
+        real_source.write_text(
+            real_source.read_text(encoding="utf-8") + "// mutation\n",
+            encoding="utf-8",
+        )
+        self.assertNotEqual(source_hash(source_tree), expected)
+        self.assert_rejected()
+
     def test_observed_input_with_symlink_ancestor_is_rejected(self):
         identifier = "core--esp32-4mb--application"
         observed = copy.deepcopy(self.fixture.observed_inputs)

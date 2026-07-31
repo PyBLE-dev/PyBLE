@@ -1155,7 +1155,10 @@ PBLE/1 **conformance** tests run against an **in-memory fake transport** shared 
   toolchain-distribution license bytes from the trusted ESP-IDF download cache,
   exact metadata/cache/install binding with distinct archive and version roots,
   absence of host-absolute paths in receipts, and profile-specific zero-input
-  not-shipped proof.
+  not-shipped proof. Supplemental source-tree digests exclude Python bytecode
+  cache artifacts while the audit rejects any such artifacts in the retained
+  checkout; release builds force bytecode generation off so checkout-local
+  absolute paths cannot contaminate otherwise identical source evidence.
 - **size:** enforce the total application-image ceiling and derived
   factory-partition headroom floor during build/candidate validation. Continue
   structural application-fit checks on all three source targets, including

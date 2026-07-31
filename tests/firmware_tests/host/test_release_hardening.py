@@ -746,7 +746,7 @@ class BuildScriptFixture:
               done
               printf '\n'
             } >> "$PYBLE_MAKE_LOG"
-            printf '%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n' \
+            printf '%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n' \
               "${CFLAGS_EXTRA-}" \
               "${EXTRA_CPPFLAGS-}" \
               "${CFLAGS-}" \
@@ -757,7 +757,8 @@ class BuildScriptFixture:
               "${MAKEFLAGS-}" \
               "${MFLAGS-}" \
               "${GNUMAKEFLAGS-}" \
-              "${MAKEOVERRIDES-}" >> "$PYBLE_MAKE_ENV_LOG"
+              "${MAKEOVERRIDES-}" \
+              "${PYTHONDONTWRITEBYTECODE-}" >> "$PYBLE_MAKE_ENV_LOG"
             printf '%s\n' "${MICROPY_MPYCROSS-}" \
               >> "$PYBLE_MPY_CROSS_ENV_LOG"
             output=""
@@ -973,7 +974,7 @@ class BuildProvenanceEmissionTests(unittest.TestCase):
             )
             environments = fixture.make_environments()
             self.assertEqual(
-                environments[0],
+                environments[0][:-1],
                 ("", "", "", "", "", "", "", "", "", "", ""),
                 "ambient compiler flags must not influence the rebuilt compiler",
             )
@@ -1000,11 +1001,26 @@ class BuildProvenanceEmissionTests(unittest.TestCase):
                         1,
                     )
             self.assertEqual(
-                environments,
+                [environment[:-1] for environment in environments],
                 [("", "", "", "", "", "", "", "", "", "", "")] * 3,
                 "submodule configuration and the final application build must "
                 "share exact runner-owned path maps; ambient flags may not be "
                 "inherited or appended",
+            )
+        finally:
+            fixture.cleanup()
+
+    def test_build_disables_python_bytecode_cache_generation(self):
+        fixture = BuildScriptFixture()
+        try:
+            completed = fixture.build()
+            self.assertEqual(completed.returncode, 0, completed.stdout)
+            environments = fixture.make_environments()
+            self.assertTrue(environments)
+            self.assertEqual(
+                [environment[-1] for environment in environments],
+                ["1"] * len(environments),
+                "every build phase must prevent checkout-local Python caches",
             )
         finally:
             fixture.cleanup()
