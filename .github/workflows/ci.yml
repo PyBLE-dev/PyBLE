@@ -95,7 +95,7 @@ jobs:
         run: |
           if [ -n "${{ github.base_ref }}" ]; then
             git fetch --no-tags origin "${{ github.base_ref }}"
-            PYBLE_DCO_RANGE="origin/${{ github.base_ref }}..HEAD" tools/ci/dco_check.sh
+            PYBLE_DCO_RANGE="origin/${{ github.base_ref }}..${{ github.event.pull_request.head.sha }}" tools/ci/dco_check.sh
           else
             PYBLE_DCO_RANGE="${{ github.event.before }}..${{ github.sha }}" tools/ci/dco_check.sh
           fi
