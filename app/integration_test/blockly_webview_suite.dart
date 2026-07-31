@@ -2,9 +2,9 @@
 // Part of PyBLE (https://pyble.dev) — see /LICENSE.
 
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -643,7 +643,8 @@ pixels.write()
       // even when ensureVisible has scrolled its RenderBox into the viewport.
       // Close it before asserting hit-testability so the integration gate tests
       // the action rather than emulator keyboard-animation timing.
-      tester.testTextInput.hide();
+      FocusManager.instance.primaryFocus?.unfocus();
+      await SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
       await tester.pumpAndSettle();
       final Finder replaceWorkspaceAction = find.byKey(
         kBlocksExampleReplaceWorkspaceButtonKey,
