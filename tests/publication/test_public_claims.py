@@ -23,6 +23,18 @@ class PublicClaimsTest(unittest.TestCase):
         cls.bug_template = (
             REPO_ROOT / ".github" / "ISSUE_TEMPLATE" / "bug.yml"
         ).read_text(encoding="utf-8")
+        cls.firmware_overview = (
+            REPO_ROOT / "docs" / "specifications" / "firmware.md"
+        ).read_text(encoding="utf-8")
+        cls.hardware_overview = (
+            REPO_ROOT / "docs" / "specifications" / "hardware.md"
+        ).read_text(encoding="utf-8")
+        cls.product_requirements = (
+            REPO_ROOT / "docs" / "specifications" / "prd.md"
+        ).read_text(encoding="utf-8")
+        cls.website_readme = (
+            REPO_ROOT / "tools" / "web" / "README.md"
+        ).read_text(encoding="utf-8")
 
     def test_readme_is_truthful_before_v042_hil_completes(self) -> None:
         firmware = markdown_section(self.readme, "What works")
@@ -82,6 +94,67 @@ class PublicClaimsTest(unittest.TestCase):
             self.assertIn(wording, self.bug_template)
 
         self.assertRegex(self.bug_template, r"(?i)remove.*(?:secret|credential)")
+
+    def test_firmware_and_hardware_overviews_are_preactivation_truthful(self) -> None:
+        self.assertIn(
+            "v0.4.2 candidate set is `esp32-4mb`",
+            self.firmware_overview,
+        )
+        self.assertIn(
+            "public browser installer remains unavailable pending final HIL",
+            self.firmware_overview,
+        )
+        self.assertNotIn(
+            "current pre-v1 release qualifies",
+            self.firmware_overview,
+        )
+        self.assertIn(
+            "| `esp32-4mb` | Classic ESP32; 4 MiB external SPI flash; "
+            "no PSRAM assumed | `ESP32` | v0.4.2 HIL pending; installer "
+            "unavailable |",
+            self.hardware_overview,
+        )
+        self.assertIn(
+            "| `esp32-s3-n16r8` | ESP32-S3; 16 MiB flash; 8 MiB Octal PSRAM "
+            "| `ESP32-S3` | v0.4.2 HIL pending; installer unavailable |",
+            self.hardware_overview,
+        )
+        self.assertNotIn(
+            "| Current pre-v1 release |",
+            self.hardware_overview,
+        )
+
+    def test_public_summaries_distinguish_build_targets_from_release_support(
+        self,
+    ) -> None:
+        self.assertIn(
+            "initial ESP-IDF build/reference targets",
+            self.website_readme,
+        )
+        self.assertIn(
+            "public installer remains unavailable pending v0.4.2 HIL",
+            self.website_readme,
+        )
+        self.assertNotIn(
+            "initial validated ESP32 / ESP32-S3 / ESP32-C3 firmware targets",
+            self.website_readme,
+        )
+        board_scope_start = self.product_requirements.index(
+            "- **Board scope**",
+        )
+        board_scope_end = self.product_requirements.index(
+            "\n\n**Pending",
+            board_scope_start,
+        )
+        board_scope = self.product_requirements[
+            board_scope_start:board_scope_end
+        ]
+        self.assertIn("initial build/reference targets", board_scope)
+        self.assertIn(
+            "release compatibility remains exact-profile and HIL-gated",
+            board_scope,
+        )
+        self.assertNotIn("initial validated firmware targets", board_scope)
 
 
 if __name__ == "__main__":
