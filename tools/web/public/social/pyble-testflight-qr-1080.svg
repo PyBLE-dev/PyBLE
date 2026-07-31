@@ -1,0 +1,158 @@
+<!-- SPDX-License-Identifier: MIT -->
+<!-- Part of PyBLE (https://pyble.dev) — see /LICENSE. -->
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  xmlns:xlink="http://www.w3.org/1999/xlink"
+  width="1080"
+  height="1080"
+  viewBox="0 0 1080 1080"
+  role="img"
+  aria-labelledby="title description"
+>
+  <title id="title">Join the PyBLE beta with TestFlight</title>
+  <desc id="description">
+    Scan the QR code or visit testflight.apple.com/join/yU4e8s6d to install
+    PyBLE on iPad.
+  </desc>
+
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#06162D" />
+      <stop offset="0.62" stop-color="#0A2446" />
+      <stop offset="1" stop-color="#123D70" />
+    </linearGradient>
+    <radialGradient id="glow" cx="0.76" cy="0.61" r="0.69">
+      <stop offset="0" stop-color="#2F8CFF" stop-opacity="0.35" />
+      <stop offset="0.55" stop-color="#2F8CFF" stop-opacity="0.08" />
+      <stop offset="1" stop-color="#2F8CFF" stop-opacity="0" />
+    </radialGradient>
+    <pattern id="dots" width="30" height="30" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.7" fill="#92C7FF" fill-opacity="0.16" />
+    </pattern>
+    <filter id="shadow" x="-35%" y="-35%" width="170%" height="180%">
+      <feDropShadow dx="0" dy="22" stdDeviation="24" flood-color="#000611" flood-opacity="0.5" />
+    </filter>
+    <filter id="soft-shadow" x="-30%" y="-30%" width="160%" height="170%">
+      <feDropShadow dx="0" dy="13" stdDeviation="17" flood-color="#000611" flood-opacity="0.42" />
+    </filter>
+    <clipPath id="preview-clip">
+      <rect x="613" y="460" width="573" height="430" rx="17" />
+    </clipPath>
+  </defs>
+
+  <rect width="1080" height="1080" fill="url(#background)" />
+  <rect width="1080" height="1080" fill="url(#glow)" />
+  <rect x="520" y="250" width="560" height="690" fill="url(#dots)" />
+
+  <image
+    x="70"
+    y="58"
+    width="86"
+    height="86"
+    href="../brand/pyble-prompt-chip.svg"
+    xlink:href="../brand/pyble-prompt-chip.svg"
+  />
+  <text
+    x="181"
+    y="119"
+    fill="#F6F9FF"
+    font-family="Inter, SF Pro Display, Helvetica Neue, Arial, sans-serif"
+    font-size="48"
+    font-weight="760"
+    letter-spacing="-1.2"
+  >PyBLE</text>
+  <rect x="848" y="73" width="162" height="43" rx="21.5" fill="#2F8CFF" fill-opacity="0.16" stroke="#5CA9FF" stroke-opacity="0.58" />
+  <circle cx="872" cy="94.5" r="5.5" fill="#5DE4A7" />
+  <text
+    x="888"
+    y="101"
+    fill="#DDEEFF"
+    font-family="Inter, SF Pro Text, Helvetica Neue, Arial, sans-serif"
+    font-size="16"
+    font-weight="720"
+    letter-spacing="1.1"
+  >PUBLIC BETA</text>
+
+  <text
+    x="70"
+    y="229"
+    fill="#F7FAFF"
+    font-family="Inter, SF Pro Display, Helvetica Neue, Arial, sans-serif"
+    font-size="61"
+    font-weight="770"
+    letter-spacing="-2"
+  >Join the PyBLE beta.</text>
+  <text
+    x="73"
+    y="278"
+    fill="#BBD2EC"
+    font-family="Inter, SF Pro Text, Helvetica Neue, Arial, sans-serif"
+    font-size="24"
+    font-weight="470"
+  >MicroPython from your iPad, over Bluetooth Low Energy.</text>
+
+  <g filter="url(#shadow)">
+    <rect x="70" y="350" width="487" height="487" rx="31" fill="#FFFFFF" />
+    <image
+      x="111"
+      y="391"
+      width="405"
+      height="405"
+      preserveAspectRatio="none"
+      image-rendering="pixelated"
+      href="../testflight/pyble-testflight-qr.svg"
+      xlink:href="../testflight/pyble-testflight-qr.svg"
+    />
+  </g>
+
+  <g filter="url(#soft-shadow)" transform="rotate(4 900 675)">
+    <rect x="596" y="443" width="608" height="464" rx="30" fill="#E6F0FC" />
+    <rect x="604" y="451" width="592" height="448" rx="22" fill="#07182F" />
+    <g clip-path="url(#preview-clip)">
+      <image
+        x="613"
+        y="460"
+        width="573"
+        height="430"
+        preserveAspectRatio="xMidYMid slice"
+        href="../app/pyble-neopixel-gpio48-ipad-landscape.png"
+        xlink:href="../app/pyble-neopixel-gpio48-ipad-landscape.png"
+      />
+    </g>
+  </g>
+
+  <g transform="translate(70 890)">
+    <circle cx="15" cy="15" r="15" fill="#2F8CFF" />
+    <path d="M9 15.5L13.2 19.6L21.5 10.8" fill="none" stroke="#FFFFFF" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" />
+    <text
+      x="44"
+      y="22"
+      fill="#EAF3FF"
+      font-family="Inter, SF Pro Text, Helvetica Neue, Arial, sans-serif"
+      font-size="22"
+      font-weight="650"
+    >Scan with your camera to install with TestFlight</text>
+  </g>
+
+  <rect x="70" y="955" width="940" height="65" rx="20" fill="#F7FAFF" fill-opacity="0.08" stroke="#CFE4FF" stroke-opacity="0.21" />
+  <text
+    x="540"
+    y="996"
+    text-anchor="middle"
+    fill="#F7FAFF"
+    font-family="SFMono-Regular, Menlo, Consolas, monospace"
+    font-size="23"
+    font-weight="650"
+    letter-spacing="0.1"
+  >testflight.apple.com/join/yU4e8s6d</text>
+  <text
+    x="540"
+    y="1058"
+    text-anchor="middle"
+    fill="#8EAECE"
+    font-family="Inter, SF Pro Text, Helvetica Neue, Arial, sans-serif"
+    font-size="16"
+    font-weight="540"
+    letter-spacing="0.8"
+  >FREE · OPEN SOURCE · MIT · PYBLE.DEV</text>
+</svg>

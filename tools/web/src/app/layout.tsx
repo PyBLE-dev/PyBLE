@@ -7,7 +7,7 @@ import type { ReactNode } from "react";
 import "@/app/globals.css";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
-import { absoluteUrl, siteConfig } from "@/lib/site";
+import { siteConfig, socialImage } from "@/lib/site";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteConfig.origin),
@@ -66,20 +66,13 @@ export const metadata: Metadata = {
     siteName: siteConfig.name,
     title: "PyBLE — Python over Bluetooth Low Energy",
     description: siteConfig.description,
-    images: [
-      {
-        url: absoluteUrl("/brand/pyble-prompt-chip-master.png"),
-        width: 1024,
-        height: 1024,
-        alt: "PyBLE Prompt Chip mark",
-      },
-    ],
+    images: [{ ...socialImage }],
   },
   twitter: {
-    card: "summary",
+    card: "summary_large_image",
     title: "PyBLE — Python over Bluetooth Low Energy",
     description: siteConfig.description,
-    images: [absoluteUrl("/brand/pyble-prompt-chip-master.png")],
+    images: [socialImage.url],
   },
 };
 

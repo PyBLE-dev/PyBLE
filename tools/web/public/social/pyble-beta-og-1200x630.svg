@@ -1,0 +1,164 @@
+<!-- SPDX-License-Identifier: MIT -->
+<!-- Part of PyBLE (https://pyble.dev) — see /LICENSE. -->
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  xmlns:xlink="http://www.w3.org/1999/xlink"
+  width="1200"
+  height="630"
+  viewBox="0 0 1200 630"
+  role="img"
+  aria-labelledby="title description"
+>
+  <title id="title">PyBLE public beta</title>
+  <desc id="description">
+    MicroPython from your iPad over Bluetooth Low Energy, with a real PyBLE
+    Blocks workspace and generated Python code.
+  </desc>
+
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#06162D" />
+      <stop offset="0.58" stop-color="#0A2344" />
+      <stop offset="1" stop-color="#103968" />
+    </linearGradient>
+    <radialGradient id="glow" cx="0.8" cy="0.44" r="0.72">
+      <stop offset="0" stop-color="#2F8CFF" stop-opacity="0.34" />
+      <stop offset="0.56" stop-color="#2F8CFF" stop-opacity="0.08" />
+      <stop offset="1" stop-color="#2F8CFF" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="device-frame" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#EAF2FF" />
+      <stop offset="1" stop-color="#A8BDD6" />
+    </linearGradient>
+    <pattern id="dots" width="28" height="28" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.5" fill="#8EC4FF" fill-opacity="0.18" />
+    </pattern>
+    <filter id="device-shadow" x="-30%" y="-30%" width="160%" height="170%">
+      <feDropShadow dx="0" dy="20" stdDeviation="22" flood-color="#000814" flood-opacity="0.48" />
+    </filter>
+    <clipPath id="screen-clip">
+      <rect x="622" y="113" width="535" height="401" rx="13" />
+    </clipPath>
+  </defs>
+
+  <rect width="1200" height="630" fill="url(#background)" />
+  <rect width="1200" height="630" fill="url(#glow)" />
+  <rect x="548" width="652" height="630" fill="url(#dots)" />
+  <path
+    d="M542 0H1200V630H664C620 514 606 384 622 261C637 147 610 65 542 0Z"
+    fill="#2F8CFF"
+    fill-opacity="0.055"
+  />
+
+  <image
+    x="58"
+    y="46"
+    width="72"
+    height="72"
+    href="../brand/pyble-prompt-chip.svg"
+    xlink:href="../brand/pyble-prompt-chip.svg"
+  />
+  <text
+    x="151"
+    y="97"
+    fill="#F6F9FF"
+    font-family="Inter, SF Pro Display, Helvetica Neue, Arial, sans-serif"
+    font-size="40"
+    font-weight="750"
+    letter-spacing="-1"
+  >PyBLE</text>
+  <rect x="307" y="60" width="150" height="38" rx="19" fill="#2F8CFF" fill-opacity="0.16" stroke="#56A5FF" stroke-opacity="0.55" />
+  <circle cx="329" cy="79" r="5" fill="#5DE4A7" />
+  <text
+    x="343"
+    y="85"
+    fill="#D9EBFF"
+    font-family="Inter, SF Pro Text, Helvetica Neue, Arial, sans-serif"
+    font-size="15"
+    font-weight="700"
+    letter-spacing="1.2"
+  >PUBLIC BETA</text>
+
+  <text
+    x="58"
+    y="194"
+    fill="#F7FAFF"
+    font-family="Inter, SF Pro Display, Helvetica Neue, Arial, sans-serif"
+    font-size="55"
+    font-weight="760"
+    letter-spacing="-2.2"
+  >
+    <tspan x="58" dy="0">MicroPython.</tspan>
+    <tspan x="58" dy="65">From your iPad.</tspan>
+    <tspan x="58" dy="65" fill="#67B0FF">Over BLE.</tspan>
+  </text>
+
+  <text
+    x="61"
+    y="425"
+    fill="#BBD2EC"
+    font-family="Inter, SF Pro Text, Helvetica Neue, Arial, sans-serif"
+    font-size="20"
+    font-weight="450"
+  >
+    Edit, run, and learn with Python or Blocks—
+    <tspan x="61" dy="30">without reaching for a cable.</tspan>
+  </text>
+
+  <g transform="translate(58 510)">
+    <rect width="153" height="40" rx="20" fill="#F6F9FF" fill-opacity="0.09" stroke="#CFE4FF" stroke-opacity="0.2" />
+    <text x="76.5" y="26" text-anchor="middle" fill="#EAF3FF" font-family="Inter, SF Pro Text, Helvetica Neue, Arial, sans-serif" font-size="15" font-weight="650">TESTFLIGHT BETA</text>
+  </g>
+  <g transform="translate(222 510)">
+    <rect width="145" height="40" rx="20" fill="#F6F9FF" fill-opacity="0.09" stroke="#CFE4FF" stroke-opacity="0.2" />
+    <text x="72.5" y="26" text-anchor="middle" fill="#EAF3FF" font-family="Inter, SF Pro Text, Helvetica Neue, Arial, sans-serif" font-size="15" font-weight="650">WEB FLASHER</text>
+  </g>
+  <text
+    x="60"
+    y="594"
+    fill="#F7FAFF"
+    font-family="Inter, SF Pro Text, Helvetica Neue, Arial, sans-serif"
+    font-size="19"
+    font-weight="720"
+    letter-spacing="0.4"
+  >pyble.dev</text>
+  <text
+    x="166"
+    y="594"
+    fill="#83A4C9"
+    font-family="Inter, SF Pro Text, Helvetica Neue, Arial, sans-serif"
+    font-size="16"
+    font-weight="500"
+  >Free · open source · MIT</text>
+
+  <g filter="url(#device-shadow)" transform="rotate(-1.6 890 315)">
+    <rect x="606" y="97" width="567" height="433" rx="25" fill="url(#device-frame)" />
+    <rect x="613" y="104" width="553" height="419" rx="19" fill="#07182F" />
+    <g clip-path="url(#screen-clip)">
+      <image
+        x="622"
+        y="113"
+        width="535"
+        height="401"
+        preserveAspectRatio="xMidYMid slice"
+        href="../app/pyble-neopixel-gpio48-ipad-landscape.png"
+        xlink:href="../app/pyble-neopixel-gpio48-ipad-landscape.png"
+      />
+    </g>
+    <circle cx="889.5" cy="518.5" r="2.7" fill="#66809C" />
+  </g>
+
+  <g transform="translate(873 546)">
+    <rect x="-161" y="-21" width="322" height="42" rx="21" fill="#07182F" stroke="#4A9EFF" stroke-opacity="0.75" />
+    <text
+      x="0"
+      y="6"
+      text-anchor="middle"
+      fill="#DDEEFF"
+      font-family="Inter, SF Pro Text, Helvetica Neue, Arial, sans-serif"
+      font-size="15"
+      font-weight="720"
+      letter-spacing="1.2"
+    >BLOCKS → GENERATED PYTHON</text>
+  </g>
+</svg>
