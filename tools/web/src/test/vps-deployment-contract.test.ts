@@ -89,6 +89,20 @@ describe("Cloudflare-fronted VPS deployment", () => {
     expect(headers).toContain("Strict-Transport-Security");
   });
 
+  it("keeps firmware 404 responses non-cacheable through the shared error page", async () => {
+    const config = await readFile(
+      join(deploymentRoot, "nginx", "10-pyble-dev-https.conf"),
+      "utf8",
+    );
+
+    expect(config).toMatch(
+      /map \$request_uri \$pyble_not_found_cache_control\s*\{[\s\S]*?~\^\/firmware\/ "no-store";[\s\S]*?default "no-cache, no-transform";[\s\S]*?\}/,
+    );
+    expect(config).toMatch(
+      /location = \/404\.html\s*\{[\s\S]*?add_header Cache-Control \$pyble_not_found_cache_control always;/,
+    );
+  });
+
   it("routes the exact v0.4.2 public beta through the immutable firmware boundary", async () => {
     const config = await readFile(
       join(deploymentRoot, "nginx", "10-pyble-dev-https.conf"),
@@ -414,6 +428,27 @@ describe("Cloudflare-fronted VPS deployment", () => {
     expect(publicRouteSmoke).toContain(
       "Cache-Control: *no-cache, *no-transform",
     );
+  });
+
+  it("requires missing firmware and deferred C3 smoke responses to be 404 no-store", async () => {
+    const script = await readFile(
+      join(deploymentRoot, "vps", "deploy.sh"),
+      "utf8",
+    );
+    const smokeStart = script.indexOf("firmware_not_found_paths=(");
+    const smokeEnd = script.indexOf("confirm_activation", smokeStart);
+    const firmwareNotFoundSmoke = script.slice(smokeStart, smokeEnd);
+
+    expect(smokeStart).toBeGreaterThan(-1);
+    expect(smokeEnd).toBeGreaterThan(smokeStart);
+    expect(firmwareNotFoundSmoke).toContain("/firmware/not-found-smoke");
+    expect(firmwareNotFoundSmoke).toContain("esp32-c3-4mb/manifest.json");
+    expect(firmwareNotFoundSmoke).toContain("--dump-header");
+    expect(firmwareNotFoundSmoke).toContain("--write-out '%{http_code}'");
+    expect(firmwareNotFoundSmoke).toMatch(
+      /firmware_not_found_status[\s\S]*?!= 404/,
+    );
+    expect(firmwareNotFoundSmoke).toContain("Cache-Control: *no-store");
   });
 
   it("freezes one clean full source commit through the completed website build", async () => {
