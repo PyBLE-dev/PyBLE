@@ -7,11 +7,12 @@
 # pins. See docs/specifications/firmware.md §6 (Build & distribution) and the
 # sibling note in firmware/upstream/README.md.
 #
-# CANDIDATE-FROZEN for firmware v0.4.1. These exact bytes select the reviewed
-# MicroPython and ESP-IDF inputs before reproducible builds, license audit, and
-# HIL. Promotion cannot change them; a pin change starts a new candidate. The
-# commit SHAs are authoritative, and the build gate verifies both upstream
-# checkouts against this file.
+# BASELINE-SELECTED for firmware v0.4.2. These exact bytes select the public
+# source baseline's MicroPython and ESP-IDF inputs before reproducible builds
+# and OI-1 measurement. The subsequent evidence/policy commit candidate-freezes
+# them before release builds, license audit, and HIL. The commit SHAs are
+# authoritative, and the build gate verifies both upstream checkouts against
+# this file.
 #
 # Update only via the controlled upgrade workflow
 # (firmware/scripts/upgrade_micropython.sh) — never by hand during a build.
@@ -44,5 +45,5 @@ mpy_cross = "rebuilt-from-pinned-micropython"
 # Deliberately no board/board_profile/routing fields: PyBLE targets generic
 # ESP32 boards and exposes hardware to user code via standard MicroPython
 # (machine), not via the agent.
-agent_version    = "0.4.1"
+agent_version    = "0.4.2"
 protocol_version = "PBLE/1"

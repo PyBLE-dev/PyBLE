@@ -8,6 +8,8 @@ are released independently from this monorepo.
 - Established `PyBLE-dev/PyBLE` as the canonical public monorepo.
 - Added public contributor, security, architecture, protocol, and validation
   documentation.
+- Selected firmware agent `0.4.2` for fresh reproducible builds and
+  two-profile qualification from the canonical public history.
 
 ## App 0.1.0-beta — 2026-07-30
 
