@@ -161,6 +161,14 @@ if [ ! -f "$IDF_DIR/export.sh" ]; then
   exit 1
 fi
 
+# Use the same physical checkout prefix that ESP-IDF exports to CMake. This is
+# also the prefix covered by the final, more-specific deterministic path map.
+if ! IDF_DIR="$(cd "$IDF_DIR" 2>/dev/null && pwd -P)"; then
+  echo "build.sh: cannot resolve the pinned ESP-IDF checkout" >&2
+  exit 1
+fi
+export PYBLE_IDF_DIR="$IDF_DIR"
+
 # Release provenance may say clean=true only after this check. Generated build
 # outputs and overlay copies are ignored/submodule-untracked and do not weaken
 # tracked source cleanliness.
@@ -255,11 +263,15 @@ export MICROPY_MPYCROSS
 # and PyBLE USER_C_MODULES sit outside those prefixes. -ffile-prefix-map is the
 # pinned GCC spelling that covers debug paths and macro/file expansions. GCC
 # gives the final matching map precedence, so order broad prefixes before the
-# more-specific target build and retained MicroPython checkout.
+# more-specific target build, retained MicroPython checkout, and ESP-IDF
+# checkout. The IDF mapping must remain last because a repo-local pinned
+# checkout is nested below REPO_ROOT and must keep ESP-IDF's stable /IDF
+# spelling rather than the broader /PYBLE spelling.
 DETERMINISTIC_CFLAGS="\
 -ffile-prefix-map=$REPO_ROOT=/PYBLE \
 -ffile-prefix-map=$OUT=/IDF_BUILD \
--ffile-prefix-map=$UPSTREAM_DIR=/MICROPYTHON"
+-ffile-prefix-map=$UPSTREAM_DIR=/MICROPYTHON \
+-ffile-prefix-map=$IDF_DIR=/IDF"
 
 make -C "$PORT" \
   submodules \
