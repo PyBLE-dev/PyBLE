@@ -13,7 +13,7 @@ compatible microcontroller board over Bluetooth Low Energy. Its normal
 workflow needs no USB serial connection, Wi-Fi onboarding, cloud account, or
 telemetry.
 
-- Website and browser installer: [pyble.dev](https://pyble.dev)
+- Website and browser-installer status: [pyble.dev](https://pyble.dev)
 - iPad external beta:
   [join with TestFlight](https://testflight.apple.com/join/yU4e8s6d)
 - License: [MIT](LICENSE)
@@ -27,7 +27,7 @@ telemetry.
 </p>
 
 <p align="center">
-  <em>Actual PyBLE app: a GPIO 48 NeoPixel Blocks program and its generated MicroPython on the pictured ESP32-S3 board.</em>
+  <em>Actual PyBLE app in landscape: GPIO 48 NeoPixel Blocks beside the generated MicroPython.</em>
 </p>
 
 ## What works
@@ -62,16 +62,17 @@ BLE GATT peripheral. It supports:
 - board naming and identify support; and
 - upstream MicroPython’s standard `neopixel` module.
 
-The public browser installer currently offers qualified images for:
+The public browser installer is currently unavailable pending v0.4.2 HIL on
+both exact current profiles:
 
-| Installer profile | Typical target                     | Availability                                |
-| ----------------- | ---------------------------------- | ------------------------------------------- |
-| `esp32-4mb`       | Classic ESP32, 4 MB flash          | Available                                   |
-| `esp32-s3-n16r8`  | ESP32-S3, 16 MB flash / 8 MB PSRAM | Available                                   |
-| `esp32-c3-4mb`    | ESP32-C3, 4 MB flash               | Source target; public installer pending HIL |
+| Installer profile | Exact target constraint                                      | Public status                                       |
+| ----------------- | ------------------------------------------------------------ | --------------------------------------------------- |
+| `esp32-4mb`       | Classic ESP32, 4 MiB external SPI flash; no PSRAM assumed     | v0.4.2 HIL pending; installer unavailable           |
+| `esp32-s3-n16r8`  | ESP32-S3, 16 MiB flash / 8 MiB Octal PSRAM; N16R8-class only | v0.4.2 HIL pending; installer unavailable           |
+| `esp32-c3-4mb`    | ESP32-C3, 4 MiB external SPI flash; no PSRAM assumed          | Planned; no public image; exact-profile HIL pending |
 
-These are the initial validated ports, not a chip-family allowlist. A future
-board is compatible when it has a maintained PyBLE agent port, BLE GATT
+These are the initial port targets, not a chip-family allowlist. A future board
+is compatible when it has a maintained PyBLE agent port, BLE GATT
 peripheral support, adequate resources, PBLE/1 conformance, recovery testing,
 and hardware-validation evidence. Stock MicroPython plus generic Bluetooth
 hardware is not sufficient by itself.
@@ -102,14 +103,17 @@ shared conformance corpus, documentation, and CI atomically.
 
 ## Try PyBLE
 
-1. Open [pyble.dev/flash](https://pyble.dev/flash) in desktop Chrome or Edge.
-2. Select the exact supported profile for your board and flash the qualified
-   agent firmware. Flashing erases the board; review the installer warning and
-   back up files first.
-3. Install the iPad beta from
+1. Install the iPad beta from
    [TestFlight](https://testflight.apple.com/join/yU4e8s6d), or build the
    Flutter app locally.
-4. Open PyBLE, scan for the board, connect, and run an example.
+2. Check [pyble.dev/flash](https://pyble.dev/flash) in desktop Chrome or Edge.
+   The public installer is currently unavailable pending v0.4.2 HIL. Wait for
+   that page to show an active release version, your exact profile, and an
+   enabled install action.
+3. Only after that gate opens, back up the board, confirm its exact memory
+   profile, and use the one-time wired installer. Flashing erases the board.
+4. Open PyBLE, scan for the provisioned board, connect, and run an example over
+   BLE.
 
 See [support and troubleshooting](https://pyble.dev/support) for browser,
 Bluetooth, and recovery requirements.

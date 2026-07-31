@@ -31,10 +31,61 @@ body:
     validations:
       required: true
   - type: input
-    id: hardware
+    id: profile
     attributes:
-      label: Hardware and platform
-      description: Exact board/profile and iPadOS, Android, browser, or desktop version
+      label: Exact installer profile ID
+      description: For installer problems, use the exact profile ID shown on /flash; otherwise enter "Not installer-related."
+    validations:
+      required: true
+  - type: input
+    id: module
+    attributes:
+      label: Exact board model and module marking
+      description: Copy the board model and the text printed on the module; enter "Not applicable" only when no board is involved.
+    validations:
+      required: true
+  - type: input
+    id: memory
+    attributes:
+      label: Memory configuration
+      description: Flash capacity, PSRAM capacity, and PSRAM type (Octal, Quad, none, or unknown).
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Browser
+      description: Browser name and exact version; enter "Not applicable" when the browser is not involved.
+    validations:
+      required: true
+  - type: input
+    id: operating_system
+    attributes:
+      label: Desktop operating system
+      description: Desktop operating system and exact version; enter "Not applicable" when the installer is not involved.
+    validations:
+      required: true
+  - type: input
+    id: installer_stage
+    attributes:
+      label: Failed installer stage
+      description: For example page load, browser check, profile selection, artifact verification, port selection, erase, write, verification, first boot, or recovery; otherwise enter "Not installer-related."
+    validations:
+      required: true
+  - type: input
+    id: tablet
+    attributes:
+      label: Exact tablet or device model
+      description: Name the iPad or Android device used with the app; enter "Not applicable" only when the app is not involved.
+    validations:
+      required: true
+  - type: input
+    id: tablet_os
+    attributes:
+      label: Tablet operating system
+      description: Tablet operating system and exact version (iPadOS or Android); enter "Not applicable" only when the app is not involved.
+    validations:
+      required: true
   - type: textarea
     id: steps
     attributes:

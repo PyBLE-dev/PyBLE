@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Part of PyBLE (https://pyble.dev) — see /LICENSE.
 
-import { MailIcon } from "@/components/icons";
+import { ExternalIcon, MailIcon } from "@/components/icons";
 import { PageIntro } from "@/components/page-intro";
 import { pageMetadata, siteConfig } from "@/lib/site";
 
@@ -13,11 +13,15 @@ export const metadata = pageMetadata({
 });
 
 const diagnosticItems = [
-  "Board and chip family",
+  "Exact installer profile ID (or “not installer-related”)",
+  "Exact board model and module marking",
+  "Flash capacity, PSRAM capacity, and PSRAM type",
+  "Browser name/version and desktop OS name/version",
+  "Failed installer stage and redacted error text",
+  "Exact tablet or device model",
+  "Tablet OS: iPadOS or Android name/version",
   "PyBLE app and agent versions",
-  "iPadOS or Android version",
   "The exact steps that caused the problem",
-  "Relevant console text and a screenshot",
 ] as const;
 
 export default function SupportPage() {
@@ -38,12 +42,12 @@ export default function SupportPage() {
               <li>
                 <span>1</span>
                 <div>
-                  <h3>Install the matching firmware once</h3>
+                  <h3>Check firmware status before installing</h3>
                   <p>
-                    The public installer supports only esp32-4mb and
-                    esp32-s3-n16r8. ESP32-C3 is not currently available. Use the
-                    reviewed image supplied for your exact target; this initial
-                    step uses a cable.
+                    The public installer is unavailable while v0.4.2 HIL runs
+                    for esp32-4mb and esp32-s3-n16r8. ESP32-C3 is not currently
+                    available. Wait for the installer status to show an active
+                    release and enabled action; this initial step uses a cable.
                   </p>
                 </div>
               </li>
@@ -139,7 +143,7 @@ export default function SupportPage() {
         <aside className="report-card">
           <MailIcon />
           <p className="eyebrow">Send a useful report</p>
-          <h2>Include these five things</h2>
+          <h2>Include these exact details</h2>
           <ul>
             {diagnosticItems.map((item) => (
               <li key={item}>{item}</li>
@@ -147,13 +151,21 @@ export default function SupportPage() {
           </ul>
           <a
             className="button button--primary"
-            href={`mailto:${siteConfig.supportEmail}`}
+            href={siteConfig.bugReportUrl}
+            target="_blank"
+            rel="noopener noreferrer"
           >
-            {siteConfig.supportEmail}
+            Open the GitHub bug template
+            <ExternalIcon />
           </a>
           <p className="fine-print">
             Please remove Wi-Fi passwords, access tokens, and other private data
-            from screenshots or code before sending.
+            and personal identifiers from screenshots or code before sending.
+            For a private, non-security support question, email{" "}
+            <a href={`mailto:${siteConfig.supportEmail}`}>
+              {siteConfig.supportEmail}
+            </a>
+            .
           </p>
         </aside>
       </div>

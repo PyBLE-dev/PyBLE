@@ -999,7 +999,7 @@ h3 {
 .target-grid > div {
   display: flex;
   min-width: 0;
-  min-height: 190px;
+  min-height: 275px;
   padding: 25px 17px;
   align-items: center;
   justify-content: flex-end;
@@ -1062,7 +1062,8 @@ h3 {
 
 .target-grid strong {
   color: var(--white);
-  font-size: 0.95rem;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.78rem;
 }
 
 .target-grid small {
@@ -1070,11 +1071,30 @@ h3 {
   font-size: 0.68rem;
 }
 
+.target-grid__target-name {
+  margin-top: 6px;
+  color: #dceaff;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.target-grid__constraint {
+  margin-top: 10px;
+  line-height: 1.45;
+}
+
+.target-grid .target-grid__status {
+  margin-top: 9px;
+  color: var(--warning);
+  font-weight: 700;
+  line-height: 1.4;
+}
+
 .target-grid > .target-grid__target--planned {
   border-style: dashed;
 }
 
-.target-grid__target--planned small {
+.target-grid__target--planned .target-grid__status {
   color: var(--warning);
 }
 
