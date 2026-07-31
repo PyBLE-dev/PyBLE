@@ -436,6 +436,31 @@ describe("Cloudflare-fronted VPS deployment", () => {
     expect(cleanOutputAssertionIndex).toBeGreaterThan(buildIndex);
   });
 
+  it("cannot silently replace an active installer with the unavailable page", async () => {
+    const script = await readFile(
+      join(deploymentRoot, "vps", "deploy.sh"),
+      "utf8",
+    );
+    const marker = ".pyble-firmware-release-selection.json";
+    const buildIndex = script.indexOf(
+      "NEXT_TELEMETRY_DISABLED=1 npm run check",
+    );
+    const markerLookup = script.indexOf(marker);
+    const explicitDisable = script.indexOf(
+      "PYBLE_EXPLICITLY_DISABLE_PUBLIC_INSTALLER",
+    );
+
+    expect(markerLookup).toBeGreaterThan(-1);
+    expect(markerLookup).toBeLessThan(buildIndex);
+    expect(explicitDisable).toBeGreaterThan(-1);
+    expect(explicitDisable).toBeLessThan(buildIndex);
+    expect
+      .soft(script.slice(Math.min(markerLookup, explicitDisable), buildIndex))
+      .toMatch(
+        /(?:preserv|carry|current)[\s\S]{0,2400}(?:Refusing|exit\s+65|--verify-staged)/i,
+      );
+  });
+
   it("rejects every Next production dotenv input before a nominal website-only build", async () => {
     const script = await readFile(
       join(deploymentRoot, "vps", "deploy.sh"),

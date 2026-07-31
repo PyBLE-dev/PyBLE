@@ -14,6 +14,82 @@ beforeAll(async () => {
 });
 
 describe("self-hosted firmware activation", () => {
+  it("carries an active public installer through later website-only deployments", () => {
+    const stagedBranch = script.indexOf(
+      "if [[ -n ${PYBLE_FIRMWARE_STAGED_ROOT:-} ]]; then",
+    );
+    const build = script.indexOf("NEXT_TELEMETRY_DISABLED=1 npm run check");
+    const marker = ".pyble-firmware-release-selection.json";
+    const currentRelease = script.indexOf("/srv/pyble/current");
+    const authenticatedRetrieval = script.search(
+      /\b(?:ssh|rsync)\b[\s\S]{0,2400}\.pyble-firmware-release-selection\.json/,
+    );
+    const preservedValidation = script.indexOf(
+      "--verify-staged",
+      authenticatedRetrieval,
+    );
+
+    expect.soft(script).toContain(marker);
+    expect.soft(currentRelease).toBeGreaterThan(-1);
+    expect
+      .soft(
+        authenticatedRetrieval,
+        "the current selector and immutable firmware must be retrieved over the authenticated deployment transport",
+      )
+      .toBeGreaterThan(-1);
+    expect.soft(authenticatedRetrieval).toBeLessThan(build);
+    expect.soft(preservedValidation).toBeGreaterThan(authenticatedRetrieval);
+    expect.soft(preservedValidation).toBeLessThan(build);
+    expect
+      .soft(script.slice(authenticatedRetrieval, build))
+      .toContain("PYBLE_FLASH_SELECTION_FILE");
+    expect
+      .soft(script.slice(stagedBranch, build))
+      .toMatch(/deployment\s*!==\s*"public"[\s\S]*hilStatus\s*!==\s*"passed"/);
+  });
+
+  it("requires an unambiguous explicit operation to disable an active installer", () => {
+    const flag = "PYBLE_EXPLICITLY_DISABLE_PUBLIC_INSTALLER";
+    const flagIndex = script.indexOf(flag);
+    const stagedBranch = script.indexOf(
+      "if [[ -n ${PYBLE_FIRMWARE_STAGED_ROOT:-} ]]; then",
+    );
+    const build = script.indexOf("NEXT_TELEMETRY_DISABLED=1 npm run check");
+
+    expect.soft(flagIndex).toBeGreaterThan(-1);
+    expect.soft(flagIndex).toBeLessThan(stagedBranch);
+    expect
+      .soft(script.slice(flagIndex, build))
+      .toMatch(/(?:0\|1|"0"\|"1"|!=\s*"0"[\s\S]*!=\s*"1")/);
+    expect
+      .soft(script.slice(flagIndex, build))
+      .toMatch(
+        /PYBLE_EXPLICITLY_DISABLE_PUBLIC_INSTALLER[\s\S]{0,1600}PYBLE_FIRMWARE_STAGED_ROOT[\s\S]{0,800}(?:Refusing|exit\s+65)/,
+      );
+    expect
+      .soft(script.slice(flagIndex, build))
+      .toMatch(/(?:disabled|unavailable)[\s\S]{0,1200}(?:flash\.html|smoke)/i);
+  });
+
+  it("retains the validated selector as hidden state in each active website release", () => {
+    const marker = ".pyble-firmware-release-selection.json";
+    const build = script.indexOf("NEXT_TELEMETRY_DISABLED=1 npm run check");
+    const markerCopy = script.indexOf(marker, build);
+    const upload = script.search(/\brsync\b/);
+    const smoke = script.indexOf("for route in / /privacy /support /flash");
+
+    expect(markerCopy).toBeGreaterThan(build);
+    expect(markerCopy).toBeLessThan(upload);
+    expect
+      .soft(script.slice(markerCopy - 300, markerCopy + 600))
+      .toMatch(/(?:cp|install)[\s\S]*\$\{staged_selection\}/);
+    expect
+      .soft(script.slice(smoke))
+      .toMatch(
+        /\.pyble-firmware-release-selection\.json[\s\S]{0,2400}(?:flash\.html|\/flash)/,
+      );
+  });
+
   it("accepts only a canonically validated all-HIL-passed public staged release", () => {
     const stagedBranch = script.indexOf(
       "if [[ -n ${PYBLE_FIRMWARE_STAGED_ROOT:-} ]]; then",
