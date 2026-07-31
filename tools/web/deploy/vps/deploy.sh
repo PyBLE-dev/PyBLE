@@ -26,7 +26,9 @@ upload_evidence_root=
 firmware_version=
 firmware_tag=
 firmware_provenance_commit=
+firmware_release_json_path=
 local_firmware_tag_object_before_build=
+staged_validation_flag=--verify-staged
 
 cleanup_firmware_evidence() {
     if [[ -n "${firmware_evidence_root}" && -d "${firmware_evidence_root}" ]]; then
@@ -63,6 +65,25 @@ if [[ -n ${PYBLE_FLASH_SELECTION_FILE:-} ]]; then
     exit 65
 fi
 unset PYBLE_FLASH_SELECTION_FILE
+
+readonly explicitly_disable_public_installer=$(
+    printf '%s' "${PYBLE_EXPLICITLY_DISABLE_PUBLIC_INSTALLER:-0}"
+)
+case "${explicitly_disable_public_installer}" in
+    0|1) ;;
+    *)
+        printf 'Refusing deployment: PYBLE_EXPLICITLY_DISABLE_PUBLIC_INSTALLER must be 0 or 1.\n' >&2
+        exit 65
+        ;;
+esac
+if [[ "${explicitly_disable_public_installer}" == 1 &&
+    -n ${PYBLE_FIRMWARE_STAGED_ROOT:-} ]]; then
+    printf 'Refusing deployment: firmware staging and explicit installer disablement are mutually exclusive.\n' >&2
+    exit 65
+fi
+if [[ "${explicitly_disable_public_installer}" == 1 ]]; then
+    printf 'The public installer is explicitly disabled; production smoke will confirm flash.html is unavailable.\n'
+fi
 
 if [[ -n $(git -C "${repository_root}" status --porcelain --untracked-files=all --ignore-submodules=untracked) ]]; then
     printf 'Refusing to deploy: the complete source tree has uncommitted changes.\n' >&2
@@ -199,6 +220,202 @@ if [[ -n ${PYBLE_FIRMWARE_STAGED_ROOT:-} ]]; then
     export PYBLE_FIRMWARE_STAGED_ROOT="${staged_firmware_root}"
     export PYBLE_FLASH_SELECTION_FILE="${staged_selection}"
 fi
+
+if [[ -z "${staged_firmware_root}" &&
+    "${explicitly_disable_public_installer}" == 0 ]]; then
+    preserved_state=$(
+        ssh -o BatchMode=yes "${deploy_target}" bash -s -- \
+            /srv/pyble/current \
+            /srv/pyble/releases \
+            .pyble-firmware-release-selection.json <<'REMOTE'
+set -Eeuo pipefail
+
+readonly current_release=$1
+readonly release_root=$2
+readonly selection_marker=$3
+
+test -L "${current_release}"
+managed_release=$(readlink -f -- "${current_release}")
+if [[ "${managed_release}" != "${release_root}/"* ]]; then
+    printf 'Current release is outside the managed release root.\n' >&2
+    exit 68
+fi
+test -d "${managed_release}"
+selection="${managed_release}/${selection_marker}"
+if [[ ! -e "${selection}" ]]; then
+    printf 'unavailable\n'
+    exit 0
+fi
+if [[ -L "${selection}" || ! -f "${selection}" ]]; then
+    printf 'Active installer selector is not an ordinary file.\n' >&2
+    exit 68
+fi
+selection_digest=$(sha256sum -- "${selection}" | awk '{ print $1 }')
+printf 'active\t%s\t%s\n' \
+    "${managed_release}" \
+    "${selection_digest}"
+REMOTE
+    )
+    IFS=$'\t' read -r preserved_mode preserved_release \
+        preserved_selection_digest preserved_extra <<< "${preserved_state}"
+    if [[ -n "${preserved_extra:-}" ]]; then
+        printf 'Refusing deployment: active installer state has an invalid shape.\n' >&2
+        exit 65
+    fi
+    case "${preserved_mode}" in
+        unavailable)
+            if [[ -n "${preserved_release:-}${preserved_selection_digest:-}" ]]; then
+                printf 'Refusing deployment: unavailable installer state has extra data.\n' >&2
+                exit 65
+            fi
+            ;;
+        active)
+            if [[ ! "${preserved_release}" =~ ^/srv/pyble/releases/[A-Za-z0-9._-]+$ ||
+                ! "${preserved_selection_digest}" =~ ^[0-9a-f]{64}$ ]]; then
+                printf 'Refusing deployment: active installer state is invalid.\n' >&2
+                exit 65
+            fi
+
+            firmware_evidence_root=$(mktemp -d)
+            chmod 0700 "${firmware_evidence_root}"
+            preserved_staged_root="${firmware_evidence_root}/preserved-staged"
+            mkdir -m 0700 -- \
+                "${preserved_staged_root}" \
+                "${preserved_staged_root}/firmware"
+            preserved_selection="${preserved_staged_root}/.pyble-firmware-release-selection.json"
+            ssh -o BatchMode=yes "${deploy_target}" bash -s -- \
+                "${preserved_release}/.pyble-firmware-release-selection.json" <<'REMOTE' \
+                > "${preserved_selection}"
+set -Eeuo pipefail
+
+readonly selection=$1
+test ! -L "${selection}"
+test -f "${selection}"
+cat -- "${selection}"
+REMOTE
+            downloaded_selection_digest=$(
+                shasum --algorithm 256 -- "${preserved_selection}" |
+                    awk '{ print $1 }'
+            )
+            if [[ "${downloaded_selection_digest}" != \
+                "${preserved_selection_digest}" ]]; then
+                printf 'Refusing deployment: active installer selector changed during retrieval.\n' >&2
+                exit 65
+            fi
+            firmware_version=$(
+                node -e '
+                  const { readFileSync } = require("node:fs");
+                  const descriptor = JSON.parse(readFileSync(process.argv[1], "utf8"));
+                  const semver = /^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
+                  if (
+                    descriptor.deployment !== "public" ||
+                    descriptor.hilStatus !== "passed" ||
+                    descriptor.accessControlled !== false ||
+                    typeof descriptor.version !== "string" ||
+                    !semver.test(descriptor.version)
+                  ) {
+                    throw new Error("The preserved selector is not an unrestricted passed public release");
+                  }
+                  process.stdout.write(descriptor.version);
+                ' "${preserved_selection}"
+            )
+            (
+                cd -- "${preserved_staged_root}/firmware"
+                ssh -o BatchMode=yes "${deploy_target}" \
+                    tar --create --file=- \
+                    --directory=/srv/pyble/firmware \
+                    "v${firmware_version}" |
+                    tar --extract --file=-
+            )
+            ssh -o BatchMode=yes "${deploy_target}" bash -s -- \
+                /srv/pyble/current \
+                "${preserved_release}" \
+                "${preserved_release}/.pyble-firmware-release-selection.json" \
+                "${preserved_selection_digest}" \
+                "/srv/pyble/firmware/v${firmware_version}" <<'REMOTE'
+set -Eeuo pipefail
+
+readonly current_release=$1
+readonly expected_release=$2
+readonly selection=$3
+readonly expected_selection_digest=$4
+readonly firmware_release=$5
+
+test "$(readlink -f -- "${current_release}")" = "${expected_release}"
+test ! -L "${selection}"
+test -f "${selection}"
+actual_selection_digest=$(
+    sha256sum -- "${selection}" |
+        awk '{ print $1 }'
+)
+test "${actual_selection_digest}" = "${expected_selection_digest}"
+test ! -L "${firmware_release}"
+test -d "${firmware_release}"
+(
+    cd -- "${firmware_release}"
+    sha256sum --check SHA256SUMS >/dev/null
+)
+REMOTE
+            PYBLE_FIRMWARE_STAGED_ROOT="${preserved_staged_root}" \
+                node "${web_directory}/scripts/stage-firmware-release.js" \
+                --verify-preserved-staged
+
+            staged_firmware_root="${preserved_staged_root}"
+            staged_selection="${preserved_selection}"
+            firmware_tag="firmware-v${firmware_version}"
+            firmware_provenance_commit=$(
+                node -e '
+                  const { readFileSync } = require("node:fs");
+                  const release = JSON.parse(readFileSync(process.argv[1], "utf8"));
+                  const commit = release?.provenance?.pyble?.commit;
+                  if (typeof commit !== "string" || !/^[0-9a-f]{40}$/.test(commit)) {
+                    throw new Error("release.json provenance.pyble.commit is invalid");
+                  }
+                  process.stdout.write(commit);
+                ' "${staged_firmware_root}/firmware/v${firmware_version}/release.json"
+            )
+            local_firmware_tag_object_before_build=$(verify_local_firmware_tag)
+
+            trusted_firmware_snapshot="${firmware_evidence_root}/trusted-preserved"
+            mkdir -m 0700 -- "${trusted_firmware_snapshot}"
+            cp -a -- "${staged_firmware_root}/." "${trusted_firmware_snapshot}/"
+            verify_firmware_tree_parity \
+                "${staged_firmware_root}" \
+                "${trusted_firmware_snapshot}" \
+                "trusted preserved firmware snapshot"
+            PYBLE_FIRMWARE_STAGED_ROOT="${trusted_firmware_snapshot}" \
+                node "${web_directory}/scripts/stage-firmware-release.js" \
+                --verify-preserved-staged
+
+            staged_firmware_root="${trusted_firmware_snapshot}"
+            staged_selection="${staged_firmware_root}/.pyble-firmware-release-selection.json"
+            staged_validation_flag=--verify-preserved-staged
+            export PYBLE_FIRMWARE_STAGED_ROOT="${staged_firmware_root}"
+            export PYBLE_FLASH_SELECTION_FILE="${staged_selection}"
+            ;;
+        *)
+            printf 'Refusing deployment: current installer state is invalid.\n' >&2
+            exit 65
+            ;;
+    esac
+fi
+
+if [[ -n "${staged_firmware_root}" ]]; then
+    firmware_release_json_path=$(
+        node -e '
+          const { readFileSync } = require("node:fs");
+          const descriptor = JSON.parse(readFileSync(process.argv[1], "utf8"));
+          const path = descriptor?.releaseJson?.path;
+          if (
+            typeof path !== "string" ||
+            path !== `/firmware/v${descriptor.version}/release.json`
+          ) {
+            throw new Error("selected release.json path is invalid");
+          }
+          process.stdout.write(path);
+        ' "${staged_selection}"
+    )
+fi
 readonly release_timestamp=$(date -u +%Y%m%dT%H%M%SZ)
 readonly release_name="${release_timestamp}-${commit:0:12}"
 readonly release_root=/srv/pyble/releases
@@ -214,6 +431,7 @@ cd -- "${web_directory}"
 if [[ -z "${staged_firmware_root}" ]]; then
     rm -rf -- out/firmware
 fi
+rm -f -- out/.pyble-firmware-release-selection.json
 npm ci
 NEXT_TELEMETRY_DISABLED=1 npm run check
 
@@ -228,15 +446,19 @@ if [[ -n $(git -C "${repository_root}" status --porcelain --untracked-files=all 
 fi
 
 test ! -e out/firmware
+test ! -e out/.pyble-firmware-release-selection.json
 if [[ -n "${staged_firmware_root}" ]]; then
     cp -R "${staged_firmware_root}/firmware" out/
     PYBLE_FIRMWARE_STAGED_ROOT="${staged_firmware_root}" \
         node "${web_directory}/scripts/stage-firmware-release.js" \
-        --verify-staged
+        "${staged_validation_flag}"
     verify_firmware_tree_parity \
         "${staged_firmware_root}/firmware" \
         "${web_directory}/out/firmware" \
         "packaged website firmware"
+    install -m 0644 \
+        "${staged_selection}" \
+        out/.pyble-firmware-release-selection.json
     readonly local_firmware_tag_object_after_build=$(
         verify_local_firmware_tag "${local_firmware_tag_object_before_build}"
     )
@@ -270,7 +492,7 @@ printf '%s\n' "${commit}" > "out/${source_commit_marker}"
 if [[ -n "${staged_firmware_root}" ]]; then
     PYBLE_FIRMWARE_STAGED_ROOT="${staged_firmware_root}" \
         node "${web_directory}/scripts/stage-firmware-release.js" \
-        --verify-staged
+        "${staged_validation_flag}"
     verify_firmware_tree_parity \
         "${staged_firmware_root}/firmware" \
         "${web_directory}/out/firmware" \
@@ -349,6 +571,19 @@ fi
     cd -- "${trusted_upload_snapshot}"
     shasum --algorithm 256 --check "${trusted_site_inventory_name}" >/dev/null
 )
+if [[ -n "${staged_firmware_root}" ]]; then
+    readonly expected_installer_state=active
+    readonly expected_selection_digest=$(
+        shasum --algorithm 256 -- \
+            "${trusted_upload_snapshot}/.pyble-firmware-release-selection.json" |
+            awk '{ print $1 }'
+    )
+else
+    readonly expected_installer_state=disabled
+    readonly expected_selection_digest=none
+    test ! -e \
+        "${trusted_upload_snapshot}/.pyble-firmware-release-selection.json"
+fi
 find "${trusted_upload_snapshot}" -type d -exec chmod 0500 {} +
 find "${trusted_upload_snapshot}" -type f -exec chmod 0400 {} +
 
@@ -376,7 +611,9 @@ ssh -o BatchMode=yes "${deploy_target}" bash -s -- \
     "${activation_confirmation}" \
     "${commit}" \
     "${trusted_site_inventory_name}" \
-    "${trusted_site_inventory_digest}" <<'REMOTE'
+    "${trusted_site_inventory_digest}" \
+    "${expected_installer_state}" \
+    "${expected_selection_digest}" <<'REMOTE'
 set -Eeuo pipefail
 
 readonly incoming_release=$1
@@ -390,6 +627,8 @@ readonly activation_confirmation=$8
 readonly expected_source_commit=$9
 readonly trusted_site_inventory_name=${10}
 readonly expected_trusted_site_inventory_digest=${11}
+readonly expected_installer_state=${12}
+readonly expected_selection_digest=${13}
 readonly trusted_site_inventory="${incoming_release}/${trusted_site_inventory_name}"
 readonly next_link="${current_release}.next"
 readonly release_root=$(dirname -- "${final_release}")
@@ -499,6 +738,23 @@ for required_file in \
 done
 test "$(cat "${incoming_release}/.pyble-source-commit")" = \
     "${expected_source_commit}"
+if [[ "${expected_installer_state}" == active ]]; then
+    selection="${incoming_release}/.pyble-firmware-release-selection.json"
+    test ! -L "${selection}"
+    test -f "${selection}"
+    actual_selection_digest=$(
+        sha256sum -- "${selection}" |
+            awk '{ print $1 }'
+    )
+    test "${actual_selection_digest}" = "${expected_selection_digest}"
+elif [[ "${expected_installer_state}" == disabled ]]; then
+    test "${expected_selection_digest}" = none
+    test ! -e \
+        "${incoming_release}/.pyble-firmware-release-selection.json"
+else
+    printf 'Incoming website installer state is invalid.\n' >&2
+    exit 69
+fi
 
 for firmware_release in "${incoming_release}"/firmware/v*; do
     if [[ ! -d "${firmware_release}" ]]; then
@@ -774,6 +1030,23 @@ for route in / /privacy /support /flash; do
     grep -Eiq '^Cache-Control: *no-cache, *no-transform *$' \
         "${normalized_headers}"
 done
+
+if [[ "${expected_installer_state}" == active ]]; then
+    test -f out/.pyble-firmware-release-selection.json
+    actual_selection_digest=$(
+        shasum --algorithm 256 -- \
+            out/.pyble-firmware-release-selection.json |
+            awk '{ print $1 }'
+    )
+    test "${actual_selection_digest}" = "${expected_selection_digest}"
+    grep -Fq "${firmware_release_json_path}" out/flash.html
+    grep -Fq "${firmware_release_json_path}" "${smoke_root}/flash.html"
+else
+    test "${explicitly_disable_public_installer}" = 1 ||
+        test ! -e out/.pyble-firmware-release-selection.json
+    grep -Fq 'Installer unavailable' out/flash.html
+    grep -Fq 'Installer unavailable' "${smoke_root}/flash.html"
+fi
 
 for firmware_release in out/firmware/v*; do
     if [[ ! -d "${firmware_release}" ]]; then

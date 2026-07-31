@@ -244,6 +244,56 @@ export async function validateWithCanonicalReleaseTool(
 }
 
 /**
+ * Re-run every self-contained public-release check for bytes that were already
+ * activated through the fresh license-evidence gate. The deployment wrapper
+ * permits this mode only for an exact selector recovered from its current
+ * managed release.
+ *
+ * @param {string} bundleDirectory
+ * @param {"public" | "candidate"} deployment
+ */
+export async function validatePreviouslyActivatedPublicWithCanonicalReleaseTool(
+  bundleDirectory,
+  deployment,
+) {
+  if (deployment !== "public") {
+    failure("preserved activation accepts only a public release");
+  }
+  const repositoryRoot = resolve(packageDirectory(), "..", "..");
+  const canonicalReleaseTool = join(
+    repositoryRoot,
+    "firmware",
+    "scripts",
+    "release_bundle.py",
+  );
+  try {
+    await execFile(
+      "python3",
+      [
+        canonicalReleaseTool,
+        "validate",
+        resolve(bundleDirectory),
+        "--previously-activated-public",
+        "--qualification-repo-root",
+        repositoryRoot,
+      ],
+      {
+        cwd: repositoryRoot,
+        maxBuffer: 16 * 1024 * 1024,
+      },
+    );
+  } catch (error) {
+    const detail =
+      error instanceof Error && "stderr" in error && error.stderr
+        ? `: ${String(error.stderr).trim()}`
+        : "";
+    failure(
+      `canonical preserved-public validation rejected the bundle${detail}`,
+    );
+  }
+}
+
+/**
  * @param {unknown} value
  * @param {string} label
  */
@@ -944,6 +994,36 @@ export async function validateStagedFirmwareRelease(
 }
 
 /**
+ * Revalidate an exact staged tree recovered from the current managed website
+ * release. Its original activation already supplied the fresh source/build
+ * license evidence; this path accepts only the same all-HIL-passed public
+ * bytes.
+ *
+ * @param {string} stagedRoot
+ * @param {{
+ *   releaseValidator: (bundleDirectory: string, deployment: "public" | "candidate") => Promise<void>;
+ * }} options
+ */
+export async function validatePreservedPublicFirmwareRelease(
+  stagedRoot,
+  { releaseValidator },
+) {
+  const descriptor = await validateStagedFirmwareRelease(stagedRoot, {
+    releaseValidator,
+  });
+  if (
+    descriptor.deployment !== "public" ||
+    descriptor.hilStatus !== "passed" ||
+    descriptor.accessControlled
+  ) {
+    failure(
+      "previously activated firmware must remain public, all-HIL-passed, and unrestricted",
+    );
+  }
+  return descriptor;
+}
+
+/**
  * Revalidate an all-HIL-passed public staged release and prove that a freshly
  * downloaded GitHub Release bundle contains exactly the same files and bytes.
  * The caller owns retrieval and must supply a new download/extraction directory;
@@ -1097,6 +1177,23 @@ async function run() {
     });
     process.stdout.write(
       `Verified staged PyBLE firmware v${descriptor.version} for ${descriptor.deployment}.\n`,
+    );
+    return;
+  }
+  if (process.argv.includes("--verify-preserved-staged")) {
+    const stagedRoot = process.env.PYBLE_FIRMWARE_STAGED_ROOT;
+    if (!stagedRoot) {
+      failure("PYBLE_FIRMWARE_STAGED_ROOT is required");
+    }
+    const descriptor = await validatePreservedPublicFirmwareRelease(
+      stagedRoot,
+      {
+        releaseValidator:
+          validatePreviouslyActivatedPublicWithCanonicalReleaseTool,
+      },
+    );
+    process.stdout.write(
+      `Verified preserved public PyBLE firmware v${descriptor.version}.\n`,
     );
     return;
   }

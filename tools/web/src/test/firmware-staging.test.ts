@@ -693,7 +693,9 @@ describe("external firmware bundle staging", () => {
       validatePreserved(stagedRoot, {
         releaseValidator: acceptSyntheticFixture,
       }),
-    ).rejects.toThrow(/previously activated|public|passed/i);
+    ).rejects.toThrow(
+      /previously activated|public|passed|candidate|access control/i,
+    );
   });
 
   it("requires explicit published-GitHub evidence with byte equality before public activation", async () => {

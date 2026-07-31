@@ -13732,14 +13732,20 @@ def validate_bundle(
     bundle_dir: Path,
     public: bool = False,
     *,
+    previously_activated_public: bool = False,
     license_evidence_dir: Path | None = None,
     license_build_root: Path | None = None,
     repo_root: Path | None = None,
     qualification_repo_root: Path | None = None,
 ) -> dict[str, Any]:
-    """Validate a local candidate, audited candidate, or public release tree."""
+    """Validate a candidate, public release, or exact activated-public replay."""
 
     bundle = Path(bundle_dir)
+    _require(
+        not (public and previously_activated_public),
+        "fresh and previously activated public validation are mutually exclusive",
+    )
+    public_bundle = public or previously_activated_public
     license_inputs = (
         license_evidence_dir,
         license_build_root,
@@ -13756,7 +13762,13 @@ def validate_bundle(
         "public release validation requires fresh license evidence, build root, "
         "and repository root",
     )
-    audited_candidate = not public and supplied_license_inputs == len(license_inputs)
+    _require(
+        not previously_activated_public or supplied_license_inputs == 0,
+        "previously activated public validation does not accept fresh license inputs",
+    )
+    audited_candidate = (
+        not public_bundle and supplied_license_inputs == len(license_inputs)
+    )
     if repo_root is not None and qualification_repo_root is not None:
         _require(
             Path(repo_root).resolve() == Path(qualification_repo_root).resolve(),
@@ -13942,7 +13954,7 @@ def validate_bundle(
             item["hil_status"] in ("pending", "passed"),
             "%s HIL status invalid" % profile_id,
         )
-        if public:
+        if public_bundle:
             _require(
                 item["hil_status"] == "passed", "%s is not HIL-passed" % profile_id
             )
@@ -14033,10 +14045,10 @@ def validate_bundle(
         document_paths["hil_report"],
         profiles,
         identity_with_source,
-        public,
+        public_bundle,
         repo_root=effective_qualification_root,
     )
-    if public or audited_candidate:
+    if public_bundle or audited_candidate:
         notices = document_paths["third_party_licenses"].read_text(
             encoding="utf-8", errors="strict"
         )
@@ -14045,6 +14057,7 @@ def validate_bundle(
             "candidate-only linked-input notices cannot qualify an audited release; "
             "run the pinned esp-idf-sbom/policy audit",
         )
+    if public or audited_candidate:
         _audit_verify_release_evidence(
             notice=notices,
             evidence_dir=license_evidence_dir,
@@ -15168,6 +15181,10 @@ def _main(argv: list[str] | None = None) -> int:
     validate_mode = validate_parser.add_mutually_exclusive_group()
     validate_mode.add_argument("--public", action="store_true")
     validate_mode.add_argument("--audited-candidate", action="store_true")
+    validate_mode.add_argument(
+        "--previously-activated-public",
+        action="store_true",
+    )
     validate_parser.add_argument("--license-evidence-dir", type=Path)
     validate_parser.add_argument("--license-build-root", type=Path)
     validate_parser.add_argument("--repo-root", type=Path)
@@ -15255,9 +15272,17 @@ def _main(argv: list[str] | None = None) -> int:
         validation_mode = (
             "--public"
             if args.public
-            else "--audited-candidate" if args.audited_candidate else None
+            else (
+                "--audited-candidate"
+                if args.audited_candidate
+                else (
+                    "--previously-activated-public"
+                    if args.previously_activated_public
+                    else None
+                )
+            )
         )
-        if validation_mode is not None and any(
+        if validation_mode in ("--public", "--audited-candidate") and any(
             value is None for value in evidence_arguments
         ):
             option_names = (
@@ -15271,22 +15296,24 @@ def _main(argv: list[str] | None = None) -> int:
                 if value is None
             ]
             parser.error("%s requires %s" % (validation_mode, ", ".join(missing)))
-        if validation_mode is None and any(
+        if validation_mode not in ("--public", "--audited-candidate") and any(
             value is not None for value in evidence_arguments
         ):
             parser.error(
                 "license evidence options require --public or --audited-candidate"
             )
         if (
-            validation_mode is None
+            validation_mode in (None, "--previously-activated-public")
             and args.qualification_repo_root is None
         ):
             parser.error(
-                "plain candidate validation requires --qualification-repo-root"
+                "%s requires --qualification-repo-root"
+                % (validation_mode or "plain candidate validation")
             )
         validate_bundle(
             args.bundle,
             public=args.public,
+            previously_activated_public=args.previously_activated_public,
             license_evidence_dir=args.license_evidence_dir,
             license_build_root=args.license_build_root,
             repo_root=args.repo_root,
