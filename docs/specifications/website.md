@@ -161,7 +161,8 @@ The support route MUST link directly to the preferred GitHub bug template at
 `https://github.com/PyBLE-dev/PyBLE/issues/new?template=bug.yml`. Installer
 intake MUST request the exact profile ID, board/model and module marking, flash
 capacity, PSRAM capacity and type, browser name/version, desktop operating
-system/version, failed installer stage, and redacted error text. The issue
+system/version, failed installer stage, redacted error text, exact tablet/device
+model, and tablet operating system/version (iPadOS or Android). The issue
 template and support-page checklist MUST agree on those fields and remind users
 to remove secrets and personal identifiers.
 
