@@ -251,4 +251,15 @@ describe("production build contract", () => {
       /https?:\/\/(?:unpkg\.com|cdn\.jsdelivr\.net|esm\.sh)/i,
     );
   });
+
+  it("gives an active public beta truthful page-level context", async () => {
+    const page = await readFile(
+      join(process.cwd(), "src", "app", "flash", "page.tsx"),
+      "utf8",
+    );
+
+    expect(page).toContain('release?.deployment === "public-beta"');
+    expect(page).toMatch(/unqualified beta/i);
+    expect(page).toMatch(/full hardware.*validation.*pending/i);
+  });
 });

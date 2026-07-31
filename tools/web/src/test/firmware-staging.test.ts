@@ -19,7 +19,11 @@ import { promisify } from "node:util";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { stageFirmwareRelease } from "../../scripts/stage-firmware-release";
+import {
+  stageFirmwareRelease,
+  validateAttestedPublicBetaBundle,
+  validatePreservedPublicFirmwareRelease,
+} from "../../scripts/stage-firmware-release";
 import {
   bundleFiles,
   createFirmwareReleaseFixture,
@@ -178,6 +182,67 @@ describe("external firmware bundle staging", () => {
         outputDirectory: await temporaryDirectory("public-pending"),
       }),
     ).rejects.toThrow();
+  });
+
+  it("stages an unrestricted pending public beta but rejects false beta status claims", async () => {
+    const fixture = createFirmwareReleaseFixture({
+      deployment: "public-beta",
+      accessControlled: false,
+      hilStatus: "pending",
+    });
+    const bundleDirectory = await temporaryDirectory("public-beta-bundle");
+    await writeExternalBundle(bundleDirectory, fixture);
+
+    const stagedRoot = await temporaryDirectory("public-beta-staged");
+    await expect(
+      stageFixture({
+        accessControlled: false,
+        bundleDirectory,
+        deployment: "public-beta",
+        outputDirectory: stagedRoot,
+      }),
+    ).resolves.toMatchObject({
+      accessControlled: false,
+      deployment: "public-beta",
+      hilStatus: "pending",
+      version: "0.4.1",
+    });
+    await expect(
+      validatePreservedPublicFirmwareRelease(stagedRoot, {
+        releaseValidator: acceptSyntheticFixture,
+      }),
+    ).resolves.toMatchObject({ deployment: "public-beta" });
+
+    await expect(
+      stageFixture({
+        accessControlled: true,
+        bundleDirectory,
+        deployment: "public-beta",
+        outputDirectory: await temporaryDirectory("controlled-public-beta"),
+      }),
+    ).rejects.toThrow(/public beta/i);
+    await expect(
+      stageFixture({
+        accessControlled: false,
+        bundleDirectory,
+        deployment: "public",
+        outputDirectory: await temporaryDirectory("qualified-pending-beta"),
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("production beta validation rejects a self-consistent bundle with an unattested release root", async () => {
+    const fixture = createFirmwareReleaseFixture({
+      deployment: "public-beta",
+      accessControlled: false,
+      hilStatus: "pending",
+    });
+    const bundleDirectory = await temporaryDirectory("unattested-beta");
+    await writeExternalBundle(bundleDirectory, fixture);
+
+    await expect(
+      validateAttestedPublicBetaBundle(bundleDirectory, "public-beta"),
+    ).rejects.toThrow(/attested.*v0\.4\.1/i);
   });
 
   it("rejects external bytes that no longer match the generated bundle checksums", async () => {

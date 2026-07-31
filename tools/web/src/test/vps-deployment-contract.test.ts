@@ -153,6 +153,23 @@ describe("Cloudflare-fronted VPS deployment", () => {
     expect(script).not.toMatch(/BEGIN (?:RSA |OPENSSH )?PRIVATE KEY/);
   });
 
+  it("accepts only the exact unrestricted pending public beta in the activation path", async () => {
+    const script = await readFile(
+      join(deploymentRoot, "vps", "deploy.sh"),
+      "utf8",
+    );
+
+    expect(script).toContain('descriptor.deployment === "public-beta"');
+    expect(script).toContain('descriptor.hilStatus === "pending"');
+    expect(script).toContain("descriptor.accessControlled === false");
+    expect(script).toContain(
+      "8b84fbb65a0463d20369e1d86dac566ca7a2039ebc30f9186f55c05421962445",
+    );
+    expect(script).toMatch(
+      /public-beta[\s\S]*?(?:skip|does not require)[\s\S]*?annotated tag/i,
+    );
+  });
+
   it("retains deployment-evidence cleanup after installing the smoke-test EXIT trap", async () => {
     const script = await readFile(
       join(deploymentRoot, "vps", "deploy.sh"),
