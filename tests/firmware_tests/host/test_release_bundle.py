@@ -2496,6 +2496,33 @@ class BundleValidationTests(FixtureCase):
         finally:
             license_fixture.close()
 
+    def test_previously_activated_public_bundle_revalidates_without_build_evidence(
+        self,
+    ):
+        bundle = self.fixture.make_bundle(public=True)
+        result = RELEASE.validate_bundle(
+            bundle,
+            previously_activated_public=True,
+            qualification_repo_root=self.fixture.repo,
+        )
+        self.assertEqual(result["identity"]["version"], "0.4.1")
+
+        with self.assertRaises(RELEASE.ReleaseError):
+            RELEASE.validate_bundle(
+                bundle,
+                public=True,
+                previously_activated_public=True,
+                qualification_repo_root=self.fixture.repo,
+            )
+
+        pending = self.fixture.make_bundle(public=False)
+        with self.assertRaises(RELEASE.ReleaseError):
+            RELEASE.validate_bundle(
+                pending,
+                previously_activated_public=True,
+                qualification_repo_root=self.fixture.repo,
+            )
+
     def test_corrupt_truncated_missing_and_swapped_parts_fail_closed(self):
         mutations = {
             "corrupt": lambda bundle: (
