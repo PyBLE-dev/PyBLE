@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import unittest
 from pathlib import Path
 
@@ -41,23 +42,37 @@ class PublicClaimsTest(unittest.TestCase):
             / "support"
             / "page.tsx"
         ).read_text(encoding="utf-8")
+        cls.browser_validation = json.loads(
+            (
+                REPO_ROOT
+                / "docs"
+                / "validation"
+                / "browser-flashing"
+                / "v0.4.2-production.json"
+            ).read_text(encoding="utf-8")
+        )
 
-    def test_readme_identifies_the_exact_unqualified_public_beta(self) -> None:
+    def test_readme_identifies_the_exact_hardware_tested_public_beta(self) -> None:
         firmware = markdown_section(self.readme, "What works")
 
         self.assertIn(
-            "public browser installer currently offers the exact v0.4.2 unqualified beta",
+            "public browser installer currently offers the exact v0.4.2 hardware-tested beta",
             firmware,
         )
-        self.assertIn("full project HIL is pending", firmware)
+        self.assertIn("Production Chrome erase/install", firmware)
+        self.assertIn("interrupted-flash recovery passed", firmware)
+        self.assertIn("Complete release qualification continues", firmware)
         self.assertIn("`esp32-4mb`", firmware)
         self.assertIn("Classic ESP32, 4 MiB external SPI flash", firmware)
         self.assertIn("`esp32-s3-n16r8`", firmware)
         self.assertIn("16 MiB flash / 8 MiB Octal PSRAM", firmware)
-        self.assertIn("Unqualified v0.4.2 beta; HIL pending", firmware)
+        self.assertIn(
+            "v0.4.2 hardware-tested beta; browser install/recovery passed",
+            firmware,
+        )
         self.assertIn("Planned; unavailable", firmware)
         self.assertNotIn("currently offers qualified images", firmware)
-        self.assertNotIn("v0.4.2 HIL pending; installer unavailable", firmware)
+        self.assertNotIn("full HIL pending", firmware)
 
     def test_readme_caption_describes_only_the_visible_app(self) -> None:
         caption_start = self.readme.index("<em>Actual PyBLE app")
@@ -69,12 +84,14 @@ class PublicClaimsTest(unittest.TestCase):
         self.assertIn("generated MicroPython", caption)
         self.assertNotRegex(caption, r"(?i)pictured|board|module")
 
-    def test_readme_try_steps_use_the_active_beta_safely(self) -> None:
+    def test_readme_try_steps_use_the_hardware_tested_beta_safely(self) -> None:
         try_section = markdown_section(self.readme, "Try PyBLE")
 
-        self.assertIn("v0.4.2 unqualified beta", try_section)
-        self.assertIn("full HIL is pending", try_section)
-        self.assertIn("use it at your own risk", try_section)
+        self.assertIn("v0.4.2 hardware-tested beta", try_section)
+        self.assertIn("Browser installation and interrupted-flash recovery passed", try_section)
+        self.assertIn("complete release qualification continues", try_section)
+        self.assertNotIn("full HIL pending", try_section)
+        self.assertNotIn("use it at your own risk", try_section)
         self.assertIn("exact profile", try_section)
         self.assertIn("back up", try_section)
         self.assertIn("enabled install action", try_section)
@@ -88,13 +105,17 @@ class PublicClaimsTest(unittest.TestCase):
 
         for wording in (
             "v0.4.2",
-            "unqualified beta",
-            "HIL pending",
+            "hardware-tested beta",
+            "browser install/recovery passed",
+            "release qualification pending",
             "esp32-4mb",
             "esp32-s3-n16r8",
         ):
             self.assertIn(wording, combined)
-        self.assertIn("use it at your own risk", combined.lower())
+        self.assertIn("Production Chrome install", combined)
+        self.assertIn("interrupted-flash recovery passed", combined)
+        self.assertNotIn("full HIL pending", combined)
+        self.assertNotIn("use it at your own risk", combined.lower())
         self.assertIn("ESP32-C3", combined)
         self.assertRegex(combined, r"(?is)ESP32-C3.{0,180}unavailable")
         for stale in (
@@ -107,8 +128,35 @@ class PublicClaimsTest(unittest.TestCase):
 
         near_term = markdown_section(self.roadmap, "Near term")
         self.assertIn(
-            "Complete full HIL qualification for the exact `esp32-4mb` and",
+            "Complete the app, PBLE/1, resource, and remaining firmware release",
             near_term,
+        )
+
+    def test_production_browser_claim_is_bound_to_public_evidence(self) -> None:
+        evidence = self.browser_validation
+
+        self.assertEqual(evidence["result"], "passed")
+        self.assertEqual(evidence["release"]["version"], "0.4.2")
+        self.assertEqual(
+            evidence["release"]["release_json_sha256"],
+            "5d1b0db8c4b90cccf054cd244530afb3b9112d489aa02f7c5da650e92161acde",
+        )
+        self.assertEqual(
+            [profile["profile_id"] for profile in evidence["profiles"]],
+            ["esp32-4mb", "esp32-s3-n16r8"],
+        )
+        for profile in evidence["profiles"]:
+            self.assertGreater(profile["interruption_percentage"], 5)
+            self.assertLess(profile["interruption_percentage"], 100)
+            self.assertEqual(profile["recovery_write_percentage"], 100)
+            self.assertTrue(profile["full_erase"])
+            self.assertTrue(profile["hard_reset"])
+            self.assertTrue(profile["visible_completion"])
+            self.assertTrue(profile["serial_route_released"])
+            self.assertEqual(profile["interruption_fetch_rounds"]["firmware"], 2)
+            self.assertEqual(profile["recovery_fetch_rounds"]["firmware"], 2)
+        self.assertTrue(
+            any("not the formal" in limitation for limitation in evidence["limitations"])
         )
 
     def test_bug_template_collects_the_exact_installer_diagnostics(self) -> None:

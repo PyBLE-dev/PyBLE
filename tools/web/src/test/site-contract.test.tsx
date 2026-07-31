@@ -126,8 +126,8 @@ describe("public-site contract", () => {
     ]);
     expect(socialSvg).toContain("One-time USB setup.");
     expect(socialSvg).toContain("Everyday coding over BLE.");
-    expect(socialSvg).toContain("FIRMWARE HIL PENDING");
-    expect(socialSvg).not.toContain("WEB FLASHER");
+    expect(socialSvg).toContain("WEB FLASHING VALIDATED");
+    expect(socialSvg).not.toContain("FIRMWARE HIL PENDING");
     const socialPngSha256 = createHash("sha256")
       .update(socialPng)
       .digest("hex");
@@ -394,7 +394,7 @@ describe("public-site contract", () => {
     ).toHaveAttribute("href", "/flash");
   });
 
-  it("shows the exact beta claims only when its build selector is active", async () => {
+  it("shows the scoped hardware-tested beta claims only when its build selector is active", async () => {
     const selectionRoot = await mkdtemp(
       join(tmpdir(), "pyble-site-beta-selection-"),
     );
@@ -410,24 +410,28 @@ describe("public-site contract", () => {
     try {
       const home = render(<HomePage />);
       expect(screen.getByText(/public v0\.4\.2 firmware/i)).toHaveTextContent(
-        /unqualified beta for the exact esp32-4mb and esp32-s3-n16r8 profiles/i,
+        /hardware-tested beta for the exact esp32-4mb and esp32-s3-n16r8 profiles/i,
       );
       expect(screen.getByText(/public v0\.4\.2 firmware/i)).toHaveTextContent(
-        /full hardware-in-the-loop qualification is pending.*use it at your own risk/i,
+        /production chrome install.*interrupted-flash recovery passed on both exact profiles.*complete release qualification continues/i,
       );
       for (const target of firmwareTargetsForRelease(
         publicBetaFirmwareRelease,
       ).filter(({ planned }) => !planned)) {
         expect(screen.getByText(target.id).closest("div")).toHaveTextContent(
-          "v0.4.2 unqualified beta · HIL pending",
+          "v0.4.2 hardware-tested beta · browser install/recovery passed · release qualification pending",
         );
       }
       home.unmount();
 
       render(<SupportPage />);
       expect(
-        screen.getByText(/v0\.4\.2 unqualified beta is available/i),
-      ).toHaveTextContent(/full HIL remains pending.*use it at your own risk/i);
+        screen.getByText(/v0\.4\.2 hardware-tested beta is available/i),
+      ).toHaveTextContent(
+        /production chrome install.*interrupted-flash recovery passed on both exact profiles.*complete release qualification continues/i,
+      );
+      expect(screen.queryByText(/full HIL pending/i)).toBeNull();
+      expect(screen.queryByText(/use at your own risk/i)).toBeNull();
     } finally {
       if (previousSelection === undefined) {
         delete process.env.PYBLE_FLASH_SELECTION_FILE;

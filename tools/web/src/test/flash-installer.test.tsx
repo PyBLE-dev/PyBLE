@@ -314,14 +314,16 @@ describe("browser firmware installer states", () => {
     expect(document.querySelector("esp-web-install-button")).toBeNull();
   });
 
-  it("offers the exact audited unrestricted v0.4.2 beta with prominent unqualified warnings", async () => {
+  it("offers the exact v0.4.2 hardware-tested beta with scoped qualification copy", async () => {
     renderInstaller({ release: publicBetaFirmwareRelease });
 
     expect(screen.getByRole("status")).toHaveTextContent(
-      /unqualified firmware beta.*full hardware-in-the-loop.*pending.*use at your own risk/i,
+      /hardware-tested firmware beta.*browser installation.*interrupted-flash recovery.*esp32-4mb.*esp32-s3-n16r8.*complete release qualification.*pending.*not a qualified release/i,
     );
     expect(screen.queryByText(/protected release candidate/i)).toBeNull();
     expect(screen.queryByText(/qualified release/i)).toBeNull();
+    expect(screen.queryByText(/full HIL pending/i)).toBeNull();
+    expect(screen.queryByText(/use at your own risk/i)).toBeNull();
 
     const profileGroup = screen.getByRole("radiogroup", {
       name: /select the exact module profile/i,
@@ -336,11 +338,13 @@ describe("browser firmware installer states", () => {
       expect(document.querySelector("esp-web-install-button")).not.toBeNull();
     });
     expect(
-      screen.getByText(/unqualified beta.*use at your own risk/i),
+      screen.getByText(
+        /browser installation.*interrupted-flash recovery.*real hardware.*exact profile.*complete release qualification.*pending/i,
+      ),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", {
-        name: /install unqualified beta pyble 0\.4\.2/i,
+        name: /install pyble 0\.4\.2 beta/i,
       }),
     ).toBeInTheDocument();
   });

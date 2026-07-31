@@ -259,7 +259,10 @@ describe("production build contract", () => {
     );
 
     expect(page).toContain('release?.deployment === "public-beta"');
-    expect(page).toMatch(/unqualified beta/i);
-    expect(page).toMatch(/full hardware.*validation.*pending/i);
+    expect(page).toMatch(/hardware-tested firmware beta/i);
+    expect(page).toMatch(/production chrome.*install/i);
+    expect(page).toMatch(/interrupted-flash recovery.*both exact profiles/i);
+    expect(page).toMatch(/complete release qualification.*pending/i);
+    expect(page).not.toMatch(/full HIL pending|use at your own risk/i);
   });
 });
