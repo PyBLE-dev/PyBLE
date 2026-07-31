@@ -67,16 +67,18 @@ confined to Layer 2 (board overlay: pins, flash size, USB), and the shared agent
 core contains no per-chip product logic.
 
 The browser installer does not publish unqualified family-wide images. The
-current pre-v1 release qualifies `esp32-4mb` (classic ESP32, 4 MiB flash) and
-`esp32-s3-n16r8` (ESP32-S3, 16 MiB flash plus 8 MiB Octal PSRAM).
-`esp32-c3-4mb` remains a known initial v1 profile but is not released or
-selectable until exact-profile real-hardware validation is complete. ESP Web
-Tools detects the chip family but cannot by that fact alone prove the required
-flash/PSRAM topology. The full compatibility and artifact contract is frozen in
+v0.4.2 candidate set is `esp32-4mb` (classic ESP32, 4 MiB flash) and
+`esp32-s3-n16r8` (ESP32-S3, 16 MiB flash plus 8 MiB Octal PSRAM), but the
+public browser installer remains unavailable pending final HIL on the exact
+candidate bytes for both profiles. `esp32-c3-4mb` remains a known initial v1
+profile but is not released or selectable until exact-profile real-hardware
+validation is complete. ESP Web Tools detects the chip family but cannot by
+that fact alone prove the required flash/PSRAM topology. The full compatibility
+and artifact contract is frozen in
 [firmware/browser-flashing.md](firmware/browser-flashing.md).
 
-These targets are the first validated firmware family, not the product
-boundary. A future port MAY use another upstream MicroPython port, CPU
+These targets are the initial reference/build family, not the product boundary.
+A future port MAY use another upstream MicroPython port, CPU
 architecture, BLE host, native integration mechanism, build system, storage
 backend, or provisioning tool. It MUST preserve PBLE/1, the protected
 control-plane boundary, capability negotiation, workspace safety, and the
