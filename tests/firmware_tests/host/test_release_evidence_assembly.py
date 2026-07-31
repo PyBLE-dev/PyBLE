@@ -104,18 +104,15 @@ class BaselineAssemblyFixture:
         self.fragments: list[Path] = []
 
         existing_policy = json.loads(
-            self.release_fixture.qualification_policy_path.read_text(
+            self.release_fixture.qualification_policy_path.read_text(encoding="utf-8")
+        )
+        existing_baseline = json.loads(
+            (self.repo / existing_policy["baseline_evidence"]["path"]).read_text(
                 encoding="utf-8"
             )
         )
-        existing_baseline = json.loads(
-            (
-                self.repo / existing_policy["baseline_evidence"]["path"]
-            ).read_text(encoding="utf-8")
-        )
         profiles = {
-            profile["profile_id"]: profile
-            for profile in existing_baseline["profiles"]
+            profile["profile_id"]: profile for profile in existing_baseline["profiles"]
         }
         for profile_id in PROFILE_ORDER:
             spec = bundle_fixture.PROFILE_SPECS[profile_id]
@@ -170,9 +167,7 @@ class BaselineAssemblyFixture:
             / "oi1"
             / (self.source_commit + ".json")
         )
-        self.policy_path = (
-            self.repo / bundle_fixture.QUALIFICATION_POLICY_RELATIVE
-        )
+        self.policy_path = self.repo / bundle_fixture.QUALIFICATION_POLICY_RELATIVE
         self.original_policy = self.policy_path.read_bytes()
 
     def assemble(self):
@@ -189,13 +184,9 @@ class BaselineAssemblyFixture:
 
 def completion_fragment(record: dict) -> dict:
     fragment = {
-        key: copy.deepcopy(record[key])
-        for key in COMPLETION_KEYS
-        if key != "checks"
+        key: copy.deepcopy(record[key]) for key in COMPLETION_KEYS if key != "checks"
     }
-    fragment["checks"] = {
-        key: record["checks"][key] for key in sorted(OPERATOR_CHECKS)
-    }
+    fragment["checks"] = {key: record["checks"][key] for key in sorted(OPERATOR_CHECKS)}
     return fragment
 
 
@@ -318,9 +309,7 @@ class BaselineEvidenceAssemblyTests(unittest.TestCase):
             self.assertEqual(
                 policy["baseline_evidence"],
                 {
-                    "path": fixture.baseline_path.relative_to(
-                        fixture.repo
-                    ).as_posix(),
+                    "path": fixture.baseline_path.relative_to(fixture.repo).as_posix(),
                     "sha256": hashlib.sha256(baseline_bytes).hexdigest(),
                 },
             )
@@ -350,9 +339,7 @@ class BaselineEvidenceAssemblyTests(unittest.TestCase):
                 fixture = BaselineAssemblyFixture()
                 try:
                     if mutation == "dirty":
-                        fixture.policy_path.write_bytes(
-                            fixture.original_policy + b"\n"
-                        )
+                        fixture.policy_path.write_bytes(fixture.original_policy + b"\n")
                     elif mutation == "duplicate-profile":
                         fixture.fragments[1].write_bytes(
                             fixture.fragments[0].read_bytes()
@@ -406,9 +393,7 @@ class CompletedHilEvidenceAssemblyTests(unittest.TestCase):
             RELEASE.assemble_completed_hil_report(
                 candidate_dir=self.fixture.candidate,
                 profile_evidence_paths=(
-                    list(reversed(self.fragments))
-                    if fragments is None
-                    else fragments
+                    list(reversed(self.fragments)) if fragments is None else fragments
                 ),
                 output_path=output,
                 qualification_repo_root=self.fixture.license_fixture.repo,
@@ -416,9 +401,7 @@ class CompletedHilEvidenceAssemblyTests(unittest.TestCase):
         )
 
     def test_assembles_candidate_bound_report_accepted_by_finalizer(self) -> None:
-        candidate_before = finalization_fixture.tree_bytes(
-            self.fixture.candidate
-        )
+        candidate_before = finalization_fixture.tree_bytes(self.fixture.candidate)
         fragment_before = [path.read_bytes() for path in self.fragments]
         output = self.root / "assembled-HIL_REPORT.md"
         self.assertEqual(self.assemble(output), output)
@@ -447,13 +430,13 @@ class CompletedHilEvidenceAssemblyTests(unittest.TestCase):
         self.fixture.finalize(public, completed_hil_report=output)
         self.assertTrue(public.is_dir())
 
-    def test_frozen_fields_failed_checks_and_bad_observations_are_rejected(self) -> None:
+    def test_frozen_fields_failed_checks_and_bad_observations_are_rejected(
+        self,
+    ) -> None:
         for mutation in ("frozen-field", "failed-check", "bad-observation"):
             with self.subTest(mutation=mutation):
                 temporary = self.root / (mutation + "-completion.json")
-                payload = json.loads(
-                    self.fragments[0].read_text(encoding="utf-8")
-                )
+                payload = json.loads(self.fragments[0].read_text(encoding="utf-8"))
                 if mutation == "frozen-field":
                     payload["firmware_sha256"] = "0" * 64
                 elif mutation == "failed-check":

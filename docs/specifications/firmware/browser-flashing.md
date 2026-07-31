@@ -220,12 +220,10 @@ The operation MUST canonicalize and create the baseline evidence at
 `docs/validation/firmware/oi1/<HEAD>.json`, compute the digest of those exact
 bytes, and atomically update `firmware/qualification/oi1-gates.json` with the
 exact frozen policy shape and derived thresholds. The baseline path is
-no-replace: an existing different file is fatal; an existing byte-identical
-file is an idempotent input. The policy update MUST be an atomic same-directory
-replacement, and both complete byte payloads MUST pass the production
-baseline/policy validator before either destination is changed. This operation
-is evidence assembly only; it does not approve a release or mutate staged
-measurement inputs.
+no-replace: any existing destination is fatal. The policy update MUST be an
+atomic same-directory replacement, and both complete payloads MUST pass the
+production baseline/policy validator. This operation is evidence assembly
+only; it does not approve a release or mutate staged measurement inputs.
 
 The protected candidate site's build-selected SHA-256 of `release.json` is the
 root identity of the candidate exercised during HIL. The completed HIL
@@ -1289,10 +1287,9 @@ the embedded pending records, require all six supplied checks to be `passed`,
 validate the observation and every profile threshold, and only then insert
 `footprint_reliability: passed` and `status: passed`. It MUST render exactly one
 canonical `PYBLE_HIL_RECORDS_V2` marker, validate the completed payload against
-the candidate bytes and committed policy, write the output atomically, and
-prove the candidate and completion-fragment inputs did not change during the
-operation. It never mutates the candidate and does not perform public bundle
-promotion; `finalize-public` remains the only promotion step.
+the candidate bytes and committed policy, and write the output atomically. It
+never mutates the candidate and does not perform public bundle promotion;
+`finalize-public` remains the only promotion step.
 
 `oi1_observation` is JSON `null` in a pending candidate. In a completed report
 it is an object with exactly:
