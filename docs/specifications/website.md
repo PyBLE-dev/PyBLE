@@ -12,8 +12,8 @@ firmware remain governed by their own specifications.
 The website MUST explain PyBLE accurately, help a beta user get started or ask
 for support, publish the app's privacy posture, and provide a gated browser
 firmware installer for the exact initial ESP32-family image profiles. The
-installer MUST distinguish an explicitly unqualified public beta from a
-fully HIL-qualified public release.
+installer MUST distinguish a hardware-tested public beta from a fully
+qualified public release.
 
 It MUST NOT imply that:
 
@@ -74,13 +74,14 @@ Compatibility copy MUST distinguish platform scope from current support:
 - hardware eligibility requires MicroPython, a PBLE/1-capable BLE peripheral
   stack, sufficient resources, and a conforming agent port;
 - actual support requires a published firmware image for the exact target and a
-  truthful release state; an unqualified beta is not a validated release;
+  truthful release state; browser-installation validation for a beta is
+  narrower than complete release qualification;
 - the current public-beta list is the exact `esp32-4mb` and
   `esp32-s3-n16r8` profiles; ESP32-C3 remains an initial firmware target but
   is planned/unavailable until its exact profile passes real-hardware HIL;
 - browser provisioning is offered only for the exact memory profiles in §7,
   including N16R8-class hardware for the initial ESP32-S3 image, and MUST show
-  whether those bytes are an unqualified beta or a qualified release;
+  whether those bytes are a hardware-tested beta or a qualified release;
 - users select pins for their exact board and wiring.
 
 It MUST NOT imply that Bluetooth hardware or stock MicroPython alone is enough,
@@ -141,16 +142,22 @@ instructions.
 
 Until the first firmware selector passes the complete qualified-release gate in
 §7, the repository README and home page MUST NOT describe either current profile
-or its browser image as qualified. The exact audited `v0.4.2` public-beta
-selector MAY make the `esp32-4mb` and `esp32-s3-n16r8` images available under
-the exception in §7, but every active installer state MUST visibly say
-**unqualified beta**, **HIL pending**, and **use at your own risk** before
-profile selection and again beside the install action. It MUST NOT say or imply
-that the beta is access-controlled. The home-page target cards MUST identify
-the constraints as
+or its browser image as a qualified release. The exact audited `v0.4.2`
+public-beta selector MAY make the `esp32-4mb` and `esp32-s3-n16r8` images
+available under the exception in §7. Following the production browser-flashing
+validation recorded in
+`docs/validation/browser-flashing/v0.4.2-production.json`, every active
+installer state MUST instead identify these exact bytes as a
+**hardware-tested firmware beta** and say that real-board browser installation
+and interrupted-flash recovery passed for both enabled exact profiles. It MUST
+also distinguish that narrow result from complete release qualification and
+MUST NOT say or imply that the beta is access-controlled, a qualified release,
+fully validated, production-ready, or generally available. The home-page target
+cards MUST identify the constraints as
 `esp32-4mb` (classic ESP32, 4 MiB external SPI flash, no PSRAM assumed) and
 `esp32-s3-n16r8` (ESP32-S3, 16 MiB flash, 8 MiB **Octal** PSRAM), and give each
-the truthful public-beta/pending-HIL state while that selector is active.
+the truthful hardware-tested-beta/release-qualification-pending state while
+that selector is active.
 `esp32-c3-4mb` remains a separate planned, unavailable profile and MUST NOT be
 present in the beta selector, release metadata, public firmware tree, or
 recovery commands.
@@ -159,16 +166,17 @@ The repository README, home-page hero, provisioning workflow, exact-profile
 cards, TestFlight callout, support getting-started guide, and public roadmap
 MUST agree with the build-selected installer state. While the exact beta
 selector is active, each current-profile status MUST name `v0.4.2`,
-**unqualified beta**, and **HIL pending**; installation instructions MUST direct
-users to the enabled `/flash` action while preserving the exact profile, backup,
-erase, cable/power, and port acknowledgements. The home and support surfaces
-MUST include **use at your own risk**. When no selector is active, including an
-explicit installer-disable deployment, the generated home and support pages
-MUST instead say that the installer is unavailable and MUST NOT claim that the
-beta is available. The roadmap MAY shorten the warning, but MUST put complete
-HIL qualification for the same two exact profiles in near-term work rather than
-claim they are qualified now. Every one of those surfaces MUST keep C3
-explicitly unavailable.
+**hardware-tested beta**, and **release qualification pending**; installation
+instructions MUST direct users to the enabled `/flash` action while preserving
+the exact profile, backup, erase, cable/power, and port acknowledgements. They
+MUST name the completed browser installation and interrupted-flash recovery
+scope rather than the stale blanket phrase **full HIL pending**. When no selector
+is active, including an explicit installer-disable deployment, the generated
+home and support pages MUST instead say that the installer is unavailable and
+MUST NOT claim that the beta is available. The roadmap MUST mark two-profile
+browser-flashing validation complete while retaining the broader app, PBLE/1,
+resource, and release-qualification work. Every one of those surfaces MUST keep
+C3 explicitly unavailable.
 
 README getting-started instructions MUST gate destructive flashing on `/flash`
 showing an active version, exact profile, and enabled install action. While the
@@ -179,9 +187,9 @@ capture shows only the app.
 
 The wide social card MUST describe the workflow as one-time USB setup followed
 by everyday use over BLE. If it advertises the enabled `v0.4.2` web flasher, it
-MUST visibly call it an unqualified beta with HIL pending. Its mechanically
-rendered PNG and authored SVG MUST remain paired by reviewed content and
-exact-dimension tests.
+MUST use the narrow claim **web flashing validated** and MUST NOT imply complete
+release qualification. Its mechanically rendered PNG and authored SVG MUST
+remain paired by reviewed content and exact-dimension tests.
 
 Every changed social-card byte set MUST use a new content-versioned public
 pathname before its metadata is deployed. Replacing a PNG or SVG at an existing
@@ -407,9 +415,11 @@ when all of these facts are true:
   the exact release-build root, using the exact firmware-source checkout
   recorded by the release as `--repo-root`; the annotated `firmware-v0.4.2` tag
   exists and peels directly to `release.json` provenance; and
-- `/flash` visibly labels the firmware an **unqualified beta**, says full HIL is
-  pending and installation is at the user's risk, and never calls it protected,
-  access-controlled, qualified, validated, or generally available.
+- `/flash` visibly labels the firmware a **hardware-tested firmware beta**,
+  names the completed real-board browser installation and interrupted-flash
+  recovery scope for both enabled profiles, says complete release qualification
+  remains pending, and never calls it protected, access-controlled, a qualified
+  release, fully validated, production-ready, or generally available.
 
 This exception attests the identity, integrity, provenance, and audited-candidate
 license state of the exact bytes; it does not manufacture HIL evidence. It MUST
