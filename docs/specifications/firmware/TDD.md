@@ -613,11 +613,13 @@ negative tests land while release qualification remains pending. The
 maintainer then:
 
 1. runs the engineering baseline on the two exact owned profiles;
-2. commits the canonical, redacted raw evidence under
-   `docs/validation/firmware/oi1/`;
-3. derives every profile threshold mechanically with the frozen formulas;
-4. commits the populated policy and its evidence SHA-256; and
-5. builds the final tagged candidate and reruns verify-mode HIL on both exact
+2. runs `assemble-oi1-baseline` against the immutable staged inputs and the
+   two bench fragments so the tool creates the canonical, redacted evidence
+   under `docs/validation/firmware/oi1/`, derives every threshold with the
+   frozen formulas, and atomically updates the policy with its evidence
+   SHA-256;
+3. reviews and commits those mechanically assembled files; and
+4. builds the final tagged candidate and reruns verify-mode HIL on both exact
    profiles.
 
 A policy has exactly two threshold-bearing profile entries and one deferred
@@ -632,6 +634,10 @@ matching baseline-evidence digest, and immutable build measurements in
 `PYBLE_HIL_RECORDS_V2`. Its runtime observation is pending. Finalization may
 fill observations, operator fields, and derived checks only; it must prove the
 policy and build portions remain byte/semantically equal to the candidate.
+The `assemble-hil-report` helper accepts only bounded per-profile mutable
+evidence, copies candidate-frozen fields from the pending report, derives the
+footprint/reliability pass from validated observations, and emits the completed
+V2 report atomically before finalization.
 
 The validator recomputes image/headroom arithmetic, sample counts, heap
 minima, latency maximum, goodput from recorded durations, threshold

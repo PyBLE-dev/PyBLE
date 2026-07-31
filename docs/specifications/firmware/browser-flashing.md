@@ -1,9 +1,10 @@
 # PyBLE ESP32-Family Browser Flashing and Release Bundle
 
-Status: **FROZEN v1.26** · Owner: project maintainer · Frozen:
-2026-07-30 (`[docs]`; pre-v1 two-profile release eligibility and explicit
+Status: **FROZEN v1.27** · Owner: project maintainer · Frozen:
+2026-07-31 (`[docs]`; pre-v1 two-profile release eligibility and explicit
 C3 deferral; evidence-derived resource policy and exact HIL V2 records;
-pre-policy two-root baseline-input staging;
+pre-policy two-root baseline-input staging and mechanical baseline/policy
+assembly;
 exact-profile manifest, C3 silicon-revision,
 license-audit safety, candidate-finalization, and candidate pin-state
 amendments, plus the real-tool license-evidence and exact license-catalog
@@ -18,7 +19,8 @@ markers, generated-header inputs, and direct-object reconciliation, plus
 component-owned linked outputs, lexical exact-path validation, nested-build
 logical paths, shell-free compiler/linker command receipts, executable
 version-matched recovery-command syntax, and the canonical pre-v1 same-origin
-publication channel with an optional byte-identical mirror, on the same date)
+publication channel with an optional byte-identical mirror, plus bounded
+completed-HIL report assembly, on the same date)
 
 This document is the source of truth for the initial browser-provisioning
 release bundle. It refines
@@ -200,6 +202,30 @@ staged. This operation runs before, and therefore MUST NOT require, an OI-1
 policy, baseline-evidence file, release tag, license evidence, or HIL approval.
 Its output is measurement input only: it is not a release candidate and MUST
 NOT be accepted by the website or public release validator.
+
+After both exact-profile baseline runs succeed, the release tool MUST provide
+an `assemble-oi1-baseline` operation. It accepts the immutable staged baseline
+input tree above, exactly two canonical single-profile fragments emitted by
+the OI-1 bench, the clean canonical PyBLE proof checkout, and one explicit UTC
+`created_at` value. It MUST derive `source_commit` from that checkout's exact
+`HEAD` and `firmware_version` from its `versions.lock`; operator-supplied
+substitutes for either identity are forbidden. Before writing, it MUST require
+the proof checkout to be clean, require exactly one fragment for each profile
+regardless of input order, validate every fragment and observation field,
+bind each fragment's firmware hash, manifest hash, and build measurements to
+the corresponding staged bytes, and mechanically derive all nine thresholds
+with the frozen formulas.
+
+The operation MUST canonicalize and create the baseline evidence at
+`docs/validation/firmware/oi1/<HEAD>.json`, compute the digest of those exact
+bytes, and atomically update `firmware/qualification/oi1-gates.json` with the
+exact frozen policy shape and derived thresholds. The baseline path is
+no-replace: an existing different file is fatal; an existing byte-identical
+file is an idempotent input. The policy update MUST be an atomic same-directory
+replacement, and both complete byte payloads MUST pass the production
+baseline/policy validator before either destination is changed. This operation
+is evidence assembly only; it does not approve a release or mutate staged
+measurement inputs.
 
 The protected candidate site's build-selected SHA-256 of `release.json` is the
 root identity of the candidate exercised during HIL. The completed HIL
@@ -1245,6 +1271,28 @@ interrupted_flash_recovery
 In a candidate every value is `pending`. In a public report every value is
 `passed`; `footprint_reliability` MUST be set by the validator only after the
 V2 observations pass, not accepted as independent operator testimony.
+
+The release tool MUST provide an `assemble-hil-report` operation so completing
+this contract never requires hand-editing `HIL_REPORT.md`. It accepts one
+immutable pending candidate, exactly two JSON completion fragments (one per
+profile, in either input order), the canonical qualification checkout, and one
+new no-replace output path. A completion fragment contains only the mutable
+profile ID, physical board descriptions/capacities, UTC test time,
+operator/sign-off and environment strings, the six operator-demonstration
+checks other than `footprint_reliability`, one completed `oi1_observation`, and
+the redacted console log. It MUST NOT accept status, release identity, artifact
+hashes, policy, or build measurements from an operator fragment.
+
+The assembler MUST validate the pending candidate first, compute the exact
+candidate `release.json` SHA-256 itself, copy every candidate-frozen field from
+the embedded pending records, require all six supplied checks to be `passed`,
+validate the observation and every profile threshold, and only then insert
+`footprint_reliability: passed` and `status: passed`. It MUST render exactly one
+canonical `PYBLE_HIL_RECORDS_V2` marker, validate the completed payload against
+the candidate bytes and committed policy, write the output atomically, and
+prove the candidate and completion-fragment inputs did not change during the
+operation. It never mutates the candidate and does not perform public bundle
+promotion; `finalize-public` remains the only promotion step.
 
 `oi1_observation` is JSON `null` in a pending candidate. In a completed report
 it is an object with exactly:
