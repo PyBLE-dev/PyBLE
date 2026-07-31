@@ -174,6 +174,9 @@ describe("Cloudflare-fronted VPS deployment", () => {
     expect(script).toContain("PYBLE_FIRMWARE_LICENSE_EVIDENCE_DIR");
     expect(script).toContain("PYBLE_FIRMWARE_LICENSE_BUILD_ROOT");
     expect(script).toContain("PYBLE_FIRMWARE_SOURCE_ROOT");
+    expect(script).toMatch(
+      /if \[\[ "\$\{firmware_deployment\}" == public-beta \]\]; then\s+require_firmware_release_inputs\s+fi/,
+    );
     expect(script).toContain("local_firmware_tag_object_before_build");
     expect(script).not.toMatch(
       /public-beta[\s\S]{0,180}(?:skip|does not require)[\s\S]{0,180}annotated tag/i,
