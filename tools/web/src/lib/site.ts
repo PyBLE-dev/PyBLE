@@ -13,6 +13,8 @@ export const siteConfig = {
   supportEmail: "viwat.v@chula.ac.th",
   testFlightUrl: "https://testflight.apple.com/join/yU4e8s6d",
   repositoryUrl: "https://github.com/PyBLE-dev/PyBLE",
+  bugReportUrl:
+    "https://github.com/PyBLE-dev/PyBLE/issues/new?template=bug.yml",
 } as const;
 
 export const navigation = [
@@ -23,9 +25,27 @@ export const navigation = [
 ] as const;
 
 export const initialFirmwareTargets = [
-  { name: "ESP32", availability: "Released profile" },
-  { name: "ESP32-S3", availability: "Released profile" },
-  { name: "ESP32-C3", availability: "Planned profile" },
+  {
+    id: "esp32-4mb",
+    target: "Classic ESP32",
+    constraint: "4 MiB external SPI flash · no PSRAM assumed",
+    status: "v0.4.2 HIL pending · installer unavailable",
+    planned: false,
+  },
+  {
+    id: "esp32-s3-n16r8",
+    target: "ESP32-S3 N16R8",
+    constraint: "16 MiB flash · 8 MiB Octal PSRAM",
+    status: "v0.4.2 HIL pending · installer unavailable",
+    planned: false,
+  },
+  {
+    id: "esp32-c3-4mb",
+    target: "ESP32-C3",
+    constraint: "4 MiB external SPI flash · no PSRAM assumed",
+    status: "Planned · installer unavailable pending exact-profile HIL",
+    planned: true,
+  },
 ] as const;
 
 export function absoluteUrl(path: string): string {

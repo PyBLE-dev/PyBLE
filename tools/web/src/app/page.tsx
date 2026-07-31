@@ -57,7 +57,7 @@ const steps = [
   {
     number: "01",
     title: "Provision once",
-    body: "Install matching PyBLE-enabled MicroPython firmware once. Initial beta images are available for compatible ESP32 targets.",
+    body: "After v0.4.2 passes HIL, use USB once to install the exact matching PyBLE-enabled MicroPython profile. The public installer is unavailable during qualification.",
   },
   {
     number: "02",
@@ -87,10 +87,11 @@ export default function HomePage() {
             <h1>Code your MicroPython board. Leave the cable behind.</h1>
             <p className="hero__lede">
               PyBLE is a free, tablet-first IDE designed for boards that run
-              MicroPython and support Bluetooth Low Energy. The current firmware
-              release supports qualified classic ESP32 and ESP32-S3 module
-              profiles. ESP32-C3 and more microcontroller families remain
-              planned.
+              MicroPython and support Bluetooth Low Energy. Public v0.4.2
+              firmware is pending HIL for the exact esp32-4mb and esp32-s3-n16r8
+              profiles. The public browser installer stays unavailable until
+              both exact profiles pass HIL. ESP32-C3 and more microcontroller
+              families remain planned.
             </p>
             <div className="button-row">
               <Link className="button button--primary" href="#testflight">
@@ -248,11 +249,11 @@ export default function HomePage() {
               {initialFirmwareTargets.map((target) => (
                 <div
                   className={
-                    target.availability === "Planned profile"
+                    target.planned
                       ? "target-grid__target target-grid__target--planned"
                       : "target-grid__target"
                   }
-                  key={target.name}
+                  key={target.id}
                 >
                   <span className="target-grid__chip" aria-hidden="true">
                     <i />
@@ -260,8 +261,14 @@ export default function HomePage() {
                     <i />
                     <i />
                   </span>
-                  <strong>{target.name}</strong>
-                  <small>{target.availability}</small>
+                  <strong>{target.id}</strong>
+                  <span className="target-grid__target-name">
+                    {target.target}
+                  </span>
+                  <small className="target-grid__constraint">
+                    {target.constraint}
+                  </small>
+                  <small className="target-grid__status">{target.status}</small>
                 </div>
               ))}
             </div>
@@ -339,9 +346,10 @@ export default function HomePage() {
             <p className="eyebrow">External testing is open</p>
             <h2 id="testflight-title">Join the PyBLE beta on TestFlight.</h2>
             <p className="beta-invite__lede">
-              Install the free iPad beta through Apple TestFlight. Then use
-              desktop Chrome to provision a supported board and start coding
-              over Bluetooth Low Energy.
+              Install the free iPad beta through Apple TestFlight now. Public
+              board provisioning will open only after v0.4.2 passes HIL on both
+              exact release profiles; after that one-time USB setup, everyday
+              coding runs over Bluetooth Low Energy.
             </p>
             <div className="button-row beta-invite__actions">
               <a
@@ -354,7 +362,7 @@ export default function HomePage() {
                 <ArrowIcon />
               </a>
               <Link className="button button--secondary" href="/flash">
-                Install board firmware
+                Check firmware status
               </Link>
             </div>
           </div>

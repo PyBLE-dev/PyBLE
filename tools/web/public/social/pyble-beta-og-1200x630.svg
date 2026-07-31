@@ -11,8 +11,9 @@
 >
   <title id="title">PyBLE public beta</title>
   <desc id="description">
-    MicroPython from your iPad over Bluetooth Low Energy, with a real PyBLE
-    Blocks workspace and generated Python code.
+    PyBLE iPad beta with one-time USB firmware setup followed by everyday
+    MicroPython development over Bluetooth Low Energy, shown with a real Blocks
+    workspace and generated Python code.
   </desc>
 
   <defs>
@@ -101,8 +102,8 @@
     font-size="20"
     font-weight="450"
   >
-    Edit, run, and learn with Python or Blocks—
-    <tspan x="61" dy="30">without reaching for a cable.</tspan>
+    One-time USB setup.
+    <tspan x="61" dy="30">Everyday coding over BLE.</tspan>
   </text>
 
   <g transform="translate(58 510)">
@@ -110,8 +111,8 @@
     <text x="76.5" y="26" text-anchor="middle" fill="#EAF3FF" font-family="Inter, SF Pro Text, Helvetica Neue, Arial, sans-serif" font-size="15" font-weight="650">TESTFLIGHT BETA</text>
   </g>
   <g transform="translate(222 510)">
-    <rect width="145" height="40" rx="20" fill="#F6F9FF" fill-opacity="0.09" stroke="#CFE4FF" stroke-opacity="0.2" />
-    <text x="72.5" y="26" text-anchor="middle" fill="#EAF3FF" font-family="Inter, SF Pro Text, Helvetica Neue, Arial, sans-serif" font-size="15" font-weight="650">WEB FLASHER</text>
+    <rect width="226" height="40" rx="20" fill="#F6F9FF" fill-opacity="0.09" stroke="#CFE4FF" stroke-opacity="0.2" />
+    <text x="113" y="26" text-anchor="middle" fill="#EAF3FF" font-family="Inter, SF Pro Text, Helvetica Neue, Arial, sans-serif" font-size="14" font-weight="650">FIRMWARE HIL PENDING</text>
   </g>
   <text
     x="60"
