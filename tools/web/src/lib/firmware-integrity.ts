@@ -300,7 +300,7 @@ function validateDescriptor(
     descriptor.deployment === "public-beta" &&
     !isExactPublicBetaFirmwareRelease(descriptor)
   ) {
-    fail("Public beta does not match the exact attested v0.4.1 release");
+    fail("Public beta does not match the exact audited v0.4.2 release");
   }
 
   const releasePath = `/firmware/v${descriptor.version}/release.json`;

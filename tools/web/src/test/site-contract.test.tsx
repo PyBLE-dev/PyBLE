@@ -22,7 +22,11 @@ import {
   navigation,
   siteConfig,
 } from "@/lib/site";
-import { publicBetaFirmwareRelease } from "@/test/fixtures/firmware-release";
+import {
+  passedPublicFirmwareRelease,
+  pendingCandidateFirmwareRelease,
+  publicBetaFirmwareRelease,
+} from "@/test/fixtures/firmware-release";
 
 describe("public-site contract", () => {
   it("keeps pyble.dev canonical and presents the four launch routes", () => {
@@ -181,8 +185,8 @@ describe("public-site contract", () => {
       ),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/firmware installer is currently unavailable/i),
-    ).toBeInTheDocument();
+      screen.getAllByText(/firmware installer is currently unavailable/i),
+    ).toHaveLength(2);
     expect(
       screen.queryByText(/unqualified firmware beta is available/i),
     ).not.toBeInTheDocument();
@@ -357,6 +361,22 @@ describe("public-site contract", () => {
         planned: true,
       },
     ]);
+    expect(
+      firmwareTargetsForRelease(passedPublicFirmwareRelease)
+        .filter(({ planned }) => !planned)
+        .map(({ status }) => status),
+    ).toEqual([
+      "v0.4.2 qualified public release",
+      "v0.4.2 qualified public release",
+    ]);
+    expect(
+      firmwareTargetsForRelease(pendingCandidateFirmwareRelease)
+        .filter(({ planned }) => !planned)
+        .map(({ status }) => status),
+    ).toEqual([
+      "v0.4.2 protected candidate · HIL pending",
+      "v0.4.2 protected candidate · HIL pending",
+    ]);
 
     render(<HomePage />);
 
@@ -408,6 +428,57 @@ describe("public-site contract", () => {
       expect(
         screen.getByText(/v0\.4\.2 unqualified beta is available/i),
       ).toHaveTextContent(/full HIL remains pending.*use it at your own risk/i);
+    } finally {
+      if (previousSelection === undefined) {
+        delete process.env.PYBLE_FLASH_SELECTION_FILE;
+      } else {
+        process.env.PYBLE_FLASH_SELECTION_FILE = previousSelection;
+      }
+      await rm(selectionRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps qualified and protected-candidate copy distinct", async () => {
+    const selectionRoot = await mkdtemp(
+      join(tmpdir(), "pyble-site-release-selection-"),
+    );
+    const selectionFile = join(selectionRoot, "selection.json");
+    const previousSelection = process.env.PYBLE_FLASH_SELECTION_FILE;
+    process.env.PYBLE_FLASH_SELECTION_FILE = selectionFile;
+
+    try {
+      await writeFile(
+        selectionFile,
+        JSON.stringify(passedPublicFirmwareRelease),
+        "utf8",
+      );
+      const qualifiedHome = render(<HomePage />);
+      expect(
+        screen.getByText(/qualified public v0\.4\.2 firmware/i),
+      ).toHaveTextContent(
+        /available for the exact esp32-4mb and esp32-s3-n16r8 profiles/i,
+      );
+      qualifiedHome.unmount();
+      const qualifiedSupport = render(<SupportPage />);
+      expect(
+        screen.getByText(/qualified v0\.4\.2 firmware is available/i),
+      ).toBeInTheDocument();
+      qualifiedSupport.unmount();
+
+      await writeFile(
+        selectionFile,
+        JSON.stringify(pendingCandidateFirmwareRelease),
+        "utf8",
+      );
+      const candidateHome = render(<HomePage />);
+      expect(
+        screen.getByText(/protected candidate v0\.4\.2 is staged/i),
+      ).toBeInTheDocument();
+      candidateHome.unmount();
+      render(<SupportPage />);
+      expect(
+        screen.getByText(/firmware installer is currently unavailable/i),
+      ).toBeInTheDocument();
     } finally {
       if (previousSelection === undefined) {
         delete process.env.PYBLE_FLASH_SELECTION_FILE;
@@ -599,12 +670,7 @@ describe("public-site contract", () => {
       screen.getByText(/iPadOS or Android name\/version/i),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(
-        /v0\.4\.2 unqualified beta is available for the exact esp32-4mb and esp32-s3-n16r8 profiles/i,
-      ),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(/full HIL remains pending.*use it at your own risk/i),
+      screen.getByText(/firmware installer is currently unavailable/i),
     ).toBeInTheDocument();
     expect(
       screen.getByText(/ESP32-C3 is not currently available/i),

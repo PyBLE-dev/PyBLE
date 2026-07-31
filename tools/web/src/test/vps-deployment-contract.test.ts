@@ -180,7 +180,7 @@ describe("Cloudflare-fronted VPS deployment", () => {
     expect(script).toContain('descriptor.hilStatus === "pending"');
     expect(script).toContain("descriptor.accessControlled === false");
     expect(script).toContain(
-      "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "5d1b0db8c4b90cccf054cd244530afb3b9112d489aa02f7c5da650e92161acde",
     );
     expect(staging).toMatch(
       /public-beta[\s\S]*?--audited-candidate[\s\S]*?--license-evidence-dir[\s\S]*?--license-build-root/,

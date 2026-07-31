@@ -7,14 +7,14 @@ import { isExactPublicBetaFirmwareRelease } from "@/lib/firmware-release";
 import { publicBetaFirmwareRelease } from "@/test/fixtures/firmware-release";
 
 describe("exact public firmware beta policy", () => {
-  it("accepts only the attested unrestricted pending v0.4.1 descriptor", () => {
+  it("accepts only the audited unrestricted pending v0.4.2 descriptor", () => {
     expect(isExactPublicBetaFirmwareRelease(publicBetaFirmwareRelease)).toBe(
       true,
     );
 
     for (const mutate of [
       (descriptor: Record<string, unknown>) => {
-        descriptor.version = "0.4.2";
+        descriptor.version = "0.4.1";
       },
       (descriptor: Record<string, unknown>) => {
         descriptor.hilStatus = "passed";

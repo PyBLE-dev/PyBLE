@@ -114,11 +114,11 @@ function releaseAtVersion(
   release.recoveryPath = `/firmware/v${version}/RECOVERY.md`;
   for (const profile of release.profiles) {
     profile.manifestPath = profile.manifestPath.replace(
-      "/firmware/v0.4.1/",
+      "/firmware/v0.4.2/",
       `/firmware/v${version}/`,
     );
     profile.firmwarePath = profile.firmwarePath.replace(
-      "/firmware/v0.4.1/",
+      "/firmware/v0.4.2/",
       `/firmware/v${version}/`,
     );
   }
@@ -158,8 +158,8 @@ function withDeferredC3(
     id: "esp32-c3-4mb",
     label: "ESP32-C3 revision v0.3+ · 4 MiB flash",
     chipFamily: "ESP32-C3",
-    manifestPath: "/firmware/v0.4.1/esp32-c3-4mb/manifest.json",
-    firmwarePath: "/firmware/v0.4.1/esp32-c3-4mb/firmware.bin",
+    manifestPath: "/firmware/v0.4.2/esp32-c3-4mb/manifest.json",
+    firmwarePath: "/firmware/v0.4.2/esp32-c3-4mb/firmware.bin",
     offset: 0,
   });
   malformed.profiles.push(deferred);
@@ -314,7 +314,7 @@ describe("browser firmware installer states", () => {
     expect(document.querySelector("esp-web-install-button")).toBeNull();
   });
 
-  it("offers the exact unrestricted v0.4.1 beta with prominent unqualified warnings", async () => {
+  it("offers the exact audited unrestricted v0.4.2 beta with prominent unqualified warnings", async () => {
     renderInstaller({ release: publicBetaFirmwareRelease });
 
     expect(screen.getByRole("status")).toHaveTextContent(
@@ -340,7 +340,7 @@ describe("browser firmware installer states", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", {
-        name: /install unqualified beta pyble 0\.4\.1/i,
+        name: /install unqualified beta pyble 0\.4\.2/i,
       }),
     ).toBeInTheDocument();
   });
@@ -516,15 +516,15 @@ describe("browser firmware installer states", () => {
     );
     expect(installElement).toHaveAttribute(
       "manifest",
-      "/firmware/v0.4.1/esp32-s3-n16r8/manifest.json",
+      "/firmware/v0.4.2/esp32-s3-n16r8/manifest.json",
     );
     expect(installElement).not.toHaveAttribute(
       "manifest",
-      "/firmware/v0.4.1/manifest.json",
+      "/firmware/v0.4.2/manifest.json",
     );
     expect(
       within(installElement).getByRole("button", {
-        name: /install pyble 0\.4\.1/i,
+        name: /install pyble 0\.4\.2/i,
       }),
     ).toHaveAttribute("slot", "activate");
     expect(screen.getByText(/artifacts verified/i)).toBeInTheDocument();
@@ -534,8 +534,8 @@ describe("browser firmware installer states", () => {
       screen.getAllByText(/installation erases the device/i).length,
     ).toBeGreaterThan(0);
     expect(
-      screen.getByRole("link", { name: /version 0\.4\.1 recovery/i }),
-    ).toHaveAttribute("href", "/firmware/v0.4.1/RECOVERY.md");
+      screen.getByRole("link", { name: /version 0\.4\.2 recovery/i }),
+    ).toHaveAttribute("href", "/firmware/v0.4.2/RECOVERY.md");
   });
 
   it("removes prior qualification when the selected profile changes", async () => {
@@ -668,15 +668,15 @@ describe("browser firmware installer states", () => {
     ).toEqual([
       {
         id: "esp32-4mb",
-        manifestPath: "/firmware/v0.4.1/esp32-4mb/manifest.json",
+        manifestPath: "/firmware/v0.4.2/esp32-4mb/manifest.json",
       },
       {
         id: "esp32-s3-n16r8",
-        manifestPath: "/firmware/v0.4.1/esp32-s3-n16r8/manifest.json",
+        manifestPath: "/firmware/v0.4.2/esp32-s3-n16r8/manifest.json",
       },
     ]);
     expect(passedPublicFirmwareRelease.releaseJson.path).toBe(
-      "/firmware/v0.4.1/release.json",
+      "/firmware/v0.4.2/release.json",
     );
     expect(JSON.stringify(passedPublicFirmwareRelease)).not.toContain(
       "esp32-c3-4mb",

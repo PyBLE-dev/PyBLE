@@ -18,7 +18,8 @@ import {
   RadioIcon,
   ShieldIcon,
 } from "@/components/icons";
-import { initialFirmwareTargets, siteConfig } from "@/lib/site";
+import { firmwareReleaseSelectedAtBuild } from "@/lib/firmware-release-selection";
+import { firmwareTargetsForRelease, siteConfig } from "@/lib/site";
 
 export const metadata: Metadata = {
   title: {
@@ -53,12 +54,7 @@ const features = [
   },
 ] as const;
 
-const steps = [
-  {
-    number: "01",
-    title: "Provision once",
-    body: "After v0.4.2 passes HIL, use USB once to install the exact matching PyBLE-enabled MicroPython profile. The public installer is unavailable during qualification.",
-  },
+const workflowStepsAfterProvision = [
   {
     number: "02",
     title: "Connect from your tablet",
@@ -72,6 +68,27 @@ const steps = [
 ] as const;
 
 export default function HomePage() {
+  const firmwareRelease = firmwareReleaseSelectedAtBuild();
+  const publicBeta = firmwareRelease?.deployment === "public-beta";
+  const qualifiedPublic =
+    firmwareRelease?.deployment === "public" &&
+    firmwareRelease.hilStatus === "passed";
+  const firmwareTargets = firmwareTargetsForRelease(firmwareRelease);
+  const steps = [
+    {
+      number: "01",
+      title: "Provision once",
+      body: publicBeta
+        ? `Use USB once to install the exact matching v${firmwareRelease.version} unqualified beta. Full HIL is pending; use it at your own risk.`
+        : qualifiedPublic
+          ? `Use USB once to install the exact matching qualified v${firmwareRelease.version} firmware.`
+          : firmwareRelease
+            ? `Check the protected candidate instructions before provisioning v${firmwareRelease.version}.`
+            : "Check firmware status before provisioning; the installer is currently unavailable.",
+    },
+    ...workflowStepsAfterProvision,
+  ];
+
   return (
     <main id="main-content">
       <section className="hero">
@@ -87,11 +104,31 @@ export default function HomePage() {
             <h1>Code your MicroPython board. Leave the cable behind.</h1>
             <p className="hero__lede">
               PyBLE is a free, tablet-first IDE designed for boards that run
-              MicroPython and support Bluetooth Low Energy. Public v0.4.2
-              firmware is pending HIL for the exact esp32-4mb and esp32-s3-n16r8
-              profiles. The public browser installer stays unavailable until
-              both exact profiles pass HIL. ESP32-C3 and more microcontroller
-              families remain planned.
+              MicroPython and support Bluetooth Low Energy.{" "}
+              {publicBeta ? (
+                <>
+                  Public v{firmwareRelease.version} firmware is an unqualified
+                  beta for the exact esp32-4mb and esp32-s3-n16r8 profiles. Full
+                  hardware-in-the-loop qualification is pending; use it at your
+                  own risk.
+                </>
+              ) : qualifiedPublic ? (
+                <>
+                  Qualified public v{firmwareRelease.version} firmware is
+                  available for the exact esp32-4mb and esp32-s3-n16r8 profiles.
+                </>
+              ) : firmwareRelease ? (
+                <>
+                  Protected candidate v{firmwareRelease.version} is staged for
+                  the exact esp32-4mb and esp32-s3-n16r8 profiles.
+                </>
+              ) : (
+                <>
+                  The firmware installer is currently unavailable; check its
+                  status before provisioning a board.
+                </>
+              )}{" "}
+              ESP32-C3 and more microcontroller families remain planned.
             </p>
             <div className="button-row">
               <Link className="button button--primary" href="#testflight">
@@ -166,6 +203,12 @@ export default function HomePage() {
               </li>
             ))}
           </ol>
+          <div className="button-row">
+            <Link className="button button--secondary" href="/flash">
+              Open firmware installer
+              <ArrowIcon />
+            </Link>
+          </div>
         </div>
       </section>
 
@@ -246,7 +289,7 @@ export default function HomePage() {
               className="target-grid"
               aria-label="Initial beta firmware targets"
             >
-              {initialFirmwareTargets.map((target) => (
+              {firmwareTargets.map((target) => (
                 <div
                   className={
                     target.planned
@@ -346,10 +389,26 @@ export default function HomePage() {
             <p className="eyebrow">External testing is open</p>
             <h2 id="testflight-title">Join the PyBLE beta on TestFlight.</h2>
             <p className="beta-invite__lede">
-              Install the free iPad beta through Apple TestFlight now. Public
-              board provisioning will open only after v0.4.2 passes HIL on both
-              exact release profiles; after that one-time USB setup, everyday
-              coding runs over Bluetooth Low Energy.
+              Install the free iPad beta through Apple TestFlight now.{" "}
+              {publicBeta ? (
+                <>
+                  The exact v{firmwareRelease.version} unqualified firmware beta
+                  is available for esp32-4mb and esp32-s3-n16r8 while full HIL
+                  remains pending; use it at your own risk.
+                </>
+              ) : qualifiedPublic ? (
+                <>
+                  Qualified v{firmwareRelease.version} firmware is available for
+                  esp32-4mb and esp32-s3-n16r8.
+                </>
+              ) : (
+                <>
+                  The firmware installer is currently unavailable; check its
+                  status before connecting a board.
+                </>
+              )}{" "}
+              ESP32-C3 is unavailable. After one-time USB setup, everyday coding
+              runs over Bluetooth Low Energy.
             </p>
             <div className="button-row beta-invite__actions">
               <a

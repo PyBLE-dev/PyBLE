@@ -8,13 +8,14 @@ promising dates; accepted work is tracked through GitHub issues and milestones.
 - iPad external beta through TestFlight
 - PBLE/1 editing, run/stop, console, and file workflows over BLE
 - Offline Blockly with beginner GPIO and NeoPixel examples
-- Browser installation for qualified `esp32-4mb` and `esp32-s3-n16r8`
-  profiles
+- Browser installation for the exact `esp32-4mb` and `esp32-s3-n16r8` profiles
+  as the v0.4.2 unqualified beta; HIL pending
 - MIT-licensed app, agent firmware, protocol, website, tests, and release tools
 
 ## Near term
 
-- Re-establish firmware release provenance from the canonical public history
+- Complete full HIL qualification for the exact `esp32-4mb` and
+  `esp32-s3-n16r8` v0.4.2 bytes
 - Complete real-hardware qualification before enabling the ESP32-C3 installer
 - Expand user-facing setup, recovery, and board-specific wiring guidance
 - Open and document the Android beta distribution path

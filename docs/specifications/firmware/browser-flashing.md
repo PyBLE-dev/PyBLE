@@ -39,8 +39,9 @@ BLE and PBLE/1.
 ## 1. Release image profiles
 
 The current pre-v1 browser bundle contains exactly these two
-**provisioning image profiles**. The exact `v0.4.1` bytes may be offered only as
-the unqualified public beta defined in §10; they are not qualified profiles.
+**provisioning image profiles**. The exact audited `v0.4.2` bytes may be offered
+only as the unqualified public beta defined in §10; they are not qualified
+profiles.
 A later qualified public bundle uses the same exact profile definitions:
 
 | Profile ID | ESP Web Tools `chipFamily` | Required target configuration | ESP image silicon window (`min_chip_rev_full`…`max_chip_rev_full`) | Merge settings | Browser image and component map |
@@ -397,7 +398,7 @@ beside their metadata:
   flash/PSRAM requirements, flash mode/frequency, required
   `silicon_revision.minimum_full` and `silicon_revision.maximum_full` integers
   matching the §1 image window, and HIL status (`pending` for a candidate or
-  the exact `v0.4.1` public beta, or `passed` for a qualified public bundle);
+  the exact `v0.4.2` public beta, or `passed` for a qualified public bundle);
 - one `manifest` entry per profile with its relative path, exact byte size, and
   lowercase 64-hex SHA-256;
 - one `install` entry per profile for the merged image, with relative `path`,
@@ -411,7 +412,8 @@ beside their metadata:
 
 All values are required; placeholders, `unknown`, and abbreviated commits fail
 any bundle. `pending` is accepted only on an access-controlled candidate used
-for HIL or the exact digest-bound `v0.4.1` `public-beta` exception in §10; an HIL
+for HIL or the exact audited and digest-bound `v0.4.2` `public-beta` exception
+in §10; an HIL
 status other than `passed` fails every ordinary public bundle.
 `release.schema.json`
 itself is versioned and immutable beside the metadata. `SHA256SUMS` MUST use the
@@ -1469,38 +1471,50 @@ manifest. Rollback changes the website's selected-release descriptor to a
 previous fully qualified immutable bundle and redeploys the site. It never
 mutates or partially replaces the active version directory.
 
-Once a fully qualified public release is active, later website-only
-deployments MUST carry its exact selector and immutable firmware tree forward
+Once a public release is active, later website-only deployments MUST carry its
+exact selector and immutable firmware tree forward
 through authenticated retrieval and the canonical staged-release validation
 path. Each website release with an active installer retains an unserved
 canonical selector marker for this purpose. The preserved-public validator
 MUST repeat every self-contained public bundle, schema, HIL, profile, artifact,
 path, size, digest, descriptor, and annotated-tag check. It MUST prove exact
 selected-byte continuity and MUST NOT accept a different version or byte. It
-does not repeat the source/build license audit whose passing evidence was
-required for the original activation of those same immutable bytes. A
+does not repeat the source/build license audit for a fully qualified release
+whose passing evidence was required for the original activation of those same
+immutable bytes. A preserved `v0.4.2` public beta MUST instead repeat canonical
+`--audited-candidate` validation with the retained license-evidence directory
+and exact release-build root, using the exact firmware-source checkout recorded
+by the release as `--repo-root`, and MUST revalidate the annotated
+`firmware-v0.4.2` tag. A
 deployment MUST fail before the build if that state cannot be retrieved or
 validated. Transitioning an active public installer to unavailable is a
 separate reviewed operation requiring an explicit truth-valued disable flag
 and a production smoke test of the disabled state; absence of staging input
 alone is never authorization to disable it.
 
-As a one-time transitional exception, the retained `v0.4.1` bundle MAY be
-published as an explicitly **unqualified public beta**. The selector deployment
+As a one-time transitional exception, the fresh audited `v0.4.2` candidate MAY
+be published as an explicitly **unqualified public beta**. The selector deployment
 mode MUST be `public-beta`, `accessControlled` MUST be `false`, both profile HIL
 states and the aggregate `hilStatus` MUST remain `pending`, and the
 `release.json` SHA-256 MUST equal
-`8b84fbb65a0463d20369e1d86dac566ca7a2039ebc30f9186f55c05421962445`.
+`5d1b0db8c4b90cccf054cd244530afb3b9112d489aa02f7c5da650e92161acde`.
 The exact profile set is `esp32-4mb` plus `esp32-s3-n16r8`; C3 MUST remain
-absent. Before the install control appears, the website MUST say that these
-bytes were manually exercised on the maintainer's two boards but have not
-passed the complete project HIL matrix, and that installation is at the user's
-risk. It MUST NOT call the beta access-controlled, protected, qualified,
-validated, or generally available.
+absent. Before staging or carrying the beta forward, the canonical release tool
+MUST accept the exact bundle with `validate --audited-candidate`, its retained
+license-evidence directory, its exact release-build root, and the exact
+firmware-source checkout recorded by the release as `--repo-root`. The annotated
+`firmware-v0.4.2` tag MUST exist and peel directly to the full PyBLE provenance
+commit recorded in `release.json`, and deployment MUST bind the tag object
+before and after the website build and before upload. Before the install control
+appears, the website MUST say that the exact bytes passed the audited-candidate
+release gate but have not passed the complete project HIL matrix, and that
+installation is at the user's risk. It MUST NOT call the beta access-controlled,
+protected, qualified, fully validated, or generally available.
 
-The beta path MUST retain all existing schema, checksum, manifest, image,
-same-origin, browser-capability, profile-confirmation, consent, recovery, and
-production-smoke checks. The exception changes only publication policy; it does
-not allow byte mutation, substitute evidence, a different version/digest, or a
-new profile. A later qualified public release therefore starts at a new
-immutable version and still requires the complete gate above.
+The beta path MUST retain all existing audited-candidate, license, tag, schema,
+checksum, manifest, image, same-origin, browser-capability,
+profile-confirmation, consent, recovery, and production-smoke checks. The
+exception changes only publication policy; it does not allow byte mutation,
+substitute evidence, a different version/digest, or a new profile. A later
+qualified public release therefore starts at a new immutable version and still
+requires the complete gate above.

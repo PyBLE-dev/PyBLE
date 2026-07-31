@@ -46,7 +46,7 @@ class PublicClaimsTest(unittest.TestCase):
         firmware = markdown_section(self.readme, "What works")
 
         self.assertIn(
-            "public browser installer currently offers the exact v0.4.1 unqualified beta",
+            "public browser installer currently offers the exact v0.4.2 unqualified beta",
             firmware,
         )
         self.assertIn("full project HIL is pending", firmware)
@@ -54,7 +54,7 @@ class PublicClaimsTest(unittest.TestCase):
         self.assertIn("Classic ESP32, 4 MiB external SPI flash", firmware)
         self.assertIn("`esp32-s3-n16r8`", firmware)
         self.assertIn("16 MiB flash / 8 MiB Octal PSRAM", firmware)
-        self.assertIn("Unqualified v0.4.1 beta; HIL pending", firmware)
+        self.assertIn("Unqualified v0.4.2 beta; HIL pending", firmware)
         self.assertIn("Planned; unavailable", firmware)
         self.assertNotIn("currently offers qualified images", firmware)
         self.assertNotIn("v0.4.2 HIL pending; installer unavailable", firmware)
@@ -72,7 +72,7 @@ class PublicClaimsTest(unittest.TestCase):
     def test_readme_try_steps_use_the_active_beta_safely(self) -> None:
         try_section = markdown_section(self.readme, "Try PyBLE")
 
-        self.assertIn("v0.4.1 unqualified beta", try_section)
+        self.assertIn("v0.4.2 unqualified beta", try_section)
         self.assertIn("full HIL is pending", try_section)
         self.assertIn("use it at your own risk", try_section)
         self.assertIn("exact profile", try_section)
@@ -87,7 +87,7 @@ class PublicClaimsTest(unittest.TestCase):
         )
 
         for wording in (
-            "v0.4.1",
+            "v0.4.2",
             "unqualified beta",
             "HIL pending",
             "esp32-4mb",

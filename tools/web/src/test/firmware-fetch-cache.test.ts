@@ -7,8 +7,8 @@ import { installReleaseKeyedArtifactFetch } from "@/lib/firmware-fetch-cache";
 
 const origin = "https://pyble.dev";
 const releaseKey = "a".repeat(64);
-const manifestPath = "/firmware/v0.4.1/esp32-4mb/manifest.json";
-const firmwarePath = "/firmware/v0.4.1/esp32-4mb/firmware.bin";
+const manifestPath = "/firmware/v0.4.2/esp32-4mb/manifest.json";
+const firmwarePath = "/firmware/v0.4.2/esp32-4mb/firmware.bin";
 
 function response(url: string) {
   const result = new Response("bytes");

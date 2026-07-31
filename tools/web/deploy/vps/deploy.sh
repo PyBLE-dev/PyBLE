@@ -107,6 +107,21 @@ verify_firmware_tree_parity() {
     fi
 }
 
+require_firmware_release_inputs() {
+    if [[ -z ${PYBLE_FIRMWARE_LICENSE_EVIDENCE_DIR:-} ]]; then
+        printf 'Refusing firmware activation: PYBLE_FIRMWARE_LICENSE_EVIDENCE_DIR is required.\n' >&2
+        exit 65
+    fi
+    if [[ -z ${PYBLE_FIRMWARE_LICENSE_BUILD_ROOT:-} ]]; then
+        printf 'Refusing firmware activation: PYBLE_FIRMWARE_LICENSE_BUILD_ROOT is required.\n' >&2
+        exit 65
+    fi
+    if [[ -z ${PYBLE_FIRMWARE_SOURCE_ROOT:-} ]]; then
+        printf 'Refusing firmware activation: PYBLE_FIRMWARE_SOURCE_ROOT is required.\n' >&2
+        exit 65
+    fi
+}
+
 verify_local_firmware_tag() {
     local expected_tag_object=${1:-}
     local tag_ref="refs/tags/${firmware_tag}"
@@ -173,16 +188,7 @@ if [[ -n ${PYBLE_FIRMWARE_STAGED_ROOT:-} ]]; then
           process.stdout.write(descriptor.deployment);
         ' "${staged_selection}"
     )
-    if [[ "${firmware_deployment}" != public-beta ]]; then
-        if [[ -z ${PYBLE_FIRMWARE_LICENSE_EVIDENCE_DIR:-} ]]; then
-            printf 'Refusing public firmware activation: PYBLE_FIRMWARE_LICENSE_EVIDENCE_DIR is required.\n' >&2
-            exit 65
-        fi
-        if [[ -z ${PYBLE_FIRMWARE_LICENSE_BUILD_ROOT:-} ]]; then
-            printf 'Refusing public firmware activation: PYBLE_FIRMWARE_LICENSE_BUILD_ROOT is required.\n' >&2
-            exit 65
-        fi
-    fi
+    require_firmware_release_inputs
     PYBLE_FIRMWARE_STAGED_ROOT="${staged_firmware_root}" \
         node "${web_directory}/scripts/stage-firmware-release.js" \
         --verify-staged
@@ -195,11 +201,11 @@ if [[ -n ${PYBLE_FIRMWARE_STAGED_ROOT:-} ]]; then
         descriptor.accessControlled === false;
       const exactPublicBeta =
         descriptor.deployment === "public-beta" &&
-        descriptor.version === "0.4.1" &&
+        descriptor.version === "0.4.2" &&
         descriptor.hilStatus === "pending" &&
         descriptor.accessControlled === false &&
         descriptor.releaseJson?.sha256 ===
-          "8b84fbb65a0463d20369e1d86dac566ca7a2039ebc30f9186f55c05421962445";
+          "5d1b0db8c4b90cccf054cd244530afb3b9112d489aa02f7c5da650e92161acde";
       if (!qualifiedPublic && !exactPublicBeta) {
         throw new Error("The public VPS accepts only a qualified public release or the exact attested public beta");
       }
@@ -225,11 +231,7 @@ if [[ -n ${PYBLE_FIRMWARE_STAGED_ROOT:-} ]]; then
           process.stdout.write(commit);
         ' "${staged_release_bundle}/release.json"
     )
-    if [[ "${firmware_deployment}" == public-beta ]]; then
-        printf 'The exact public-beta exception does not require an annotated tag; release identity is digest-bound.\n'
-    else
-        local_firmware_tag_object_before_build=$(verify_local_firmware_tag)
-    fi
+    local_firmware_tag_object_before_build=$(verify_local_firmware_tag)
 
     firmware_evidence_root=$(mktemp -d)
     chmod 0700 "${firmware_evidence_root}"
@@ -342,11 +344,11 @@ REMOTE
                     descriptor.accessControlled === false;
                   const exactPublicBeta =
                     descriptor.deployment === "public-beta" &&
-                    descriptor.version === "0.4.1" &&
+                    descriptor.version === "0.4.2" &&
                     descriptor.hilStatus === "pending" &&
                     descriptor.accessControlled === false &&
                     descriptor.releaseJson?.sha256 ===
-                      "8b84fbb65a0463d20369e1d86dac566ca7a2039ebc30f9186f55c05421962445";
+                      "5d1b0db8c4b90cccf054cd244530afb3b9112d489aa02f7c5da650e92161acde";
                   if (
                     (!qualifiedPublic && !exactPublicBeta) ||
                     typeof descriptor.version !== "string" ||
@@ -364,6 +366,9 @@ REMOTE
                   process.stdout.write(descriptor.deployment);
                 ' "${preserved_selection}"
             )
+            if [[ "${firmware_deployment}" == public-beta ]]; then
+                require_firmware_release_inputs
+            fi
             (
                 cd -- "${preserved_staged_root}/firmware"
                 ssh -o BatchMode=yes "${deploy_target}" \
@@ -419,11 +424,7 @@ REMOTE
                   process.stdout.write(commit);
                 ' "${staged_firmware_root}/firmware/v${firmware_version}/release.json"
             )
-            if [[ "${firmware_deployment}" == public-beta ]]; then
-                printf 'Preserved public-beta state skips annotated tag validation because its exact release root is digest-bound.\n'
-            else
-                local_firmware_tag_object_before_build=$(verify_local_firmware_tag)
-            fi
+            local_firmware_tag_object_before_build=$(verify_local_firmware_tag)
 
             trusted_firmware_snapshot="${firmware_evidence_root}/trusted-preserved"
             mkdir -m 0700 -- "${trusted_firmware_snapshot}"
@@ -508,11 +509,9 @@ if [[ -n "${staged_firmware_root}" ]]; then
     install -m 0644 \
         "${staged_selection}" \
         out/.pyble-firmware-release-selection.json
-    if [[ "${firmware_deployment}" != public-beta ]]; then
-        local_firmware_tag_object_after_build=$(
-            verify_local_firmware_tag "${local_firmware_tag_object_before_build}"
-        )
-    fi
+    local_firmware_tag_object_after_build=$(
+        verify_local_firmware_tag "${local_firmware_tag_object_before_build}"
+    )
 fi
 for firmware_release in out/firmware/v*; do
     if [[ ! -d "${firmware_release}" ]]; then
@@ -548,11 +547,9 @@ if [[ -n "${staged_firmware_root}" ]]; then
         "${staged_firmware_root}/firmware" \
         "${web_directory}/out/firmware" \
         "final packaged website firmware"
-    if [[ "${firmware_deployment}" != public-beta ]]; then
-        local_firmware_tag_object_before_upload=$(
-            verify_local_firmware_tag "${local_firmware_tag_object_after_build}"
-        )
-    fi
+    local_firmware_tag_object_before_upload=$(
+        verify_local_firmware_tag "${local_firmware_tag_object_after_build}"
+    )
 fi
 upload_evidence_root=$(mktemp -d)
 chmod 0700 "${upload_evidence_root}"
@@ -1159,6 +1156,45 @@ if [[ "${not_found_status}" != 404 ]]; then
         "${not_found_status}" >&2
     exit 66
 fi
+
+firmware_not_found_paths=(
+    /firmware/not-found-smoke
+)
+if [[ "${expected_installer_state}" == active ]]; then
+    selected_firmware_root=${firmware_release_json_path%/release.json}
+    test "${selected_firmware_root}" != "${firmware_release_json_path}"
+    firmware_not_found_paths+=(
+        "${selected_firmware_root}/esp32-c3-4mb/manifest.json"
+    )
+fi
+firmware_not_found_index=0
+for firmware_not_found_path in "${firmware_not_found_paths[@]}"; do
+    firmware_not_found_headers="${smoke_root}/firmware-not-found-${firmware_not_found_index}.headers"
+    firmware_not_found_status=$(
+        curl --silent --show-error --max-time 30 \
+            --location --max-redirs 0 --proto '=https' \
+            --dump-header "${firmware_not_found_headers}" \
+            --output /dev/null \
+            --write-out '%{http_code}' \
+            "https://pyble.dev${firmware_not_found_path}"
+    )
+    if [[ "${firmware_not_found_status}" != 404 ]]; then
+        printf 'Firmware 404 smoke failed for %s: expected 404, received %s.\n' \
+            "${firmware_not_found_path}" \
+            "${firmware_not_found_status}" >&2
+        exit 66
+    fi
+    firmware_not_found_normalized_headers="${firmware_not_found_headers}.normalized"
+    tr -d '\r' < "${firmware_not_found_headers}" > \
+        "${firmware_not_found_normalized_headers}"
+    if ! grep -Eiq '^Cache-Control: *no-store *$' \
+        "${firmware_not_found_normalized_headers}"; then
+        printf 'Firmware 404 smoke failed for %s: Cache-Control is not no-store.\n' \
+            "${firmware_not_found_path}" >&2
+        exit 66
+    fi
+    firmware_not_found_index=$((firmware_not_found_index + 1))
+done
 
 confirm_activation
 trap - ERR

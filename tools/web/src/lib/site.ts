@@ -3,6 +3,8 @@
 
 import type { Metadata } from "next";
 
+import type { FirmwareReleaseDescriptor } from "@/lib/firmware-release";
+
 export const siteConfig = {
   name: "PyBLE",
   expandedName: "Python over Bluetooth Low Energy",
@@ -24,29 +26,49 @@ export const navigation = [
   { label: "Support", href: "/support" },
 ] as const;
 
-export const initialFirmwareTargets = [
+const firmwareTargetDefinitions = [
   {
     id: "esp32-4mb",
     target: "Classic ESP32",
     constraint: "4 MiB external SPI flash · no PSRAM assumed",
-    status: "v0.4.2 HIL pending · installer unavailable",
     planned: false,
   },
   {
     id: "esp32-s3-n16r8",
     target: "ESP32-S3 N16R8",
     constraint: "16 MiB flash · 8 MiB Octal PSRAM",
-    status: "v0.4.2 HIL pending · installer unavailable",
     planned: false,
   },
   {
     id: "esp32-c3-4mb",
     target: "ESP32-C3",
     constraint: "4 MiB external SPI flash · no PSRAM assumed",
-    status: "Planned · installer unavailable pending exact-profile HIL",
     planned: true,
   },
 ] as const;
+
+export function firmwareTargetsForRelease(
+  release: FirmwareReleaseDescriptor | null,
+) {
+  return firmwareTargetDefinitions.map((target) => {
+    let status = "Installer unavailable";
+    if (target.planned) {
+      status = "Planned · installer unavailable pending exact-profile HIL";
+    } else if (release?.deployment === "public-beta") {
+      status = `v${release.version} unqualified beta · HIL pending`;
+    } else if (
+      release?.deployment === "public" &&
+      release.hilStatus === "passed"
+    ) {
+      status = `v${release.version} qualified public release`;
+    } else if (release?.deployment === "candidate") {
+      status = `v${release.version} protected candidate · HIL pending`;
+    }
+    return { ...target, status };
+  });
+}
+
+export const initialFirmwareTargets = firmwareTargetsForRelease(null);
 
 export function absoluteUrl(path: string): string {
   return new URL(path, siteConfig.origin).toString();

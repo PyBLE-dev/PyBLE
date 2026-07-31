@@ -523,7 +523,6 @@ describe("external firmware bundle staging", () => {
       "scripts",
       "stage-firmware-release.js",
     );
-    const repositoryRoot = join(process.cwd(), "..", "..");
     const bundleDirectory = await temporaryDirectory(
       "candidate-license-validation-bundle",
     );
@@ -532,6 +531,9 @@ describe("external firmware bundle staging", () => {
     );
     const licenseBuildRoot = await temporaryDirectory(
       "candidate-license-build",
+    );
+    const firmwareSourceRoot = await temporaryDirectory(
+      "candidate-source-root",
     );
     const fakeBin = await temporaryDirectory("candidate-validator-bin");
     const fakePython = join(fakeBin, "python3");
@@ -556,6 +558,7 @@ describe("external firmware bundle staging", () => {
     };
     delete validationEnvironment.PYBLE_FIRMWARE_LICENSE_EVIDENCE_DIR;
     delete validationEnvironment.PYBLE_FIRMWARE_LICENSE_BUILD_ROOT;
+    delete validationEnvironment.PYBLE_FIRMWARE_SOURCE_ROOT;
 
     for (const [label, evidenceEnvironment] of [
       ["both evidence inputs", {}],
@@ -563,12 +566,21 @@ describe("external firmware bundle staging", () => {
         "the exact build root",
         {
           PYBLE_FIRMWARE_LICENSE_EVIDENCE_DIR: licenseEvidenceDirectory,
+          PYBLE_FIRMWARE_SOURCE_ROOT: firmwareSourceRoot,
         },
       ],
       [
         "the retained evidence directory",
         {
           PYBLE_FIRMWARE_LICENSE_BUILD_ROOT: licenseBuildRoot,
+          PYBLE_FIRMWARE_SOURCE_ROOT: firmwareSourceRoot,
+        },
+      ],
+      [
+        "the exact firmware source root",
+        {
+          PYBLE_FIRMWARE_LICENSE_BUILD_ROOT: licenseBuildRoot,
+          PYBLE_FIRMWARE_LICENSE_EVIDENCE_DIR: licenseEvidenceDirectory,
         },
       ],
     ] as const) {
@@ -610,6 +622,7 @@ describe("external firmware bundle staging", () => {
           ...validationEnvironment,
           PYBLE_FIRMWARE_LICENSE_BUILD_ROOT: licenseBuildRoot,
           PYBLE_FIRMWARE_LICENSE_EVIDENCE_DIR: licenseEvidenceDirectory,
+          PYBLE_FIRMWARE_SOURCE_ROOT: firmwareSourceRoot,
           PYBLE_TEST_VALIDATOR_CAPTURE: captureFile,
         },
       },
@@ -630,7 +643,7 @@ describe("external firmware bundle staging", () => {
     expect.soft(arguments_).toContain("--repo-root");
     expect
       .soft(arguments_[arguments_.indexOf("--repo-root") + 1])
-      .toBe(repositoryRoot);
+      .toBe(firmwareSourceRoot);
   });
 
   it("runs a public beta through the canonical audited-candidate and license gates", async () => {

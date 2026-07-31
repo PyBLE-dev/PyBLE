@@ -55,9 +55,9 @@ export type PlannedFirmwareProfileId =
 export type FirmwareDeployment = "public" | "candidate" | "public-beta";
 export type FirmwareHilStatus = "pending" | "passed";
 
-export const publicBetaFirmwareVersion = "0.4.1";
+export const publicBetaFirmwareVersion = "0.4.2";
 export const publicBetaReleaseJsonSha256 =
-  "8b84fbb65a0463d20369e1d86dac566ca7a2039ebc30f9186f55c05421962445";
+  "5d1b0db8c4b90cccf054cd244530afb3b9112d489aa02f7c5da650e92161acde";
 
 export interface FirmwareProfileDescriptor {
   readonly id: FirmwareProfileId;

@@ -62,14 +62,15 @@ BLE GATT peripheral. It supports:
 - board naming and identify support; and
 - upstream MicroPython’s standard `neopixel` module.
 
-The public browser installer is currently unavailable pending v0.4.2 HIL on
-both exact current profiles:
+The public browser installer currently offers the exact v0.4.2 unqualified beta
+for both current profiles. The exact bytes pass the audited-candidate release
+gate, but full project HIL is pending:
 
 | Installer profile | Exact target constraint                                      | Public status                                       |
 | ----------------- | ------------------------------------------------------------ | --------------------------------------------------- |
-| `esp32-4mb`       | Classic ESP32, 4 MiB external SPI flash; no PSRAM assumed     | v0.4.2 HIL pending; installer unavailable           |
-| `esp32-s3-n16r8`  | ESP32-S3, 16 MiB flash / 8 MiB Octal PSRAM; N16R8-class only | v0.4.2 HIL pending; installer unavailable           |
-| `esp32-c3-4mb`    | ESP32-C3, 4 MiB external SPI flash; no PSRAM assumed          | Planned; no public image; exact-profile HIL pending |
+| `esp32-4mb`       | Classic ESP32, 4 MiB external SPI flash; no PSRAM assumed     | Unqualified v0.4.2 beta; HIL pending                 |
+| `esp32-s3-n16r8`  | ESP32-S3, 16 MiB flash / 8 MiB Octal PSRAM; N16R8-class only | Unqualified v0.4.2 beta; HIL pending                 |
+| `esp32-c3-4mb`    | ESP32-C3, 4 MiB external SPI flash; no PSRAM assumed          | Planned; unavailable; no public image               |
 
 These are the initial port targets, not a chip-family allowlist. A future board
 is compatible when it has a maintained PyBLE agent port, BLE GATT
@@ -106,12 +107,13 @@ shared conformance corpus, documentation, and CI atomically.
 1. Install the iPad beta from
    [TestFlight](https://testflight.apple.com/join/yU4e8s6d), or build the
    Flutter app locally.
-2. Check [pyble.dev/flash](https://pyble.dev/flash) in desktop Chrome or Edge.
-   The public installer is currently unavailable pending v0.4.2 HIL. Wait for
-   that page to show an active release version, your exact profile, and an
-   enabled install action.
-3. Only after that gate opens, back up the board, confirm its exact memory
-   profile, and use the one-time wired installer. Flashing erases the board.
+2. Open [pyble.dev/flash](https://pyble.dev/flash) in desktop Chrome or Edge.
+   The exact v0.4.2 unqualified beta is active while full HIL is pending; please
+   use it at your own risk. Confirm the active version, your exact profile, and
+   the enabled install action.
+3. Before flashing, back up the board, confirm its exact memory profile, and
+   accept every safety acknowledgement before using the one-time wired
+   installer. Flashing erases the board.
 4. Open PyBLE, scan for the provisioned board, connect, and run an example over
    BLE.
 

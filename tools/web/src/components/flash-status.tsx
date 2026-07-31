@@ -143,7 +143,7 @@ function policyFailure(release: FirmwareReleaseDescriptor | null | undefined) {
   ) {
     return {
       heading: "Installer unavailable",
-      body: "The public beta does not match the exact attested v0.4.1 firmware, so installation remains unavailable.",
+      body: "The public beta does not match the exact audited v0.4.2 firmware, so installation remains unavailable.",
     };
   }
   if (!hasExactFirmwareProfileDescriptors(release.version, release.profiles)) {
@@ -404,7 +404,7 @@ function FlashStatusForRelease({
         {candidate
           ? "Protected release candidate: hardware validation is pending."
           : publicBeta
-            ? "Unqualified firmware beta: full hardware-in-the-loop qualification is pending. These exact v0.4.1 bytes were manually exercised on the maintainer's ESP32 and ESP32-S3 boards, but they are not qualified. Use at your own risk."
+            ? "Unqualified firmware beta: these exact v0.4.2 bytes passed the audited-candidate release gate, but full hardware-in-the-loop qualification is pending. They are not qualified. Use at your own risk."
             : "Select and verify the exact module profile before installation."}
       </div>
 

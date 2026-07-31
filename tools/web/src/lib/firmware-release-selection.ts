@@ -64,7 +64,7 @@ export function firmwareReleaseSelectedAtBuild(): FirmwareReleaseDescriptor | nu
     !isExactPublicBetaFirmwareRelease(descriptor)
   ) {
     throw new Error(
-      "Build-selected public beta does not match the exact attested v0.4.1 release",
+      "Build-selected public beta does not match the exact audited v0.4.2 release",
     );
   }
   return descriptor;

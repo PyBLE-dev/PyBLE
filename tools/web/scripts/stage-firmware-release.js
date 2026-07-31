@@ -29,9 +29,9 @@ import { isDeepStrictEqual, promisify } from "node:util";
 const execFile = promisify(execFileCallback);
 const canonicalSemverPattern =
   /^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
-const publicBetaVersion = "0.4.1";
+const publicBetaVersion = "0.4.2";
 const publicBetaReleaseJsonSha256 =
-  "8b84fbb65a0463d20369e1d86dac566ca7a2039ebc30f9186f55c05421962445";
+  "5d1b0db8c4b90cccf054cd244530afb3b9112d489aa02f7c5da650e92161acde";
 
 function packageDirectory() {
   try {
@@ -184,7 +184,7 @@ function sha256(bytes) {
  * reviewed repository tool, not an arbitrary substitute.
  *
  * @param {string} bundleDirectory
- * @param {"public" | "candidate"} deployment
+ * @param {"public" | "candidate" | "public-beta"} deployment
  */
 export async function validateWithCanonicalReleaseTool(
   bundleDirectory,
@@ -205,12 +205,13 @@ export async function validateWithCanonicalReleaseTool(
   const mode =
     deployment === "public"
       ? "--public"
-      : deployment === "candidate"
+      : deployment === "candidate" || deployment === "public-beta"
         ? "--audited-candidate"
         : failure("canonical validation deployment is invalid");
   const licenseEvidenceDirectory =
     process.env.PYBLE_FIRMWARE_LICENSE_EVIDENCE_DIR;
   const licenseBuildRoot = process.env.PYBLE_FIRMWARE_LICENSE_BUILD_ROOT;
+  const firmwareSourceRoot = process.env.PYBLE_FIRMWARE_SOURCE_ROOT;
   if (!licenseEvidenceDirectory) {
     failure(
       `PYBLE_FIRMWARE_LICENSE_EVIDENCE_DIR is required for ${deployment} validation`,
@@ -221,6 +222,11 @@ export async function validateWithCanonicalReleaseTool(
       `PYBLE_FIRMWARE_LICENSE_BUILD_ROOT is required for ${deployment} validation`,
     );
   }
+  if (!firmwareSourceRoot) {
+    failure(
+      `PYBLE_FIRMWARE_SOURCE_ROOT is required for ${deployment} validation`,
+    );
+  }
   arguments_.push(
     mode,
     "--license-evidence-dir",
@@ -228,7 +234,7 @@ export async function validateWithCanonicalReleaseTool(
     "--license-build-root",
     resolve(licenseBuildRoot),
     "--repo-root",
-    repositoryRoot,
+    resolve(firmwareSourceRoot),
   );
   try {
     await execFile("python3", arguments_, {
@@ -247,7 +253,8 @@ export async function validateWithCanonicalReleaseTool(
 }
 
 /**
- * Validate the identity root for the one retained public-beta bundle. The
+ * Validate the identity root and audited-candidate evidence for the one exact
+ * public-beta bundle. The
  * structural, schema, path, size, checksum, and profile checks still run in
  * validateReleaseBundle; this function prevents any other self-consistent
  * pending bundle from entering the exceptional deployment mode.
@@ -266,8 +273,9 @@ export async function validateAttestedPublicBetaBundle(
     join(resolve(bundleDirectory), "release.json"),
   );
   if (sha256(releaseBytes) !== publicBetaReleaseJsonSha256) {
-    failure("bundle is not the exact attested v0.4.1 public beta");
+    failure("bundle is not the exact audited v0.4.2 public beta");
   }
+  await validateWithCanonicalReleaseTool(bundleDirectory, deployment);
 }
 
 /**
@@ -811,7 +819,7 @@ async function validateReleaseBundle(
   }
   if (deployment === "public-beta") {
     if (version !== publicBetaVersion) {
-      failure("public beta must be the exact v0.4.1 version");
+      failure("public beta must be the exact v0.4.2 version");
     }
     if (accessControlled) {
       failure("public beta must be unrestricted, not access-controlled");
@@ -1070,8 +1078,10 @@ export async function validateStagedFirmwareRelease(
 /**
  * Revalidate an exact staged tree recovered from the current managed website
  * release. Its original activation already supplied the fresh source/build
- * license evidence; this path accepts only the same all-HIL-passed public
- * bytes or the same exact digest-bound transitional public beta.
+ * license evidence. This path accepts only the same all-HIL-passed public
+ * bytes or the same exact audited and digest-bound transitional public beta;
+ * the beta repeats canonical audited-candidate validation with retained
+ * evidence on every deployment.
  *
  * @param {string} stagedRoot
  * @param {{
