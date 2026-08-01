@@ -95,7 +95,9 @@ describe("Cloudflare-fronted VPS deployment", () => {
       "utf8",
     );
     const parityIndex = script.indexOf("verify_remote_runtime_config");
-    const buildIndex = script.indexOf("NEXT_TELEMETRY_DISABLED=1 npm run check");
+    const buildIndex = script.indexOf(
+      "NEXT_TELEMETRY_DISABLED=1 npm run check",
+    );
     const uploadIndex = script.search(/\brsync\b/);
 
     expect(parityIndex).toBeGreaterThan(-1);
@@ -104,9 +106,7 @@ describe("Cloudflare-fronted VPS deployment", () => {
     expect(script).toContain(
       "/etc/nginx/sites-available/10-pyble-dev-https.conf",
     );
-    expect(script).toContain(
-      "/etc/nginx/snippets/pyble-security-headers.conf",
-    );
+    expect(script).toContain("/etc/nginx/snippets/pyble-security-headers.conf");
     expect(script).toMatch(
       /verify_remote_runtime_config\(\)[\s\S]*?shasum[\s\S]*?ssh[\s\S]*?sha256sum[\s\S]*?(?:mismatch|differs)/i,
     );
