@@ -15,8 +15,8 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import {
+  validateFreshDeploymentBundle,
   validateStagedFirmwareRelease,
-  validateWithCanonicalReleaseTool,
 } from "./stage-firmware-release.js";
 
 /** @typedef {{ route?: string, status?: string }} PrerenderRoute */
@@ -142,13 +142,13 @@ async function requirePrerenderedRoutes(manifestPath) {
  *
  * @param {string} packageRoot
  * @param {string | undefined} stagedFirmwareRoot
- * @param {(bundleDirectory: string, deployment: "public" | "candidate") => Promise<void>} releaseValidator
+ * @param {(bundleDirectory: string, deployment: "public" | "candidate" | "public-beta") => Promise<void>} releaseValidator
  * @returns {Promise<void>}
  */
 export async function prepareSitesOutput(
   packageRoot,
   stagedFirmwareRoot = process.env.PYBLE_FIRMWARE_STAGED_ROOT,
-  releaseValidator = validateWithCanonicalReleaseTool,
+  releaseValidator = validateFreshDeploymentBundle,
 ) {
   const selectionFile = process.env.PYBLE_FLASH_SELECTION_FILE;
   if (Boolean(stagedFirmwareRoot) !== Boolean(selectionFile)) {

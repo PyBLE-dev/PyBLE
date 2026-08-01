@@ -4,6 +4,7 @@
 import {
   firmwareProfileDescriptors,
   firmwareProfileTable,
+  isExactPublicBetaFirmwareRelease,
   type FirmwareProfileDescriptor,
   type FirmwareProfileId,
   type FirmwareReleaseDescriptor,
@@ -275,7 +276,8 @@ function validateDescriptor(
 ) {
   if (
     descriptor.deployment !== "public" &&
-    descriptor.deployment !== "candidate"
+    descriptor.deployment !== "candidate" &&
+    descriptor.deployment !== "public-beta"
   ) {
     fail("Selected firmware deployment mode is invalid");
   }
@@ -293,6 +295,12 @@ function validateDescriptor(
   }
   if (descriptor.deployment === "public" && descriptor.hilStatus !== "passed") {
     fail("Public firmware requires passed hardware validation");
+  }
+  if (
+    descriptor.deployment === "public-beta" &&
+    !isExactPublicBetaFirmwareRelease(descriptor)
+  ) {
+    fail("Public beta does not match the exact audited v0.4.2 release");
   }
 
   const releasePath = `/firmware/v${descriptor.version}/release.json`;
@@ -622,6 +630,12 @@ function validateRelease(
   }
   if (descriptor.deployment === "candidate" && !descriptor.accessControlled) {
     fail("Pending candidate release is not access-controlled");
+  }
+  if (
+    descriptor.deployment === "public-beta" &&
+    statuses.some((status) => status !== "pending")
+  ) {
+    fail("Public beta hardware validation must remain pending");
   }
   const aggregateStatus = statuses.every((status) => status === "passed")
     ? "passed"

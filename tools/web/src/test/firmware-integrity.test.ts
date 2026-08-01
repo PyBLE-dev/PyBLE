@@ -21,7 +21,7 @@ interface FetchOverrides {
 }
 
 function relativeArtifactPath(pathname: string) {
-  const prefix = "/firmware/v0.4.1/";
+  const prefix = "/firmware/v0.4.2/";
   return pathname.startsWith(prefix)
     ? pathname.slice(prefix.length)
     : undefined;
@@ -103,11 +103,11 @@ describe("firmware integrity verifier", () => {
 
     await expect(verify(fixture, fetcher)).resolves.toEqual({
       chipFamily: "ESP32-S3",
-      firmwarePath: "/firmware/v0.4.1/esp32-s3-n16r8/firmware.bin",
+      firmwarePath: "/firmware/v0.4.2/esp32-s3-n16r8/firmware.bin",
       manifestBuildCount: 1,
-      manifestPath: "/firmware/v0.4.1/esp32-s3-n16r8/manifest.json",
+      manifestPath: "/firmware/v0.4.2/esp32-s3-n16r8/manifest.json",
       profileId: "esp32-s3-n16r8",
-      version: "0.4.1",
+      version: "0.4.2",
     });
     expect(
       fetcher.mock.calls.map(([input]) => {
@@ -119,19 +119,19 @@ describe("firmware integrity verifier", () => {
       }),
     ).toEqual([
       {
-        pathname: "/firmware/v0.4.1/release.json",
+        pathname: "/firmware/v0.4.2/release.json",
         releaseKey: fixture.descriptor.releaseJson.sha256,
       },
       {
-        pathname: "/firmware/v0.4.1/release.schema.json",
+        pathname: "/firmware/v0.4.2/release.schema.json",
         releaseKey: fixture.descriptor.releaseJson.sha256,
       },
       {
-        pathname: "/firmware/v0.4.1/esp32-s3-n16r8/manifest.json",
+        pathname: "/firmware/v0.4.2/esp32-s3-n16r8/manifest.json",
         releaseKey: fixture.descriptor.releaseJson.sha256,
       },
       {
-        pathname: "/firmware/v0.4.1/esp32-s3-n16r8/firmware.bin",
+        pathname: "/firmware/v0.4.2/esp32-s3-n16r8/firmware.bin",
         releaseKey: fixture.descriptor.releaseJson.sha256,
       },
     ]);
@@ -153,7 +153,7 @@ describe("firmware integrity verifier", () => {
     const schemaCall = fetcher.mock.calls.find(([input]) => {
       return (
         new URL(inputUrl(input), firmwareOrigin).pathname ===
-        "/firmware/v0.4.1/release.schema.json"
+        "/firmware/v0.4.2/release.schema.json"
       );
     });
     expect(schemaCall).toBeDefined();
@@ -195,7 +195,7 @@ describe("firmware integrity verifier", () => {
 
     await expect(verify(protectedCandidate)).resolves.toMatchObject({
       profileId: "esp32-s3-n16r8",
-      version: "0.4.1",
+      version: "0.4.2",
     });
     await expect(verify(publicPending)).rejects.toThrow();
     await expect(verify(exposedCandidate)).rejects.toThrow();
@@ -401,7 +401,7 @@ describe("firmware integrity verifier", () => {
     const fixture = createFirmwareReleaseFixture({
       mutateDescriptor: (descriptor) => {
         descriptor.releaseJson.path =
-          "https://example.invalid/firmware/v0.4.1/release.json";
+          "https://example.invalid/firmware/v0.4.2/release.json";
       },
     });
     const fetcher = mockFetch(fixture);

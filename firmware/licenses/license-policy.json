@@ -17094,7 +17094,7 @@
       "source": {
         "ref": "3.6.4@b5d87eaa6748b7a6fa70593178c08b4480e9b71e",
         "tree_path": "firmware/.esp-idf/components/mbedtls",
-        "tree_sha256": "0338a54ab75fa598cf77260998deb48879c326d8a785305e4d31f3e9b232a3cc",
+        "tree_sha256": "4366d742b5721fab1705ce58962558b25d08aa0176913e9466a3f02284d729b3",
         "url": "https://github.com/Mbed-TLS/mbedtls/tree/b5d87eaa6748b7a6fa70593178c08b4480e9b71e"
       },
       "source_spdx_expression": "(Apache-2.0 OR GPL-2.0-or-later)"

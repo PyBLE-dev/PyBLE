@@ -2409,6 +2409,43 @@ def _audit_sha256_tree(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _audit_python_cache_artifact(relative: Path) -> bool:
+    return "__pycache__" in relative.parts or relative.suffix.lower() in {
+        ".pyc",
+        ".pyo",
+    }
+
+
+def _audit_sha256_source_tree(
+    path: Path,
+    *,
+    reject_python_cache: bool = False,
+) -> str:
+    """Hash source bytes canonically without host-generated Python caches."""
+
+    _require(path.is_dir(), "reviewed source tree is missing: %s" % path)
+    digest = hashlib.sha256()
+    for item in sorted(path.rglob("*")):
+        _require(not item.is_symlink(), "reviewed source tree contains a symlink")
+        if not item.is_file():
+            continue
+        relative_path = item.relative_to(path)
+        if _audit_python_cache_artifact(relative_path):
+            _require(
+                not reject_python_cache,
+                "reviewed source tree contains Python cache artifact: %s"
+                % relative_path.as_posix(),
+            )
+            continue
+        relative = relative_path.as_posix().encode("utf-8")
+        value = item.read_bytes()
+        digest.update(len(relative).to_bytes(8, "big"))
+        digest.update(relative)
+        digest.update(len(value).to_bytes(8, "big"))
+        digest.update(value)
+    return digest.hexdigest()
+
+
 def _audit_artifact_requirements(artifact: dict[str, Any]) -> list[str]:
     value = artifact.get("requires")
     _require(isinstance(value, list), "locked artifact requires must be an array")
@@ -4145,7 +4182,7 @@ def _audit_v2_source(
         path = repo_root / relative
         _audit_no_symlink_components(repo_root, path, "%s source tree" % label)
         _require(
-            _audit_sha256_tree(path) == digest,
+            _audit_sha256_source_tree(path, reject_python_cache=True) == digest,
             "%s source tree changed" % label,
         )
     return copy.deepcopy(record)

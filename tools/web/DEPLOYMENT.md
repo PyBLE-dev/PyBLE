@@ -55,7 +55,7 @@ Review at least:
 The immutable deployment input is the exact committed source revision that
 produced the checked `out/` export.
 
-## Stage a qualified firmware release
+## Stage a firmware release
 
 The normal build and deploy path contains no firmware and keeps the installer
 unavailable. Do not put release bytes in `tools/web/public/`. Generate the
@@ -70,6 +70,7 @@ For an all-HIL-passed public bundle:
 staged_root=$(mktemp -d)
 export PYBLE_FIRMWARE_LICENSE_EVIDENCE_DIR=/absolute/path/to/license-evidence
 export PYBLE_FIRMWARE_LICENSE_BUILD_ROOT=/absolute/path/to/release-build-root
+export PYBLE_FIRMWARE_SOURCE_ROOT=/absolute/path/to/exact-firmware-source-checkout
 
 PYBLE_FIRMWARE_BUNDLE_DIR=/absolute/path/to/firmware-bundle \
 PYBLE_FIRMWARE_OUTPUT_DIR="${staged_root}" \
@@ -85,11 +86,13 @@ annotated tag and peel directly to the full commit recorded by `release.json`
 at `provenance.pyble.commit`. The helper binds the tag object and peeled commit
 before and after the website build and again before upload.
 
-Public and protected-candidate validation require the explicit license-evidence
-and release-build paths shown above. The evidence directory must be the fresh,
-reviewed output for those exact build inputs and must remain outside both the
-source and build trees. Keep both variables exported through deployment because
-the helper repeats canonical public validation for the private trusted staged
+Public, public-beta, and protected-candidate validation require the explicit
+license-evidence, release-build, and exact firmware-source paths shown above.
+The source checkout must be the clean source identity recorded by the release,
+with its pinned generated build inputs available. The evidence directory must
+be the fresh, reviewed output for those exact source and build inputs and must
+remain outside both trees. Keep all three variables exported through deployment
+because the helper repeats canonical validation for the private trusted staged
 snapshot.
 
 The deploy helper canonically validates the caller staging, requires an
@@ -108,6 +111,32 @@ website symlink. Firmware and upload evidence remain available through this
 remote verification. A caller-supplied evidence or inventory directory is
 never trusted. The helper retrieves every published byte afterward.
 
+For the exact digest-bound v0.4.2 hardware-tested beta, use the same retained
+license inputs and annotated `firmware-v0.4.2` tag, but select the explicit
+public-beta mode:
+
+```sh
+staged_root=$(mktemp -d)
+export PYBLE_FIRMWARE_LICENSE_EVIDENCE_DIR=/absolute/path/to/license-evidence
+export PYBLE_FIRMWARE_LICENSE_BUILD_ROOT=/absolute/path/to/release-build-root
+export PYBLE_FIRMWARE_SOURCE_ROOT=/absolute/path/to/exact-firmware-source-checkout
+
+PYBLE_FIRMWARE_BUNDLE_DIR=/absolute/path/to/firmware-v0.4.2-bundle \
+PYBLE_FIRMWARE_OUTPUT_DIR="${staged_root}" \
+PYBLE_FLASH_DEPLOYMENT=public-beta \
+npm run firmware:stage
+
+PYBLE_FIRMWARE_STAGED_ROOT="${staged_root}" \
+deploy/vps/deploy.sh <ssh-user>@<vps-host>
+```
+
+The staging and deployment helpers run the canonical `--audited-candidate`
+license gate, require both profile HIL states to remain pending, bind the exact
+reviewed `release.json` SHA-256, and keep ESP32-C3 absent. The public site must
+identify these bytes as a hardware-tested beta, name the completed production
+Chrome installation and interrupted-flash recovery scope, and distinguish it
+from complete release qualification.
+
 For a pending release candidate, stage with both explicit controls:
 
 ```sh
@@ -115,6 +144,7 @@ PYBLE_FIRMWARE_BUNDLE_DIR=/absolute/path/to/firmware-bundle \
 PYBLE_FIRMWARE_OUTPUT_DIR="${staged_root}" \
 PYBLE_FIRMWARE_LICENSE_EVIDENCE_DIR=/absolute/path/to/license-evidence \
 PYBLE_FIRMWARE_LICENSE_BUILD_ROOT=/absolute/path/to/release-build-root \
+PYBLE_FIRMWARE_SOURCE_ROOT=/absolute/path/to/exact-firmware-source-checkout \
 PYBLE_FLASH_DEPLOYMENT=candidate \
 PYBLE_FLASH_ACCESS_CONTROLLED=1 \
 npm run firmware:stage
@@ -128,6 +158,7 @@ PYBLE_FIRMWARE_STAGED_ROOT="${staged_root}" \
 PYBLE_FLASH_SELECTION_FILE="${staged_root}/.pyble-firmware-release-selection.json" \
 PYBLE_FIRMWARE_LICENSE_EVIDENCE_DIR=/absolute/path/to/license-evidence \
 PYBLE_FIRMWARE_LICENSE_BUILD_ROOT=/absolute/path/to/release-build-root \
+PYBLE_FIRMWARE_SOURCE_ROOT=/absolute/path/to/exact-firmware-source-checkout \
 NEXT_TELEMETRY_DISABLED=1 \
 npm run check
 ```
@@ -139,8 +170,9 @@ selector must be the exact descriptor inside that root, and supplying either
 one without the other is rejected.
 Deploy that artifact only behind enforced authentication. The boolean is an
 attestation to the fail-closed build policy, not access control itself. Never
-send a candidate through the public VPS helper; it accepts only public releases
-whose two final-byte HIL statuses are both `passed`.
+send a protected candidate through the public VPS helper; it accepts only
+qualified public releases whose two final-byte HIL statuses are both `passed`
+or the exact audited and digest-bound v0.4.2 public beta.
 
 ## First-time VPS bootstrap
 
@@ -228,6 +260,12 @@ From the repository root:
 ```sh
 tools/web/deploy/vps/deploy.sh <ssh-user>@<vps-host>
 ```
+
+When the current installer is the v0.4.2 public beta, a website-only deployment
+must also export the same retained license-evidence, release-build, and exact
+firmware-source paths and retain the annotated `firmware-v0.4.2` tag.
+Carry-forward repeats the canonical audited-candidate and tag checks; it does
+not rely on the presence of firmware bytes alone.
 
 The SSH target is an argument so no host address or private-key path is stored
 in the repository. Authentication must be non-interactive and key-based.

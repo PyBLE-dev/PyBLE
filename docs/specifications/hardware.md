@@ -1,19 +1,19 @@
 # PyBLE — Hardware Support & Pin Guidance
 
-Status: **DRAFT** · Last updated: 2026-07-30
+Status: **DRAFT** · Last updated: 2026-08-01
 
 PyBLE's platform scope is any microcontroller board that can run MicroPython
 and provide a Bluetooth Low Energy peripheral stack capable of hosting a
 conforming PBLE/1 agent. It makes no assumptions about wiring and carries no
 board-specific routing profile. Hardware eligibility is broader than current
-support: a board works with PyBLE only after a maintained agent port or firmware
-image for that target passes the protocol, resource, recovery, and
-hardware-in-the-loop gates.
+support. A qualified port must pass its complete protocol, resource, recovery,
+and hardware-in-the-loop gates; a narrower beta must name the exact evidence it
+has passed and the qualification that remains open.
 
 Classic ESP32, ESP32-S3, and ESP32-C3 are the **initial v1 reference target
 families**, not the permanent product boundary. A public browser image is
-narrower than a target family and is supported only for the exact memory profile
-qualified below. Their firmware exposes hardware to user MicroPython through
+narrower than a target family and is supported only for an exact listed memory
+profile and its stated release status. Their firmware exposes hardware through
 standard runtime APIs, including `machine` and the frozen upstream `neopixel`
 package. The app may ship read-only target guidance to help users avoid common
 footguns.
@@ -35,8 +35,8 @@ under the same PBLE/1 protocol.
 
 | Image profile | Required memory configuration | Installer family check | Release status | Public compatibility claim |
 |---|---|---|---|---|
-| `esp32-4mb` | Classic ESP32; 4 MiB external SPI flash; no PSRAM assumed | `ESP32` | v0.4.2 HIL pending; installer unavailable | Only boards whose module documentation confirms this flash layout |
-| `esp32-s3-n16r8` | ESP32-S3; 16 MiB flash; 8 MiB Octal PSRAM | `ESP32-S3` | v0.4.2 HIL pending; installer unavailable | N16R8-class modules only; not generic ESP32-S3 |
+| `esp32-4mb` | Classic ESP32; 4 MiB external SPI flash; no PSRAM assumed | `ESP32` | v0.4.2 hardware-tested beta; browser install/recovery passed; qualification pending | Only boards whose module documentation confirms this flash layout |
+| `esp32-s3-n16r8` | ESP32-S3; 16 MiB flash; 8 MiB Octal PSRAM | `ESP32-S3` | v0.4.2 hardware-tested beta; browser install/recovery passed; qualification pending | N16R8-class modules only; not generic ESP32-S3 |
 | `esp32-c3-4mb` | ESP32-C3 revision v0.3 or newer; 4 MiB external flash; no PSRAM assumed | `ESP32-C3` | Unavailable pending exact-profile HIL | No public installer compatibility claim yet |
 
 The installer family check cannot establish flash capacity, PSRAM type, USB
@@ -47,11 +47,13 @@ different flash size or Quad/no PSRAM, are not covered by
 `esp32-s3-n16r8`; they require another profile and its own HIL evidence.
 The C3 profile is neither selectable nor published while its status is
 unavailable; owning or building the target is not a substitute for HIL. The
-current machine-readable resource policy and HIL report therefore contain
-exactly the first two profile IDs and no C3 thresholds or record. C3 continues
-to build and participate in source/reproducibility/license audits, but its
-real-board resource qualification remains required before C3 enablement and
-before v1.0.
+current machine-readable resource policy and immutable HIL ledger therefore
+contain exactly the first two profile IDs and no C3 thresholds or record. The
+[supplemental production-browser attestation](../validation/browser-flashing/v0.4.2-production.md)
+records the two completed browser rows; the ledger's other formal rows remain
+pending. C3 continues to build and participate in
+source/reproducibility/license audits, but its real-board resource
+qualification remains required before C3 enablement and before v1.0.
 
 These are **provisioning image profiles**, not board-routing profiles. They
 exist solely to keep destructive flash layouts honest. They do not define GPIO

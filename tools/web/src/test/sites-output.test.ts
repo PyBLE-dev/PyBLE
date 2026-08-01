@@ -153,14 +153,14 @@ describe("Sites vinext-output adapter", () => {
       );
       const firmwareManifest = await worker.fetch(
         new Request(
-          "https://pyble.dev/firmware/v0.4.1/esp32-s3-n16r8/manifest.json",
+          "https://pyble.dev/firmware/v0.4.2/esp32-s3-n16r8/manifest.json",
         ),
         {},
         context,
       );
       const firmwareBinary = await worker.fetch(
         new Request(
-          "https://pyble.dev/firmware/v0.4.1/esp32-s3-n16r8/firmware.bin",
+          "https://pyble.dev/firmware/v0.4.2/esp32-s3-n16r8/firmware.bin",
         ),
         {},
         context,
@@ -209,11 +209,11 @@ describe("Sites vinext-output adapter", () => {
       },
       firmwareManifest: {
         status: 200,
-        body: "vinext:/firmware/v0.4.1/esp32-s3-n16r8/manifest.json:execution-context",
+        body: "vinext:/firmware/v0.4.2/esp32-s3-n16r8/manifest.json:execution-context",
       },
       firmwareBinary: {
         status: 200,
-        body: "vinext:/firmware/v0.4.1/esp32-s3-n16r8/firmware.bin:execution-context",
+        body: "vinext:/firmware/v0.4.2/esp32-s3-n16r8/firmware.bin:execution-context",
       },
       notFound: { status: 404, body: notFoundEntry },
     });
@@ -327,7 +327,7 @@ describe("Sites vinext-output adapter", () => {
           "dist",
           "client",
           "firmware",
-          "v0.4.1",
+          "v0.4.2",
           "esp32-s3-n16r8",
           "firmware.bin",
         ),
@@ -340,7 +340,7 @@ describe("Sites vinext-output adapter", () => {
           "dist",
           "client",
           "firmware",
-          "v0.4.1",
+          "v0.4.2",
           "esp32-c3-4mb",
           "manifest.json",
         ),

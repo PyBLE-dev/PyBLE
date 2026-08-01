@@ -11,7 +11,9 @@ firmware remain governed by their own specifications.
 
 The website MUST explain PyBLE accurately, help a beta user get started or ask
 for support, publish the app's privacy posture, and provide a gated browser
-firmware installer for the qualified initial ESP32-family image profiles.
+firmware installer for the exact initial ESP32-family image profiles. The
+installer MUST distinguish a hardware-tested public beta from a fully
+qualified public release.
 
 It MUST NOT imply that:
 
@@ -63,8 +65,7 @@ The home page MAY make these verified claims:
 - Blocks runs offline, includes editable beginner examples, supports the
   current explicit numeric-GPIO and standard MicroPython NeoPixel subset, and
   can reopen exact sidecars or import a deliberately bounded Python subset.
-  Those hardware APIs are implemented and exercised on the initial
-  ESP32-family builds; release support still requires exact-profile HIL and
+  Those hardware APIs are initially validated on ESP32-family firmware and
   MUST NOT be promised for every future port.
 - PBLE/1 is an open PyBLE-owned protocol.
 
@@ -72,14 +73,15 @@ Compatibility copy MUST distinguish platform scope from current support:
 
 - hardware eligibility requires MicroPython, a PBLE/1-capable BLE peripheral
   stack, sufficient resources, and a conforming agent port;
-- actual support requires a released, validated firmware image for the target;
-- the current v0.4.2 candidate set is the exact `esp32-4mb` and
-  `esp32-s3-n16r8` profiles, but neither is released or selectable until both
-  exact candidate images pass real-hardware HIL; ESP32-C3 remains an initial
-  firmware target but is planned/unavailable until its own exact profile
-  passes HIL;
-- browser provisioning is activated only for exact HIL-qualified memory
-  profiles in §7, including N16R8-class hardware for the ESP32-S3 image;
+- actual support requires a published firmware image for the exact target and a
+  truthful release state; browser-installation validation for a beta is
+  narrower than complete release qualification;
+- the current public-beta list is the exact `esp32-4mb` and
+  `esp32-s3-n16r8` profiles; ESP32-C3 remains an initial firmware target but
+  is planned/unavailable until its exact profile passes real-hardware HIL;
+- browser provisioning is offered only for the exact memory profiles in §7,
+  including N16R8-class hardware for the initial ESP32-S3 image, and MUST show
+  whether those bytes are a hardware-tested beta or a qualified release;
 - users select pins for their exact board and wiring.
 
 It MUST NOT imply that Bluetooth hardware or stock MicroPython alone is enough,
@@ -126,8 +128,8 @@ metadata suitable for the external beta announcement. The image MUST use the
 canonical prompt-chip mark and a privacy-reviewed capture of the real app
 described in §4. It MAY add authored brand text and framing, but MUST NOT
 retouch or generate the pictured app interface. Its claims MUST be limited to
-the current iPad external beta, the exact selected candidate profiles, and
-their current qualification status.
+the current iPad external beta and the exact installer profiles and release
+state actually available.
 
 The social image MUST have useful alternative text, remain legible under
 common center crops, and make no third-party runtime request. A QR code MUST
@@ -136,17 +138,45 @@ platform cropping can make it unreliable. A separate local square TestFlight
 card MAY include the exact invitation QR, visible destination, and plain-text
 instructions.
 
-### 3.4 Pre-activation release claims and support intake
+### 3.4 Transitional firmware beta claims and support intake
 
-Until the first v0.4.2 public firmware selector passes the complete gate in §7,
-the repository README and home page MUST say that the browser installer is
-unavailable pending v0.4.2 HIL on both exact current profiles. They MUST NOT
-describe either profile or its browser image as released, available, or
-qualified. The home-page target cards MUST identify the profiles and constraints
-as `esp32-4mb` (classic ESP32, 4 MiB external SPI flash, no PSRAM assumed) and
+Until the first firmware selector passes the complete qualified-release gate in
+§7, the repository README and home page MUST NOT describe either current profile
+or its browser image as a qualified release. The exact audited `v0.4.2`
+public-beta selector MAY make the `esp32-4mb` and `esp32-s3-n16r8` images
+available under the exception in §7. Following the production browser-flashing
+validation recorded in
+`docs/validation/browser-flashing/v0.4.2-production.json`, every active
+installer state MUST instead identify these exact bytes as a
+**hardware-tested firmware beta** and say that real-board browser installation
+and interrupted-flash recovery passed for both enabled exact profiles. It MUST
+also distinguish that narrow result from complete release qualification and
+MUST NOT say or imply that the beta is access-controlled, a qualified release,
+fully validated, production-ready, or generally available. The home-page target
+cards MUST identify the constraints as
+`esp32-4mb` (classic ESP32, 4 MiB external SPI flash, no PSRAM assumed) and
 `esp32-s3-n16r8` (ESP32-S3, 16 MiB flash, 8 MiB **Octal** PSRAM), and give each
-the truthful pending-HIL/unavailable state. `esp32-c3-4mb` remains a separate
-planned, unavailable profile.
+the truthful hardware-tested-beta/release-qualification-pending state while
+that selector is active.
+`esp32-c3-4mb` remains a separate planned, unavailable profile and MUST NOT be
+present in the beta selector, release metadata, public firmware tree, or
+recovery commands.
+
+The repository README, home-page hero, provisioning workflow, exact-profile
+cards, TestFlight callout, support getting-started guide, and public roadmap
+MUST agree with the build-selected installer state. While the exact beta
+selector is active, each current-profile status MUST name `v0.4.2`,
+**hardware-tested beta**, and **release qualification pending**; installation
+instructions MUST direct users to the enabled `/flash` action while preserving
+the exact profile, backup, erase, cable/power, and port acknowledgements. They
+MUST name the completed browser installation and interrupted-flash recovery
+scope rather than the stale blanket phrase **full HIL pending**. When no selector
+is active, including an explicit installer-disable deployment, the generated
+home and support pages MUST instead say that the installer is unavailable and
+MUST NOT claim that the beta is available. The roadmap MUST mark two-profile
+browser-flashing validation complete while retaining the broader app, PBLE/1,
+resource, and release-qualification work. Every one of those surfaces MUST keep
+C3 explicitly unavailable.
 
 README getting-started instructions MUST gate destructive flashing on `/flash`
 showing an active version, exact profile, and enabled install action. While the
@@ -155,11 +185,11 @@ supposedly qualified public image. A real-app capture caption MUST describe only
 what is visible; it MUST NOT claim that a physical board is pictured when the
 capture shows only the app.
 
-While the installer is unavailable, the wide social card MUST describe the
-workflow as one-time USB setup followed by everyday use over BLE. It MUST NOT
-advertise an enabled web flasher; it MAY explicitly label firmware HIL as
-pending. Its mechanically rendered PNG and authored SVG MUST remain paired by
-reviewed content and exact-dimension tests.
+The wide social card MUST describe the workflow as one-time USB setup followed
+by everyday use over BLE. If it advertises the enabled `v0.4.2` web flasher, it
+MUST use the narrow claim **web flashing validated** and MUST NOT imply complete
+release qualification. Its mechanically rendered PNG and authored SVG MUST
+remain paired by reviewed content and exact-dimension tests.
 
 Every changed social-card byte set MUST use a new content-versioned public
 pathname before its metadata is deployed. Replacing a PNG or SVG at an existing
@@ -303,22 +333,30 @@ VPS origin. The origin MUST:
   firmware 4xx/5xx with `Cache-Control: no-store`, and use the selected
   `release.json` SHA-256 as the deterministic cache key for both verification
   and ESP Web Tools retrieval;
-- quarantine the burned pre-public `/firmware/v0.4.1/` candidate path with a
-  non-cacheable not-found response, without deleting the retained forensic
-  copy or allowing it to enter any active selector;
+- serve `/firmware/v0.4.2/` only while the exact audited public-beta selector
+  defined in §7 is active; its successful immutable responses use the ordinary
+  versioned-firmware cache policy, while every missing/error response remains
+  `no-store`;
 - use a valid origin certificate with Cloudflare **Full (strict)** TLS, never
   Flexible mode; and
 - expose only the required web and key-authenticated administration ports.
 
-After the first qualified public installer is activated, an ordinary
-website-only deployment MUST preserve that exact immutable selected release.
+After a public installer is activated, an ordinary website-only deployment MUST
+preserve that exact immutable selected release.
 The deployment obtains the selector and firmware tree from the current managed
 release over the authenticated deployment transport, validates them through
 the preserved-public staged-release and checksum gates, and embeds the selector
 at build time. That carry-forward gate repeats the self-contained bundle,
-schema, HIL, profile, artifact, path, size, digest, descriptor, and annotated-tag
-checks. It does not repeat the source/build license audit because the exact
-immutable bytes already passed that audit during their original activation.
+schema, HIL, profile, artifact, path, size, digest, descriptor, and
+annotated-tag checks. A preserved qualified release does not repeat the
+source/build license audit because the exact immutable bytes already passed that
+audit during its original activation. The exact `v0.4.2` public beta is a fresh
+pending candidate and MUST instead repeat canonical `--audited-candidate`
+validation with its retained license-evidence directory and exact build root on
+every deployment that carries it forward. That validation MUST receive the
+exact firmware-source checkout recorded by the release, rather than substituting
+the later website checkout. A preserved qualified release MUST NOT require
+those retained beta source/build/evidence inputs.
 It MUST NOT infer availability from the mere presence of a firmware directory
 or accept a caller-supplied selector.
 
@@ -351,10 +389,9 @@ image profiles, offsets, same-origin layout, manifest, integrity/provenance
 metadata, recovery content, and HIL matrix. This section owns the website state
 and user experience.
 
-The v0.4.2 candidate profiles are exactly `esp32-4mb` and
-`esp32-s3-n16r8`; neither is public or qualified before the complete gate below
-passes. The S3 image requires 16 MiB flash plus 8 MiB Octal PSRAM and MUST NOT
-be described as suitable for every ESP32-S3 board. The known
+The current pre-v1 public profiles are exactly `esp32-4mb` and
+`esp32-s3-n16r8`. The S3 image requires 16 MiB flash plus 8 MiB Octal PSRAM
+and MUST NOT be described as suitable for every ESP32-S3 board. The known
 `esp32-c3-4mb` profile remains an initial v1 target but is explicitly
 unavailable until exact-profile real-hardware validation is complete. It MUST
 be shown separately as planned/unavailable and MUST NOT appear in the active
@@ -362,11 +399,43 @@ selector, release metadata, public firmware paths, or recovery commands.
 ESP Web Tools' family detection is necessary but not sufficient to establish
 memory-profile or silicon-revision compatibility.
 
-The `/flash` action MUST fail closed and remain explicitly unavailable until
-all of the following are true for one exact immutable version:
+One narrow pre-qualification exception exists for the fresh audited `v0.4.2`
+candidate. A build-time selector MAY use deployment mode `public-beta` only
+when all of these facts are true:
+
+- `version` is exactly `0.4.2`, `releaseJson.sha256` is exactly
+  `5d1b0db8c4b90cccf054cd244530afb3b9112d489aa02f7c5da650e92161acde`,
+  `hilStatus` is `pending`, and `accessControlled` is `false`;
+- the selector contains exactly `esp32-4mb` and `esp32-s3-n16r8` with the
+  frozen paths, offsets, memory requirements, and silicon windows; C3 is absent;
+- the same-origin `release.json`, schema, manifests, firmware, documents, and
+  `SHA256SUMS` pass the existing path, shape, size, and SHA-256 integrity checks;
+- the canonical release tool accepts the exact bundle with
+  `validate --audited-candidate`, the retained license-evidence directory, and
+  the exact release-build root, using the exact firmware-source checkout
+  recorded by the release as `--repo-root`; the annotated `firmware-v0.4.2` tag
+  exists and peels directly to `release.json` provenance; and
+- `/flash` visibly labels the firmware a **hardware-tested firmware beta**,
+  names the completed real-board browser installation and interrupted-flash
+  recovery scope for both enabled profiles, says complete release qualification
+  remains pending, and never calls it protected, access-controlled, a qualified
+  release, fully validated, production-ready, or generally available.
+
+This exception attests the identity, integrity, provenance, and audited-candidate
+license state of the exact bytes; it does not manufacture HIL evidence. It MUST
+NOT accept another version or
+digest, broaden either profile, enable C3, or satisfy any qualified-release
+gate. Removing or replacing the beta requires an explicit deployment action and
+production smoke verification. A later website-only deployment MAY carry the
+same exact beta selector and byte tree forward only by repeating the same
+audited-candidate, license-evidence, annotated-tag, and integrity gates.
+
+Except for that exact transitional beta, the `/flash` action MUST fail closed
+and remain explicitly unavailable until all of the following are true for one
+exact immutable version:
 
 1. two clean, provenance-recorded, reproducible builds produced
-   byte-identical current candidate-profile artifact sets from the frozen
+   byte-identical current release-profile artifact sets from the frozen
    source/toolchain pins, while the three-target source/build audit remained
    green;
 2. the versioned, same-origin profile-scoped ESP Web Tools manifests and separate
@@ -374,7 +443,7 @@ all of the following are true for one exact immutable version:
    partition, path, schema, license, and integrity gates;
 3. the final hash-locked bytes passed the complete browser-install and
    interrupted-flash recovery HIL matrix on real hardware for both exact
-   current candidate profiles from an access-controlled,
+   current release profiles from an access-controlled,
    production-equivalent HTTPS candidate
    deployment, while the public action remained disabled;
 4. the exact bytes, release notes, licenses, recovery guide, and HIL report are
@@ -390,7 +459,8 @@ all of the following are true for one exact immutable version:
 6. the activation deployment passes a non-destructive production-origin
    retrieval, redirect, size, SHA-256, CSP, and render smoke test.
 
-Once the gate is green, `/flash` MUST render an active action only after:
+For either the exact public beta above or a release whose gate is green,
+`/flash` MUST render an active action only after:
 
 - secure-context, `navigator.serial`, and Web Crypto capability detection;
 - exact profile selection and the compatibility/backup/erase/cable/power
@@ -449,9 +519,10 @@ The v1 site is releasable when:
   sitemap, and web manifest are static client files;
 - an unknown pathname returns the generated not-found page with status 404;
 - generated output contains no unsupported third-party runtime request;
-- the active flasher, when selected, names an exact qualified profile; verifies
-  the embedded release-metadata root plus every manifest part; requires
-  compatibility/backup/erase consent; and links the matching recovery guide;
+- the active flasher, when selected, names an exact profile and its truthful
+  beta-or-qualified state; verifies the embedded release-metadata root plus
+  every manifest part; requires compatibility/backup/erase consent; and links
+  the matching recovery guide;
 - all versioned firmware files are same-origin, immutable, byte-identical to
   the reviewed release, and retrievable from the public production origin;
 - browser verification and the subsequent ESP Web Tools fetches use the same

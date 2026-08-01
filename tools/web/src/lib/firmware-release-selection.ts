@@ -6,6 +6,7 @@ import { resolve } from "node:path";
 
 import {
   hasExactFirmwareProfileDescriptors,
+  isExactPublicBetaFirmwareRelease,
   type FirmwareReleaseDescriptor,
 } from "@/lib/firmware-release";
 
@@ -30,7 +31,8 @@ export function firmwareReleaseSelectedAtBuild(): FirmwareReleaseDescriptor | nu
   const descriptor = parsed as FirmwareReleaseDescriptor;
   if (
     descriptor.deployment !== "public" &&
-    descriptor.deployment !== "candidate"
+    descriptor.deployment !== "candidate" &&
+    descriptor.deployment !== "public-beta"
   ) {
     throw new Error(
       "Build-selected firmware descriptor has an invalid deployment mode",
@@ -55,6 +57,14 @@ export function firmwareReleaseSelectedAtBuild(): FirmwareReleaseDescriptor | nu
   if (descriptor.deployment === "public" && descriptor.hilStatus !== "passed") {
     throw new Error(
       "Build-selected public firmware must have passed all hardware validation",
+    );
+  }
+  if (
+    descriptor.deployment === "public-beta" &&
+    !isExactPublicBetaFirmwareRelease(descriptor)
+  ) {
+    throw new Error(
+      "Build-selected public beta does not match the exact audited v0.4.2 release",
     );
   }
   return descriptor;

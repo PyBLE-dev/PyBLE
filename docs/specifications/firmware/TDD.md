@@ -528,8 +528,10 @@ Download (`FILE_GET_*`) is the symmetric streamer: `FILE_GET_BEGIN{path,offset}`
 
 Static, boot-time allocation of all large buffers (D3) makes resource
 headroom repeatable enough to measure after HELLO and after transfer workloads.
-The current pre-v1 release measures the owned exact profiles
-`esp32-4mb` and `esp32-s3-n16r8`. The S3's PSRAM is useful Python headroom but
+The current v0.4.2 public-beta qualification work measures the owned exact
+profiles `esp32-4mb` and `esp32-s3-n16r8`. Its supplemental production-browser
+rows passed, while its formal resource and remaining HIL rows stay open. The
+S3's PSRAM is useful Python headroom but
 MUST NOT conceal internal-RAM pressure, so the gate records Python GC memory
 and internal ESP-IDF heap separately. The design still targets the
 **ESP32-C3 floor** for v1.0 (single-core RISC-V, ~400 KB SRAM —
@@ -720,10 +722,12 @@ pipeline while retaining the shared PBLE/1 conformance gates.
     generate THIRD_PARTY_LICENSES.txt mechanically                           BLD-8/14
 11. run no-leak, SPDX, manifest/integrity/license/reproducibility gates       CON-6,
                                                                              BLD-14/18
-12. publish identical immutable bytes to the versioned same-origin path
-    and matching GitHub Release only after every included profile passes HIL;
-    the current pre-v1 gate covers esp32-4mb and esp32-s3-n16r8, while C3 is
-    unavailable until a later candidate                                      BLD-7/21/22
+12. publish identical immutable bytes to the versioned same-origin path and
+    matching GitHub Release only after every included profile passes HIL;
+    alternatively, the exact digest-bound v0.4.2 exception may publish the two
+    profiles as a hardware-tested beta and GitHub pre-release after both pass
+    the scoped production-browser install/recovery run; C3 stays unavailable
+                                                                              BLD-7/21/22
 ```
 
 ### 10.2 Entry points
@@ -774,8 +778,8 @@ exact public tree, manifest, separate integrity/provenance metadata, recovery,
 HIL report, activation, and rollback are frozen in
 [browser-flashing.md](browser-flashing.md). Identical immutable bytes publish
 both at the versioned `pyble.dev` path and through the matching GitHub Release,
-with exact release-profile parity: two qualified profiles in the current
-pre-v1 release and all three at v1.0 (BLD-7/17…22). `DEVICE_INFO`/HELLO,
+with exact release-profile parity: two hardware-tested beta profiles in v0.4.2
+and all three qualified profiles at v1.0 (BLD-7/17…22). `DEVICE_INFO`/HELLO,
 `manifest.json`/`release.json`, tag, and release notes make agent/protocol/
 upstream/source/artifact versions recoverable (BLD-13); the agent follows
 SemVer (BLD-12).
@@ -1077,7 +1081,7 @@ Chip facts are owned by [hardware.md §1](../hardware.md#1-supported-chip-famili
   frozen-Python does not fit, hot paths go native (D1,
   [§8.6](#86-esp32-c3-mitigation)). The known `esp32-c3-4mb` provisioning
   profile is defined only for C3 silicon revision v0.3 or newer but remains
-  unavailable in the current pre-v1 release pending exact-profile HIL. Its
+  unavailable in the current v0.4.2 public beta pending exact-profile HIL. Its
   exact image revision window appears in release metadata only after a later
   candidate qualifies it.
 
@@ -1155,22 +1159,27 @@ PBLE/1 **conformance** tests run against an **in-memory fake transport** shared 
   toolchain-distribution license bytes from the trusted ESP-IDF download cache,
   exact metadata/cache/install binding with distinct archive and version roots,
   absence of host-absolute paths in receipts, and profile-specific zero-input
-  not-shipped proof.
+  not-shipped proof. Supplemental source-tree digests exclude Python bytecode
+  cache artifacts while the audit rejects any such artifacts in the retained
+  checkout; release builds force bytecode generation off so checkout-local
+  absolute paths cannot contaminate otherwise identical source evidence.
 - **size:** enforce the total application-image ceiling and derived
   factory-partition headroom floor during build/candidate validation. Continue
   structural application-fit checks on all three source targets, including
   deferred C3. Heap, boot, goodput, and reliability are not mislabeled as
   static size gates.
 - **HIL:** the release-blocking bench runs on every exact profile included in
-  the release. For the current pre-v1 candidate that is exactly
+  the release. For the v0.4.2 formal candidate matrix that is exactly
   `esp32-4mb` and `esp32-s3-n16r8`; it covers the frozen §8.5 resource
   workload, multi-file integrity (NFR-REL-5), STOP authority (NFR-SAFE-1),
   cold-boot safety (NFR-SAFE-3), candidate-browser install, and
   interrupted-flash recovery from an access-controlled,
   production-equivalent HTTPS deployment (BLD-20/21). C3 HIL and
   footprint/goodput gates remain open, block C3 enablement, and block v1.0.
-  Public activation then needs only the non-destructive origin/integrity smoke
-  defined by BLD-22.
+  The later supplemental production-browser run completed only the browser
+  install and interrupted-recovery rows for both profiles. The other formal
+  rows remain open; the exact public-beta activation follows the bounded
+  exception in browser-flashing §10 rather than claiming BLD-21 completion.
 
 ### 14.4 Required red matrix for pre-v1 qualification
 
@@ -1240,12 +1249,12 @@ Design element → satisfied requirement IDs. Each `FR-*` block has at least one
 - **R2 — Frozen→native trigger point.** Which paths move to C, and on which chip the budget forces it, is undecided until HIL measurement (OI-3). The module boundaries ([§4](#4-module-design)) are drawn to make the move contract-neutral (NFR-MAINT-3).
 - **R3 — iOS/Android BLE MTU quirks.** Central platforms negotiate MTU differently and may not grant 247; the firmware must operate correctly across the negotiated MTU down to the default (FR-BLE-8). Fragmentation/reassembly is tested across an MTU matrix ([§14.1](#141-per-module-verification-approach)).
 - **R4 — Single-core C3 STOP latency.** With one core the runner and BLE/agent task time-share; STOP must still land promptly against a tight loop ([§5.2](#52-stop-delivery)). Validate on C3 HIL first ([§11](#11-per-chip-design-notes)).
-- **R5 — Candidate pins not yet selected or HIL-approved.** `versions.lock`
-  values (MicroPython v1.28.0 / ESP-IDF v5.5.1) remain proposed defaults until
-  selected as candidate-frozen inputs before the release builds and HIL
-  (OI-2). Candidate-freezing makes the input immutable; it does not approve
-  C3 compatibility or public release. A pin change creates a new candidate and
-  reruns all build, audit, deployment, and exact-profile HIL gates through
+- **R5 — v0.4.2 candidate pins are selected but not fully HIL-approved.** The
+  exact `versions.lock` values (MicroPython v1.28.0 / ESP-IDF v5.5.1) are
+  candidate-frozen for v0.4.2 (OI-2). Candidate-freezing makes the input
+  immutable; it does not approve the remaining formal matrix, C3 compatibility,
+  or a qualified release. A pin change creates a new candidate and reruns all
+  build, audit, deployment, and exact-profile HIL gates through
   `upgrade_micropython.sh` (BLD-9/19/21).
 - **R6 — PBLE/1 still DRAFT.** Opcode/UUID/status numbers are provisional until [protocol.md](../protocol.md) §2/§4 freeze (OI-4); the single constants mirror (D6) localizes the churn.
 - **R7 — Auto-run caps flag naming.** The opt-in `main.py` auto-run flag name/encoding is owned by [protocol.md §7](../protocol.md#7-hello--capabilities) and must be fixed before F-12 (OI-5).

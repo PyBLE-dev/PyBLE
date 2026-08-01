@@ -45,7 +45,10 @@ describe("self-hosted firmware activation", () => {
       .toContain("PYBLE_FLASH_SELECTION_FILE");
     expect
       .soft(script.slice(stagedBranch, build))
-      .toMatch(/deployment\s*!==\s*"public"[\s\S]*hilStatus\s*!==\s*"passed"/);
+      .toContain("const qualifiedPublic");
+    expect
+      .soft(script.slice(stagedBranch, build))
+      .toContain("const exactPublicBeta");
   });
 
   it("requires an unambiguous explicit operation to disable an active installer", () => {
@@ -90,17 +93,21 @@ describe("self-hosted firmware activation", () => {
       );
   });
 
-  it("accepts only a canonically validated all-HIL-passed public staged release", () => {
+  it("accepts only a validated qualified release or the exact attested public beta", () => {
     const stagedBranch = script.indexOf(
       "if [[ -n ${PYBLE_FIRMWARE_STAGED_ROOT:-} ]]; then",
     );
     const canonicalValidation = script.indexOf("--verify-staged", stagedBranch);
     const publicGate = script.indexOf(
-      'descriptor.deployment !== "public"',
+      'descriptor.deployment === "public"',
       stagedBranch,
     );
     const hilGate = script.indexOf(
-      'descriptor.hilStatus !== "passed"',
+      'descriptor.hilStatus === "passed"',
+      stagedBranch,
+    );
+    const betaGate = script.indexOf(
+      'descriptor.deployment === "public-beta"',
       stagedBranch,
     );
     const build = script.indexOf("NEXT_TELEMETRY_DISABLED=1 npm run check");
@@ -109,6 +116,7 @@ describe("self-hosted firmware activation", () => {
     expect(canonicalValidation).toBeGreaterThan(stagedBranch);
     expect(publicGate).toBeGreaterThan(canonicalValidation);
     expect(hilGate).toBeGreaterThan(canonicalValidation);
+    expect(betaGate).toBeGreaterThan(canonicalValidation);
     expect(hilGate).toBeLessThan(build);
     expect(script).not.toContain("PYBLE_GITHUB_REPOSITORY");
     expect(script).not.toMatch(/\bgh\s+(?:api|repo|release)\b/);

@@ -24,10 +24,13 @@ staged_firmware_root=
 firmware_evidence_root=
 upload_evidence_root=
 firmware_version=
+firmware_deployment=
 firmware_tag=
 firmware_provenance_commit=
 firmware_release_json_path=
 local_firmware_tag_object_before_build=
+local_firmware_tag_object_after_build=
+local_firmware_tag_object_before_upload=
 staged_validation_flag=--verify-staged
 
 cleanup_firmware_evidence() {
@@ -104,6 +107,21 @@ verify_firmware_tree_parity() {
     fi
 }
 
+require_firmware_release_inputs() {
+    if [[ -z ${PYBLE_FIRMWARE_LICENSE_EVIDENCE_DIR:-} ]]; then
+        printf 'Refusing firmware activation: PYBLE_FIRMWARE_LICENSE_EVIDENCE_DIR is required.\n' >&2
+        exit 65
+    fi
+    if [[ -z ${PYBLE_FIRMWARE_LICENSE_BUILD_ROOT:-} ]]; then
+        printf 'Refusing firmware activation: PYBLE_FIRMWARE_LICENSE_BUILD_ROOT is required.\n' >&2
+        exit 65
+    fi
+    if [[ -z ${PYBLE_FIRMWARE_SOURCE_ROOT:-} ]]; then
+        printf 'Refusing firmware activation: PYBLE_FIRMWARE_SOURCE_ROOT is required.\n' >&2
+        exit 65
+    fi
+}
+
 verify_local_firmware_tag() {
     local expected_tag_object=${1:-}
     local tag_ref="refs/tags/${firmware_tag}"
@@ -153,15 +171,6 @@ verify_local_firmware_tag() {
 }
 
 if [[ -n ${PYBLE_FIRMWARE_STAGED_ROOT:-} ]]; then
-    if [[ -z ${PYBLE_FIRMWARE_LICENSE_EVIDENCE_DIR:-} ]]; then
-        printf 'Refusing public firmware activation: PYBLE_FIRMWARE_LICENSE_EVIDENCE_DIR is required.\n' >&2
-        exit 65
-    fi
-    if [[ -z ${PYBLE_FIRMWARE_LICENSE_BUILD_ROOT:-} ]]; then
-        printf 'Refusing public firmware activation: PYBLE_FIRMWARE_LICENSE_BUILD_ROOT is required.\n' >&2
-        exit 65
-    fi
-
     staged_firmware_root=$(
         cd -- "${PYBLE_FIRMWARE_STAGED_ROOT}"
         pwd -P
@@ -169,14 +178,36 @@ if [[ -n ${PYBLE_FIRMWARE_STAGED_ROOT:-} ]]; then
     staged_selection="${staged_firmware_root}/.pyble-firmware-release-selection.json"
     test -f "${staged_selection}"
     test -d "${staged_firmware_root}/firmware"
+    firmware_deployment=$(
+        node -e '
+          const { readFileSync } = require("node:fs");
+          const descriptor = JSON.parse(readFileSync(process.argv[1], "utf8"));
+          if (!["public", "candidate", "public-beta"].includes(descriptor.deployment)) {
+            throw new Error("staged firmware deployment is invalid");
+          }
+          process.stdout.write(descriptor.deployment);
+        ' "${staged_selection}"
+    )
+    require_firmware_release_inputs
     PYBLE_FIRMWARE_STAGED_ROOT="${staged_firmware_root}" \
         node "${web_directory}/scripts/stage-firmware-release.js" \
         --verify-staged
     node -e '
       const { readFileSync } = require("node:fs");
       const descriptor = JSON.parse(readFileSync(process.argv[1], "utf8"));
-      if (descriptor.deployment !== "public" || descriptor.hilStatus !== "passed") {
-        throw new Error("The public VPS accepts only an all-HIL-passed public release");
+      const qualifiedPublic =
+        descriptor.deployment === "public" &&
+        descriptor.hilStatus === "passed" &&
+        descriptor.accessControlled === false;
+      const exactPublicBeta =
+        descriptor.deployment === "public-beta" &&
+        descriptor.version === "0.4.2" &&
+        descriptor.hilStatus === "pending" &&
+        descriptor.accessControlled === false &&
+        descriptor.releaseJson?.sha256 ===
+          "5d1b0db8c4b90cccf054cd244530afb3b9112d489aa02f7c5da650e92161acde";
+      if (!qualifiedPublic && !exactPublicBeta) {
+        throw new Error("The public VPS accepts only a qualified public release or the exact attested public beta");
       }
     ' "${staged_selection}"
 
@@ -307,18 +338,37 @@ REMOTE
                   const { readFileSync } = require("node:fs");
                   const descriptor = JSON.parse(readFileSync(process.argv[1], "utf8"));
                   const semver = /^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
+                  const qualifiedPublic =
+                    descriptor.deployment === "public" &&
+                    descriptor.hilStatus === "passed" &&
+                    descriptor.accessControlled === false;
+                  const exactPublicBeta =
+                    descriptor.deployment === "public-beta" &&
+                    descriptor.version === "0.4.2" &&
+                    descriptor.hilStatus === "pending" &&
+                    descriptor.accessControlled === false &&
+                    descriptor.releaseJson?.sha256 ===
+                      "5d1b0db8c4b90cccf054cd244530afb3b9112d489aa02f7c5da650e92161acde";
                   if (
-                    descriptor.deployment !== "public" ||
-                    descriptor.hilStatus !== "passed" ||
-                    descriptor.accessControlled !== false ||
+                    (!qualifiedPublic && !exactPublicBeta) ||
                     typeof descriptor.version !== "string" ||
                     !semver.test(descriptor.version)
                   ) {
-                    throw new Error("The preserved selector is not an unrestricted passed public release");
+                    throw new Error("The preserved selector is not an unrestricted qualified public release or the exact public beta");
                   }
                   process.stdout.write(descriptor.version);
                 ' "${preserved_selection}"
             )
+            firmware_deployment=$(
+                node -e '
+                  const { readFileSync } = require("node:fs");
+                  const descriptor = JSON.parse(readFileSync(process.argv[1], "utf8"));
+                  process.stdout.write(descriptor.deployment);
+                ' "${preserved_selection}"
+            )
+            if [[ "${firmware_deployment}" == public-beta ]]; then
+                require_firmware_release_inputs
+            fi
             (
                 cd -- "${preserved_staged_root}/firmware"
                 ssh -o BatchMode=yes "${deploy_target}" \
@@ -459,7 +509,7 @@ if [[ -n "${staged_firmware_root}" ]]; then
     install -m 0644 \
         "${staged_selection}" \
         out/.pyble-firmware-release-selection.json
-    readonly local_firmware_tag_object_after_build=$(
+    local_firmware_tag_object_after_build=$(
         verify_local_firmware_tag "${local_firmware_tag_object_before_build}"
     )
 fi
@@ -497,7 +547,7 @@ if [[ -n "${staged_firmware_root}" ]]; then
         "${staged_firmware_root}/firmware" \
         "${web_directory}/out/firmware" \
         "final packaged website firmware"
-    readonly local_firmware_tag_object_before_upload=$(
+    local_firmware_tag_object_before_upload=$(
         verify_local_firmware_tag "${local_firmware_tag_object_after_build}"
     )
 fi
@@ -1106,6 +1156,100 @@ if [[ "${not_found_status}" != 404 ]]; then
         "${not_found_status}" >&2
     exit 66
 fi
+
+retired_public_asset_paths=(
+    /social/pyble-beta-og-1200x630.png
+    /social/pyble-beta-og-1200x630.svg
+)
+retired_public_asset_methods=( GET HEAD )
+retired_public_asset_index=0
+for retired_public_asset_path in "${retired_public_asset_paths[@]}"; do
+    for retired_public_asset_method in "${retired_public_asset_methods[@]}"; do
+        retired_public_asset_headers="${smoke_root}/retired-public-asset-${retired_public_asset_index}-${retired_public_asset_method}.headers"
+        retired_public_asset_curl_mode=()
+        if [[ "${retired_public_asset_method}" == HEAD ]]; then
+            retired_public_asset_curl_mode=( --head )
+        fi
+        retired_public_asset_status=$(
+            curl --silent --show-error --max-time 30 \
+                --location --max-redirs 0 --proto '=https' \
+                "${retired_public_asset_curl_mode[@]}" \
+                --dump-header "${retired_public_asset_headers}" \
+                --output /dev/null \
+                --write-out '%{http_code}' \
+                "https://pyble.dev${retired_public_asset_path}"
+        )
+        if [[ "${retired_public_asset_status}" != 404 ]]; then
+            printf 'Retired public asset smoke failed for %s %s: expected 404, received %s.\n' \
+                "${retired_public_asset_method}" \
+                "${retired_public_asset_path}" \
+                "${retired_public_asset_status}" >&2
+            exit 66
+        fi
+        retired_public_asset_normalized_headers="${retired_public_asset_headers}.normalized"
+        tr -d '\r' < "${retired_public_asset_headers}" > \
+            "${retired_public_asset_normalized_headers}"
+        if ! grep -Eiq '^Cache-Control: *no-store *$' \
+            "${retired_public_asset_normalized_headers}"; then
+            printf 'Retired public asset smoke failed for %s %s: Cache-Control is not no-store.\n' \
+                "${retired_public_asset_method}" \
+                "${retired_public_asset_path}" >&2
+            exit 66
+        fi
+    done
+    retired_public_asset_index=$((retired_public_asset_index + 1))
+done
+
+firmware_not_found_paths=(
+    /firmware/not-found-smoke
+    /firmware/v0.4.1/release.json
+    /firmware/v0.4.1/esp32-4mb/manifest.json
+)
+if [[ "${expected_installer_state}" == active ]]; then
+    selected_firmware_root=${firmware_release_json_path%/release.json}
+    test "${selected_firmware_root}" != "${firmware_release_json_path}"
+    firmware_not_found_paths+=(
+        "${selected_firmware_root}/esp32-c3-4mb/manifest.json"
+    )
+fi
+firmware_not_found_methods=( GET HEAD )
+firmware_not_found_index=0
+for firmware_not_found_path in "${firmware_not_found_paths[@]}"; do
+    for firmware_not_found_method in "${firmware_not_found_methods[@]}"; do
+        firmware_not_found_headers="${smoke_root}/firmware-not-found-${firmware_not_found_index}-${firmware_not_found_method}.headers"
+        firmware_not_found_curl_mode=()
+        if [[ "${firmware_not_found_method}" == HEAD ]]; then
+            firmware_not_found_curl_mode=( --head )
+        fi
+        firmware_not_found_status=$(
+            curl --silent --show-error --max-time 30 \
+                --location --max-redirs 0 --proto '=https' \
+                "${firmware_not_found_curl_mode[@]}" \
+                --dump-header "${firmware_not_found_headers}" \
+                --output /dev/null \
+                --write-out '%{http_code}' \
+                "https://pyble.dev${firmware_not_found_path}"
+        )
+        if [[ "${firmware_not_found_status}" != 404 ]]; then
+            printf 'Firmware 404 smoke failed for %s %s: expected 404, received %s.\n' \
+                "${firmware_not_found_method}" \
+                "${firmware_not_found_path}" \
+                "${firmware_not_found_status}" >&2
+            exit 66
+        fi
+        firmware_not_found_normalized_headers="${firmware_not_found_headers}.normalized"
+        tr -d '\r' < "${firmware_not_found_headers}" > \
+            "${firmware_not_found_normalized_headers}"
+        if ! grep -Eiq '^Cache-Control: *no-store *$' \
+            "${firmware_not_found_normalized_headers}"; then
+            printf 'Firmware 404 smoke failed for %s %s: Cache-Control is not no-store.\n' \
+                "${firmware_not_found_method}" \
+                "${firmware_not_found_path}" >&2
+            exit 66
+        fi
+    done
+    firmware_not_found_index=$((firmware_not_found_index + 1))
+done
 
 confirm_activation
 trap - ERR

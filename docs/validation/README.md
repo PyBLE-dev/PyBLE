@@ -8,6 +8,14 @@ Pre-publication records are retained only when their provenance is explicitly
 described; new releases must be regenerated from commits in the canonical
 public repository.
 
+`browser-flashing/v0.4.2-production.md` is the human-readable post-release
+attestation for the supplemental production-browser installation and
+interrupted-flash recovery run on the two enabled v0.4.2 profiles. Its
+companion `browser-flashing/v0.4.2-production.json` is the public, redacted
+machine-readable record. They support only the scope stated in those records
+and do not replace the formal final-candidate HIL, OI-1 resource, app, or PBLE/1
+qualification matrices.
+
 The retained firmware 0.4.1 OI-1 record was produced from the archived private
 development history. Its source identifier is deliberately not resolvable in
 this fresh public history. It documents the legacy release baseline and must

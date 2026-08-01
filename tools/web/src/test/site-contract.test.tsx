@@ -2,7 +2,8 @@
 // Part of PyBLE (https://pyble.dev) — see /LICENSE.
 
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { render, screen, within } from "@testing-library/react";
@@ -15,7 +16,17 @@ import PrivacyPage, { metadata as privacyMetadata } from "@/app/privacy/page";
 import SupportPage, { metadata as supportMetadata } from "@/app/support/page";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
-import { initialFirmwareTargets, navigation, siteConfig } from "@/lib/site";
+import {
+  firmwareTargetsForRelease,
+  initialFirmwareTargets,
+  navigation,
+  siteConfig,
+} from "@/lib/site";
+import {
+  passedPublicFirmwareRelease,
+  pendingCandidateFirmwareRelease,
+  publicBetaFirmwareRelease,
+} from "@/test/fixtures/firmware-release";
 
 describe("public-site contract", () => {
   it("keeps pyble.dev canonical and presents the four launch routes", () => {
@@ -77,8 +88,8 @@ describe("public-site contract", () => {
   });
 
   it("publishes a real-app large social card and local TestFlight card", async () => {
-    const socialPngName = "pyble-beta-og-7e7e037d-1200x630.png";
-    const socialSvgName = "pyble-beta-og-48d458bd-1200x630.svg";
+    const socialPngName = "pyble-beta-og-277eee8a-1200x630.png";
+    const socialSvgName = "pyble-beta-og-b47b6d10-1200x630.svg";
     const socialUrl = `https://pyble.dev/social/${socialPngName}`;
     expect(rootMetadata.openGraph?.images).toEqual([
       {
@@ -115,8 +126,8 @@ describe("public-site contract", () => {
     ]);
     expect(socialSvg).toContain("One-time USB setup.");
     expect(socialSvg).toContain("Everyday coding over BLE.");
-    expect(socialSvg).toContain("FIRMWARE HIL PENDING");
-    expect(socialSvg).not.toContain("WEB FLASHER");
+    expect(socialSvg).toContain("WEB FLASHING VALIDATED");
+    expect(socialSvg).not.toContain("FIRMWARE HIL PENDING");
     const socialPngSha256 = createHash("sha256")
       .update(socialPng)
       .digest("hex");
@@ -124,10 +135,10 @@ describe("public-site contract", () => {
       .update(socialSvg)
       .digest("hex");
     expect(socialPngSha256).toBe(
-      "7e7e037d9bd2e58e2e66f516bfd6f1b753bda472c402b8130f8a8a6dd8f19ba9",
+      "277eee8ae859c3e26444df830cf1b03f624f2be1f1524bc3246ce2d946332023",
     );
     expect(socialSvgSha256).toBe(
-      "48d458bd5a6ee1e754bad7d7f9a7261361c0d8a3b13c4fc9cc8a9f5670e04b5d",
+      "b47b6d10d6de3e16a5687680d8f34f115f9a276d0fdbde06051751de2270ddfd",
     );
     expect(socialPngName).toContain(socialPngSha256.slice(0, 8));
     expect(socialSvgName).toContain(socialSvgSha256.slice(0, 8));
@@ -159,7 +170,7 @@ describe("public-site contract", () => {
     );
   });
 
-  it("states the vendor-neutral vision and the truthful pre-activation firmware state", () => {
+  it("states the vendor-neutral vision without claiming unavailable firmware is active", () => {
     render(<HomePage />);
 
     expect(
@@ -173,12 +184,12 @@ describe("public-site contract", () => {
         /designed for boards that run MicroPython and support Bluetooth Low Energy/i,
       ),
     ).toBeInTheDocument();
-    expect(screen.getByText(/public v0\.4\.2 firmware/i)).toHaveTextContent(
-      /pending HIL for the exact esp32-4mb and esp32-s3-n16r8 profiles/i,
-    );
-    expect(screen.getByText(/public v0\.4\.2 firmware/i)).toHaveTextContent(
-      /public browser installer stays unavailable until both exact profiles pass HIL/i,
-    );
+    expect(
+      screen.getAllByText(/firmware installer is currently unavailable/i),
+    ).toHaveLength(2);
+    expect(
+      screen.queryByText(/unqualified firmware beta is available/i),
+    ).not.toBeInTheDocument();
     expect(
       screen.getByText(
         /ESP32-C3 and more microcontroller families remain planned/i,
@@ -332,14 +343,14 @@ describe("public-site contract", () => {
         id: "esp32-4mb",
         target: "Classic ESP32",
         constraint: "4 MiB external SPI flash · no PSRAM assumed",
-        status: "v0.4.2 HIL pending · installer unavailable",
+        status: "Installer unavailable",
         planned: false,
       },
       {
         id: "esp32-s3-n16r8",
         target: "ESP32-S3 N16R8",
         constraint: "16 MiB flash · 8 MiB Octal PSRAM",
-        status: "v0.4.2 HIL pending · installer unavailable",
+        status: "Installer unavailable",
         planned: false,
       },
       {
@@ -350,6 +361,22 @@ describe("public-site contract", () => {
         planned: true,
       },
     ]);
+    expect(
+      firmwareTargetsForRelease(passedPublicFirmwareRelease)
+        .filter(({ planned }) => !planned)
+        .map(({ status }) => status),
+    ).toEqual([
+      "v0.4.2 qualified public release",
+      "v0.4.2 qualified public release",
+    ]);
+    expect(
+      firmwareTargetsForRelease(pendingCandidateFirmwareRelease)
+        .filter(({ planned }) => !planned)
+        .map(({ status }) => status),
+    ).toEqual([
+      "v0.4.2 protected candidate · HIL pending",
+      "v0.4.2 protected candidate · HIL pending",
+    ]);
 
     render(<HomePage />);
 
@@ -358,6 +385,111 @@ describe("public-site contract", () => {
       expect(targetCard).toHaveTextContent(target.target);
       expect(targetCard).toHaveTextContent(target.constraint);
       expect(targetCard).toHaveTextContent(target.status);
+    }
+    expect(screen.getByText(/provision once/i).closest("li")).toHaveTextContent(
+      /check firmware status.*installer is currently unavailable/i,
+    );
+    expect(
+      screen.getByRole("link", { name: /open firmware installer/i }),
+    ).toHaveAttribute("href", "/flash");
+  });
+
+  it("shows the scoped hardware-tested beta claims only when its build selector is active", async () => {
+    const selectionRoot = await mkdtemp(
+      join(tmpdir(), "pyble-site-beta-selection-"),
+    );
+    const selectionFile = join(selectionRoot, "selection.json");
+    await writeFile(
+      selectionFile,
+      JSON.stringify(publicBetaFirmwareRelease),
+      "utf8",
+    );
+    const previousSelection = process.env.PYBLE_FLASH_SELECTION_FILE;
+    process.env.PYBLE_FLASH_SELECTION_FILE = selectionFile;
+
+    try {
+      const home = render(<HomePage />);
+      expect(screen.getByText(/public v0\.4\.2 firmware/i)).toHaveTextContent(
+        /hardware-tested beta for the exact esp32-4mb and esp32-s3-n16r8 profiles/i,
+      );
+      expect(screen.getByText(/public v0\.4\.2 firmware/i)).toHaveTextContent(
+        /production chrome install.*interrupted-flash recovery passed on both exact profiles.*complete release qualification continues/i,
+      );
+      for (const target of firmwareTargetsForRelease(
+        publicBetaFirmwareRelease,
+      ).filter(({ planned }) => !planned)) {
+        expect(screen.getByText(target.id).closest("div")).toHaveTextContent(
+          "v0.4.2 hardware-tested beta · browser install/recovery passed · release qualification pending",
+        );
+      }
+      home.unmount();
+
+      render(<SupportPage />);
+      expect(
+        screen.getByText(/v0\.4\.2 hardware-tested beta is available/i),
+      ).toHaveTextContent(
+        /production chrome install.*interrupted-flash recovery passed on both exact profiles.*complete release qualification continues/i,
+      );
+      expect(screen.queryByText(/full HIL pending/i)).toBeNull();
+      expect(screen.queryByText(/use at your own risk/i)).toBeNull();
+    } finally {
+      if (previousSelection === undefined) {
+        delete process.env.PYBLE_FLASH_SELECTION_FILE;
+      } else {
+        process.env.PYBLE_FLASH_SELECTION_FILE = previousSelection;
+      }
+      await rm(selectionRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps qualified and protected-candidate copy distinct", async () => {
+    const selectionRoot = await mkdtemp(
+      join(tmpdir(), "pyble-site-release-selection-"),
+    );
+    const selectionFile = join(selectionRoot, "selection.json");
+    const previousSelection = process.env.PYBLE_FLASH_SELECTION_FILE;
+    process.env.PYBLE_FLASH_SELECTION_FILE = selectionFile;
+
+    try {
+      await writeFile(
+        selectionFile,
+        JSON.stringify(passedPublicFirmwareRelease),
+        "utf8",
+      );
+      const qualifiedHome = render(<HomePage />);
+      expect(
+        screen.getByText(/qualified public v0\.4\.2 firmware/i),
+      ).toHaveTextContent(
+        /available for the exact esp32-4mb and esp32-s3-n16r8 profiles/i,
+      );
+      qualifiedHome.unmount();
+      const qualifiedSupport = render(<SupportPage />);
+      expect(
+        screen.getByText(/qualified v0\.4\.2 firmware is available/i),
+      ).toBeInTheDocument();
+      qualifiedSupport.unmount();
+
+      await writeFile(
+        selectionFile,
+        JSON.stringify(pendingCandidateFirmwareRelease),
+        "utf8",
+      );
+      const candidateHome = render(<HomePage />);
+      expect(
+        screen.getByText(/protected candidate v0\.4\.2 is staged/i),
+      ).toBeInTheDocument();
+      candidateHome.unmount();
+      render(<SupportPage />);
+      expect(
+        screen.getByText(/firmware installer is currently unavailable/i),
+      ).toBeInTheDocument();
+    } finally {
+      if (previousSelection === undefined) {
+        delete process.env.PYBLE_FLASH_SELECTION_FILE;
+      } else {
+        process.env.PYBLE_FLASH_SELECTION_FILE = previousSelection;
+      }
+      await rm(selectionRoot, { recursive: true, force: true });
     }
   });
 
@@ -375,7 +507,7 @@ describe("public-site contract", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        /public install action remains unavailable until the final bytes pass hardware validation on both exact current candidate profiles/i,
+        /public install action remains unavailable until the final bytes pass hardware validation on both exact current release profiles/i,
       ),
     ).toBeInTheDocument();
     expect(screen.getByText(/esp32-s3-n16r8/i)).toBeInTheDocument();
@@ -542,9 +674,7 @@ describe("public-site contract", () => {
       screen.getByText(/iPadOS or Android name\/version/i),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(
-        /public installer is unavailable while v0\.4\.2 HIL runs for esp32-4mb and esp32-s3-n16r8/i,
-      ),
+      screen.getByText(/firmware installer is currently unavailable/i),
     ).toBeInTheDocument();
     expect(
       screen.getByText(/ESP32-C3 is not currently available/i),

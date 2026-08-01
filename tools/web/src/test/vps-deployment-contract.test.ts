@@ -89,23 +89,50 @@ describe("Cloudflare-fronted VPS deployment", () => {
     expect(headers).toContain("Strict-Transport-Security");
   });
 
-  it("quarantines the burned pre-public firmware candidate", async () => {
+  it("keeps firmware 404 responses non-cacheable through the shared error page", async () => {
     const config = await readFile(
       join(deploymentRoot, "nginx", "10-pyble-dev-https.conf"),
       "utf8",
     );
-    const quarantine =
-      /location \^~ \/firmware\/v0\.4\.1\/\s*\{([\s\S]*?)\n\s*\}/.exec(
-        config,
-      )?.[1];
-    const quarantineIndex = config.indexOf("location ^~ /firmware/v0.4.1/");
-    const generalFirmwareIndex = config.indexOf("location ^~ /firmware/ {");
 
-    expect(quarantine).toBeDefined();
-    expect.soft(quarantine).toMatch(/Cache-Control\s+"no-store"/);
-    expect.soft(quarantine).toMatch(/return\s+404/);
-    expect(quarantineIndex).toBeGreaterThan(-1);
-    expect(quarantineIndex).toBeLessThan(generalFirmwareIndex);
+    expect(config).toMatch(
+      /map \$request_uri \$pyble_not_found_cache_control\s*\{[\s\S]*?~\^\/firmware\/ "no-store";[\s\S]*?default "no-cache, no-transform";[\s\S]*?\}/,
+    );
+    expect(config).toMatch(
+      /location = \/404\.html\s*\{[\s\S]*?add_header Cache-Control \$pyble_not_found_cache_control always;/,
+    );
+  });
+
+  it("keeps retired unversioned social-card 404 responses out of caches", async () => {
+    const [config, script] = await Promise.all([
+      readFile(
+        join(deploymentRoot, "nginx", "10-pyble-dev-https.conf"),
+        "utf8",
+      ),
+      readFile(join(deploymentRoot, "vps", "deploy.sh"), "utf8"),
+    ]);
+
+    expect(config).toContain(
+      '~^/social/pyble-beta-og-1200x630\\.(?:png|svg)(?:\\?|$) "no-store";',
+    );
+    expect(script).toContain("retired_public_asset_paths=(");
+    expect(script).toContain("/social/pyble-beta-og-1200x630.png");
+    expect(script).toContain("/social/pyble-beta-og-1200x630.svg");
+    expect(script).toContain("retired_public_asset_methods=( GET HEAD )");
+    expect(script).toMatch(/retired_public_asset_status[\s\S]*?!= 404/);
+    expect(script).toContain("Cache-Control: *no-store");
+  });
+
+  it("routes the exact v0.4.2 public beta through the immutable firmware boundary", async () => {
+    const config = await readFile(
+      join(deploymentRoot, "nginx", "10-pyble-dev-https.conf"),
+      "utf8",
+    );
+    expect(config).not.toContain("location ^~ /firmware/v0.4.2/");
+    expect(config).not.toContain("@burned_firmware_candidate");
+    expect(config).toMatch(
+      /location \^~ \/firmware\/\s*\{[\s\S]*?alias \/srv\/pyble\/firmware\//,
+    );
   });
 
   it("preserves path and query while canonicalizing every alternate host", async () => {
@@ -158,6 +185,36 @@ describe("Cloudflare-fronted VPS deployment", () => {
     expect(script).not.toContain("--chmod=");
     expect(script).not.toMatch(/\b(?:\d{1,3}\.){3}\d{1,3}\b/);
     expect(script).not.toMatch(/BEGIN (?:RSA |OPENSSH )?PRIVATE KEY/);
+  });
+
+  it("accepts only the exact unrestricted pending public beta in the activation path", async () => {
+    const [script, staging] = await Promise.all([
+      readFile(join(deploymentRoot, "vps", "deploy.sh"), "utf8"),
+      readFile(
+        join(process.cwd(), "scripts", "stage-firmware-release.js"),
+        "utf8",
+      ),
+    ]);
+
+    expect(script).toContain('descriptor.deployment === "public-beta"');
+    expect(script).toContain('descriptor.hilStatus === "pending"');
+    expect(script).toContain("descriptor.accessControlled === false");
+    expect(script).toContain(
+      "5d1b0db8c4b90cccf054cd244530afb3b9112d489aa02f7c5da650e92161acde",
+    );
+    expect(staging).toMatch(
+      /public-beta[\s\S]*?--audited-candidate[\s\S]*?--license-evidence-dir[\s\S]*?--license-build-root/,
+    );
+    expect(script).toContain("PYBLE_FIRMWARE_LICENSE_EVIDENCE_DIR");
+    expect(script).toContain("PYBLE_FIRMWARE_LICENSE_BUILD_ROOT");
+    expect(script).toContain("PYBLE_FIRMWARE_SOURCE_ROOT");
+    expect(script).toMatch(
+      /if \[\[ "\$\{firmware_deployment\}" == public-beta \]\]; then\s+require_firmware_release_inputs\s+fi/,
+    );
+    expect(script).toContain("local_firmware_tag_object_before_build");
+    expect(script).not.toMatch(
+      /public-beta[\s\S]{0,180}(?:skip|does not require)[\s\S]{0,180}annotated tag/i,
+    );
   });
 
   it("retains deployment-evidence cleanup after installing the smoke-test EXIT trap", async () => {
@@ -391,6 +448,34 @@ describe("Cloudflare-fronted VPS deployment", () => {
     expect(publicRouteSmoke).toContain(
       "Cache-Control: *no-cache, *no-transform",
     );
+  });
+
+  it("requires missing firmware and deferred C3 smoke responses to be 404 no-store", async () => {
+    const script = await readFile(
+      join(deploymentRoot, "vps", "deploy.sh"),
+      "utf8",
+    );
+    const smokeStart = script.indexOf("firmware_not_found_paths=(");
+    const smokeEnd = script.indexOf("confirm_activation", smokeStart);
+    const firmwareNotFoundSmoke = script.slice(smokeStart, smokeEnd);
+
+    expect(smokeStart).toBeGreaterThan(-1);
+    expect(smokeEnd).toBeGreaterThan(smokeStart);
+    expect(firmwareNotFoundSmoke).toContain("/firmware/not-found-smoke");
+    expect(firmwareNotFoundSmoke).toContain("/firmware/v0.4.1/release.json");
+    expect(firmwareNotFoundSmoke).toContain(
+      "/firmware/v0.4.1/esp32-4mb/manifest.json",
+    );
+    expect(firmwareNotFoundSmoke).toContain(
+      "firmware_not_found_methods=( GET HEAD )",
+    );
+    expect(firmwareNotFoundSmoke).toContain("esp32-c3-4mb/manifest.json");
+    expect(firmwareNotFoundSmoke).toContain("--dump-header");
+    expect(firmwareNotFoundSmoke).toContain("--write-out '%{http_code}'");
+    expect(firmwareNotFoundSmoke).toMatch(
+      /firmware_not_found_status[\s\S]*?!= 404/,
+    );
+    expect(firmwareNotFoundSmoke).toContain("Cache-Control: *no-store");
   });
 
   it("freezes one clean full source commit through the completed website build", async () => {

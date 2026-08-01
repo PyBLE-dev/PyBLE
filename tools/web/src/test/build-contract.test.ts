@@ -10,7 +10,10 @@ import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 
 import { firmwareReleaseSelectedAtBuild } from "@/lib/firmware-release-selection";
-import { pendingPublicFirmwareRelease } from "@/test/fixtures/firmware-release";
+import {
+  pendingPublicFirmwareRelease,
+  publicBetaFirmwareRelease,
+} from "@/test/fixtures/firmware-release";
 
 const execFile = promisify(execFileCallback);
 
@@ -169,6 +172,38 @@ describe("production build contract", () => {
     }
   });
 
+  it("accepts only the exact attested public-beta selector at the build boundary", async () => {
+    const selectionRoot = await mkdtemp(
+      join(tmpdir(), "pyble-beta-selection-"),
+    );
+    const selectionFile = join(selectionRoot, "selection.json");
+    await writeFile(
+      selectionFile,
+      JSON.stringify(publicBetaFirmwareRelease),
+      "utf8",
+    );
+
+    const previousSelection = process.env.PYBLE_FLASH_SELECTION_FILE;
+    process.env.PYBLE_FLASH_SELECTION_FILE = selectionFile;
+    try {
+      expect(firmwareReleaseSelectedAtBuild()).toEqual(
+        publicBetaFirmwareRelease,
+      );
+
+      const altered = structuredClone(publicBetaFirmwareRelease);
+      altered.releaseJson.sha256 = "0".repeat(64);
+      await writeFile(selectionFile, JSON.stringify(altered), "utf8");
+      expect(() => firmwareReleaseSelectedAtBuild()).toThrow(/public beta/i);
+    } finally {
+      if (previousSelection === undefined) {
+        delete process.env.PYBLE_FLASH_SELECTION_FILE;
+      } else {
+        process.env.PYBLE_FLASH_SELECTION_FILE = previousSelection;
+      }
+      await rm(selectionRoot, { recursive: true, force: true });
+    }
+  });
+
   it("requires explicit server-side build inputs for protected candidate staging", async () => {
     const [packageJson, stagingSource] = await Promise.all([
       readFile(join(process.cwd(), "package.json"), "utf8").then(
@@ -215,5 +250,19 @@ describe("production build contract", () => {
     expect(authoredInstallerSources.join("\n")).not.toMatch(
       /https?:\/\/(?:unpkg\.com|cdn\.jsdelivr\.net|esm\.sh)/i,
     );
+  });
+
+  it("gives an active public beta truthful page-level context", async () => {
+    const page = await readFile(
+      join(process.cwd(), "src", "app", "flash", "page.tsx"),
+      "utf8",
+    );
+
+    expect(page).toContain('release?.deployment === "public-beta"');
+    expect(page).toMatch(/hardware-tested firmware beta/i);
+    expect(page).toMatch(/production chrome.*install/i);
+    expect(page).toMatch(/interrupted-flash recovery.*both exact profiles/i);
+    expect(page).toMatch(/complete release qualification.*pending/i);
+    expect(page).not.toMatch(/full HIL pending|use at your own risk/i);
   });
 });

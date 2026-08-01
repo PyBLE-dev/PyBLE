@@ -3,7 +3,7 @@
 
 import { createHash } from "node:crypto";
 
-export const firmwareVersion = "0.4.1";
+export const firmwareVersion = "0.4.2";
 export const firmwareOrigin = "https://pyble.dev";
 
 export const firmwareProfiles = [
@@ -11,8 +11,8 @@ export const firmwareProfiles = [
     id: "esp32-4mb",
     label: "ESP32 · 4 MiB flash",
     chipFamily: "ESP32",
-    manifestPath: "/firmware/v0.4.1/esp32-4mb/manifest.json",
-    firmwarePath: "/firmware/v0.4.1/esp32-4mb/firmware.bin",
+    manifestPath: "/firmware/v0.4.2/esp32-4mb/manifest.json",
+    firmwarePath: "/firmware/v0.4.2/esp32-4mb/firmware.bin",
     offset: 4096,
     siliconRevision: {
       minimumFull: 0,
@@ -29,8 +29,8 @@ export const firmwareProfiles = [
     id: "esp32-s3-n16r8",
     label: "ESP32-S3 · N16R8",
     chipFamily: "ESP32-S3",
-    manifestPath: "/firmware/v0.4.1/esp32-s3-n16r8/manifest.json",
-    firmwarePath: "/firmware/v0.4.1/esp32-s3-n16r8/firmware.bin",
+    manifestPath: "/firmware/v0.4.2/esp32-s3-n16r8/manifest.json",
+    firmwarePath: "/firmware/v0.4.2/esp32-s3-n16r8/firmware.bin",
     offset: 0,
     siliconRevision: {
       minimumFull: 0,
@@ -46,7 +46,7 @@ export const firmwareProfiles = [
 ] as const;
 
 export type FirmwareProfileId = (typeof firmwareProfiles)[number]["id"];
-export type FirmwareDeployment = "public" | "candidate";
+export type FirmwareDeployment = "public" | "candidate" | "public-beta";
 export type HilStatus = "pending" | "passed";
 
 interface TestArtifact {
@@ -708,6 +708,15 @@ export const passedPublicFirmwareRelease =
 export const pendingPublicFirmwareRelease = createFirmwareReleaseFixture({
   hilStatus: "pending",
 }).descriptor;
+export const publicBetaFirmwareRelease = {
+  ...structuredClone(pendingPublicFirmwareRelease),
+  deployment: "public-beta",
+  accessControlled: false,
+  releaseJson: {
+    path: "/firmware/v0.4.2/release.json",
+    sha256: "5d1b0db8c4b90cccf054cd244530afb3b9112d489aa02f7c5da650e92161acde",
+  },
+} satisfies FirmwareReleaseDescriptor;
 export const pendingCandidateFirmwareRelease = createFirmwareReleaseFixture({
   deployment: "candidate",
   accessControlled: true,

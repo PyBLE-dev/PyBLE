@@ -1,6 +1,6 @@
 # PyBLE ESP32-Family Browser Flashing and Release Bundle
 
-Status: **FROZEN v1.27** · Owner: project maintainer · Frozen:
+Status: **FROZEN v1.28** · Owner: project maintainer · Frozen:
 2026-07-31 (`[docs]`; pre-v1 two-profile release eligibility and explicit
 C3 deferral; evidence-derived resource policy and exact HIL V2 records;
 pre-policy two-root baseline-input staging and mechanical baseline/policy
@@ -20,7 +20,8 @@ component-owned linked outputs, lexical exact-path validation, nested-build
 logical paths, shell-free compiler/linker command receipts, executable
 version-matched recovery-command syntax, and the canonical pre-v1 same-origin
 publication channel with an optional byte-identical mirror, plus bounded
-completed-HIL report assembly, on the same date)
+completed-HIL report assembly, plus the exact one-version unqualified public
+beta exception, on the same date)
 
 This document is the source of truth for the initial browser-provisioning
 release bundle. It refines
@@ -37,21 +38,23 @@ BLE and PBLE/1.
 
 ## 1. Release image profiles
 
-The v0.4.2 release candidate targets exactly these two **provisioning image
-profiles**. Neither becomes a qualified public profile until the complete
-reproducibility, license, exact-byte HIL, and activation gate passes:
+The current pre-v1 browser bundle contains exactly these two
+**provisioning image profiles**. The exact audited `v0.4.2` bytes may be offered
+only as the hardware-tested public beta defined in §10; that narrow validation
+does not make them qualified-release profiles.
+A later qualified public bundle uses the same exact profile definitions:
 
-| Profile ID | ESP Web Tools `chipFamily` | Required target configuration | ESP image silicon window (`min_chip_rev_full`…`max_chip_rev_full`) | Merge settings | Browser image and component map |
-|---|---|---|---|---|---|
-| `esp32-4mb` | `ESP32` | Classic ESP32 with 4 MiB external SPI flash; no PSRAM assumption | `0`…`399` | DIO, 40 MHz, 4 MiB | merged `firmware.bin` at `0x1000`; bootloader `0x1000`; partition table `0x8000`; application `0x10000` |
-| `esp32-s3-n16r8` | `ESP32-S3` | ESP32-S3 with 16 MiB flash and 8 MiB **Octal** PSRAM (N16R8-class) | `0`…`99` | DIO, 80 MHz, 16 MiB | merged `firmware.bin` at `0x0000`; bootloader `0x0000`; partition table `0x8000`; application `0x10000` |
+| Profile ID       | ESP Web Tools `chipFamily` | Required target configuration                                      | ESP image silicon window (`min_chip_rev_full`…`max_chip_rev_full`) | Merge settings      | Browser image and component map                                                                         |
+| ---------------- | -------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------ | ------------------- | ------------------------------------------------------------------------------------------------------- |
+| `esp32-4mb`      | `ESP32`                    | Classic ESP32 with 4 MiB external SPI flash; no PSRAM assumption   | `0`…`399`                                                          | DIO, 40 MHz, 4 MiB  | merged `firmware.bin` at `0x1000`; bootloader `0x1000`; partition table `0x8000`; application `0x10000` |
+| `esp32-s3-n16r8` | `ESP32-S3`                 | ESP32-S3 with 16 MiB flash and 8 MiB **Octal** PSRAM (N16R8-class) | `0`…`99`                                                           | DIO, 80 MHz, 16 MiB | merged `firmware.bin` at `0x0000`; bootloader `0x0000`; partition table `0x8000`; application `0x10000` |
 
 `esp32-c3-4mb` remains a known provisioning profile and an initial v1
 firmware target, with this frozen future qualification:
 
-| Deferred profile ID | ESP Web Tools `chipFamily` | Required target configuration | ESP image silicon window (`min_chip_rev_full`…`max_chip_rev_full`) | Merge settings | Browser image and component map |
-|---|---|---|---|---|---|
-| `esp32-c3-4mb` | `ESP32-C3` | ESP32-C3 revision v0.3 or newer with 4 MiB external flash; no PSRAM assumption | `3`…`199` | DIO, 80 MHz, 4 MiB | merged `firmware.bin` at `0x0000`; bootloader `0x0000`; partition table `0x8000`; application `0x10000` |
+| Deferred profile ID | ESP Web Tools `chipFamily` | Required target configuration                                                  | ESP image silicon window (`min_chip_rev_full`…`max_chip_rev_full`) | Merge settings     | Browser image and component map                                                                         |
+| ------------------- | -------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------ | ------------------ | ------------------------------------------------------------------------------------------------------- |
+| `esp32-c3-4mb`      | `ESP32-C3`                 | ESP32-C3 revision v0.3 or newer with 4 MiB external flash; no PSRAM assumption | `3`…`199`                                                          | DIO, 80 MHz, 4 MiB | merged `firmware.bin` at `0x0000`; bootloader `0x0000`; partition table `0x8000`; application `0x10000` |
 
 That deferred profile is **not** part of the current public release: it MUST
 NOT have an entry in `release.json`, a public manifest or binary directory, or
@@ -164,7 +167,7 @@ as immutable inputs to one release candidate. Candidate-freezing MUST happen
 before the two clean release builds, license audit, candidate packaging,
 protected-site staging, or HIL. It is an input-selection state only: it does
 **not** assert that the pins work on hardware and does not approve them for a
-public release. Exact-profile HIL on both current candidate profiles,
+public release. Exact-profile HIL on both current release profiles,
 `esp32-4mb` and `esp32-s3-n16r8`, remains the pre-v1 public-release approval
 gate.
 
@@ -243,6 +246,7 @@ block same-origin publication.
 ## 3. Same-origin, versioned layout
 
 The canonical public files are static and use this exact layout:
+
 ```text
 https://pyble.dev/firmware/v<version>/
   release.json
@@ -327,9 +331,7 @@ one build for its owning profile. For example,
   "builds": [
     {
       "chipFamily": "ESP32-S3",
-      "parts": [
-        { "path": "firmware.bin", "offset": 0 }
-      ]
+      "parts": [{ "path": "firmware.bin", "offset": 0 }]
     }
   ]
 }
@@ -337,7 +339,7 @@ one build for its owning profile. For example,
 
 `<version>` above is a template substitution, not literal released JSON.
 The `esp32-4mb` manifest has the same shape and exactly one `ESP32` build with
-offset `4096`. There is no C3 manifest in the current candidate. The website MUST
+offset `4096`. There is no C3 manifest in the current release. The website MUST
 set the custom element's manifest URL to the verified manifest for the selected
 profile only. It MUST NOT pass an all-family catalog to ESP Web Tools or change
 manifests after the browser has selected a serial device.
@@ -390,12 +392,12 @@ beside their metadata:
   UTC `built_at`;
 - provenance: full PyBLE commit and clean state; MicroPython ref/commit;
   ESP-IDF ref/commit; patch count; runner and compiler/tool versions;
-- one entry for each current candidate profile in the first table of §1,
+- one entry for each current release profile in the first table of §1,
   including profile ID, `chip_family`,
   flash/PSRAM requirements, flash mode/frequency, required
   `silicon_revision.minimum_full` and `silicon_revision.maximum_full` integers
   matching the §1 image window, and HIL status (`pending` for a candidate or
-  `passed` for a public bundle);
+  the exact `v0.4.2` public beta, or `passed` for a qualified public bundle);
 - one `manifest` entry per profile with its relative path, exact byte size, and
   lowercase 64-hex SHA-256;
 - one `install` entry per profile for the merged image, with relative `path`,
@@ -409,7 +411,9 @@ beside their metadata:
 
 All values are required; placeholders, `unknown`, and abbreviated commits fail
 any bundle. `pending` is accepted only on an access-controlled candidate used
-for HIL; an HIL status other than `passed` fails a public bundle.
+for HIL or the exact audited and digest-bound `v0.4.2` `public-beta` exception
+in §10; an HIL
+status other than `passed` fails every ordinary public bundle.
 `release.schema.json`
 itself is versioned and immutable beside the metadata. `SHA256SUMS` MUST use the
 conventional lowercase-hex, two-space, relative-path format and cover every
@@ -458,7 +462,7 @@ public notice.
 The conservative build audit runs against all six authoritative ESP-IDF
 descriptions: application and bootloader `project_description.json` for each
 of the three initial build targets. This preserves the v1 three-target build
-and license gate even while the pre-v1 candidate bundle targets two profiles.
+and license gate even while the pre-v1 public bundle contains two profiles.
 The released notice MUST classify as redistributed only the dependency union
 of the two packaged profiles; C3-only observations remain retained review
 evidence and MUST NOT be represented as a shipped C3 image or shipped profile.
@@ -562,6 +566,7 @@ The following resolution rules are part of that fail-closed mapping:
    A missing file, unexpected basename, alternate or sibling retained tree,
    escaped path, near-match root, nonzero generated ELF anchor, or symlinked
    input is fatal.
+
 5. A generated component archive has only a stable topology matcher in
    committed policy. An ordinary matcher contains exactly its ESP-IDF
    component name. A nested CMake archive produced below a `CONFIG_ONLY`
@@ -678,6 +683,7 @@ The following resolution rules are part of that fail-closed mapping:
    observations. Rechecking only archive/tree digests is insufficient:
    project/compile/map/link documents, metadata inputs, archive sources, direct
    outputs, and direct sources are all race-sensitive release inputs.
+
 6. An archive outside the repository and build roots is admitted only below
    one versioned toolchain root proven by the exact compile-command
    executables and the locked ESP-IDF `tools/tools.json` entry. The policy
@@ -727,6 +733,7 @@ The following resolution rules are part of that fail-closed mapping:
    only logical metadata, semantic hashes, constrained relative frontend/member
    paths, and distribution identity; they MUST NOT contain a host-absolute
    tools-home, cache, frontend, installed-root, or runtime path.
+
 7. Each raw package is matched exactly once by profile/role and its complete
    raw property set, including name, version state, download-location state,
    copyright state, declared/concluded license states, checksums, annotations,
@@ -768,6 +775,7 @@ The following resolution rules are part of that fail-closed mapping:
    share the same SPDX ID in different profiles; a union expression MUST NOT
    be invented to make unlike occurrences share one review. Any unexpected
    property, value, package, relationship, resolution, or ambiguity is fatal.
+
 8. A raw package that the pinned tool reports but that contributes no linked
    archive, compiled source, or aggregate project identity may be excluded
    from the redistribution notice only through an explicit `not-shipped`
@@ -810,6 +818,7 @@ The following resolution rules are part of that fail-closed mapping:
    independent ledger says `allow-aggregate`. The receipt binds both the
    `shipment_review` policy record and the normalized occurrence
    classifications.
+
 9. A redistributed dependency absent from the raw ESP-IDF package graph is a
    deterministic supplemental SPDX package, not misrepresented as raw tool
    output. In this release the exact frozen NeoPixel tree and the three linked
@@ -895,15 +904,16 @@ The following resolution rules are part of that fail-closed mapping:
    host-absolute path is retained. A source, metadata version, optimization
    level, module order, qstr header, `.mpy`, generator, compiler, architecture,
    copied-board byte, or frozen C mismatch is fatal.
-9. Coverage is exact without asserting false package/archive cardinality.
-   Every observed raw package, linked archive, compiled source, frozen
-   destination, frozen source tree,
-   prebuilt blob, and compiler/runtime input is consumed by exactly one
-   resolution record; each record declares its complete many-to-many
-   package/input attribution, and aggregate packages may own no archive
-   directly only through rule 7. Every expected relationship is present, every
-   declared stable matcher is observed exactly where applicable, and no
-   unexpected record is accepted.
+
+10. Coverage is exact without asserting false package/archive cardinality.
+    Every observed raw package, linked archive, compiled source, frozen
+    destination, frozen source tree,
+    prebuilt blob, and compiler/runtime input is consumed by exactly one
+    resolution record; each record declares its complete many-to-many
+    package/input attribution, and aggregate packages may own no archive
+    directly only through rule 7. Every expected relationship is present, every
+    declared stable matcher is observed exactly where applicable, and no
+    unexpected record is accepted.
 
 The initial runtime/input review explicitly includes `libgcc.a` and
 `libstdc++.a` under `GPL-3.0-or-later WITH GCC-exception-3.1`;
@@ -1090,7 +1100,7 @@ Automated release tests MUST cover:
 - static-export and candidate/production-origin retrieval of every versioned
   byte.
 
-One HIL record MUST be completed for each of the two exact current candidate
+One HIL record MUST be completed for each of the two exact current release
 profiles using the final, hash-locked release candidate. The report contains
 exactly one embedded JSON object marked `PYBLE_HIL_RECORDS_V2`; a V1 marker,
 an additional marker, or keys not defined below are invalid.
@@ -1109,16 +1119,16 @@ Candidate generation MUST read
 both its parsed JSON object and the lowercase SHA-256 of its exact source
 bytes. The policy object has exactly these keys:
 
-| Key | Exact value/type |
-|---|---|
-| `schema_version` | integer `1` |
-| `qualification_scope` | string `"pre-v1"` |
-| `profile_order` | exact string array `["esp32-4mb", "esp32-s3-n16r8"]` |
-| `deferred_profiles` | exact string array `["esp32-c3-4mb"]` |
-| `workload` | exact object defined below |
-| `derivation` | exact object defined below |
-| `baseline_evidence` | exact object `{path, sha256}` |
-| `profiles` | two policy-entry objects, in `profile_order` |
+| Key                   | Exact value/type                                     |
+| --------------------- | ---------------------------------------------------- |
+| `schema_version`      | integer `1`                                          |
+| `qualification_scope` | string `"pre-v1"`                                    |
+| `profile_order`       | exact string array `["esp32-4mb", "esp32-s3-n16r8"]` |
+| `deferred_profiles`   | exact string array `["esp32-c3-4mb"]`                |
+| `workload`            | exact object defined below                           |
+| `derivation`          | exact object defined below                           |
+| `baseline_evidence`   | exact object `{path, sha256}`                        |
+| `profiles`            | two policy-entry objects, in `profile_order`         |
 
 `workload` has exactly these integer/string keys and values:
 
@@ -1437,9 +1447,10 @@ requires the complete two-profile HIL matrix again.
 
 ## 10. Activation and rollback
 
-The public action progresses through `candidate` → `verified` → `published` →
-`active`. The public `pyble.dev/flash` action remains disabled while candidate
-HIL runs on the access-controlled production-equivalent HTTPS deployment. It
+The qualified public action progresses through `candidate` → `verified` →
+`published` → `active`. The public `pyble.dev/flash` action remains disabled
+while candidate HIL runs on the access-controlled production-equivalent HTTPS
+deployment. It
 is valid for that protected candidate deployment alone to expose the action
 with `hil_status: pending` after every non-HIL automated/integrity gate is
 green; the candidate-mode selection MUST be build-time explicit, inaccessible
@@ -1465,24 +1476,54 @@ manifest. Rollback changes the website's selected-release descriptor to a
 previous fully qualified immutable bundle and redeploys the site. It never
 mutates or partially replaces the active version directory.
 
-Once a fully qualified public release is active, later website-only
-deployments MUST carry its exact selector and immutable firmware tree forward
+Once a public release is active, later website-only deployments MUST carry its
+exact selector and immutable firmware tree forward
 through authenticated retrieval and the canonical staged-release validation
 path. Each website release with an active installer retains an unserved
 canonical selector marker for this purpose. The preserved-public validator
 MUST repeat every self-contained public bundle, schema, HIL, profile, artifact,
 path, size, digest, descriptor, and annotated-tag check. It MUST prove exact
 selected-byte continuity and MUST NOT accept a different version or byte. It
-does not repeat the source/build license audit whose passing evidence was
-required for the original activation of those same immutable bytes. A
+does not repeat the source/build license audit for a fully qualified release
+whose passing evidence was required for the original activation of those same
+immutable bytes. A preserved `v0.4.2` public beta MUST instead repeat canonical
+`--audited-candidate` validation with the retained license-evidence directory
+and exact release-build root, using the exact firmware-source checkout recorded
+by the release as `--repo-root`, and MUST revalidate the annotated
+`firmware-v0.4.2` tag. A
 deployment MUST fail before the build if that state cannot be retrieved or
 validated. Transitioning an active public installer to unavailable is a
 separate reviewed operation requiring an explicit truth-valued disable flag
 and a production smoke test of the disabled state; absence of staging input
 alone is never authorization to disable it.
 
-The pre-public `v0.4.1` candidate path was exposed without the required access
-control and is permanently burned. The origin MUST quarantine
-`/firmware/v0.4.1/` with a non-cacheable not-found response, MUST NOT select or
-promote those bytes, and MUST retain any forensic copy outside public routing.
-A qualified public release therefore starts at a new immutable version.
+As a one-time transitional exception, the fresh audited `v0.4.2` candidate MAY
+be published as a **hardware-tested public beta**. The selector deployment
+mode MUST be `public-beta`, `accessControlled` MUST be `false`, both profile HIL
+states and the aggregate `hilStatus` MUST remain `pending`, and the
+`release.json` SHA-256 MUST equal
+`5d1b0db8c4b90cccf054cd244530afb3b9112d489aa02f7c5da650e92161acde`.
+The exact profile set is `esp32-4mb` plus `esp32-s3-n16r8`; C3 MUST remain
+absent. Before staging or carrying the beta forward, the canonical release tool
+MUST accept the exact bundle with `validate --audited-candidate`, its retained
+license-evidence directory, its exact release-build root, and the exact
+firmware-source checkout recorded by the release as `--repo-root`. The annotated
+`firmware-v0.4.2` tag MUST exist and peel directly to the full PyBLE provenance
+commit recorded in `release.json`, and deployment MUST bind the tag object
+before and after the website build and before upload. The exact production
+browser-flashing validation recorded in
+`docs/validation/browser-flashing/v0.4.2-production.json` supports the narrower
+claim that real-board Chrome installation, interruption, recovery, and reset
+passed for both enabled exact profiles. Before the install control appears, the
+website MUST state that completed scope and MUST separately say that complete
+release qualification remains pending. It MUST NOT call the beta
+access-controlled, protected, a qualified release, fully validated,
+production-ready, or generally available.
+
+The beta path MUST retain all existing audited-candidate, license, tag, schema,
+checksum, manifest, image, same-origin, browser-capability,
+profile-confirmation, consent, recovery, and production-smoke checks. The
+exception changes only publication policy; it does not allow byte mutation,
+substitute evidence, a different version/digest, or a new profile. A later
+qualified public release therefore starts at a new immutable version and still
+requires the complete gate above.

@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import unittest
 from pathlib import Path
 
@@ -23,6 +24,46 @@ class PublicClaimsTest(unittest.TestCase):
         cls.bug_template = (
             REPO_ROOT / ".github" / "ISSUE_TEMPLATE" / "bug.yml"
         ).read_text(encoding="utf-8")
+        cls.roadmap = (REPO_ROOT / "docs" / "ROADMAP.md").read_text(
+            encoding="utf-8"
+        )
+        cls.home_page = (
+            REPO_ROOT / "tools" / "web" / "src" / "app" / "page.tsx"
+        ).read_text(encoding="utf-8")
+        cls.site_copy = (
+            REPO_ROOT / "tools" / "web" / "src" / "lib" / "site.ts"
+        ).read_text(encoding="utf-8")
+        cls.support_page = (
+            REPO_ROOT
+            / "tools"
+            / "web"
+            / "src"
+            / "app"
+            / "support"
+            / "page.tsx"
+        ).read_text(encoding="utf-8")
+        cls.browser_validation = json.loads(
+            (
+                REPO_ROOT
+                / "docs"
+                / "validation"
+                / "browser-flashing"
+                / "v0.4.2-production.json"
+            ).read_text(encoding="utf-8")
+        )
+        cls.browser_attestation = (
+            REPO_ROOT
+            / "docs"
+            / "validation"
+            / "browser-flashing"
+            / "v0.4.2-production.md"
+        ).read_text(encoding="utf-8")
+        cls.changelog = (REPO_ROOT / "CHANGELOG.md").read_text(
+            encoding="utf-8"
+        )
+        cls.flash_page = (
+            REPO_ROOT / "tools" / "web" / "src" / "app" / "flash" / "page.tsx"
+        ).read_text(encoding="utf-8")
         cls.firmware_overview = (
             REPO_ROOT / "docs" / "specifications" / "firmware.md"
         ).read_text(encoding="utf-8")
@@ -32,47 +73,38 @@ class PublicClaimsTest(unittest.TestCase):
         cls.product_requirements = (
             REPO_ROOT / "docs" / "specifications" / "prd.md"
         ).read_text(encoding="utf-8")
-        cls.website_readme = (
-            REPO_ROOT / "tools" / "web" / "README.md"
-        ).read_text(encoding="utf-8")
-        cls.website_specification = (
-            REPO_ROOT / "docs" / "specifications" / "website.md"
-        ).read_text(encoding="utf-8")
         cls.firmware_requirements = (
             REPO_ROOT / "docs" / "specifications" / "firmware" / "specs.md"
         ).read_text(encoding="utf-8")
-        cls.browser_flashing = (
-            REPO_ROOT
-            / "docs"
-            / "specifications"
-            / "firmware"
-            / "browser-flashing.md"
+        cls.firmware_tdd = (
+            REPO_ROOT / "docs" / "specifications" / "firmware" / "TDD.md"
         ).read_text(encoding="utf-8")
-        cls.flash_page = (
-            REPO_ROOT / "tools" / "web" / "src" / "app" / "flash" / "page.tsx"
-        ).read_text(encoding="utf-8")
-        cls.flash_status = (
-            REPO_ROOT
-            / "tools"
-            / "web"
-            / "src"
-            / "components"
-            / "flash-status.tsx"
+        cls.website_readme = (
+            REPO_ROOT / "tools" / "web" / "README.md"
         ).read_text(encoding="utf-8")
 
-    def test_readme_is_truthful_before_v042_hil_completes(self) -> None:
+    def test_readme_identifies_the_exact_hardware_tested_public_beta(self) -> None:
         firmware = markdown_section(self.readme, "What works")
+        normalized = " ".join(firmware.split())
 
         self.assertIn(
-            "public browser installer is currently unavailable pending v0.4.2 HIL",
-            firmware,
+            "public browser installer currently offers the exact v0.4.2 hardware-tested beta",
+            normalized,
         )
+        self.assertIn("Production Chrome erase/install", firmware)
+        self.assertIn("interrupted-flash recovery passed", firmware)
+        self.assertIn("Complete release qualification continues", firmware)
         self.assertIn("`esp32-4mb`", firmware)
         self.assertIn("Classic ESP32, 4 MiB external SPI flash", firmware)
         self.assertIn("`esp32-s3-n16r8`", firmware)
         self.assertIn("16 MiB flash / 8 MiB Octal PSRAM", firmware)
+        self.assertIn(
+            "v0.4.2 hardware-tested beta; browser install/recovery passed",
+            firmware,
+        )
+        self.assertIn("Planned; unavailable", firmware)
         self.assertNotIn("currently offers qualified images", firmware)
-        self.assertNotIn("| Available", firmware)
+        self.assertNotIn("full HIL pending", firmware)
 
     def test_readme_caption_describes_only_the_visible_app(self) -> None:
         caption_start = self.readme.index("<em>Actual PyBLE app")
@@ -84,13 +116,189 @@ class PublicClaimsTest(unittest.TestCase):
         self.assertIn("generated MicroPython", caption)
         self.assertNotRegex(caption, r"(?i)pictured|board|module")
 
-    def test_readme_try_steps_are_gated_on_an_active_installer(self) -> None:
+    def test_readme_try_steps_use_the_hardware_tested_beta_safely(self) -> None:
         try_section = markdown_section(self.readme, "Try PyBLE")
+        normalized = " ".join(try_section.split())
 
-        self.assertIn("currently unavailable pending v0.4.2 HIL", try_section)
-        self.assertIn("active release version", try_section)
+        self.assertIn("v0.4.2 hardware-tested beta", normalized)
+        self.assertIn(
+            "Browser installation and interrupted-flash recovery passed",
+            normalized,
+        )
+        self.assertIn("complete release qualification continues", normalized)
+        self.assertNotIn("full HIL pending", try_section)
+        self.assertNotIn("use it at your own risk", try_section)
+        self.assertIn("exact profile", try_section)
+        self.assertIn("back up", try_section)
         self.assertIn("enabled install action", try_section)
-        self.assertNotRegex(try_section, r"(?is)select .*qualified\s+agent firmware")
+        self.assertIn("Flashing erases the board", try_section)
+        self.assertNotIn("wait for that page", try_section.lower())
+
+    def test_current_public_surfaces_agree_on_beta_and_c3_state(self) -> None:
+        combined = "\n".join(
+            (self.home_page, self.site_copy, self.support_page, self.roadmap)
+        )
+
+        for wording in (
+            "v0.4.2",
+            "hardware-tested beta",
+            "browser install/recovery passed",
+            "release qualification pending",
+            "esp32-4mb",
+            "esp32-s3-n16r8",
+        ):
+            self.assertIn(wording, combined)
+        self.assertIn("Production Chrome install", combined)
+        self.assertIn("interrupted-flash recovery passed", combined)
+        self.assertNotIn("full HIL pending", combined)
+        self.assertNotIn("use it at your own risk", combined.lower())
+        self.assertIn("ESP32-C3", combined)
+        self.assertRegex(combined, r"(?is)ESP32-C3.{0,180}unavailable")
+        for stale in (
+            "public browser installer stays unavailable",
+            "public installer is unavailable while v0.4.2 HIL runs",
+            "board provisioning will open only after v0.4.2",
+            "Browser installation for qualified `esp32-4mb`",
+        ):
+            self.assertNotIn(stale, combined)
+
+        near_term = markdown_section(self.roadmap, "Near term")
+        self.assertIn(
+            "Complete the app, PBLE/1, resource, and remaining firmware release",
+            near_term,
+        )
+
+    def test_production_browser_claim_is_bound_to_public_evidence(self) -> None:
+        evidence = self.browser_validation
+
+        self.assertEqual(evidence["result"], "passed")
+        self.assertEqual(evidence["release"]["version"], "0.4.2")
+        self.assertEqual(
+            evidence["release"]["release_json_sha256"],
+            "5d1b0db8c4b90cccf054cd244530afb3b9112d489aa02f7c5da650e92161acde",
+        )
+        self.assertEqual(
+            [profile["profile_id"] for profile in evidence["profiles"]],
+            ["esp32-4mb", "esp32-s3-n16r8"],
+        )
+        for profile in evidence["profiles"]:
+            self.assertGreater(profile["interruption_percentage"], 5)
+            self.assertLess(profile["interruption_percentage"], 100)
+            self.assertEqual(profile["recovery_write_percentage"], 100)
+            self.assertTrue(profile["full_erase"])
+            self.assertTrue(profile["hard_reset"])
+            self.assertTrue(profile["visible_completion"])
+            self.assertTrue(profile["serial_route_released"])
+            self.assertEqual(profile["interruption_fetch_rounds"]["firmware"], 2)
+            self.assertEqual(profile["recovery_fetch_rounds"]["firmware"], 2)
+        self.assertEqual(
+            [profile["firmware_sha256"] for profile in evidence["profiles"]],
+            [
+                "3bd148df6163d21dd6ee86eecdff47820f3b20323e7cc39a3253937c60af1245",
+                "7cb73313b7108d9ee7bcd34780ecc25f6fef1590dfeee49bb08c424e58f741ff",
+            ],
+        )
+        self.assertTrue(
+            any(
+                "not the formal" in limitation
+                for limitation in evidence["limitations"]
+            )
+        )
+
+    def test_post_release_attestation_bounds_the_completed_hil_scope(self) -> None:
+        attestation = self.browser_attestation
+
+        for identity in (
+            "firmware-v0.4.2",
+            "ce02b68ab73da903035aa9f992c1f7e8eb2a3691",
+            "5d1b0db8c4b90cccf054cd244530afb3b9112d489aa02f7c5da650e92161acde",
+            "3bd148df6163d21dd6ee86eecdff47820f3b20323e7cc39a3253937c60af1245",
+            "7cb73313b7108d9ee7bcd34780ecc25f6fef1590dfeee49bb08c424e58f741ff",
+        ):
+            self.assertIn(identity, attestation)
+
+        for wording in (
+            "Supplemental production-browser result: **passed**",
+            "`esp32-4mb`",
+            "`esp32-s3-n16r8`",
+            "7%",
+            "immutable pre-public qualification ledger",
+            "supersedes only its pending browser-installation and interrupted-recovery rows",
+            "does not change its other pending qualification rows",
+            "not a qualified release",
+            "ESP32-C3 was not tested and remains unavailable",
+        ):
+            self.assertIn(wording, attestation)
+
+    def test_public_surfaces_link_the_release_evidence_and_changelog(self) -> None:
+        self.assertIn(
+            "(docs/validation/browser-flashing/v0.4.2-production.md)",
+            self.readme,
+        )
+        self.assertIn(
+            "https://github.com/PyBLE-dev/PyBLE/releases/tag/firmware-v0.4.2",
+            self.flash_page,
+        )
+        self.assertIn("Release evidence and exact hashes", self.flash_page)
+
+        release = markdown_section(self.changelog, "Firmware 0.4.2 — 2026-07-31")
+        self.assertIn("hardware-tested beta", release)
+        self.assertIn("`esp32-4mb`", release)
+        self.assertIn("`esp32-s3-n16r8`", release)
+        self.assertIn("interrupted-flash recovery", release)
+        self.assertIn("complete release qualification remains pending", release)
+        self.assertNotIn("qualified release", release)
+
+    def test_public_specifications_describe_the_exact_beta_without_overclaim(
+        self,
+    ) -> None:
+        combined = "\n".join(
+            (
+                self.firmware_overview,
+                self.hardware_overview,
+                self.product_requirements,
+                self.firmware_requirements,
+                self.firmware_tdd,
+                self.website_readme,
+            )
+        )
+
+        for wording in (
+            "v0.4.2 hardware-tested beta",
+            "browser installation and interrupted-flash recovery passed",
+            "complete release qualification remains pending",
+            "`esp32-4mb`",
+            "`esp32-s3-n16r8`",
+            "ESP32-C3",
+            "unavailable",
+        ):
+            self.assertIn(wording, combined)
+
+        for stale_claim in (
+            "current pre-v1 release qualifies",
+            "| Current pre-v1 release |",
+            "the two qualified profiles",
+            "installer without claiming that release artifacts are ready",
+            "stages the future browser firmware installer",
+            "before the current public installer can be enabled",
+            "the first validated firmware family",
+        ):
+            self.assertNotIn(stale_claim, combined)
+
+        self.assertRegex(
+            self.hardware_overview,
+            r"(?s)`esp32-4mb`.{0,240}hardware-tested beta.{0,200}"
+            r"`esp32-s3-n16r8`.{0,240}hardware-tested beta",
+        )
+        self.assertIn(
+            "The exact v0.4.2 public-beta bundle covers exactly the two enabled, "
+            "not-yet-qualified profiles",
+            self.firmware_requirements,
+        )
+        self.assertIn(
+            "two hardware-tested beta profiles in v0.4.2",
+            self.firmware_tdd,
+        )
 
     def test_bug_template_collects_the_exact_installer_diagnostics(self) -> None:
         for field_id in (
@@ -118,137 +326,6 @@ class PublicClaimsTest(unittest.TestCase):
             self.assertIn(wording, self.bug_template)
 
         self.assertRegex(self.bug_template, r"(?i)remove.*(?:secret|credential)")
-
-    def test_firmware_and_hardware_overviews_are_preactivation_truthful(self) -> None:
-        self.assertIn(
-            "v0.4.2 candidate set is `esp32-4mb`",
-            self.firmware_overview,
-        )
-        self.assertIn(
-            "public browser installer remains unavailable pending final HIL",
-            self.firmware_overview,
-        )
-        self.assertNotIn(
-            "current pre-v1 release qualifies",
-            self.firmware_overview,
-        )
-        self.assertIn(
-            "| `esp32-4mb` | Classic ESP32; 4 MiB external SPI flash; "
-            "no PSRAM assumed | `ESP32` | v0.4.2 HIL pending; installer "
-            "unavailable |",
-            self.hardware_overview,
-        )
-        self.assertIn(
-            "| `esp32-s3-n16r8` | ESP32-S3; 16 MiB flash; 8 MiB Octal PSRAM "
-            "| `ESP32-S3` | v0.4.2 HIL pending; installer unavailable |",
-            self.hardware_overview,
-        )
-        self.assertNotIn(
-            "| Current pre-v1 release |",
-            self.hardware_overview,
-        )
-
-    def test_public_summaries_distinguish_build_targets_from_release_support(
-        self,
-    ) -> None:
-        self.assertIn(
-            "initial ESP-IDF build/reference targets",
-            self.website_readme,
-        )
-        self.assertIn(
-            "public installer remains unavailable pending v0.4.2 HIL",
-            self.website_readme,
-        )
-        self.assertNotIn(
-            "initial validated ESP32 / ESP32-S3 / ESP32-C3 firmware targets",
-            self.website_readme,
-        )
-        board_scope_start = self.product_requirements.index(
-            "- **Board scope**",
-        )
-        board_scope_end = self.product_requirements.index(
-            "\n\n**Pending",
-            board_scope_start,
-        )
-        board_scope = self.product_requirements[
-            board_scope_start:board_scope_end
-        ]
-        self.assertIn("initial build/reference targets", board_scope)
-        self.assertIn(
-            "release compatibility remains exact-profile and HIL-gated",
-            board_scope,
-        )
-        self.assertNotIn("initial validated firmware targets", board_scope)
-
-    def test_preactivation_profiles_are_candidates_not_current_releases(
-        self,
-    ) -> None:
-        self.assertIn(
-            "v0.4.2 candidate qualification scope is profile-scoped",
-            self.firmware_overview,
-        )
-        self.assertIn(
-            "current v0.4.2 candidate set is the exact `esp32-4mb`",
-            self.website_specification,
-        )
-        self.assertIn(
-            "v0.4.2 release candidate targets exactly these two",
-            self.browser_flashing,
-        )
-        self.assertIn(
-            "current pre-v1 candidate set is exactly `esp32-4mb`",
-            self.product_requirements,
-        )
-        self.assertIn(
-            "current pre-v1 candidate qualification set is exactly",
-            self.firmware_requirements,
-        )
-
-        prohibited_claims = (
-            "current pre-v1 qualification is profile-scoped",
-            "current pre-v1 release list is",
-            "current pre-v1 public set is",
-            "current pre-v1 release set is",
-            "current pre-v1 public bundle contains exactly these two qualified",
-            "current pre-v1 qualification set is exactly",
-        )
-        for claim in prohibited_claims:
-            for document in (
-                self.firmware_overview,
-                self.website_specification,
-                self.browser_flashing,
-                self.product_requirements,
-                self.firmware_requirements,
-            ):
-                self.assertNotIn(claim, document)
-
-    def test_preactivation_installer_ui_does_not_call_candidates_qualified(
-        self,
-    ) -> None:
-        self.assertIn(
-            "candidate ESP32 and ESP32-S3 profiles",
-            self.flash_page,
-        )
-        self.assertIn(
-            "both exact current candidate profiles",
-            self.flash_page,
-        )
-        self.assertIn(
-            "both exact current candidate profiles",
-            self.flash_status,
-        )
-        self.assertNotIn(
-            "qualified ESP32 and ESP32-S3 profiles",
-            self.flash_page,
-        )
-        self.assertNotIn(
-            "both exact current release profiles",
-            self.flash_page,
-        )
-        self.assertNotIn(
-            "both exact current release profiles",
-            self.flash_status,
-        )
 
 
 if __name__ == "__main__":

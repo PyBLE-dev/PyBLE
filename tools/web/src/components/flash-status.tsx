@@ -9,6 +9,7 @@ import { installReleaseKeyedArtifactFetch } from "@/lib/firmware-fetch-cache";
 import { verifyFirmwareProfile } from "@/lib/firmware-integrity";
 import {
   hasExactFirmwareProfileDescriptors,
+  isExactPublicBetaFirmwareRelease,
   type FirmwareProfileDescriptor,
   type FirmwareProfileId,
   type FirmwareReleaseDescriptor,
@@ -122,13 +123,27 @@ function policyFailure(release: FirmwareReleaseDescriptor | null | undefined) {
   if (!release) {
     return {
       heading: "Installer unavailable",
-      body: "Hardware validation is still required on both exact current candidate profiles before the public installer can be enabled.",
+      body: "Hardware validation is still required on both exact current release profiles before the public installer can be enabled.",
     };
   }
   if (release.deployment !== "public" && release.deployment !== "candidate") {
+    if (
+      release.deployment !== "public-beta" ||
+      !isExactPublicBetaFirmwareRelease(release)
+    ) {
+      return {
+        heading: "Installer unavailable",
+        body: "The selected firmware deployment mode is invalid, so installation remains unavailable.",
+      };
+    }
+  }
+  if (
+    release.deployment === "public-beta" &&
+    !isExactPublicBetaFirmwareRelease(release)
+  ) {
     return {
       heading: "Installer unavailable",
-      body: "The selected firmware deployment mode is invalid, so installation remains unavailable.",
+      body: "The public beta does not match the exact audited v0.4.2 firmware, so installation remains unavailable.",
     };
   }
   if (!hasExactFirmwareProfileDescriptors(release.version, release.profiles)) {
@@ -285,6 +300,7 @@ function FlashStatusForRelease({
   );
   const everyConsent = consentItems.every(({ id }) => consents[id]);
   const candidate = activeRelease.deployment === "candidate";
+  const publicBeta = activeRelease.deployment === "public-beta";
 
   function chooseProfile(profileId: FirmwareProfileId) {
     verificationAttempt.current += 1;
@@ -372,18 +388,24 @@ function FlashStatusForRelease({
         <div>
           <p className="flash-status__eyebrow">Installer status</p>
           <h2 id="installer-status-title">
-            {candidate ? "Protected release candidate" : "Qualified release"}
+            {candidate
+              ? "Protected release candidate"
+              : publicBeta
+                ? "Hardware-tested firmware beta"
+                : "Qualified release"}
           </h2>
         </div>
       </div>
 
       <div
-        role={candidate ? "status" : undefined}
+        role={candidate || publicBeta ? "status" : undefined}
         className="flash-status__message"
       >
         {candidate
           ? "Protected release candidate: hardware validation is pending."
-          : "Select and verify the exact module profile before installation."}
+          : publicBeta
+            ? "Hardware-tested firmware beta: exact PyBLE v0.4.2 browser installation and interrupted-flash recovery passed on real esp32-4mb and esp32-s3-n16r8 hardware. Complete release qualification is still pending; this is not a qualified release."
+            : "Select and verify the exact module profile before installation."}
       </div>
 
       <div
@@ -475,6 +497,13 @@ function FlashStatusForRelease({
             Installation erases the device. Keep stable power connected and
             select only the serial port for this board.
           </p>
+          {publicBeta ? (
+            <p className="flash-warning">
+              Browser installation and interrupted-flash recovery passed on real
+              hardware for this exact profile. Complete release qualification is
+              still pending.
+            </p>
+          ) : null}
           <a className="text-link" href={activeRelease.recoveryPath}>
             {`Version ${verified.version} recovery instructions`}
           </a>
@@ -484,7 +513,9 @@ function FlashStatusForRelease({
               type="button"
               slot="activate"
             >
-              Install PyBLE {verified.version}
+              {publicBeta
+                ? `Install PyBLE ${verified.version} beta`
+                : `Install PyBLE ${verified.version}`}
             </button>
           </esp-web-install-button>
         </div>

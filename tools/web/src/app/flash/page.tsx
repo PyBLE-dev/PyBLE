@@ -10,21 +10,27 @@ import { pageMetadata } from "@/lib/site";
 export const metadata = pageMetadata({
   title: "Firmware installer",
   description:
-    "Release status and requirements for candidate ESP32 and ESP32-S3 profiles, with ESP32-C3 planned.",
+    "Release status and requirements for installing PyBLE firmware on exact ESP32 and ESP32-S3 profiles, with ESP32-C3 planned.",
   path: "/flash",
 });
 
 export default function FlashPage() {
   const release = firmwareReleaseSelectedAtBuild();
+  const publicBeta = release?.deployment === "public-beta";
+  const qualifiedPublic =
+    release?.deployment === "public" && release.hilStatus === "passed";
 
   return (
     <main id="main-content">
       <PageIntro eyebrow="One-time provisioning" title="Firmware installer">
         <p>
           One-time wired provisioning installs PyBLE-enabled MicroPython. Then
-          develop over Bluetooth Low Energy from the tablet-first PyBLE app. The
-          public install action remains unavailable until the final bytes pass
-          hardware validation on both exact current candidate profiles.
+          develop over Bluetooth Low Energy from the tablet-first PyBLE app.
+          {publicBeta
+            ? " The current v0.4.2 installer is a hardware-tested firmware beta. Production Chrome erase/install and deliberately interrupted-flash recovery passed on both exact profiles. Complete release qualification is still pending; this is not a qualified release."
+            : qualifiedPublic
+              ? ` Qualified v${release.version} firmware is available for both exact current release profiles.`
+              : " The public install action remains unavailable until the final bytes pass hardware validation on both exact current release profiles."}
         </p>
       </PageIntro>
 
@@ -99,6 +105,17 @@ export default function FlashPage() {
             </section>
 
             <div className="installer-links">
+              {publicBeta ? (
+                <a
+                  className="text-link"
+                  href="https://github.com/PyBLE-dev/PyBLE/releases/tag/firmware-v0.4.2"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Release evidence and exact hashes
+                  <ExternalIcon />
+                </a>
+              ) : null}
               <a
                 className="text-link"
                 href="https://esphome.github.io/esp-web-tools/"

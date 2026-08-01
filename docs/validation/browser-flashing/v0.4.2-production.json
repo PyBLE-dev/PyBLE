@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "kind": "pyble-production-browser-flash-validation-summary",
+  "scope": "supplemental-browser-installation-and-recovery",
+  "release": {
+    "version": "0.4.2",
+    "source_commit": "ce02b68ab73da903035aa9f992c1f7e8eb2a3691",
+    "release_json_sha256": "5d1b0db8c4b90cccf054cd244530afb3b9112d489aa02f7c5da650e92161acde"
+  },
+  "environment": {
+    "origin": "https://pyble.dev/flash",
+    "browser": "Google Chrome 150.0.7871.187",
+    "puppeteer": "25.1.0",
+    "visible_browser": true,
+    "serial_selection_method": "isolated-profile-grant"
+  },
+  "profiles": [
+    {
+      "profile_id": "esp32-4mb",
+      "chip_family": "ESP32",
+      "offset": 4096,
+      "firmware_sha256": "3bd148df6163d21dd6ee86eecdff47820f3b20323e7cc39a3253937c60af1245",
+      "recorded_at": "2026-07-31T16:03:55.320Z",
+      "interruption_percentage": 7,
+      "interruption_fetch_rounds": {
+        "release": 1,
+        "manifest": 2,
+        "firmware": 2
+      },
+      "recovery_fetch_rounds": {
+        "release": 1,
+        "manifest": 3,
+        "firmware": 2
+      },
+      "full_erase": true,
+      "recovery_write_percentage": 100,
+      "hard_reset": true,
+      "visible_completion": true,
+      "serial_route_released": true,
+      "private_evidence_sha256": "f68d9d78c33b1d25993c74c06b7ef438eabdfbe38486574cf651a7aadb4e9bfe"
+    },
+    {
+      "profile_id": "esp32-s3-n16r8",
+      "chip_family": "ESP32-S3",
+      "offset": 0,
+      "firmware_sha256": "7cb73313b7108d9ee7bcd34780ecc25f6fef1590dfeee49bb08c424e58f741ff",
+      "recorded_at": "2026-07-31T16:06:09.062Z",
+      "interruption_percentage": 7,
+      "interruption_fetch_rounds": {
+        "release": 1,
+        "manifest": 2,
+        "firmware": 2
+      },
+      "recovery_fetch_rounds": {
+        "release": 1,
+        "manifest": 3,
+        "firmware": 2
+      },
+      "full_erase": true,
+      "recovery_write_percentage": 100,
+      "hard_reset": true,
+      "visible_completion": true,
+      "serial_route_released": true,
+      "private_evidence_sha256": "818d22c8c40905e8cf2704014b32d437dc144eb9870ca86e73d247f0b1c92228"
+    }
+  ],
+  "result": "passed",
+  "limitations": [
+    "This is not the formal final-candidate HIL V2 or OI-1 resource qualification record.",
+    "The current-byte final app and PBLE/1 qualification matrices remain open.",
+    "ESP32-C3 is absent and was not tested or enabled by this run."
+  ]
+}

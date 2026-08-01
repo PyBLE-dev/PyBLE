@@ -5,10 +5,11 @@
 
 The statically authored Next.js site for `pyble.dev`. It explains the PyBLE
 workflow and capability-defined board vision, distinguishes that vision from
-the initial ESP-IDF build/reference targets (ESP32, ESP32-S3, and ESP32-C3),
-publishes privacy and support information, and stages the future browser
-firmware installer. The public installer remains unavailable pending v0.4.2 HIL
-on the exact release-candidate bytes for both selected profiles.
+the exact profiles available today, publishes privacy and support information,
+and hosts the policy-gated browser installer. The live v0.4.2 selector offers a
+hardware-tested beta for `esp32-4mb` and `esp32-s3-n16r8`; browser installation
+and interrupted-flash recovery passed, while complete release qualification
+remains pending. ESP32-C3 is unavailable.
 
 ## Why Next.js
 
@@ -80,38 +81,49 @@ Keep the copies synchronized; never edit the website mark independently.
 
 ## Firmware installer boundary
 
-The checked-in `/flash` selection is `null`, so the public install button is
-deliberately unavailable. ESP Web Tools 10.4.0 is bundled locally, and the
-browser loads it only after a selected profile's same-origin release metadata,
+The checked-in `/flash` selection is `null`, so an ordinary source build remains
+fail-closed. A production deployment may inject only an explicitly staged and
+validated selector; the current live deployment uses the exact v0.4.2
+public-beta selector. ESP Web Tools 10.4.0 is bundled locally, and the browser
+loads it only after a selected profile's same-origin release metadata,
 single-build manifest, merged image, exact size, and SHA-256 digest pass the
 strict verifier. The website dependency closure and complete license texts are
 published in `public/WEBSITE_THIRD_PARTY_LICENSES.txt`.
 
 Enablement requires the release gate frozen in
-`docs/specifications/website.md`: reviewed artifacts for both current exact
-profiles (`esp32-4mb` and `esp32-s3-n16r8`), automated checks, real-board
-validation of the final bytes, HTTPS, capability detection, and recovery
-instructions. The S3 profile specifically requires an N16R8 module.
+`docs/specifications/website.md`. The exact v0.4.2 public beta requires reviewed
+artifacts for both current exact profiles (`esp32-4mb` and
+`esp32-s3-n16r8`), the canonical audited-candidate and license gates, an
+annotated provenance tag, HTTPS, capability detection, and recovery
+instructions. Production Chrome install and interrupted-flash recovery passed
+on real hardware for both exact profiles; complete app, PBLE/1, resource, and
+remaining firmware release qualification continues. The S3 profile specifically
+requires an N16R8 module.
 `esp32-c3-4mb` remains visibly unavailable and has no public release bytes
 until a later exact-profile HIL-qualified candidate.
 
 Firmware is never checked into `public/` or selected through a public
 environment variable. `npm run firmware:stage` accepts an explicit external
 bundle, verifies its complete `SHA256SUMS` coverage and release contract, then
-writes an external immutable tree and a build-selection descriptor. A public
-bundle must have passed HIL on every profile. A pending candidate is accepted
+writes an external immutable tree and a build-selection descriptor. A
+qualified public bundle must have passed HIL on every profile. A pending
+candidate is accepted
 only with both `PYBLE_FLASH_DEPLOYMENT=candidate` and
 `PYBLE_FLASH_ACCESS_CONTROLLED=1`, and must be built and hosted behind actual
 access control. Supply both `PYBLE_FIRMWARE_STAGED_ROOT` and
 `PYBLE_FLASH_SELECTION_FILE` to the protected build so the Sites adapter
 revalidates and packages the external bytes without modifying `public/`. The
-public VPS deploy helper rejects candidates. Candidate staging requires
+public VPS deploy helper rejects protected candidates. Candidate and exact
+v0.4.2 public-beta staging require
 `PYBLE_FIRMWARE_LICENSE_EVIDENCE_DIR` and
-`PYBLE_FIRMWARE_LICENSE_BUILD_ROOT`, and invokes the canonical audited-candidate
-gate against those retained inputs. Public activation requires the exact local
+`PYBLE_FIRMWARE_LICENSE_BUILD_ROOT`, plus
+`PYBLE_FIRMWARE_SOURCE_ROOT` for the exact release-source checkout, and invokes
+the canonical audited-candidate gate against those retained inputs. Public and
+public-beta activation require the exact local
 annotated `firmware-v<version>` tag to peel to the `release.json` PyBLE
-provenance commit. The helper canonically validates the all-HIL-passed public
-staging, freezes it in a mode-0700 private snapshot, and proves exact staging,
+provenance commit. The helper canonically validates either the all-HIL-passed
+public staging or the exact digest-bound audited v0.4.2 beta, freezes it in a
+mode-0700 private snapshot, and proves exact staging,
 packaged-output, and upload-snapshot byte equality. Final `out/` is copied to a
 separate private read-only upload snapshot with a whole-site inventory; the VPS
 authenticates that inventory separately and verifies the exact file set and all
@@ -120,7 +132,8 @@ hashes before publication or activation. The deploy helper rejects every
 validation requires explicit
 `PYBLE_FIRMWARE_LICENSE_EVIDENCE_DIR` and
 `PYBLE_FIRMWARE_LICENSE_BUILD_ROOT` paths for the reviewed evidence and exact
-release-build inputs. Activation is guarded by systemd rollback and
+release-build inputs, plus `PYBLE_FIRMWARE_SOURCE_ROOT` for their exact source
+checkout. Activation is guarded by systemd rollback and
 confirmation transactions until the public smoke suite succeeds.
 
 MicroPython plus generic Bluetooth hardware is not itself a support claim.

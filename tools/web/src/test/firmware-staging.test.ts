@@ -19,7 +19,11 @@ import { promisify } from "node:util";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { stageFirmwareRelease } from "../../scripts/stage-firmware-release";
+import {
+  stageFirmwareRelease,
+  validateAttestedPublicBetaBundle,
+  validatePreservedPublicFirmwareRelease,
+} from "../../scripts/stage-firmware-release";
 import {
   bundleFiles,
   createFirmwareReleaseFixture,
@@ -113,7 +117,7 @@ describe("external firmware bundle staging", () => {
         join(
           outputDirectory,
           "firmware",
-          "v0.4.1",
+          "v0.4.2",
           "esp32-s3-n16r8",
           "manifest.json",
         ),
@@ -124,14 +128,14 @@ describe("external firmware bundle staging", () => {
         join(
           outputDirectory,
           "firmware",
-          "v0.4.1",
+          "v0.4.2",
           "esp32-s3-n16r8",
           "firmware.bin",
         ),
       ).then((value) => Array.from(value)),
     ).resolves.toEqual(Array.from(fixture.firmwareBytes));
     await expect(
-      readdir(join(outputDirectory, "firmware", "v0.4.1")),
+      readdir(join(outputDirectory, "firmware", "v0.4.2")),
     ).resolves.not.toContain("esp32-c3-4mb");
     expect(fixture.descriptor.profiles.map(({ id }) => id)).toEqual([
       "esp32-4mb",
@@ -160,7 +164,7 @@ describe("external firmware bundle staging", () => {
       accessControlled: true,
       deployment: "candidate",
       hilStatus: "pending",
-      version: "0.4.1",
+      version: "0.4.2",
     });
     await expect(
       stageFixture({
@@ -178,6 +182,67 @@ describe("external firmware bundle staging", () => {
         outputDirectory: await temporaryDirectory("public-pending"),
       }),
     ).rejects.toThrow();
+  });
+
+  it("stages an unrestricted pending public beta but rejects false beta status claims", async () => {
+    const fixture = createFirmwareReleaseFixture({
+      deployment: "public-beta",
+      accessControlled: false,
+      hilStatus: "pending",
+    });
+    const bundleDirectory = await temporaryDirectory("public-beta-bundle");
+    await writeExternalBundle(bundleDirectory, fixture);
+
+    const stagedRoot = await temporaryDirectory("public-beta-staged");
+    await expect(
+      stageFixture({
+        accessControlled: false,
+        bundleDirectory,
+        deployment: "public-beta",
+        outputDirectory: stagedRoot,
+      }),
+    ).resolves.toMatchObject({
+      accessControlled: false,
+      deployment: "public-beta",
+      hilStatus: "pending",
+      version: "0.4.2",
+    });
+    await expect(
+      validatePreservedPublicFirmwareRelease(stagedRoot, {
+        releaseValidator: acceptSyntheticFixture,
+      }),
+    ).rejects.toThrow(/exact public beta/i);
+
+    await expect(
+      stageFixture({
+        accessControlled: true,
+        bundleDirectory,
+        deployment: "public-beta",
+        outputDirectory: await temporaryDirectory("controlled-public-beta"),
+      }),
+    ).rejects.toThrow(/public beta/i);
+    await expect(
+      stageFixture({
+        accessControlled: false,
+        bundleDirectory,
+        deployment: "public",
+        outputDirectory: await temporaryDirectory("qualified-pending-beta"),
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("production beta validation rejects a self-consistent bundle with an unattested release root", async () => {
+    const fixture = createFirmwareReleaseFixture({
+      deployment: "public-beta",
+      accessControlled: false,
+      hilStatus: "pending",
+    });
+    const bundleDirectory = await temporaryDirectory("unattested-beta");
+    await writeExternalBundle(bundleDirectory, fixture);
+
+    await expect(
+      validateAttestedPublicBetaBundle(bundleDirectory, "public-beta"),
+    ).rejects.toThrow(/audited.*v0\.4\.2/i);
   });
 
   it("rejects external bytes that no longer match the generated bundle checksums", async () => {
@@ -458,7 +523,6 @@ describe("external firmware bundle staging", () => {
       "scripts",
       "stage-firmware-release.js",
     );
-    const repositoryRoot = join(process.cwd(), "..", "..");
     const bundleDirectory = await temporaryDirectory(
       "candidate-license-validation-bundle",
     );
@@ -467,6 +531,9 @@ describe("external firmware bundle staging", () => {
     );
     const licenseBuildRoot = await temporaryDirectory(
       "candidate-license-build",
+    );
+    const firmwareSourceRoot = await temporaryDirectory(
+      "candidate-source-root",
     );
     const fakeBin = await temporaryDirectory("candidate-validator-bin");
     const fakePython = join(fakeBin, "python3");
@@ -491,6 +558,7 @@ describe("external firmware bundle staging", () => {
     };
     delete validationEnvironment.PYBLE_FIRMWARE_LICENSE_EVIDENCE_DIR;
     delete validationEnvironment.PYBLE_FIRMWARE_LICENSE_BUILD_ROOT;
+    delete validationEnvironment.PYBLE_FIRMWARE_SOURCE_ROOT;
 
     for (const [label, evidenceEnvironment] of [
       ["both evidence inputs", {}],
@@ -498,12 +566,21 @@ describe("external firmware bundle staging", () => {
         "the exact build root",
         {
           PYBLE_FIRMWARE_LICENSE_EVIDENCE_DIR: licenseEvidenceDirectory,
+          PYBLE_FIRMWARE_SOURCE_ROOT: firmwareSourceRoot,
         },
       ],
       [
         "the retained evidence directory",
         {
           PYBLE_FIRMWARE_LICENSE_BUILD_ROOT: licenseBuildRoot,
+          PYBLE_FIRMWARE_SOURCE_ROOT: firmwareSourceRoot,
+        },
+      ],
+      [
+        "the exact firmware source root",
+        {
+          PYBLE_FIRMWARE_LICENSE_BUILD_ROOT: licenseBuildRoot,
+          PYBLE_FIRMWARE_LICENSE_EVIDENCE_DIR: licenseEvidenceDirectory,
         },
       ],
     ] as const) {
@@ -545,6 +622,7 @@ describe("external firmware bundle staging", () => {
           ...validationEnvironment,
           PYBLE_FIRMWARE_LICENSE_BUILD_ROOT: licenseBuildRoot,
           PYBLE_FIRMWARE_LICENSE_EVIDENCE_DIR: licenseEvidenceDirectory,
+          PYBLE_FIRMWARE_SOURCE_ROOT: firmwareSourceRoot,
           PYBLE_TEST_VALIDATOR_CAPTURE: captureFile,
         },
       },
@@ -565,7 +643,86 @@ describe("external firmware bundle staging", () => {
     expect.soft(arguments_).toContain("--repo-root");
     expect
       .soft(arguments_[arguments_.indexOf("--repo-root") + 1])
-      .toBe(repositoryRoot);
+      .toBe(firmwareSourceRoot);
+  });
+
+  it("runs a public beta through the canonical audited-candidate and license gates", async () => {
+    const stagingScript = join(
+      process.cwd(),
+      "scripts",
+      "stage-firmware-release.js",
+    );
+    const bundleDirectory = await temporaryDirectory(
+      "public-beta-audit-bundle",
+    );
+    const licenseEvidenceDirectory = await temporaryDirectory(
+      "public-beta-license-evidence",
+    );
+    const licenseBuildRoot = await temporaryDirectory(
+      "public-beta-license-build",
+    );
+    const firmwareSourceRoot = await temporaryDirectory(
+      "public-beta-source-root",
+    );
+    const fakeBin = await temporaryDirectory("public-beta-validator-bin");
+    const fakePython = join(fakeBin, "python3");
+    const captureFile = join(fakeBin, "public-beta-arguments.txt");
+    await writeFile(
+      fakePython,
+      [
+        "#!/bin/sh",
+        'printf "%s\\n" "$@" > "${PYBLE_TEST_VALIDATOR_CAPTURE}"',
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    await chmod(fakePython, 0o755);
+
+    const validationProgram = [
+      `const staging = await import(${JSON.stringify(pathToFileURL(stagingScript).href)});`,
+      `await staging.validateWithCanonicalReleaseTool(${JSON.stringify(bundleDirectory)}, "public-beta");`,
+    ].join("\n");
+    const baseEnvironment: NodeJS.ProcessEnv = {
+      ...process.env,
+      PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
+      PYBLE_TEST_VALIDATOR_CAPTURE: captureFile,
+    };
+    delete baseEnvironment.PYBLE_FIRMWARE_LICENSE_EVIDENCE_DIR;
+    delete baseEnvironment.PYBLE_FIRMWARE_LICENSE_BUILD_ROOT;
+    delete baseEnvironment.PYBLE_FIRMWARE_SOURCE_ROOT;
+
+    await expect(
+      execFile(
+        process.execPath,
+        ["--input-type=module", "--eval", validationProgram],
+        { cwd: process.cwd(), env: baseEnvironment },
+      ),
+    ).rejects.toThrow();
+
+    await execFile(
+      process.execPath,
+      ["--input-type=module", "--eval", validationProgram],
+      {
+        cwd: process.cwd(),
+        env: {
+          ...baseEnvironment,
+          PYBLE_FIRMWARE_LICENSE_BUILD_ROOT: licenseBuildRoot,
+          PYBLE_FIRMWARE_LICENSE_EVIDENCE_DIR: licenseEvidenceDirectory,
+          PYBLE_FIRMWARE_SOURCE_ROOT: firmwareSourceRoot,
+        },
+      },
+    );
+    const arguments_ = (await readFile(captureFile, "utf8"))
+      .trimEnd()
+      .split("\n");
+    expect(arguments_).toContain("--audited-candidate");
+    expect(arguments_).not.toContain("--public");
+    expect(arguments_).toContain("--license-evidence-dir");
+    expect(arguments_).toContain("--license-build-root");
+    expect(arguments_).toContain("--repo-root");
+    expect(arguments_[arguments_.indexOf("--repo-root") + 1]).toBe(
+      firmwareSourceRoot,
+    );
   });
 
   it("leaves no finalized version or selector when final staged-root validation fails", async () => {
@@ -628,7 +785,7 @@ describe("external firmware bundle staging", () => {
     ).resolves.toEqual(descriptor);
 
     await writeFile(
-      join(stagedRoot, "firmware", "v0.4.1", "release.json"),
+      join(stagedRoot, "firmware", "v0.4.2", "release.json"),
       new Uint8Array([0x7b, 0x7d, 0x0a]),
     );
     await expect(

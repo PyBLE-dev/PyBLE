@@ -3,6 +3,7 @@
 
 import { ExternalIcon, MailIcon } from "@/components/icons";
 import { PageIntro } from "@/components/page-intro";
+import { firmwareReleaseSelectedAtBuild } from "@/lib/firmware-release-selection";
 import { pageMetadata, siteConfig } from "@/lib/site";
 
 export const metadata = pageMetadata({
@@ -25,6 +26,12 @@ const diagnosticItems = [
 ] as const;
 
 export default function SupportPage() {
+  const firmwareRelease = firmwareReleaseSelectedAtBuild();
+  const publicBeta = firmwareRelease?.deployment === "public-beta";
+  const qualifiedPublic =
+    firmwareRelease?.deployment === "public" &&
+    firmwareRelease.hilStatus === "passed";
+
   return (
     <main id="main-content">
       <PageIntro eyebrow="Beta help" title="Support">
@@ -44,10 +51,29 @@ export default function SupportPage() {
                 <div>
                   <h3>Check firmware status before installing</h3>
                   <p>
-                    The public installer is unavailable while v0.4.2 HIL runs
-                    for esp32-4mb and esp32-s3-n16r8. ESP32-C3 is not currently
-                    available. Wait for the installer status to show an active
-                    release and enabled action; this initial step uses a cable.
+                    {publicBeta ? (
+                      <>
+                        The v{firmwareRelease.version} hardware-tested beta is
+                        available for the exact esp32-4mb and esp32-s3-n16r8
+                        profiles. Production Chrome install and
+                        interrupted-flash recovery passed on both exact
+                        profiles; complete release qualification continues.
+                      </>
+                    ) : qualifiedPublic ? (
+                      <>
+                        Qualified v{firmwareRelease.version} firmware is
+                        available for the exact esp32-4mb and esp32-s3-n16r8
+                        profiles.
+                      </>
+                    ) : (
+                      <>
+                        The firmware installer is currently unavailable. Check
+                        this status again before provisioning a board.
+                      </>
+                    )}{" "}
+                    ESP32-C3 is not currently available. Confirm the active
+                    release, exact profile, and enabled action; this initial
+                    step uses a cable.
                   </p>
                 </div>
               </li>

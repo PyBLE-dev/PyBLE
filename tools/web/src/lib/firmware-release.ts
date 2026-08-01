@@ -52,8 +52,12 @@ export const plannedFirmwareProfileTable = [
 export type FirmwareProfileId = (typeof firmwareProfileTable)[number]["id"];
 export type PlannedFirmwareProfileId =
   (typeof plannedFirmwareProfileTable)[number]["id"];
-export type FirmwareDeployment = "public" | "candidate";
+export type FirmwareDeployment = "public" | "candidate" | "public-beta";
 export type FirmwareHilStatus = "pending" | "passed";
+
+export const publicBetaFirmwareVersion = "0.4.2";
+export const publicBetaReleaseJsonSha256 =
+  "5d1b0db8c4b90cccf054cd244530afb3b9112d489aa02f7c5da650e92161acde";
 
 export interface FirmwareProfileDescriptor {
   readonly id: FirmwareProfileId;
@@ -96,6 +100,27 @@ export interface VerifiedFirmwareProfile {
   readonly manifestBuildCount: 1;
   readonly firmwarePath: string;
   readonly version: string;
+}
+
+export function isExactPublicBetaFirmwareRelease(
+  value: unknown,
+): value is FirmwareReleaseDescriptor {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const descriptor = value as Partial<FirmwareReleaseDescriptor>;
+  const version = publicBetaFirmwareVersion;
+  return (
+    descriptor.deployment === "public-beta" &&
+    descriptor.accessControlled === false &&
+    descriptor.version === version &&
+    descriptor.hilStatus === "pending" &&
+    descriptor.releaseJson?.path === `/firmware/v${version}/release.json` &&
+    descriptor.releaseJson?.sha256 === publicBetaReleaseJsonSha256 &&
+    descriptor.schemaPath === `/firmware/v${version}/release.schema.json` &&
+    descriptor.recoveryPath === `/firmware/v${version}/RECOVERY.md` &&
+    hasExactFirmwareProfileDescriptors(version, descriptor.profiles)
+  );
 }
 
 export function profileDescriptor(
