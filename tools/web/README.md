@@ -5,9 +5,11 @@
 
 The statically authored Next.js site for `pyble.dev`. It explains the PyBLE
 workflow and capability-defined board vision, distinguishes that vision from
-the initial validated ESP32 / ESP32-S3 / ESP32-C3 firmware targets, publishes
-privacy and support information, and stages the future browser firmware
-installer without claiming that release artifacts are ready.
+the exact profiles available today, publishes privacy and support information,
+and hosts the policy-gated browser installer. The live v0.4.2 selector offers a
+hardware-tested beta for `esp32-4mb` and `esp32-s3-n16r8`; browser installation
+and interrupted-flash recovery passed, while complete release qualification
+remains pending. ESP32-C3 is unavailable.
 
 ## Why Next.js
 
@@ -79,9 +81,11 @@ Keep the copies synchronized; never edit the website mark independently.
 
 ## Firmware installer boundary
 
-The checked-in `/flash` selection is `null`, so the public install button is
-deliberately unavailable. ESP Web Tools 10.4.0 is bundled locally, and the
-browser loads it only after a selected profile's same-origin release metadata,
+The checked-in `/flash` selection is `null`, so an ordinary source build remains
+fail-closed. A production deployment may inject only an explicitly staged and
+validated selector; the current live deployment uses the exact v0.4.2
+public-beta selector. ESP Web Tools 10.4.0 is bundled locally, and the browser
+loads it only after a selected profile's same-origin release metadata,
 single-build manifest, merged image, exact size, and SHA-256 digest pass the
 strict verifier. The website dependency closure and complete license texts are
 published in `public/WEBSITE_THIRD_PARTY_LICENSES.txt`.
@@ -101,8 +105,9 @@ until a later exact-profile HIL-qualified candidate.
 Firmware is never checked into `public/` or selected through a public
 environment variable. `npm run firmware:stage` accepts an explicit external
 bundle, verifies its complete `SHA256SUMS` coverage and release contract, then
-writes an external immutable tree and a build-selection descriptor. A public
-bundle must have passed HIL on every profile. A pending candidate is accepted
+writes an external immutable tree and a build-selection descriptor. A
+qualified public bundle must have passed HIL on every profile. A pending
+candidate is accepted
 only with both `PYBLE_FLASH_DEPLOYMENT=candidate` and
 `PYBLE_FLASH_ACCESS_CONTROLLED=1`, and must be built and hosted behind actual
 access control. Supply both `PYBLE_FIRMWARE_STAGED_ROOT` and

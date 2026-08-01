@@ -1,6 +1,6 @@
 # PyBLE — Agent Firmware
 
-Status: **DRAFT** · Last updated: 2026-07-30
+Status: **DRAFT** · Last updated: 2026-08-01
 
 The PyBLE agent is small board-side firmware that turns a compatible
 MicroPython target into a PyBLE-speaking board: it advertises the BLE service,
@@ -67,12 +67,15 @@ confined to Layer 2 (board overlay: pins, flash size, USB), and the shared agent
 core contains no per-chip product logic.
 
 The browser installer does not publish unqualified family-wide images. The
-current pre-v1 release qualifies `esp32-4mb` (classic ESP32, 4 MiB flash) and
-`esp32-s3-n16r8` (ESP32-S3, 16 MiB flash plus 8 MiB Octal PSRAM).
-`esp32-c3-4mb` remains a known initial v1 profile but is not released or
-selectable until exact-profile real-hardware validation is complete. ESP Web
-Tools detects the chip family but cannot by that fact alone prove the required
-flash/PSRAM topology. The full compatibility and artifact contract is frozen in
+exact v0.4.2 bundle is offered as a hardware-tested beta for `esp32-4mb`
+(classic ESP32, 4 MiB flash) and `esp32-s3-n16r8` (ESP32-S3, 16 MiB flash plus
+8 MiB Octal PSRAM). On both exact profiles, browser installation and interrupted-flash recovery passed;
+complete release qualification remains pending.
+`esp32-c3-4mb` remains a known initial v1 profile but is unavailable
+and has no public image until exact-profile real-hardware validation is
+complete. ESP Web Tools detects the chip family but cannot by that fact alone
+prove the required flash/PSRAM topology. The full compatibility, artifact, and
+bounded public-beta contracts are frozen in
 [firmware/browser-flashing.md](firmware/browser-flashing.md).
 
 These targets are the first validated firmware family, not the product
@@ -116,13 +119,13 @@ MUST NOT require a known-chip allowlist.
 The measurement method is frozen in
 [firmware/specs.md §5.3](firmware/specs.md#53-footprint-gates-nfr-fp);
 numeric values remain provisional until derived from retained baseline samples.
-The current pre-v1 qualification is profile-scoped:
+The current v0.4.2 qualification work remains profile-scoped:
 
 | Profile | Current numeric status | Release effect |
 |---|---|---|
-| `esp32-4mb` | Measure, derive, freeze, and verify on the owned exact profile | Required for the current pre-v1 installer |
-| `esp32-s3-n16r8` | Measure, derive, freeze, and verify on the owned exact N16R8 profile | Required for the current pre-v1 installer |
-| `esp32-c3-4mb` | Deferred; no current threshold or HIL row | Blocks C3 enablement and v1.0, but not the two-profile pre-v1 release |
+| `esp32-4mb` | Browser install/recovery passed; numeric/resource qualification pending | Enabled only by the exact v0.4.2 public-beta exception; required for qualification |
+| `esp32-s3-n16r8` | Browser install/recovery passed; numeric/resource qualification pending | Enabled only by the exact v0.4.2 public-beta exception; required for qualification |
+| `esp32-c3-4mb` | Deferred; no current threshold or HIL row | Blocks C3 enablement and v1.0; absent from the v0.4.2 beta |
 
 The enforced metrics are:
 

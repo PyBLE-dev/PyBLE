@@ -159,10 +159,11 @@ Each story selects the applicable categories; the protocol and firmware stories 
 - **Hardware-in-the-loop (HIL)** — on every exact profile claimed by the
   release: connect, `DEVICE_INFO`, run/stop, console streaming, and a clean
   multi-file upload without dropping the link, plus resume-on-reconnect and
-  the resource measurements above. The current pre-v1 matrix is exactly
-  `esp32-4mb` plus `esp32-s3-n16r8`; v1.0 additionally requires
-  `esp32-c3-4mb`. A milestone is gated by a working HIL demo, not by merged
-  code alone.
+  the resource measurements above. The current v0.4.2 public-beta profile set
+  is exactly `esp32-4mb` plus `esp32-s3-n16r8`; production-browser installation
+  and interrupted-flash recovery passed, but the other formal HIL rows remain
+  pending. v1.0 additionally requires `esp32-c3-4mb`. A milestone is gated by
+  a working HIL demo, not by merged code alone.
 
 ### §1B.4 SDD+TDD interlock
 
@@ -386,11 +387,10 @@ never a fork, never edited in place** (see
   targets — `esp32`, `esp32s3`, `esp32c3` — all using NimBLE, with per-chip
   differences confined to Layer 2. The pinned base is MicroPython `v1.28.0` +
   ESP-IDF `v5.5.1` per
-  [`firmware/versions.lock`](../../firmware/versions.lock); these pins are
-  proposed defaults until deliberately selected as **candidate-frozen**
-  inputs. Candidate-freezing precedes release builds and HIL; it is not
-  hardware approval. The exact candidate still requires the complete
-  exact-profile HIL pass before public release. Future
+  [`firmware/versions.lock`](../../firmware/versions.lock). Those exact lock
+  bytes are candidate-frozen for v0.4.2; this is not complete hardware
+  approval. The exact candidate still requires the remaining formal
+  exact-profile HIL and resource gates before qualification. Future
   MicroPython ports MAY use different platform adapters while preserving the
   same agent/PBLE contract. See [firmware.md §4](firmware.md#4-chip-targets-and-release-profiles).
 - The agent MUST start frozen-Python to nail PBLE/1 and reliability, then port hot paths to native C where the chip budget demands it (especially ESP32-C3); the wire contract MUST NOT change across that move. See [firmware.md §2](firmware.md#2-agent-base-native-vs-frozen).
@@ -802,7 +802,7 @@ Pin selection and pin approval are separate lifecycle states:
   profile. Any upstream pin change creates a new source state and candidate and
   requires the build, audit, deployment, and complete HIL matrix to restart.
 
-- `versions.lock` is the **single source of truth** for the pinned upstream MicroPython tag + commit and the ESP-IDF version + commit. The current proposed defaults are MicroPython `v1.28.0` and ESP-IDF `v5.5.1`.
+- `versions.lock` is the **single source of truth** for the pinned upstream MicroPython tag + commit and the ESP-IDF version + commit. MicroPython `v1.28.0` and ESP-IDF `v5.5.1` are candidate-frozen for v0.4.2; a future release selects its own exact committed lock state.
 - One MicroPython + ESP-IDF pin MUST drive all three chip targets; per-chip differences live in the board overlays, not in the lock.
 - The build MUST refuse to proceed if the checked-out upstream submodule SHA does not match the SHA recorded in `versions.lock` (**SHA-drift gate**).
 - Upgrades MUST go through the controlled workflow (`firmware/scripts/upgrade_micropython.sh`), never by hand-editing during a build. ESP-IDF MUST be installed from the pin into a gitignored directory (it is not an outer submodule); `mpy-cross` MUST be rebuilt from the pinned MicroPython.
@@ -834,13 +834,16 @@ Each successful per-target build MUST emit a flashable artifact set ([firmware.m
   tag and matched to the `versions.lock` pin used to build them. A v0.x mirror
   is optional and MUST be byte-identical if published; v1.0 and later
   additionally require the matching GitHub Release.
-- A pre-v1 beta release MAY publish only the exact profiles for which the
+- A qualified pre-v1 release MAY publish only the exact profiles for which the
   maintainer owns matching hardware and has completed the full hash-locked HIL
-  matrix. An unqualified profile MUST be absent from release metadata,
-  artifacts, selection, and recovery commands and shown as unavailable, never
-  silently marked supported.
-- The current pre-v1 release set is exactly `esp32-4mb` and
-  `esp32-s3-n16r8`; `esp32-c3-4mb` remains unavailable pending exact-profile
+  matrix. The narrowly digest-bound v0.4.2 exception in
+  [browser-flashing §10](firmware/browser-flashing.md#10-activation-and-rollback)
+  MAY instead expose its two exact images only as a hardware-tested beta after
+  their supplemental production-browser installation and recovery run passes;
+  it MUST say that complete qualification remains pending.
+- The current v0.4.2 public-beta set is exactly `esp32-4mb` and
+  `esp32-s3-n16r8`. `esp32-c3-4mb` remains unavailable and absent from release
+  metadata, artifacts, selection, and recovery commands pending exact-profile
   real-hardware validation. Re-enabling it requires a new SemVer candidate and
   immutable bundle.
 - The flasher manifest MUST select the correct artifact per released profile;
@@ -864,8 +867,10 @@ rounding formulas, and evidence contract are normative in
 
 Requirements:
 
-- The current pre-v1 public set is exactly the two profiles in §10.12. Their
-  numeric thresholds and hash-locked final-candidate HIL are release-blocking.
+- The current v0.4.2 public-beta set is exactly the two profiles in §10.12.
+  Their numeric thresholds and hash-locked final-candidate HIL remain
+  release-blocking for qualification; the bounded beta exception does not
+  satisfy or waive those gates.
   `esp32-c3-4mb` MUST remain absent from that release's policy, HIL rows,
   artifacts, recovery, and installer selection.
 - **ESP32-C3 remains the binding v1.0 constraint.** Its source target continues
@@ -1101,13 +1106,14 @@ Exact per-package licenses MUST be generated mechanically at build time (not han
 ### §15.3 Distribution
 
 - The app MUST be distributed **free** on the **Apple App Store** and **Google Play**, at feature parity across iPadOS and Android tablets (see §13.6 and §19). No account, no paywall, no in-app purchase.
-- A browser-based **web flasher** MUST be hosted at `pyble.dev/flash`, built on **esp-web-tools**, with one profile-scoped, single-build manifest per exact profile included in that release (see [firmware.md §6](firmware.md#6-build--distribution)). It MUST allow a user to flash the agent from a supported desktop browser over USB without installing a toolchain, and MUST NOT give ESP Web Tools a multi-family manifest that could override the user's selected profile. The current pre-v1 set is the two profiles in §10.12; C3 is unavailable until separately qualified.
+- A browser-based **web flasher** MUST be hosted at `pyble.dev/flash`, built on **esp-web-tools**, with one profile-scoped, single-build manifest per exact profile included in that release (see [firmware.md §6](firmware.md#6-build--distribution)). It MUST allow a user to flash the agent from a supported desktop browser over USB without installing a toolchain, and MUST NOT give ESP Web Tools a multi-family manifest that could override the user's selected profile. The current v0.4.2 hardware-tested beta contains the two exact profiles in §10.12; complete release qualification remains pending and C3 is unavailable.
 - Firmware binaries (`firmware.bin`, bootloader, partition table, profile-scoped
   `manifest.json` files, and `THIRD_PARTY_LICENSES`) MUST be published at the
   canonical immutable `pyble.dev/firmware/v<version>/` path, one set per exact
-  qualified profile per version. A v0.x mirror is optional and MUST be
-  byte-identical if present; v1.0 and later additionally require the matching
-  GitHub Release.
+  listed profile and truthful release state. A v0.x mirror is optional and MUST
+  be byte-identical if present; v1.0 and later additionally require the
+  matching GitHub Release. Any pre-qualification publication MUST be an
+  explicitly permitted beta, never described as qualified.
 - Self-build from source MUST remain fully supported (`firmware/scripts/build.sh <target>`, `build_all.sh`) so no user depends on the hosted flasher.
 - Sustainability is via **donations / GitHub Sponsors**, not sales ([ADR-0003](../decisions/0003-license-mit.md)); a Sponsors link MAY appear in `README`/About but MUST NOT gate any functionality.
 
@@ -1185,14 +1191,14 @@ PyBLE depends on third-party code at two layers (firmware upstream and Flutter p
 
 ### §17.1 Upstream pins
 
-- The single source of truth for upstream firmware versions is [`firmware/versions.lock`](../../firmware/versions.lock). It pins **MicroPython `v1.28.0`** (commit `e0e9fbb17ed6fd06bb76e266ae554784c9c80804`) and **ESP-IDF `v5.5.1`** (commit `fcae32885b0296b32044cb99ecbdc50d98dddb83`). One MicroPython + ESP-IDF pair drives all three chip targets; per-chip differences live only in the board overlays. These values remain **proposed defaults** until selected for a candidate under §10.9.
+- The single source of truth for upstream firmware versions is [`firmware/versions.lock`](../../firmware/versions.lock). It pins **MicroPython `v1.28.0`** (commit `e0e9fbb17ed6fd06bb76e266ae554784c9c80804`) and **ESP-IDF `v5.5.1`** (commit `fcae32885b0296b32044cb99ecbdc50d98dddb83`). One MicroPython + ESP-IDF pair drives all three chip targets; per-chip differences live only in the board overlays. These exact values are candidate-frozen for v0.4.2 under §10.9; later candidates must deliberately select their own committed lock state.
 - Before release-candidate builds or HIL, the exact committed lock file MUST be
   **candidate-frozen**. This makes the selected input immutable; it does not
   approve the pins. Public-release approval still requires the same candidate
   to pass HIL on every exact profile included in that release. The current
-  pre-v1 set is the two profiles in §10.12; all three, including the binding
-  ESP32-C3 footprint, are required for v1.0 (§10.13, §21.2). A pin change
-  abandons that candidate and all evidence bound to it.
+  v0.4.2 formal matrix is the two profiles in §10.12; all three, including the
+  binding ESP32-C3 footprint, are required for v1.0 (§10.13, §21.2). A pin
+  change abandons that candidate and all evidence bound to it.
 - A **SHA gate** MUST run in the build: the build prep verifies the checked-out submodule SHA against `versions.lock` and **refuses to proceed on mismatch**. CI MUST run this gate on every PR.
 - ESP-IDF is **not** a submodule; it is installed from the pinned version into a gitignored directory by the build scripts. MicroPython's own `lib/` dependencies are fetched by the standard port build (`make … submodules`).
 - Upgrades MUST go only through the **controlled upgrade workflow** (`firmware/scripts/upgrade_micropython.sh`) — never edited by hand during a build. An upgrade MUST: bump `versions.lock` (ref + resolved SHA) in its own commit; rebuild `mpy-cross`; pass the full host + protocol-conformance suite; pass the applicable per-profile resource gates (§10.13); candidate-freeze the updated lock before release-candidate generation; and validate that exact candidate on every profile included in the release. All three profiles are mandatory for v1.0. The default patch count against upstream is **zero**; any patch is re-reviewed for retirement at every upgrade.
@@ -1228,12 +1234,14 @@ PyBLE depends on third-party code at two layers (firmware upstream and Flutter p
 ### §18.2 Release cadence & artifacts
 
 - Releases are **milestone-gated by a working demo on real hardware**, not by a fixed calendar (see the [public roadmap](../ROADMAP.md)). v1.0 ships when the §21.1 gate passes; v1.x follows as features mature.
-- Each firmware release MUST publish, per exact qualified profile, at the
+- Each qualified firmware release MUST publish, per exact profile, at the
   canonical immutable `pyble.dev/firmware/v<version>/` path:
   `firmware.bin`, bootloader, partition table, `manifest.json` (for the web
   flasher), and `THIRD_PARTY_LICENSES` (§15.3). A v0.x mirror is optional and
   byte-identical; v1.0 and later additionally require the matching GitHub
-  Release.
+  Release. The exact v0.4.2 public-beta exception publishes the same immutable
+  artifact shape and a matching GitHub pre-release while retaining its pending
+  formal qualification state.
 - Each app release MUST be submitted to the **App Store and Google Play** at parity; neither platform may ship a release ahead of the other.
 - The web flasher at `pyble.dev/flash` MUST be updated to the matching per-chip manifests on each firmware release.
 - Release notes MUST state the app version, agent version, protocol version, and the upstream pins in effect.
@@ -1390,8 +1398,8 @@ The entry flow is scan → connect → use, with no QR pairing, no account, and 
 These are the production targets the project measures itself against. Numeric
 BLE/throughput targets are validated on hardware for every exact profile
 included in a release and MUST be frozen per profile after measurement. The
-current pre-v1 matrix has two profiles; the v1.0 matrix has all three. Until a
-profile's values are frozen, they are stated as intent, not asserted.
+  current v0.4.2 formal matrix has two profiles; the v1.0 matrix has all three.
+  Until a profile's values are frozen, they are stated as intent, not asserted.
 
 | Metric | Definition | v1.0 target | Status |
 |---|---|---|---|
@@ -1530,22 +1538,21 @@ The foundational product decisions are resolved and recorded as Architecture Dec
 - **Initial app platforms** → iPadOS and Android tablet at parity, released together (§13.6).
 - **Wi-Fi / USB as primary transport** → no; BLE-first and BLE-only for v1 (this is what makes iPad first-class).
 - **Board scope** → capability-defined MicroPython + BLE platform; ESP32,
-  ESP32-S3, and ESP32-C3 are the initial validated firmware targets
+  ESP32-S3, and ESP32-C3 are the initial build/reference targets. Current
+  public compatibility remains exact-profile and evidence-gated
   ([ADR-0021](../decisions/0021-capability-defined-board-scope.md)).
 
 **Pending (resolved by measurement, not debate):**
 
-- **Upstream-pin approval and footprint gates on real hardware** — the
-  MicroPython/ESP-IDF values and per-target footprint budgets (especially
-  **ESP32-C3**) are proposed defaults in
-  [`versions.lock`](../../firmware/versions.lock) and §10.13. The exact lock
-  file MUST first be candidate-frozen as the immutable release-build/HIL
-  input; that state is not approval. The same candidate MUST then pass the
-  complete exact-profile HIL matrix before its pins and resource gates are
-  approved. The current pre-v1 subset is exactly the two profiles in §10.12;
-  all three, including C3, are required for v1.0 (§10.9, §17.1, §21.2). A pin
-  change creates a new candidate. New ADRs are added if a pin or budget
-  changes materially.
+- **Upstream-pin approval and footprint gates on real hardware** — the exact
+  MicroPython/ESP-IDF lock bytes are candidate-frozen for v0.4.2, but the
+  per-target footprint budgets and formal approval (especially **ESP32-C3**)
+  remain open under §10.13. Candidate-freezing is not approval. The same
+  candidate MUST pass the complete exact-profile HIL matrix before its pins and
+  resource gates are approved. The current v0.4.2 formal subset is exactly the
+  two profiles in §10.12; all three, including C3, are required for v1.0
+  (§10.9, §17.1, §21.2). A pin change creates a new candidate. New ADRs are
+  added if a pin or budget changes materially.
 - **Agent base transition point** — frozen-Python first, then C `USER_C_MODULES` for hot paths; the exact point where the C port becomes necessary per chip is decided by HIL footprint/throughput data, not up front (see [firmware.md §2](firmware.md#2-agent-base-native-vs-frozen)).
 - **State-management library choice** for the Flutter app (§16.1) — to be fixed by an ADR before broad adoption.
 
@@ -1563,4 +1570,4 @@ New significant decisions MUST be captured as additional ADRs (`docs/decisions/N
 | **Control plane** | The agent's protected layer that owns BLE, the runner, and the filesystem bridge. It MUST NOT be editable by user code; a frozen `while True` in user code MUST NOT be able to wedge BLE or block `STOP`. |
 | **Workspace** | The user's own files on the board — `/main.py`, `/lib/*.py`, `/data/*` (Layer 4). Just programs the agent runs; never the control plane. |
 | **Platform port / target adapter** | Layer-2 integration for a MicroPython target: BLE host, scheduler/interrupt boundary, storage/config, identity, build, and provisioning. The initial ESP32 port uses per-chip board overlays for `esp32` / `esp32-s3` / `esp32-c3`, copied into the upstream tree at build prep so the submodule stays pristine. |
-| **HIL** | Hardware-in-the-loop — validation and measurement performed on a real board (as opposed to host-side or fake-transport tests). Resource and BLE/goodput numbers are frozen only after HIL measurement for every exact profile claimed by a release. The current pre-v1 matrix is `esp32-4mb` plus `esp32-s3-n16r8`; v1.0 additionally requires `esp32-c3-4mb`. |
+| **HIL** | Hardware-in-the-loop — validation and measurement performed on a real board (as opposed to host-side or fake-transport tests). Resource and BLE/goodput numbers are frozen only after HIL measurement for every exact profile claimed by a release. The current v0.4.2 formal matrix is `esp32-4mb` plus `esp32-s3-n16r8`; its supplemental browser rows passed while other formal rows remain pending. v1.0 additionally requires `esp32-c3-4mb`. |
