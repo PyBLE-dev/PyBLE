@@ -89,6 +89,29 @@ describe("Cloudflare-fronted VPS deployment", () => {
     expect(headers).toContain("Strict-Transport-Security");
   });
 
+  it("refuses deployment when active Nginx contracts differ from source", async () => {
+    const script = await readFile(
+      join(deploymentRoot, "vps", "deploy.sh"),
+      "utf8",
+    );
+    const parityIndex = script.indexOf("verify_remote_runtime_config");
+    const buildIndex = script.indexOf("NEXT_TELEMETRY_DISABLED=1 npm run check");
+    const uploadIndex = script.search(/\brsync\b/);
+
+    expect(parityIndex).toBeGreaterThan(-1);
+    expect(parityIndex).toBeLessThan(buildIndex);
+    expect(parityIndex).toBeLessThan(uploadIndex);
+    expect(script).toContain(
+      "/etc/nginx/sites-available/10-pyble-dev-https.conf",
+    );
+    expect(script).toContain(
+      "/etc/nginx/snippets/pyble-security-headers.conf",
+    );
+    expect(script).toMatch(
+      /verify_remote_runtime_config\(\)[\s\S]*?shasum[\s\S]*?ssh[\s\S]*?sha256sum[\s\S]*?(?:mismatch|differs)/i,
+    );
+  });
+
   it("keeps firmware 404 responses non-cacheable through the shared error page", async () => {
     const config = await readFile(
       join(deploymentRoot, "nginx", "10-pyble-dev-https.conf"),
