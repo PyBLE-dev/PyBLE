@@ -6,9 +6,9 @@ PyBLE's platform scope is any microcontroller board that can run MicroPython
 and provide a Bluetooth Low Energy peripheral stack capable of hosting a
 conforming PBLE/1 agent. It makes no assumptions about wiring and carries no
 board-specific routing profile. Hardware eligibility is broader than current
-support: a board works with PyBLE only after a maintained agent port or firmware
-image for that target passes the protocol, resource, recovery, and
-hardware-in-the-loop gates.
+support. A qualified port must pass its complete protocol, resource, recovery,
+and hardware-in-the-loop gates; a narrower beta must name the exact evidence it
+has passed and the qualification that remains open.
 
 Classic ESP32, ESP32-S3, and ESP32-C3 are the **initial v1 reference target
 families**, not the permanent product boundary. A public browser image is

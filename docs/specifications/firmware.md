@@ -78,8 +78,8 @@ prove the required flash/PSRAM topology. The full compatibility, artifact, and
 bounded public-beta contracts are frozen in
 [firmware/browser-flashing.md](firmware/browser-flashing.md).
 
-These targets are the first validated firmware family, not the product
-boundary. A future port MAY use another upstream MicroPython port, CPU
+These targets are the initial reference/build family, not the product boundary.
+A future port MAY use another upstream MicroPython port, CPU
 architecture, BLE host, native integration mechanism, build system, storage
 backend, or provisioning tool. It MUST preserve PBLE/1, the protected
 control-plane boundary, capability negotiation, workspace safety, and the
