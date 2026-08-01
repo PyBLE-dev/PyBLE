@@ -1048,6 +1048,16 @@ rollback_on_smoke_error() {
     fi
     exit "${smoke_status}"
 }
+reject_post_activation_smoke() {
+    local smoke_status=$1
+    if [[ ! "${smoke_status}" =~ ^[1-9][0-9]*$ ||
+        "${smoke_status}" -gt 255 ]]; then
+        printf 'Invalid post-activation smoke status: %s.\n' \
+            "${smoke_status}" >&2
+        return 70
+    fi
+    return "${smoke_status}"
+}
 trap rollback_on_smoke_error ERR
 
 smoke_root=$(mktemp -d)
@@ -1122,13 +1132,13 @@ for firmware_release in out/firmware/v*; do
         if [[ "${firmware_path}" == "${checksum_line}" ]]; then
             printf 'Invalid firmware checksum entry: %s\n' \
                 "${checksum_line}" >&2
-            exit 67
+            reject_post_activation_smoke 67
         fi
         case "${firmware_path}" in
             ""|/*|*\\*|*..*)
                 printf 'Unsafe firmware checksum path: %s\n' \
                     "${firmware_path}" >&2
-                exit 67
+                reject_post_activation_smoke 67
                 ;;
         esac
         mkdir -p -- "$(dirname -- "${public_release}/${firmware_path}")"
@@ -1154,7 +1164,7 @@ readonly not_found_status=$(
 if [[ "${not_found_status}" != 404 ]]; then
     printf 'Public 404 smoke failed: expected 404, received %s.\n' \
         "${not_found_status}" >&2
-    exit 66
+    reject_post_activation_smoke 66
 fi
 
 retired_public_asset_paths=(
@@ -1180,7 +1190,7 @@ for retired_public_asset_path in "${retired_public_asset_paths[@]}"; do
                 "${retired_public_asset_method}" \
                 "${retired_public_asset_path}" \
                 "${retired_public_asset_status}" >&2
-            exit 66
+            reject_post_activation_smoke 66
         fi
         retired_public_asset_normalized_headers="${retired_public_asset_headers}.normalized"
         tr -d '\r' < "${retired_public_asset_headers}" > \
@@ -1190,7 +1200,7 @@ for retired_public_asset_path in "${retired_public_asset_paths[@]}"; do
             printf 'Retired public asset smoke failed for %s %s: Cache-Control is not no-store.\n' \
                 "${retired_public_asset_method}" \
                 "${retired_public_asset_path}" >&2
-            exit 66
+            reject_post_activation_smoke 66
         fi
     done
     retired_public_asset_index=$((retired_public_asset_index + 1))
@@ -1227,7 +1237,7 @@ for firmware_not_found_path in "${firmware_not_found_paths[@]}"; do
                 "${firmware_not_found_method}" \
                 "${firmware_not_found_path}" \
                 "${firmware_not_found_status}" >&2
-            exit 66
+            reject_post_activation_smoke 66
         fi
         firmware_not_found_normalized_headers="${firmware_not_found_headers}.normalized"
         tr -d '\r' < "${firmware_not_found_headers}" > \
@@ -1237,7 +1247,7 @@ for firmware_not_found_path in "${firmware_not_found_paths[@]}"; do
             printf 'Firmware 404 smoke failed for %s %s: Cache-Control is not no-store.\n' \
                 "${firmware_not_found_method}" \
                 "${firmware_not_found_path}" >&2
-            exit 66
+            reject_post_activation_smoke 66
         fi
     done
     firmware_not_found_index=$((firmware_not_found_index + 1))
