@@ -1166,14 +1166,10 @@ retired_public_asset_index=0
 for retired_public_asset_path in "${retired_public_asset_paths[@]}"; do
     for retired_public_asset_method in "${retired_public_asset_methods[@]}"; do
         retired_public_asset_headers="${smoke_root}/retired-public-asset-${retired_public_asset_index}-${retired_public_asset_method}.headers"
-        retired_public_asset_curl_mode=()
-        if [[ "${retired_public_asset_method}" == HEAD ]]; then
-            retired_public_asset_curl_mode=( --head )
-        fi
         retired_public_asset_status=$(
             curl --silent --show-error --max-time 30 \
                 --location --max-redirs 0 --proto '=https' \
-                "${retired_public_asset_curl_mode[@]}" \
+                --request "${retired_public_asset_method}" \
                 --dump-header "${retired_public_asset_headers}" \
                 --output /dev/null \
                 --write-out '%{http_code}' \
@@ -1217,14 +1213,10 @@ firmware_not_found_index=0
 for firmware_not_found_path in "${firmware_not_found_paths[@]}"; do
     for firmware_not_found_method in "${firmware_not_found_methods[@]}"; do
         firmware_not_found_headers="${smoke_root}/firmware-not-found-${firmware_not_found_index}-${firmware_not_found_method}.headers"
-        firmware_not_found_curl_mode=()
-        if [[ "${firmware_not_found_method}" == HEAD ]]; then
-            firmware_not_found_curl_mode=( --head )
-        fi
         firmware_not_found_status=$(
             curl --silent --show-error --max-time 30 \
                 --location --max-redirs 0 --proto '=https' \
-                "${firmware_not_found_curl_mode[@]}" \
+                --request "${firmware_not_found_method}" \
                 --dump-header "${firmware_not_found_headers}" \
                 --output /dev/null \
                 --write-out '%{http_code}' \
