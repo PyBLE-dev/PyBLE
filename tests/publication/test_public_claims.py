@@ -51,6 +51,19 @@ class PublicClaimsTest(unittest.TestCase):
                 / "v0.4.2-production.json"
             ).read_text(encoding="utf-8")
         )
+        cls.browser_attestation = (
+            REPO_ROOT
+            / "docs"
+            / "validation"
+            / "browser-flashing"
+            / "v0.4.2-production.md"
+        ).read_text(encoding="utf-8")
+        cls.changelog = (REPO_ROOT / "CHANGELOG.md").read_text(
+            encoding="utf-8"
+        )
+        cls.flash_page = (
+            REPO_ROOT / "tools" / "web" / "src" / "app" / "flash" / "page.tsx"
+        ).read_text(encoding="utf-8")
 
     def test_readme_identifies_the_exact_hardware_tested_public_beta(self) -> None:
         firmware = markdown_section(self.readme, "What works")
@@ -160,12 +173,63 @@ class PublicClaimsTest(unittest.TestCase):
             self.assertTrue(profile["serial_route_released"])
             self.assertEqual(profile["interruption_fetch_rounds"]["firmware"], 2)
             self.assertEqual(profile["recovery_fetch_rounds"]["firmware"], 2)
+        self.assertEqual(
+            [profile["firmware_sha256"] for profile in evidence["profiles"]],
+            [
+                "3bd148df6163d21dd6ee86eecdff47820f3b20323e7cc39a3253937c60af1245",
+                "7cb73313b7108d9ee7bcd34780ecc25f6fef1590dfeee49bb08c424e58f741ff",
+            ],
+        )
         self.assertTrue(
             any(
                 "not the formal" in limitation
                 for limitation in evidence["limitations"]
             )
         )
+
+    def test_post_release_attestation_bounds_the_completed_hil_scope(self) -> None:
+        attestation = self.browser_attestation
+
+        for identity in (
+            "firmware-v0.4.2",
+            "ce02b68ab73da903035aa9f992c1f7e8eb2a3691",
+            "5d1b0db8c4b90cccf054cd244530afb3b9112d489aa02f7c5da650e92161acde",
+            "3bd148df6163d21dd6ee86eecdff47820f3b20323e7cc39a3253937c60af1245",
+            "7cb73313b7108d9ee7bcd34780ecc25f6fef1590dfeee49bb08c424e58f741ff",
+        ):
+            self.assertIn(identity, attestation)
+
+        for wording in (
+            "Supplemental production-browser result: **passed**",
+            "`esp32-4mb`",
+            "`esp32-s3-n16r8`",
+            "7%",
+            "immutable pre-public qualification ledger",
+            "supersedes only its pending browser-installation and interrupted-recovery rows",
+            "does not change its other pending qualification rows",
+            "not a qualified release",
+            "ESP32-C3 was not tested and remains unavailable",
+        ):
+            self.assertIn(wording, attestation)
+
+    def test_public_surfaces_link_the_release_evidence_and_changelog(self) -> None:
+        self.assertIn(
+            "(docs/validation/browser-flashing/v0.4.2-production.md)",
+            self.readme,
+        )
+        self.assertIn(
+            "https://github.com/PyBLE-dev/PyBLE/releases/tag/firmware-v0.4.2",
+            self.flash_page,
+        )
+        self.assertIn("Release evidence and exact hashes", self.flash_page)
+
+        release = markdown_section(self.changelog, "Firmware 0.4.2 — 2026-07-31")
+        self.assertIn("hardware-tested beta", release)
+        self.assertIn("`esp32-4mb`", release)
+        self.assertIn("`esp32-s3-n16r8`", release)
+        self.assertIn("interrupted-flash recovery", release)
+        self.assertIn("complete release qualification remains pending", release)
+        self.assertNotIn("qualified release", release)
 
     def test_bug_template_collects_the_exact_installer_diagnostics(self) -> None:
         for field_id in (
