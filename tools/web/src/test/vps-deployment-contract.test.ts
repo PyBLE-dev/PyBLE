@@ -103,6 +103,28 @@ describe("Cloudflare-fronted VPS deployment", () => {
     );
   });
 
+  it("keeps retired unversioned social-card 404 responses out of caches", async () => {
+    const [config, script] = await Promise.all([
+      readFile(
+        join(deploymentRoot, "nginx", "10-pyble-dev-https.conf"),
+        "utf8",
+      ),
+      readFile(join(deploymentRoot, "vps", "deploy.sh"), "utf8"),
+    ]);
+
+    expect(config).toContain(
+      '~^/social/pyble-beta-og-1200x630\\.(?:png|svg)(?:\\?|$) "no-store";',
+    );
+    expect(script).toContain("retired_public_asset_paths=(");
+    expect(script).toContain("/social/pyble-beta-og-1200x630.png");
+    expect(script).toContain("/social/pyble-beta-og-1200x630.svg");
+    expect(script).toContain("retired_public_asset_methods=( GET HEAD )");
+    expect(script).toMatch(
+      /retired_public_asset_status[\s\S]*?!= 404/,
+    );
+    expect(script).toContain("Cache-Control: *no-store");
+  });
+
   it("routes the exact v0.4.2 public beta through the immutable firmware boundary", async () => {
     const config = await readFile(
       join(deploymentRoot, "nginx", "10-pyble-dev-https.conf"),
@@ -442,6 +464,15 @@ describe("Cloudflare-fronted VPS deployment", () => {
     expect(smokeStart).toBeGreaterThan(-1);
     expect(smokeEnd).toBeGreaterThan(smokeStart);
     expect(firmwareNotFoundSmoke).toContain("/firmware/not-found-smoke");
+    expect(firmwareNotFoundSmoke).toContain(
+      "/firmware/v0.4.1/release.json",
+    );
+    expect(firmwareNotFoundSmoke).toContain(
+      "/firmware/v0.4.1/esp32-4mb/manifest.json",
+    );
+    expect(firmwareNotFoundSmoke).toContain(
+      "firmware_not_found_methods=( GET HEAD )",
+    );
     expect(firmwareNotFoundSmoke).toContain("esp32-c3-4mb/manifest.json");
     expect(firmwareNotFoundSmoke).toContain("--dump-header");
     expect(firmwareNotFoundSmoke).toContain("--write-out '%{http_code}'");
