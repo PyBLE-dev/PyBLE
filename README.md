@@ -113,7 +113,8 @@ shared conformance corpus, documentation, and CI atomically.
 1. Install the iPad beta from
    [TestFlight](https://testflight.apple.com/join/yU4e8s6d), or build the
    Flutter app locally.
-2. Open [pyble.dev/flash](https://pyble.dev/flash) in desktop Chrome or Edge.
+2. Open [pyble.dev/flash](https://pyble.dev/flash) in a supported desktop
+   Chromium browser.
    The exact v0.4.2 hardware-tested beta is active. Browser installation and
    interrupted-flash recovery passed on both exact profiles; complete release
    qualification continues. Confirm the active version, your exact profile,
