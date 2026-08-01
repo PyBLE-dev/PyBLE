@@ -105,6 +105,17 @@ export default function FlashPage() {
             </section>
 
             <div className="installer-links">
+              {publicBeta ? (
+                <a
+                  className="text-link"
+                  href="https://github.com/PyBLE-dev/PyBLE/releases/tag/firmware-v0.4.2"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Release evidence and exact hashes
+                  <ExternalIcon />
+                </a>
+              ) : null}
               <a
                 className="text-link"
                 href="https://esphome.github.io/esp-web-tools/"

@@ -8,11 +8,18 @@ are released independently from this monorepo.
 - Established `PyBLE-dev/PyBLE` as the canonical public monorepo.
 - Added public contributor, security, architecture, protocol, and validation
   documentation.
-- Selected firmware agent `0.4.2` for fresh reproducible builds and
-  two-profile qualification from the canonical public history.
-- Validated production Chrome installation, deliberate interruption, recovery,
-  and reset on real `esp32-4mb` and `esp32-s3-n16r8` hardware, and corrected
-  public beta copy to describe that completed scope.
+
+## Firmware 0.4.2 — 2026-07-31
+
+- Published the exact hardware-tested beta for `esp32-4mb` and
+  `esp32-s3-n16r8`; ESP32-C3 remains unavailable.
+- Validated production Chrome installation, deliberate interruption,
+  interrupted-flash recovery, and reset on real hardware for both exact
+  profiles.
+- Bound the public release to its annotated source tag, immutable metadata,
+  binary hashes, and post-release production-browser attestation.
+- The complete release qualification remains pending across the app, PBLE/1,
+  resource, and remaining firmware matrices.
 
 ## App 0.1.0-beta — 2026-07-30
 

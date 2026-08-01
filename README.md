@@ -74,6 +74,10 @@ remaining firmware matrices:
 | `esp32-s3-n16r8`  | ESP32-S3, 16 MiB flash / 8 MiB Octal PSRAM; N16R8-class only | v0.4.2 hardware-tested beta; browser install/recovery passed |
 | `esp32-c3-4mb`    | ESP32-C3, 4 MiB external SPI flash; no PSRAM assumed         | Planned; unavailable; no public image                        |
 
+See the
+[post-release production-browser attestation](docs/validation/browser-flashing/v0.4.2-production.md)
+for the exact hashes, completed checks, and deliberately bounded claim.
+
 These are the initial port targets, not a chip-family allowlist. A future board
 is compatible when it has a maintained PyBLE agent port, BLE GATT
 peripheral support, adequate resources, PBLE/1 conformance, recovery testing,

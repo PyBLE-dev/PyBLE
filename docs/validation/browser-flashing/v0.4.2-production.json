@@ -19,6 +19,7 @@
       "profile_id": "esp32-4mb",
       "chip_family": "ESP32",
       "offset": 4096,
+      "firmware_sha256": "3bd148df6163d21dd6ee86eecdff47820f3b20323e7cc39a3253937c60af1245",
       "recorded_at": "2026-07-31T16:03:55.320Z",
       "interruption_percentage": 7,
       "interruption_fetch_rounds": {
@@ -42,6 +43,7 @@
       "profile_id": "esp32-s3-n16r8",
       "chip_family": "ESP32-S3",
       "offset": 0,
+      "firmware_sha256": "7cb73313b7108d9ee7bcd34780ecc25f6fef1590dfeee49bb08c424e58f741ff",
       "recorded_at": "2026-07-31T16:06:09.062Z",
       "interruption_percentage": 7,
       "interruption_fetch_rounds": {
