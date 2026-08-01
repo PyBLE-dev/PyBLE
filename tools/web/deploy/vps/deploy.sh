@@ -94,6 +94,54 @@ if [[ -n $(git -C "${repository_root}" status --porcelain --untracked-files=all 
 fi
 readonly commit=$(git -C "${repository_root}" rev-parse HEAD)
 
+verify_remote_runtime_config() {
+    local source_config=$1
+    local installed_config=$2
+    local config_label=$3
+    local source_digest=
+    local installed_digest=
+
+    test ! -L "${source_config}"
+    test -f "${source_config}"
+    source_digest=$(shasum --algorithm 256 -- "${source_config}" |
+        awk '{ print $1 }')
+    if ! installed_digest=$(
+        ssh -o BatchMode=yes "${deploy_target}" bash -s -- \
+            "${installed_config}" <<'REMOTE'
+set -euo pipefail
+
+readonly installed_config=$1
+test ! -L "${installed_config}"
+test -f "${installed_config}"
+sha256sum -- "${installed_config}" | awk '{ print $1 }'
+REMOTE
+    ); then
+        printf 'Refusing deployment: active %s is missing or unsafe at %s.\n' \
+            "${config_label}" "${installed_config}" >&2
+        exit 65
+    fi
+    if [[ ! "${source_digest}" =~ ^[0-9a-f]{64}$ ||
+        ! "${installed_digest}" =~ ^[0-9a-f]{64}$ ]]; then
+        printf 'Refusing deployment: %s digest validation failed.\n' \
+            "${config_label}" >&2
+        exit 65
+    fi
+    if [[ "${source_digest}" != "${installed_digest}" ]]; then
+        printf 'Refusing deployment: active %s differs from repository source; install, validate, and reload Nginx first.\n' \
+            "${config_label}" >&2
+        exit 65
+    fi
+}
+
+verify_remote_runtime_config \
+    "${script_directory}/../nginx/10-pyble-dev-https.conf" \
+    /etc/nginx/sites-available/10-pyble-dev-https.conf \
+    'pyble.dev HTTPS configuration'
+verify_remote_runtime_config \
+    "${script_directory}/../nginx/pyble-security-headers.conf" \
+    /etc/nginx/snippets/pyble-security-headers.conf \
+    'security-header configuration'
+
 verify_firmware_tree_parity() {
     local expected_tree=$1
     local actual_tree=$2

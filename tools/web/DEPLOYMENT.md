@@ -230,6 +230,14 @@ browser can load it without a certificate warning.
 
 ## Deploy a release
 
+The deploy helper proves that the active `pyble.dev` HTTPS configuration and
+security-header snippet are byte-identical to the repository before it builds
+or uploads a release. When either repository file changes, first copy it to a
+root-owned temporary path on the VPS, retain a dated backup of the installed
+file, install it atomically at the path in the bootstrap table, run `nginx -t`,
+reload Nginx, and verify the affected policy endpoints. Only then run the
+website deployment. A configuration mismatch fails before activation.
+
 The deploy helper refuses every `tools/web/.env*` filesystem node before it
 chooses a deployment mode, so Next cannot inject an inherited selector or
 other unreviewed build input. It also refuses a dirty source tree, freezes the
