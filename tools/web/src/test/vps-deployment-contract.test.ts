@@ -119,9 +119,7 @@ describe("Cloudflare-fronted VPS deployment", () => {
     expect(script).toContain("/social/pyble-beta-og-1200x630.png");
     expect(script).toContain("/social/pyble-beta-og-1200x630.svg");
     expect(script).toContain("retired_public_asset_methods=( GET HEAD )");
-    expect(script).toMatch(
-      /retired_public_asset_status[\s\S]*?!= 404/,
-    );
+    expect(script).toMatch(/retired_public_asset_status[\s\S]*?!= 404/);
     expect(script).toContain("Cache-Control: *no-store");
   });
 
@@ -464,9 +462,7 @@ describe("Cloudflare-fronted VPS deployment", () => {
     expect(smokeStart).toBeGreaterThan(-1);
     expect(smokeEnd).toBeGreaterThan(smokeStart);
     expect(firmwareNotFoundSmoke).toContain("/firmware/not-found-smoke");
-    expect(firmwareNotFoundSmoke).toContain(
-      "/firmware/v0.4.1/release.json",
-    );
+    expect(firmwareNotFoundSmoke).toContain("/firmware/v0.4.1/release.json");
     expect(firmwareNotFoundSmoke).toContain(
       "/firmware/v0.4.1/esp32-4mb/manifest.json",
     );

@@ -1157,8 +1157,53 @@ if [[ "${not_found_status}" != 404 ]]; then
     exit 66
 fi
 
+retired_public_asset_paths=(
+    /social/pyble-beta-og-1200x630.png
+    /social/pyble-beta-og-1200x630.svg
+)
+retired_public_asset_methods=( GET HEAD )
+retired_public_asset_index=0
+for retired_public_asset_path in "${retired_public_asset_paths[@]}"; do
+    for retired_public_asset_method in "${retired_public_asset_methods[@]}"; do
+        retired_public_asset_headers="${smoke_root}/retired-public-asset-${retired_public_asset_index}-${retired_public_asset_method}.headers"
+        retired_public_asset_curl_mode=()
+        if [[ "${retired_public_asset_method}" == HEAD ]]; then
+            retired_public_asset_curl_mode=( --head )
+        fi
+        retired_public_asset_status=$(
+            curl --silent --show-error --max-time 30 \
+                --location --max-redirs 0 --proto '=https' \
+                "${retired_public_asset_curl_mode[@]}" \
+                --dump-header "${retired_public_asset_headers}" \
+                --output /dev/null \
+                --write-out '%{http_code}' \
+                "https://pyble.dev${retired_public_asset_path}"
+        )
+        if [[ "${retired_public_asset_status}" != 404 ]]; then
+            printf 'Retired public asset smoke failed for %s %s: expected 404, received %s.\n' \
+                "${retired_public_asset_method}" \
+                "${retired_public_asset_path}" \
+                "${retired_public_asset_status}" >&2
+            exit 66
+        fi
+        retired_public_asset_normalized_headers="${retired_public_asset_headers}.normalized"
+        tr -d '\r' < "${retired_public_asset_headers}" > \
+            "${retired_public_asset_normalized_headers}"
+        if ! grep -Eiq '^Cache-Control: *no-store *$' \
+            "${retired_public_asset_normalized_headers}"; then
+            printf 'Retired public asset smoke failed for %s %s: Cache-Control is not no-store.\n' \
+                "${retired_public_asset_method}" \
+                "${retired_public_asset_path}" >&2
+            exit 66
+        fi
+    done
+    retired_public_asset_index=$((retired_public_asset_index + 1))
+done
+
 firmware_not_found_paths=(
     /firmware/not-found-smoke
+    /firmware/v0.4.1/release.json
+    /firmware/v0.4.1/esp32-4mb/manifest.json
 )
 if [[ "${expected_installer_state}" == active ]]; then
     selected_firmware_root=${firmware_release_json_path%/release.json}
@@ -1167,32 +1212,42 @@ if [[ "${expected_installer_state}" == active ]]; then
         "${selected_firmware_root}/esp32-c3-4mb/manifest.json"
     )
 fi
+firmware_not_found_methods=( GET HEAD )
 firmware_not_found_index=0
 for firmware_not_found_path in "${firmware_not_found_paths[@]}"; do
-    firmware_not_found_headers="${smoke_root}/firmware-not-found-${firmware_not_found_index}.headers"
-    firmware_not_found_status=$(
-        curl --silent --show-error --max-time 30 \
-            --location --max-redirs 0 --proto '=https' \
-            --dump-header "${firmware_not_found_headers}" \
-            --output /dev/null \
-            --write-out '%{http_code}' \
-            "https://pyble.dev${firmware_not_found_path}"
-    )
-    if [[ "${firmware_not_found_status}" != 404 ]]; then
-        printf 'Firmware 404 smoke failed for %s: expected 404, received %s.\n' \
-            "${firmware_not_found_path}" \
-            "${firmware_not_found_status}" >&2
-        exit 66
-    fi
-    firmware_not_found_normalized_headers="${firmware_not_found_headers}.normalized"
-    tr -d '\r' < "${firmware_not_found_headers}" > \
-        "${firmware_not_found_normalized_headers}"
-    if ! grep -Eiq '^Cache-Control: *no-store *$' \
-        "${firmware_not_found_normalized_headers}"; then
-        printf 'Firmware 404 smoke failed for %s: Cache-Control is not no-store.\n' \
-            "${firmware_not_found_path}" >&2
-        exit 66
-    fi
+    for firmware_not_found_method in "${firmware_not_found_methods[@]}"; do
+        firmware_not_found_headers="${smoke_root}/firmware-not-found-${firmware_not_found_index}-${firmware_not_found_method}.headers"
+        firmware_not_found_curl_mode=()
+        if [[ "${firmware_not_found_method}" == HEAD ]]; then
+            firmware_not_found_curl_mode=( --head )
+        fi
+        firmware_not_found_status=$(
+            curl --silent --show-error --max-time 30 \
+                --location --max-redirs 0 --proto '=https' \
+                "${firmware_not_found_curl_mode[@]}" \
+                --dump-header "${firmware_not_found_headers}" \
+                --output /dev/null \
+                --write-out '%{http_code}' \
+                "https://pyble.dev${firmware_not_found_path}"
+        )
+        if [[ "${firmware_not_found_status}" != 404 ]]; then
+            printf 'Firmware 404 smoke failed for %s %s: expected 404, received %s.\n' \
+                "${firmware_not_found_method}" \
+                "${firmware_not_found_path}" \
+                "${firmware_not_found_status}" >&2
+            exit 66
+        fi
+        firmware_not_found_normalized_headers="${firmware_not_found_headers}.normalized"
+        tr -d '\r' < "${firmware_not_found_headers}" > \
+            "${firmware_not_found_normalized_headers}"
+        if ! grep -Eiq '^Cache-Control: *no-store *$' \
+            "${firmware_not_found_normalized_headers}"; then
+            printf 'Firmware 404 smoke failed for %s %s: Cache-Control is not no-store.\n' \
+                "${firmware_not_found_method}" \
+                "${firmware_not_found_path}" >&2
+            exit 66
+        fi
+    done
     firmware_not_found_index=$((firmware_not_found_index + 1))
 done
 
