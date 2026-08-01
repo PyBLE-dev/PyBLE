@@ -281,6 +281,7 @@ class PublicClaimsTest(unittest.TestCase):
             "installer without claiming that release artifacts are ready",
             "stages the future browser firmware installer",
             "before the current public installer can be enabled",
+            "the first validated firmware family",
         ):
             self.assertNotIn(stale_claim, combined)
 
