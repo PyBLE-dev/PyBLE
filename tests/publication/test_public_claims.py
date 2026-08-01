@@ -64,6 +64,24 @@ class PublicClaimsTest(unittest.TestCase):
         cls.flash_page = (
             REPO_ROOT / "tools" / "web" / "src" / "app" / "flash" / "page.tsx"
         ).read_text(encoding="utf-8")
+        cls.firmware_overview = (
+            REPO_ROOT / "docs" / "specifications" / "firmware.md"
+        ).read_text(encoding="utf-8")
+        cls.hardware_overview = (
+            REPO_ROOT / "docs" / "specifications" / "hardware.md"
+        ).read_text(encoding="utf-8")
+        cls.product_requirements = (
+            REPO_ROOT / "docs" / "specifications" / "prd.md"
+        ).read_text(encoding="utf-8")
+        cls.firmware_requirements = (
+            REPO_ROOT / "docs" / "specifications" / "firmware" / "specs.md"
+        ).read_text(encoding="utf-8")
+        cls.firmware_tdd = (
+            REPO_ROOT / "docs" / "specifications" / "firmware" / "TDD.md"
+        ).read_text(encoding="utf-8")
+        cls.website_readme = (
+            REPO_ROOT / "tools" / "web" / "README.md"
+        ).read_text(encoding="utf-8")
 
     def test_readme_identifies_the_exact_hardware_tested_public_beta(self) -> None:
         firmware = markdown_section(self.readme, "What works")
@@ -230,6 +248,56 @@ class PublicClaimsTest(unittest.TestCase):
         self.assertIn("interrupted-flash recovery", release)
         self.assertIn("complete release qualification remains pending", release)
         self.assertNotIn("qualified release", release)
+
+    def test_public_specifications_describe_the_exact_beta_without_overclaim(
+        self,
+    ) -> None:
+        combined = "\n".join(
+            (
+                self.firmware_overview,
+                self.hardware_overview,
+                self.product_requirements,
+                self.firmware_requirements,
+                self.firmware_tdd,
+                self.website_readme,
+            )
+        )
+
+        for wording in (
+            "v0.4.2 hardware-tested beta",
+            "browser installation and interrupted-flash recovery passed",
+            "complete release qualification remains pending",
+            "`esp32-4mb`",
+            "`esp32-s3-n16r8`",
+            "ESP32-C3",
+            "unavailable",
+        ):
+            self.assertIn(wording, combined)
+
+        for stale_claim in (
+            "current pre-v1 release qualifies",
+            "| Current pre-v1 release |",
+            "the two qualified profiles",
+            "installer without claiming that release artifacts are ready",
+            "stages the future browser firmware installer",
+            "before the current public installer can be enabled",
+        ):
+            self.assertNotIn(stale_claim, combined)
+
+        self.assertRegex(
+            self.hardware_overview,
+            r"(?s)`esp32-4mb`.{0,240}hardware-tested beta.{0,200}"
+            r"`esp32-s3-n16r8`.{0,240}hardware-tested beta",
+        )
+        self.assertIn(
+            "The exact v0.4.2 public-beta bundle covers exactly the two enabled, "
+            "not-yet-qualified profiles",
+            self.firmware_requirements,
+        )
+        self.assertIn(
+            "two hardware-tested beta profiles in v0.4.2",
+            self.firmware_tdd,
+        )
 
     def test_bug_template_collects_the_exact_installer_diagnostics(self) -> None:
         for field_id in (
