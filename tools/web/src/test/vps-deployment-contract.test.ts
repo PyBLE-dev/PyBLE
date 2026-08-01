@@ -112,9 +112,11 @@ describe("Cloudflare-fronted VPS deployment", () => {
       readFile(join(deploymentRoot, "vps", "deploy.sh"), "utf8"),
     ]);
 
-    expect(config).toContain(
-      '~^/social/pyble-beta-og-1200x630\\.(?:png|svg)(?:\\?|$) "no-store";',
-    );
+    for (const extension of ["png", "svg"]) {
+      const path = `/social/pyble-beta-og-1200x630.${extension}`;
+      expect(config).toContain(`"${path}" "no-store";`);
+      expect(config).toContain(`~^${path.replace(".", "\\.")}\\? "no-store";`);
+    }
     expect(script).toContain("retired_public_asset_paths=(");
     expect(script).toContain("/social/pyble-beta-og-1200x630.png");
     expect(script).toContain("/social/pyble-beta-og-1200x630.svg");
@@ -255,6 +257,24 @@ describe("Cloudflare-fronted VPS deployment", () => {
       .toMatch(
         /(?:rollback|restore)[\s\S]{0,1600}(?:ln\s+-s|mv\s+-Tf)[\s\S]{0,500}(?:current_release|\/srv\/pyble\/current)/i,
       );
+  });
+
+  it("routes explicit post-activation smoke rejections through rollback", async () => {
+    const script = await readFile(
+      join(deploymentRoot, "vps", "deploy.sh"),
+      "utf8",
+    );
+    const smokeStart = script.indexOf("trap rollback_on_smoke_error ERR");
+    const smokeEnd = script.indexOf("trap - ERR", smokeStart + 1);
+    const smokeRegion = script.slice(smokeStart, smokeEnd);
+
+    expect(smokeStart).toBeGreaterThan(-1);
+    expect(smokeEnd).toBeGreaterThan(smokeStart);
+    expect(script).toMatch(
+      /reject_post_activation_smoke\(\)[\s\S]*?return\s+"\$\{smoke_status\}"/,
+    );
+    expect(smokeRegion).not.toMatch(/\bexit\s+(?:66|67)\b/);
+    expect(smokeRegion).toMatch(/\breject_post_activation_smoke\s+(?:66|67)\b/);
   });
 
   it("arms rollback before the current symlink can switch or the activation SSH can fail", async () => {
