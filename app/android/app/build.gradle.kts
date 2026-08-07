@@ -4,6 +4,33 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+val pybleReleaseTaskRequested =
+    gradle.startParameter.taskNames.any { taskName ->
+        taskName.contains("Release", ignoreCase = true)
+    }
+
+// BLD-12: even `flutter run --release --flavor production` must use an
+// explicit non-debug signing identity; no release task falls back to debug.
+
+fun pybleReleaseEnvironment(name: String): String? {
+    val value = providers.environmentVariable(name).orNull?.trim()
+    if (pybleReleaseTaskRequested) {
+        require(!value.isNullOrEmpty()) {
+            "$name must be provided by the secret manager for Android release builds."
+        }
+    }
+    return value?.takeIf { it.isNotEmpty() }
+}
+
+val pybleAndroidKeystorePath =
+    pybleReleaseEnvironment("PYBLE_ANDROID_KEYSTORE_PATH")
+val pybleAndroidKeystorePassword =
+    pybleReleaseEnvironment("PYBLE_ANDROID_KEYSTORE_PASSWORD")
+val pybleAndroidKeyAlias =
+    pybleReleaseEnvironment("PYBLE_ANDROID_KEY_ALIAS")
+val pybleAndroidKeyPassword =
+    pybleReleaseEnvironment("PYBLE_ANDROID_KEY_PASSWORD")
+
 android {
     namespace = "dev.pyble.pyble"
     compileSdk = flutter.compileSdkVersion
@@ -36,12 +63,25 @@ android {
         }
     }
 
+    signingConfigs {
+        create("release") {
+            if (pybleReleaseTaskRequested) {
+                val keystore = file(pybleAndroidKeystorePath!!)
+                require(keystore.isFile) {
+                    "PYBLE_ANDROID_KEYSTORE_PATH must name an existing regular file."
+                }
+                storeFile = keystore
+                storePassword = pybleAndroidKeystorePassword
+                keyAlias = pybleAndroidKeyAlias
+                keyPassword = pybleAndroidKeyPassword
+                storeType = "PKCS12"
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with debug keys for now, so
-            // `flutter run --release --flavor production` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 }

@@ -236,6 +236,10 @@ jobs:
       PYBLE_ANDROID_RAW_EMULATOR_LOG: /tmp/pyble-android-emulator.log
       ANDROID_AVD_HOME: /tmp/pyble-android-avd
       GRADLE_USER_HOME: /tmp/pyble-gradle-home
+      PYBLE_ANDROID_KEYSTORE_PATH: /tmp/pyble-android-ci-upload.p12
+      PYBLE_ANDROID_KEYSTORE_PASSWORD: pyble-ci-ephemeral-not-a-secret
+      PYBLE_ANDROID_KEY_ALIAS: pyble-ci-upload
+      PYBLE_ANDROID_KEY_PASSWORD: pyble-ci-ephemeral-not-a-secret
     steps:
       - uses: actions/checkout@v4
       - name: Set up Flutter 3.44.1 (pinned, stable) + SDK cache
@@ -347,15 +351,34 @@ jobs:
             "ANDROID_NDK_PATH=$ANDROID_NDK_PATH" \
             "ANDROID_NDK_LATEST_HOME=$ANDROID_NDK_LATEST_HOME" \
             >> "$GITHUB_ENV"
-      - name: Production release APK build (no integration-test plugin)
+      - name: Create disposable Android CI signing key
+        shell: bash
+        run: |
+          set -euo pipefail
+          keytool -genkeypair -noprompt \
+            -keystore "$PYBLE_ANDROID_KEYSTORE_PATH" \
+            -storetype PKCS12 \
+            -storepass "$PYBLE_ANDROID_KEYSTORE_PASSWORD" \
+            -keypass "$PYBLE_ANDROID_KEY_PASSWORD" \
+            -alias "$PYBLE_ANDROID_KEY_ALIAS" \
+            -keyalg RSA \
+            -keysize 2048 \
+            -sigalg SHA256withRSA \
+            -validity 10000 \
+            -dname 'CN=PyBLE CI Ephemeral'
+      - name: Production release APK build plus signed AAB (no integration-test plugin)
         shell: bash
         run: |
           set -euo pipefail
           flutter build apk --release --flavor production --target lib/main.dart
+          flutter build appbundle --release --flavor production --target lib/main.dart
           PYBLE_AAPT="$PYBLE_ANDROID_SDK_ROOT/build-tools/36.0.0/aapt"
           PYBLE_APK="build/app/outputs/flutter-apk/app-production-release.apk"
+          PYBLE_AAB="build/app/outputs/bundle/productionRelease/app-production-release.aab"
           "$PYBLE_AAPT" dump badging "$PYBLE_APK" \
             | grep -F "package: name='dev.pyble.pyble'"
+          test -s "$PYBLE_AAB"
+          jarsigner -verify "$PYBLE_AAB"
       - name: Create API 34 AOSP x86_64 tablet AVD
         shell: bash
         run: |
