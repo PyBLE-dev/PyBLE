@@ -283,8 +283,15 @@ Future<void> _pumpUntil(
 }
 
 Future<void> _tapVisible(WidgetTester tester, Finder finder) async {
+  // A real Android IME can keep the footer below the resized render surface
+  // even after ensureVisible scrolls its RenderBox. Commit the field edit and
+  // restore the full viewport before resolving the action's tap position.
+  FocusManager.instance.primaryFocus?.unfocus();
+  await SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
+  await tester.pumpAndSettle();
   await tester.ensureVisible(finder);
   await tester.pumpAndSettle();
+  expect(finder.hitTestable(), findsOneWidget);
   await tester.tap(finder);
 }
 
