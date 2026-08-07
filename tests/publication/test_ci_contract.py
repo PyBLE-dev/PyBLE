@@ -332,10 +332,30 @@ class CiContractTest(unittest.TestCase):
             android,
         )
 
-    def test_android_blockly_smoke_reveals_ime_occluded_action(self) -> None:
+    def test_android_blockly_smoke_reveals_ime_occluded_actions(self) -> None:
         suite = (
             REPO_ROOT / "app" / "integration_test" / "blockly_webview_suite.dart"
         ).read_text(encoding="utf-8")
+
+        tap_visible_start = suite.index("Future<void> _tapVisible(")
+        tap_visible_end = suite.index("\n}\n", tap_visible_start)
+        tap_visible = suite[tap_visible_start:tap_visible_end]
+        preview_snippets = (
+            "FocusManager.instance.primaryFocus?.unfocus();",
+            "SystemChannels.textInput.invokeMethod<void>('TextInput.hide');",
+            "await tester.ensureVisible(finder);",
+            "expect(finder.hitTestable(), findsOneWidget);",
+            "await tester.tap(finder);",
+        )
+        preview_positions = []
+        for snippet in preview_snippets:
+            self.assertIn(
+                snippet,
+                tap_visible,
+                f"missing Android preview interaction contract: {snippet}",
+            )
+            preview_positions.append(tap_visible.index(snippet))
+        self.assertEqual(preview_positions, sorted(preview_positions))
 
         enter_gpio = suite.index(
             "await tester.enterText("
