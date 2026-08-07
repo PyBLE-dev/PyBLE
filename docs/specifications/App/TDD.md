@@ -1549,6 +1549,26 @@ been applied. This is deliberately stricter than `codesign --deep --strict`,
 which can validate the enclosing framework while Apple's server independently
 reclassifies a script-like resource as nested code (BLD-11).
 
+### 15.8 Android release signing and App Bundle gate
+
+The Android Gradle build owns one `release` signing configuration. It reads the
+keystore path, keystore password, key alias, and key password only from the
+four `PYBLE_ANDROID_*` environment variables frozen by BLD-12. Configuration
+of any Gradle task whose name contains `Release` validates that all four values
+are non-empty and that the keystore is a regular file; absence is a hard build
+error. No release path names `signingConfigs.debug`, and secret values are
+never committed, written to build output, or passed as command-line project
+arguments.
+
+The public Android CI job creates a disposable PKCS#12 key under the runner's
+temporary directory, exports the four environment variables, and builds the
+production APK and AAB through the same Gradle configuration. It verifies the
+AAB as a signed JAR and discards the key with the runner. The owner build uses
+a separately generated Play upload key held outside the repository. Its gate
+records the clean source commit, version name/code, bundle SHA-256, and public
+upload-certificate SHA-256; the two certificate fingerprints extracted from
+the AAB and upload keystore MUST match before upload (BLD-12).
+
 ## 16. Traceability
 
 Design element → satisfied requirement IDs. Each `FR-*`/`NFR-*`/`CON-*`/`DAT-*` family has at least one design home.
@@ -1575,13 +1595,13 @@ Design element → satisfied requirement IDs. Each `FR-*`/`NFR-*`/`CON-*`/`DAT-*
 | Error handling & mapping ([§14](#14-error-handling--mapping)) | lib/pble + UI | FR-PBLE-13, FR-ERR-*, FR-FILES-3, NFR-USE-3, NFR-REL-4 |
 | Reliability (resume, CRC, preserve-on-drop) ([§8.4](#84-file-transfer-state-machine), [§9.2](#92-migrations--hydration)) | lib/pble, lib/data | NFR-REL-1..4, NFR-PERF-1/2, FR-PROJ-6 |
 | Test design, shared corpus, gates ([§15](#15-test-design)) | all | NFR-MAINT-1/3/4, BLD-5/8, CON-6/8 |
-| Build/versioning/distribution ([§15.6](#156-import-boundary--no-leak-gates), [§15.7](#157-launcher-identity-and-platform-assets), [§8.6](#86-hello--capabilities)) | all | BLD-1..11, IF-6, NFR-COMPAT-1 |
+| Build/versioning/distribution ([§15.6](#156-import-boundary--no-leak-gates), [§15.7](#157-launcher-identity-and-platform-assets), [§15.8](#158-android-release-signing-and-app-bundle-gate), [§8.6](#86-hello--capabilities)) | all | BLD-1..12, IF-6, NFR-COMPAT-1 |
 | Security & privacy ([§5.1](#51-the-connection-interface), [§6.3](#63-single-active-writer--serialization), [§8.9](#89-screenless-identity--identify-control-commands), [§9.1](#91-schema), [§11.5](#115-screenless-identity--rename--identify)) | lib/pble, lib/connect, lib/data | SEC-1..9 |
 
 **Requirements with no dedicated design element:** none functional. Notes:
 
 - **NFR-PERF-3/4** and **OI-4** have design *levers* (MTU 247, window `W`, bounded console buffer, time-to-connect via saved `board_ref`) but the concrete ceilings are HIL-frozen later — by intent, not a gap.
-- **BLD-1/2/3/4/6/10/11** (single Flutter codebase, `pubspec` governance + lock, SemVer, free dual-store-at-parity distribution, generated notices + in-app Open-Source Notices screen / IF-6, platform launcher packaging, and store-signable embedded data) are project/build-pipeline obligations: this TDD honors them (single codebase, ASCII identifiers, notices screen surfaced in UI, shared vector launcher source, deterministic Blockly asset transform) but the release pipeline is owned by the build/infra stories (X-03/X-11). Flagged here for completeness.
+- **BLD-1/2/3/4/6/10/11/12** (single Flutter codebase, `pubspec` governance + lock, SemVer, free dual-store-at-parity distribution, generated notices + in-app Open-Source Notices screen / IF-6, platform launcher packaging, store-signable embedded data, and fail-closed Android upload signing) are project/build-pipeline obligations: this TDD honors them (single codebase, ASCII identifiers, notices screen surfaced in UI, shared vector launcher source, deterministic Blockly asset transform, and the signed AAB gate) but the release pipeline is owned by the build/infra stories (X-03/X-11). Flagged here for completeness.
 - **BLD-9** (previous-protocol-major compatibility window) is forward-looking: no PBLE/2 exists yet, but its design home is the version-negotiation seam ([§8.6](#86-hello--capabilities)) — the same HELLO `proto_versions[]` exchange that refuses an unsupported version (FR-PBLE-5/6) is where a future app would select a previous major, so deployed boards are never bricked by an app update.
 - **OI-1** (editor widget) and **OI-2** (state-management ADR) are reflected as D3 and the `EditorSurface` fallback ([§11.1](#111-editor)); both await their ADRs ([§17](#17-risks--open-questions)).
 
