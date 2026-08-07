@@ -4,8 +4,6 @@
 /// Native, localized chooser for the bundled beginner Blockly examples.
 library;
 
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -160,6 +158,7 @@ class _BlocksExamplesDialogState extends State<_BlocksExamplesDialog> {
   late BlocksExampleTemplate _selected;
   final Map<String, TextEditingController> _gpioControllers =
       <String, TextEditingController>{};
+  final Map<String, GlobalKey> _gpioFieldKeys = <String, GlobalKey>{};
   BlocksExamplePreview? _preview;
   Object? _previewError;
   bool _generating = false;
@@ -173,11 +172,6 @@ class _BlocksExamplesDialogState extends State<_BlocksExamplesDialog> {
         ? widget.catalog.byId(initialId)
         : widget.catalog.examples.first;
     _resetGpioControllers();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && !_selected.requiresGpio) {
-        unawaited(_generatePreview());
-      }
-    });
   }
 
   @override
@@ -201,6 +195,16 @@ class _BlocksExamplesDialogState extends State<_BlocksExamplesDialog> {
                 role.role,
                 TextEditingController(),
               ),
+        ),
+      );
+    _gpioFieldKeys
+      ..clear()
+      ..addEntries(
+        _selected.gpioRoles.map(
+          (BlocksExampleGpioRole role) => MapEntry<String, GlobalKey>(
+            role.role,
+            GlobalKey(debugLabel: 'blocks-example-${role.role}-gpio'),
+          ),
         ),
       );
   }
@@ -253,7 +257,6 @@ class _BlocksExamplesDialogState extends State<_BlocksExamplesDialog> {
       _generating = false;
       _resetGpioControllers();
     });
-    if (!example.requiresGpio) unawaited(_generatePreview());
   }
 
   void _onGpioChanged() {
@@ -263,7 +266,6 @@ class _BlocksExamplesDialogState extends State<_BlocksExamplesDialog> {
       _previewError = null;
       _generating = false;
     });
-    if (_gpioValues != null) unawaited(_generatePreview());
   }
 
   Future<BlocksExamplePreview?> _generatePreview() async {
@@ -555,6 +557,7 @@ class _BlocksExamplesDialogState extends State<_BlocksExamplesDialog> {
               (BlocksExampleGpioRole role) => Padding(
                 padding: const EdgeInsets.only(bottom: SignalSpacing.md),
                 child: TextField(
+                  key: _gpioFieldKeys[role.role],
                   controller: _gpioControllers[role.role],
                   keyboardType: TextInputType.number,
                   textInputAction: TextInputAction.next,
@@ -659,7 +662,7 @@ class _BlocksExamplesDialogState extends State<_BlocksExamplesDialog> {
     if (preview == null) {
       return _PreviewPlaceholder(
         icon: Icons.code,
-        message: l10n.blocksExamplesPreviewLoading,
+        message: l10n.blocksExamplesPreviewIdle,
       );
     }
     return Semantics(

@@ -670,6 +670,7 @@
 
   let workspace;
   let revision = 0;
+  let hostEpoch;
   let snapshotScheduled = false;
   let pendingRestore;
   let resizeFrame = 0;
@@ -678,7 +679,9 @@
   function postMessage(message) {
     const channel = window.PybleBlocks;
     if (channel && typeof channel.postMessage === "function") {
-      channel.postMessage(JSON.stringify(message));
+      const envelope =
+        message.type === "hostReady" ? message : { ...message, hostEpoch };
+      channel.postMessage(JSON.stringify(envelope));
     }
   }
 
@@ -892,9 +895,16 @@
     return value;
   }
 
-  function configureHost(messages, workspaceJson, priorRevision) {
+  function configureHost(messages, dartHostEpoch, workspaceJson, priorRevision) {
     if (workspace) {
       throw new Error("Blockly host is already configured.");
+    }
+    if (
+      !Number.isSafeInteger(dartHostEpoch) ||
+      dartHostEpoch < 1 ||
+      dartHostEpoch > maxRevision
+    ) {
+      throw new TypeError("Dart host epoch must be a positive safe integer.");
     }
     if (!messages || typeof messages !== "object" || Array.isArray(messages)) {
       throw new TypeError("Blockly host messages must be an object.");
@@ -1049,6 +1059,7 @@
     registerGpioBlocks();
     registerNeopixelBlocks();
     registerTimeBlocks();
+    hostEpoch = dartHostEpoch;
     pendingRestore = initialRestore;
     initialise();
     return true;
@@ -1060,6 +1071,7 @@
     restore,
     snapshot: publishSnapshot,
   });
+  postMessage({ version: bridgeVersion, type: "hostReady" });
 
   function resizeWorkspace() {
     if (!workspace) {

@@ -4,15 +4,32 @@
          The flutter_blue_plus_android plugin manifest is intentionally blank, so
          the app declares these itself. neverForLocation: the scan is filtered to
          the PyBLE service UUID and derives no location (startScan is called with
-         androidUsesFineLocation: false). ACCESS_FINE_LOCATION is legacy-only,
-         capped at Android 11 (API 30). -->
+         androidUsesFineLocation: false). The app is BLE-first, so BLE hardware
+         is required. Classic Bluetooth and location hardware remain optional:
+         those permissions are only older-Android BLE scan prerequisites.
+         Bluetooth/Fine-Location declarations are legacy-only and capped at
+         Android 11 (API 30); Coarse Location is capped at Android 9 (API 28),
+         matching the pinned adapter contract. -->
+    <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
+    <uses-feature android:name="android.hardware.bluetooth_le" android:required="true" />
+    <uses-feature android:name="android.hardware.location" android:required="false" />
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" android:maxSdkVersion="28" />
     <application
         android:label="PyBLE"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+        <!-- Flutter 3.44 Impeller/Vulkan renders a blank frame on the validated
+             Lenovo TB-J616X (MediaTek, Android 12). Keep the supported legacy
+             OpenGL renderer until the physical Android gate passes on a later
+             Flutter engine. See NFR-COMPAT-4. -->
+        <meta-data
+            android:name="io.flutter.embedding.android.EnableImpeller"
+            android:value="false" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

@@ -751,8 +751,14 @@ abstract class AppLocalizations {
   /// Placeholder in the example source pane while a GPIO role is missing or invalid.
   ///
   /// In en, this message translates to:
-  /// **'Generated Python appears after every required GPIO is entered.'**
+  /// **'Enter every required GPIO to enable generation.'**
   String get blocksExamplesPreviewWaiting;
+
+  /// Truthful idle placeholder before Preview, Create copy, or Replace workspace explicitly starts generation.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose an action below to generate Python.'**
+  String get blocksExamplesPreviewIdle;
 
   /// Progress text while the production Blockly generator prepares an example preview.
   ///

@@ -24,6 +24,165 @@ const String _assetPath = 'assets/blockly/index.html';
 const String _channelName = 'PybleBlocks';
 const Duration _firstSnapshotTimeout = Duration(seconds: 15);
 
+/// Routing decision for one JavaScript-channel message during host startup.
+enum BlocklyHostChannelDisposition { initialise, forward, ignore, reject }
+
+/// Admits the authored host's versioned readiness event once per page.
+///
+/// All other channel traffic remains available to the document controller.
+/// Requiring the exact two-field envelope prevents a malformed message from
+/// closing the startup gate before the JavaScript API exists.
+class BlocklyHostStartupGate {
+  int _pageGeneration = 0;
+  int _hostEpoch = 0;
+  int _attemptingGeneration = 0;
+  int _configuredGeneration = 0;
+  int _queuedReadinessGeneration = 0;
+
+  int get generation => _pageGeneration;
+
+  void beginPage({required int hostEpoch}) {
+    if (hostEpoch < 1) {
+      throw ArgumentError.value(hostEpoch, 'hostEpoch', 'must be positive');
+    }
+    _pageGeneration += 1;
+    _hostEpoch = hostEpoch;
+    _attemptingGeneration = 0;
+    _configuredGeneration = 0;
+    _queuedReadinessGeneration = 0;
+  }
+
+  bool isCurrentGeneration(int generation) =>
+      generation == _pageGeneration && generation > 0;
+
+  BlocklyHostChannelDisposition classify(String message) {
+    try {
+      final Object? decoded = jsonDecode(message);
+      if (decoded is Map<String, dynamic> &&
+          decoded.length == 2 &&
+          decoded['version'] == kBlocksBridgeVersion &&
+          decoded['type'] == 'hostReady') {
+        if (_pageGeneration == 0 || _configuredGeneration == _pageGeneration) {
+          return BlocklyHostChannelDisposition.ignore;
+        }
+        if (_attemptingGeneration == _pageGeneration) {
+          _queuedReadinessGeneration = _pageGeneration;
+          return BlocklyHostChannelDisposition.ignore;
+        }
+        _attemptingGeneration = _pageGeneration;
+        return BlocklyHostChannelDisposition.initialise;
+      }
+
+      if (decoded is! Map<String, dynamic>) {
+        return BlocklyHostChannelDisposition.reject;
+      }
+      final Object? messageHostEpoch = decoded['hostEpoch'];
+      if (messageHostEpoch is! int || messageHostEpoch < 1) {
+        return BlocklyHostChannelDisposition.reject;
+      }
+      if (_pageGeneration == 0 || messageHostEpoch != _hostEpoch) {
+        return BlocklyHostChannelDisposition.ignore;
+      }
+      return BlocklyHostChannelDisposition.forward;
+    } on FormatException {
+      return BlocklyHostChannelDisposition.reject;
+    }
+  }
+
+  /// Commits one configuration attempt and requests a serialized retry when a
+  /// readiness duplicate arrived while the failed attempt was in flight.
+  bool finishInitialisation(int generation, {required bool succeeded}) {
+    if (!isCurrentGeneration(generation) ||
+        _attemptingGeneration != generation) {
+      return false;
+    }
+    _attemptingGeneration = 0;
+    if (succeeded) {
+      _configuredGeneration = generation;
+      _queuedReadinessGeneration = 0;
+      return false;
+    }
+    if (_queuedReadinessGeneration == generation) {
+      _queuedReadinessGeneration = 0;
+      _attemptingGeneration = generation;
+      return true;
+    }
+    return false;
+  }
+}
+
+/// Keeps readiness control traffic out of the document bridge.
+@visibleForTesting
+void dispatchBlocklyHostChannelMessage({
+  required BlocklyHostStartupGate gate,
+  required String message,
+  required VoidCallback initialise,
+  required ValueChanged<String> forward,
+  required VoidCallback reject,
+}) {
+  switch (gate.classify(message)) {
+    case BlocklyHostChannelDisposition.initialise:
+      initialise();
+      return;
+    case BlocklyHostChannelDisposition.forward:
+      forward(message);
+      return;
+    case BlocklyHostChannelDisposition.ignore:
+      return;
+    case BlocklyHostChannelDisposition.reject:
+      reject();
+      return;
+  }
+}
+
+/// Serializes native setup against the controller's lazily created WebView.
+@visibleForTesting
+Future<void> configureBlocklyControllerSequentially({
+  required bool Function() isCancelled,
+  required Future<void> Function() enableJavaScript,
+  required Future<void> Function() installJavaScriptChannel,
+  required Future<void> Function() installNavigationDelegate,
+}) async {
+  if (isCancelled()) return;
+  await enableJavaScript();
+  if (isCancelled()) return;
+  await installJavaScriptChannel();
+  if (isCancelled()) return;
+  await installNavigationDelegate();
+}
+
+/// Loads the bundled page only after every asynchronous controller hook exists.
+Future<void> loadBlocklyAssetAfterControllerSetup({
+  required Future<void> setup,
+  required Future<void> Function() waitUntilLoadAllowed,
+  required bool Function() isCancelled,
+  required Future<void> Function() load,
+}) async {
+  await setup;
+  if (isCancelled()) return;
+  await waitUntilLoadAllowed();
+  if (isCancelled()) return;
+  await load();
+}
+
+/// Owns startup errors immediately while deferring provider mutation until a
+/// descendant can safely report after its first Flutter frame.
+@visibleForTesting
+Future<void> runBlocklyStartupGuarded({
+  required Future<void> Function() startup,
+  required Future<void> Function() waitUntilFailureCanBeReported,
+  required bool Function() isCancelled,
+  required ValueChanged<Object> reportFailure,
+}) async {
+  try {
+    await startup();
+  } catch (error) {
+    await waitUntilFailureCanBeReported();
+    if (isCancelled()) return;
+    reportFailure(error);
+  }
+}
+
 /// Whether [value] is the exact local main-frame location admitted by A-31.
 ///
 /// Relative scripts/media are subresources and do not navigate the main frame.
@@ -47,6 +206,11 @@ bool isAllowedBlocklyNavigation(String value) {
   return value ==
       'https://appassets.androidplatform.net/assets/assets/blockly/index.html';
 }
+
+/// Whether a main-frame start is an authored Blockly document generation.
+@visibleForTesting
+bool isBlocklyAssetDocumentNavigation(String value) =>
+    value != 'about:blank' && isAllowedBlocklyNavigation(value);
 
 /// Stale retained revisions are not startup success: the restore handshake must
 /// still publish a newer snapshot before the watchdog can stop.
@@ -133,76 +297,126 @@ class BlocklyWebView extends ConsumerStatefulWidget {
 
 class _BlocklyWebViewState extends ConsumerState<BlocklyWebView> {
   late final WebViewController _controller;
+  late final Completer<void> _startupLoadAllowed;
+  late final Future<void> _startupFuture;
   late final BlocksDocumentController _documentController;
-  late final int _hostId;
+  late int _hostId;
+  final BlocklyHostStartupGate _startupGate = BlocklyHostStartupGate();
   Timer? _firstMessageTimer;
+  bool _assetPageStarted = false;
+  bool _startupCancelled = false;
 
   @override
   void initState() {
     super.initState();
     _documentController = ref.read(blocksDocumentProvider.notifier);
-    _controller = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..addJavaScriptChannel(
+    _controller = WebViewController();
+    _startupLoadAllowed = Completer<void>();
+    _hostId = _beginDocumentHost();
+    final int bootstrapHostId = _hostId;
+    final Future<void> controllerSetup = configureBlocklyControllerSequentially(
+      isCancelled: () => _startupCancelled,
+      enableJavaScript: () =>
+          _controller.setJavaScriptMode(JavaScriptMode.unrestricted),
+      installJavaScriptChannel: () => _controller.addJavaScriptChannel(
         _channelName,
         onMessageReceived: (JavaScriptMessage message) {
           if (!mounted) return;
-          final BlocksBridgeResult result = _documentController
-              .receiveBridgeMessage(message.message, hostId: _hostId);
-          if (shouldCancelBlocksStartupWatchdog(result)) {
-            _firstMessageTimer?.cancel();
-          }
-        },
-      )
-      ..setNavigationDelegate(
-        NavigationDelegate(
-          onNavigationRequest: (NavigationRequest request) {
-            return isAllowedBlocklyNavigation(request.url)
-                ? NavigationDecision.navigate
-                : NavigationDecision.prevent;
-          },
-          onPageFinished: (String url) {
-            if (!mounted ||
-                url == 'about:blank' ||
-                !isAllowedBlocklyNavigation(url)) {
-              return;
-            }
-            unawaited(_initialiseHost());
-          },
-          onWebResourceError: (WebResourceError error) {
-            if (!mounted) return;
-            if (error.isForMainFrame == false) return;
-            _firstMessageTimer?.cancel();
-            _documentController.reportHostError(
-              error.description,
-              hostId: _hostId,
-            );
-          },
-        ),
-      );
-    _hostId = _documentController.beginHost(
-      previewExample: _previewExample,
-      requestSnapshot: _requestFreshSnapshot,
-    );
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _documentController.markHostLoading(_hostId);
-      _firstMessageTimer = Timer(_firstSnapshotTimeout, () {
-        if (!mounted) return;
-        _documentController.reportHostError(
-          AppLocalizations.of(context).blocksStartupTimeout,
-          hostId: _hostId,
-        );
-      });
-      unawaited(
-        _controller.loadFlutterAsset(_assetPath).catchError((Object error) {
-          _firstMessageTimer?.cancel();
-          if (!mounted) return;
-          _documentController.reportHostError(
-            error.toString(),
-            hostId: _hostId,
+          dispatchBlocklyHostChannelMessage(
+            gate: _startupGate,
+            message: message.message,
+            initialise: () {
+              final int hostId = _hostId;
+              final int generation = _startupGate.generation;
+              unawaited(_initialiseHost(hostId, generation));
+            },
+            forward: (String bridgeMessage) {
+              final int hostId = _hostId;
+              final BlocksBridgeResult result = _documentController
+                  .receiveBridgeMessage(bridgeMessage, hostId: hostId);
+              if (shouldCancelBlocksStartupWatchdog(result)) {
+                _firstMessageTimer?.cancel();
+              }
+            },
+            reject: () {
+              final int hostId = _hostId;
+              _firstMessageTimer?.cancel();
+              _documentController.reportHostError(
+                'Blockly bridge message has an invalid host epoch',
+                hostId: hostId,
+              );
+            },
           );
-        }),
+        },
+      ),
+      installNavigationDelegate: () => _controller.setNavigationDelegate(
+        NavigationDelegate(
+          onPageStarted: _onPageStarted,
+          onNavigationRequest: (NavigationRequest request) =>
+              isAllowedBlocklyNavigation(request.url)
+              ? NavigationDecision.navigate
+              : NavigationDecision.prevent,
+        ),
+      ),
+    );
+    bool startupIsCancelled() =>
+        _startupCancelled || !mounted || bootstrapHostId != _hostId;
+    _startupFuture = runBlocklyStartupGuarded(
+      startup: () => loadBlocklyAssetAfterControllerSetup(
+        setup: controllerSetup,
+        waitUntilLoadAllowed: () => _startupLoadAllowed.future,
+        isCancelled: startupIsCancelled,
+        load: () => _controller.loadFlutterAsset(_assetPath),
+      ),
+      waitUntilFailureCanBeReported: () => _startupLoadAllowed.future,
+      isCancelled: startupIsCancelled,
+      reportFailure: (Object error) {
+        _firstMessageTimer?.cancel();
+        _documentController.reportHostError(
+          error.toString(),
+          hostId: bootstrapHostId,
+        );
+      },
+    );
+    unawaited(_startupFuture);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        if (!_startupLoadAllowed.isCompleted) _startupLoadAllowed.complete();
+        return;
+      }
+      _documentController.markHostLoading(_hostId);
+      _armFirstSnapshotWatchdog();
+      if (!_startupLoadAllowed.isCompleted) _startupLoadAllowed.complete();
+    });
+  }
+
+  int _beginDocumentHost() => _documentController.beginHost(
+    previewExample: _previewExample,
+    requestSnapshot: _requestFreshSnapshot,
+  );
+
+  void _onPageStarted(String url) {
+    if (!mounted || !isBlocklyAssetDocumentNavigation(url)) return;
+    if (_assetPageStarted) {
+      _hostId = _beginDocumentHost();
+    } else {
+      _assetPageStarted = true;
+    }
+    _startupGate.beginPage(hostEpoch: _hostId);
+    _documentController.markHostLoading(_hostId);
+    _armFirstSnapshotWatchdog();
+  }
+
+  void _armFirstSnapshotWatchdog() {
+    _firstMessageTimer?.cancel();
+    final int hostId = _hostId;
+    final int generation = _startupGate.generation;
+    _firstMessageTimer = Timer(_firstSnapshotTimeout, () {
+      if (!mounted || hostId != _hostId) return;
+      if (_startupGate.generation != generation) return;
+      _documentController.reportHostError(
+        AppLocalizations.of(context).blocksStartupTimeout,
+        hostId: hostId,
       );
     });
   }
@@ -218,8 +432,12 @@ class _BlocklyWebViewState extends ConsumerState<BlocklyWebView> {
     return decodeBlocksExamplePreviewResult(result);
   }
 
-  Future<void> _initialiseHost() async {
-    if (!mounted) return;
+  Future<void> _initialiseHost(int hostId, int generation) async {
+    if (!mounted ||
+        hostId != _hostId ||
+        !_startupGate.isCurrentGeneration(generation)) {
+      return;
+    }
     final BlocksDocument document = ref.read(blocksDocumentProvider);
     final String? retainedWorkspaceJson = document.retainedWorkspaceJson;
     final int? retainedWorkspaceRevision = document.retainedWorkspaceRevision;
@@ -242,20 +460,39 @@ class _BlocklyWebViewState extends ConsumerState<BlocklyWebView> {
                 '$retainedWorkspaceRevision';
       final Object configured = await _controller.runJavaScriptReturningResult(
         'window.pybleBlocks.configureHost('
-        '$messages$retainedArguments);',
+        '$messages, $hostId$retainedArguments);',
       );
+      if (!mounted ||
+          hostId != _hostId ||
+          !_startupGate.isCurrentGeneration(generation)) {
+        return;
+      }
       if (!_javascriptTrue(configured)) {
         throw const FormatException('Blockly rejected localized host messages');
       }
+      _startupGate.finishInitialisation(generation, succeeded: true);
     } catch (error) {
-      _firstMessageTimer?.cancel();
-      if (!mounted) return;
-      _documentController.reportHostError(error.toString(), hostId: _hostId);
+      if (!mounted ||
+          hostId != _hostId ||
+          !_startupGate.isCurrentGeneration(generation)) {
+        return;
+      }
+      final bool retry = _startupGate.finishInitialisation(
+        generation,
+        succeeded: false,
+      );
+      if (retry) {
+        unawaited(_initialiseHost(hostId, generation));
+        return;
+      }
+      _documentController.reportHostError(error.toString(), hostId: hostId);
     }
   }
 
   @override
   void dispose() {
+    _startupCancelled = true;
+    if (!_startupLoadAllowed.isCompleted) _startupLoadAllowed.complete();
     _firstMessageTimer?.cancel();
     _documentController.endHost(_hostId);
     super.dispose();

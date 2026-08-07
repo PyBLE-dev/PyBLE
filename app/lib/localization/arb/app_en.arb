@@ -551,9 +551,13 @@
       }
     }
   },
-  "blocksExamplesPreviewWaiting": "Generated Python appears after every required GPIO is entered.",
+  "blocksExamplesPreviewWaiting": "Enter every required GPIO to enable generation.",
   "@blocksExamplesPreviewWaiting": {
     "description": "Placeholder in the example source pane while a GPIO role is missing or invalid."
+  },
+  "blocksExamplesPreviewIdle": "Choose an action below to generate Python.",
+  "@blocksExamplesPreviewIdle": {
+    "description": "Truthful idle placeholder before Preview, Create copy, or Replace workspace explicitly starts generation."
   },
   "blocksExamplesPreviewLoading": "Generating Python…",
   "@blocksExamplesPreviewLoading": {

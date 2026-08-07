@@ -475,6 +475,9 @@ bool isSemanticallyEmptyBlocksWorkspace(String? workspaceJson) {
   try {
     final Object? decoded = jsonDecode(workspaceJson);
     if (decoded is! Map<String, dynamic>) return false;
+    // Blockly omits every empty serializer section and emits `{}` for a
+    // canonical workspace with no blocks, variables, or other state.
+    if (decoded.isEmpty) return true;
     final Object? rawBlocks = decoded['blocks'];
     if (rawBlocks is! Map<String, dynamic>) return false;
     final Object? blocks = rawBlocks['blocks'];
