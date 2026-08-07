@@ -96,4 +96,46 @@ void main() {
       reason: 'the signing comment must not advertise an ambiguous command',
     );
   });
+
+  test('Android release builds fail closed and CI verifies a signed AAB', () {
+    final String appRoot = appPackageRoot().path;
+    final String gradle = File(
+      '$appRoot/android/app/build.gradle.kts',
+    ).readAsStringSync();
+    final String ci = File(
+      '$appRoot/../.github/workflows/ci.yml',
+    ).readAsStringSync();
+
+    for (final String variable in <String>[
+      'PYBLE_ANDROID_KEYSTORE_PATH',
+      'PYBLE_ANDROID_KEYSTORE_PASSWORD',
+      'PYBLE_ANDROID_KEY_ALIAS',
+      'PYBLE_ANDROID_KEY_PASSWORD',
+    ]) {
+      expect(
+        gradle,
+        contains(variable),
+        reason: '$variable is part of the frozen BLD-12 signing contract',
+      );
+      expect(
+        ci,
+        contains(variable),
+        reason: 'CI must exercise the same BLD-12 release path',
+      );
+    }
+
+    expect(gradle, contains('create("release")'));
+    expect(gradle, contains('contains("Release", ignoreCase = true)'));
+    expect(gradle, contains('isFile'));
+    expect(gradle, isNot(contains('signingConfigs.getByName("debug")')));
+    expect(ci, contains('CN=PyBLE CI Ephemeral'));
+    expect(
+      ci,
+      contains(
+        'flutter build appbundle --release --flavor production '
+        '--target lib/main.dart',
+      ),
+    );
+    expect(ci, contains(r'jarsigner -verify "$PYBLE_AAB"'));
+  });
 }
