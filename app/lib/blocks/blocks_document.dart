@@ -364,6 +364,7 @@ class BlocksDocumentController extends Notifier<BlocksDocument> {
   /// Makes retained source non-actionable until [hostId] publishes a snapshot.
   void markHostLoading(int hostId) {
     if (_activeHostId != hostId) return;
+    _activeHostReady = false;
     state = state.copyWith(
       status: BlocksStatus.loading,
       error: null,

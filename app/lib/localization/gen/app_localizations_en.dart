@@ -394,7 +394,11 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get blocksExamplesPreviewWaiting =>
-      'Generated Python appears after every required GPIO is entered.';
+      'Enter every required GPIO to enable generation.';
+
+  @override
+  String get blocksExamplesPreviewIdle =>
+      'Choose an action below to generate Python.';
 
   @override
   String get blocksExamplesPreviewLoading => 'Generating Python…';

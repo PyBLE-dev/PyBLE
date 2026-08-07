@@ -86,6 +86,27 @@ flutter test --tags golden
 
 Use a recent stable Flutter SDK matching the version pinned by CI.
 
+Use the normal package directly on iOS:
+
+```sh
+flutter run -d <ios-device>
+```
+
+Always name an Android flavor. `production` is the normal launcher, while
+`integration` uses the disposable `dev.pyble.pyble.integrationtest` package:
+
+```sh
+flutter run --flavor production --target lib/main.dart -d <android-device>
+flutter build apk --release --flavor production --target lib/main.dart
+flutter drive --flavor integration \
+  --driver test_driver/integration_test.dart \
+  --target integration_test/android_smoke_test.dart \
+  -d <android-device>
+```
+
+The current local production-flavor release build uses Gradle's debug signing
+configuration for device testing. It is not a distributable beta artifact.
+
 ### Firmware
 
 Host-side protocol and release tests do not require hardware:
