@@ -127,16 +127,30 @@ try {
     path.join(repoRoot, "app/assets/blockly/index.html"),
   );
   await page.goto(indexUrl.href, { waitUntil: "load" });
-  const hostConfiguration = await page.evaluate((messages) => {
+  const hostEpoch = 101;
+  const invalidHostEpoch = await page.evaluate((messages) => {
+    try {
+      window.pybleBlocks.configureHost(messages, 0);
+      return "accepted";
+    } catch (error) {
+      return String(error);
+    }
+  }, localizedHostMessages);
+  if (!invalidHostEpoch.includes("host epoch")) {
+    throw new Error(
+      `Blockly accepted an invalid Dart host epoch: ${invalidHostEpoch}`,
+    );
+  }
+  const hostConfiguration = await page.evaluate(({ messages, epoch }) => {
     const configurable =
       typeof window.pybleBlocks?.configureHost === "function";
     return {
       configurable,
       accepted: configurable
-        ? window.pybleBlocks.configureHost(messages)
+        ? window.pybleBlocks.configureHost(messages, epoch)
         : false,
     };
-  }, localizedHostMessages);
+  }, { messages: localizedHostMessages, epoch: hostEpoch });
   if (!hostConfiguration.configurable || hostConfiguration.accepted !== true) {
     throw new Error(
       `localized Blockly host configuration failed: ${JSON.stringify(hostConfiguration)}`,
@@ -145,6 +159,17 @@ try {
   await page.waitForFunction(() =>
     window.__pybleMessages.some((message) => message.type === "snapshot"),
   );
+  const initialSnapshot = await page.evaluate(() =>
+    window.__pybleMessages.find((message) => message.type === "snapshot"),
+  );
+  if (
+    !initialSnapshot ||
+    JSON.stringify(initialSnapshot.workspace) !== "{}"
+  ) {
+    throw new Error(
+      `Blockly's canonical empty serialization changed: ${JSON.stringify(initialSnapshot)}`,
+    );
+  }
 
   async function assertWorkspaceGeometry(width, height) {
     await page.setViewport({ width, height, deviceScaleFactor: 1 });
@@ -624,6 +649,7 @@ try {
       version: 1,
       type: "openExamples",
       exampleId: "blink-led",
+      hostEpoch,
     },
   });
 
@@ -1957,16 +1983,19 @@ try {
   });
   await coldStartPage.goto(indexUrl.href, { waitUntil: "load" });
   const retainedRevision = 4096;
+  const coldStartHostEpoch = 202;
   const coldStartConfiguration = await coldStartPage.evaluate(
-    ({ messages, retainedWorkspaceJson, priorRevision }) => ({
+    ({ messages, epoch, retainedWorkspaceJson, priorRevision }) => ({
       accepted: window.pybleBlocks.configureHost(
         messages,
+        epoch,
         retainedWorkspaceJson,
         priorRevision,
       ),
     }),
     {
       messages: localizedHostMessages,
+      epoch: coldStartHostEpoch,
       retainedWorkspaceJson: JSON.stringify(gpioWorkspace),
       priorRevision: retainedRevision,
     },
@@ -1994,21 +2023,31 @@ try {
       `atomic retained-workspace startup was rejected: ${JSON.stringify(coldStartConfiguration)}`,
     );
   }
-  if (coldStart.workspaceCount !== 1 || coldStart.messages.length !== 1) {
+  if (coldStart.workspaceCount !== 1 || coldStart.messages.length !== 2) {
     throw new Error(
-      `atomic retained-workspace startup must initialize and publish exactly once: ${JSON.stringify(coldStart)}`,
+      `atomic retained-workspace startup must publish one readiness event then one snapshot: ${JSON.stringify(coldStart)}`,
     );
   }
-  const firstColdStartMessage = coldStart.messages[0];
+  const [coldStartReady, firstColdStartSnapshot] = coldStart.messages;
   if (
-    firstColdStartMessage.type !== "snapshot" ||
-    firstColdStartMessage.source !== expectedGpioSource ||
-    !Number.isSafeInteger(firstColdStartMessage.revision) ||
-    firstColdStartMessage.revision <= retainedRevision ||
-    !JSON.stringify(firstColdStartMessage.workspace).includes("pyble_gpio_pin")
+    coldStartReady.type !== "hostReady" ||
+    coldStartReady.version !== 1 ||
+    Object.keys(coldStartReady).length !== 2
   ) {
     throw new Error(
-      `the first atomic cold-start snapshot was not the retained GPIO program: ${JSON.stringify(firstColdStartMessage)}`,
+      `atomic retained-workspace startup did not publish exactly one versioned readiness event first: ${JSON.stringify(coldStart.messages)}`,
+    );
+  }
+  if (
+    firstColdStartSnapshot.type !== "snapshot" ||
+    firstColdStartSnapshot.hostEpoch !== coldStartHostEpoch ||
+    firstColdStartSnapshot.source !== expectedGpioSource ||
+    !Number.isSafeInteger(firstColdStartSnapshot.revision) ||
+    firstColdStartSnapshot.revision <= retainedRevision ||
+    !JSON.stringify(firstColdStartSnapshot.workspace).includes("pyble_gpio_pin")
+  ) {
+    throw new Error(
+      `the first atomic cold-start snapshot was not the retained GPIO program: ${JSON.stringify(firstColdStartSnapshot)}`,
     );
   }
 
@@ -2203,6 +2242,24 @@ try {
         message.source.includes("print('hello')"),
     ),
   );
+
+  const bridgeEpochs = await page.evaluate(() => window.__pybleMessages);
+  const readyMessages = bridgeEpochs.filter(
+    (message) => message.type === "hostReady",
+  );
+  const postConfigMessages = bridgeEpochs.filter(
+    (message) => message.type !== "hostReady",
+  );
+  if (
+    readyMessages.length !== 1 ||
+    Object.keys(readyMessages[0]).length !== 2 ||
+    postConfigMessages.length === 0 ||
+    postConfigMessages.some((message) => message.hostEpoch !== hostEpoch)
+  ) {
+    throw new Error(
+      `Blockly bridge traffic was not bound to host epoch ${hostEpoch}: ${JSON.stringify(bridgeEpochs)}`,
+    );
+  }
 
   const external = requests.filter((request) => {
     const url = new URL(request);

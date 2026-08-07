@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 
 import 'package:pyble/app/providers.dart';
 import 'package:pyble/blocks/blocks.dart';
@@ -281,6 +282,12 @@ Future<void> _pumpUntil(
   );
 }
 
+Future<void> _tapVisible(WidgetTester tester, Finder finder) async {
+  await tester.ensureVisible(finder);
+  await tester.pumpAndSettle();
+  await tester.tap(finder);
+}
+
 Widget _testApp(ProviderContainer container, {required bool showBlocks}) {
   return UncontrolledProviderScope(
     container: container,
@@ -313,6 +320,11 @@ void registerBlocklyWebViewIntegrationTests() {
 
       controller.receiveBridgeMessage(_seedSnapshot());
 
+      // Android creates the real platform view lazily after the native Flutter
+      // surface is attached. Reproduce that production lifecycle instead of
+      // making a WebView the integration runner's first rendered frame.
+      await tester.pumpWidget(_testApp(container, showBlocks: false));
+      await tester.pumpAndSettle();
       await tester.pumpWidget(_testApp(container, showBlocks: true));
 
       await _pumpUntil(
@@ -363,6 +375,82 @@ void registerBlocklyWebViewIntegrationTests() {
           isNotNull,
         );
       }
+
+      // Reload the same platform view, not merely its Flutter wrapper. The
+      // retained graph must restore through a fresh page generation, and an
+      // exact duplicate readiness event must remain host-control traffic.
+      final WebViewWidget webView = tester.widget<WebViewWidget>(
+        find.byType(WebViewWidget),
+      );
+      final WebViewController liveWebViewController =
+          WebViewController.fromPlatform(webView.platform.params.controller);
+      final int beforeReloadRevision = container
+          .read(blocksDocumentProvider)
+          .program!
+          .revision;
+      await liveWebViewController.reload();
+      await _pumpUntil(
+        tester,
+        () {
+          final BlocksDocument state = container.read(blocksDocumentProvider);
+          return state.status == BlocksStatus.ready &&
+              state.error == null &&
+              state.program != null &&
+              state.program!.revision > beforeReloadRevision &&
+              state.program!.source == _expectedGpioSource &&
+              controller.hasActiveReadyHost;
+        },
+        reason:
+            'the same WebView did not restore through a fresh page generation',
+      );
+      final int afterReloadRevision = container
+          .read(blocksDocumentProvider)
+          .program!
+          .revision;
+      final String supersededSnapshot = jsonEncode(<String, Object?>{
+        'version': 1,
+        'type': 'snapshot',
+        'hostEpoch': 1,
+        'revision': afterReloadRevision + 100,
+        'source': 'print("superseded page")\n',
+        'workspace': <String, Object?>{
+          'blocks': <String, Object?>{
+            'languageVersion': 0,
+            'blocks': <Object?>[],
+          },
+        },
+      });
+      final String supersededError = jsonEncode(<String, Object?>{
+        'version': 1,
+        'type': 'error',
+        'hostEpoch': 1,
+        'message': 'superseded page failed',
+      });
+      await liveWebViewController.runJavaScript(
+        'window.PybleBlocks.postMessage(${jsonEncode(supersededSnapshot)});'
+        'window.PybleBlocks.postMessage(${jsonEncode(supersededError)});',
+      );
+      await tester.pump(const Duration(milliseconds: 300));
+      final BlocksDocument afterSupersededTraffic = container.read(
+        blocksDocumentProvider,
+      );
+      expect(afterSupersededTraffic.status, BlocksStatus.ready);
+      expect(afterSupersededTraffic.error, isNull);
+      expect(afterSupersededTraffic.workspaceError, isNull);
+      expect(afterSupersededTraffic.program?.revision, afterReloadRevision);
+      expect(afterSupersededTraffic.program?.source, _expectedGpioSource);
+
+      await liveWebViewController.runJavaScript(
+        "window.PybleBlocks.postMessage("
+        "'{\"version\":1,\"type\":\"hostReady\"}');",
+      );
+      await tester.pump(const Duration(milliseconds: 300));
+      final BlocksDocument afterDuplicateReady = container.read(
+        blocksDocumentProvider,
+      );
+      expect(afterDuplicateReady.status, BlocksStatus.ready);
+      expect(afterDuplicateReady.error, isNull);
+      expect(afterDuplicateReady.program?.revision, afterReloadRevision);
 
       await tester.tap(find.byKey(kBlocksPreviewButtonKey));
       await tester.pumpAndSettle();
@@ -549,6 +637,12 @@ void registerBlocklyWebViewIntegrationTests() {
         () => find.byKey(kBlocksExamplesCatalogKey).evaluate().isNotEmpty,
         reason: 'the bundled beginner example chooser did not open',
       );
+      expect(
+        find.textContaining("print('Hello, PyBLE!')"),
+        findsNothing,
+        reason: 'opening the chooser must not generate through the WebView',
+      );
+      await _tapVisible(tester, find.byKey(kBlocksExamplePreviewButtonKey));
       await _pumpUntil(
         tester,
         () =>
@@ -556,6 +650,13 @@ void registerBlocklyWebViewIntegrationTests() {
         reason:
             'the real scratch Blockly workspace did not generate the Hello preview',
       );
+      await tester.tap(
+        find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.text('Close'),
+        ),
+      );
+      await tester.pumpAndSettle();
       final BlocksDocument afterHelloPreview = container.read(
         blocksDocumentProvider,
       );
@@ -576,6 +677,13 @@ void registerBlocklyWebViewIntegrationTests() {
         find.widgetWithText(TextField, 'NeoPixel data GPIO'),
         '48',
       );
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining('from neopixel import NeoPixel'),
+        findsNothing,
+        reason: 'GPIO editing must not generate through the WebView',
+      );
+      await _tapVisible(tester, find.byKey(kBlocksExamplePreviewButtonKey));
       await _pumpUntil(
         tester,
         () =>
@@ -588,6 +696,13 @@ void registerBlocklyWebViewIntegrationTests() {
             'the real scratch Blockly workspace did not generate the standard '
             'NeoPixel API from the user-selected GPIO',
       );
+      await tester.tap(
+        find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.text('Close'),
+        ),
+      );
+      await tester.pumpAndSettle();
       final BlocksDocument afterNeoPixelPreview = container.read(
         blocksDocumentProvider,
       );
@@ -633,16 +748,31 @@ pixels.write()
       );
       await tester.pumpAndSettle();
       await tester.enterText(find.widgetWithText(TextField, 'LED GPIO'), '17');
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining('Pin(17, Pin.OUT'),
+        findsNothing,
+        reason: 'GPIO editing must remain local until an explicit action',
+      );
+      await _tapVisible(tester, find.byKey(kBlocksExamplePreviewButtonKey));
       await _pumpUntil(
         tester,
         () => find.textContaining('Pin(17, Pin.OUT').evaluate().isNotEmpty,
         reason:
             'the real scratch Blockly workspace did not materialize the selected LED GPIO',
       );
+      await tester.tap(
+        find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.text('Close'),
+        ),
+      );
+      await tester.pumpAndSettle();
       // A real Android IME can still cover the example action after enterText,
       // even when ensureVisible has scrolled its RenderBox into the viewport.
-      // Close it before asserting hit-testability so the integration gate tests
-      // the action rather than emulator keyboard-animation timing.
+      // Close it after the explicit preview before asserting hit-testability,
+      // so the integration gate tests the action rather than emulator
+      // keyboard-animation timing.
       FocusManager.instance.primaryFocus?.unfocus();
       await SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
       await tester.pumpAndSettle();

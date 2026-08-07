@@ -81,7 +81,7 @@ Requirement voice: MUST / SHOULD / MAY. Each line: **ID** — statement — *(so
 - **FR-BLE-3** — The adapter MUST expose a byte-stream interface: an inbound `Stream<List<int>>` from TX notifications and a `write(bytes)` to RX (Write / Write-Without-Response); it MUST NOT interpret frame contents. MUST (*source: app.md §2; verify: unit; story: A-02*)
 - **FR-BLE-4** — The adapter MUST detect link loss and auto-reattempt connection, exposing connection-state transitions to the layer above; it MUST reconnect a saved board by remembered identifier. MUST (*source: PRD §8.1, §13.1; verify: unit/integration; story: A-03*)
 - **FR-BLE-5** — The adapter MUST stop scanning before initiating a connection. MUST (*source: PRD §9.6; verify: unit; story: A-02*)
-- **FR-BLE-6** — The adapter MUST request and handle platform BLE permissions and adapter-off state, surfacing them upward with enough detail for a localized rationale (iOS `NSBluetoothAlwaysUsageDescription`; Android 12+ `BLUETOOTH_SCAN`/`BLUETOOTH_CONNECT`, plus location handling on older Android). MUST (*source: PRD §9.6, §13.6, app.md §5; verify: integration; story: A-04*)
+- **FR-BLE-6** — The adapter MUST request and handle platform BLE permissions and adapter-off state, surfacing them upward with enough detail for a localized rationale (iOS `NSBluetoothAlwaysUsageDescription`; Android 12+ `BLUETOOTH_SCAN`/`BLUETOOTH_CONNECT`; Android 11 and lower `BLUETOOTH`/`BLUETOOTH_ADMIN` capped at API 30 plus location handling; `ACCESS_COARSE_LOCATION` capped at API 28). Because BLE is the sole primary transport, the Android package MUST declare `android.hardware.bluetooth_le` as required. It MUST declare `android.hardware.bluetooth` and `android.hardware.location` as not required so legacy permissions do not filter otherwise-compatible BLE hardware. MUST (*source: PRD §9.6, §13.6, app.md §5; verify: integration; story: A-04*)
 - **FR-BLE-7** — The adapter MUST remain a thin, mockable seam so scan/connect/reconnect are testable with a mocked transport and behaviour differences between iOS and Android are isolable. MUST (*source: PRD §23 (BLE risk), app.md §7; verify: unit; story: A-01/A-02/A-03*)
 - **FR-BLE-8** — No UI widget MUST import `lib/ble/`; the adapter is reachable only through `lib/pble/`. MUST (*source: PRD §6.1, §16.1, app.md §1; verify: unit (import-boundary lint); story: A-02*)
 
@@ -198,6 +198,47 @@ The client implements the PBLE/1 wire contract; it references [protocol.md](../p
 ### 4.10 Blocks & Plots — FR-BLOCKS / FR-PLOTS
 
 - **FR-BLOCKS-1** — The app MUST provide a Blockly block editor (WebView, `lib/blocks/`) that generates an inspectable, board-neutral MicroPython subset with **no board-specific defaults**. The current numeric-GPIO and NeoPixel subset is initially validated on ESP32-family firmware; broader runtime availability MUST NOT be implied. MUST (*source: PRD §9.8, §16.1; verify: integration; story: A-31*)
+- **FR-BLOCKS-1A — Android input and test isolation (FROZEN · A-31 · `[docs]`
+  2026-08-07).** Native GPIO fields in the example chooser MUST retain focus
+  and accept ordinary software-keyboard input on supported Android tablets.
+  Responsive keyboard-inset changes and every per-keystroke validation rebuild
+  MUST retain the same role-scoped field/controller/input client, including
+  staged multi-digit entry, deletion, and re-entry.
+  Editing or validating a GPIO draft MUST NOT invoke the Blockly platform view;
+  production generation occurs only after an explicit Preview, Create copy, or
+  Replace workspace action. The bundled host MUST request configuration with a
+  versioned JavaScript-channel readiness event emitted once per page generation
+  and only after its authored API exists. An allowed main-frame reload MUST
+  start a fresh host epoch, readiness gate, and bounded watchdog; an exact
+  duplicate readiness event in one generation is swallowed and MUST NOT enter
+  the document bridge. Readiness is committed only after host configuration
+  succeeds; a failed or in-flight attempt MUST NOT consume the real readiness
+  event. Every post-configuration bridge envelope MUST echo the positive Dart
+  host epoch. A valid message from another epoch is ignored; a missing or
+  malformed epoch fails visibly. Native WebView controller setup MUST execute
+  and finish
+  sequentially—JavaScript mode, JavaScript channel, then navigation delegate—
+  before the single bundled-asset load begins. The startup future MUST own its
+  error handler immediately and MUST stop between phases after disposal. A
+  main-frame resource error with no assignable page epoch MUST rely on the
+  owned asset-load rejection or generation watchdog rather than be attributed
+  to a mutable host. Startup MUST NOT use a delay,
+  poll, or automatic reload; it remains bounded by the existing watchdog and
+  MUST fail visibly instead of polling without limit. Android device-test
+  builds MUST use an application ID distinct from the normal
+  `dev.pyble.pyble` launcher so test installation and cleanup cannot replace or
+  uninstall the user-facing app. Android development, build, and run commands
+  MUST name either the `production` or `integration` flavor; contributor
+  guidance MUST NOT leave the application ID implicit.
+  The native semantic-empty check MUST accept Blockly's canonical empty
+  workspace serialization (`{}`) as empty, while null, malformed,
+  variable-only, and non-empty graphs remain non-empty or unknown. A
+  successfully loaded canonical empty workspace MUST show the empty-workspace
+  actions and MUST NOT be labelled as still loading.
+  CI MUST compile the `production` release APK after host tests so a dev-only
+  integration plugin can neither break nor enter the production artifact.
+  MUST (*source: PRD §13.6, §16.1; verify: widget/Android physical-device;
+  story: A-31/X-11*)
 - **FR-BLOCKS-2** — Generated code MUST be inspectable as plain `.py` and MUST flow through the same upload/run path as the text editor (§8.2). MUST (*source: PRD §9.8; verify: integration; story: A-31*)
 - **FR-BLOCKS-3** — The app MUST allow running or saving the generated code through the `Connection` API. MUST (*source: PRD §9.8; verify: integration; story: A-31*)
 - **FR-BLOCKS-4** — The block bridge MUST bind to `Connection`/neutral types
@@ -403,13 +444,20 @@ contains exactly `hello-pyble`, `count-repeatedly`, `blink-led`,
 `blink-neopixel`, `read-button`, `button-controls-led`, and
 `reusable-function` in that order. Each fixture is
 ordinary Blockly serialization plus stable technical metadata and ARB keys.
-The catalog does not duplicate generated Python. The app restores a deep clone
-and invokes the production generator for the selectable, read-only source
-preview. Non-hardware examples generate immediately. A GPIO fixture contains
+The catalog does not duplicate generated Python. Opening, browsing, selecting,
+or editing a GPIO draft does not invoke the platform view or production
+generator. Only an explicit **Preview**, **Create copy**, or **Replace
+workspace** action restores a deep clone and invokes the production generator
+for the selectable, read-only source preview. Before that action, the preview
+surface MUST state that generation awaits an action; it MUST show a loading
+state only while generation is actually in progress. A GPIO fixture contains
 disconnected constructor sockets and role bindings only; the user must provide
 each finite, non-negative integral GPIO before source is previewed or copied,
 and values for separate roles must be pairwise distinct. A repeated role value
 produces a localized field error; this does not claim physical board validity.
+While a required GPIO is absent or invalid, the source surface describes that
+entering every required GPIO enables generation; it does not promise automatic
+generation.
 Materialization connects ordinary number blocks in the clone and leaves no role
 placeholder or metadata in the active workspace. No board/chip default, named
 onboard component, remembered pin, or claimed safe value is supplied.
@@ -634,6 +682,15 @@ finished.
 - **NFR-COMPAT-1** — iPadOS and Android tablet MUST ship at feature parity at every milestone; neither platform may lag the other for a released capability. MUST (*source: PRD §13.6, §15.3; verify: integration; story: X-11*)
 - **NFR-COMPAT-2** — BLE permissions MUST be handled per platform (iOS `NSBluetoothAlwaysUsageDescription`; Android 12+ `BLUETOOTH_SCAN`/`BLUETOOTH_CONNECT` + older-Android location). MUST (*source: PRD §13.6, app.md §5; verify: integration; story: A-04*)
 - **NFR-COMPAT-3** — The app MUST NOT depend on USB serial or Wi-Fi onboarding as a runtime path; BLE is the only v1.0 transport. MUST (*source: PRD §13.6, §1A.3; verify: unit; story: A-02*)
+- **NFR-COMPAT-4 — Android renderer fallback (FROZEN · X-11 · `[docs]`
+  2026-08-07).** Until the pinned Flutter engine renders correctly through
+  Impeller/Vulkan on the validated Lenovo TB-J616X/MediaTek Android 12 device,
+  the Android manifest MUST disable Impeller so Flutter uses its supported
+  legacy OpenGL renderer. A real-device cold-launch check MUST show the first
+  application frame and the BLE connect surface; a blank foreground activity
+  fails the Android gate. This temporary opt-out MUST be re-evaluated whenever
+  Flutter is upgraded because Flutter has deprecated permanent opt-out.
+  MUST (*source: PRD §13.6, §15.3; verify: unit/build/manual; story: X-11*)
 
 ### 5.6 Accessibility & Localization — NFR-A11Y
 

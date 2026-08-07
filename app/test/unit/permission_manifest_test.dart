@@ -9,12 +9,9 @@
 //   iOS      NSBluetoothAlwaysUsageDescription
 //   Android  BLUETOOTH_SCAN with android:usesPermissionFlags="neverForLocation"
 //            BLUETOOTH_CONNECT
-//            ACCESS_FINE_LOCATION with android:maxSdkVersion="30" (Android ≤ 11)
-//
-// CURRENTLY RED: the manifests are the default Flutter templates with no BLE
-// permission block. HAND-OFF: `app/ios/Runner/Info.plist` +
-// `app/android/app/src/main/AndroidManifest.xml` → app-ble-engineer (permission
-// block only; app-build-smith owns the surrounding skeleton).
+//            BLUETOOTH / BLUETOOTH_ADMIN / ACCESS_FINE_LOCATION capped at 30
+//            ACCESS_COARSE_LOCATION capped at 28
+//            android.hardware.bluetooth_le required
 
 import 'dart:io';
 
@@ -85,6 +82,53 @@ void main() {
       expect(manifest, contains('BLUETOOTH_CONNECT'));
     });
 
+    test('BLE hardware is required because BLE is the primary transport', () {
+      expect(
+        RegExp(
+          r'<uses-feature\s+android:name="android\.hardware\.bluetooth_le"\s+android:required="true"\s*/>',
+        ).hasMatch(manifest),
+        isTrue,
+      );
+    });
+
+    test('legacy permissions do not require Bluetooth Classic hardware', () {
+      expect(
+        RegExp(
+          r'<uses-feature\s+android:name="android\.hardware\.bluetooth"\s+android:required="false"\s*/>',
+        ).hasMatch(manifest),
+        isTrue,
+        reason: 'PyBLE requires BLE, not a Bluetooth Classic radio',
+      );
+    });
+
+    test('legacy scan permissions do not require location hardware', () {
+      expect(
+        RegExp(
+          r'<uses-feature\s+android:name="android\.hardware\.location"\s+android:required="false"\s*/>',
+        ).hasMatch(manifest),
+        isTrue,
+        reason:
+            'BLE scans on older Android need permission, not location hardware',
+      );
+    });
+
+    test('legacy Bluetooth permissions are capped at maxSdkVersion 30', () {
+      for (final String permission in <String>[
+        'android.permission.BLUETOOTH',
+        'android.permission.BLUETOOTH_ADMIN',
+      ]) {
+        expect(
+          usesPermissionWithBoth(
+            manifest,
+            'android:name="$permission"',
+            'android:maxSdkVersion="30"',
+          ),
+          isTrue,
+          reason: '$permission is required only through Android 11',
+        );
+      }
+    });
+
     test('legacy ACCESS_FINE_LOCATION is capped at maxSdkVersion 30', () {
       expect(
         usesPermissionWithBoth(
@@ -94,6 +138,27 @@ void main() {
         ),
         isTrue,
         reason: 'location handling is Android ≤ 11 only (IF-5)',
+      );
+    });
+
+    test('legacy ACCESS_COARSE_LOCATION is capped at maxSdkVersion 28', () {
+      expect(
+        usesPermissionWithBoth(
+          manifest,
+          'ACCESS_COARSE_LOCATION',
+          'android:maxSdkVersion="28"',
+        ),
+        isTrue,
+        reason: 'Android 9 and lower need the legacy coarse declaration',
+      );
+    });
+
+    test('the failing Impeller/Vulkan renderer path is disabled', () {
+      expect(
+        RegExp(
+          r'<meta-data\s+android:name="io\.flutter\.embedding\.android\.EnableImpeller"\s+android:value="false"\s*/>',
+        ).hasMatch(manifest),
+        isTrue,
       );
     });
   });

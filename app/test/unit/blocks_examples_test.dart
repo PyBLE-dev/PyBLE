@@ -273,6 +273,20 @@ void main() {
     }
 
     test('semantic empty detection includes variables and invalid graphs', () {
+      expect(isSemanticallyEmptyBlocksWorkspace(null), isFalse);
+      expect(isSemanticallyEmptyBlocksWorkspace('not JSON'), isFalse);
+      expect(
+        isSemanticallyEmptyBlocksWorkspace(
+          jsonEncode(<String, Object?>{'variables': <Object?>[]}),
+        ),
+        isFalse,
+        reason: 'a missing blocks section is unknown unless the object is `{}`',
+      );
+      expect(
+        isSemanticallyEmptyBlocksWorkspace('{}'),
+        isTrue,
+        reason: 'Blockly serializes its canonical empty workspace as `{}`',
+      );
       expect(
         isSemanticallyEmptyBlocksWorkspace(
           jsonEncode(<String, Object?>{

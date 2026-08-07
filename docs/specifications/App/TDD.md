@@ -491,7 +491,7 @@ Implements the byte boundary; references [protocol.md §2](../protocol.md#2-ble-
 **Frozen permission / readiness contract (S3 A-04 · `[docs]` 2026-07-02).**
 
 - **Typed, mockable readiness seam (surfaced through `lib/pble` ONLY, FR-BLE-8):** `enum BleReadiness { ready, adapterOff, unauthorized, unsupported }` plus a `Stream<BleReadiness>` of transitions (a reasons stream) so the layer above can render a localized rationale *later*. `lib/ble` derives it from `FlutterBluePlus.adapterState` (`on → ready`, `off → adapterOff`, `unauthorized → unauthorized`, `unavailable → unsupported`); `lib/pble` re-exposes it as a neutral type — **no widget imports `lib/ble/`** and no `flutter_blue_plus` enum crosses the seam (CON-8).
-- **Platform manifest keys (A-04 content, owned by app-ble-engineer; app-build-smith owns the surrounding skeleton):** iOS `ios/Runner/Info.plist` → `NSBluetoothAlwaysUsageDescription`. Android `android/app/src/main/AndroidManifest.xml` → `BLUETOOTH_SCAN` (`android:usesPermissionFlags="neverForLocation"`) + `BLUETOOTH_CONNECT`, and legacy `ACCESS_FINE_LOCATION` with `android:maxSdkVersion="30"` (Android ≤ 11 only). The `flutter_blue_plus_android` plugin manifest is intentionally blank, so the app MUST declare these itself; `startScan(androidUsesFineLocation: false)` since the scan is service-UUID-filtered and derives no location.
+- **Platform manifest keys (A-04 content, owned by app-ble-engineer; app-build-smith owns the surrounding skeleton):** iOS `ios/Runner/Info.plist` → `NSBluetoothAlwaysUsageDescription`. Android `android/app/src/main/AndroidManifest.xml` → required `android.hardware.bluetooth_le`, with `android.hardware.bluetooth` and `android.hardware.location` optional (to override hardware implicitly required by legacy permissions); `BLUETOOTH_SCAN` (`android:usesPermissionFlags="neverForLocation"`) + `BLUETOOTH_CONNECT`; legacy `BLUETOOTH` + `BLUETOOTH_ADMIN` + `ACCESS_FINE_LOCATION`, each with `android:maxSdkVersion="30"`; and `ACCESS_COARSE_LOCATION` with `android:maxSdkVersion="28"`. The `flutter_blue_plus_android` plugin manifest is intentionally blank, so the app MUST declare these itself; `startScan(androidUsesFineLocation: false)` since the scan is service-UUID-filtered and derives no location.
 - **Dependency decision — NO new dependency (prefer-zero, BLD-2):** the pinned `flutter_blue_plus` (1.36.8) already (a) exposes `adapterState` covering on/off/`unauthorized`/`unavailable`, and (b) requests the Android 12+ runtime BLE permissions at `startScan`; iOS surfaces authorization denial as `adapterState == unauthorized` off the Info.plist string. `permission_handler` is **not** required and MUST NOT be added.
 - **No user-facing strings at S3:** A-04 ships the seam + manifest keys only; the localized rationale UI and its ARB entries are **A-22/S5**. S3 therefore adds no ARB keys and the locale-parity gate stays trivially green.
 
@@ -651,6 +651,48 @@ logic/loops/math/text/lists/variables/functions toolbox. The platform host is
 lazy and fakeable; Dart bridge decoding/controller/action behavior is covered
 without a platform view, while the real restore → generate → Save → Run flow is
 exercised on both iPadOS and Android.
+
+GPIO field changes update only native validation/button state; they never call
+the WebView generator while the software keyboard owns focus. Role-scoped
+`GlobalKey` and `TextEditingController` instances remain stable across the
+keyboard-inset layout branch and every validation `setState`; staged digits,
+delete, and re-entry retain the same `EditableText` focus/input connection.
+Preview, Create
+copy, and Replace workspace use the existing `_ensurePreview` boundary to run
+the production generator explicitly. The idle source surface prompts for an
+explicit action and uses generating copy only while that future is pending. The
+authored local host posts one
+versioned readiness message only after `window.pybleBlocks` exists; a
+page-generation-aware Dart gate then configures it once. Exact same-generation
+duplicates are swallowed before the document bridge. The gate has distinct
+attempting/configured states: configuration success commits readiness, while a
+failure re-arms it and a duplicate received during the attempt is queued for
+one retry. Dart passes the positive document-host epoch into `configureHost`;
+every later snapshot/error/example-catalog envelope echoes it. The channel
+ignores a well-formed stale epoch, while a missing/malformed current envelope
+is contained as a visible host error. An allowed main-frame
+reload starts a new document-host epoch and re-arms both readiness and the
+bounded first-snapshot watchdog. The first page load awaits completion of
+JavaScript-mode, channel, and navigation-delegate setup in that order; those
+Pigeon operations are never launched concurrently against a lazily created
+native WebView. Its error-owned future is installed during `initState`, checks
+mount state between phases, and cannot continue setup/load after disposal.
+Because `onWebResourceError` has no reliable same-URL navigation epoch, it does
+not report against the mutable host; asset-load rejection and the current
+generation watchdog are the bounded failure boundaries. The exact bundled
+asset is then loaded once; there is no sleep,
+polling, or automatic reload. Android physical-device tests run under a
+dedicated application-ID suffix, so Flutter test teardown cannot uninstall the
+normal launcher package. The normal package is always built from
+`lib/main.dart`; every documented Android command names `production` or
+`integration` explicitly. The Android CI device job also compiles a production
+release APK after host tests, catching stale dev-plugin registration without
+shipping the integration-test plugin.
+Blockly's own serializer emits `{}` for a canonical workspace with no blocks or
+variables. Native semantic-empty detection accepts that exact object as empty,
+as well as the expanded empty-block-list form, so a loaded blank workspace gets
+the empty-workspace actions instead of a false loading label. Null, malformed,
+variable-only, and non-empty graph payloads remain non-empty or unknown.
 
 ADR-0017's source-first/sidecar-last pair action supersedes only the
 source-only Save/Run sequence in this baseline paragraph. Fresh-snapshot
@@ -1269,7 +1311,7 @@ Shared by run-control (b) and the console indicator (c). This is seam wiring (li
 
 ## 13. Platform design
 
-— *(satisfies NFR-COMPAT-1..3, FR-UI-1..7, CON-5.)*
+— *(satisfies NFR-COMPAT-1..4, FR-UI-1..7, CON-5.)*
 
 ### 13.1 Feature parity
 
@@ -1439,15 +1481,19 @@ The hosted integration job uses an isolated Gradle user home whose
 `gradle.properties` bounds the build JVM to a 3 GiB heap, 1 GiB metaspace, and
 256 MiB code cache, disables the persistent Gradle daemon, permits one Gradle
 worker, and keeps Kotlin compilation in that same process. It compiles the
-sole integration entrypoint once as an x86_64 debug APK before starting the
-AVD, verifies that artifact, and stops Gradle. The device phase invokes
-`flutter drive --use-application-binary` against that exact APK, so no Android
-assembly or compiler process overlaps the running emulator. Prebuild and
-device test are separately time-bounded and write directly to retained
-diagnostic logs, so a failed timeout cannot be hidden behind a still-open
-shell pipeline. This keeps compiler and emulator peak allocations sequential
-on the smallest supported hosted runner while preserving the
-single-entrypoint, single-binary integration contract.
+sole integration entrypoint once with the isolated `integration` flavor as the
+x86_64 `app-integration-debug.apk` before starting the AVD, verifies that
+artifact, and stops Gradle. The device phase invokes
+`flutter drive --flavor integration --use-application-binary` against that
+exact APK, so no Android assembly or compiler process overlaps the running
+emulator. Before creating the AVD, the same job separately builds
+`app-production-release.apk` from `lib/main.dart` and verifies its normal
+`dev.pyble.pyble` package ID. Prebuild and device test are separately
+time-bounded and write directly to retained diagnostic logs, so a failed
+timeout cannot be hidden behind a still-open shell pipeline. This keeps
+compiler and emulator peak allocations sequential on the smallest supported
+hosted runner while preserving the single-entrypoint, single-binary device-test
+contract and a separately compiled production artifact.
 
 The Blockly suite verifies the offline asset, JavaScript channel,
 restore/recreation, source generation, examples, sidecar reopen, bounded Python
@@ -1462,6 +1508,15 @@ plugin boundary (FR-ABOUT-3/4). Integration suites also run end-to-end against a
 fake board and on-device smoke per chip (run/stop, multi-file upload,
 dropped-link resume, observe-anywhere console) — NFR-REL-1..4, NFR-PERF-* (HIL
 ceilings frozen later, [OI-4](specs.md)).
+
+The Android build also pins `io.flutter.embedding.android.EnableImpeller=false`
+while the Flutter 3.44 Impeller/Vulkan path produces a blank frame on the
+validated Lenovo TB-J616X/MediaTek Android 12 tablet. Host tests assert the
+manifest switch; the physical-device gate cold-launches the normally installed
+APK (without a CLI renderer flag), captures a non-blank PyBLE frame, grants the
+normal runtime BLE permissions, connects to a real classic ESP32 agent, and
+exercises the real Blockly host plus chooser GPIO entry. Re-evaluate and remove
+the opt-out only after that same matrix passes on a later Flutter engine.
 
 ### 15.6 Import-boundary & no-leak gates
 
@@ -1515,7 +1570,7 @@ Design element → satisfied requirement IDs. Each `FR-*`/`NFR-*`/`CON-*`/`DAT-*
 | Persistence ([§4.10](#410-libdata--persistence-drift), [§9](#9-persistence-design-libdata)) | lib/data | FR-PROJ-1..7, DAT-1..8, IF-3, NFR-OFF-1..3, CON-4 |
 | Localization ([§4.11](#411-liblocalization--i18n), [§12](#12-localization-design-liblocalization)) | lib/localization | FR-I18N-1..5, NFR-A11Y-1/2/4, BLD-5, CON-9 |
 | About, runtime metadata, and offline notices entry ([§4.12](#412-libapp--about-and-open-source-information), [§13.2](#132-responsive-layout)) | lib/app | FR-ABOUT-1..8, IF-6, NFR-OFF-1..3, NFR-A11Y-3, CON-5/8/9, SEC-3/5 |
-| Platform & responsive layout ([§13](#13-platform-design)) | (app-wide) | FR-UI-1..7, NFR-COMPAT-1..3, NFR-USE-2/4, CON-5 |
+| Platform & responsive layout ([§13](#13-platform-design)) | (app-wide) | FR-UI-1..7, NFR-COMPAT-1..4, NFR-USE-2/4, CON-5 |
 | Run control & data flow ([§3.2](#32-data-flow-example--run-a-file)–[§3.4](#34-data-flow-example--file-mirroring-download)) | lib/pble + UI | FR-RUN-1..5, FR-CONN-2 |
 | Error handling & mapping ([§14](#14-error-handling--mapping)) | lib/pble + UI | FR-PBLE-13, FR-ERR-*, FR-FILES-3, NFR-USE-3, NFR-REL-4 |
 | Reliability (resume, CRC, preserve-on-drop) ([§8.4](#84-file-transfer-state-machine), [§9.2](#92-migrations--hydration)) | lib/pble, lib/data | NFR-REL-1..4, NFR-PERF-1/2, FR-PROJ-6 |
