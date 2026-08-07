@@ -3,6 +3,7 @@
 //
 // A-31 — the authored Blockly host must load only pinned, app-bundled assets.
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -129,6 +130,293 @@ void main() {
         contains('window.addEventListener("resize", resizeWorkspace)'),
       );
     });
+
+    test('announces host readiness only after the authored API exists', () {
+      final String script = File(
+        '${index.parent.path}/pyble_blockly.js',
+      ).readAsStringSync();
+      final int apiIndex = script.indexOf(
+        'window.pybleBlocks = Object.freeze({',
+      );
+      final Iterable<RegExpMatch> readyMessages = RegExp(
+        r'type:\s*"hostReady"',
+      ).allMatches(script);
+
+      expect(apiIndex, greaterThanOrEqualTo(0));
+      expect(readyMessages, hasLength(1));
+      expect(
+        readyMessages.single.start,
+        greaterThan(apiIndex),
+        reason: 'Dart must never configure a partially loaded authored host',
+      );
+    });
+  });
+
+  group('A-31 Blockly host readiness gate', () {
+    const String ready = '{"version":1,"type":"hostReady"}';
+    const String firstSnapshot =
+        '{"version":1,"type":"snapshot","hostEpoch":101}';
+    const String secondSnapshot =
+        '{"version":1,"type":"snapshot","hostEpoch":202}';
+
+    test('routes one readiness per page and swallows exact duplicates', () {
+      final BlocklyHostStartupGate gate = BlocklyHostStartupGate();
+
+      expect(
+        gate.classify(ready),
+        BlocklyHostChannelDisposition.ignore,
+        reason: 'readiness before an allowed main-frame start is inert',
+      );
+      gate.beginPage(hostEpoch: 101);
+      expect(gate.classify(ready), BlocklyHostChannelDisposition.initialise);
+      gate.finishInitialisation(gate.generation, succeeded: true);
+      expect(gate.classify(ready), BlocklyHostChannelDisposition.ignore);
+      expect(
+        gate.classify(firstSnapshot),
+        BlocklyHostChannelDisposition.forward,
+      );
+
+      gate.beginPage(hostEpoch: 202);
+      expect(
+        gate.classify(ready),
+        BlocklyHostChannelDisposition.initialise,
+        reason: 'an allowed reload must configure its new document generation',
+      );
+      gate.finishInitialisation(gate.generation, succeeded: true);
+      expect(gate.classify(ready), BlocklyHostChannelDisposition.ignore);
+      expect(
+        gate.classify(firstSnapshot),
+        BlocklyHostChannelDisposition.ignore,
+        reason: 'traffic from the superseded document epoch must stay inert',
+      );
+      expect(
+        gate.classify(secondSnapshot),
+        BlocklyHostChannelDisposition.forward,
+      );
+    });
+
+    test('re-arms failed readiness and retries one duplicate in flight', () {
+      final BlocklyHostStartupGate gate = BlocklyHostStartupGate()
+        ..beginPage(hostEpoch: 101);
+      final int generation = gate.generation;
+
+      expect(gate.classify(ready), BlocklyHostChannelDisposition.initialise);
+      expect(
+        gate.classify(ready),
+        BlocklyHostChannelDisposition.ignore,
+        reason: 'a duplicate must not configure the same page concurrently',
+      );
+      expect(
+        gate.finishInitialisation(generation, succeeded: false),
+        isTrue,
+        reason: 'the queued readiness must trigger one serialized retry',
+      );
+      expect(gate.finishInitialisation(generation, succeeded: false), isFalse);
+      expect(
+        gate.classify(ready),
+        BlocklyHostChannelDisposition.initialise,
+        reason: 'a failed retry must leave the generation re-armed',
+      );
+      expect(gate.finishInitialisation(generation, succeeded: true), isFalse);
+      expect(gate.classify(ready), BlocklyHostChannelDisposition.ignore);
+    });
+
+    test(
+      'dispatch never forwards duplicate readiness to the document bridge',
+      () {
+        final BlocklyHostStartupGate gate = BlocklyHostStartupGate();
+        int initialisations = 0;
+        int rejections = 0;
+        final List<String> forwarded = <String>[];
+        void dispatch(String message) => dispatchBlocklyHostChannelMessage(
+          gate: gate,
+          message: message,
+          initialise: () => initialisations += 1,
+          forward: forwarded.add,
+          reject: () => rejections += 1,
+        );
+
+        dispatch(ready);
+        expect(initialisations, 0);
+        expect(forwarded, isEmpty);
+
+        gate.beginPage(hostEpoch: 101);
+        dispatch(ready);
+        dispatch(ready);
+        gate.finishInitialisation(gate.generation, succeeded: true);
+        dispatch(firstSnapshot);
+        expect(initialisations, 1);
+        expect(forwarded, <String>[firstSnapshot]);
+        expect(rejections, 0);
+
+        gate.beginPage(hostEpoch: 202);
+        dispatch(ready);
+        gate.finishInitialisation(gate.generation, succeeded: true);
+        dispatch(firstSnapshot);
+        dispatch(secondSnapshot);
+        expect(initialisations, 2);
+        expect(forwarded, <String>[firstSnapshot, secondSnapshot]);
+        expect(rejections, 0);
+      },
+    );
+
+    test('rejects malformed epochs and ignores superseded epochs', () {
+      final BlocklyHostStartupGate gate = BlocklyHostStartupGate()
+        ..beginPage(hostEpoch: 202);
+      for (final String message in <String>[
+        '{"version":1,"type":"snapshot"}',
+        '{"version":1,"type":"snapshot","hostEpoch":"202"}',
+        '{"version":2,"type":"hostReady"}',
+        '{"version":1,"type":"hostReady","unexpected":true}',
+        'not JSON',
+      ]) {
+        expect(
+          gate.classify(message),
+          BlocklyHostChannelDisposition.reject,
+          reason: message,
+        );
+      }
+      expect(
+        gate.classify(firstSnapshot),
+        BlocklyHostChannelDisposition.ignore,
+      );
+      expect(
+        gate.classify(secondSnapshot),
+        BlocklyHostChannelDisposition.forward,
+      );
+      expect(gate.classify(ready), BlocklyHostChannelDisposition.initialise);
+    });
+
+    test(
+      'serializes JavaScript, channel, and navigation controller setup',
+      () async {
+        final Completer<void> javascript = Completer<void>();
+        final Completer<void> channel = Completer<void>();
+        final Completer<void> navigation = Completer<void>();
+        final List<String> events = <String>[];
+
+        final Future<void> setup = configureBlocklyControllerSequentially(
+          isCancelled: () => false,
+          enableJavaScript: () async {
+            events.add('javascript');
+            await javascript.future;
+          },
+          installJavaScriptChannel: () async {
+            events.add('channel');
+            await channel.future;
+          },
+          installNavigationDelegate: () async {
+            events.add('navigation');
+            await navigation.future;
+          },
+        );
+
+        await Future<void>.delayed(Duration.zero);
+        expect(events, <String>['javascript']);
+        javascript.complete();
+        await Future<void>.delayed(Duration.zero);
+        expect(events, <String>['javascript', 'channel']);
+        channel.complete();
+        await Future<void>.delayed(Duration.zero);
+        expect(events, <String>['javascript', 'channel', 'navigation']);
+        navigation.complete();
+        await setup;
+      },
+    );
+
+    test('controller setup stops between phases after cancellation', () async {
+      final Completer<void> javascript = Completer<void>();
+      final List<String> events = <String>[];
+      bool cancelled = false;
+      final Future<void> setup = configureBlocklyControllerSequentially(
+        isCancelled: () => cancelled,
+        enableJavaScript: () async {
+          events.add('javascript');
+          await javascript.future;
+        },
+        installJavaScriptChannel: () async => events.add('channel'),
+        installNavigationDelegate: () async => events.add('navigation'),
+      );
+
+      await Future<void>.delayed(Duration.zero);
+      cancelled = true;
+      javascript.complete();
+      await setup;
+      expect(events, <String>['javascript']);
+    });
+
+    test(
+      'withholds the page load until asynchronous controller setup ends',
+      () async {
+        final Completer<void> setup = Completer<void>();
+        final Completer<void> loadAllowed = Completer<void>();
+        bool loaded = false;
+        final Future<void> startup = loadBlocklyAssetAfterControllerSetup(
+          setup: setup.future,
+          waitUntilLoadAllowed: () => loadAllowed.future,
+          isCancelled: () => false,
+          load: () async {
+            loaded = true;
+          },
+        );
+
+        await Future<void>.delayed(Duration.zero);
+        expect(loaded, isFalse);
+        setup.complete();
+        await Future<void>.delayed(Duration.zero);
+        expect(loaded, isFalse);
+        loadAllowed.complete();
+        await startup;
+        expect(loaded, isTrue);
+      },
+    );
+
+    test('page load stays cancelled after setup or frame readiness', () async {
+      for (final bool cancelDuringSetup in <bool>[true, false]) {
+        final Completer<void> setup = Completer<void>();
+        final Completer<void> loadAllowed = Completer<void>();
+        bool cancelled = false;
+        bool loaded = false;
+        final Future<void> startup = loadBlocklyAssetAfterControllerSetup(
+          setup: setup.future,
+          waitUntilLoadAllowed: () => loadAllowed.future,
+          isCancelled: () => cancelled,
+          load: () async {
+            loaded = true;
+          },
+        );
+
+        if (cancelDuringSetup) cancelled = true;
+        setup.complete();
+        await Future<void>.delayed(Duration.zero);
+        if (!cancelDuringSetup) cancelled = true;
+        loadAllowed.complete();
+        await startup;
+        expect(loaded, isFalse, reason: 'cancelDuringSetup=$cancelDuringSetup');
+      }
+    });
+
+    test(
+      'guard owns startup errors and suppresses them after disposal',
+      () async {
+        for (final bool cancelled in <bool>[false, true]) {
+          final Completer<void> mayReport = Completer<void>();
+          final List<Object> errors = <Object>[];
+          final Future<void> startup = runBlocklyStartupGuarded(
+            startup: () async => throw StateError('setup failed'),
+            waitUntilFailureCanBeReported: () => mayReport.future,
+            isCancelled: () => cancelled,
+            reportFailure: errors.add,
+          );
+
+          await Future<void>.delayed(Duration.zero);
+          expect(errors, isEmpty);
+          mayReport.complete();
+          await startup;
+          expect(errors, cancelled ? isEmpty : hasLength(1));
+        }
+      },
+    );
   });
 
   group('A-31 Blockly navigation policy', () {
@@ -154,6 +442,18 @@ void main() {
         isTrue,
       );
       expect(isAllowedBlocklyNavigation('about:blank'), isTrue);
+      expect(
+        isBlocklyAssetDocumentNavigation('about:blank'),
+        isFalse,
+        reason: 'the inert bootstrap page must not re-arm host readiness',
+      );
+      expect(
+        isBlocklyAssetDocumentNavigation(
+          'https://appassets.androidplatform.net/assets/'
+          'assets/blockly/index.html',
+        ),
+        isTrue,
+      );
     });
 
     test('rejects unrelated files, traversal, network, and custom schemes', () {

@@ -107,7 +107,7 @@ class CiContractTest(unittest.TestCase):
             android,
         )
 
-    def test_android_integration_builds_one_application_bundle(self) -> None:
+    def test_android_integration_uses_one_isolated_application_bundle(self) -> None:
         workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(
             encoding="utf-8"
         )
@@ -121,13 +121,14 @@ class CiContractTest(unittest.TestCase):
         self.assertIn("timeout --signal=TERM --kill-after=30s 12m", android)
         self.assertIn("--no-pub", android)
         self.assertIn("flutter drive \\", android)
+        self.assertIn("--flavor integration", android)
         self.assertIn(
             "--driver test_driver/integration_test.dart",
             android,
         )
         self.assertIn(
             "--use-application-binary "
-            "build/app/outputs/flutter-apk/app-debug.apk",
+            "build/app/outputs/flutter-apk/app-integration-debug.apk",
             android,
         )
         self.assertNotIn("            flutter test \\", android)
@@ -256,10 +257,17 @@ class CiContractTest(unittest.TestCase):
             integration,
         )
         self.assertLess(android.index("sleep 20"), integration)
-        self.assertEqual(1, android.count("flutter build apk"))
+        self.assertEqual(2, android.count("flutter build apk"))
+        self.assertIn(
+            "flutter build apk --release --flavor production "
+            "--target lib/main.dart",
+            android,
+        )
+        self.assertIn("package: name='dev.pyble.pyble'", android)
         self.assertIn(
             "flutter build apk \\\n"
             "            --debug \\\n"
+            "            --flavor integration \\\n"
             "            --no-pub \\\n"
             "            --target-platform android-x64 \\\n"
             "            --target integration_test/android_smoke_test.dart",
@@ -270,7 +278,8 @@ class CiContractTest(unittest.TestCase):
             android,
         )
         self.assertIn(
-            "test -s build/app/outputs/flutter-apk/app-debug.apk",
+            "test -s "
+            "build/app/outputs/flutter-apk/app-integration-debug.apk",
             android,
         )
         self.assertIn("./android/gradlew --stop", android)
@@ -280,7 +289,7 @@ class CiContractTest(unittest.TestCase):
         )
         self.assertIn(
             "--use-application-binary "
-            "build/app/outputs/flutter-apk/app-debug.apk",
+            "build/app/outputs/flutter-apk/app-integration-debug.apk",
             android,
         )
         self.assertNotIn(

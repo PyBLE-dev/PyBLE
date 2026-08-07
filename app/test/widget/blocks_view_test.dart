@@ -220,6 +220,40 @@ void main() {
       );
     });
 
+    testWidgets('canonical Blockly empty object is loaded, not still loading', (
+      WidgetTester tester,
+    ) async {
+      final RecordingConnection connection = RecordingConnection(
+        initial: ConnState.ready,
+      );
+      await pumpSurface(
+        tester,
+        const BlocksView(),
+        connection: connection,
+        extra: <Override>[_fakeWorkspace()],
+      );
+      containerOf(tester)
+          .read(blocksDocumentProvider.notifier)
+          .receiveBridgeMessage(
+            jsonEncode(<String, Object?>{
+              'version': kBlocksBridgeVersion,
+              'type': 'snapshot',
+              'revision': 1,
+              'source': '',
+              'workspace': <String, Object?>{},
+            }),
+          );
+      await tester.pump();
+      final AppLocalizations l10n = l10nOf(tester);
+
+      expect(find.text(l10n.blocksExamplesEmptyTitle), findsOneWidget);
+      expect(
+        tester.widget<IconButton>(find.byKey(kBlocksPreviewButtonKey)).tooltip,
+        l10n.blocksEmptyHint,
+      );
+      expect(find.bySemanticsLabel(l10n.blocksNotReady), findsNothing);
+    });
+
     testWidgets('previews the exact generated Python as selectable text', (
       WidgetTester tester,
     ) async {

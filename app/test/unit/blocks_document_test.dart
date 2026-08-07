@@ -446,6 +446,60 @@ void main() {
       },
     );
 
+    test('same-host reload clears readiness but retains restore state', () {
+      final ProviderContainer container = bind();
+      final BlocksDocumentController controller = container.read(
+        blocksDocumentProvider.notifier,
+      );
+      final int hostId = controller.beginHost(
+        requestSnapshot: (int requestId) async {},
+      );
+      controller.markHostLoading(hostId);
+      controller.receiveBridgeMessage(
+        snapshot(revision: 8, source: 'print("retained")\n'),
+        hostId: hostId,
+      );
+      expect(controller.hasActiveReadyHost, isTrue);
+
+      controller.markHostLoading(hostId);
+
+      final BlocksDocument loading = container.read(blocksDocumentProvider);
+      expect(loading.status, BlocksStatus.loading);
+      expect(loading.retainedWorkspaceRevision, 8);
+      expect(loading.program?.source, 'print("retained")\n');
+      expect(
+        controller.hasActiveReadyHost,
+        isFalse,
+        reason: 'preview actions must wait for the reloaded renderer snapshot',
+      );
+
+      expect(
+        controller.receiveBridgeMessage(
+          snapshot(revision: 8, source: 'print("stale")\n'),
+          hostId: hostId,
+        ),
+        BlocksBridgeResult.staleSnapshot,
+      );
+      expect(controller.hasActiveReadyHost, isFalse);
+      expect(
+        container.read(blocksDocumentProvider).status,
+        BlocksStatus.loading,
+      );
+
+      expect(
+        controller.receiveBridgeMessage(
+          snapshot(revision: 9, source: 'print("restored")\n'),
+          hostId: hostId,
+        ),
+        BlocksBridgeResult.snapshotAccepted,
+      );
+      expect(controller.hasActiveReadyHost, isTrue);
+      expect(
+        container.read(blocksDocumentProvider).program?.source,
+        'print("restored")\n',
+      );
+    });
+
     test(
       'a dismissed transient preview host restores the exact prior document',
       () {

@@ -98,6 +98,7 @@ Future<RecordingConnection> _pump(
   WidgetTester tester, {
   required bool empty,
   Size size = const Size(1024, 768),
+  BlocksExamplePreviewer? previewer,
 }) async {
   final RecordingConnection connection = RecordingConnection(
     initial: ConnState.ready,
@@ -108,7 +109,9 @@ Future<RecordingConnection> _pump(
     connection: connection,
     extra: <Override>[
       _fakeWorkspace(),
-      _fakeExamplePreviewer(),
+      previewer == null
+          ? _fakeExamplePreviewer()
+          : blocksExamplePreviewerProvider.overrideWithValue(previewer),
       _fakeExampleCatalog(),
     ],
     size: size,
@@ -178,10 +181,20 @@ void main() {
         expect(find.byKey(_createCopyKey), findsOneWidget);
         expect(find.byKey(_replaceKey), findsNothing);
         expect(find.text('Generated Python'), findsOneWidget);
-        expect(find.textContaining("print('Hello, PyBLE!')"), findsOneWidget);
+        expect(
+          find.text('Choose an action below to generate Python.'),
+          findsOneWidget,
+        );
+        expect(find.text('Generating Python…'), findsNothing);
+        expect(
+          find.textContaining("print('Hello, PyBLE!')"),
+          findsNothing,
+          reason: 'opening and browsing must not invoke the platform previewer',
+        );
 
         await tester.tap(find.byKey(_previewKey));
         await tester.pumpAndSettle();
+        expect(find.textContaining("print('Hello, PyBLE!')"), findsWidgets);
 
         final BlocksDocument after = container.read(blocksDocumentProvider);
         expect(after.retainedWorkspaceJson, before.retainedWorkspaceJson);
@@ -209,7 +222,12 @@ void main() {
 
           await tester.tap(find.byKey(_emptyExamplesButtonKey));
           await tester.pumpAndSettle();
-          expect(find.textContaining("print('Hello, PyBLE!')"), findsOneWidget);
+          expect(find.textContaining("print('Hello, PyBLE!')"), findsNothing);
+          await tester.tap(find.byKey(_previewKey));
+          await tester.pumpAndSettle();
+          expect(find.textContaining("print('Hello, PyBLE!')"), findsWidgets);
+          await tester.tap(find.text('Close'));
+          await tester.pumpAndSettle();
 
           Finder previewLiveRegions() => find.descendant(
             of: find.byKey(_catalogKey),
@@ -410,6 +428,10 @@ void main() {
           find.textContaining('GPIO numbers vary by board'),
           findsOneWidget,
         );
+        expect(
+          find.text('Enter every required GPIO to enable generation.'),
+          findsOneWidget,
+        );
         expect(find.textContaining('wiring'), findsWidgets);
         expect(find.widgetWithText(TextField, 'LED GPIO'), findsOneWidget);
         expect(
@@ -430,6 +452,219 @@ void main() {
         expect(connection.runFileCalls, isEmpty);
         await tester.tap(find.byIcon(Icons.close));
         await tester.pumpAndSettle();
+      },
+    );
+
+    testWidgets(
+      'GPIO editing does not invoke the platform previewer until an action',
+      (WidgetTester tester) async {
+        int previewCalls = 0;
+        await _pump(
+          tester,
+          empty: true,
+          previewer: (String workspaceJson) async {
+            previewCalls += 1;
+            return BlocksExamplePreview(
+              source: '# explicit preview\n',
+              workspaceJson: workspaceJson,
+            );
+          },
+        );
+        tester.widget<IconButton>(find.byKey(_examplesButtonKey)).onPressed!();
+        await tester.pumpAndSettle();
+        expect(
+          previewCalls,
+          0,
+          reason: 'opening the native chooser must not invoke the WebView',
+        );
+        await tester.tap(
+          find.byKey(
+            const ValueKey<String>('blocksExampleCard-count-repeatedly'),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          previewCalls,
+          0,
+          reason: 'selecting a non-GPIO example must remain preview-idle',
+        );
+        await tester.tap(
+          find.byKey(const ValueKey<String>('blocksExampleCard-blink-led')),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          previewCalls,
+          0,
+          reason: 'selecting an example must not invoke the WebView',
+        );
+
+        await tester.enterText(_fieldWithLabel('LED GPIO'), '-1');
+        await tester.pumpAndSettle();
+        expect(
+          previewCalls,
+          0,
+          reason: 'validating an invalid GPIO must remain native-only',
+        );
+        await tester.enterText(_fieldWithLabel('LED GPIO'), '');
+        await tester.pumpAndSettle();
+        expect(
+          previewCalls,
+          0,
+          reason: 'clearing a GPIO draft must remain native-only',
+        );
+        await tester.enterText(_fieldWithLabel('LED GPIO'), '2');
+        await tester.pumpAndSettle();
+        expect(
+          previewCalls,
+          0,
+          reason:
+              'typing must not call into Android WebView while Gboard owns focus',
+        );
+
+        await tester.tap(find.byKey(_previewKey));
+        await tester.pumpAndSettle();
+        expect(previewCalls, 1);
+      },
+    );
+
+    testWidgets(
+      'tablet GPIO field keeps its input connection across keyboard layout',
+      (WidgetTester tester) async {
+        const double physicalKeyboardInset = 640;
+        addTearDown(tester.view.resetViewInsets);
+        await _pump(tester, empty: true);
+        tester.widget<IconButton>(find.byKey(_examplesButtonKey)).onPressed!();
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey<String>('blocksExampleCard-blink-led')),
+        );
+        await tester.pumpAndSettle();
+
+        Finder gpioField = _fieldWithLabel('LED GPIO');
+        await tester.tap(gpioField);
+        await tester.pump();
+        Finder editable = find.descendant(
+          of: gpioField,
+          matching: find.byType(EditableText),
+        );
+        final TextField originalField = tester.widget<TextField>(gpioField);
+        final Key? originalKey = originalField.key;
+        final TextEditingController? originalController =
+            originalField.controller;
+        final FocusNode originalFocus = tester
+            .widget<EditableText>(editable)
+            .focusNode;
+        expect(originalKey, isA<GlobalKey>());
+        expect(originalController, isNotNull);
+        expect(originalFocus.hasFocus, isTrue);
+        expect(tester.testTextInput.isVisible, isTrue);
+
+        tester.view.viewInsets = const FakeViewPadding(
+          bottom: physicalKeyboardInset,
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 220));
+
+        gpioField = _fieldWithLabel('LED GPIO');
+        editable = find.descendant(
+          of: gpioField,
+          matching: find.byType(EditableText),
+        );
+        final FocusNode rebuiltFocus = tester
+            .widget<EditableText>(editable)
+            .focusNode;
+        final TextField rebuiltField = tester.widget<TextField>(gpioField);
+        expect(rebuiltField.key, same(originalKey));
+        expect(rebuiltField.controller, same(originalController));
+        expect(
+          rebuiltFocus,
+          same(originalFocus),
+          reason: 'responsive reparenting must retain the real text field',
+        );
+        expect(rebuiltFocus.hasFocus, isTrue);
+        expect(tester.testTextInput.isVisible, isTrue);
+
+        tester.testTextInput.enterText('1');
+        await tester.pump();
+        gpioField = _fieldWithLabel('LED GPIO');
+        editable = find.descendant(
+          of: gpioField,
+          matching: find.byType(EditableText),
+        );
+        final TextField afterFirstDigit = tester.widget<TextField>(gpioField);
+        final FocusNode afterFirstDigitFocus = tester
+            .widget<EditableText>(editable)
+            .focusNode;
+        expect(afterFirstDigit.key, same(originalKey));
+        expect(afterFirstDigit.controller, same(originalController));
+        expect(afterFirstDigit.controller?.text, '1');
+        expect(afterFirstDigitFocus, same(originalFocus));
+        expect(afterFirstDigitFocus.hasFocus, isTrue);
+        expect(tester.testTextInput.isVisible, isTrue);
+
+        tester.testTextInput.enterText('12');
+        await tester.pump();
+        gpioField = _fieldWithLabel('LED GPIO');
+        editable = find.descendant(
+          of: gpioField,
+          matching: find.byType(EditableText),
+        );
+        final TextField afterSecondDigit = tester.widget<TextField>(gpioField);
+        final FocusNode afterSecondDigitFocus = tester
+            .widget<EditableText>(editable)
+            .focusNode;
+        expect(afterSecondDigit.key, same(originalKey));
+        expect(afterSecondDigit.controller, same(originalController));
+        expect(afterSecondDigit.controller?.text, '12');
+        expect(afterSecondDigitFocus, same(originalFocus));
+        expect(afterSecondDigitFocus.hasFocus, isTrue);
+        expect(tester.testTextInput.isVisible, isTrue);
+
+        tester.testTextInput.updateEditingValue(
+          const TextEditingValue(
+            text: '1',
+            selection: TextSelection.collapsed(offset: 1),
+          ),
+        );
+        await tester.pump();
+        gpioField = _fieldWithLabel('LED GPIO');
+        editable = find.descendant(
+          of: gpioField,
+          matching: find.byType(EditableText),
+        );
+        final TextField afterDeletion = tester.widget<TextField>(gpioField);
+        final FocusNode afterDeletionFocus = tester
+            .widget<EditableText>(editable)
+            .focusNode;
+        expect(afterDeletion.key, same(originalKey));
+        expect(afterDeletion.controller, same(originalController));
+        expect(afterDeletion.controller?.text, '1');
+        expect(afterDeletionFocus, same(originalFocus));
+        expect(afterDeletionFocus.hasFocus, isTrue);
+        expect(tester.testTextInput.isVisible, isTrue);
+
+        tester.testTextInput.updateEditingValue(
+          const TextEditingValue(
+            text: '12',
+            selection: TextSelection.collapsed(offset: 2),
+          ),
+        );
+        await tester.pump();
+        gpioField = _fieldWithLabel('LED GPIO');
+        editable = find.descendant(
+          of: gpioField,
+          matching: find.byType(EditableText),
+        );
+        final TextField afterReentry = tester.widget<TextField>(gpioField);
+        final FocusNode afterReentryFocus = tester
+            .widget<EditableText>(editable)
+            .focusNode;
+        expect(afterReentry.key, same(originalKey));
+        expect(afterReentry.controller, same(originalController));
+        expect(afterReentry.controller?.text, '12');
+        expect(afterReentryFocus, same(originalFocus));
+        expect(afterReentryFocus.hasFocus, isTrue);
+        expect(tester.testTextInput.isVisible, isTrue);
       },
     );
 
