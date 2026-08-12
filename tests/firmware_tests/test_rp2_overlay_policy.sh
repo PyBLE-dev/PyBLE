@@ -3,7 +3,7 @@
 # Part of PyBLE (https://pyble.dev) — see /LICENSE.
 #
 # [red] F-26 — PYBLE_RPI_PICO2_W overlay policy (port spec ports/rpi-pico2-w.md
-# P9; ADR-0023; firmware.md §4.1/§6).
+# P9; ADR-0030; firmware.md §4.1/§6).
 # AC:
 #  - firmware/board_overlays/rpi-pico2-w/ holds EXACTLY the five frozen files:
 #    _boot.py, manifest.py, mpconfigboard.cmake, mpconfigboard.h,

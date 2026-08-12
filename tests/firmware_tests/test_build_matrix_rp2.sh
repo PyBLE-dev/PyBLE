@@ -3,7 +3,7 @@
 # Part of PyBLE (https://pyble.dev) — see /LICENSE.
 #
 # [red] X-13 — rp2 build plane (port spec ports/rpi-pico2-w.md P9, RP2-BLD;
-# ADR-0023). Mirrors test_build_matrix.sh for the sibling build_rp2.sh.
+# ADR-0030). Mirrors test_build_matrix.sh for the sibling build_rp2.sh.
 # AC:
 #  - build_rp2.sh --plan rpi-pico2-w is TOOLCHAIN-FREE (exit 0 with no ARM GNU
 #    install) and prints: board PYBLE_RPI_PICO2_W, the artifact set
@@ -15,10 +15,9 @@
 #    of whatever arm-none-eabi-gcc is first on PATH, never fake success.
 #  - The target -> board lookup reads versions.lock [targets_rp2] (behavioural:
 #    a lock with the section stripped must make the plan fail).
-#  - The ESP32 candidate plane is untouched (D-LOCK ruling): the versions.lock
-#    ESP input sections ([micropython] [esp_idf] [targets] [toolchain]) and the
-#    build.sh --plan esp32 output are byte-identical to the frozen candidate
-#    (modulo the inherently per-commit source_commit/source_date_epoch lines).
+#  - The RP2 plane preserves the already-integrated ESP inputs and four logical
+#    variants. The build.sh --plan esp32 contract remains unchanged (modulo the
+#    inherently per-commit source_commit/source_date_epoch lines).
 #
 # Contract asserted for the production script (HAND-OFF: build-smith,
 # firmware/scripts/build_rp2.sh):
@@ -49,7 +48,7 @@ lock_section() {
   ' "$LOCK"
 }
 
-# ---- versions.lock: rp2 additions present, ESP candidate bytes untouched ----
+# ---- versions.lock: rp2 additions preserve integrated ESP source inputs ----
 check_lock() {
   check_grep "versions.lock gains a [targets_rp2] section (X-13)" \
     '^\[targets_rp2\]' "$LOCK"
@@ -57,9 +56,11 @@ check_lock() {
     '^"rpi-pico2-w"[[:space:]]*=[[:space:]]*"RPI_PICO2_W"' "$LOCK"
   check_grep "versions.lock gains an [arm_gnu_toolchain] pin section (BLD-4 eq)" \
     '^\[arm_gnu_toolchain\]' "$LOCK"
+  check_grep "combined source reserves agent version 0.6.0" \
+    '^agent_version[[:space:]]*=[[:space:]]*"0\.6\.0"' "$LOCK"
 
-  # D-LOCK: the ESP input sections stay byte-identical (normalized to their
-  # key/value lines so an appended rp2 comment block cannot false-fail this).
+  # The ESP input sections remain exact (normalized to their key/value lines
+  # so an appended rp2 comment block cannot false-fail this).
   local got want
   got="$(lock_section micropython; lock_section esp_idf; lock_section targets; lock_section toolchain)"
   want='[micropython]
@@ -73,14 +74,15 @@ commit = "fcae32885b0296b32044cb99ecbdc50d98dddb83"
 [targets]
 "esp32"    = "esp32"
 "esp32-s3" = "esp32s3"
+"waveshare-esp32-s3-lcd-147b" = "esp32s3"
 "esp32-c3" = "esp32c3"
 [toolchain]
 source    = "pinned-esp-idf"
 mpy_cross = "rebuilt-from-pinned-micropython"'
   if [ "$got" = "$want" ]; then
-    pass "versions.lock ESP input sections are byte-identical to the frozen candidate (D-LOCK)"
+    pass "versions.lock preserves the integrated four-variant ESP source inputs"
   else
-    fail "versions.lock ESP input sections changed — the rp2 additions must be purely additive (D-LOCK)"
+    fail "versions.lock ESP source inputs changed while adding the rp2 plane"
   fi
 }
 
@@ -109,7 +111,7 @@ pin_lock=firmware/versions.lock
 output_root=firmware/build
 artifacts: firmware.bin micropython.bin micropython.elf bootloader.bin partition-table.bin flasher_args.json pyble-build-provenance.json'
   if [ "$got" = "$want" ]; then
-    pass "build.sh --plan esp32 output is byte-identical to the frozen contract"
+    pass "build.sh --plan esp32 preserves the integrated contract"
   else
     fail "build.sh --plan esp32 output changed — the rp2 plane must not touch it"
   fi
