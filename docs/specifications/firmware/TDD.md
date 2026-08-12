@@ -1489,7 +1489,9 @@ same checkout. They assign ordinary CYW43 driver code and each of those three
 payloads to separate most-specific owners, bind both header and embedded-data
 digests, and keep every payload owner `review-required` until authoritative
 terms identify that exact selected byte closure. A broad CYW43 owner or an
-older byte-different firmware grant fails. They also assign `libm.h`,
+older byte-different firmware grant fails. Tests allow source and selected
+expressions to retain the same unresolved choice only for `review-required`;
+an admitted owner must select one reviewed arm. They also assign `libm.h`,
 `fdlibm.h`, the exact observed BSD-3-Clause `re1.5` sources and header, the
 exact observed Zlib `uzlib` sources and headers, Apache-only CMSIS Core
 headers, the

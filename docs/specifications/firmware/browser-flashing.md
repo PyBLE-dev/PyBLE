@@ -758,7 +758,10 @@ CLM payload, signed Bluetooth firmware, and Broadcom-attributed NVRAM remain
 `review-required` until authoritative evidence maps those exact selected
 bytes to redistribution terms for an RP2350/Pico 2 W UF2. A repository-level
 grant, a grant for an older byte-different Wi-Fi image, or the fact that a
-payload was committed by an authorized contributor is not that mapping.
+payload was committed by an authorized contributor is not that mapping. While
+unresolved, each payload retains its complete source choice as both the source
+and selected expression; only `review-required` may preserve that unresolved
+choice. An `allow` or `project-owned` record MUST select one reviewed arm.
 
 That no-gap ownership covers every linked or frozen input and, at minimum,
 the selected MicroPython core and `ports/rp2` sources, lwIP, Mbed TLS,
