@@ -216,6 +216,67 @@ class V060Oi1CatalogTests(unittest.TestCase):
         self.assertEqual(profile["install_sha256"], "3" * 64)
         self.assertNotIn("firmware_sha256", profile)
 
+    def test_v060_esp_cli_requires_only_the_schema2_install_digest(self):
+        common = [
+            "--mode",
+            "baseline",
+            "--profile",
+            "esp32-4mb",
+            "--expect-chip",
+            "esp32",
+            "--address",
+            "private-test-address",
+            "--reset-port",
+            "/dev/private-test-reset",
+            "--application-bin",
+            "application.bin",
+            "--partition-table-bin",
+            "partition-table.bin",
+            "--raw-log",
+            "raw.jsonl",
+            "--output",
+            "profile.json",
+            "--board-manufacturer",
+            "Espressif",
+            "--board-model",
+            "host-test board",
+            "--module-marking",
+            "host-test module",
+            "--device-flash-capacity-bytes",
+            str(4 * 1024 * 1024),
+            "--device-psram-capacity-bytes",
+            "0",
+            "--manifest-sha256",
+            "2" * 64,
+            "--ble-backend",
+            "host-test backend",
+            "--ble-adapter",
+            "host-test adapter",
+        ]
+
+        current = profile_bench._parse_args(
+            [*common, "--install-sha256", "3" * 64]
+        )
+        profile_bench._validate_run_metadata(current)
+
+        legacy = profile_bench._parse_args(
+            [*common, "--firmware-sha256", "1" * 64]
+        )
+        with self.assertRaises(profile_bench.BenchError):
+            profile_bench._validate_run_metadata(legacy)
+
+        ambiguous = profile_bench._parse_args(
+            [
+                *common,
+                "--firmware-sha256",
+                "1" * 64,
+                "--install-sha256",
+                "3" * 64,
+            ]
+        )
+        with self.assertRaises(profile_bench.BenchError):
+            profile_bench._validate_run_metadata(ambiguous)
+
     def test_schema3_policy_accepts_five_target_discriminated_rows(self):
         policy = qualification_policy()
         self.assertNotIn("deferred_profiles", policy)
