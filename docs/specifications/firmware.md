@@ -317,6 +317,37 @@ component-wide compilation's consolidated year ranges do not replace an exact
 binary-redistribution notice. Libgloss MUST analogously retain the exact
 `COPYING.LIBGLOSS` bytes.
 
+The per-file notice set is a separate canonical, hash-bound document derived
+only from the exact source paths already selected by the runtime attribution:
+the 62 byte-identical compiler-dependency header sources, the six content
+templates for the four generated headers, the source path for each of the 29
+allocated archive-member rows (26 unique paths), and the source path for each
+of the three contributing direct-input rows (two unique paths). Overlapping
+selection reasons are retained on one source row, giving exactly 96 unique
+sources: 23 for `arm-gnu-gcc-runtime` and 73 for
+`arm-gnu-newlib-runtime`. Build-tool sources, generator recipe files,
+LOAD-only archives, and noncontributing direct inputs are excluded. A future
+contribution change MUST fail closed until the notice document is regenerated
+from a newly reviewed attribution.
+
+Each source row MUST bind owner ID, source path, source SHA-256, sorted
+selection reasons, and ordered notice-block indices. A notice block is the
+complete source comment block containing a case-insensitive `copyright`
+statement, including its original comment delimiters, whitespace, line
+endings, permissions, conditions, and disclaimer; identifier uses outside a
+comment are not notices. Block bytes remain in source order, and byte-identical
+blocks are emitted once at their first canonical `(owner ID, source path,
+source-block ordinal)` occurrence. A source with no such block remains an
+explicit source row with an empty block-index list. For the frozen attribution,
+the exact result is 46 block occurrences, 41 unique blocks, and 50
+notice-silent sources. The mechanically rendered public asset MUST bind the
+runtime-attribution and source-archive SHA-256 values, state the included and
+excluded contribution scope, and reproduce every unique block byte-for-byte;
+the canonical evidence document MUST bind the asset path, size, and SHA-256.
+The RP2 `THIRD_PARTY_LICENSES` output MUST include this asset together with the
+complete `COPYING.NEWLIB` and applicable GCC license/exception texts whenever
+the validated contribution scope includes the corresponding runtime owners.
+
 Finally, use of the GCC exception is conditional on an **Eligible Compilation
 receipt** for each release build. The auditor MUST derive, not accept as an
 unchecked assertion, that every Target Code recipe uses the pinned GCC C, C++,
