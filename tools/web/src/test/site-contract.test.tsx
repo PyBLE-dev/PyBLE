@@ -436,6 +436,9 @@ describe("public-site contract", () => {
 
     render(<HomePage />);
 
+    const channelGroup = screen.getByRole("region", {
+      name: "Choose your tablet beta.",
+    });
     const testFlightSection = screen.getByRole("region", {
       name: "Join the PyBLE beta on TestFlight.",
     });
@@ -452,6 +455,10 @@ describe("public-site contract", () => {
     const androidSection = screen.getByRole("region", {
       name: "Join the PyBLE Android internal test.",
     });
+    expect(channelGroup).toContainElement(testFlightSection);
+    expect(channelGroup).toContainElement(androidSection);
+    expect(testFlightSection.parentElement).toBe(androidSection.parentElement);
+    expect(testFlightSection.parentElement).toHaveClass("beta-channel-grid");
     expect(testFlightSection.nextElementSibling).toBe(androidSection);
     expect(
       within(androidSection).getByText(/approved internal testers/i),
