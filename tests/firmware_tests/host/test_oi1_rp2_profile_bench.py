@@ -42,7 +42,7 @@ RP2_LINK_FACTS = {
     "observed_att_mtu": 247,
     "observed_window": 4,
     "observed_chunk_bytes": 229,
-    "console_tx_budget_ms": 250,
+    "console_tx_budget_ms": 103,
 }
 
 
@@ -126,8 +126,6 @@ def _rp2_cli() -> list[str]:
         "firmware.bin",
         "--firmware-uf2",
         "firmware.uf2",
-        "--console-tx-budget-ms",
-        "250",
     ]
 
 
@@ -199,7 +197,7 @@ class Rp2CliDiscriminationTests(unittest.TestCase):
         self.assertFalse(args.operator_reset)
         self.assertIsNone(args.firmware_bin)
         self.assertIsNone(args.firmware_uf2)
-        self.assertIsNone(args.console_tx_budget_ms)
+        self.assertFalse(hasattr(args, "console_tx_budget_ms"))
 
     def test_rp2_cli_requires_only_rp2_artifacts_and_operator_reset(self):
         with redirect_stderr(io.StringIO()):
@@ -209,7 +207,7 @@ class Rp2CliDiscriminationTests(unittest.TestCase):
         self.assertTrue(args.operator_reset)
         self.assertEqual(args.firmware_bin, "firmware.bin")
         self.assertEqual(args.firmware_uf2, "firmware.uf2")
-        self.assertEqual(args.console_tx_budget_ms, 250)
+        self.assertFalse(hasattr(args, "console_tx_budget_ms"))
         self.assertIsNone(args.reset_port)
         self.assertIsNone(args.application_bin)
         self.assertIsNone(args.partition_table_bin)
@@ -221,8 +219,9 @@ class Rp2CliDiscriminationTests(unittest.TestCase):
                 for value in _rp2_cli()
                 if value != "--operator-reset"
             ],
-            "missing-uf2": _rp2_cli()[:-4]
-            + ["--console-tx-budget-ms", "250"],
+            "missing-uf2": _rp2_cli()[:-2],
+            "operator-pacing-override": _rp2_cli()
+            + ["--console-tx-budget-ms", "1"],
             "serial-reset": _rp2_cli()
             + ["--reset-port", "/dev/private-test-reset"],
             "esp-artifacts": _rp2_cli()
@@ -248,8 +247,6 @@ class Rp2CliDiscriminationTests(unittest.TestCase):
                     "firmware.bin",
                     "--firmware-uf2",
                     "firmware.uf2",
-                    "--console-tx-budget-ms",
-                    "250",
                 ]
             )
 
@@ -424,7 +421,6 @@ class Rp2ExecutorTests(unittest.IsolatedAsyncioTestCase):
             address="private-test-address",
             expect_chip=PICO_PROFILE,
             profile=PICO_PROFILE,
-            console_tx_budget_ms=250,
         )
         reset = _FakeRp2Reset()
         log = _FakeLog()
@@ -588,7 +584,6 @@ class Rp2RunRoutingTests(unittest.IsolatedAsyncioTestCase):
             expect_chip=PICO_PROFILE,
             address="private-test-address",
             operator_reset=True,
-            console_tx_budget_ms=250,
             firmware_bin="firmware.bin",
             firmware_uf2="firmware.uf2",
             application_bin=None,

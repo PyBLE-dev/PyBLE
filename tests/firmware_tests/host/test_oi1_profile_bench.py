@@ -1894,8 +1894,6 @@ class EvidenceAndCliTest(unittest.TestCase):
             "firmware.bin",
             "--firmware-uf2",
             "firmware.uf2",
-            "--console-tx-budget-ms",
-            "250",
             "--raw-log",
             "raw.jsonl",
             "--output",

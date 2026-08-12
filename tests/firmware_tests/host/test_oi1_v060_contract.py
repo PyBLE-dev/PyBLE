@@ -266,8 +266,6 @@ class V060Oi1CatalogTests(unittest.TestCase):
                         "firmware.bin",
                         "--firmware-uf2",
                         "firmware.uf2",
-                        "--console-tx-budget-ms",
-                        "250",
                     ]
                     if profile_id == "rpi-pico2-w"
                     else [

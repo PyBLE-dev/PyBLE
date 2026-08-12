@@ -23,6 +23,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 
 HERE = Path(__file__).resolve().parent
@@ -102,6 +103,52 @@ def canonical_json_bytes(value: object) -> bytes:
     ).encode("utf-8")
 
 
+def candidate_release(artifact: bytes) -> dict[str, object]:
+    profiles: list[dict[str, object]] = [
+        {"id": profile_id, "hil_status": "pending"}
+        for profile_id in PROFILE_ORDER
+    ]
+    profiles[3] = {
+        "id": "esp32-c3-4mb",
+        "chip_family": "ESP32-C3",
+        "silicon_revision": {"minimum": 3},
+        "requirements": {
+            "flash_size_bytes": 4 * 1024 * 1024,
+            "psram": {"required": False, "size_bytes": 0},
+        },
+        "flash": {"mode": "dio", "frequency_hz": 40_000_000},
+        "hil_status": "pending",
+        "manifest": {
+            "path": "esp32-c3-4mb/manifest.json",
+            "size": 1,
+            "sha256": "1" * 64,
+        },
+        "install": {
+            "path": "esp32-c3-4mb/firmware.bin",
+            "size": len(artifact),
+            "sha256": hashlib.sha256(artifact).hexdigest(),
+            "offset": 0,
+        },
+        "components": [],
+        "target": "esp32-c3",
+        "provisioning_kind": "esp-web-serial",
+    }
+    return {
+        "schema_version": 4,
+        "identity": {
+            "version": "0.6.0",
+            "tag": "firmware-v0.6.0",
+            "agent_version": "0.6.0",
+            "protocol_version": "PBLE/1",
+            "built_at": "2026-08-12T00:00:00Z",
+        },
+        "provenance": {},
+        "installer": {},
+        "profiles": profiles,
+        "documents": {},
+    }
+
+
 class CommittedPolicyReadinessTests(unittest.TestCase):
     def test_committed_policy_is_generated_schema3_five_profile_evidence(self):
         raw = POLICY_PATH.read_bytes()
@@ -175,21 +222,34 @@ class CommittedPolicyReadinessTests(unittest.TestCase):
 
 
 class PicoPacingSourceBindingTests(unittest.TestCase):
-    def test_pico_pacing_fact_is_one_positive_runtime_source_constant(self):
+    def test_pico_pacing_fact_is_the_exact_runtime_refill_horizon(self):
+        capacity = getattr(CONSOLE, "TX_CAPACITY", None)
+        refill_per_ms = getattr(CONSOLE, "TX_REFILL_PER_MS", None)
         runtime_budget = getattr(CONSOLE, "TX_BUDGET_MS", None)
-        self.assertIs(
-            type(runtime_budget),
-            int,
-            "P8/OI-P3 must first freeze a Pico runtime TX_BUDGET_MS; the "
-            "ESP 250 ms constant and host fixture are not Pico evidence",
-        )
-        if type(runtime_budget) is not int:
-            return
-        self.assertGreater(runtime_budget, 0)
         self.assertEqual(
-            getattr(PROFILE_BENCH, "RP2_CONSOLE_TX_BUDGET_MS", None),
+            (capacity, refill_per_ms, runtime_budget),
+            (2048, 20, 103),
+            "Pico pacing must use the frozen byte capacity, byte/ms refill, "
+            "and empty-to-full horizon; ESP's 250 ms wait is unrelated",
+        )
+        if not all(
+            type(value) is int and value > 0
+            for value in (capacity, refill_per_ms, runtime_budget)
+        ):
+            return
+        self.assertEqual(
             runtime_budget,
-            "the bench fact must be bound to the frozen runtime value",
+            (capacity + refill_per_ms - 1) // refill_per_ms,
+            "TX_BUDGET_MS must be the exact integer ceiling refill horizon",
+        )
+        self.assertEqual(
+            (
+                getattr(PROFILE_BENCH, "RP2_CONSOLE_TX_CAPACITY", None),
+                getattr(PROFILE_BENCH, "RP2_CONSOLE_TX_REFILL_PER_MS", None),
+                getattr(PROFILE_BENCH, "RP2_CONSOLE_TX_BUDGET_MS", None),
+            ),
+            (capacity, refill_per_ms, runtime_budget),
+            "the bench must import all three exact runtime pacing constants",
         )
 
     def test_pico_cli_has_no_operator_selectable_pacing_value(self):
@@ -220,9 +280,9 @@ class PicoPacingSourceBindingTests(unittest.TestCase):
                     "Pico bench still requires an operator-supplied pacing "
                     "number (parser exit %s)" % exc.code
                 )
-        self.assertEqual(
-            args.console_tx_budget_ms,
-            getattr(PROFILE_BENCH, "RP2_CONSOLE_TX_BUDGET_MS", None),
+        self.assertFalse(
+            hasattr(args, "console_tx_budget_ms"),
+            "the parsed CLI namespace must not carry an operator pacing fact",
         )
         with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
             PROFILE_BENCH._parse_args(
@@ -271,12 +331,10 @@ class PrivateGateResultWriterContractTests(unittest.TestCase):
             root = Path(tmp)
             candidate = root / "candidate"
             (candidate / "esp32-c3-4mb").mkdir(parents=True)
-            release_raw = canonical_json_bytes(
-                {"identity": {"version": "0.6.0"}}
-            )
-            (candidate / "release.json").write_bytes(release_raw)
             artifact = b"candidate C3 firmware\0"
             (candidate / "esp32-c3-4mb" / "firmware.bin").write_bytes(artifact)
+            release_raw = canonical_json_bytes(candidate_release(artifact))
+            (candidate / "release.json").write_bytes(release_raw)
             output = root / "private" / "c3-result.json"
             gates = ["C3-G%d" % index for index in range(7)]
 
@@ -318,6 +376,95 @@ class PrivateGateResultWriterContractTests(unittest.TestCase):
                     output_path=missing_output,
                 )
             self.assertFalse(missing_output.exists())
+
+    def test_writer_rejects_minimal_or_substituted_candidate_metadata(self):
+        writer = GATE.create_result_file
+        gates = ["C3-G%d" % index for index in range(7)]
+        with tempfile.TemporaryDirectory(prefix="pyble-v060-gate-metadata-") as tmp:
+            root = Path(tmp)
+            candidate = root / "candidate"
+            artifact_path = candidate / "esp32-c3-4mb" / "firmware.bin"
+            artifact_path.parent.mkdir(parents=True)
+            artifact = b"candidate C3 firmware\0"
+            artifact_path.write_bytes(artifact)
+            release_path = candidate / "release.json"
+            invalid = {
+                "minimal-release": {"identity": {"version": "0.6.0"}},
+                "wrong-profile-digest": candidate_release(artifact),
+            }
+            invalid["wrong-profile-digest"]["profiles"][3]["install"][
+                "sha256"
+            ] = "0" * 64
+            for name, release in invalid.items():
+                with self.subTest(name=name):
+                    release_path.write_bytes(canonical_json_bytes(release))
+                    output = root / (name + ".json")
+                    with self.assertRaises(GATE.QualificationError):
+                        writer(
+                            candidate_dir=candidate,
+                            profile_id="esp32-c3-4mb",
+                            passed_gates=gates,
+                            output_path=output,
+                        )
+                    self.assertFalse(output.exists())
+
+    def test_low_level_writer_is_durable_and_cleans_every_injected_failure(self):
+        payload = b'{"fixture":true}\n'
+        with tempfile.TemporaryDirectory(prefix="pyble-v060-gate-write-") as tmp:
+            root = Path(tmp)
+            real_fstat = GATE.os.fstat
+            failures = {
+                "fchmod": mock.patch.object(
+                    GATE.os, "fchmod", side_effect=OSError("fixture fchmod")
+                ),
+                "write": mock.patch.object(
+                    GATE.os, "write", side_effect=OSError("fixture write")
+                ),
+                "fsync": mock.patch.object(
+                    GATE.os, "fsync", side_effect=OSError("fixture fsync")
+                ),
+                "fstat": mock.patch.object(
+                    GATE.os,
+                    "fstat",
+                    side_effect=lambda descriptor: (
+                        (_ for _ in ()).throw(OSError("fixture fstat"))
+                        if stat.S_ISREG(real_fstat(descriptor).st_mode)
+                        else real_fstat(descriptor)
+                    ),
+                ),
+            }
+            for name, patcher in failures.items():
+                with self.subTest(name=name):
+                    output = root / name / "result.json"
+                    with patcher, self.assertRaises(GATE.QualificationError):
+                        GATE._write_exclusive_result(output, payload)
+                    self.assertFalse(output.exists())
+
+            sync_modes: list[int] = []
+            real_fsync = GATE.os.fsync
+
+            def record_fsync(descriptor):
+                sync_modes.append(real_fstat(descriptor).st_mode)
+                return real_fsync(descriptor)
+
+            output = root / "durable" / "result.json"
+            with mock.patch.object(GATE.os, "fsync", side_effect=record_fsync):
+                GATE._write_exclusive_result(output, payload)
+            self.assertEqual(output.read_bytes(), payload)
+            self.assertTrue(any(stat.S_ISREG(mode) for mode in sync_modes))
+            self.assertTrue(any(stat.S_ISDIR(mode) for mode in sync_modes))
+
+    def test_writer_rejects_symlink_ancestor_without_touching_target(self):
+        with tempfile.TemporaryDirectory(prefix="pyble-v060-gate-link-") as tmp:
+            root = Path(tmp)
+            real_parent = root / "real"
+            real_parent.mkdir()
+            link = root / "linked"
+            link.symlink_to(real_parent, target_is_directory=True)
+            output = link / "private" / "result.json"
+            with self.assertRaises(GATE.QualificationError):
+                GATE._write_exclusive_result(output, b"safe\n")
+            self.assertFalse((real_parent / "private" / "result.json").exists())
 
 
 class HilCompletionWriterContractTests(unittest.TestCase):
