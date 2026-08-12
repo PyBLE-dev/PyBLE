@@ -541,12 +541,14 @@ qualified release is `v0.5.1` or newer, the page MUST:
 
 An unavailable selector, a candidate, or a failed/pending public release MUST
 NOT claim that the exact-board profile is active or expose its install action
-or qualified-board photograph. The exact `v0.4.2` beta has only its two frozen
-profiles and MUST NOT claim that either image contains the Waveshare display
-modules or boot splash. A provisioning profile identifies distinct release
-bytes for user-selected installation; it is not a PBLE/1 capability, app
-runtime routing profile, automatic board-detection request, or automatic
-splash enablement.
+or a qualified-board photograph. The loopback-only approval preview has the
+one narrow historical-reference exception frozen in §7.1; that reference MUST
+NOT be described as qualification of its local bytes. The exact `v0.4.2` beta
+has only its two frozen profiles and MUST NOT claim that either image contains
+the Waveshare display modules or boot splash. A provisioning profile identifies
+distinct release bytes for user-selected installation; it is not a PBLE/1
+capability, app runtime routing profile, automatic board-detection request, or
+automatic splash enablement.
 
 One narrow pre-qualification exception exists for the fresh audited `v0.4.2`
 candidate. A build-time selector MAY use deployment mode `public-beta` only
@@ -677,6 +679,17 @@ artifacts:
   require `navigator.serial`, and MUST NOT claim direct WebUSB or automatic
   browser-to-board flashing.
 
+The `/flash` preview MUST retain the existing reviewed Waveshare
+ESP32-S3-LCD-1.47B photograph as an **Exact-board reference** so the maintainer
+can visually distinguish the B-version board from the lean generic S3 target.
+The photograph MUST retain its content-versioned v0.5.0 filename, alternative
+text, and visible v0.5.0 caption. Adjacent copy MUST explicitly state that it is
+a historical identification reference and does not qualify, support, or prove
+the local v0.6.0-derived bytes. This exception applies only to the loopback
+`/flash` approval harness; it does not expose an install action by itself, make
+the photograph qualified evidence for the preview, or add the photo to an
+unqualified production home page.
+
 The exact artifact and capability rules are frozen in
 [firmware/browser-flashing.md §1.1](firmware/browser-flashing.md#11-loopback-only-five-target-approval-preview).
 An ESP action still requires a secure context, Web Crypto, Web Serial, artifact
@@ -754,7 +767,8 @@ The v1 site is releasable when:
   renders the exact five-choice native selector and persistent selected-target
   detail panel, repeats its unqualified label, uses verified ESP Web Serial
   actions for the four ESP targets, and uses only verified UF2 download plus
-  BOOTSEL-copy guidance for Pico 2 W;
+  BOOTSEL-copy guidance for Pico 2 W; it retains the reviewed Waveshare v0.5.0
+  photograph solely as a visibly historical exact-board reference;
 - production builds reject or exclude every preview descriptor and staged
   artifact, keep C3 and Pico 2 W out of active release selection, and retain
   the fail-closed no-release state;
@@ -767,9 +781,11 @@ The v1 site is releasable when:
   Waveshare display runtime and splash while the exact-board image contains
   them, without treating either provisioning profile as an app connection gate;
 - that same qualified selector renders the exact reviewed local board photo on
-  both home and `/flash`, while all older or unqualified states omit it; tests
-  bind its pathname, dimensions, byte ceiling, SHA-256, alternative text, and
-  caption, and the static export makes no remote image request;
+  both home and `/flash`, while all older or unqualified production states omit
+  it; the §7.1 loopback preview shows it only as the explicit historical
+  reference; tests bind its pathname, dimensions, byte ceiling, SHA-256,
+  alternative text, caption, and truthful local-preview disclaimer, and the
+  static export makes no remote image request;
 - all versioned firmware files are same-origin, immutable, byte-identical to
   the reviewed release, and retrievable from the public production origin;
 - browser verification and the subsequent ESP Web Tools fetches use the same
