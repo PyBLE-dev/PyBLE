@@ -104,35 +104,124 @@ def canonical_json_bytes(value: object) -> bytes:
 
 
 def candidate_release(artifact: bytes) -> dict[str, object]:
-    profiles: list[dict[str, object]] = [
-        {"id": profile_id, "hil_status": "pending"}
-        for profile_id in PROFILE_ORDER
-    ]
-    profiles[3] = {
-        "id": "esp32-c3-4mb",
-        "chip_family": "ESP32-C3",
-        "silicon_revision": {"minimum": 3},
-        "requirements": {
-            "flash_size_bytes": 4 * 1024 * 1024,
-            "psram": {"required": False, "size_bytes": 0},
-        },
-        "flash": {"mode": "dio", "frequency_hz": 40_000_000},
-        "hil_status": "pending",
-        "manifest": {
-            "path": "esp32-c3-4mb/manifest.json",
-            "size": 1,
-            "sha256": "1" * 64,
-        },
-        "install": {
-            "path": "esp32-c3-4mb/firmware.bin",
-            "size": len(artifact),
-            "sha256": hashlib.sha256(artifact).hexdigest(),
-            "offset": 0,
-        },
-        "components": [],
-        "target": "esp32-c3",
-        "provisioning_kind": "esp-web-serial",
+    esp_specs = {
+        "esp32-4mb": (
+            "esp32",
+            "ESP32",
+            {"minimum_full": 0, "maximum_full": 399},
+            4 * 1024 * 1024,
+            {"required": False, "size_bytes": 0, "type": "not-required"},
+            40_000_000,
+            (0x1000, 0x1000, 0x8000, 0x10000),
+        ),
+        "esp32-s3-n16r8": (
+            "esp32-s3",
+            "ESP32-S3",
+            {"minimum_full": 0, "maximum_full": 99},
+            16 * 1024 * 1024,
+            {"required": True, "size_bytes": 8 * 1024 * 1024, "type": "octal"},
+            80_000_000,
+            (0, 0, 0x8000, 0x10000),
+        ),
+        "waveshare-esp32-s3-lcd-147b": (
+            "waveshare-esp32-s3-lcd-147b",
+            "ESP32-S3",
+            {"minimum_full": 0, "maximum_full": 99},
+            16 * 1024 * 1024,
+            {"required": True, "size_bytes": 8 * 1024 * 1024, "type": "octal"},
+            80_000_000,
+            (0, 0, 0x8000, 0x10000),
+        ),
+        "esp32-c3-4mb": (
+            "esp32-c3",
+            "ESP32-C3",
+            {"minimum_full": 3, "maximum_full": 199},
+            4 * 1024 * 1024,
+            {"required": False, "size_bytes": 0, "type": "not-required"},
+            80_000_000,
+            (0, 0, 0x8000, 0x10000),
+        ),
     }
+    roles = (
+        ("bootloader", "bootloader.bin"),
+        ("partition-table", "partition-table.bin"),
+        ("application", "application.bin"),
+    )
+    profiles: list[dict[str, object]] = []
+    for profile_id in PROFILE_ORDER[:-1]:
+        (
+            target,
+            family,
+            revisions,
+            flash_bytes,
+            psram,
+            frequency_hz,
+            offsets,
+        ) = esp_specs[profile_id]
+        install_sha256 = (
+            hashlib.sha256(artifact).hexdigest()
+            if profile_id == "esp32-c3-4mb"
+            else profile_id[0].encode().hex().ljust(64, "0")[:64]
+        )
+        profiles.append(
+            {
+                "id": profile_id,
+                "target": target,
+                "provisioning_kind": "esp-web-serial",
+                "chip_family": family,
+                "silicon_revision": revisions,
+                "requirements": {
+                    "flash_size_bytes": flash_bytes,
+                    "psram": psram,
+                },
+                "flash": {"mode": "dio", "frequency_hz": frequency_hz},
+                "hil_status": "pending",
+                "manifest": {
+                    "path": "%s/manifest.json" % profile_id,
+                    "size": 1,
+                    "sha256": "1" * 64,
+                },
+                "install": {
+                    "path": "%s/firmware.bin" % profile_id,
+                    "size": len(artifact) if profile_id == "esp32-c3-4mb" else 1,
+                    "sha256": install_sha256,
+                    "offset": offsets[0],
+                },
+                "components": [
+                    {
+                        "path": "%s/%s" % (profile_id, filename),
+                        "size": 1,
+                        "sha256": str(index + 2) * 64,
+                        "role": role,
+                        "offset": offset,
+                    }
+                    for index, ((role, filename), offset) in enumerate(
+                        zip(roles, offsets[1:])
+                    )
+                ],
+            }
+        )
+    profiles.append(
+        {
+            "id": "rpi-pico2-w",
+            "target": "rpi-pico2-w",
+            "provisioning_kind": "verified-uf2-bootsel",
+            "board": "RPI_PICO2_W",
+            "hil_status": "pending",
+            "install": {
+                "path": "rpi-pico2-w/firmware.uf2",
+                "size": 1,
+                "sha256": "a" * 64,
+                "format": "uf2",
+            },
+            "resource_image": {
+                "path": "rpi-pico2-w/firmware.bin",
+                "size": 1,
+                "sha256": "b" * 64,
+                "image_limit_bytes": 1_572_864,
+            },
+        }
+    )
     return {
         "schema_version": 4,
         "identity": {
@@ -142,10 +231,25 @@ def candidate_release(artifact: bytes) -> dict[str, object]:
             "protocol_version": "PBLE/1",
             "built_at": "2026-08-12T00:00:00Z",
         },
-        "provenance": {},
-        "installer": {},
+        "provenance": {
+            "pyble": {"commit": "1" * 40, "clean": True},
+            "micropython": {"ref": "v1.28.0", "commit": "2" * 40},
+            "esp_idf": {"ref": "v5.5.1", "commit": "3" * 40},
+            "patch_count": 0,
+            "runner": {"os": "FixtureOS", "architecture": "fixture64"},
+            "tools": [{"name": "python", "version": "3.13.5"}],
+        },
+        "installer": {"package": "esp-web-tools", "version": "10.4.0"},
         "profiles": profiles,
-        "documents": {},
+        "documents": {
+            key: {"path": path, "size": 1, "sha256": "f" * 64}
+            for key, path in {
+                "third_party_licenses": "THIRD_PARTY_LICENSES.txt",
+                "release_notes": "RELEASE_NOTES.md",
+                "recovery": "RECOVERY.md",
+                "hil_report": "HIL_REPORT.md",
+            }.items()
+        },
     }
 
 
@@ -328,7 +432,7 @@ class PrivateGateResultWriterContractTests(unittest.TestCase):
         if not callable(writer):
             self.skipTest("RED: private gate writer has not landed")
         with tempfile.TemporaryDirectory(prefix="pyble-v060-workflow-gate-") as tmp:
-            root = Path(tmp)
+            root = Path(tmp).resolve()
             candidate = root / "candidate"
             (candidate / "esp32-c3-4mb").mkdir(parents=True)
             artifact = b"candidate C3 firmware\0"
@@ -381,7 +485,7 @@ class PrivateGateResultWriterContractTests(unittest.TestCase):
         writer = GATE.create_result_file
         gates = ["C3-G%d" % index for index in range(7)]
         with tempfile.TemporaryDirectory(prefix="pyble-v060-gate-metadata-") as tmp:
-            root = Path(tmp)
+            root = Path(tmp).resolve()
             candidate = root / "candidate"
             artifact_path = candidate / "esp32-c3-4mb" / "firmware.bin"
             artifact_path.parent.mkdir(parents=True)
@@ -411,7 +515,7 @@ class PrivateGateResultWriterContractTests(unittest.TestCase):
     def test_low_level_writer_is_durable_and_cleans_every_injected_failure(self):
         payload = b'{"fixture":true}\n'
         with tempfile.TemporaryDirectory(prefix="pyble-v060-gate-write-") as tmp:
-            root = Path(tmp)
+            root = Path(tmp).resolve()
             real_fstat = GATE.os.fstat
             failures = {
                 "fchmod": mock.patch.object(
@@ -456,7 +560,7 @@ class PrivateGateResultWriterContractTests(unittest.TestCase):
 
     def test_writer_rejects_symlink_ancestor_without_touching_target(self):
         with tempfile.TemporaryDirectory(prefix="pyble-v060-gate-link-") as tmp:
-            root = Path(tmp)
+            root = Path(tmp).resolve()
             real_parent = root / "real"
             real_parent.mkdir()
             link = root / "linked"
@@ -465,6 +569,107 @@ class PrivateGateResultWriterContractTests(unittest.TestCase):
             with self.assertRaises(GATE.QualificationError):
                 GATE._write_exclusive_result(output, b"safe\n")
             self.assertFalse((real_parent / "private" / "result.json").exists())
+
+    def test_writer_rolls_back_candidate_or_output_parent_toctou(self):
+        payload = b'{"fixture":true}\n'
+        with tempfile.TemporaryDirectory(prefix="pyble-v060-gate-race-") as tmp:
+            root = Path(tmp).resolve()
+            candidate_output = root / "candidate-race" / "result.json"
+
+            def changed_candidate():
+                raise GATE.QualificationError("fixture candidate changed")
+
+            with self.assertRaises(GATE.QualificationError):
+                GATE._write_exclusive_result(
+                    candidate_output,
+                    payload,
+                    post_write_check=changed_candidate,
+                )
+            self.assertFalse(candidate_output.exists())
+
+            parent_output = root / "parent-race" / "result.json"
+            real_verify_parent = GATE._verify_output_parent
+            calls = 0
+
+            def changed_parent(chain):
+                nonlocal calls
+                calls += 1
+                if calls >= 3:
+                    raise GATE.QualificationError("fixture parent changed")
+                return real_verify_parent(chain)
+
+            with mock.patch.object(
+                GATE, "_verify_output_parent", side_effect=changed_parent
+            ), self.assertRaises(GATE.QualificationError):
+                GATE._write_exclusive_result(parent_output, payload)
+            self.assertFalse(parent_output.exists())
+
+    def test_writer_rejects_lexical_symlink_dotdot_output(self):
+        with tempfile.TemporaryDirectory(prefix="pyble-v060-gate-dotdot-") as tmp:
+            root = Path(tmp).resolve()
+            real = root / "real" / "inner"
+            real.mkdir(parents=True)
+            link = root / "linked"
+            link.symlink_to(real, target_is_directory=True)
+
+            output = link / ".." / "private" / "result.json"
+            with self.assertRaises(GATE.QualificationError):
+                GATE._write_exclusive_result(output, b"safe\n")
+            self.assertFalse((root / "private" / "result.json").exists())
+            self.assertFalse((root / "real" / "private" / "result.json").exists())
+
+    def test_writer_rejects_lexical_symlink_dotdot_candidate(self):
+        gates = ["C3-G%d" % index for index in range(7)]
+        with tempfile.TemporaryDirectory(prefix="pyble-v060-gate-dotdot-") as tmp:
+            root = Path(tmp).resolve()
+            real = root / "real" / "inner"
+            real.mkdir(parents=True)
+            link = root / "linked"
+            link.symlink_to(real, target_is_directory=True)
+            candidate = root / "candidate"
+            artifact_path = candidate / "esp32-c3-4mb" / "firmware.bin"
+            artifact_path.parent.mkdir(parents=True)
+            artifact = b"candidate C3 firmware\0"
+            artifact_path.write_bytes(artifact)
+            (candidate / "release.json").write_bytes(
+                canonical_json_bytes(candidate_release(artifact))
+            )
+            lexical_candidate = link / ".." / "candidate"
+            candidate_output = root / "candidate-dotdot-result.json"
+            with self.assertRaises(GATE.QualificationError):
+                GATE.create_result_file(
+                    candidate_dir=lexical_candidate,
+                    profile_id="esp32-c3-4mb",
+                    passed_gates=gates,
+                    output_path=candidate_output,
+                )
+            self.assertFalse(candidate_output.exists())
+
+    def test_candidate_writer_rolls_back_post_write_validation_failure(self):
+        gates = ["C3-G%d" % index for index in range(7)]
+        with tempfile.TemporaryDirectory(prefix="pyble-v060-gate-validate-") as tmp:
+            root = Path(tmp).resolve()
+            candidate = root / "candidate"
+            artifact_path = candidate / "esp32-c3-4mb" / "firmware.bin"
+            artifact_path.parent.mkdir(parents=True)
+            artifact = b"candidate C3 firmware\0"
+            artifact_path.write_bytes(artifact)
+            (candidate / "release.json").write_bytes(
+                canonical_json_bytes(candidate_release(artifact))
+            )
+            output = root / "private" / "result.json"
+            with mock.patch.object(
+                GATE,
+                "validate_result_file",
+                side_effect=GATE.QualificationError("fixture validation failure"),
+            ), self.assertRaises(GATE.QualificationError):
+                GATE.create_result_file(
+                    candidate_dir=candidate,
+                    profile_id="esp32-c3-4mb",
+                    passed_gates=gates,
+                    output_path=output,
+                )
+            self.assertFalse(output.exists())
 
 
 class HilCompletionWriterContractTests(unittest.TestCase):
