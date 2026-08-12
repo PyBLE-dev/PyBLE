@@ -1329,4 +1329,107 @@ strip.write()
     expect(input.semanticFingerprint, isNotNull);
     expect(output.semanticFingerprint, input.semanticFingerprint);
   });
+
+  group('A-38 named pins in the bounded importer', () {
+    test('imports double- and single-quoted pin names as quoted-name '
+        'blocks', () {
+      final Map<String, dynamic> workspace = _workspaceOf('''
+from machine import Pin
+
+led = Pin("LED", Pin.OUT)
+sensor = Pin('WL_GPIO0', Pin.IN)
+led.value(1)
+print(sensor.value())
+''');
+      final List<Map<String, dynamic>> pins = _objects(workspace)
+          .where(
+            (Map<String, dynamic> value) => value['type'] == 'pyble_gpio_pin',
+          )
+          .toList(growable: false);
+      expect(pins, hasLength(2));
+      expect(
+        pins.map((Map<String, dynamic> value) => value['fields']),
+        containsAll(<Map<String, Object?>>[
+          <String, Object?>{'MODE': 'OUT', 'PULL': 'NONE'},
+          <String, Object?>{'MODE': 'IN', 'PULL': 'NONE'},
+        ]),
+      );
+      final List<Object?> names = pins
+          .map((Map<String, dynamic> pin) {
+            final Map<String, dynamic> gpio =
+                ((pin['inputs']! as Map<String, dynamic>)['GPIO']!
+                        as Map<String, dynamic>)['block']!
+                    as Map<String, dynamic>;
+            expect(
+              gpio['type'],
+              'text',
+              reason:
+                  'a named pin imports as the stock Blockly string literal '
+                  'block, exactly the shape example materialization produces',
+            );
+            return (gpio['fields']! as Map<String, dynamic>)['TEXT'];
+          })
+          .toList(growable: false);
+      expect(names, containsAll(<String>['LED', 'WL_GPIO0']));
+    });
+
+    const Map<String, String> rejectedNamedPins = <String, String>{
+      'a space inside the name':
+          'from machine import Pin\n\nled = Pin("led led", Pin.OUT)\n',
+      'a leading digit':
+          "from machine import Pin\n\nled = Pin('2x', Pin.OUT)\n",
+      'an empty name': 'from machine import Pin\n\nled = Pin("", Pin.OUT)\n',
+      'a seventeen-character name':
+          'from machine import Pin\n\n'
+          'led = Pin("ABCDEFGHIJKLMNOPQ", Pin.OUT)\n',
+      'a digits-only string':
+          'from machine import Pin\n\nled = Pin("2", Pin.OUT)\n',
+      'a variable pin identity':
+          'from machine import Pin\n\nx = 1\nled = Pin(x, Pin.OUT)\n',
+      'a valid name next to an invalid one (all-or-nothing)':
+          'from machine import Pin\n\n'
+          'led = Pin("LED", Pin.OUT)\nbad = Pin("led led", Pin.OUT)\n',
+    };
+    for (final MapEntry<String, String> entry in rejectedNamedPins.entries) {
+      test('rejects ${entry.key} without producing a workspace', () {
+        final PythonBlocksConversion result = const PythonToBlocksConverter()
+            .convert(entry.value);
+
+        expect(result.workspaceJson, isNull);
+        expect(result.hasErrors, isTrue);
+        expect(result.diagnostics.first.code, 'invalid_gpio');
+      });
+    }
+
+    test('semantic fingerprint preserves canonical named-pin round trips', () {
+      const String original = '''
+from machine import Pin
+
+led = Pin("LED", Pin.OUT)
+button = Pin(23, Pin.IN)
+led.value(1)
+print(button.value())
+''';
+      const String generated = '''
+from machine import Pin
+
+led = None
+button = None
+
+led = Pin('LED', Pin.OUT, None)
+button = Pin(23, Pin.IN, None)
+led.value(1)
+print(button.value())
+''';
+      final PythonBlocksConversion input = const PythonToBlocksConverter()
+          .convert(original);
+      final PythonBlocksConversion output = const PythonToBlocksConverter()
+          .convert(generated, productionGenerated: true);
+
+      expect(input.diagnostics, isEmpty);
+      expect(output.diagnostics, isEmpty);
+      expect(input.semanticFingerprint, isNotNull);
+      expect(output.semanticFingerprint, input.semanticFingerprint);
+    });
+  });
 }

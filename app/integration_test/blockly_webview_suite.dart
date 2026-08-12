@@ -775,6 +775,56 @@ pixels.write()
         ),
       );
       await tester.pumpAndSettle();
+
+      // A-38: exercise the complete native-entry -> example materialization
+      // -> sealed Blockly generator path with a real MicroPython named pin.
+      // Editing remains local until Preview, and the active workspace and
+      // connected board remain untouched by the disposable scratch run.
+      final Finder ledGpioField = find.widgetWithText(TextField, 'LED GPIO');
+      await tester.enterText(ledGpioField, 'LED');
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining('Pin("LED", Pin.OUT'),
+        findsNothing,
+        reason: 'named GPIO editing must not generate before Preview',
+      );
+      expect(
+        tester
+            .widget<ButtonStyleButton>(
+              find.byKey(kBlocksExamplePreviewButtonKey),
+            )
+            .onPressed,
+        isNotNull,
+        reason: 'a valid named pin must enable the real preview action',
+      );
+      await _tapVisible(tester, find.byKey(kBlocksExamplePreviewButtonKey));
+      await _pumpUntil(
+        tester,
+        () => find.textContaining('Pin("LED", Pin.OUT').evaluate().isNotEmpty,
+        reason:
+            'the real scratch Blockly workspace did not quote the named LED pin',
+      );
+      await tester.tap(
+        find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.text('Close'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final BlocksDocument afterNamedPinPreview = container.read(
+        blocksDocumentProvider,
+      );
+      expect(
+        afterNamedPinPreview.retainedWorkspaceJson,
+        beforeExamples.retainedWorkspaceJson,
+      );
+      expect(connection.writes, hasLength(writesBeforeExamples));
+      expect(connection.runs, hasLength(runsBeforeExamples));
+
+      // Preserve the existing numeric replacement gate after independently
+      // proving named-pin preview generation.
+      await tester.enterText(ledGpioField, '17');
+      await tester.pumpAndSettle();
       // A real Android IME can still cover the example action after enterText,
       // even when ensureVisible has scrolled its RenderBox into the viewport.
       // Close it after the explicit preview before asserting hit-testability,

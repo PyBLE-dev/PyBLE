@@ -73,6 +73,22 @@ Future<void> _loadExampleFuture(
   required bool replace,
 }) => controller.loadExampleWorkspace(example, replace: replace);
 
+/// FR-BLOCKS-1B (A-38) pins the GPIO slot as a union: every example role
+/// value is EITHER a non-negative safe integer (existing semantics) OR a
+/// MicroPython pin name matching `^[A-Za-z][A-Za-z0-9_]{0,15}$`, so
+/// `materializeWorkspaceJson` accepts `Map<String, Object>` whose values are
+/// `int` or `String`. The call routes through a `dynamic` local so this red
+/// suite still compiles against the in-flight `Map<String, int>` signature
+/// and each test fails at runtime instead of failing the file at compile
+/// time.
+String _materializeUnion(
+  BlocksExampleTemplate example,
+  Map<String, Object> gpioValues,
+) {
+  final dynamic unionValues = gpioValues;
+  return example.materializeWorkspaceJson(unionValues);
+}
+
 void main() {
   group('A-31 beginner example catalog model', () {
     test('parsed workspace nested maps are immutable', () {
@@ -815,6 +831,157 @@ void main() {
         same(requestBefore),
       );
       expect(controller.hasActiveReadyHost, isTrue);
+    });
+  });
+
+  group('A-38 named pin union in example GPIO materialization', () {
+    test('materializes a named pin as a quoted-name text value block', () {
+      final BlocksExampleTemplate example = _catalog().byId('blink-led');
+      final String templateBefore = jsonEncode(example.workspace);
+
+      final String materialized = _materializeUnion(
+        example,
+        const <String, Object>{'led': 'LED'},
+      );
+
+      final Map<String, dynamic> decoded =
+          jsonDecode(materialized)! as Map<String, dynamic>;
+      final Map<String, dynamic> value = _objectWithId(
+        decoded,
+        'blink-led-led-gpio-value',
+      );
+      expect(
+        value['type'],
+        'text',
+        reason:
+            'a pin NAME materializes as the stock Blockly string literal so '
+            'the generator can quote it (Pin("LED", ...)) while integers stay '
+            'math_number blocks',
+      );
+      expect(value['fields'], <String, Object?>{'TEXT': 'LED'});
+      final Map<String, dynamic> pin = _objectWithId(decoded, 'blink-led-pin');
+      final Map<String, dynamic> connected =
+          ((pin['inputs']! as Map<String, dynamic>)['GPIO']!
+                  as Map<String, dynamic>)['block']!
+              as Map<String, dynamic>;
+      expect(connected['id'], 'blink-led-led-gpio-value');
+      expect(jsonEncode(example.workspace), templateBefore);
+      expect(templateBefore, isNot(contains('"TEXT":"LED"')));
+    });
+
+    test('accepts the sixteen-character name upper bound', () {
+      final BlocksExampleTemplate example = _catalog().byId('blink-led');
+
+      expect(
+        () => _materializeUnion(example, const <String, Object>{
+          'led': 'A234567890123456',
+        }),
+        returnsNormally,
+        reason: 'the frozen grammar allows up to sixteen characters',
+      );
+    });
+
+    test('materializes mixed integer and named GPIO roles together', () {
+      final BlocksExampleTemplate example = _catalog().byId(
+        'button-controls-led',
+      );
+      final String templateBefore = jsonEncode(example.workspace);
+
+      final String materialized = _materializeUnion(
+        example,
+        const <String, Object>{'button': 23, 'led': 'LED'},
+      );
+
+      expect(materialized, contains('"NUM":23'));
+      expect(materialized, contains('"TEXT":"LED"'));
+      expect(materialized, contains('button-controls-led-button-gpio-value'));
+      expect(materialized, contains('button-controls-led-led-gpio-value'));
+      expect(jsonEncode(example.workspace), templateBefore);
+    });
+
+    test('rejects names outside the frozen grammar via the invalid-pin '
+        'path', () {
+      final BlocksExampleTemplate example = _catalog().byId('blink-led');
+
+      for (final Object invalid in <Object>[
+        'led led',
+        '2x',
+        '',
+        'ABCDEFGHIJKLMNOPQ', // seventeen characters — one over the bound
+        '9LED',
+        '2',
+        ' LED',
+        'LED-1',
+        2.5,
+        true,
+      ]) {
+        expect(
+          () => _materializeUnion(example, <String, Object>{'led': invalid}),
+          throwsA(isA<BlocksExampleFormatException>()),
+          reason:
+              'GPIO value `$invalid` must follow the existing invalid-pin '
+              'error path',
+        );
+      }
+    });
+
+    test('GPIO uniqueness compares canonical union forms', () {
+      final BlocksExampleTemplate example = _catalog().byId(
+        'button-controls-led',
+      );
+
+      expect(
+        () => _materializeUnion(example, const <String, Object>{
+          'button': 'LED',
+          'led': 'LED',
+        }),
+        throwsA(isA<BlocksExampleFormatException>()),
+        reason: "'LED' == 'LED' — duplicate names collide",
+      );
+      expect(
+        () => _materializeUnion(example, const <String, Object>{
+          'button': 2,
+          'led': 2,
+        }),
+        throwsA(isA<BlocksExampleFormatException>()),
+        reason: '2 == 2 — duplicate integers still collide through the union',
+      );
+      expect(
+        () => _materializeUnion(example, const <String, Object>{
+          'button': 'WL_GPIO0',
+          'led': 'LED',
+        }),
+        returnsNormally,
+        reason: 'distinct names never collide',
+      );
+      expect(
+        () => _materializeUnion(example, const <String, Object>{
+          'button': 2,
+          'led': 'LED',
+        }),
+        returnsNormally,
+        reason: "'LED' != 2 — a name never collides with an integer",
+      );
+    });
+
+    test('parses named pins with the exact integer-or-name grammar', () {
+      expect(parseBlocksExampleGpio('LED'), 'LED');
+      expect(
+        parseBlocksExampleGpio(' WL_GPIO0 '),
+        'WL_GPIO0',
+        reason: 'surrounding whitespace trims exactly like integer input',
+      );
+      expect(parseBlocksExampleGpio('17'), 17);
+      for (final String invalid in <String>[
+        'led led',
+        '2x',
+        '',
+        'ABCDEFGHIJKLMNOPQ',
+        '9LED',
+        'LED-1',
+      ]) {
+        expect(parseBlocksExampleGpio(invalid), isNull, reason: '`$invalid`');
+      }
     });
   });
 }

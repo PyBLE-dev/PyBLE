@@ -2,6 +2,7 @@
 // Part of PyBLE (https://pyble.dev) — see /LICENSE.
 //
 // A-31 — the authored Blockly host must load only pinned, app-bundled assets.
+// A-38 — GPIO slots accept named MicroPython pins (FR-BLOCKS-1B).
 
 import 'dart:async';
 import 'dart:convert';
@@ -504,6 +505,62 @@ void main() {
       );
     },
   );
+
+  group('A-38 named MicroPython pins asset policy (FR-BLOCKS-1B)', () {
+    late String script;
+
+    setUpAll(() {
+      script = File(
+        '${appPackageRoot().path}/assets/blockly/pyble_blockly.js',
+      ).readAsStringSync();
+    });
+
+    test('the GPIO slot declares the frozen pin-name pattern', () {
+      expect(
+        script,
+        contains(r'^[A-Za-z][A-Za-z0-9_]{0,15}$'),
+        reason:
+            'FR-BLOCKS-1B freezes exactly this pin-name grammar for every '
+            'GPIO slot in the sealed asset',
+      );
+    });
+
+    test('codegen quotes pin names and keeps integers bare', () {
+      expect(
+        script,
+        contains('Pin("'),
+        reason:
+            'a named pin must be emitted as a quoted Python string literal, '
+            'e.g. Pin("LED", ...)',
+      );
+      expect(
+        script,
+        contains(r'/^(?:0|[1-9][0-9]*)$/'),
+        reason:
+            'the bare non-negative integer grammar must survive unchanged '
+            'next to the name grammar',
+      );
+    });
+
+    test('ships no per-board pin-name suggestions or defaults (CON-7)', () {
+      for (final String token in <String>[
+        'WL_GPIO',
+        'EXT_GPIO',
+        '"LED"',
+        '"BOOT"',
+        '"BUTTON"',
+        '"NEOPIXEL"',
+      ]) {
+        expect(
+          script,
+          isNot(contains(token)),
+          reason:
+              'CON-7: the sealed asset must not hardcode board-specific pin '
+              'names or suggestion lists ($token)',
+        );
+      }
+    });
+  });
 
   group('Blockly scratch preview result decoding', () {
     const String source = "print('Hello, PyBLE!')\n";

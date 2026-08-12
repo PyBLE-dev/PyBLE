@@ -518,7 +518,9 @@ try {
     "pyble_gpio_pin connection and dropdown contract",
     gpioContract.shape.pin,
     {
-      gpioCheck: ["Number"],
+      // FR-BLOCKS-1B: the GPIO slot accepts a non-negative integer or a
+      // quoted machine.Pin name, so the input checks Number and String.
+      gpioCheck: ["Number", "String"],
       gpioConnected: false,
       outputCheck: ["Pin"],
       modes: ["IN", "OUT"],
@@ -2176,6 +2178,10 @@ try {
               const gpio = scratch.newBlock("math_number");
               gpio.setFieldValue(configuration.gpio, "NUM");
               block.getInput("GPIO").connection.connect(gpio.outputConnection);
+            } else if (configuration.gpioText !== undefined) {
+              const gpio = scratch.newBlock("text");
+              gpio.setFieldValue(configuration.gpioText, "TEXT");
+              block.getInput("GPIO").connection.connect(gpio.outputConnection);
             }
           }
           return Blockly.serialization.workspaces.save(scratch);
@@ -2265,6 +2271,28 @@ try {
       { gpioGenerator: "tampered" },
       "a tampered GPIO expression",
       `${localizedHostMessages.gpioPinRequiredError} ${localizedHostMessages.multilineValueError}`,
+    ],
+    // FR-BLOCKS-1B: anything outside ^[A-Za-z][A-Za-z0-9_]{0,15}$ keeps the
+    // existing invalid-pin error path.
+    [
+      { gpioText: "" },
+      "an empty named pin",
+      localizedHostMessages.gpioPinInvalidError,
+    ],
+    [
+      { gpioText: "0LED" },
+      "a named pin starting with a digit",
+      localizedHostMessages.gpioPinInvalidError,
+    ],
+    [
+      { gpioText: "WL-GPIO0" },
+      "a named pin with a forbidden character",
+      localizedHostMessages.gpioPinInvalidError,
+    ],
+    [
+      { gpioText: "ABCDEFGHIJKLMNOPQ" },
+      "a seventeen-character named pin",
+      localizedHostMessages.gpioPinInvalidError,
     ],
   ]) {
     gpioRevision = await expectGenerationError(
@@ -2404,6 +2432,47 @@ try {
   if (pinImportCount !== 1) {
     throw new Error(
       `GPIO source must contain exactly one machine.Pin import, got ${pinImportCount}`,
+    );
+  }
+
+  // FR-BLOCKS-1B: a machine.Pin NAME in the GPIO slot travels as a quoted
+  // Python string literal ("LED" is user-entered, never suggested).
+  const namedPinWorkspace = await page.evaluate(() => {
+    const scratch = new Blockly.Workspace();
+    try {
+      const led = scratch
+        .getVariableMap()
+        .createVariable("led", "", "named-gpio-led");
+      const name = scratch.newBlock("text");
+      name.setFieldValue("LED", "TEXT");
+      const pin = scratch.newBlock("pyble_gpio_pin");
+      pin.setFieldValue("OUT", "MODE");
+      pin.setFieldValue("NONE", "PULL");
+      pin.getInput("GPIO").connection.connect(name.outputConnection);
+      const declare = scratch.newBlock("variables_set");
+      declare.setFieldValue(led.getId(), "VAR");
+      declare.getInput("VALUE").connection.connect(pin.outputConnection);
+      return Blockly.serialization.workspaces.save(scratch);
+    } finally {
+      scratch.dispose();
+    }
+  });
+  const expectedNamedPinSource =
+    "from machine import Pin\n\n" +
+    "led = None\n\n\n" +
+    'led = Pin("LED", Pin.OUT, None)\n';
+  const namedPinSnapshot = await restoreWorkspace(
+    namedPinWorkspace,
+    gpioSnapshot.revision,
+  );
+  if (namedPinSnapshot.type !== "snapshot") {
+    throw new Error(
+      `valid named-pin workspace did not generate: ${JSON.stringify(namedPinSnapshot)}`,
+    );
+  }
+  if (namedPinSnapshot.source !== expectedNamedPinSource) {
+    throw new Error(
+      `named-pin MicroPython mismatch:\nexpected:\n${expectedNamedPinSource}\nactual:\n${namedPinSnapshot.source}`,
     );
   }
 
