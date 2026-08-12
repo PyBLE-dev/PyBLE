@@ -1,7 +1,7 @@
 # PyBLE — Public Website Specification
 
 Status: **FROZEN (pre-v1 and v1 launch surface)** · Owner: project maintainer · Last updated:
-2026-08-07
+2026-08-12
 
 This document is the source of truth for the first public website at
 `pyble.dev`. It specifies only the public site; the Flutter app, PBLE/1, and
@@ -634,6 +634,78 @@ Future non-ESP32 ports MAY require another reviewed provisioning backend and
 artifact format. Adding one requires a specification and test change; it MUST
 NOT weaken PyBLE's BLE-first runtime contract.
 
+### 7.1 Loopback-only five-target approval preview
+
+A maintainer MAY run a local engineering preview of the future board-selection
+experience before any new profile is qualified or deployed. This is an
+approval harness, not a release selector, public installer, support claim, or
+substitute for the release and port gates. It MUST NOT change the immutable
+`v0.4.2` exception, the prospective three-profile ESP release contract, or the
+production no-release state.
+
+The preview MUST use one labelled native HTML `select`, with an inert prompt
+followed by these five choices in this order:
+
+1. Classic ESP32 (`esp32-4mb`);
+2. ESP32-S3 N16R8 (`esp32-s3-n16r8`);
+3. Waveshare ESP32-S3-LCD-1.47B B version
+   (`waveshare-esp32-s3-lcd-147b`);
+4. ESP32-C3 4 MiB (`esp32-c3-4mb`); and
+5. Raspberry Pi Pico 2 W (`rpi-pico2-w`).
+
+The four ESP choices SHOULD be grouped as **ESP Web Serial** and Pico 2 W as
+**UF2 / BOOTSEL**, using native `optgroup` elements when grouping is rendered.
+The page MUST NOT infer a choice from USB identity, chip-family detection,
+previous BLE identity, or browser storage. Selecting a choice renders one
+persistent adjacent detail panel; that panel remains present throughout
+verification, consent, success, and failure states and names the exact target
+ID, compatibility requirements, firmware version and source commit, artifact
+name, size and SHA-256, provisioning method, destructive effect, and next
+action. Only the selected target's action is rendered. Five simultaneous cards
+or action buttons are not the approved preview interaction.
+
+The preview page and every selected-target panel MUST conspicuously repeat
+**LOCAL ENGINEERING PREVIEW — UNQUALIFIED**. The preview MAY expose local
+actions solely to let the maintainer inspect and exercise exact clean-build
+artifacts:
+
+- the four ESP targets use the locally bundled ESP Web Tools element over Web
+  Serial, each with its own verified single-build manifest, merged image, chip
+  family, base offset, and target-specific compatibility consent; and
+- Pico 2 W uses a verified `firmware.uf2` download followed by visible BOOTSEL
+  mass-storage copy instructions. It has no ESP Web Tools manifest, does not
+  require `navigator.serial`, and MUST NOT claim direct WebUSB or automatic
+  browser-to-board flashing.
+
+The exact artifact and capability rules are frozen in
+[firmware/browser-flashing.md §1.1](firmware/browser-flashing.md#11-loopback-only-five-target-approval-preview).
+An ESP action still requires a secure context, Web Crypto, Web Serial, artifact
+verification, exact-target consent, backup/erase/cable/power consent, and the
+other-serial-process acknowledgement. A Pico download still requires a secure
+context, Web Crypto verification of the exact bytes, backup/overwrite consent,
+and the BOOTSEL-copy instructions; its action MUST download the already
+verified in-memory bytes rather than refetching a mutable pathname.
+
+This mode MUST require both an explicit truth-valued development flag
+`PYBLE_LOCAL_FLASH_PREVIEW=1` and a development server bound only to a loopback
+interface. The page MUST also refuse to activate the preview when its document
+host is not `localhost`, `127.0.0.1`, or `[::1]`. Preview descriptors,
+manifests, binaries, UF2 files, and generated metadata MUST remain untracked in
+a dedicated gitignored staging directory. A production static export, Sites
+build, release bundle, or deployment MUST reject the preview flag and reject
+or omit that staging directory; preview bytes MUST never enter `out/`, `dist/`,
+the canonical `/firmware/v<version>/` tree, a candidate/public selector, or a
+deployment carry-forward marker.
+
+The production `/flash` contract remains unchanged. `esp32-c3-4mb` stays
+planned/unavailable until its existing exact-profile qualification and release
+gates pass. `rpi-pico2-w` stays absent from every production installer,
+release matrix, and supported-hardware claim until its port gate GP2 and a new
+reviewed RP2 publication contract pass. When no audited beta or qualified
+release is selected, production continues to fail closed with no install or
+download action. Local preview success is engineering evidence only and MUST
+NOT alter any of those states.
+
 The installer is a browser-only component and MUST explain that this is
 one-time wired provisioning, not PyBLE's runtime transport. Capability is
 detected rather than guessed from the user-agent. The unsupported state MUST
@@ -678,6 +750,14 @@ The v1 site is releasable when:
   beta-or-qualified state; verifies the embedded release-metadata root plus
   every manifest part; requires compatibility/backup/erase consent; and links
   the matching recovery guide;
+- the loopback-only approval preview requires its explicit development flag,
+  renders the exact five-choice native selector and persistent selected-target
+  detail panel, repeats its unqualified label, uses verified ESP Web Serial
+  actions for the four ESP targets, and uses only verified UF2 download plus
+  BOOTSEL-copy guidance for Pico 2 W;
+- production builds reject or exclude every preview descriptor and staged
+  artifact, keep C3 and Pico 2 W out of active release selection, and retain
+  the fail-closed no-release state;
 - a qualified `v0.5.1`-or-newer active selector names
   `waveshare-esp32-s3-lcd-147b` separately from the lean
   `esp32-s3-n16r8`, gives each its own manifest and firmware bytes, and requires

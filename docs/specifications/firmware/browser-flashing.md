@@ -1,7 +1,8 @@
 # PyBLE ESP32-Family Browser Flashing and Release Bundle
 
-Status: **FROZEN v1.29** · Owner: project maintainer · Frozen:
-2026-08-12 (`[docs]`; reconciles the immutable v0.4.2 two-profile,
+Status: **FROZEN v1.30** · Owner: project maintainer · Frozen:
+2026-08-12 (`[docs]`; adds a loopback-only, unqualified five-target approval
+preview with a verified UF2/BOOTSEL path for Pico 2 W; reconciles the immutable v0.4.2 two-profile,
 unqualified hardware-tested public-beta exception and preserved-public
 hardening with the v0.5.1 three-profile exact-board source/qualification
 contract under ADR-0028 and ADR-0029; retains release schema 3, HIL V4, OI
@@ -53,6 +54,84 @@ an installer selection. The website MUST show it separately as unavailable
 pending exact-profile real-hardware validation. Re-enabling it requires a new
 SemVer candidate, the complete automated gates, its own HIL row, and a new
 immutable public bundle; it MUST NOT be added to an existing version.
+
+### 1.1 Loopback-only five-target approval preview
+
+The website MAY provide a maintainer-only engineering harness for approving the
+future five-target selection experience and exercising exact local clean-build
+artifacts. This harness is not part of the release bundle described by this
+document. It does not add a profile to `release.json`, establish HIL, qualify a
+port, make firmware public, or relax any candidate, public-beta, qualified-
+release, activation, or rollback requirement.
+
+Its exact target catalog and provisioning contracts are:
+
+| Order | Target ID | Exact local artifact and action |
+| --- | --- | --- |
+| 1 | `esp32-4mb` | target-local single-build ESP Web Tools manifest; verified merged `firmware.bin` at `0x1000`; Web Serial |
+| 2 | `esp32-s3-n16r8` | target-local single-build ESP Web Tools manifest; verified merged `firmware.bin` at `0x0000`; Web Serial |
+| 3 | `waveshare-esp32-s3-lcd-147b` | target-local single-build ESP Web Tools manifest; verified exact-board merged `firmware.bin` at `0x0000`; Web Serial |
+| 4 | `esp32-c3-4mb` | target-local single-build ESP Web Tools manifest for `ESP32-C3`; verified merged `firmware.bin` at `0x0000`; Web Serial |
+| 5 | `rpi-pico2-w` | verified `firmware.uf2` download followed by manual copy to the board's BOOTSEL mass-storage volume |
+
+All five inputs MUST come from exact clean builds of one full PyBLE source
+commit and one firmware-agent version. A local preview descriptor MUST record
+that version and full commit plus, for every artifact, its target ID, safe
+relative preview path, exact byte size, and lowercase 64-hex SHA-256. Each ESP
+entry additionally records the ESP Web Tools chip family, base offset, and its
+own single-build manifest path and digest. The preview builder MUST reject a
+dirty, mixed-commit, mixed-version, missing, escaped, symlinked, or digest-
+mismatched input. It MUST NOT consume an arbitrary file merely because its name
+is `firmware.bin` or `firmware.uf2`.
+
+The four ESP paths retain the applicable manifest, image parsing, path,
+compatibility, verification, and consent rules in §§1, 4, 5, and 7. Their
+engineering manifests and artifacts live only in the local preview staging
+tree; they are not public manifests or release metadata. ESP Web Tools receives
+only the selected target's verified manifest. A connected chip-family match
+does not prove flash capacity, PSRAM topology, silicon revision, or exact-board
+wiring, and MUST NOT choose or substitute another target.
+
+Pico 2 W has a deliberately different approval path:
+
+1. the client fetches the local `firmware.uf2` with redirects rejected and
+   verifies its exact byte size and SHA-256 with Web Crypto;
+2. only after that verification and the visible overwrite/backup consent does
+   it offer **Download verified UF2**;
+3. that download is created from the verified in-memory bytes, not by navigating
+   to or refetching the artifact pathname;
+4. the page instructs the maintainer to disconnect the board, hold BOOTSEL
+   while reconnecting USB, copy the downloaded UF2 to the mounted BOOTSEL
+   mass-storage volume, wait for its automatic reboot, and then check for the
+   expected PyBLE BLE advertisement; and
+5. a verification failure removes the download action and does not offer an
+   unverified fallback.
+
+Pico 2 W MUST NOT receive an ESP Web Tools manifest, use the ESP installer
+element, or require `navigator.serial`. This increment does not implement or
+claim direct WebUSB, File System Access writes to the BOOTSEL volume, automatic
+drive discovery, or automatic browser-to-board flashing. Those would be a new
+provisioning backend requiring a later specification, threat review, tests,
+and physical recovery evidence.
+
+The preview starts only when `PYBLE_LOCAL_FLASH_PREVIEW=1` is explicitly set
+for a development process bound to a loopback interface, and it activates only
+for a document host of `localhost`, `127.0.0.1`, or `[::1]`. Its descriptor,
+metadata, manifests, binaries, and UF2 file MUST be generated below a dedicated
+gitignored, untracked staging directory. A production static export or Sites
+build MUST reject the preview flag and reject or omit the staging tree. No
+preview byte or descriptor may enter `out/`, `dist/`, the canonical versioned
+firmware tree, `release.json`, `SHA256SUMS`, a selected-release descriptor, an
+activation marker, a carry-forward marker, or a deployment upload.
+
+The page and every selected-target detail panel MUST visibly say **LOCAL
+ENGINEERING PREVIEW — UNQUALIFIED**. A successful local ESP flash or Pico UF2
+copy is approval evidence only. In particular, C3 remains unavailable in
+production until its existing exact-profile qualification and new-release
+gates pass, and Pico 2 W remains absent from every production installer,
+release matrix, and support claim until GP2 plus a separately frozen RP2
+publication contract pass. A production build with no audited beta or
+qualified selected release remains fail-closed.
 
 The offsets and flash settings above are frozen from the matching ESP-IDF
 `flasher_args.json` outputs. The release builder MUST compare generated
@@ -1146,7 +1225,13 @@ Automated release tests MUST cover:
 - mechanically complete third-party license output;
 - website feature-detection, unsupported/insecure/iPad copy, consent, fail-
   closed integrity states, keyboard accessibility, and no third-party request;
-  and
+- loopback-preview isolation, its exact five-target order and action-specific
+  capability gates, target-local manifest/UF2 size and SHA-256 verification,
+  verified-byte UF2 download, unqualified labelling, and rejection of dirty,
+  mixed-source, escaped, symlinked, or corrupt local inputs;
+- production rejection or exclusion of the preview flag and staging tree,
+  continued absence of C3 and Pico 2 W from active release selection, and the
+  unchanged fail-closed no-release state; and
 - static-export and candidate/production-origin retrieval of every versioned
   byte.
 
