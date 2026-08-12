@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { render, screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import AppPage, { metadata as appMetadata } from "@/app/app/page";
 import FlashPage, { metadata as flashMetadata } from "@/app/flash/page";
@@ -24,11 +24,14 @@ import {
   siteConfig,
 } from "@/lib/site";
 import type { FirmwareReleaseDescriptor } from "@/lib/firmware-release";
+import * as firmwareSelection from "@/lib/firmware-release-selection";
+import { localFirmwareProfileTable } from "@/lib/local-firmware-preview";
 import {
   currentPendingCandidateFirmwareRelease,
   hypotheticalPassedPublicFirmwareRelease,
   publicBetaFirmwareRelease,
 } from "@/test/fixtures/firmware-release";
+import { localFiveTargetPreview } from "@/test/fixtures/local-firmware-preview";
 
 function hypotheticalQualifiedReleaseAtVersion(
   version: string,
@@ -161,7 +164,7 @@ describe("public-site contract", () => {
       /<loc>https:\/\/pyble\.dev\/privacy<\/loc>\s*<lastmod>2026-08-07T00:00:00\.000Z<\/lastmod>/,
     );
     expect(sitemap).toMatch(
-      /<loc>https:\/\/pyble\.dev\/<\/loc>\s*<lastmod>2026-08-07T00:00:00\.000Z<\/lastmod>/,
+      /<loc>https:\/\/pyble\.dev\/<\/loc>\s*<lastmod>2026-08-12T00:00:00\.000Z<\/lastmod>/,
     );
     expect(sitemap).toMatch(
       /<loc>https:\/\/pyble\.dev\/app<\/loc>\s*<lastmod>2026-08-07T00:00:00\.000Z<\/lastmod>/,
@@ -300,10 +303,88 @@ describe("public-site contract", () => {
     expect(
       screen.getByText("Python over Bluetooth Low Energy"),
     ).toBeInTheDocument();
-    expect(screen.getByText("iPad beta now open")).toBeInTheDocument();
+    expect(
+      screen.getByText("iPad external beta + Android internal test"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", {
+        name: "Install PyBLE on iPad or Android",
+      }),
+    ).toHaveAttribute("href", "/app");
     expect(
       screen.queryByText(/available on the app store/i),
     ).not.toBeInTheDocument();
+  });
+
+  it("summarizes the exact five-target local preview without changing public support claims", () => {
+    const preview = localFiveTargetPreview();
+    const previewSelection = vi
+      .spyOn(firmwareSelection, "localFirmwarePreviewSelectedAtBuild")
+      .mockReturnValue(preview);
+
+    try {
+      render(<HomePage />);
+
+      expect(screen.getByRole("main")).toHaveTextContent(
+        /LOCAL ENGINEERING PREVIEW v0\.6\.0 — UNQUALIFIED/i,
+      );
+      expect(screen.getByRole("main")).toHaveTextContent(
+        /not a public release or support claim/i,
+      );
+      expect(
+        screen.getByRole("link", {
+          name: /review five-target firmware preview/i,
+        }),
+      ).toHaveAttribute("href", "/flash");
+
+      const targetGrid = screen.getByLabelText(
+        "Five exact v0.6.0 engineering targets",
+      );
+      const cards = Array.from(
+        targetGrid.querySelectorAll<HTMLElement>(".target-grid__target"),
+      );
+      expect(
+        cards.map((card) => card.querySelector("strong")?.textContent),
+      ).toEqual(preview.profiles.map(({ id }) => id));
+      for (const [index, definition] of localFirmwareProfileTable.entries()) {
+        expect(cards[index]).toHaveTextContent(definition.requirements);
+        expect(cards[index]).toHaveTextContent(
+          definition.method === "esp-web-tools"
+            ? "ESP Web Serial"
+            : "UF2 / BOOTSEL",
+        );
+        expect(cards[index]).toHaveTextContent(
+          "v0.6.0 local engineering preview · unqualified · not public",
+        );
+      }
+
+      expect(screen.getByRole("main")).not.toHaveTextContent(
+        /firmware installer is currently unavailable/i,
+      );
+      expect(screen.getByRole("main")).not.toHaveTextContent(
+        /ESP32-C3.*planned/i,
+      );
+      expect(screen.getByRole("main")).not.toHaveTextContent(
+        /v0\.4\.2|v0\.5\.1|hardware-tested firmware beta|qualified public firmware/i,
+      );
+      expect(
+        screen.queryByRole("img", {
+          name: /actual waveshare esp32-s3-lcd-1\.47b/i,
+        }),
+      ).not.toBeInTheDocument();
+
+      const previewStep = screen.getByText("Provision once").closest("li");
+      expect(previewStep).toHaveTextContent(
+        /four ESP targets.*Web Serial.*Pico 2 W.*UF2.*BOOTSEL/i,
+      );
+      expect(previewStep).toHaveTextContent(/unqualified/i);
+
+      expect(
+        screen.getByText(/explicit numeric or named GPIO pins/i),
+      ).toHaveTextContent(/Pin\("LED"\)/i);
+    } finally {
+      previewSelection.mockRestore();
+    }
   });
 
   it("publishes the canonical MIT source repository from the home page and global footer", () => {
@@ -420,7 +501,9 @@ describe("public-site contract", () => {
     expect(within(androidSection).getByText(googlePlayUrl)).toBeInTheDocument();
 
     expect(
-      screen.getByRole("link", { name: "Join the iPad beta" }),
+      screen.getByRole("link", {
+        name: "Install PyBLE on iPad or Android",
+      }),
     ).toHaveAttribute("href", "/app");
     expect(
       screen.queryByText(/preparing for public (?:beta|testing)/i),
