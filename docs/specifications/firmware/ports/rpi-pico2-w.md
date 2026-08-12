@@ -46,6 +46,10 @@ One `io.IOBase` object serving three roles: stdout tee (gated on the run-active 
 
 Board `PYBLE_RPI_PICO2_W`; overlay `firmware/board_overlays/rpi-pico2-w/` (five files: `mpconfigboard.cmake`, `mpconfigvariant.cmake`, `mpconfigboard.h`, `manifest.py`, `_boot.py`); `build_rp2.sh` with the same `--plan`/fail-clean contract as `build.sh`; pinned **ARM GNU 14.2.Rel1** via `versions.lock [arm_gnu_toolchain]` (verify-or-fail, never a silent substitution — BLD-4 equivalent; the unpinned Homebrew arm-none-eabi-gcc on PATH must never be selected); BUILD dir outside the submodule; artifacts `firmware.uf2` (primary), `firmware.elf`, `firmware.bin`, provenance JSON (`port: "rp2"`); hard image-size gate **≤ 1,572,864 bytes**; flash = `picotool load -v -x`; BOOTSEL re-entry = `picotool reboot -f -u` or BLE RUN of `machine.bootloader()`.
 
+The installer default `firmware/.arm-gnu/` is a gitignored, pinned third-party
+compiler tree. Authored-source gates MUST prune that exact root, as they do
+`firmware/.esp-idf`, while similarly named authored paths remain in scope.
+
 **Release-history ruling (recorded 2026-08-11):** the published v0.4.2 ESP32
 bytes and their evidence remain immutable. `[targets_rp2]` and
 `[arm_gnu_toolchain]` are additive, section-scoped inputs; they do not
