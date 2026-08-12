@@ -244,6 +244,14 @@ class PresenceTests(unittest.TestCase):
             self.assertTrue(callable(getattr(GATE, "validate_result_file", None)))
             self.assertTrue(callable(getattr(GATE, "validate_public_summary", None)))
 
+    def test_combined_validator_requires_explicit_candidate_version(self):
+        self.assertIsNotNone(GATE, GATE_ERROR)
+        if GATE is not None:
+            parameter = inspect.signature(
+                GATE.validate_combined_qualification_result
+            ).parameters["expected_version"]
+            self.assertIs(parameter.default, inspect.Parameter.empty)
+
     def test_finalize_api_and_cli_accept_private_result_path(self):
         self.assertIsNotNone(RELEASE, RELEASE_ERROR)
         function = getattr(RELEASE, "finalize_public_bundle", None)

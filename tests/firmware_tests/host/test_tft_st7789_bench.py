@@ -13,6 +13,7 @@ import os
 import re
 import sys
 import tempfile
+import tomllib
 import types
 import unittest
 from pathlib import Path
@@ -29,10 +30,14 @@ import _pble_central as central_module  # noqa: E402
 import tft_st7789_bench as bench  # noqa: E402
 
 
+with (HERE.parents[2] / "firmware" / "versions.lock").open("rb") as handle:
+    SELECTED_AGENT_VERSION = tomllib.load(handle)["pyble"]["agent_version"]
+
+
 CAPS = (
     b"proto=1\n"
-    b"agent=0.5.1\n"
-    b"chip=esp32-s3\n"
+    + ("agent=%s\n" % SELECTED_AGENT_VERSION).encode("ascii")
+    + b"chip=esp32-s3\n"
     b"mpy=1.28.0\n"
     b"fs_root=/\n"
     b"mtu=247\n"
@@ -380,6 +385,9 @@ class FakeClock:
 
 
 class FrozenExactBoardContractTest(unittest.TestCase):
+    def test_live_bench_uses_the_lock_selected_agent_version(self):
+        self.assertEqual(bench.EXPECTED_AGENT_VERSION, SELECTED_AGENT_VERSION)
+
     def test_exact_profile_geometry_pins_and_workload_are_frozen(self):
         self.assertEqual(bench.SCHEMA_VERSION, 1)
         self.assertEqual(bench.PROFILE_ID, "waveshare-esp32-s3-lcd-147b")

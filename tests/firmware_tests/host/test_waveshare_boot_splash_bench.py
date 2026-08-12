@@ -16,6 +16,7 @@ import os
 import re
 import sys
 import tempfile
+import tomllib
 import types
 import unittest
 from pathlib import Path
@@ -32,10 +33,14 @@ import tft_st7789_bench as tft_bench  # noqa: E402
 import waveshare_boot_splash_bench as bench  # noqa: E402
 
 
+with (HERE.parents[2] / "firmware" / "versions.lock").open("rb") as handle:
+    SELECTED_AGENT_VERSION = tomllib.load(handle)["pyble"]["agent_version"]
+
+
 CAPS = (
     b"proto=1\n"
-    b"agent=0.5.1\n"
-    b"chip=esp32-s3\n"
+    + ("agent=%s\n" % SELECTED_AGENT_VERSION).encode("ascii")
+    + b"chip=esp32-s3\n"
     b"mpy=1.28.0\n"
     b"fs_root=/\n"
     b"mtu=247\n"
@@ -345,7 +350,7 @@ class FrozenConstantsTest(unittest.TestCase):
         self.assertEqual(bench.PROFILE_ID, "waveshare-esp32-s3-lcd-147b")
         self.assertEqual(bench.EXPECTED_CHIP, "esp32-s3")
         self.assertEqual(bench.BOARD_MODEL, "ESP32-S3-LCD-1.47B")
-        self.assertEqual(bench.EXPECTED_FIRMWARE_VERSION, "0.5.1")
+        self.assertEqual(bench.EXPECTED_FIRMWARE_VERSION, SELECTED_AGENT_VERSION)
         self.assertEqual(bench.QR_URL, "https://pyble.dev/app")
         self.assertEqual(bench.DEFAULT_OPERATOR_TIMEOUT_S, 900.0)
         self.assertEqual(bench.MAX_OPERATOR_TIMEOUT_S, 900.0)
@@ -570,7 +575,7 @@ class EvidenceParsingTest(unittest.TestCase):
                         "wait_ready": ready,
                         "rendered": rendered,
                         "backlight_on": backlight,
-                        "firmware_version": "0.5.1",
+                        "firmware_version": SELECTED_AGENT_VERSION,
                         "gc_free_bytes": 7_800_000,
                     },
                 )
@@ -578,10 +583,16 @@ class EvidenceParsingTest(unittest.TestCase):
     def test_probe_rejects_wrong_version_state_readiness_or_duplicate_marker(self):
         valid = self._probe_line("enabled-boot", 1, 1, 1)
         invalid = (
-            valid.replace(b"0.5.1", b"0.4.2"),
+            valid.replace(SELECTED_AGENT_VERSION.encode("ascii"), b"0.4.2"),
             valid.replace(b"enabled-boot,1", b"enabled-boot,0"),
-            valid.replace(b",1,1,1,0.5.1", b",1,0,1,0.5.1"),
-            valid.replace(b",1,1,1,0.5.1", b",1,1,0,0.5.1"),
+            valid.replace(
+                b",1,1,1," + SELECTED_AGENT_VERSION.encode("ascii"),
+                b",1,0,1," + SELECTED_AGENT_VERSION.encode("ascii"),
+            ),
+            valid.replace(
+                b",1,1,1," + SELECTED_AGENT_VERSION.encode("ascii"),
+                b",1,1,0," + SELECTED_AGENT_VERSION.encode("ascii"),
+            ),
             valid + valid,
             valid + (bench.PROBE_MARKER + "=malformed\n").encode("ascii"),
         )
@@ -703,7 +714,7 @@ class QualificationWorkflowTest(unittest.IsolatedAsyncioTestCase):
                 "candidate_attestation": candidate_attestation(self.CANDIDATE_SIZE),
             },
         )
-        self.assertEqual(result["firmware_version"], "0.5.1")
+        self.assertEqual(result["firmware_version"], SELECTED_AGENT_VERSION)
         self.assertEqual(result["profile_id"], "waveshare-esp32-s3-lcd-147b")
         self.assertEqual(result["board_model"], "ESP32-S3-LCD-1.47B")
         self.assertEqual(
