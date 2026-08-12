@@ -74,20 +74,12 @@ Future<void> _loadExampleFuture(
 }) => controller.loadExampleWorkspace(example, replace: replace);
 
 /// FR-BLOCKS-1B (A-38) pins the GPIO slot as a union: every example role
-/// value is EITHER a non-negative safe integer (existing semantics) OR a
-/// MicroPython pin name matching `^[A-Za-z][A-Za-z0-9_]{0,15}$`, so
-/// `materializeWorkspaceJson` accepts `Map<String, Object>` whose values are
-/// `int` or `String`. The call routes through a `dynamic` local so this red
-/// suite still compiles against the in-flight `Map<String, int>` signature
-/// and each test fails at runtime instead of failing the file at compile
-/// time.
+/// value is either a non-negative safe integer or a bounded MicroPython pin
+/// name.
 String _materializeUnion(
   BlocksExampleTemplate example,
   Map<String, Object> gpioValues,
-) {
-  final dynamic unionValues = gpioValues;
-  return example.materializeWorkspaceJson(unionValues);
-}
+) => example.materializeWorkspaceJson(gpioValues);
 
 void main() {
   group('A-31 beginner example catalog model', () {
