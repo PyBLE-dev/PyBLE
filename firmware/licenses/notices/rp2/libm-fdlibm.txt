@@ -7,6 +7,7 @@ their own headers and are assigned to the fdlibm owner:
 lib/libm/ef_rem_pio2.c
 lib/libm/ef_sqrt.c
 lib/libm/erf_lgamma.c
+lib/libm/fdlibm.h
 lib/libm/kf_cos.c
 lib/libm/kf_rem_pio2.c
 lib/libm/kf_sin.c

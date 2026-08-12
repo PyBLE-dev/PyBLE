@@ -177,6 +177,24 @@ RP2_LICENSE_AUDIT_ROLES = (
     "tinyusb",
     "arm-gnu-runtime",
 )
+_RP2_LICENSE_POLICY_KEYS = {
+    "schema_version",
+    "profile_id",
+    "target",
+    "source_owners",
+}
+_RP2_LICENSE_OWNER_KEYS = {
+    "id",
+    "source_roots",
+    "source_ref",
+    "source_url",
+    "source_spdx_expression",
+    "selected_spdx_expression",
+    "copyright",
+    "license_texts",
+    "notice_files",
+    "disposition",
+}
 DOCUMENT_KEYS = (
     "third_party_licenses",
     "release_notes",
@@ -632,6 +650,41 @@ def _atomic_publish_no_replace(
     )
 
 
+def _fsync_release_tree(path: Path, label: str) -> None:
+    """Flush every regular file and directory in one staged publication."""
+
+    root = Path(path)
+    _require(root.is_dir() and not root.is_symlink(), "%s is unsafe" % label)
+    directories = [root]
+    for item in sorted(root.rglob("*")):
+        try:
+            mode = item.lstat().st_mode
+        except OSError as exc:
+            raise ReleaseError("cannot inspect %s" % label) from exc
+        _require(not stat_module.S_ISLNK(mode), "%s contains a symlink" % label)
+        if stat_module.S_ISDIR(mode):
+            directories.append(item)
+            continue
+        _require(stat_module.S_ISREG(mode), "%s contains a special file" % label)
+        try:
+            descriptor = os.open(item, os.O_RDONLY)
+            try:
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+        except OSError as exc:
+            raise ReleaseError("cannot flush %s" % label) from exc
+    for directory in reversed(directories):
+        try:
+            descriptor = os.open(directory, os.O_RDONLY)
+            try:
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+        except OSError as exc:
+            raise ReleaseError("cannot flush %s" % label) from exc
+
+
 def _artifact(path: Path, relative: str, **extra: Any) -> dict[str, Any]:
     _require(path.is_file(), "artifact is missing: %s" % path)
     record = {
@@ -737,6 +790,7 @@ def _micropython_generated_path_is_allowed(relative: str) -> bool:
         "ports/esp32/boards/PYBLE_ESP32_S3/",
         "ports/esp32/boards/PYBLE_WAVESHARE_ESP32_S3_LCD_147B/",
         "ports/esp32/boards/PYBLE_ESP32_C3/",
+        "ports/rp2/boards/PYBLE_RPI_PICO2_W/",
         "ports/esp32/build-PYBLE_ESP32/",
         "ports/esp32/build-PYBLE_ESP32_S3/",
         "ports/esp32/build-PYBLE_WAVESHARE_ESP32_S3_LCD_147B/",
@@ -3137,17 +3191,35 @@ def _audit_load_tool_lock(repo_root: Path) -> dict[str, Any]:
         "executed-artifact receipts require one selected artifact per package",
     )
 
+    input_keys = {
+        "excluded_cves_path",
+        "excluded_cves_sha256",
+        "license_policy_path",
+        "license_policy_sha256",
+    }
+    versions_path = Path(repo_root) / "firmware" / "versions.lock"
+    has_rp2_binding = any(
+        key.startswith("rp2_license_policy_")
+        for key in lock["inputs"]
+    )
+    if versions_path.is_file():
+        source_version = _read_lock(Path(repo_root))["pyble"]["agent_version"]
+        has_rp2_binding = has_rp2_binding or tuple(
+            _release_profile_order_for_version(source_version)
+        ) == V060_RELEASE_PROFILE_ORDER
+    if has_rp2_binding:
+        input_keys.update(
+            {"rp2_license_policy_path", "rp2_license_policy_sha256"}
+        )
     inputs = _exact_keys(
         lock["inputs"],
-        {
-            "excluded_cves_path",
-            "excluded_cves_sha256",
-            "license_policy_path",
-            "license_policy_sha256",
-        },
+        input_keys,
         "release-tools.lock [inputs]",
     )
-    for prefix in ("excluded_cves", "license_policy"):
+    prefixes = ["excluded_cves", "license_policy"]
+    if has_rp2_binding:
+        prefixes.append("rp2_license_policy")
+    for prefix in prefixes:
         relative = inputs.get("%s_path" % prefix)
         expected_hash = inputs.get("%s_sha256" % prefix)
         _require(
@@ -7352,6 +7424,3086 @@ def _audit_load_policy(
     return policy
 
 
+def _audit_rp2_nonempty(value: Any, label: str) -> str:
+    _require(
+        isinstance(value, str) and bool(value) and value == value.strip(),
+        "%s must be one nonempty canonical string" % label,
+    )
+    _require("\x00" not in value, "%s contains NUL" % label)
+    return value
+
+
+def _audit_rp2_logical_file(
+    value: Any,
+    *,
+    repo_root: Path,
+    build_root: Path,
+    label: str,
+) -> tuple[str, Path]:
+    logical = _safe_relative_path(value, label)
+    prefix, separator, relative = logical.partition("/")
+    if bool(separator) and prefix in {"repo", "build"} and bool(relative):
+        root = Path(repo_root) if prefix == "repo" else Path(build_root)
+    else:
+        # Checked-in policy assets use repository-relative paths.  The
+        # explicit repo/build spelling remains accepted for persisted input
+        # records and for self-contained audit fixtures.
+        root = Path(repo_root)
+        relative = logical
+    return logical, _audit_repo_file(root, relative, label)
+
+
+def _audit_validate_rp2_license_policy(
+    value: Any,
+    *,
+    repo_root: Path,
+    build_root: Path,
+) -> dict[str, Any]:
+    """Validate the independent, source-root keyed RP2 license policy."""
+
+    root = Path(repo_root)
+    builds = Path(build_root)
+    policy = _exact_keys(
+        value,
+        _RP2_LICENSE_POLICY_KEYS,
+        "RP2 license policy",
+    )
+    _require(
+        type(policy["schema_version"]) is int
+        and policy["schema_version"] == 1,
+        "RP2 license policy schema_version must be the exact integer 1",
+    )
+    _require(
+        policy["profile_id"] == "rpi-pico2-w"
+        and policy["target"] == "rpi-pico2-w",
+        "RP2 license policy identity is substituted",
+    )
+    raw_owners = policy["source_owners"]
+    _require(
+        isinstance(raw_owners, list) and bool(raw_owners),
+        "RP2 license policy source_owners must be nonempty",
+    )
+    owners: list[dict[str, Any]] = []
+    owner_ids: set[str] = set()
+    root_identities: set[tuple[str, str]] = set()
+    license_ref_sha256: dict[str, str] = {}
+    for index, raw in enumerate(raw_owners):
+        owner = _exact_keys(
+            raw,
+            _RP2_LICENSE_OWNER_KEYS,
+            "RP2 license owner %d" % index,
+        )
+        identifier = _audit_rp2_nonempty(owner["id"], "RP2 owner id")
+        _require(
+            re.fullmatch(r"[a-z0-9][a-z0-9.-]*", identifier) is not None
+            and identifier not in owner_ids,
+            "RP2 license owner id is invalid or duplicated",
+        )
+        owner_ids.add(identifier)
+        roots = owner["source_roots"]
+        _require(
+            isinstance(roots, list) and bool(roots),
+            "RP2 owner %s source_roots must be nonempty" % identifier,
+        )
+        normalized_roots: list[dict[str, str]] = []
+        for root_index, raw_root in enumerate(roots):
+            source_root = _exact_keys(
+                raw_root,
+                {"namespace", "path"},
+                "RP2 owner %s source root %d" % (identifier, root_index),
+            )
+            namespace = source_root["namespace"]
+            _require(
+                namespace in {"repo", "micropython", "arm-gnu-toolchain"},
+                "RP2 owner %s source-root namespace is invalid" % identifier,
+            )
+            path = _safe_relative_path(
+                source_root["path"],
+                "RP2 owner %s source-root path" % identifier,
+            )
+            identity = (namespace, path.rstrip("/"))
+            _require(
+                identity not in root_identities,
+                "RP2 license source root is ambiguous or duplicated",
+            )
+            root_identities.add(identity)
+            normalized_roots.append(
+                {"namespace": namespace, "path": identity[1]}
+            )
+        _require(
+            normalized_roots
+            == sorted(
+                normalized_roots,
+                key=lambda item: (item["namespace"], item["path"]),
+            ),
+            "RP2 owner %s source_roots are not canonical" % identifier,
+        )
+        source_ref = _audit_rp2_nonempty(
+            owner["source_ref"], "RP2 owner %s source_ref" % identifier
+        )
+        source_url = _audit_rp2_nonempty(
+            owner["source_url"], "RP2 owner %s source_url" % identifier
+        )
+        parsed_url = urlsplit(source_url)
+        _require(
+            parsed_url.scheme in {"https", "file"}
+            and bool(parsed_url.netloc or parsed_url.scheme == "file"),
+            "RP2 owner %s source_url is invalid" % identifier,
+        )
+        disposition = owner["disposition"]
+        _require(
+            disposition in {"project-owned", "allow", "review-required"},
+            "RP2 owner %s disposition is invalid" % identifier,
+        )
+        source_expression = _audit_rp2_nonempty(
+            owner["source_spdx_expression"],
+            "RP2 owner %s source SPDX expression" % identifier,
+        )
+        selected_expression = _audit_rp2_nonempty(
+            owner["selected_spdx_expression"],
+            "RP2 owner %s selected SPDX expression" % identifier,
+        )
+        source_syntax = _AuditSpdxExpressionParser(source_expression).parse()
+        selected_syntax = _AuditSpdxExpressionParser(selected_expression).parse()
+        custom_refs = {
+            item
+            for item in source_syntax | selected_syntax
+            if item.startswith("LicenseRef-")
+        }
+        # The separately locked policy plus the exact complete-text records is
+        # the review authority for project-specific LicenseRefs.  Its
+        # disposition decides admission later; syntax validation must retain
+        # both reviewed ``allow`` and unresolved ``review-required`` records.
+        approved_refs = custom_refs
+        source_identifiers = _audit_parse_spdx(
+            source_expression,
+            approved_refs,
+        )
+        selected_identifiers = _audit_parse_spdx(
+            selected_expression,
+            approved_refs,
+        )
+        source_arms = _audit_spdx_choice_arms(source_expression)
+        selected_tokens = _audit_spdx_unwrap(
+            _audit_spdx_tokens(selected_expression)
+        )
+        source_tokens = _audit_spdx_unwrap(
+            _audit_spdx_tokens(source_expression)
+        )
+        _require(
+            (
+                selected_tokens == source_tokens
+                and (
+                    len(source_arms) == 1
+                    or disposition == "review-required"
+                )
+            )
+            or (
+                len(source_arms) > 1
+                and selected_tokens in source_arms
+            ),
+            "RP2 owner %s selected expression weakens or changes source terms"
+            % identifier,
+        )
+        copyright_value = _audit_rp2_nonempty(
+            owner["copyright"], "RP2 owner %s copyright" % identifier
+        )
+        license_texts = owner["license_texts"]
+        _require(
+            isinstance(license_texts, list) and bool(license_texts),
+            "RP2 owner %s has no complete license texts" % identifier,
+        )
+        normalized_licenses: list[dict[str, str]] = []
+        license_ids: set[str] = set()
+        for text_index, raw_text in enumerate(license_texts):
+            record = _exact_keys(
+                raw_text,
+                {"identifier", "path", "sha256"},
+                "RP2 owner %s license text %d" % (identifier, text_index),
+            )
+            text_id = _audit_rp2_nonempty(
+                record["identifier"],
+                "RP2 owner %s license identifier" % identifier,
+            )
+            _require(
+                text_id not in license_ids,
+                "RP2 owner %s duplicates a license identifier" % identifier,
+            )
+            logical, file_path = _audit_rp2_logical_file(
+                record["path"],
+                repo_root=root,
+                build_root=builds,
+                label="RP2 owner %s license text" % identifier,
+            )
+            digest = _audit_v060_digest(
+                record["sha256"],
+                "RP2 owner %s license digest" % identifier,
+            )
+            _require(
+                _sha256_path(file_path) == digest,
+                "RP2 owner %s license text changed" % identifier,
+            )
+            license_ids.add(text_id)
+            normalized_licenses.append(
+                {"identifier": text_id, "path": logical, "sha256": digest}
+            )
+        _require(
+            normalized_licenses
+            == sorted(normalized_licenses, key=lambda item: item["identifier"])
+            and license_ids == source_identifiers,
+            "RP2 owner %s license texts do not exactly cover its source expression"
+            % identifier,
+        )
+        for license_record in normalized_licenses:
+            license_identifier = license_record["identifier"]
+            if not license_identifier.startswith("LicenseRef-"):
+                continue
+            previous_digest = license_ref_sha256.setdefault(
+                license_identifier,
+                license_record["sha256"],
+            )
+            _require(
+                previous_digest == license_record["sha256"],
+                "RP2 LicenseRef %s has different complete-text digests across "
+                "owners" % license_identifier,
+            )
+        notices = owner["notice_files"]
+        _require(
+            isinstance(notices, list),
+            "RP2 owner %s notice_files must be an array" % identifier,
+        )
+        normalized_notices: list[dict[str, str]] = []
+        notice_paths: set[str] = set()
+        for notice_index, raw_notice in enumerate(notices):
+            record = _exact_keys(
+                raw_notice,
+                {"path", "sha256"},
+                "RP2 owner %s notice %d" % (identifier, notice_index),
+            )
+            logical, file_path = _audit_rp2_logical_file(
+                record["path"],
+                repo_root=root,
+                build_root=builds,
+                label="RP2 owner %s notice" % identifier,
+            )
+            digest = _audit_v060_digest(
+                record["sha256"],
+                "RP2 owner %s notice digest" % identifier,
+            )
+            _require(
+                logical not in notice_paths and _sha256_path(file_path) == digest,
+                "RP2 owner %s notice is duplicated or changed" % identifier,
+            )
+            notice_paths.add(logical)
+            normalized_notices.append({"path": logical, "sha256": digest})
+        _require(
+            normalized_notices
+            == sorted(normalized_notices, key=lambda item: item["path"]),
+            "RP2 owner %s notices are not canonical" % identifier,
+        )
+        owners.append(
+            {
+                "id": identifier,
+                "source_roots": normalized_roots,
+                "source_ref": source_ref,
+                "source_url": source_url,
+                "source_spdx_expression": source_expression,
+                "selected_spdx_expression": selected_expression,
+                "copyright": copyright_value,
+                "license_texts": normalized_licenses,
+                "notice_files": normalized_notices,
+                "disposition": disposition,
+            }
+        )
+    _require(
+        [owner["id"] for owner in owners]
+        == sorted(owner["id"] for owner in owners),
+        "RP2 license policy owners are not canonical",
+    )
+    return {
+        "schema_version": 1,
+        "profile_id": "rpi-pico2-w",
+        "target": "rpi-pico2-w",
+        "source_owners": owners,
+    }
+
+
+def _audit_load_rp2_license_policy(
+    repo_root: Path,
+    build_root: Path,
+    lock: dict[str, Any],
+) -> dict[str, Any]:
+    inputs = lock.get("inputs")
+    _require(isinstance(inputs, dict), "release tool lock inputs are missing")
+    relative = inputs.get("rp2_license_policy_path")
+    expected_hash = inputs.get("rp2_license_policy_sha256")
+    _require(
+        isinstance(relative, str)
+        and isinstance(expected_hash, str)
+        and SHA256_RE.fullmatch(expected_hash) is not None,
+        "release tool lock lacks the RP2 license-policy binding",
+    )
+    path = _audit_repo_file(
+        Path(repo_root),
+        relative,
+        "RP2 release license policy",
+    )
+    raw = _read_regular_file_bytes(path, "RP2 release license policy")
+    try:
+        value = json.loads(raw.decode("utf-8", errors="strict"))
+    except (UnicodeError, TypeError, ValueError) as exc:
+        raise ReleaseError("RP2 release license policy is invalid JSON") from exc
+    _require(
+        raw == _canonical_json_bytes(value),
+        "RP2 release license policy is not canonical JSON",
+    )
+    _require(
+        _sha256_bytes(raw) == expected_hash,
+        "RP2 release license policy differs from release-tools.lock",
+    )
+    return _audit_validate_rp2_license_policy(
+        value,
+        repo_root=Path(repo_root),
+        build_root=Path(build_root),
+    )
+
+
+def _audit_rp2_owner_for_path(
+    owners: list[dict[str, Any]],
+    *,
+    namespace: str,
+    logical_path: str,
+) -> dict[str, Any]:
+    matches: list[tuple[int, dict[str, Any]]] = []
+    for owner in owners:
+        for source_root in owner["source_roots"]:
+            if source_root["namespace"] != namespace:
+                continue
+            root_path = source_root["path"].rstrip("/")
+            if logical_path == root_path or logical_path.startswith(root_path + "/"):
+                matches.append((len(PurePosixPath(root_path).parts), owner))
+    _require(
+        bool(matches),
+        "RP2 linked input has no license owner: %s/%s"
+        % (namespace, logical_path),
+    )
+    specificity = max(length for length, _owner in matches)
+    winners = {
+        owner["id"]: owner
+        for length, owner in matches
+        if length == specificity
+    }
+    _require(
+        len(winners) == 1,
+        "RP2 linked input has ambiguous license owners: %s/%s"
+        % (namespace, logical_path),
+    )
+    return next(iter(winners.values()))
+
+
+def _audit_rp2_admitted_path(
+    raw_path: str | Path,
+    *,
+    relative_to: Path,
+    roots: tuple[Path, ...],
+    label: str,
+) -> Path:
+    """Resolve one RP2 build operand only after lexical symlink checks."""
+
+    value = Path(raw_path)
+    lexical = value if value.is_absolute() else Path(relative_to) / value
+    # Preserve literal parents until every traversed component is checked;
+    # ``link/../file`` must still inspect ``link`` before normalization.
+    absolute = lexical.absolute()
+    for root in roots:
+        for lexical_root in (Path(root).absolute(), Path(root).resolve()):
+            try:
+                absolute.relative_to(lexical_root)
+            except ValueError:
+                continue
+            _audit_no_symlink_components(lexical_root, absolute, label)
+            try:
+                resolved = absolute.resolve(strict=True)
+                resolved.relative_to(Path(root).resolve())
+            except (OSError, ValueError) as exc:
+                raise ReleaseError("%s escapes or is missing" % label) from exc
+            return resolved
+    raise ReleaseError("%s escapes its admitted RP2 roots" % label)
+
+
+def _audit_rp2_depend_info(
+    path: Path,
+    *,
+    target_root: Path,
+    repo_root: Path,
+    source_root: Path,
+) -> dict[Path, Path]:
+    text = _read_regular_file_bytes(path, "RP2 CMake DependInfo").decode(
+        "utf-8", errors="strict"
+    )
+    dependency_match = re.search(
+        r"set\(CMAKE_DEPENDS_DEPENDENCY_FILES\s*(.*?)\s*\)",
+        text,
+        re.DOTALL,
+    )
+    try:
+        dependency_tokens = (
+            shlex.split(dependency_match.group(1), posix=True)
+            if dependency_match is not None
+            else []
+        )
+    except ValueError as exc:
+        raise ReleaseError("RP2 CMake DependInfo mapping is malformed") from exc
+    _require(
+        len(dependency_tokens) % 4 == 0,
+        "RP2 CMake DependInfo mapping is incomplete",
+    )
+    asm_match = re.search(
+        r"set\(CMAKE_DEPENDS_CHECK_ASM\s*(.*?)\s*\)",
+        text,
+        re.DOTALL,
+    )
+    try:
+        asm_tokens = (
+            shlex.split(asm_match.group(1), posix=True)
+            if asm_match is not None
+            else []
+        )
+    except ValueError as exc:
+        raise ReleaseError("RP2 CMake ASM mapping is malformed") from exc
+    _require(
+        len(asm_tokens) % 2 == 0
+        and bool(dependency_tokens or asm_tokens),
+        "RP2 CMake source/object mapping is missing or incomplete",
+    )
+    result: dict[Path, Path] = {}
+    sources: set[Path] = set()
+
+    def add_mapping(
+        source_raw: str,
+        output_raw: str,
+        *,
+        language: str,
+        dependency_raw: str | None,
+    ) -> None:
+        _require(
+            language in {"gcc", "asm", "cxx"},
+            "RP2 CMake DependInfo language is unknown",
+        )
+        source = _audit_rp2_admitted_path(
+            source_raw,
+            relative_to=target_root,
+            roots=(target_root, source_root, repo_root),
+            label="RP2 CMake DependInfo source",
+        )
+        output = _audit_rp2_admitted_path(
+            output_raw,
+            relative_to=target_root,
+            roots=(target_root,),
+            label="RP2 CMake DependInfo output",
+        )
+        dependency = None
+        if dependency_raw is not None:
+            dependency = _audit_rp2_admitted_path(
+                dependency_raw,
+                relative_to=target_root,
+                roots=(target_root,),
+                label="RP2 CMake dependency file",
+            )
+        _require(
+            source.is_relative_to(repo_root.resolve())
+            or source.is_relative_to(source_root.resolve())
+            or source.is_relative_to(target_root.resolve()),
+            "RP2 CMake DependInfo source escapes admitted roots",
+        )
+        _require(
+            not source.is_relative_to(
+                (repo_root / "firmware" / "upstream" / "micropython").resolve()
+            ),
+            "RP2 CMake DependInfo uses canonical rather than retained source",
+        )
+        _require(
+            output.is_relative_to(target_root.resolve())
+            and (
+                dependency is None
+                or (
+                    dependency.is_relative_to(target_root.resolve())
+                    and output != dependency
+                    and dependency == Path(os.fspath(output) + ".d").resolve()
+                )
+            ),
+            "RP2 CMake DependInfo output/depfile mapping escapes or is ambiguous",
+        )
+        _audit_regular_compile_file(source, "RP2 compiled source")
+        _audit_regular_compile_file(output, "RP2 linked object")
+        _require(
+            output not in result and source not in sources,
+            "RP2 CMake DependInfo source/object mapping is not bijective",
+        )
+        result[output] = source
+        sources.add(source)
+
+    for index in range(0, len(dependency_tokens), 4):
+        source_raw, output_raw, language, dependency_raw = dependency_tokens[
+            index : index + 4
+        ]
+        add_mapping(
+            source_raw,
+            output_raw,
+            language=language,
+            dependency_raw=dependency_raw,
+        )
+    for index in range(0, len(asm_tokens), 2):
+        add_mapping(
+            asm_tokens[index],
+            asm_tokens[index + 1],
+            language="asm",
+            dependency_raw=None,
+        )
+    return result
+
+
+def _audit_rp2_bootstage_mapping(
+    *,
+    target_root: Path,
+) -> tuple[dict[Path, Path], Path]:
+    """Bind the separately generated RP2350 bootstage source/object pair."""
+
+    dependency = (
+        target_root
+        / "pico-sdk"
+        / "src"
+        / "rp2350"
+        / "boot_stage2"
+        / "CMakeFiles"
+        / "bs2_default_library.dir"
+        / "DependInfo.cmake"
+    )
+    if not dependency.is_file():
+        return {}, dependency
+    text = _read_regular_file_bytes(
+        dependency, "RP2 bootstage DependInfo"
+    ).decode("utf-8", errors="strict")
+    match = re.search(
+        r"set\(CMAKE_DEPENDS_CHECK_ASM\s*(.*?)\s*\)",
+        text,
+        re.DOTALL,
+    )
+    _require(match is not None, "RP2 bootstage source/object mapping is missing")
+    try:
+        tokens = shlex.split(match.group(1), posix=True)
+    except ValueError as exc:
+        raise ReleaseError("RP2 bootstage source/object mapping is malformed") from exc
+    _require(
+        len(tokens) == 2,
+        "RP2 bootstage source/object mapping is not exact",
+    )
+    source = _audit_rp2_admitted_path(
+        tokens[0],
+        relative_to=target_root,
+        roots=(target_root,),
+        label="RP2 bootstage generated source",
+    )
+    output = _audit_rp2_admitted_path(
+        tokens[1],
+        relative_to=target_root,
+        roots=(target_root,),
+        label="RP2 bootstage output",
+    )
+    expected_source = (
+        target_root
+        / "pico-sdk"
+        / "src"
+        / "rp2350"
+        / "boot_stage2"
+        / "bs2_default_padded_checksummed.S"
+    ).resolve()
+    expected_output = (
+        target_root
+        / "pico-sdk"
+        / "src"
+        / "rp2350"
+        / "boot_stage2"
+        / "CMakeFiles"
+        / "bs2_default_library.dir"
+        / "bs2_default_padded_checksummed.S.o"
+    ).resolve()
+    _require(
+        source == expected_source and output == expected_output,
+        "RP2 bootstage derivation path is substituted",
+    )
+    _audit_regular_compile_file(source, "RP2 generated bootstage source")
+    _audit_regular_compile_file(output, "RP2 linked bootstage object")
+    return {output: source}, dependency
+
+
+def _audit_rp2_link_arguments(
+    path: Path,
+    *,
+    target_root: Path,
+    repo_root: Path,
+) -> list[Path]:
+    text = _read_regular_file_bytes(path, "RP2 linker command").decode(
+        "utf-8", errors="strict"
+    )
+    command = text[:-1] if text.endswith("\n") else text
+    _require(
+        "\n" not in command
+        and "\r" not in command
+        and all(token not in command for token in (";", "`", "$(", "${", "|", "&&")),
+        "RP2 linker command contains shell control",
+    )
+    try:
+        tokens = shlex.split(command, posix=True)
+    except ValueError as exc:
+        raise ReleaseError("RP2 linker command is malformed") from exc
+    _require(bool(tokens), "RP2 linker command is empty")
+    inputs: list[Path] = []
+    seen: set[Path] = set()
+    for token in tokens[1:]:
+        _require(
+            not token.startswith("@") and not token.startswith("-Wl,@"),
+            "RP2 linker response files are forbidden",
+        )
+        if token.startswith("-") or token == "firmware.elf":
+            continue
+        if not token.endswith((".o", ".obj", ".a")):
+            continue
+        candidate = _audit_rp2_admitted_path(
+            token,
+            relative_to=target_root,
+            roots=(target_root, repo_root),
+            label="RP2 linker input",
+        )
+        _audit_regular_compile_file(candidate, "RP2 linker input")
+        _require(candidate not in seen, "RP2 linker input is duplicated")
+        seen.add(candidate)
+        inputs.append(candidate)
+    _require(bool(inputs), "RP2 linker command contains no admitted inputs")
+    return inputs
+
+
+def _audit_rp2_replay_implicit_inputs(
+    path: Path,
+    *,
+    target_root: Path,
+    repo_root: Path,
+    explicit_inputs: list[Path],
+    map_implicit_inputs: list[Path],
+) -> None:
+    """Prove compiler-injected LOAD paths by a traced, scratch-only relink."""
+
+    if not map_implicit_inputs:
+        return
+    command = _read_regular_file_bytes(path, "RP2 linker command").decode(
+        "utf-8", errors="strict"
+    ).rstrip("\n")
+    try:
+        tokens = shlex.split(command, posix=True)
+    except ValueError as exc:
+        raise ReleaseError("RP2 linker command is malformed") from exc
+    compiler = _audit_rp2_admitted_path(
+        tokens[0],
+        relative_to=target_root,
+        roots=(repo_root / "firmware" / ".arm-gnu",),
+        label="RP2 pinned linker driver",
+    )
+    toolchain_root = (repo_root / "firmware" / ".arm-gnu").resolve()
+    _require(
+        compiler.is_relative_to(toolchain_root / "bin"),
+        "RP2 implicit inputs require the pinned ARM GNU compiler",
+    )
+    _audit_regular_compile_file(compiler, "RP2 pinned linker driver")
+    arguments: list[str] = []
+    skip_output = False
+    for token in tokens[1:]:
+        if skip_output:
+            skip_output = False
+            continue
+        if token == "-o":
+            skip_output = True
+            continue
+        if token.startswith("-Wl,-Map=") or token.startswith("-Wl,-Map,"):
+            continue
+        arguments.append(token)
+    _require(not skip_output, "RP2 linker output operand is incomplete")
+    with tempfile.TemporaryDirectory(prefix="pyble-rp2-link-replay-") as raw:
+        scratch = Path(raw)
+        replay_map = scratch / "firmware.elf.map"
+        replay_elf = scratch / "firmware.elf"
+        environment = {
+            "HOME": os.fspath(scratch),
+            "LANG": "C",
+            "LC_ALL": "C",
+            "PATH": "/usr/bin:/bin",
+            "TMPDIR": os.fspath(scratch),
+        }
+        try:
+            completed = subprocess.run(
+                [
+                    os.fspath(compiler),
+                    *arguments,
+                    "-Wl,-t",
+                    "-Wl,-Map=%s" % replay_map,
+                    "-o",
+                    os.fspath(replay_elf),
+                ],
+                cwd=target_root,
+                env=environment,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=False,
+                timeout=120,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise ReleaseError("RP2 traced linker replay failed") from exc
+        _require(
+            completed.returncode == 0
+            and replay_elf.is_file()
+            and replay_map.is_file(),
+            "RP2 traced linker replay failed",
+        )
+        traced: list[Path] = []
+        for line in completed.stdout.splitlines():
+            value = line.strip()
+            if not value.endswith((".o", ".obj", ".a")):
+                continue
+            candidate = _audit_rp2_admitted_path(
+                value,
+                relative_to=target_root,
+                roots=(target_root, toolchain_root),
+                label="RP2 traced linker input",
+            )
+            _audit_regular_compile_file(candidate, "RP2 traced linker input")
+            traced.append(candidate)
+    explicit = set(explicit_inputs)
+    traced_implicit = [item for item in traced if item not in explicit]
+    expected_counts = Counter(map_implicit_inputs)
+    traced_counts = Counter(traced_implicit)
+    _require(
+        set(expected_counts) == set(traced_counts)
+        and all(
+            expected_counts[path_value] <= traced_counts[path_value]
+            for path_value in expected_counts
+        ),
+        "RP2 map implicit LOADs differ from pinned driver/spec replay",
+    )
+
+
+def _audit_rp2_map_records(
+    path: Path,
+    *,
+    target_root: Path,
+    repo_root: Path,
+) -> tuple[list[Path], set[Path], list[dict[str, Any]]]:
+    text = _read_regular_file_bytes(path, "RP2 linker map").decode(
+        "utf-8", errors="strict"
+    )
+    loads: list[Path] = []
+    direct_contributors: set[Path] = set()
+    archive_sections: set[tuple[Path, str]] = set()
+    included_members: list[tuple[Path, str]] = []
+
+    def resolve(raw: str) -> Path:
+        candidate = _audit_rp2_admitted_path(
+            raw,
+            relative_to=target_root,
+            roots=(target_root, repo_root),
+            label="RP2 linker map input",
+        )
+        _audit_regular_compile_file(candidate, "RP2 linker map input")
+        return candidate
+
+    lines = text.splitlines()
+    in_archive_inventory = bool(lines) and lines[0] == (
+        "Archive member included to satisfy reference by file (symbol)"
+    )
+    for line in lines:
+        if in_archive_inventory:
+            member_match = re.fullmatch(r"(\S+\.a)\(([^()/]+)\)", line)
+            if member_match is not None:
+                included_members.append(
+                    (resolve(member_match.group(1)), member_match.group(2))
+                )
+                continue
+            if line.startswith("Discarded input sections"):
+                in_archive_inventory = False
+        load_match = re.fullmatch(r"LOAD (\S+)", line)
+        if load_match is not None:
+            candidate = resolve(load_match.group(1))
+            loads.append(candidate)
+            continue
+        contribution = re.fullmatch(
+            r"\s+(?:\.\S+\s+)?(0x[0-9A-Fa-f]+)\s+"
+            r"(0x[0-9A-Fa-f]+)\s+(\S+?)(?:\(([^()/]+)\))?",
+            line,
+        )
+        if (
+            contribution is not None
+            and int(contribution.group(1), 16) > 0
+            and int(contribution.group(2), 16) > 0
+        ):
+            source = resolve(contribution.group(3))
+            member = contribution.group(4)
+            if member is None:
+                direct_contributors.add(source)
+            else:
+                archive_sections.add((source, member))
+    _require(bool(loads), "RP2 linker map has no LOAD inventory")
+    _require(
+        direct_contributors <= set(loads),
+        "RP2 linker map contribution is absent from its LOAD inventory",
+    )
+    inventory_counts: Counter[tuple[Path, str]] = Counter(included_members)
+    _require(
+        archive_sections <= set(inventory_counts),
+        "RP2 allocated archive/member is absent from inclusion inventory",
+    )
+    archive_members: list[dict[str, Any]] = []
+    for (archive, member), count in sorted(
+        (
+            (identity, inventory_counts[identity])
+            for identity in archive_sections
+        ),
+        key=lambda item: (os.fspath(item[0][0]), item[0][1]),
+    ):
+        payloads = _audit_ar_member_payloads(archive).get(member, [])
+        _require(
+            len(payloads) == count,
+            "RP2 archive/member multiplicity differs from archive bytes",
+        )
+        archive_members.append(
+            {
+                "archive": archive,
+                "member": member,
+                "multiplicity": count,
+                "member_sha256": [
+                    _sha256_bytes(payload) for payload in payloads
+                ],
+            }
+        )
+    return loads, direct_contributors, archive_members
+
+
+def _audit_rp2_source_identity(
+    *,
+    source_root: Path,
+    repo_root: Path,
+    provenance: dict[str, Any],
+) -> dict[str, Any]:
+    micropython = _exact_keys(
+        provenance.get("micropython"),
+        {"commit"},
+        "RP2 MicroPython provenance",
+    )
+    lock_micropython = _read_lock(Path(repo_root)).get("micropython")
+    _require(
+        isinstance(lock_micropython, dict),
+        "RP2 versions.lock MicroPython identity is missing",
+    )
+    commit = _git_output(source_root, "retained MicroPython", "rev-parse", "HEAD")
+    origin = _git_output(
+        source_root, "retained MicroPython", "remote", "get-url", "origin"
+    )
+    _require_checkout_clean(
+        source_root,
+        "retained MicroPython",
+        allow_micropython_generated=True,
+    )
+    _require(
+        micropython["commit"] == commit
+        and lock_micropython.get("commit") == commit
+        and lock_micropython.get("repo") == origin,
+        "RP2 retained MicroPython commit/origin differs from provenance",
+    )
+    return {
+        "micropython_commit": commit,
+        "rp2_port_tree_sha256": _audit_v060_tree_sha256(
+            source_root / "ports" / "rp2",
+            "retained MicroPython/rp2 source",
+        ),
+        "arm_gnu_toolchain": copy.deepcopy(provenance.get("arm_gnu_toolchain")),
+    }
+
+
+def _audit_rp2_logical_path(
+    path: Path,
+    *,
+    repo_root: Path,
+    build_root: Path,
+) -> str:
+    resolved = path.resolve()
+    # A conventional build root may be nested below the checkout.  Persist it
+    # in the narrower build namespace so receipts are independent of layout.
+    for prefix, root in (("build", build_root), ("repo", repo_root)):
+        try:
+            relative = resolved.relative_to(root.resolve())
+        except ValueError:
+            continue
+        return "%s/%s" % (prefix, relative.as_posix())
+    raise ReleaseError("RP2 audit input is outside its logical namespaces")
+
+
+def _audit_rp2_policy_asset_logical(path: str) -> str:
+    return path if path.startswith(("repo/", "build/")) else "repo/" + path
+
+
+def _audit_rp2_selected_license_ids(owner: dict[str, Any]) -> set[str]:
+    return _AuditSpdxExpressionParser(
+        owner["selected_spdx_expression"]
+    ).parse()
+
+
+def _audit_rp2_checkout_identity(
+    owner: dict[str, Any],
+    *,
+    source_root: Path,
+    repo_root: Path,
+    provenance: dict[str, Any],
+) -> None:
+    namespaces = {item["namespace"] for item in owner["source_roots"]}
+    if namespaces == {"repo"}:
+        pyble = _exact_keys(
+            provenance.get("pyble"),
+            {"commit", "clean"},
+            "RP2 PyBLE provenance",
+        )
+        source_version = _read_lock(Path(repo_root))["pyble"]["agent_version"]
+        _require(
+            pyble["clean"] is True
+            and isinstance(pyble["commit"], str)
+            and COMMIT_RE.fullmatch(pyble["commit"]) is not None
+            and owner["source_ref"] == source_version
+            and owner["source_url"] == "https://github.com/PyBLE-dev/PyBLE",
+            "RP2 first-party source identity changed",
+        )
+        if (Path(repo_root) / ".git").exists():
+            head = _git_output(Path(repo_root), "PyBLE", "rev-parse", "HEAD")
+            _require_checkout_clean(Path(repo_root), "PyBLE")
+            _require(
+                head == pyble["commit"],
+                "RP2 PyBLE provenance commit is not checkout HEAD",
+            )
+        return
+    if namespaces == {"arm-gnu-toolchain"}:
+        toolchain = provenance.get("arm_gnu_toolchain")
+        _require(
+            isinstance(toolchain, dict)
+            and toolchain.get("release") == owner["source_ref"],
+            "RP2 ARM GNU runtime source identity changed",
+        )
+        return
+    _require(
+        namespaces == {"micropython"},
+        "RP2 owner mixes source namespaces",
+    )
+    first = source_root / owner["source_roots"][0]["path"]
+    probe = first if first.is_dir() else first.parent
+    checkout = Path(
+        _git_output(probe, "retained dependency", "rev-parse", "--show-toplevel")
+    ).resolve()
+    _require(
+        checkout.is_relative_to(source_root.resolve()),
+        "RP2 dependency resolves outside retained source",
+    )
+    _require_checkout_clean(
+        checkout,
+        "retained dependency %s" % owner["id"],
+        allow_micropython_generated=(checkout == source_root.resolve()),
+    )
+    commit = _git_output(checkout, "retained dependency", "rev-parse", "HEAD")
+    origin = _git_output(
+        checkout, "retained dependency", "remote", "get-url", "origin"
+    )
+    _require(
+        commit == owner["source_ref"] and origin == owner["source_url"],
+        "RP2 retained dependency source identity changed for %s" % owner["id"],
+    )
+
+
+def _audit_rp2_frozen_inputs(
+    *,
+    manifest: Path,
+    repo_root: Path,
+    source_root: Path,
+) -> tuple[list[tuple[str, Path]], list[Path]]:
+    board_root = (
+        source_root / "ports" / "rp2" / "boards" / "PYBLE_RPI_PICO2_W"
+    )
+    if not board_root.is_dir():
+        board_root = manifest.parent
+    macros = {
+        "MPY_DIR": source_root,
+        "PORT_DIR": source_root / "ports" / "rp2",
+        "BOARD_DIR": board_root,
+    }
+    selected: dict[str, Path] = {}
+    traversed: set[Path] = set()
+
+    def resolve_path(value: Any, *, relative_to: Path, label: str) -> Path:
+        _require(isinstance(value, str) and bool(value), "%s is invalid" % label)
+        expanded = value
+        for name, replacement in macros.items():
+            expanded = expanded.replace("$(%s)" % name, os.fspath(replacement))
+        _require("$(" not in expanded and "\x00" not in expanded, "%s is unsafe" % label)
+        return _audit_rp2_admitted_path(
+            expanded,
+            relative_to=relative_to,
+            roots=(source_root, repo_root),
+            label=label,
+        )
+
+    def add(destination: str, source: Path) -> None:
+        destination = _safe_relative_path(destination, "RP2 frozen destination")
+        source = _audit_rp2_admitted_path(
+            source,
+            relative_to=manifest.parent,
+            roots=(source_root, repo_root),
+            label="RP2 frozen module",
+        )
+        _audit_regular_compile_file(source, "RP2 frozen module")
+        _require(destination not in selected, "RP2 frozen manifest duplicates a destination")
+        selected[destination] = source
+
+    def resolve(current: Path) -> None:
+        current = _audit_rp2_admitted_path(
+            current,
+            relative_to=manifest.parent,
+            roots=(source_root, repo_root),
+            label="RP2 frozen manifest",
+        )
+        _require(current not in traversed, "RP2 frozen manifest is included twice")
+        traversed.add(current)
+        try:
+            syntax = ast.parse(
+                current.read_text(encoding="utf-8", errors="strict"),
+                filename=os.fspath(current),
+                mode="exec",
+            )
+        except (OSError, UnicodeError, SyntaxError) as exc:
+            raise ReleaseError("RP2 frozen manifest is not literal UTF-8 Python") from exc
+        for statement in syntax.body:
+            _require(
+                isinstance(statement, ast.Expr)
+                and isinstance(statement.value, ast.Call)
+                and isinstance(statement.value.func, ast.Name),
+                "RP2 frozen manifest contains dynamic syntax",
+            )
+            call = statement.value
+            operation = call.func.id
+            _require(
+                operation in {"module", "package", "include", "freeze", "metadata"},
+                "RP2 frozen manifest contains an unknown operation",
+            )
+            if operation == "metadata":
+                _audit_manifest_call_arguments(
+                    call,
+                    operation=operation,
+                    positional=(),
+                    allowed_keywords={"description", "version"},
+                )
+                continue
+            if operation == "include":
+                values = _audit_manifest_call_arguments(
+                    call,
+                    operation=operation,
+                    positional=("manifest_path",),
+                    allowed_keywords={"manifest_path"},
+                )
+                included = resolve_path(
+                    values.get("manifest_path"),
+                    relative_to=current.parent,
+                    label="RP2 included manifest",
+                )
+                if included.is_dir():
+                    included /= "manifest.py"
+                resolve(included)
+                continue
+            if operation == "module":
+                values = _audit_manifest_call_arguments(
+                    call,
+                    operation=operation,
+                    positional=("module_path", "base_path", "opt"),
+                    allowed_keywords={"module_path", "base_path", "opt"},
+                )
+                destination = _safe_relative_path(
+                    values.get("module_path"), "RP2 manifest module"
+                )
+                base = resolve_path(
+                    values.get("base_path", "."),
+                    relative_to=current.parent,
+                    label="RP2 manifest module base",
+                )
+                add(destination, base / destination)
+                continue
+            if operation == "package":
+                values = _audit_manifest_call_arguments(
+                    call,
+                    operation=operation,
+                    positional=("package_path", "files", "base_path", "opt"),
+                    allowed_keywords={"package_path", "files", "base_path", "opt"},
+                )
+                package = _safe_relative_path(
+                    values.get("package_path"), "RP2 manifest package"
+                )
+                files = values.get("files")
+                _require(
+                    isinstance(files, (list, tuple))
+                    and bool(files)
+                    and all(isinstance(item, str) for item in files),
+                    "RP2 manifest package file list is not literal",
+                )
+                base = resolve_path(
+                    values.get("base_path", "."),
+                    relative_to=current.parent,
+                    label="RP2 manifest package base",
+                )
+                for filename in files:
+                    safe_file = _safe_relative_path(filename, "RP2 manifest package file")
+                    add("%s/%s" % (package, safe_file), base / package / safe_file)
+                continue
+            values = _audit_manifest_call_arguments(
+                call,
+                operation=operation,
+                positional=("path", "script", "opt"),
+                allowed_keywords={"path", "script", "opt"},
+            )
+            frozen_root = resolve_path(
+                values.get("path"),
+                relative_to=current.parent,
+                label="RP2 frozen source",
+            )
+            script = values.get("script")
+            if script is None:
+                raise ReleaseError(
+                    "RP2 freeze directory recursion is forbidden; manifest must "
+                    "select an explicit literal file list"
+                )
+            else:
+                scripts = script if isinstance(script, (list, tuple)) else (script,)
+                _require(
+                    bool(scripts) and all(isinstance(item, str) for item in scripts),
+                    "RP2 freeze script selection is not literal",
+                )
+                for filename in scripts:
+                    safe_file = _safe_relative_path(filename, "RP2 frozen script")
+                    add(safe_file, frozen_root / safe_file)
+
+    resolve(manifest)
+    _require(bool(selected), "RP2 frozen manifest selects no literal module")
+    return (
+        [(name, selected[name]) for name in sorted(selected)],
+        sorted(traversed),
+    )
+
+
+def _audit_rp2_role_for_source(namespace: str, logical_path: str) -> str:
+    if namespace == "arm-gnu-toolchain":
+        return "arm-gnu-runtime"
+    if namespace == "micropython":
+        if logical_path.startswith("lib/btstack/"):
+            return "btstack"
+        if logical_path.startswith("lib/cyw43-driver/"):
+            return "cyw43"
+        if logical_path.startswith("lib/tinyusb/"):
+            return "tinyusb"
+        if logical_path.startswith("lib/pico-sdk/"):
+            return "pico-sdk"
+    return "linked-inputs"
+
+
+def _audit_rp2_control_input_paths(
+    *,
+    repo_root: Path,
+    build_root: Path,
+    validated_policy: dict[str, Any],
+) -> dict[str, Path]:
+    """Bind complete RP2 policy and tool-lock bytes when they are present."""
+
+    lock_path = Path(repo_root) / "firmware" / "release-tools.lock"
+    if not lock_path.is_file():
+        # Small historical fixtures predate the independently locked policy.
+        # Every real v0.6 checkout has this file and enters the strict branch.
+        return {}
+    lock_raw = _read_regular_file_bytes(lock_path, "RP2 release tool lock")
+    try:
+        lock_value = tomllib.loads(lock_raw.decode("utf-8", errors="strict"))
+    except (UnicodeError, tomllib.TOMLDecodeError) as exc:
+        raise ReleaseError("RP2 release tool lock is invalid TOML") from exc
+    inputs = lock_value.get("inputs")
+    _require(isinstance(inputs, dict), "RP2 release tool lock inputs are missing")
+    policy_relative = inputs.get("rp2_license_policy_path")
+    policy_sha256 = inputs.get("rp2_license_policy_sha256")
+    _require(
+        isinstance(policy_relative, str)
+        and isinstance(policy_sha256, str)
+        and SHA256_RE.fullmatch(policy_sha256) is not None,
+        "RP2 release tool lock lacks the complete policy binding",
+    )
+    policy_path = _audit_repo_file(
+        Path(repo_root), policy_relative, "RP2 release license policy"
+    )
+    policy_raw = _read_regular_file_bytes(policy_path, "RP2 release license policy")
+    _require(
+        _sha256_bytes(policy_raw) == policy_sha256,
+        "RP2 release license policy differs from release-tools.lock",
+    )
+    try:
+        policy_value = json.loads(policy_raw.decode("utf-8", errors="strict"))
+    except (UnicodeError, TypeError, ValueError) as exc:
+        raise ReleaseError("RP2 release license policy is invalid JSON") from exc
+    _require(
+        policy_raw == _canonical_json_bytes(policy_value),
+        "RP2 release license policy is not canonical JSON",
+    )
+    rebound = _audit_validate_rp2_license_policy(
+        policy_value,
+        repo_root=Path(repo_root),
+        build_root=Path(build_root),
+    )
+    _require(
+        rebound == validated_policy,
+        "RP2 release license policy object differs from its locked bytes",
+    )
+    return {
+        "repo/firmware/release-tools.lock": lock_path,
+        _audit_rp2_logical_path(
+            policy_path,
+            repo_root=Path(repo_root),
+            build_root=Path(build_root),
+        ): policy_path,
+    }
+
+
+def _audit_rp2_retained_board_inputs(
+    *,
+    repo_root: Path,
+    build_root: Path,
+    source_root: Path,
+) -> list[dict[str, str]]:
+    """Prove the exact output of prepare.sh and its lock-derived version."""
+
+    board = (
+        Path(source_root)
+        / "ports"
+        / "rp2"
+        / "boards"
+        / "PYBLE_RPI_PICO2_W"
+    )
+    if not board.is_dir():
+        return []
+    overlay = Path(repo_root) / "firmware" / "board_overlays" / "rpi-pico2-w"
+    pyble = Path(repo_root) / "firmware" / "pyble"
+    _require(
+        overlay.is_dir() and pyble.is_dir(),
+        "RP2 retained board copy lacks canonical source directories",
+    )
+
+    overlay_names = (
+        "_boot.py",
+        "manifest.py",
+        "mpconfigboard.cmake",
+        "mpconfigboard.h",
+        "mpconfigvariant.cmake",
+    )
+    pyble_names = (
+        "__init__.py",
+        "pyble_agent.py",
+        "pyble_ble.py",
+        "pyble_boot.py",
+        "pyble_console.py",
+        "pyble_device_config.py",
+        "pyble_fs.py",
+        "pyble_info.py",
+        "pyble_proto.py",
+        "pyble_runner.py",
+    )
+    expected_copies = {
+        **{name: overlay / name for name in overlay_names},
+        **{"pyble/%s" % name: pyble / name for name in pyble_names},
+    }
+    for canonical in expected_copies.values():
+        _audit_no_symlink_components(
+            overlay if canonical.is_relative_to(overlay) else pyble,
+            canonical,
+            "RP2 canonical board input",
+        )
+        _audit_regular_compile_file(canonical, "RP2 canonical board input")
+
+    expected_paths = set(expected_copies) | {
+        "pyble/_version.py",
+        "pble_version.h",
+    }
+    actual_paths: set[str] = set()
+    for candidate in sorted(board.rglob("*")):
+        try:
+            mode = candidate.lstat().st_mode
+        except OSError as exc:
+            raise ReleaseError("RP2 retained board inventory changed") from exc
+        _require(
+            not stat_module.S_ISLNK(mode),
+            "RP2 retained board inventory contains a symlink",
+        )
+        if stat_module.S_ISDIR(mode):
+            continue
+        _require(
+            stat_module.S_ISREG(mode),
+            "RP2 retained board inventory contains a special file",
+        )
+        actual_paths.add(candidate.relative_to(board).as_posix())
+    _require(
+        actual_paths == expected_paths,
+        "RP2 retained board inventory contains unowned or missing generated files",
+    )
+
+    records: list[dict[str, str]] = []
+    for relative, canonical in sorted(expected_copies.items()):
+        copied = board / relative
+        _require(
+            copied.read_bytes() == canonical.read_bytes(),
+            "RP2 retained board copy changed: %s" % relative,
+        )
+        for observed, kind in (
+            (copied, "retained-board-copy"),
+            (canonical, "canonical-board-input"),
+        ):
+            records.append(
+                {
+                    "kind": kind,
+                    "logical_path": _audit_rp2_logical_path(
+                        observed,
+                        repo_root=Path(repo_root),
+                        build_root=Path(build_root),
+                    ),
+                    "sha256": _sha256_path(observed),
+                }
+            )
+
+    source_lock = _read_lock(Path(repo_root))
+    expected_version = (
+        "# SPDX-License-Identifier: MIT\n"
+        "# GENERATED by firmware/scripts/build_rp2.sh from "
+        "firmware/versions.lock [pyble] — do not edit.\n"
+        'AGENT_VERSION = "%s"\n'
+        'PROTOCOL_VERSION = "%s"\n'
+        % (
+            source_lock["pyble"]["agent_version"],
+            source_lock["pyble"]["protocol_version"],
+        )
+    ).encode("utf-8")
+    generated_version = board / "pyble" / "_version.py"
+    expected_header = (
+        "// SPDX-License-Identifier: MIT\n"
+        "// GENERATED by firmware/scripts/build_rp2.sh from "
+        "firmware/versions.lock [pyble] — do not edit.\n"
+        "#ifndef PBLE_VERSION_H\n"
+        "#define PBLE_VERSION_H\n"
+        '#define PBLE_AGENT_VERSION "%s"\n'
+        '#define PBLE_PROTOCOL_VERSION "%s"\n'
+        "#endif  // PBLE_VERSION_H\n"
+        % (
+            source_lock["pyble"]["agent_version"],
+            source_lock["pyble"]["protocol_version"],
+        )
+    ).encode("utf-8")
+    generated_header = board / "pble_version.h"
+    _require(
+        generated_version.read_bytes() == expected_version
+        and generated_header.read_bytes() == expected_header,
+        "RP2 retained board generated version/config changed",
+    )
+    for generated, kind in (
+        (generated_version, "lock-derived-agent-version"),
+        (generated_header, "lock-derived-version-header"),
+    ):
+        _audit_regular_compile_file(generated, "RP2 retained board generated input")
+        records.append(
+            {
+                "kind": kind,
+                "logical_path": _audit_rp2_logical_path(
+                    generated,
+                    repo_root=Path(repo_root),
+                    build_root=Path(build_root),
+                ),
+                "sha256": _sha256_path(generated),
+            }
+        )
+    return sorted(records, key=lambda item: (item["kind"], item["logical_path"]))
+
+
+def _audit_rp2_make_tokens(value: str, label: str) -> list[str]:
+    """Parse the strict escaped-token subset emitted in compiler depfiles."""
+
+    result: list[str] = []
+    token: list[str] = []
+    index = 0
+    while index < len(value):
+        character = value[index]
+        if character == "\\":
+            _require(index + 1 < len(value), "%s has a dangling escape" % label)
+            token.append(value[index + 1])
+            index += 2
+            continue
+        _require(character not in "#$", "%s contains make syntax" % label)
+        if character.isspace():
+            if token:
+                result.append("".join(token))
+                token = []
+            index += 1
+            continue
+        token.append(character)
+        index += 1
+    if token:
+        result.append("".join(token))
+    return result
+
+
+def _audit_rp2_depfile_rule(path: Path) -> tuple[str, list[str]]:
+    raw = _read_regular_file_bytes(path, "RP2 compiler depfile")
+    try:
+        text = raw.decode("utf-8", errors="strict")
+    except UnicodeError as exc:
+        raise ReleaseError("RP2 compiler depfile is not UTF-8") from exc
+    _require(
+        "\x00" not in text and "\r" not in text,
+        "RP2 compiler depfile contains control bytes",
+    )
+    logical = text.replace("\\\n", " ")
+    if logical.endswith("\n"):
+        logical = logical[:-1]
+    _require(
+        "\n" not in logical,
+        "RP2 compiler depfile contains multiple rules or directives",
+    )
+    separator: int | None = None
+    escaped = False
+    for index, character in enumerate(logical):
+        if escaped:
+            escaped = False
+            continue
+        if character == "\\":
+            escaped = True
+            continue
+        if character == ":":
+            separator = index
+            break
+    _require(separator is not None, "RP2 compiler depfile has no rule separator")
+    targets = _audit_rp2_make_tokens(logical[:separator], "RP2 depfile target")
+    dependencies = _audit_rp2_make_tokens(
+        logical[separator + 1 :], "RP2 depfile dependencies"
+    )
+    _require(
+        len(targets) == 1 and bool(dependencies),
+        "RP2 compiler depfile rule is incomplete",
+    )
+    return targets[0], dependencies
+
+
+_AUDIT_RP2_GENERATED_DEPENDENCY_PATHS = {
+    "frozen_content.c",
+    "generated/pico_base/pico/config_autogen.h",
+    "generated/pico_base/pico/version.h",
+    "genhdr/compressed.data.h",
+    "genhdr/moduledefs.h",
+    "genhdr/mpversion.h",
+    "genhdr/pins.h",
+    "genhdr/qstrdefs.generated.h",
+    "genhdr/root_pointers.h",
+    "pico-sdk/src/rp2_common/pico_cyw43_driver/cyw43_bus_pio_spi.pio.h",
+    "pins_PYBLE_RPI_PICO2_W.c",
+}
+_AUDIT_RP2_RETAINED_PREFIX = "build/.sources/rpi-pico2-w/micropython/"
+_AUDIT_RP2_CYW43_PAYLOADS = {
+    "lib/cyw43-driver/firmware/cyw43_btfw_43439.h": {
+        "owner_id": "cyw43-bt-firmware-payload",
+        "symbol": "cyw43_btfw_43439",
+        "bytes": 6_970,
+        "sha256": "d974384d0aa8124d30084f30d13519a3ed3b9f759f7ddd6a34ef3dcf1441bcf7",
+        "header_sha256": "d05a8dca7e232ada470d8ed723edaa1ea78000098870f9b979d490d83ad35b22",
+    },
+    "lib/cyw43-driver/firmware/wb43439A0_7_95_49_00_combined.h": {
+        "owner_id": "cyw43-wifi-clm-payload",
+        "symbol": "wb43439A0_7_95_49_00_combined",
+        "bytes": 232_408,
+        "sha256": "9c9879836c5267672c9cf3f5436d4585f2d0e6e2e212fb84f636f1aa28c38d4c",
+        "header_sha256": "6b4b9a717c3c5d669b56a3bc38b58df3901f63e3a7363ccf5d74706460762176",
+    },
+    "lib/cyw43-driver/firmware/wifi_nvram_43439.h": {
+        "owner_id": "cyw43-nvram-payload",
+        "symbol": "wifi_nvram_4343",
+        "bytes": 743,
+        "sha256": "36fa0ddfac5a899e2ec1fbe2f618cf319b58952bed24a26abe4f89f06c9a7664",
+        "header_sha256": "ddc82b00667643f55d7687bba1b5e4028f24717ec8883f05bd7d435f4c9c01ad",
+    },
+}
+_AUDIT_RP2_TOOLCHAIN_DISTRIBUTION_LOCK_KEYS = {
+    "archive_filename",
+    "archive_bytes",
+    "archive_format",
+    "archive_root",
+    "release_manifest_path",
+    "release_manifest_sha256",
+    "c_asm_frontend_path",
+    "c_asm_frontend_sha256",
+    "cxx_frontend_path",
+    "cxx_frontend_sha256",
+}
+
+
+def _audit_rp2_c_comments_only(value: str) -> bool:
+    """Recognize only whitespace and complete C comments."""
+
+    index = 0
+    while index < len(value):
+        if value[index].isspace():
+            index += 1
+            continue
+        if value.startswith("//", index):
+            newline = value.find("\n", index + 2)
+            index = len(value) if newline < 0 else newline + 1
+            continue
+        if value.startswith("/*", index):
+            closing = value.find("*/", index + 2)
+            if closing < 0:
+                return False
+            index = closing + 2
+            continue
+        return False
+    return True
+
+
+def _audit_rp2_c_string_bytes(value: str, start: int) -> tuple[bytes, int]:
+    """Decode the strict ASCII C-string subset used by the selected NVRAM."""
+
+    result = bytearray()
+    index = start
+    strings = 0
+    simple_escapes = {
+        "a": 0x07,
+        "b": 0x08,
+        "f": 0x0C,
+        "n": 0x0A,
+        "r": 0x0D,
+        "t": 0x09,
+        "v": 0x0B,
+        "\\": 0x5C,
+        "\"": 0x22,
+        "'": 0x27,
+        "?": 0x3F,
+    }
+    while True:
+        while index < len(value) and value[index].isspace():
+            index += 1
+        if index >= len(value) or value[index] != '"':
+            break
+        strings += 1
+        index += 1
+        while index < len(value) and value[index] != '"':
+            character = value[index]
+            _require(
+                character not in "\r\n\x00",
+                "RP2 C payload string contains a raw control byte",
+            )
+            if character != "\\":
+                codepoint = ord(character)
+                _require(
+                    0x20 <= codepoint <= 0x7E,
+                    "RP2 C payload string is not literal ASCII",
+                )
+                result.append(codepoint)
+                index += 1
+                continue
+            index += 1
+            _require(
+                index < len(value),
+                "RP2 C payload string has a dangling escape",
+            )
+            escaped = value[index]
+            if escaped in simple_escapes:
+                result.append(simple_escapes[escaped])
+                index += 1
+                continue
+            if escaped == "x":
+                digits = value[index + 1 : index + 3]
+                _require(
+                    len(digits) == 2
+                    and re.fullmatch(r"[0-9A-Fa-f]{2}", digits) is not None
+                    and (
+                        index + 3 >= len(value)
+                        or value[index + 3] not in "0123456789abcdefABCDEF"
+                    ),
+                    "RP2 C payload string has a noncanonical hex escape",
+                )
+                result.append(int(digits, 16))
+                index += 3
+                continue
+            if escaped in "01234567":
+                match = re.match(r"[0-7]{1,3}", value[index:])
+                _require(match is not None, "RP2 C payload octal escape is invalid")
+                number = int(match.group(0), 8)
+                _require(
+                    number <= 0xFF,
+                    "RP2 C payload octal escape is out of byte range",
+                )
+                result.append(number)
+                index += len(match.group(0))
+                continue
+            raise ReleaseError("RP2 C payload string has an unknown escape")
+        _require(
+            index < len(value) and value[index] == '"',
+            "RP2 C payload string is unterminated",
+        )
+        index += 1
+    _require(strings > 0, "RP2 C payload has no literal string initializer")
+    # An array initialized from a C string contains one implicit terminator in
+    # addition to every explicitly escaped byte.
+    result.append(0)
+    return bytes(result), index
+
+
+def _audit_rp2_c_payload_suffix(
+    value: str,
+    *,
+    symbol: str,
+    expected_length: int,
+) -> None:
+    """Admit only the literal aliases shipped beside the selected arrays."""
+
+    if not value.strip():
+        return
+    escaped_symbol = re.escape(symbol)
+    bt_aliases = re.fullmatch(
+        r"\s*const\s+unsigned\s+int\s+"
+        + escaped_symbol
+        + r"_len\s*=\s*"
+        + str(expected_length)
+        + r"\s*;\s*const\s+uint8_t\s*\*\s*btfw_data\s*=\s*&"
+        + escaped_symbol
+        + r"\[0\]\s*;\s*const\s+size_t\s+btfw_len\s*=\s*"
+        + escaped_symbol
+        + r"_len\s*;\s*",
+        value,
+    )
+    wifi_aliases = re.fullmatch(
+        r"\s*#define\s+CYW43_WIFI_FW_LEN\s+\([0-9]+\)\s*//[^\r\n]*\n"
+        r"\s*#define\s+CYW43_CLM_LEN\s+\([0-9]+\)\s*//[^\r\n]*\n"
+        r"\s*const\s+uintptr_t\s+fw_data\s*=\s*\(uintptr_t\)\s*&"
+        + escaped_symbol
+        + r"\[0\]\s*;\s*",
+        value,
+    )
+    _require(
+        bt_aliases is not None or wifi_aliases is not None,
+        "RP2 C payload header has an unreviewed trailing declaration",
+    )
+
+
+def _audit_rp2_c_array_payload(
+    path: Path,
+    symbol: str,
+    expected_length: int,
+) -> dict[str, Any]:
+    """Derive exact bytes from one strict literal CYW43 C array."""
+
+    _require(
+        isinstance(symbol, str)
+        and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", symbol) is not None
+        and type(expected_length) is int
+        and expected_length > 0,
+        "RP2 C payload identity is invalid",
+    )
+    raw = _read_regular_file_bytes(Path(path), "RP2 C payload header")
+    try:
+        value = raw.decode("ascii", errors="strict")
+    except UnicodeError as exc:
+        raise ReleaseError("RP2 C payload header is not strict ASCII") from exc
+    declaration = re.compile(
+        r"(?:static\s+)?const\s+(?:unsigned\s+char|uint8_t)\s+"
+        + re.escape(symbol)
+        + r"\s*\[\s*\]\s+CYW43_RESOURCE_ATTRIBUTE\s*=\s*"
+    )
+    matches = list(declaration.finditer(value))
+    _require(
+        len(matches) == 1
+        and _audit_rp2_c_comments_only(value[: matches[0].start()]),
+        "RP2 C payload declaration is missing, duplicated, or preceded by code",
+    )
+    index = matches[0].end()
+    if index < len(value) and value[index] == "{":
+        closing = value.find("}", index + 1)
+        _require(closing >= 0, "RP2 C payload array is unterminated")
+        body = value[index + 1 : closing]
+        tokens = [item.strip() for item in body.split(",")]
+        if tokens and not tokens[-1]:
+            tokens.pop()
+        _require(
+            bool(tokens)
+            and all(bool(token) for token in tokens)
+            and all(
+                re.fullmatch(
+                    r"(?:0[xX][0-9A-Fa-f]{1,2}|0|[1-9][0-9]{0,2})",
+                    token,
+                )
+                is not None
+                for token in tokens
+            ),
+            "RP2 C payload array contains a nonliteral byte",
+        )
+        numbers = [
+            int(token, 16)
+            if token.lower().startswith("0x")
+            else int(token, 10)
+            for token in tokens
+        ]
+        _require(
+            all(0 <= number <= 0xFF for number in numbers),
+            "RP2 C payload array byte is out of range",
+        )
+        payload = bytes(numbers)
+        index = closing + 1
+    else:
+        payload, index = _audit_rp2_c_string_bytes(value, index)
+    while index < len(value) and value[index].isspace():
+        index += 1
+    _require(
+        index < len(value) and value[index] == ";",
+        "RP2 C payload declaration lacks its exact terminator",
+    )
+    _audit_rp2_c_payload_suffix(
+        value[index + 1 :],
+        symbol=symbol,
+        expected_length=expected_length,
+    )
+    _require(
+        len(payload) == expected_length,
+        "RP2 C payload derived byte length differs from the reviewed length",
+    )
+    return {"bytes": len(payload), "sha256": _sha256_bytes(payload)}
+
+
+def _audit_rp2_compiler_dependency_closure(
+    *,
+    mappings: dict[Path, Path],
+    target_root: Path,
+    source_root: Path,
+    repo_root: Path,
+    build_root: Path,
+    owners: list[dict[str, Any]],
+    project_owner: dict[str, Any],
+) -> tuple[list[dict[str, Any]], set[Path], set[Path]]:
+    """Hash every compiler depfile and assign every dependency to one owner."""
+
+    closure: list[dict[str, Any]] = []
+    evidence_paths: set[Path] = set()
+    toolchain_inputs: set[Path] = set()
+    expected_depfiles = {
+        Path(os.fspath(object_path) + ".d").resolve()
+        for object_path in mappings
+        if Path(os.fspath(object_path) + ".d").is_file()
+    }
+    firmware_target_directory = target_root / "CMakeFiles" / "firmware.dir"
+    actual_depfiles = {
+        path.resolve()
+        for path in firmware_target_directory.rglob("*.d")
+        if path.is_file()
+    }
+    _require(
+        actual_depfiles == expected_depfiles,
+        "RP2 firmware target depfile inventory is missing or contains an extra file",
+    )
+    for object_path, source in sorted(
+        mappings.items(), key=lambda item: os.fspath(item[0])
+    ):
+        depfile = Path(os.fspath(object_path) + ".d")
+        if not depfile.is_file():
+            # CMake's ASM records have no compiler depfile. Their direct source
+            # is still bound by DependInfo and generated-source derivations.
+            continue
+        _audit_no_symlink_components(
+            target_root.resolve(), depfile.resolve(), "RP2 compiler depfile"
+        )
+        target_raw, dependency_values = _audit_rp2_depfile_rule(depfile)
+        dep_target = _audit_rp2_admitted_path(
+            target_raw,
+            relative_to=target_root,
+            roots=(target_root,),
+            label="RP2 depfile target",
+        )
+        _require(
+            dep_target == object_path.resolve(),
+            "RP2 compiler depfile targets a different object",
+        )
+        dependency_records: list[dict[str, str]] = []
+        dependency_paths: set[Path] = set()
+        for dependency_raw in dependency_values:
+            dependency = _audit_rp2_admitted_path(
+                dependency_raw,
+                relative_to=target_root,
+                roots=(target_root, source_root, repo_root),
+                label="RP2 compiler dependency",
+            )
+            _audit_regular_compile_file(dependency, "RP2 compiler dependency")
+            dependency_paths.add(dependency)
+            if dependency.is_relative_to(source_root.resolve()):
+                policy_path = dependency.relative_to(source_root.resolve()).as_posix()
+                owner = _audit_rp2_owner_for_path(
+                    owners,
+                    namespace="micropython",
+                    logical_path=policy_path,
+                )
+            elif dependency.is_relative_to(
+                (repo_root / "firmware" / ".arm-gnu").resolve()
+            ):
+                policy_path = dependency.relative_to(
+                    (repo_root / "firmware" / ".arm-gnu").resolve()
+                ).as_posix()
+                owner = _audit_rp2_owner_for_path(
+                    owners,
+                    namespace="arm-gnu-toolchain",
+                    logical_path=policy_path,
+                )
+                toolchain_inputs.add(dependency)
+            elif dependency.is_relative_to(target_root.resolve()):
+                generated_relative = dependency.relative_to(
+                    target_root.resolve()
+                ).as_posix()
+                _require(
+                    generated_relative in _AUDIT_RP2_GENERATED_DEPENDENCY_PATHS,
+                    "RP2 compiler dependency is an unknown generated input: %s"
+                    % generated_relative,
+                )
+                owner = project_owner
+            else:
+                _require(
+                    dependency.is_relative_to(repo_root.resolve()),
+                    "RP2 compiler dependency escapes its owned namespaces",
+                )
+                policy_path = dependency.relative_to(repo_root.resolve()).as_posix()
+                owner = _audit_rp2_owner_for_path(
+                    owners,
+                    namespace="repo",
+                    logical_path=policy_path,
+                )
+            dependency_records.append(
+                {
+                    "logical_path": _audit_rp2_logical_path(
+                        dependency,
+                        repo_root=repo_root,
+                        build_root=build_root,
+                    ),
+                    "sha256": _sha256_path(dependency),
+                    "owner_id": owner["id"],
+                }
+            )
+            evidence_paths.add(dependency)
+        _require(
+            source.resolve() in dependency_paths,
+            "RP2 compiler depfile omits its compiled source",
+        )
+        evidence_paths.update((object_path, source, depfile))
+        closure.append(
+            {
+                "object": _audit_rp2_logical_path(
+                    object_path, repo_root=repo_root, build_root=build_root
+                ),
+                "object_sha256": _sha256_path(object_path),
+                "source": _audit_rp2_logical_path(
+                    source, repo_root=repo_root, build_root=build_root
+                ),
+                "source_sha256": _sha256_path(source),
+                "depfile": _audit_rp2_logical_path(
+                    depfile, repo_root=repo_root, build_root=build_root
+                ),
+                "depfile_sha256": _sha256_path(depfile),
+                "dependencies": sorted(
+                    dependency_records, key=lambda item: item["logical_path"]
+                ),
+            }
+        )
+    selected_cyw43_payloads = {
+        dependency["logical_path"].partition(_AUDIT_RP2_RETAINED_PREFIX)[2]
+        for record in closure
+        for dependency in record["dependencies"]
+        if dependency["logical_path"].startswith(
+            _AUDIT_RP2_RETAINED_PREFIX + "lib/cyw43-driver/firmware/"
+        )
+    }
+    _require(
+        selected_cyw43_payloads
+        == {
+            "lib/cyw43-driver/firmware/cyw43_btfw_43439.h",
+            "lib/cyw43-driver/firmware/wb43439A0_7_95_49_00_combined.h",
+            "lib/cyw43-driver/firmware/wifi_nvram_43439.h",
+        },
+        "RP2 compiler dependency closure selects a different CYW43 payload set",
+    )
+    return closure, evidence_paths, toolchain_inputs
+
+
+def _audit_rp2_toolchain_distribution(
+    *,
+    cache_values: dict[str, str],
+    link_path: Path,
+    linked_inputs: list[Path],
+    compiler_inputs: set[Path],
+    repo_root: Path,
+) -> tuple[dict[str, Any] | None, set[Path], set[Path]]:
+    """Bind installed ARM inputs to the exact retained official tar archive."""
+
+    arm = _read_lock(Path(repo_root)).get("arm_gnu_toolchain")
+    _require(isinstance(arm, dict), "RP2 ARM GNU lock section is missing")
+    required = _AUDIT_RP2_TOOLCHAIN_DISTRIBUTION_LOCK_KEYS
+    present = required & set(arm)
+    _require(
+        not present or present == required,
+        "RP2 ARM GNU distribution lock is incomplete",
+    )
+    if not present:
+        return None, set(), set()
+
+    toolchain = (Path(repo_root) / "firmware" / ".arm-gnu").resolve()
+    archive_filename = _safe_relative_path(
+        arm["archive_filename"], "RP2 ARM GNU archive filename"
+    )
+    _require(
+        PurePosixPath(archive_filename).name == archive_filename,
+        "RP2 ARM GNU archive filename is not a basename",
+    )
+    archive = (
+        Path(repo_root)
+        / "firmware"
+        / ".arm-gnu"
+        / ".pyble-dist"
+        / archive_filename
+    )
+    _audit_no_symlink_components(
+        toolchain.resolve(), archive.resolve(), "RP2 ARM GNU archive"
+    )
+    _audit_regular_compile_file(archive, "RP2 ARM GNU archive")
+    _require(
+        arm["archive_format"] == "tar.xz"
+        and type(arm["archive_bytes"]) is int
+        and arm["archive_bytes"] > 0
+        and archive.stat().st_size == arm["archive_bytes"]
+        and _sha256_path(archive) == arm.get("sha256"),
+        "RP2 ARM GNU archive bytes differ from versions.lock",
+    )
+    archive_root = _safe_relative_path(
+        arm["archive_root"], "RP2 ARM GNU archive root"
+    )
+    _require(
+        PurePosixPath(archive_root).name == archive_root,
+        "RP2 ARM GNU archive root is not singular",
+    )
+
+    frontend_specs = (
+        (
+            ("ASM", "C"),
+            arm["c_asm_frontend_path"],
+            arm["c_asm_frontend_sha256"],
+            (
+                "CMAKE_C_COMPILER:STRING",
+                "CMAKE_ASM_COMPILER:STRING",
+                "PICO_COMPILER_CC:FILEPATH",
+                "PICO_COMPILER_ASM:INTERNAL",
+            ),
+        ),
+        (
+            ("CXX",),
+            arm["cxx_frontend_path"],
+            arm["cxx_frontend_sha256"],
+            ("CMAKE_CXX_COMPILER:STRING", "PICO_COMPILER_CXX:FILEPATH"),
+        ),
+    )
+    _require(
+        cache_values.get("PICO_BOARD:STRING") == "pico2_w"
+        and cache_values.get("PICO_PLATFORM:STRING") == "rp2350-arm-s",
+        "RP2 board or platform compiler identity changed",
+    )
+    frontends: list[dict[str, Any]] = []
+    frontend_paths: set[Path] = set()
+    for languages, relative_raw, expected_digest, cache_keys in frontend_specs:
+        relative = _safe_relative_path(relative_raw, "RP2 ARM GNU frontend")
+        frontend = _audit_repo_file(toolchain, relative, "RP2 ARM GNU frontend")
+        digest = _audit_v060_digest(expected_digest, "RP2 ARM GNU frontend digest")
+        _require(
+            _sha256_path(frontend) == digest
+            and all(
+                key in cache_values
+                and Path(cache_values[key]).resolve() == frontend.resolve()
+                for key in cache_keys
+            ),
+            "RP2 compiler frontend identity differs from versions.lock/CMake cache",
+        )
+        frontend_paths.add(frontend.resolve())
+        frontends.append(
+            {"languages": list(languages), "path": relative, "sha256": digest}
+        )
+    try:
+        link_words = shlex.split(
+            _read_regular_file_bytes(link_path, "RP2 linker command").decode(
+                "utf-8", errors="strict"
+            )
+        )
+    except (UnicodeError, ValueError) as exc:
+        raise ReleaseError("RP2 linker command is malformed") from exc
+    _require(
+        bool(link_words)
+        and Path(link_words[0]).resolve()
+        == (toolchain / arm["cxx_frontend_path"]).resolve(),
+        "RP2 linker driver is not the pinned CXX frontend",
+    )
+
+    manifest_relative = _safe_relative_path(
+        arm["release_manifest_path"], "RP2 ARM GNU release manifest"
+    )
+    manifest = _audit_repo_file(
+        toolchain, manifest_relative, "RP2 ARM GNU release manifest"
+    )
+    manifest_digest = _audit_v060_digest(
+        arm["release_manifest_sha256"], "RP2 ARM GNU release manifest digest"
+    )
+    _require(
+        _sha256_path(manifest) == manifest_digest,
+        "RP2 ARM GNU release manifest differs from versions.lock",
+    )
+
+    installed_paths = {
+        path.resolve()
+        for path in (*linked_inputs, *compiler_inputs, *frontend_paths, manifest)
+        if path.resolve().is_relative_to(toolchain)
+    }
+    needed_relatives = {
+        path.relative_to(toolchain).as_posix()
+        for path in installed_paths
+    }
+    try:
+        with tarfile.open(name=archive, mode="r:xz") as handle:
+            archive_files: dict[str, bytes] = {}
+            archive_seen: set[str] = set()
+            for member in handle.getmembers():
+                member_path = PurePosixPath(member.name)
+                _require(
+                    not member_path.is_absolute()
+                    and ".." not in member_path.parts
+                    and bool(member_path.parts)
+                    and member_path.parts[0] == archive_root,
+                    "RP2 ARM GNU archive contains an unsafe member",
+                )
+                if member.isdir():
+                    continue
+                relative = PurePosixPath(*member_path.parts[1:]).as_posix()
+                _require(
+                    bool(relative) and relative not in archive_seen,
+                    "RP2 ARM GNU archive member is empty or duplicated",
+                )
+                archive_seen.add(relative)
+                if member.issym():
+                    _require(
+                        relative not in needed_relatives,
+                        "RP2 observed ARM GNU input is a symbolic-link archive member",
+                    )
+                    continue
+                if member.islnk():
+                    link_path = PurePosixPath(member.linkname)
+                    _require(
+                        not link_path.is_absolute()
+                        and ".." not in link_path.parts
+                        and bool(link_path.parts)
+                        and link_path.parts[0] == archive_root,
+                        "RP2 ARM GNU archive contains an unsafe hard link",
+                    )
+                else:
+                    _require(
+                        member.isfile(),
+                        "RP2 ARM GNU archive contains a special file",
+                    )
+                if relative not in needed_relatives:
+                    continue
+                extracted = handle.extractfile(member)
+                _require(
+                    extracted is not None,
+                    "RP2 ARM GNU archive member is unreadable",
+                )
+                archive_files[relative] = extracted.read()
+    except (OSError, tarfile.TarError) as exc:
+        raise ReleaseError("RP2 ARM GNU archive is unreadable") from exc
+
+    installed_records: list[dict[str, str]] = []
+    for installed in sorted(installed_paths):
+        relative = installed.relative_to(toolchain).as_posix()
+        value = _read_regular_file_bytes(installed, "RP2 installed ARM GNU input")
+        _require(
+            archive_files.get(relative) == value,
+            "RP2 installed ARM GNU input differs from official archive: %s"
+            % relative,
+        )
+        installed_records.append({"path": relative, "sha256": _sha256_bytes(value)})
+    distribution = {
+        "archive": {
+            "filename": archive_filename,
+            "bytes": arm["archive_bytes"],
+            "format": "tar.xz",
+            "root": archive_root,
+            "sha256": arm["sha256"],
+        },
+        "release_manifest": {
+            "path": manifest_relative,
+            "sha256": manifest_digest,
+        },
+        "frontends": frontends,
+        "installed_inputs": installed_records,
+    }
+    return distribution, {archive, manifest, *installed_paths}, frontend_paths
+
+
+def _audit_observe_rp2_license_inputs(
+    *,
+    build_root: Path,
+    repo_root: Path,
+    provenance: dict[str, Any],
+    policy: dict[str, Any],
+) -> dict[str, Any]:
+    """Observe the retained RP2 linked/frozen closure without directory inference."""
+
+    # Preserve caller-root lexical spelling (notably macOS /var vs
+    # /private/var) for component audits; individual operands are still
+    # canonicalized only after the symlink walk.
+    builds = Path(build_root).absolute()
+    root = Path(repo_root).absolute()
+    target = builds / "rpi-pico2-w"
+    retained = builds / ".sources" / "rpi-pico2-w" / "micropython"
+    validated = _audit_validate_rp2_license_policy(
+        policy,
+        repo_root=root,
+        build_root=builds,
+    )
+    owners = validated["source_owners"]
+    control_input_paths = _audit_rp2_control_input_paths(
+        repo_root=root,
+        build_root=builds,
+        validated_policy=validated,
+    )
+    _require(
+        target.is_dir() and retained.is_dir(),
+        "RP2 retained .sources build is missing",
+    )
+    _audit_no_symlink_components(builds, target, "RP2 target build")
+    _audit_no_symlink_components(builds, retained, "RP2 retained source")
+    cache = target / "CMakeCache.txt"
+    _audit_no_symlink_components(target, cache, "RP2 CMake cache")
+    cache_text = _read_regular_file_bytes(cache, "RP2 CMake cache").decode(
+        "utf-8", errors="strict"
+    )
+    canonical = root / "firmware" / "upstream" / "micropython"
+    cache_values: dict[str, str] = {}
+    for line in cache_text.splitlines():
+        if "=" not in line:
+            continue
+        key, raw_value = line.split("=", 1)
+        if not raw_value:
+            continue
+        _require(key not in cache_values, "RP2 CMake cache duplicates a key")
+        cache_values[key] = raw_value
+    _require(
+        cache_values.get("CMAKE_HOME_DIRECTORY:INTERNAL") is not None
+        and Path(cache_values["CMAKE_HOME_DIRECTORY:INTERNAL"]).resolve()
+        == (retained / "ports" / "rp2").resolve()
+        and cache_values.get("MICROPY_BOARD_DIR:UNINITIALIZED") is not None
+        and Path(cache_values["MICROPY_BOARD_DIR:UNINITIALIZED"]).resolve()
+        == (
+            retained / "ports" / "rp2" / "boards" / "PYBLE_RPI_PICO2_W"
+        ).resolve()
+        and cache_values.get("PICO_SDK_PATH:PATH") is not None
+        and Path(cache_values["PICO_SDK_PATH:PATH"]).resolve()
+        == (retained / "lib" / "pico-sdk").resolve()
+        and os.fspath(canonical.resolve()) not in cache_text,
+        "RP2 CMake cache does not use the retained .sources checkout",
+    )
+    for label, cache_path, admitted_root in (
+        (
+            "RP2 CMake source directory",
+            Path(cache_values["CMAKE_HOME_DIRECTORY:INTERNAL"]),
+            retained,
+        ),
+        (
+            "RP2 CMake board directory",
+            Path(cache_values["MICROPY_BOARD_DIR:UNINITIALIZED"]),
+            retained,
+        ),
+        (
+            "RP2 Pico SDK directory",
+            Path(cache_values["PICO_SDK_PATH:PATH"]),
+            retained,
+        ),
+    ):
+        _audit_no_symlink_components(admitted_root, cache_path, label)
+    source_identity = _audit_rp2_source_identity(
+        source_root=retained,
+        repo_root=root,
+        provenance=provenance,
+    )
+    for owner in owners:
+        _audit_rp2_checkout_identity(
+            owner,
+            source_root=retained,
+            repo_root=root,
+            provenance=provenance,
+        )
+    retained_board_inputs = _audit_rp2_retained_board_inputs(
+        repo_root=root,
+        build_root=builds,
+        source_root=retained,
+    )
+
+    link_path = target / "CMakeFiles" / "firmware.dir" / "link.txt"
+    map_path = target / "firmware.elf.map"
+    depend_path = target / "CMakeFiles" / "firmware.dir" / "DependInfo.cmake"
+    elf_path = target / "firmware.elf"
+    for observed_path, label in (
+        (link_path, "RP2 linker command"),
+        (map_path, "RP2 linker map"),
+        (depend_path, "RP2 CMake DependInfo"),
+        (elf_path, "RP2 linked ELF"),
+    ):
+        _audit_no_symlink_components(target, observed_path, label)
+    link_inputs = _audit_rp2_link_arguments(
+        link_path,
+        target_root=target,
+        repo_root=root,
+    )
+    map_loads, direct_contributors, archive_members = _audit_rp2_map_records(
+        map_path,
+        target_root=target,
+        repo_root=root,
+    )
+    map_load_set = set(map_loads)
+    _require(
+        set(link_inputs) <= map_load_set,
+        "RP2 explicit linker input is absent from map LOAD inventory",
+    )
+    implicit_inputs = [item for item in map_loads if item not in set(link_inputs)]
+    _require(
+        all(item.is_relative_to(root / "firmware" / ".arm-gnu") for item in implicit_inputs),
+        "RP2 map contains an unexplained implicit non-toolchain input",
+    )
+    _audit_rp2_replay_implicit_inputs(
+        link_path,
+        target_root=target,
+        repo_root=root,
+        explicit_inputs=link_inputs,
+        map_implicit_inputs=implicit_inputs,
+    )
+    link_inputs.extend(implicit_inputs)
+    archive_members_by_path: dict[Path, list[dict[str, Any]]] = {}
+    for member_record in archive_members:
+        archive_members_by_path.setdefault(member_record["archive"], []).append(
+            member_record
+        )
+    mappings = _audit_rp2_depend_info(
+        depend_path,
+        target_root=target,
+        repo_root=root,
+        source_root=retained,
+    )
+    bootstage_mapping, bootstage_depend = _audit_rp2_bootstage_mapping(
+        target_root=target
+    )
+    _require(
+        not (set(mappings) & set(bootstage_mapping)),
+        "RP2 bootstage object is duplicated in firmware DependInfo",
+    )
+    mappings.update(bootstage_mapping)
+    _audit_regular_compile_file(elf_path, "RP2 linked ELF")
+
+    observed_owners = {
+        owner["id"]: {
+            "id": owner["id"],
+            "source_ref": owner["source_ref"],
+            "source_url": owner["source_url"],
+            "source_spdx_expression": owner["source_spdx_expression"],
+            "selected_spdx_expression": owner["selected_spdx_expression"],
+            "disposition": owner["disposition"],
+            "link_inputs": [],
+            "contributing_inputs": [],
+        }
+        for owner in owners
+    }
+    project_owners = [owner for owner in owners if owner["disposition"] == "project-owned"]
+    _require(len(project_owners) == 1, "RP2 policy must name one project owner")
+    arm_lock = _read_lock(root).get("arm_gnu_toolchain")
+    _require(isinstance(arm_lock, dict), "RP2 ARM GNU lock section is missing")
+    compiler_dependency_closure: list[dict[str, Any]] = []
+    compiler_evidence_paths: set[Path] = set()
+    compiler_toolchain_inputs: set[Path] = set()
+    if _AUDIT_RP2_TOOLCHAIN_DISTRIBUTION_LOCK_KEYS & set(arm_lock):
+        (
+            compiler_dependency_closure,
+            compiler_evidence_paths,
+            compiler_toolchain_inputs,
+        ) = _audit_rp2_compiler_dependency_closure(
+            mappings=mappings,
+            target_root=target,
+            source_root=retained,
+            repo_root=root,
+            build_root=builds,
+            owners=owners,
+            project_owner=project_owners[0],
+        )
+    (
+        toolchain_distribution,
+        toolchain_evidence_paths,
+        toolchain_frontends,
+    ) = _audit_rp2_toolchain_distribution(
+        cache_values=cache_values,
+        link_path=link_path,
+        linked_inputs=link_inputs,
+        compiler_inputs=compiler_toolchain_inputs,
+        repo_root=root,
+    )
+    generated: list[dict[str, Any]] = []
+    role_owner_ids: dict[str, set[str]] = {
+        role: set() for role in RP2_LICENSE_AUDIT_ROLES
+    }
+    role_inputs: dict[str, list[dict[str, str]]] = {
+        role: [] for role in RP2_LICENSE_AUDIT_ROLES
+    }
+
+    compiler_dependencies: dict[str, dict[str, str]] = {}
+    for closure_record in compiler_dependency_closure:
+        for dependency in closure_record["dependencies"]:
+            existing = compiler_dependencies.get(dependency["logical_path"])
+            _require(
+                existing is None or existing == dependency,
+                "RP2 compiler dependency has inconsistent owner or bytes",
+            )
+            compiler_dependencies[dependency["logical_path"]] = dependency
+    payload_owner_ids = {
+        record["owner_id"] for record in _AUDIT_RP2_CYW43_PAYLOADS.values()
+    }
+    present_payload_owner_ids = payload_owner_ids & set(observed_owners)
+    _require(
+        not present_payload_owner_ids
+        or present_payload_owner_ids == payload_owner_ids,
+        "RP2 CYW43 payload owner catalog is incomplete",
+    )
+    if present_payload_owner_ids:
+        for relative, specification in sorted(
+            _AUDIT_RP2_CYW43_PAYLOADS.items()
+        ):
+            logical = _AUDIT_RP2_RETAINED_PREFIX + relative
+            dependency = compiler_dependencies.get(logical)
+            _require(
+                dependency is not None
+                and dependency["owner_id"] == specification["owner_id"]
+                and dependency["sha256"] == specification["header_sha256"],
+                "RP2 CYW43 payload header or most-specific owner changed",
+            )
+            payload = _audit_rp2_c_array_payload(
+                retained / relative,
+                specification["symbol"],
+                specification["bytes"],
+            )
+            _require(
+                payload["sha256"] == specification["sha256"],
+                "RP2 CYW43 embedded payload bytes changed",
+            )
+            observed_owner = observed_owners[specification["owner_id"]]
+            observed_owner["payload_bytes"] = payload["bytes"]
+            observed_owner["payload_sha256"] = payload["sha256"]
+    for logical, dependency in sorted(compiler_dependencies.items()):
+        owner = observed_owners[dependency["owner_id"]]
+        record = {
+            "logical_path": logical,
+            "sha256": dependency["sha256"],
+            "contributes": True,
+            "compiler_dependency": True,
+        }
+        if not any(
+            item["logical_path"] == logical
+            for item in owner["contributing_inputs"]
+        ):
+            owner["link_inputs"].append(record)
+            owner["contributing_inputs"].append(record)
+        if logical.startswith(_AUDIT_RP2_RETAINED_PREFIX):
+            dependency_role = _audit_rp2_role_for_source(
+                "micropython",
+                logical.removeprefix(_AUDIT_RP2_RETAINED_PREFIX),
+            )
+        elif logical.startswith("repo/firmware/.arm-gnu/"):
+            dependency_role = "arm-gnu-runtime"
+        else:
+            dependency_role = "linked-inputs"
+        role_owner_ids[dependency_role].add(dependency["owner_id"])
+        role_inputs[dependency_role].append(
+            {
+                "kind": "compiler-dependency",
+                "logical_path": logical,
+                "sha256": dependency["sha256"],
+            }
+        )
+
+    def source_coordinates(source: Path) -> tuple[str, str]:
+        source_resolved = source.resolve()
+        retained_resolved = retained.resolve()
+        root_resolved = root.resolve()
+        if source_resolved.is_relative_to(retained_resolved):
+            return "micropython", source_resolved.relative_to(
+                retained_resolved
+            ).as_posix()
+        if source_resolved.is_relative_to(root_resolved):
+            return "repo", source_resolved.relative_to(root_resolved).as_posix()
+        raise ReleaseError(
+            "RP2 compiled source is outside admitted namespaces: %s" % source
+        )
+
+    for linked in link_inputs:
+        contributes = (
+            linked in direct_contributors
+            or linked in archive_members_by_path
+        )
+        logical_link = _audit_rp2_logical_path(
+            linked, repo_root=root, build_root=builds
+        )
+        if linked in mappings:
+            source = mappings[linked]
+            if source.resolve().is_relative_to(target.resolve()):
+                name = source.name
+                _require(
+                    name
+                    in {
+                        "pins_PYBLE_RPI_PICO2_W.c",
+                        "frozen_content.c",
+                        "bs2_default_padded_checksummed.S",
+                    },
+                    "RP2 generated linked source lacks an exact derivation",
+                )
+                generator_paths = [cache, depend_path]
+                if name == "bs2_default_padded_checksummed.S":
+                    _require(
+                        bootstage_depend.is_file(),
+                        "RP2 bootstage lacks separate derivation evidence",
+                    )
+                    generator_paths.append(bootstage_depend)
+                manifest = root / "firmware" / "board_overlays" / "rpi-pico2-w" / "manifest.py"
+                if name == "frozen_content.c":
+                    generator_paths.append(manifest)
+                generated.append(
+                    {
+                        "generated_source": name,
+                        "generated_sha256": _sha256_path(source),
+                        "linked_object": logical_link,
+                        "linked_object_sha256": _sha256_path(linked),
+                        "generator_inputs": [
+                            {
+                                "logical_path": _audit_rp2_logical_path(
+                                    item, repo_root=root, build_root=builds
+                                ),
+                                "sha256": _sha256_path(item),
+                            }
+                            for item in generator_paths
+                        ],
+                    }
+                )
+                continue
+            namespace, source_logical = source_coordinates(source)
+            owner = _audit_rp2_owner_for_path(
+                owners,
+                namespace=namespace,
+                logical_path=source_logical,
+            )
+            role = _audit_rp2_role_for_source(namespace, source_logical)
+            role_owner_ids[role].add(owner["id"])
+            role_inputs[role].append(
+                {
+                    "kind": "micropython-rp2-source"
+                    if namespace == "micropython"
+                    and source_logical.startswith("ports/rp2/")
+                    else "linked-source",
+                    "logical_path": _audit_rp2_logical_path(
+                        source, repo_root=root, build_root=builds
+                    ),
+                    "sha256": _sha256_path(source),
+                }
+            )
+        elif linked.resolve().is_relative_to(
+            (root / "firmware" / ".arm-gnu").resolve()
+        ):
+            source_logical = linked.resolve().relative_to(
+                (root / "firmware" / ".arm-gnu").resolve()
+            ).as_posix()
+            owner = _audit_rp2_owner_for_path(
+                owners,
+                namespace="arm-gnu-toolchain",
+                logical_path=source_logical,
+            )
+            role = "arm-gnu-runtime"
+            role_owner_ids[role].add(owner["id"])
+            role_inputs[role].append(
+                {
+                    "kind": "linked-runtime-archive",
+                    "logical_path": logical_link,
+                    "sha256": _sha256_path(linked),
+                }
+            )
+        else:
+            _require(
+                not contributes,
+                "RP2 contributing object lacks DependInfo source identity: %s"
+                % linked,
+            )
+            owner = project_owners[0]
+            role = "linked-inputs"
+        record = {
+            "logical_path": logical_link,
+            "sha256": _sha256_path(linked),
+            "contributes": contributes,
+        }
+        if linked in archive_members_by_path:
+            record["archive_members"] = [
+                {
+                    "member": item["member"],
+                    "multiplicity": item["multiplicity"],
+                    "member_sha256": item["member_sha256"],
+                }
+                for item in sorted(
+                    archive_members_by_path[linked],
+                    key=lambda item: item["member"],
+                )
+            ]
+        observed_owners[owner["id"]]["link_inputs"].append(record)
+        if contributes:
+            observed_owners[owner["id"]]["contributing_inputs"].append(record)
+
+    observed_toolchain_paths = {
+        item.resolve()
+        for item in (*link_inputs, *compiler_toolchain_inputs, *toolchain_frontends)
+        if item.resolve().is_relative_to(
+            (root / "firmware" / ".arm-gnu").resolve()
+        )
+    }
+    for owner in owners:
+        for source_root in owner["source_roots"]:
+            if source_root["namespace"] != "arm-gnu-toolchain":
+                continue
+            expected = (
+                root / "firmware" / ".arm-gnu" / source_root["path"]
+            ).resolve()
+            _require(
+                any(
+                    observed == expected or observed.is_relative_to(expected)
+                    for observed in observed_toolchain_paths
+                ),
+                "RP2 runtime/compiler policy input is absent from the complete "
+                "closure: %s"
+                % source_root["path"],
+            )
+
+    manifest = root / "firmware" / "board_overlays" / "rpi-pico2-w" / "manifest.py"
+    frozen_sources, frozen_manifests = _audit_rp2_frozen_inputs(
+        manifest=manifest,
+        repo_root=root,
+        source_root=retained,
+    )
+    for frozen_manifest in frozen_manifests:
+        role_inputs["frozen-modules"].append(
+            {
+                "kind": "frozen-manifest",
+                "logical_path": _audit_rp2_logical_path(
+                    frozen_manifest, repo_root=root, build_root=builds
+                ),
+                "sha256": _sha256_path(frozen_manifest),
+            }
+        )
+    retained_board = retained / "ports" / "rp2" / "boards" / "PYBLE_RPI_PICO2_W"
+    for destination, frozen_source in frozen_sources:
+        if frozen_source.is_relative_to(retained_board):
+            board_relative = frozen_source.relative_to(retained_board)
+            if board_relative.parts and board_relative.parts[0] == "pyble":
+                candidate = root / "firmware" / "pyble" / Path(*board_relative.parts[1:])
+            else:
+                candidate = (
+                    root
+                    / "firmware"
+                    / "board_overlays"
+                    / "rpi-pico2-w"
+                    / board_relative
+                )
+            if candidate.is_file() and candidate.name != "_version.py":
+                _require(
+                    candidate.read_bytes() == frozen_source.read_bytes(),
+                    "RP2 retained first-party frozen source changed",
+                )
+            frozen_owner = project_owners[0]
+        else:
+            namespace, frozen_logical = source_coordinates(frozen_source)
+            frozen_owner = _audit_rp2_owner_for_path(
+                owners, namespace=namespace, logical_path=frozen_logical
+            )
+        role_owner_ids["frozen-modules"].add(frozen_owner["id"])
+        frozen_record = {
+            "logical_path": _audit_rp2_logical_path(
+                frozen_source, repo_root=root, build_root=builds
+            ),
+            "sha256": _sha256_path(frozen_source),
+            "contributes": True,
+            "frozen_destination": destination,
+        }
+        observed_owners[frozen_owner["id"]]["link_inputs"].append(frozen_record)
+        observed_owners[frozen_owner["id"]]["contributing_inputs"].append(
+            frozen_record
+        )
+        role_inputs["frozen-modules"].append(
+            {
+                "kind": "frozen-mpy",
+                "logical_path": _audit_rp2_logical_path(
+                    frozen_source, repo_root=root, build_root=builds
+                ),
+                "sha256": _sha256_path(frozen_source),
+            }
+        )
+    for owner in owners:
+        _require(
+            bool(observed_owners[owner["id"]]["contributing_inputs"]),
+            "RP2 owner %s has no contributing linked or frozen input"
+            % owner["id"],
+        )
+    frozen_content = target / "frozen_content.c"
+    if not frozen_content.is_file():
+        frozen_content = target / "frozen_content.c"
+    _audit_regular_compile_file(frozen_content, "RP2 frozen content")
+    role_inputs["frozen-modules"].append(
+        {
+            "kind": "frozen-content",
+            "logical_path": _audit_rp2_logical_path(
+                frozen_content, repo_root=root, build_root=builds
+            ),
+            "sha256": _sha256_path(frozen_content),
+        }
+    )
+    role_inputs["linked-inputs"].extend(
+        [
+            {
+                "kind": "linked-elf",
+                "logical_path": _audit_rp2_logical_path(
+                    elf_path, repo_root=root, build_root=builds
+                ),
+                "sha256": _sha256_path(elf_path),
+            },
+            {
+                "kind": "linker-command",
+                "logical_path": _audit_rp2_logical_path(
+                    link_path, repo_root=root, build_root=builds
+                ),
+                "sha256": _sha256_path(link_path),
+            },
+            *retained_board_inputs,
+        ]
+    )
+    versions_lock = root / "firmware" / "versions.lock"
+    role_inputs["arm-gnu-runtime"].append(
+        {
+            "kind": "toolchain-pin",
+            "logical_path": _audit_rp2_logical_path(
+                versions_lock, repo_root=root, build_root=builds
+            ),
+            "sha256": _sha256_path(versions_lock),
+        }
+    )
+    if toolchain_distribution is not None:
+        toolchain_root = root / "firmware" / ".arm-gnu"
+        distribution_inputs = (
+            (
+                "toolchain-distribution",
+                toolchain_root
+                / ".pyble-dist"
+                / toolchain_distribution["archive"]["filename"],
+            ),
+            (
+                "toolchain-release-manifest",
+                toolchain_root
+                / toolchain_distribution["release_manifest"]["path"],
+            ),
+            *(
+                (
+                    "toolchain-frontend",
+                    toolchain_root / frontend["path"],
+                )
+                for frontend in toolchain_distribution["frontends"]
+            ),
+        )
+        role_inputs["arm-gnu-runtime"].extend(
+            {
+                "kind": kind,
+                "logical_path": _audit_rp2_logical_path(
+                    path, repo_root=root, build_root=builds
+                ),
+                "sha256": _sha256_path(path),
+            }
+            for kind, path in distribution_inputs
+        )
+
+    policy_by_id = {owner["id"]: owner for owner in owners}
+    notice_records: list[dict[str, Any]] = []
+    for owner in owners:
+        selected_ids = _audit_rp2_selected_license_ids(owner)
+        selected_texts = [
+            item for item in owner["license_texts"]
+            if item["identifier"] in selected_ids
+        ]
+        for item in selected_texts:
+            logical, path = _audit_rp2_logical_file(
+                item["path"],
+                repo_root=root,
+                build_root=builds,
+                label="RP2 selected license text",
+            )
+            persisted = _audit_rp2_policy_asset_logical(logical)
+            _require(
+                persisted.startswith(("repo/", "build/")),
+                "RP2 selected license lacks a persisted namespace",
+            )
+        if owner["disposition"] != "project-owned":
+            def complete_text(record: dict[str, str]) -> dict[str, str]:
+                _logical, path = _audit_rp2_logical_file(
+                    record["path"],
+                    repo_root=root,
+                    build_root=builds,
+                    label="RP2 notice source",
+                )
+                return {
+                    **({"identifier": record["identifier"]} if "identifier" in record else {}),
+                    "sha256": record["sha256"],
+                    "text": path.read_text(encoding="utf-8", errors="strict"),
+                }
+            notice_records.append(
+                {
+                    "id": owner["id"],
+                    "name": owner["id"],
+                    "version_ref": owner["source_ref"],
+                    "source_url": owner["source_url"],
+                    "spdx_expression": owner["selected_spdx_expression"],
+                    "copyright": owner["copyright"],
+                    "notice_texts": [complete_text(item) for item in owner["notice_files"]],
+                    "license_texts": [complete_text(item) for item in selected_texts],
+                }
+            )
+
+    provenance_path = target / "pyble-build-provenance.json"
+    provenance_digest = _sha256_path(provenance_path)
+    arm_identity = copy.deepcopy(source_identity["arm_gnu_toolchain"])
+    _require(isinstance(arm_identity, dict), "RP2 ARM GNU identity is missing")
+    arm_identity["versions_lock_sha256"] = _sha256_path(versions_lock)
+    persisted_source_identity = {
+        "micropython_commit": source_identity["micropython_commit"],
+        "rp2_port_tree_sha256": source_identity["rp2_port_tree_sha256"],
+        "arm_gnu_toolchain": arm_identity,
+    }
+    role_documents: dict[str, dict[str, Any]] = {}
+    for role in RP2_LICENSE_AUDIT_ROLES:
+        ids = role_owner_ids[role]
+        if role == "frozen-modules":
+            ids.add(project_owners[0]["id"])
+        if role == "arm-gnu-runtime":
+            ids.update(
+                owner["id"]
+                for owner in owners
+                if any(root_item["namespace"] == "arm-gnu-toolchain" for root_item in owner["source_roots"])
+            )
+        licenses = {
+            record["logical_path"]: record
+            for identifier in ids
+            for record in (
+                {
+                    "kind": "license",
+                    "logical_path": _audit_rp2_policy_asset_logical(item["path"]),
+                    "sha256": item["sha256"],
+                }
+                for item in policy_by_id[identifier]["license_texts"]
+                if item["identifier"] in _audit_rp2_selected_license_ids(policy_by_id[identifier])
+            )
+        }
+        _require(bool(role_inputs[role]) and bool(licenses), "RP2 role evidence is incomplete")
+        role_documents[role] = {
+            "schema_version": 1,
+            "profile_id": "rpi-pico2-w",
+            "target": "rpi-pico2-w",
+            "resource_kind": "rp2",
+            "role": role,
+            "build_provenance_sha256": provenance_digest,
+            "source_identity": copy.deepcopy(persisted_source_identity),
+            "inputs": sorted(
+                {item["logical_path"]: item for item in role_inputs[role]}.values(),
+                key=lambda item: (item["kind"], item["logical_path"]),
+            ),
+            "license_inputs": sorted(licenses.values(), key=lambda item: item["logical_path"]),
+        }
+
+    input_paths = {
+        _audit_rp2_logical_path(path, repo_root=root, build_root=builds): path
+        for path in (
+            cache,
+            depend_path,
+            *( (bootstage_depend,) if bootstage_depend.is_file() else () ),
+            link_path,
+            map_path,
+            elf_path,
+            provenance_path,
+            manifest,
+            versions_lock,
+            *frozen_manifests,
+            *link_inputs,
+            *mappings.values(),
+            *(source for _destination, source in frozen_sources),
+            *compiler_evidence_paths,
+            *toolchain_evidence_paths,
+        )
+    }
+    input_paths.update(control_input_paths)
+    for record in retained_board_inputs:
+        logical = record["logical_path"]
+        prefix, _separator, relative = logical.partition("/")
+        input_paths[logical] = (builds if prefix == "build" else root) / relative
+    input_hashes = {
+        logical: _sha256_path(path) for logical, path in sorted(input_paths.items())
+    }
+    semantic_payload = {
+        "input_sha256": input_hashes,
+        "owners": [observed_owners[owner["id"]] for owner in owners],
+        "notice_records": notice_records,
+        "role_documents": role_documents,
+        "generated_object_derivations": sorted(
+            generated, key=lambda item: item["generated_source"]
+        ),
+        "compiler_dependency_closure": compiler_dependency_closure,
+        "toolchain_distribution": toolchain_distribution,
+    }
+    return {
+        "semantic_sha256": _sha256_bytes(_canonical_json_bytes(semantic_payload)),
+        **semantic_payload,
+    }
+
+
+def _audit_merge_release_notices(
+    *,
+    esp_notice: str,
+    rp2_notice_records: list[dict[str, Any]],
+) -> str:
+    """Append deterministic RP2 notices while deduplicating complete texts."""
+
+    _require(isinstance(esp_notice, str) and bool(esp_notice), "ESP notice is empty")
+    lines = [esp_notice.rstrip(), "", "RP2 / Raspberry Pi Pico 2 W", ""]
+    seen_texts: set[str] = set()
+    for record in sorted(rp2_notice_records, key=lambda item: item["id"]):
+        item = _exact_keys(
+            record,
+            {
+                "id", "name", "version_ref", "source_url", "spdx_expression",
+                "copyright", "notice_texts", "license_texts",
+            },
+            "RP2 release notice record",
+        )
+        lines.extend(
+            [
+                "Name: %s" % item["name"],
+                "Version/ref: %s" % item["version_ref"],
+                "Source: %s" % item["source_url"],
+                "License: %s" % item["spdx_expression"],
+                "Copyright: %s" % item["copyright"],
+                "",
+            ]
+        )
+        for text_record in (*item["notice_texts"], *item["license_texts"]):
+            digest = _audit_v060_digest(text_record["sha256"], "RP2 notice text")
+            text_value = text_record["text"]
+            _require(
+                isinstance(text_value, str)
+                and _sha256_bytes(text_value.encode("utf-8")) == digest,
+                "RP2 notice text changed",
+            )
+            if digest in seen_texts:
+                continue
+            seen_texts.add(digest)
+            lines.extend([text_value.rstrip(), ""])
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _audit_compose_v060_license_evidence(
+    *,
+    esp_evidence: Path,
+    destination: Path,
+    build_root: Path,
+    repo_root: Path,
+    esp_notice: str,
+    rp2_observation: dict[str, Any],
+) -> dict[str, Any]:
+    """Compose canonical heterogeneous evidence from two independently replayed audits."""
+
+    _require(not destination.exists(), "v0.6 composition destination exists")
+    esp_receipt = _read_json(
+        esp_evidence / "audit-receipt.json", "ESP license audit receipt"
+    )
+    esp_receipt = _exact_keys(
+        esp_receipt,
+        {
+            "schema_version",
+            "notice_sha256",
+            "input_sha256",
+            "executed_artifacts",
+            "execution_identity",
+            "identities",
+            "evidence_sha256",
+        },
+        "ESP license audit receipt",
+    )
+    _require(
+        esp_receipt["schema_version"] == 1,
+        "v0.6 composition requires schema-1 ESP evidence",
+    )
+    role_documents = rp2_observation["role_documents"]
+    _require(
+        isinstance(role_documents, dict)
+        and list(role_documents) == list(RP2_LICENSE_AUDIT_ROLES),
+        "RP2 role documents are missing or reordered",
+    )
+    notice = _audit_merge_release_notices(
+        esp_notice=esp_notice,
+        rp2_notice_records=rp2_observation["notice_records"],
+    )
+    destination.mkdir()
+    (destination / "raw").mkdir()
+    (destination / "spdx").mkdir()
+    for profile_id in V060_RELEASE_PROFILE_ORDER[:-1]:
+        for role in ("application", "bootloader"):
+            candidates = [
+                esp_evidence / "raw" / ("%s--%s.%s" % (profile_id, role, extension))
+                for extension in LICENSE_AUDIT_RAW_EXTENSIONS.values()
+            ]
+            selected = [path for path in candidates if path.is_file()]
+            _require(
+                len(selected) == 1,
+                "v0.6 composition lacks one exact ESP raw document",
+            )
+            shutil.copyfile(selected[0], destination / "raw" / selected[0].name)
+            reviewed_name = "%s--%s.spdx.json" % (profile_id, role)
+            reviewed = _read_json(
+                esp_evidence / "spdx" / reviewed_name,
+                "reviewed ESP SPDX evidence",
+            )
+            (destination / "spdx" / reviewed_name).write_bytes(
+                _canonical_json_bytes(reviewed)
+            )
+    rp2_dir = destination / "rp2"
+    rp2_dir.mkdir()
+    for role in RP2_LICENSE_AUDIT_ROLES:
+        (rp2_dir / ("rpi-pico2-w--%s.json" % role)).write_bytes(
+            _canonical_json_bytes(role_documents[role])
+        )
+
+    profiles: list[dict[str, Any]] = []
+    identities: list[dict[str, str]] = []
+    for contract in _release_license_inventory_for_version("0.6.0"):
+        profile_id = contract["profile_id"]
+        target = contract["target"]
+        provenance = Path(build_root) / target / "pyble-build-provenance.json"
+        provenance_digest = _sha256_path(provenance)
+        roles: list[dict[str, str]] = []
+        if contract["resource_kind"] == "esp-idf":
+            for role in contract["roles"]:
+                raw_matches = sorted(
+                    (destination / "raw").glob("%s--%s.*" % (profile_id, role))
+                )
+                _require(len(raw_matches) == 1, "ESP raw evidence path is ambiguous")
+                raw_relative = raw_matches[0].relative_to(destination).as_posix()
+                reviewed_relative = "spdx/%s--%s.spdx.json" % (profile_id, role)
+                roles.append(
+                    {
+                        "role": role,
+                        "raw_path": raw_relative,
+                        "raw_sha256": _sha256_path(destination / raw_relative),
+                        "reviewed_path": reviewed_relative,
+                        "reviewed_sha256": _sha256_path(
+                            destination / reviewed_relative
+                        ),
+                    }
+                )
+                identities.append({"profile_id": profile_id, "role": role})
+        else:
+            for role in contract["roles"]:
+                relative = "rp2/rpi-pico2-w--%s.json" % role
+                roles.append(
+                    {
+                        "role": role,
+                        "evidence_path": relative,
+                        "evidence_sha256": _sha256_path(destination / relative),
+                    }
+                )
+                identities.append({"profile_id": profile_id, "role": role})
+        profiles.append(
+            {
+                "profile_id": profile_id,
+                "target": target,
+                "resource_kind": contract["resource_kind"],
+                "build_provenance_sha256": provenance_digest,
+                "roles": roles,
+            }
+        )
+    notice_digest = _sha256_bytes(notice.encode("utf-8"))
+    inventory = {
+        "schema_version": 1,
+        "firmware_version": "0.6.0",
+        "profile_order": list(V060_RELEASE_PROFILE_ORDER),
+        "notice_sha256": notice_digest,
+        "profiles": profiles,
+    }
+    inventory_path = destination / "release-inventory.json"
+    inventory_path.write_bytes(_canonical_json_bytes(inventory))
+    evidence_hashes = {
+        path.relative_to(destination).as_posix(): _sha256_path(path)
+        for path in sorted(destination.rglob("*"))
+        if path.is_file()
+    }
+    rp2_inputs = rp2_observation["input_sha256"]
+    _require(
+        isinstance(rp2_inputs, dict)
+        and bool(rp2_inputs)
+        and all(
+            isinstance(key, str)
+            and bool(key)
+            and isinstance(value, str)
+            and SHA256_RE.fullmatch(value) is not None
+            for key, value in rp2_inputs.items()
+        ),
+        "RP2 semantic input receipt is invalid",
+    )
+    input_hashes = {
+        **esp_receipt["input_sha256"],
+        "semantic/rp2-license-closure": rp2_observation["semantic_sha256"],
+        **{
+            "rp2-input/%s" % key: value
+            for key, value in sorted(rp2_inputs.items())
+        },
+    }
+    receipt = {
+        "schema_version": 2,
+        "notice_sha256": notice_digest,
+        "input_sha256": dict(sorted(input_hashes.items())),
+        "executed_artifacts": esp_receipt["executed_artifacts"],
+        "execution_identity": esp_receipt["execution_identity"],
+        "identities": identities,
+        "evidence_sha256": dict(sorted(evidence_hashes.items())),
+        "release_inventory_path": "release-inventory.json",
+        "release_inventory_sha256": _sha256_path(inventory_path),
+    }
+    (destination / "audit-receipt.json").write_bytes(_canonical_json_bytes(receipt))
+    return {
+        "third_party_licenses": notice,
+        "input_sha256": receipt["input_sha256"],
+    }
+
+
 def _audit_ar_member_payloads(path: Path) -> dict[str, list[bytes]]:
     """Return ordered member payloads from a validated System V/GNU/BSD ar."""
 
@@ -9279,6 +12431,57 @@ def _audit_v060_input_records(
     return normalized
 
 
+def _audit_verify_rp2_semantic_replay(
+    *,
+    receipt_inputs: dict[str, str],
+    persisted_documents: dict[str, dict[str, Any]],
+    build_root: Path,
+    repo_root: Path,
+    provenance: dict[str, Any],
+) -> dict[str, Any]:
+    """Repeat the private RP2 closure observation at public validation time."""
+
+    root = Path(repo_root)
+    builds = Path(build_root)
+    tool_lock = _audit_load_tool_lock(root)
+    policy = _audit_load_rp2_license_policy(root, builds, tool_lock)
+    replay = _audit_observe_rp2_license_inputs(
+        build_root=builds,
+        repo_root=root,
+        provenance=provenance,
+        policy=policy,
+    )
+    _require(
+        all(
+            owner.get("disposition") != "review-required"
+            for owner in replay["owners"]
+        ),
+        "RP2 public release policy still contains review-required owners",
+    )
+    semantic_key = "semantic/rp2-license-closure"
+    replay_inputs = {
+        semantic_key: replay["semantic_sha256"],
+        **{
+            "rp2-input/%s" % name: digest
+            for name, digest in sorted(replay["input_sha256"].items())
+        },
+    }
+    persisted_inputs = {
+        name: digest
+        for name, digest in receipt_inputs.items()
+        if name == semantic_key or name.startswith("rp2-input/")
+    }
+    _require(
+        persisted_inputs == replay_inputs,
+        "RP2 semantic release receipt differs from live build/policy inputs",
+    )
+    _require(
+        persisted_documents == replay["role_documents"],
+        "RP2 persisted role evidence differs from live semantic replay",
+    )
+    return replay
+
+
 def _audit_verify_release_inventory_evidence(
     *,
     evidence_dir: Path,
@@ -9456,6 +12659,7 @@ def _audit_verify_release_inventory_evidence(
     rp2_source_identity: dict[str, Any] | None = None
     rp2_provenance: dict[str, Any] | None = None
     rp2_link_text: str | None = None
+    rp2_documents: dict[str, dict[str, Any]] = {}
     for profile, contract in zip(profiles, contracts):
         profile_id = contract["profile_id"]
         profile = _exact_keys(
@@ -9677,6 +12881,7 @@ def _audit_verify_release_inventory_evidence(
                     "rp2" in rp2_link_text.lower(),
                     "RP2 linker command lacks the RP2 port input",
                 )
+            rp2_documents[role] = copy.deepcopy(document)
             expected_identities.append({"profile_id": profile_id, "role": role})
 
     _require(
@@ -9729,6 +12934,21 @@ def _audit_verify_release_inventory_evidence(
         )
         and ("-lgcc" in link_text_lower or "libgcc" in link_text_lower),
         "RP2 linker command lacks one reviewed dependency/runtime input",
+    )
+    _require(
+        "semantic/rp2-license-closure" in receipt["input_sha256"]
+        and any(
+            name.startswith("rp2-input/")
+            for name in receipt["input_sha256"]
+        ),
+        "v0.6 receipt omits mandatory RP2 semantic replay inputs",
+    )
+    _audit_verify_rp2_semantic_replay(
+        receipt_inputs=receipt["input_sha256"],
+        persisted_documents=rp2_documents,
+        build_root=builds,
+        repo_root=root,
+        provenance=rp2_provenance,
     )
     return inventory
 
@@ -12429,6 +15649,7 @@ def _audit_v2_release_notice_records(
         in (
             tuple(HISTORICAL_V042_RELEASE_PROFILE_ORDER),
             tuple(V05_RELEASE_PROFILE_ORDER),
+            tuple(V060_RELEASE_PROFILE_ORDER[:-1]),
             tuple(V060_RELEASE_PROFILE_ORDER),
         ),
         "license notice profile scope differs from a supported release era",
@@ -12603,6 +15824,7 @@ def _audit_v2_release_frozen_names(
         in (
             tuple(HISTORICAL_V042_RELEASE_PROFILE_ORDER),
             tuple(V05_RELEASE_PROFILE_ORDER),
+            tuple(V060_RELEASE_PROFILE_ORDER[:-1]),
             tuple(V060_RELEASE_PROFILE_ORDER),
         ),
         "frozen notice profile scope differs from a supported release era",
@@ -12866,7 +16088,12 @@ def _audit_release_licenses_v2(
     )
 
     firmware_version = _read_lock(repo_root)["pyble"]["agent_version"]
-    release_profile_order = _release_profile_order_for_version(firmware_version)
+    source_profile_order = _release_profile_order_for_version(firmware_version)
+    release_profile_order = (
+        V060_RELEASE_PROFILE_ORDER[:-1]
+        if tuple(source_profile_order) == V060_RELEASE_PROFILE_ORDER
+        else source_profile_order
+    )
     frozen_union = _audit_v2_release_frozen_names(
         repo_root=repo_root,
         build_root=build_root,
@@ -12989,6 +16216,104 @@ def audit_release_licenses(
         "excluded CVE input must remain semantically empty",
     )
     policy = _audit_load_policy(root, lock)
+    firmware_version = _read_lock(root)["pyble"]["agent_version"]
+    if tuple(_release_profile_order_for_version(firmware_version)) == (
+        V060_RELEASE_PROFILE_ORDER
+    ):
+        _require(
+            not evidence.exists() and evidence.parent.is_dir(),
+            "v0.6 license evidence destination must not exist",
+        )
+        rp2_policy = _audit_load_rp2_license_policy(root, builds, lock)
+        rp2_provenance = _read_json(
+            builds / "rpi-pico2-w" / "pyble-build-provenance.json",
+            "RP2 build provenance",
+        )
+        initial_rp2 = _audit_observe_rp2_license_inputs(
+            build_root=builds,
+            repo_root=root,
+            provenance=rp2_provenance,
+            policy=rp2_policy,
+        )
+        _require(
+            all(
+                owner.get("disposition") != "review-required"
+                for owner in initial_rp2.get("owners", [])
+            ),
+            "RP2 release license policy still contains review-required owners",
+        )
+        temporary = Path(
+            tempfile.mkdtemp(
+                prefix=".%s-v060-license-" % evidence.name,
+                dir=evidence.parent,
+            )
+        )
+        try:
+            esp_evidence = temporary / "esp"
+            esp_result = _audit_release_licenses_v2(
+                build_root=builds,
+                repo_root=root,
+                evidence_dir=esp_evidence,
+                runner=runner,
+                lock=lock,
+                policy=policy,
+                excluded=excluded,
+            )
+            final_rp2 = _audit_observe_rp2_license_inputs(
+                build_root=builds,
+                repo_root=root,
+                provenance=rp2_provenance,
+                policy=rp2_policy,
+            )
+            required_semantics = {
+                "semantic_sha256",
+                "input_sha256",
+                "owners",
+                "notice_records",
+                "role_documents",
+                "generated_object_derivations",
+            }
+            _require(
+                required_semantics <= set(initial_rp2)
+                and required_semantics <= set(final_rp2)
+                and SHA256_RE.fullmatch(initial_rp2["semantic_sha256"])
+                is not None,
+                "RP2 structural evidence lacks semantic observation",
+            )
+            _require(
+                initial_rp2 == final_rp2,
+                "RP2 semantic license inputs changed during ESP audit",
+            )
+            _audit_verify_esp_release_evidence(
+                notice=esp_result["third_party_licenses"],
+                evidence_dir=esp_evidence,
+                build_root=builds,
+                repo_root=root,
+            )
+            composed = temporary / "composed"
+            result = _audit_compose_v060_license_evidence(
+                esp_evidence=esp_evidence,
+                destination=composed,
+                build_root=builds,
+                repo_root=root,
+                esp_notice=esp_result["third_party_licenses"],
+                rp2_observation=initial_rp2,
+            )
+            _audit_verify_release_inventory_evidence(
+                evidence_dir=composed,
+                build_root=builds,
+                repo_root=root,
+                notice=result["third_party_licenses"],
+                firmware_version="0.6.0",
+            )
+            _atomic_publish_no_replace(
+                composed,
+                evidence,
+                "v0.6 license evidence",
+            )
+            return result
+        finally:
+            shutil.rmtree(temporary, ignore_errors=True)
     return _audit_release_licenses_v2(
         build_root=builds,
         repo_root=root,
@@ -12999,221 +16324,6 @@ def audit_release_licenses(
         excluded=excluded,
     )
 
-    neopixel_tree = (
-        root
-        / "firmware"
-        / "upstream"
-        / "micropython"
-        / "lib"
-        / "micropython-lib"
-        / "micropython"
-        / "drivers"
-        / "led"
-        / "neopixel"
-    )
-    source_tree_matches = [
-        entry for entry in entries if entry["match"]["kind"] == "source-tree"
-    ]
-    for entry in source_tree_matches:
-        if "path" not in entry["match"] and "neopixel" in json.dumps(entry).lower():
-            _require(
-                _audit_sha256_tree(neopixel_tree) == entry["match"]["sha256"],
-                "reviewed NeoPixel source-tree digest changed",
-            )
-
-    inventories: dict[tuple[str, str], dict[str, Any]] = {}
-    frozen_union: set[str] = set()
-    for profile_id, target, idf_target in LICENSE_AUDIT_PROFILES:
-        manifest_path = root / "firmware" / "board_overlays" / target / "manifest.py"
-        frozen_path = builds / target / "frozen_content.c"
-        frozen_union.update(
-            _audit_manifest_inventory(
-                manifest_path,
-                frozen_path,
-                repo_root=root,
-                target=target,
-            )
-        )
-        for role in LICENSE_AUDIT_ROLES:
-            inventories[(profile_id, role)] = _audit_inventory_role(
-                profile_id=profile_id,
-                target=target,
-                idf_target=idf_target,
-                role=role,
-                repo_root=root,
-                build_root=builds,
-                entries=entries,
-            )
-
-    initial_input_hashes = _audit_input_hashes(
-        repo_root=root,
-        build_root=builds,
-        lock=lock,
-        entries=entries,
-        inventories=inventories,
-    )
-    documents: dict[tuple[str, str], dict[str, Any]] = {}
-    raw_documents: dict[tuple[str, str], tuple[str, bytes]] = {}
-    execution_identity: dict[str, Any] | None = None
-    with tempfile.TemporaryDirectory(prefix="pyble-license-audit-") as temporary_raw:
-        temporary = Path(temporary_raw)
-        home = temporary / "home"
-        xdg = temporary / "xdg-cache"
-        pip_cache = temporary / "pip-cache"
-        raw_outputs = temporary / "raw"
-        raw_outputs.mkdir()
-        environment = {
-            key: os.environ[key]
-            for key in ("LANG", "LC_ALL", "LC_CTYPE", "PATH", "TZ")
-            if key in os.environ
-        }
-        environment.update(
-            {
-                "HOME": str(home),
-                "XDG_CACHE_HOME": str(xdg),
-                "PIP_CACHE_DIR": str(pip_cache),
-                "PIP_CONFIG_FILE": os.devnull,
-                "PIP_NO_INDEX": "1",
-                "PYTHONDONTWRITEBYTECODE": "1",
-                "PYTHONHASHSEED": "0",
-                "PYTHONNOUSERSITE": "1",
-                "SBOM_EXCLUDED_CVES_FILE": str(excluded.resolve()),
-                "TMPDIR": str(temporary),
-            }
-        )
-        for profile_id, target, _idf_target in LICENSE_AUDIT_PROFILES:
-            for role in LICENSE_AUDIT_ROLES:
-                inventory = inventories[(profile_id, role)]
-                output = raw_outputs / ("%s--%s.spdx.json" % (profile_id, role))
-                command = [
-                    sys.executable,
-                    "-m",
-                    "esp_idf_sbom",
-                    "create",
-                    str(inventory["description_path"].resolve()),
-                    "--output-file",
-                    str(output),
-                    "--rem-unused",
-                    "--rem-config",
-                    "--file-tags",
-                ]
-                try:
-                    completed = runner(
-                        command,
-                        cwd=inventory["description_path"].parent,
-                        env=environment,
-                        check=True,
-                        network_disabled=True,
-                    )
-                except Exception as exc:
-                    raise ReleaseError(
-                        "offline esp-idf-sbom execution failed for %s/%s"
-                        % (profile_id, role)
-                    ) from exc
-                _require(
-                    getattr(completed, "returncode", 0) == 0,
-                    "offline esp-idf-sbom returned failure",
-                )
-                _audit_exact_executed_artifacts(
-                    getattr(completed, "executed_artifacts", None),
-                    lock["_artifact_hashes"],
-                )
-                isolated = getattr(completed, "network_isolated", None)
-                _require(
-                    isolated is True,
-                    "SBOM runner did not prove network isolation",
-                )
-                current_identity = _audit_validate_execution_identity(
-                    getattr(completed, "execution_identity", None),
-                    artifact_hashes=lock["_artifact_hashes"],
-                )
-                if execution_identity is None:
-                    execution_identity = current_identity
-                else:
-                    _require(
-                        current_identity == execution_identity,
-                        "SBOM execution identity changed during the profile/role audit",
-                    )
-                try:
-                    output_mode = output.lstat().st_mode
-                    raw_value = output.read_bytes()
-                except OSError as exc:
-                    raise ReleaseError(
-                        "esp-idf-sbom output is missing or unreadable"
-                    ) from exc
-                _require(
-                    stat_module.S_ISREG(output_mode)
-                    and not stat_module.S_ISLNK(output_mode)
-                    and bool(raw_value),
-                    "esp-idf-sbom output must be a non-empty regular file",
-                )
-                raw_document, source_format = _audit_read_spdx_output(
-                    output,
-                    "esp-idf-sbom output",
-                )
-                try:
-                    validated_raw_value = output.read_bytes()
-                except OSError as exc:
-                    raise ReleaseError(
-                        "esp-idf-sbom output disappeared during validation"
-                    ) from exc
-                _require(
-                    validated_raw_value == raw_value,
-                    "esp-idf-sbom output changed while it was being validated",
-                )
-                validated = _audit_validate_spdx_document(
-                    raw_document,
-                    profile_id=profile_id,
-                    role=role,
-                    entries=entries,
-                    approved_license_refs=approved,
-                    source_format=source_format,
-                    expected_document_name=inventory["description"].get("project_name"),
-                    repo_root=root,
-                )
-                raw_documents[(profile_id, role)] = (source_format, raw_value)
-                documents[(profile_id, role)] = _audit_normalize_spdx(
-                    validated,
-                    profile_id=profile_id,
-                    role=role,
-                    repo_root=root,
-                    build_root=builds,
-                )
-
-    _require(
-        len(documents) == len(LICENSE_AUDIT_PROFILES) * len(LICENSE_AUDIT_ROLES),
-        "license audit did not produce every profile/role SPDX inventory",
-    )
-    _require(
-        execution_identity is not None,
-        "license audit retained no execution identity",
-    )
-    notice = _audit_notice(entries, repo_root=root, frozen_names=frozen_union)
-    final_input_hashes = _audit_input_hashes(
-        repo_root=root,
-        build_root=builds,
-        lock=lock,
-        entries=entries,
-        inventories=inventories,
-    )
-    _require(
-        final_input_hashes == initial_input_hashes,
-        "license audit inputs changed during the profile/role audit",
-    )
-    _audit_write_evidence(
-        evidence,
-        documents=documents,
-        raw_documents=raw_documents,
-        notice=notice,
-        input_hashes=initial_input_hashes,
-        artifact_hashes=lock["_artifact_hashes"],
-        execution_identity=execution_identity,
-    )
-    return {
-        "third_party_licenses": notice,
-        "input_sha256": initial_input_hashes,
-    }
-
 
 def audit_release_licenses_from_lock(
     *,
@@ -13223,94 +16333,80 @@ def audit_release_licenses_from_lock(
     wheelhouse: Path,
     notice_output: Path,
 ) -> dict[str, Any]:
-    """Run the production offline audit and atomically publish its outputs."""
+    """Audit into one private tree, then publish evidence and notice together."""
 
     builds = Path(build_root).absolute()
     root = Path(repo_root).absolute()
     wheels = Path(wheelhouse).absolute()
     evidence = Path(evidence_dir).absolute()
     notice_path = Path(notice_output).absolute()
+    publication = evidence.parent
     _require(builds.is_dir(), "license audit build root is missing")
     _require(root.is_dir(), "repository root is missing")
     _require(wheels.is_dir(), "release-tool wheelhouse is missing")
     _require(
-        evidence.parent.is_dir() and not evidence.parent.is_symlink(),
-        "license evidence parent is missing or unsafe",
+        evidence.name == "evidence"
+        and notice_path.name == "THIRD_PARTY_LICENSES.txt"
+        and notice_path.parent == publication,
+        "license publication requires sibling evidence and notice outputs",
     )
     _require(
-        not evidence.exists() and not evidence.is_symlink(),
-        "production license evidence path must be new",
-    )
-    _require(
-        notice_path.parent.is_dir()
-        and not notice_path.parent.is_symlink()
-        and not notice_path.is_symlink()
-        and (not notice_path.exists() or notice_path.is_file()),
-        "license notice output path is unsafe",
+        publication.parent.is_dir()
+        and not publication.parent.is_symlink()
+        and not publication.exists()
+        and not publication.is_symlink(),
+        "license publication destination already exists or is unsafe",
     )
 
-    with tempfile.TemporaryDirectory(
-        prefix=".pyble-license-publication-",
-        dir=evidence.parent,
-    ) as staging_raw:
-        staging_root = Path(staging_raw)
+    staging_root = Path(
+        tempfile.mkdtemp(
+            prefix=".%s-staging-" % publication.name,
+            dir=publication.parent,
+        )
+    )
+    try:
         staging_evidence = staging_root / "evidence"
-        temporary_notice: Path | None = None
-        try:
-            with LockedWheelSbomRunner(
-                repo_root=root,
+        staging_notice = staging_root / "THIRD_PARTY_LICENSES.txt"
+        with LockedWheelSbomRunner(
+            repo_root=root,
+            build_root=builds,
+            wheelhouse=wheels,
+        ) as runner:
+            result = audit_release_licenses(
                 build_root=builds,
-                wheelhouse=wheels,
-            ) as runner:
-                result = audit_release_licenses(
-                    build_root=builds,
-                    repo_root=root,
-                    evidence_dir=staging_evidence,
-                    runner=runner,
-                )
-            notice = result.get("third_party_licenses")
-            _require(
-                isinstance(notice, str)
-                and bool(notice)
-                and notice.endswith("\n")
-                and NOTICE_CANDIDATE_MARKER not in notice,
-                "production license audit returned an invalid notice",
+                repo_root=root,
+                evidence_dir=staging_evidence,
+                runner=runner,
             )
-            descriptor, temporary_raw = tempfile.mkstemp(
-                prefix=".%s." % notice_path.name,
-                suffix=".tmp",
-                dir=notice_path.parent,
-            )
-            temporary_notice = Path(temporary_raw)
-            with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
-                handle.write(notice)
-                handle.flush()
-                os.fsync(handle.fileno())
-            _require(
-                staging_evidence.is_dir(),
-                "production license audit retained no evidence",
-            )
-            _atomic_publish_no_replace(
-                staging_evidence,
-                evidence,
-                "license evidence",
-            )
-            try:
-                os.replace(temporary_notice, notice_path)
-                temporary_notice = None
-            except OSError:
-                os.replace(evidence, staging_evidence)
-                raise
-        except OSError as exc:
-            raise ReleaseError(
-                "cannot atomically publish license audit outputs"
-            ) from exc
-        finally:
-            if temporary_notice is not None:
-                try:
-                    temporary_notice.unlink()
-                except FileNotFoundError:
-                    pass
+        notice = result.get("third_party_licenses")
+        _require(
+            isinstance(notice, str)
+            and bool(notice)
+            and notice.endswith("\n")
+            and NOTICE_CANDIDATE_MARKER not in notice,
+            "production license audit returned an invalid notice",
+        )
+        _require(
+            staging_evidence.is_dir(),
+            "production license audit retained no evidence",
+        )
+        descriptor = os.open(
+            staging_notice,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+            0o600,
+        )
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(notice)
+            handle.flush()
+            os.fsync(handle.fileno())
+        _fsync_release_tree(staging_root, "license evidence/notice staging")
+        _atomic_publish_no_replace(
+            staging_root,
+            publication,
+            "license evidence/notice publication",
+        )
+    finally:
+        shutil.rmtree(staging_root, ignore_errors=True)
     return {
         "third_party_licenses": notice_path.read_text(encoding="utf-8"),
         "evidence_dir": evidence,
@@ -13417,7 +16513,7 @@ def _audit_verify_packaged_build(
         )
 
 
-def _audit_verify_release_evidence(
+def _audit_verify_esp_release_evidence(
     *,
     notice: str,
     evidence_dir: Path | None,
@@ -13439,26 +16535,12 @@ def _audit_verify_release_evidence(
         if release is not None
         else _read_lock(root)["pyble"]["agent_version"]
     )
-    release_profile_order = _release_profile_order_for_version(firmware_version)
-    if tuple(release_profile_order) == V060_RELEASE_PROFILE_ORDER:
-        _audit_verify_release_inventory_evidence(
-            evidence_dir=evidence,
-            build_root=builds,
-            repo_root=root,
-            notice=notice,
-            firmware_version=firmware_version,
-        )
-        if bundle is not None or release is not None:
-            _require(
-                bundle is not None and release is not None,
-                "packaged-build evidence comparison is incomplete",
-            )
-            _audit_verify_packaged_build(
-                bundle=Path(bundle),
-                release=release,
-                build_root=builds,
-            )
-        return
+    source_profile_order = _release_profile_order_for_version(firmware_version)
+    release_profile_order = (
+        V060_RELEASE_PROFILE_ORDER[:-1]
+        if tuple(source_profile_order) == V060_RELEASE_PROFILE_ORDER
+        else source_profile_order
+    )
     _require(
         not evidence.is_symlink(),
         "license review evidence root must not be a symlink",
@@ -13760,6 +16842,160 @@ def _audit_verify_release_evidence(
             bundle=Path(bundle),
             release=release,
             build_root=builds,
+        )
+
+
+def _audit_verify_release_evidence(
+    *,
+    notice: str,
+    evidence_dir: Path | None,
+    build_root: Path | None,
+    repo_root: Path | None,
+    bundle: Path | None = None,
+    release: dict[str, Any] | None = None,
+) -> None:
+    """Replay the source-era license evidence and optional packaged bytes."""
+
+    _require(
+        evidence_dir is not None and build_root is not None and repo_root is not None,
+        "audited release validation requires fresh license evidence, build root, "
+        "and repository root",
+    )
+    root = Path(repo_root)
+    firmware_version = (
+        release["identity"]["version"]
+        if release is not None
+        else _read_lock(root)["pyble"]["agent_version"]
+    )
+    if tuple(_release_profile_order_for_version(firmware_version)) == (
+        V060_RELEASE_PROFILE_ORDER
+    ):
+        if bundle is not None or release is not None:
+            _require(
+                bundle is not None and release is not None,
+                "packaged-build evidence comparison is incomplete",
+            )
+            _audit_verify_packaged_build(
+                bundle=Path(bundle),
+                release=release,
+                build_root=Path(build_root),
+            )
+        _audit_verify_release_inventory_evidence(
+            evidence_dir=Path(evidence_dir),
+            build_root=Path(build_root),
+            repo_root=root,
+            notice=notice,
+            firmware_version=firmware_version,
+        )
+        _audit_verify_v060_esp_semantic_replay(
+            notice=notice,
+            evidence_dir=Path(evidence_dir),
+            build_root=Path(build_root),
+            repo_root=root,
+        )
+        return
+    _audit_verify_esp_release_evidence(
+        notice=notice,
+        evidence_dir=Path(evidence_dir),
+        build_root=Path(build_root),
+        repo_root=root,
+        bundle=bundle,
+        release=release,
+    )
+
+
+def _audit_verify_v060_esp_semantic_replay(
+    *,
+    notice: str,
+    evidence_dir: Path,
+    build_root: Path,
+    repo_root: Path,
+) -> None:
+    """Replay the complete ESP verifier against the ESP half of v0.6 evidence."""
+
+    evidence = Path(evidence_dir)
+    receipt = _audit_v060_canonical_json(
+        evidence / "audit-receipt.json",
+        "v0.6 license audit receipt",
+    )
+    receipt = _exact_keys(
+        receipt,
+        {
+            "schema_version",
+            "notice_sha256",
+            "input_sha256",
+            "executed_artifacts",
+            "execution_identity",
+            "identities",
+            "evidence_sha256",
+            "release_inventory_path",
+            "release_inventory_sha256",
+        },
+        "v0.6 license audit receipt",
+    )
+    _require(receipt["schema_version"] == 2, "v0.6 ESP replay receipt changed")
+    marker = "\n\nRP2 / Raspberry Pi Pico 2 W\n"
+    _require(
+        isinstance(notice, str) and notice.count(marker) == 1,
+        "v0.6 notice lacks its exact ESP/RP2 boundary",
+    )
+    esp_notice = notice.split(marker, 1)[0].rstrip() + "\n"
+    esp_evidence_hashes = {
+        relative: digest
+        for relative, digest in receipt["evidence_sha256"].items()
+        if relative.startswith(("raw/", "spdx/"))
+    }
+    esp_identities = sorted(
+        (
+            identity
+            for identity in receipt["identities"]
+            if identity.get("profile_id") in V060_RELEASE_PROFILE_ORDER[:-1]
+        ),
+        key=lambda item: (item["profile_id"], item["role"]),
+    )
+    esp_inputs = {
+        name: digest
+        for name, digest in receipt["input_sha256"].items()
+        if name != "semantic/rp2-license-closure"
+        and not name.startswith("rp2-input/")
+    }
+    with tempfile.TemporaryDirectory(
+        prefix="pyble-v060-esp-semantic-replay-"
+    ) as raw:
+        replay_evidence = Path(raw) / "evidence"
+        (replay_evidence / "raw").mkdir(parents=True)
+        (replay_evidence / "spdx").mkdir()
+        for relative, digest in sorted(esp_evidence_hashes.items()):
+            source = _audit_repo_file(
+                evidence,
+                relative,
+                "v0.6 ESP semantic evidence",
+            )
+            _require(
+                _sha256_path(source) == digest,
+                "v0.6 ESP semantic evidence changed",
+            )
+            destination = replay_evidence / relative
+            destination.write_bytes(
+                _read_regular_file_bytes(source, "v0.6 ESP semantic evidence")
+            )
+        esp_receipt = {
+            "schema_version": 1,
+            "notice_sha256": _sha256_bytes(esp_notice.encode("utf-8")),
+            "input_sha256": esp_inputs,
+            "executed_artifacts": receipt["executed_artifacts"],
+            "execution_identity": receipt["execution_identity"],
+            "identities": esp_identities,
+            "evidence_sha256": dict(sorted(esp_evidence_hashes.items())),
+        }
+        (replay_evidence / "audit-receipt.json").write_bytes(
+            _canonical_json_bytes(esp_receipt)
+        )
+        _audit_verify_esp_release_evidence(
+            notice=esp_notice,
+            evidence_dir=replay_evidence,
+            build_root=Path(build_root),
+            repo_root=Path(repo_root),
         )
 
 

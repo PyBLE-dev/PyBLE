@@ -164,9 +164,37 @@
       "source_url": "https://github.com/bluekitchen/btstack.git"
     },
     {
-      "copyright": "Copyright (C) 2019-2022 George Robotics Pty Ltd",
+      "copyright": "Exact selected Bluetooth firmware copyright/licensor unresolved",
       "disposition": "review-required",
-      "id": "cyw43-driver",
+      "id": "cyw43-bt-firmware-payload",
+      "license_texts": [
+        {
+          "identifier": "LicenseRef-PyBLE-CYW43-Noncommercial",
+          "path": "firmware/licenses/evidence/rp2/micropython/lib/cyw43-driver/LICENSE",
+          "sha256": "0ce42360898b7c3f168317b559d4783b55c892751580c2a12c76b548aa5858fb"
+        },
+        {
+          "identifier": "LicenseRef-PyBLE-CYW43-Raspberry-Pi",
+          "path": "firmware/upstream/micropython/lib/cyw43-driver/LICENSE.RP",
+          "sha256": "67aca4f10d9edf489871f64cd8f0dcd6c5df3e4ce75bd39e1914fc54f99e40b3"
+        }
+      ],
+      "notice_files": [],
+      "selected_spdx_expression": "(LicenseRef-PyBLE-CYW43-Noncommercial OR LicenseRef-PyBLE-CYW43-Raspberry-Pi)",
+      "source_ref": "055d64274b014dd7b1c2fc94d26e8a18face7124",
+      "source_roots": [
+        {
+          "namespace": "micropython",
+          "path": "lib/cyw43-driver/firmware/cyw43_btfw_43439.h"
+        }
+      ],
+      "source_spdx_expression": "(LicenseRef-PyBLE-CYW43-Noncommercial OR LicenseRef-PyBLE-CYW43-Raspberry-Pi)",
+      "source_url": "https://github.com/georgerobotics/cyw43-driver.git"
+    },
+    {
+      "copyright": "Copyright (C) 2019-2022 George Robotics Pty Ltd",
+      "disposition": "allow",
+      "id": "cyw43-driver-code",
       "license_texts": [
         {
           "identifier": "LicenseRef-PyBLE-CYW43-Noncommercial",
@@ -192,6 +220,67 @@
       "source_url": "https://github.com/georgerobotics/cyw43-driver.git"
     },
     {
+      "copyright": "Copyright Broadcom Corporation",
+      "disposition": "review-required",
+      "id": "cyw43-nvram-payload",
+      "license_texts": [
+        {
+          "identifier": "LicenseRef-PyBLE-CYW43-Noncommercial",
+          "path": "firmware/licenses/evidence/rp2/micropython/lib/cyw43-driver/LICENSE",
+          "sha256": "0ce42360898b7c3f168317b559d4783b55c892751580c2a12c76b548aa5858fb"
+        },
+        {
+          "identifier": "LicenseRef-PyBLE-CYW43-Raspberry-Pi",
+          "path": "firmware/upstream/micropython/lib/cyw43-driver/LICENSE.RP",
+          "sha256": "67aca4f10d9edf489871f64cd8f0dcd6c5df3e4ce75bd39e1914fc54f99e40b3"
+        }
+      ],
+      "notice_files": [
+        {
+          "path": "firmware/licenses/notices/rp2/cyw43-nvram.txt",
+          "sha256": "512fa4108d243f1ee2f32f679d3997dab67002df7cf02f2aca806bd2f3d208df"
+        }
+      ],
+      "selected_spdx_expression": "(LicenseRef-PyBLE-CYW43-Noncommercial OR LicenseRef-PyBLE-CYW43-Raspberry-Pi)",
+      "source_ref": "055d64274b014dd7b1c2fc94d26e8a18face7124",
+      "source_roots": [
+        {
+          "namespace": "micropython",
+          "path": "lib/cyw43-driver/firmware/wifi_nvram_43439.h"
+        }
+      ],
+      "source_spdx_expression": "(LicenseRef-PyBLE-CYW43-Noncommercial OR LicenseRef-PyBLE-CYW43-Raspberry-Pi)",
+      "source_url": "https://github.com/georgerobotics/cyw43-driver.git"
+    },
+    {
+      "copyright": "Exact selected Wi-Fi/CLM firmware copyright/licensor unresolved",
+      "disposition": "review-required",
+      "id": "cyw43-wifi-clm-payload",
+      "license_texts": [
+        {
+          "identifier": "LicenseRef-PyBLE-CYW43-Noncommercial",
+          "path": "firmware/licenses/evidence/rp2/micropython/lib/cyw43-driver/LICENSE",
+          "sha256": "0ce42360898b7c3f168317b559d4783b55c892751580c2a12c76b548aa5858fb"
+        },
+        {
+          "identifier": "LicenseRef-PyBLE-CYW43-Raspberry-Pi",
+          "path": "firmware/upstream/micropython/lib/cyw43-driver/LICENSE.RP",
+          "sha256": "67aca4f10d9edf489871f64cd8f0dcd6c5df3e4ce75bd39e1914fc54f99e40b3"
+        }
+      ],
+      "notice_files": [],
+      "selected_spdx_expression": "(LicenseRef-PyBLE-CYW43-Noncommercial OR LicenseRef-PyBLE-CYW43-Raspberry-Pi)",
+      "source_ref": "055d64274b014dd7b1c2fc94d26e8a18face7124",
+      "source_roots": [
+        {
+          "namespace": "micropython",
+          "path": "lib/cyw43-driver/firmware/wb43439A0_7_95_49_00_combined.h"
+        }
+      ],
+      "source_spdx_expression": "(LicenseRef-PyBLE-CYW43-Noncommercial OR LicenseRef-PyBLE-CYW43-Raspberry-Pi)",
+      "source_url": "https://github.com/georgerobotics/cyw43-driver.git"
+    },
+    {
       "copyright": "Copyright (C) 1993 by Sun Microsystems, Inc.; Copyright (c) 2013-2026 Damien P. George",
       "disposition": "allow",
       "id": "libm-fdlibm-sun",
@@ -210,7 +299,7 @@
       "notice_files": [
         {
           "path": "firmware/licenses/notices/rp2/libm-fdlibm.txt",
-          "sha256": "a59df5f3908d27c5bc016f4b28b0b330f874dc0bd87277516bbb78cf90dbd8b1"
+          "sha256": "2cc41aa28a9045578afbdf4b53cafdc5fc8cad46a352869a565502f04464b8ca"
         }
       ],
       "selected_spdx_expression": "LicenseRef-PyBLE-Fdlibm-Sun AND MIT",
@@ -227,6 +316,10 @@
         {
           "namespace": "micropython",
           "path": "lib/libm/erf_lgamma.c"
+        },
+        {
+          "namespace": "micropython",
+          "path": "lib/libm/fdlibm.h"
         },
         {
           "namespace": "micropython",
@@ -363,7 +456,7 @@
         },
         {
           "path": "firmware/licenses/notices/rp2/libm-fdlibm.txt",
-          "sha256": "a59df5f3908d27c5bc016f4b28b0b330f874dc0bd87277516bbb78cf90dbd8b1"
+          "sha256": "2cc41aa28a9045578afbdf4b53cafdc5fc8cad46a352869a565502f04464b8ca"
         }
       ],
       "selected_spdx_expression": "LicenseRef-PyBLE-Fdlibm-Sun AND MIT",
@@ -812,6 +905,46 @@
       "source_url": "https://github.com/PyBLE-dev/PyBLE"
     },
     {
+      "copyright": "Copyright (c) 2007-2009 Russ Cox, Google Inc.; Copyright 2014 Paul Sokolovsky; MicroPython contributors",
+      "disposition": "allow",
+      "id": "re1.5-bsd",
+      "license_texts": [
+        {
+          "identifier": "BSD-3-Clause",
+          "path": "firmware/licenses/evidence/rp2/re1.5/v0.8.2/LICENSE",
+          "sha256": "df5c6cd09a47c05bd8529b3188b0daa5f5ffbd5c73398fd76bafb64b75663fab"
+        }
+      ],
+      "notice_files": [
+        {
+          "path": "firmware/licenses/notices/rp2/re1.5-bsd.txt",
+          "sha256": "4736c9db06d75eafa9d07f2b5555e20ec46b9cc8b87c36c4e1104758dfbcacf5"
+        }
+      ],
+      "selected_spdx_expression": "BSD-3-Clause",
+      "source_ref": "e0e9fbb17ed6fd06bb76e266ae554784c9c80804",
+      "source_roots": [
+        {
+          "namespace": "micropython",
+          "path": "lib/re1.5/charclass.c"
+        },
+        {
+          "namespace": "micropython",
+          "path": "lib/re1.5/compilecode.c"
+        },
+        {
+          "namespace": "micropython",
+          "path": "lib/re1.5/re1.5.h"
+        },
+        {
+          "namespace": "micropython",
+          "path": "lib/re1.5/recursiveloop.c"
+        }
+      ],
+      "source_spdx_expression": "BSD-3-Clause",
+      "source_url": "https://github.com/micropython/micropython"
+    },
+    {
       "copyright": "Copyright (c) 2018 hathach (tinyusb.org)",
       "disposition": "allow",
       "id": "tinyusb",
@@ -833,6 +966,54 @@
       ],
       "source_spdx_expression": "MIT",
       "source_url": "https://github.com/hathach/tinyusb"
+    },
+    {
+      "copyright": "Copyright (c) 1998-2003 Joergen Ibsen / Jibz; Copyright (C) 1995-1998 Jean-loup Gailly and Mark Adler; Copyright (c) 2014-2018 Paul Sokolovsky; Copyright (c) 2023 Jim Mussared",
+      "disposition": "allow",
+      "id": "uzlib-zlib",
+      "license_texts": [
+        {
+          "identifier": "Zlib",
+          "path": "firmware/licenses/texts/Zlib.txt",
+          "sha256": "bfb1112d49db5b1daecdfef24bd7e2f3ea0bafb33aa67aa0ab51e2bf8407c03d"
+        }
+      ],
+      "notice_files": [
+        {
+          "path": "firmware/licenses/notices/rp2/uzlib-zlib.txt",
+          "sha256": "32745fdb77191c2f1d911e67c4f6c972bd70a1f6f1988ba3071a4c8a32fb5174"
+        }
+      ],
+      "selected_spdx_expression": "Zlib",
+      "source_ref": "e0e9fbb17ed6fd06bb76e266ae554784c9c80804",
+      "source_roots": [
+        {
+          "namespace": "micropython",
+          "path": "lib/uzlib/adler32.c"
+        },
+        {
+          "namespace": "micropython",
+          "path": "lib/uzlib/crc32.c"
+        },
+        {
+          "namespace": "micropython",
+          "path": "lib/uzlib/header.c"
+        },
+        {
+          "namespace": "micropython",
+          "path": "lib/uzlib/tinflate.c"
+        },
+        {
+          "namespace": "micropython",
+          "path": "lib/uzlib/uzlib.h"
+        },
+        {
+          "namespace": "micropython",
+          "path": "lib/uzlib/uzlib_conf.h"
+        }
+      ],
+      "source_spdx_expression": "Zlib",
+      "source_url": "https://github.com/micropython/micropython"
     }
   ],
   "target": "rpi-pico2-w"

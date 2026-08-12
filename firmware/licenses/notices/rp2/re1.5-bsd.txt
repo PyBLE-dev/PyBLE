@@ -1,0 +1,15 @@
+Exact retained-source provenance for the selected MicroPython re1.5 compiler
+dependencies at commit e0e9fbb17ed6fd06bb76e266ae554784c9c80804.
+The complete upstream BSD-3-Clause grant is retained from re1.5 tag v0.8.2,
+commit f2c151e24f7f7bfb270534c39cac37de21847958.
+
+The following observed files are assigned to this owner:
+
+lib/re1.5/charclass.c
+lib/re1.5/compilecode.c
+lib/re1.5/re1.5.h
+lib/re1.5/recursiveloop.c
+
+Copyright 2007-2009 Russ Cox. All Rights Reserved.
+Copyright 2014 Paul Sokolovsky.
+Additional changes are retained in MicroPython's exact source history.
