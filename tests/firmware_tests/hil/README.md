@@ -114,7 +114,7 @@ python3 oi1_profile_bench.py \
   --module-marking ESP32-WROOM-32 \
   --device-flash-capacity-bytes 4194304 \
   --device-psram-capacity-bytes 0 \
-  --firmware-sha256 <64-lowercase-hex> \
+  --install-sha256 <merged-firmware.bin-64-lowercase-hex> \
   --manifest-sha256 <64-lowercase-hex> \
   --ble-backend "Bleak CoreBluetooth <version>" \
   --ble-adapter "Mac built-in Bluetooth <description>" \
@@ -165,6 +165,8 @@ the exact Pico identity:
 --operator-reset
 --firmware-bin <oi1-inputs>/rpi-pico2-w/firmware.bin
 --firmware-uf2 <oi1-inputs>/rpi-pico2-w/firmware.uf2
+--firmware-sha256 <raw-firmware.bin-64-lowercase-hex>
+--install-sha256 <firmware.uf2-64-lowercase-hex>
 --device-flash-capacity-bytes 4194304
 --device-psram-capacity-bytes 0
 ```
@@ -220,7 +222,7 @@ python3 oi1_profile_bench.py \
   --module-marking ESP32-WROOM-32 \
   --device-flash-capacity-bytes 4194304 \
   --device-psram-capacity-bytes 0 \
-  --firmware-sha256 <64-lowercase-hex> \
+  --install-sha256 <merged-firmware.bin-64-lowercase-hex> \
   --manifest-sha256 <64-lowercase-hex> \
   --ble-backend "Bleak CoreBluetooth <version>" \
   --ble-adapter "Mac built-in Bluetooth <description>" \
