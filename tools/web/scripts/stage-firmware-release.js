@@ -47,6 +47,7 @@ const historicalProfileTable = [
   {
     id: "esp32-4mb",
     label: "ESP32 · 4 MiB flash",
+    target: "esp32",
     chipFamily: "ESP32",
     offset: 4096,
     flashSizeBytes: 4 * 1024 * 1024,
@@ -57,6 +58,7 @@ const historicalProfileTable = [
   {
     id: "esp32-s3-n16r8",
     label: "ESP32-S3 · N16R8",
+    target: "esp32-s3",
     chipFamily: "ESP32-S3",
     offset: 0,
     flashSizeBytes: 16 * 1024 * 1024,
@@ -66,7 +68,7 @@ const historicalProfileTable = [
   },
 ];
 
-const profileTable = [
+const sourceProfileTable = [
   historicalProfileTable[0],
   {
     ...historicalProfileTable[1],
@@ -75,6 +77,7 @@ const profileTable = [
   {
     id: "waveshare-esp32-s3-lcd-147b",
     label: "Waveshare ESP32-S3-LCD-1.47B · N16R8",
+    target: "waveshare-esp32-s3-lcd-147b",
     chipFamily: "ESP32-S3",
     offset: 0,
     flashSizeBytes: 16 * 1024 * 1024,
@@ -83,6 +86,42 @@ const profileTable = [
     psram: { required: true, sizeBytes: 8 * 1024 * 1024, type: "octal" },
   },
 ];
+
+const v060EspProfileTable = [
+  ...sourceProfileTable,
+  {
+    id: "esp32-c3-4mb",
+    label: "ESP32-C3 revision v0.3+ · 4 MiB flash",
+    target: "esp32-c3",
+    chipFamily: "ESP32-C3",
+    offset: 0,
+    flashSizeBytes: 4 * 1024 * 1024,
+    flashFrequencyHz: 80_000_000,
+    siliconRevision: { minimumFull: 3, maximumFull: 199 },
+    psram: { required: false, sizeBytes: 0, type: "not-required" },
+  },
+];
+
+const pico2WProfile = {
+  id: "rpi-pico2-w",
+  label: "Raspberry Pi Pico 2 W",
+  target: "rpi-pico2-w",
+  board: "RPI_PICO2_W",
+  imageLimitBytes: 1_572_864,
+};
+
+/** @param {string} version */
+function versionUsesFiveProfiles(version) {
+  const match = canonicalSemverPattern.exec(version);
+  if (!match) {
+    return false;
+  }
+  const [major, minor, patch] = version
+    .split(/[+-]/, 1)[0]
+    .split(".")
+    .map(Number);
+  return major > 0 || minor > 6 || (minor === 6 && patch >= 0);
+}
 
 /** @param {string} version */
 function releaseContract(version) {
@@ -92,9 +131,15 @@ function releaseContract(version) {
       profiles: historicalProfileTable,
     };
   }
+  if (versionUsesFiveProfiles(version)) {
+    return {
+      schemaVersion: 4,
+      profiles: [...v060EspProfileTable, pico2WProfile],
+    };
+  }
   return {
     schemaVersion: 3,
-    profiles: profileTable,
+    profiles: sourceProfileTable,
   };
 }
 
@@ -442,21 +487,36 @@ function validateProvenance(value) {
  * @param {number} schemaVersion
  */
 function canonicalSchemaForVersion(canonicalSchema, schemaVersion) {
-  if (schemaVersion === 3) {
+  if (schemaVersion === 4) {
     return canonicalSchema;
   }
-  if (schemaVersion !== 2) {
+  if (schemaVersion !== 2 && schemaVersion !== 3) {
     failure("release schema version is unsupported");
   }
   const historicalSchema = structuredClone(canonicalSchema);
-  historicalSchema.title = "PyBLE firmware release metadata v2";
-  historicalSchema.properties.schema_version.const = 2;
-  historicalSchema.properties.profiles.minItems = 2;
-  historicalSchema.properties.profiles.maxItems = 2;
-  historicalSchema.properties.profiles.items.properties.id.enum = [
-    "esp32-4mb",
-    "esp32-s3-n16r8",
-  ];
+  const profileIds =
+    schemaVersion === 2
+      ? ["esp32-4mb", "esp32-s3-n16r8"]
+      : ["esp32-4mb", "esp32-s3-n16r8", "waveshare-esp32-s3-lcd-147b"];
+  const espProfile = structuredClone(
+    historicalSchema.properties.profiles.prefixItems[0],
+  );
+  espProfile.required = espProfile.required.filter(
+    /** @param {string} key */ (key) =>
+      key !== "target" && key !== "provisioning_kind",
+  );
+  delete espProfile.properties.target;
+  delete espProfile.properties.provisioning_kind;
+  espProfile.properties.id = { enum: profileIds };
+  espProfile.properties.chip_family = { enum: ["ESP32", "ESP32-S3"] };
+  historicalSchema.title = `PyBLE firmware release metadata v${schemaVersion}`;
+  historicalSchema.properties.schema_version.const = schemaVersion;
+  historicalSchema.properties.profiles = {
+    type: "array",
+    minItems: profileIds.length,
+    maxItems: profileIds.length,
+    items: espProfile,
+  };
   return historicalSchema;
 }
 
@@ -617,7 +677,7 @@ async function verifyInstall(
 /**
  * @param {string} bundleDirectory
  * @param {string} version
- * @param {(typeof profileTable)[number]} profile
+ * @param {(typeof v060EspProfileTable)[number]} profile
  * @param {{ path: string }} artifact
  */
 async function verifyManifest(bundleDirectory, version, profile, artifact) {
@@ -743,10 +803,92 @@ async function validateReleaseBundle(
   const statuses = [];
   for (const [index, profile] of contract.profiles.entries()) {
     const value = asObject(release.profiles[index], `${profile.id} profile`);
+    if (profile.id === "rpi-pico2-w") {
+      const picoProfile = /** @type {typeof pico2WProfile} */ (profile);
+      exactKeys(
+        value,
+        [
+          "id",
+          "target",
+          "provisioning_kind",
+          "board",
+          "hil_status",
+          "install",
+          "resource_image",
+        ],
+        `${profile.id} profile`,
+      );
+      equal(value.id, profile.id, `${profile.id} ID`);
+      equal(value.target, profile.target, `${profile.id} target`);
+      equal(
+        value.provisioning_kind,
+        "verified-uf2-bootsel",
+        `${profile.id} provisioning`,
+      );
+      equal(value.board, picoProfile.board, `${profile.id} board`);
+      const status = asString(value.hil_status, `${profile.id} HIL status`);
+      if (status !== "pending" && status !== "passed") {
+        failure(`${profile.id} HIL status is invalid`);
+      }
+      statuses.push(status);
+
+      const install = asObject(value.install, `${profile.id} install image`);
+      exactKeys(
+        install,
+        ["path", "size", "sha256", "format"],
+        `${profile.id} install image`,
+      );
+      equal(install.format, "uf2", `${profile.id} install format`);
+      await verifyArtifact(
+        bundleDirectory,
+        {
+          path: install.path,
+          size: install.size,
+          sha256: install.sha256,
+        },
+        `${profile.id}/firmware.uf2`,
+        `${profile.id} install image`,
+      );
+
+      const resource = asObject(
+        value.resource_image,
+        `${profile.id} resource image`,
+      );
+      exactKeys(
+        resource,
+        ["path", "size", "sha256", "image_limit_bytes"],
+        `${profile.id} resource image`,
+      );
+      equal(
+        resource.image_limit_bytes,
+        picoProfile.imageLimitBytes,
+        `${profile.id} resource image limit`,
+      );
+      const rawImage = await verifyArtifact(
+        bundleDirectory,
+        {
+          path: resource.path,
+          size: resource.size,
+          sha256: resource.sha256,
+        },
+        `${profile.id}/firmware.bin`,
+        `${profile.id} resource image`,
+      );
+      if (rawImage.size > picoProfile.imageLimitBytes) {
+        failure(`${profile.id} resource image exceeds its frozen limit`);
+      }
+      continue;
+    }
+
+    const schema4 = contract.schemaVersion === 4;
+    const espProfile = /** @type {(typeof v060EspProfileTable)[number]} */ (
+      profile
+    );
     exactKeys(
       value,
       [
         "id",
+        ...(schema4 ? ["target", "provisioning_kind"] : []),
         "chip_family",
         "requirements",
         "flash",
@@ -759,7 +901,15 @@ async function validateReleaseBundle(
       `${profile.id} profile`,
     );
     equal(value.id, profile.id, `${profile.id} ID`);
-    equal(value.chip_family, profile.chipFamily, `${profile.id} family`);
+    if (schema4) {
+      equal(value.target, profile.target, `${profile.id} target`);
+      equal(
+        value.provisioning_kind,
+        "esp-web-serial",
+        `${profile.id} provisioning`,
+      );
+    }
+    equal(value.chip_family, espProfile.chipFamily, `${profile.id} family`);
 
     const requirements = asObject(
       value.requirements,
@@ -772,25 +922,25 @@ async function validateReleaseBundle(
     );
     equal(
       requirements.flash_size_bytes,
-      profile.flashSizeBytes,
+      espProfile.flashSizeBytes,
       `${profile.id} flash size`,
     );
     const psram = asObject(requirements.psram, `${profile.id} PSRAM`);
     exactKeys(psram, ["required", "size_bytes", "type"], `${profile.id} PSRAM`);
-    equal(psram.required, profile.psram.required, `${profile.id} PSRAM`);
+    equal(psram.required, espProfile.psram.required, `${profile.id} PSRAM`);
     equal(
       psram.size_bytes,
-      profile.psram.sizeBytes,
+      espProfile.psram.sizeBytes,
       `${profile.id} PSRAM size`,
     );
-    equal(psram.type, profile.psram.type, `${profile.id} PSRAM type`);
+    equal(psram.type, espProfile.psram.type, `${profile.id} PSRAM type`);
 
     const flash = asObject(value.flash, `${profile.id} flash`);
     exactKeys(flash, ["mode", "frequency_hz"], `${profile.id} flash`);
     equal(flash.mode, "dio", `${profile.id} flash mode`);
     equal(
       flash.frequency_hz,
-      profile.flashFrequencyHz,
+      espProfile.flashFrequencyHz,
       `${profile.id} flash frequency`,
     );
     const revision = asObject(
@@ -804,12 +954,12 @@ async function validateReleaseBundle(
     );
     equal(
       revision.minimum_full,
-      profile.siliconRevision.minimumFull,
+      espProfile.siliconRevision.minimumFull,
       `${profile.id} minimum silicon revision`,
     );
     equal(
       revision.maximum_full,
-      profile.siliconRevision.maximumFull,
+      espProfile.siliconRevision.maximumFull,
       `${profile.id} maximum silicon revision`,
     );
 
@@ -824,12 +974,12 @@ async function validateReleaseBundle(
       `${profile.id}/manifest.json`,
       `${profile.id} manifest`,
     );
-    await verifyManifest(bundleDirectory, version, profile, manifest);
+    await verifyManifest(bundleDirectory, version, espProfile, manifest);
     await verifyInstall(
       bundleDirectory,
       value.install,
       `${profile.id}/firmware.bin`,
-      profile.offset,
+      espProfile.offset,
       `${profile.id} install image`,
     );
 
@@ -840,7 +990,7 @@ async function validateReleaseBundle(
       {
         role: "bootloader",
         path: `${profile.id}/bootloader.bin`,
-        offset: profile.offset,
+        offset: espProfile.offset,
       },
       {
         role: "partition-table",
@@ -928,16 +1078,43 @@ async function validateReleaseBundle(
     recoveryPath: `/firmware/v${version}/RECOVERY.md`,
     profiles: contract.profiles.map((profile) => {
       const root = `/firmware/v${version}/${profile.id}`;
+      if (profile.id === "rpi-pico2-w") {
+        return {
+          id: profile.id,
+          label: profile.label,
+          target: profile.target,
+          provisioningKind: "verified-uf2-bootsel",
+          firmwarePath: `${root}/firmware.uf2`,
+        };
+      }
+      const espProfile = /** @type {(typeof v060EspProfileTable)[number]} */ (
+        profile
+      );
+      if (contract.schemaVersion === 4) {
+        return {
+          id: espProfile.id,
+          label: espProfile.label,
+          target: espProfile.target,
+          provisioningKind: "esp-web-serial",
+          chipFamily: espProfile.chipFamily,
+          manifestPath: `${root}/manifest.json`,
+          firmwarePath: `${root}/firmware.bin`,
+          offset: espProfile.offset,
+          siliconRevision: espProfile.siliconRevision,
+          flashSizeBytes: espProfile.flashSizeBytes,
+          psram: espProfile.psram,
+        };
+      }
       return {
-        id: profile.id,
-        label: profile.label,
-        chipFamily: profile.chipFamily,
+        id: espProfile.id,
+        label: espProfile.label,
+        chipFamily: espProfile.chipFamily,
         manifestPath: `${root}/manifest.json`,
         firmwarePath: `${root}/firmware.bin`,
-        offset: profile.offset,
-        siliconRevision: profile.siliconRevision,
-        flashSizeBytes: profile.flashSizeBytes,
-        psram: profile.psram,
+        offset: espProfile.offset,
+        siliconRevision: espProfile.siliconRevision,
+        flashSizeBytes: espProfile.flashSizeBytes,
+        psram: espProfile.psram,
       };
     }),
   };

@@ -11,6 +11,7 @@ import {
   hasExactFirmwareProfileDescriptors,
   isExactPublicBetaFirmwareRelease,
   releaseIncludesWaveshareLcd147b,
+  firmwareVersionUsesFiveProfiles,
   type FirmwareProfileDescriptor,
   type FirmwareProfileId,
   type FirmwareReleaseDescriptor,
@@ -142,6 +143,12 @@ function profileDescription(profile: FirmwareProfileDescriptor) {
   if (profile.id === "waveshare-esp32-s3-lcd-147b") {
     return "Exact B-version board · 16 MiB flash · 8 MiB Octal PSRAM · bundled ST7789 display runtime and fresh-install splash";
   }
+  if (profile.id === "esp32-c3-4mb") {
+    return "ESP32-C3 · revision v0.3+ · 4 MiB flash · no PSRAM required";
+  }
+  if (profile.id === "rpi-pico2-w") {
+    return "Raspberry Pi Pico 2 W · verified UF2 download · BOOTSEL copy";
+  }
   return "ESP32 · 4 MiB flash · no PSRAM required";
 }
 
@@ -243,13 +250,25 @@ function FlashStatusForRelease({
   const capabilities = providedCapabilities ?? detectedCapabilities;
   const verificationAttempt = useRef(0);
   const artifactFetchCleanup = useRef<(() => void) | null>(null);
+  const verifiedDownloadUrl = useRef<string | null>(null);
+
+  function clearVerifiedResources() {
+    artifactFetchCleanup.current?.();
+    artifactFetchCleanup.current = null;
+    if (verifiedDownloadUrl.current?.startsWith("blob:")) {
+      URL.revokeObjectURL?.(verifiedDownloadUrl.current);
+    }
+    verifiedDownloadUrl.current = null;
+  }
 
   useEffect(() => {
     verificationAttempt.current += 1;
     return () => {
       verificationAttempt.current += 1;
       artifactFetchCleanup.current?.();
-      artifactFetchCleanup.current = null;
+      if (verifiedDownloadUrl.current?.startsWith("blob:")) {
+        URL.revokeObjectURL?.(verifiedDownloadUrl.current);
+      }
     };
   }, [release]);
   const [selectedId, setSelectedId] = useState<FirmwareProfileId | null>(null);
@@ -295,6 +314,7 @@ function FlashStatusForRelease({
     return null;
   }
   const activeRelease = release;
+  const heterogeneous = firmwareVersionUsesFiveProfiles(activeRelease.version);
 
   if (!capabilities) {
     return (
@@ -314,7 +334,13 @@ function FlashStatusForRelease({
     );
   }
 
-  const capability = capabilityFailure(capabilities);
+  const capability = heterogeneous
+    ? !capabilities.secureContext
+      ? "Open this page over HTTPS before verifying firmware."
+      : !capabilities.webCrypto
+        ? "Web Crypto verification is not available in this browser."
+        : null
+    : capabilityFailure(capabilities);
   if (capability) {
     return (
       <section
@@ -337,18 +363,27 @@ function FlashStatusForRelease({
   const selectedProfile = activeRelease.profiles.find(
     ({ id }) => id === selectedId,
   );
+  const selectedCapability =
+    heterogeneous &&
+    selectedProfile?.provisioningKind === "esp-web-serial" &&
+    !capabilities.webSerial
+      ? "This ESP target requires a current desktop Chromium browser with Web Serial support."
+      : null;
+  const profileConsentItems =
+    selectedProfile?.provisioningKind === "verified-uf2-bootsel"
+      ? consentItems.filter(({ id }) => id !== "port")
+      : [...consentItems];
   const requiredConsentItems =
     selectedProfile?.id === "waveshare-esp32-s3-lcd-147b"
-      ? [...consentItems, exactBoardConsentItem]
-      : consentItems;
+      ? [...profileConsentItems, exactBoardConsentItem]
+      : profileConsentItems;
   const everyConsent = requiredConsentItems.every(({ id }) => consents[id]);
   const candidate = activeRelease.deployment === "candidate";
   const publicBeta = activeRelease.deployment === "public-beta";
 
   function chooseProfile(profileId: FirmwareProfileId) {
     verificationAttempt.current += 1;
-    artifactFetchCleanup.current?.();
-    artifactFetchCleanup.current = null;
+    clearVerifiedResources();
     setSelectedId(profileId);
     setConsents({
       profile: false,
@@ -365,8 +400,7 @@ function FlashStatusForRelease({
 
   function updateConsent(id: ConsentId, checked: boolean) {
     verificationAttempt.current += 1;
-    artifactFetchCleanup.current?.();
-    artifactFetchCleanup.current = null;
+    clearVerifiedResources();
     setConsents((current) => ({ ...current, [id]: checked }));
     setPhase("idle");
     setVerified(null);
@@ -374,19 +408,33 @@ function FlashStatusForRelease({
   }
 
   async function startVerification() {
-    if (!selectedId || !everyConsent) {
+    if (!selectedId || !everyConsent || selectedCapability) {
       return;
     }
     const attempt = ++verificationAttempt.current;
     const requestedProfileId = selectedId;
-    artifactFetchCleanup.current?.();
-    artifactFetchCleanup.current = null;
+    clearVerifiedResources();
     setPhase("verifying");
     setVerified(null);
     setFailure(null);
     try {
       const result = await verifyProfile(activeRelease, requestedProfileId);
       if (attempt !== verificationAttempt.current) {
+        if (result.downloadUrl?.startsWith("blob:")) {
+          URL.revokeObjectURL?.(result.downloadUrl);
+        }
+        return;
+      }
+      if (result.provisioningKind === "verified-uf2-bootsel") {
+        if (
+          !result.verifiedFirmwareBytes ||
+          !result.downloadUrl?.startsWith("blob:")
+        ) {
+          throw new Error("Verified Pico 2 W firmware has no in-memory UF2");
+        }
+        verifiedDownloadUrl.current = result.downloadUrl;
+        setVerified(result);
+        setPhase("verified");
         return;
       }
       const cleanupFetch = installArtifactFetch(
@@ -409,8 +457,7 @@ function FlashStatusForRelease({
       setVerified(result);
       setPhase("verified");
     } catch (error) {
-      artifactFetchCleanup.current?.();
-      artifactFetchCleanup.current = null;
+      clearVerifiedResources();
       if (attempt !== verificationAttempt.current) {
         return;
       }
@@ -454,27 +501,47 @@ function FlashStatusForRelease({
             : "Select and verify the exact module profile before installation."}
       </div>
 
-      <div
-        className="profile-options"
-        role="radiogroup"
-        aria-label="Select the exact module profile"
-      >
-        {activeRelease.profiles.map((profile) => (
-          <label key={profile.id} className="profile-option">
-            <input
-              type="radio"
-              name="firmware-profile"
-              value={profile.id}
-              checked={selectedId === profile.id}
-              onChange={() => chooseProfile(profile.id)}
-            />
-            <span>
-              <strong>{profile.id}</strong>
-              {profileDescription(profile)}
-            </span>
-          </label>
-        ))}
-      </div>
+      {heterogeneous ? (
+        <label className="profile-select" htmlFor="qualified-firmware-target">
+          <span>Choose a firmware target</span>
+          <select
+            id="qualified-firmware-target"
+            value={selectedId ?? ""}
+            onChange={(event) =>
+              chooseProfile(event.target.value as FirmwareProfileId)
+            }
+          >
+            <option value="">Select your exact board…</option>
+            {activeRelease.profiles.map((profile) => (
+              <option key={profile.id} value={profile.id}>
+                {profile.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : (
+        <div
+          className="profile-options"
+          role="radiogroup"
+          aria-label="Select the exact module profile"
+        >
+          {activeRelease.profiles.map((profile) => (
+            <label key={profile.id} className="profile-option">
+              <input
+                type="radio"
+                name="firmware-profile"
+                value={profile.id}
+                checked={selectedId === profile.id}
+                onChange={() => chooseProfile(profile.id)}
+              />
+              <span>
+                <strong>{profile.id}</strong>
+                {profileDescription(profile)}
+              </span>
+            </label>
+          ))}
+        </div>
+      )}
 
       <p className="flash-warning">
         The <strong>esp32-s3-n16r8</strong> image is not for every ESP32-S3
@@ -491,7 +558,7 @@ function FlashStatusForRelease({
       ) : null}
 
       {selectedProfile ? (
-        <div
+        <fieldset
           className="consent-list"
           aria-label="Installation acknowledgements"
         >
@@ -502,17 +569,32 @@ function FlashStatusForRelease({
                 checked={consents[id]}
                 onChange={(event) => updateConsent(id, event.target.checked)}
               />
-              <span>{label}</span>
+              <span>
+                {id === "erase" &&
+                selectedProfile.provisioningKind === "verified-uf2-bootsel"
+                  ? "I understand copying the UF2 overwrites the installed board firmware."
+                  : label}
+              </span>
             </label>
           ))}
-        </div>
+        </fieldset>
+      ) : null}
+
+      {selectedCapability ? (
+        <p role="alert" className="verification-error">
+          {selectedCapability}
+        </p>
       ) : null}
 
       {selectedProfile && phase !== "verified" ? (
         <button
           className="button button--primary verify-button"
           type="button"
-          disabled={!everyConsent || phase === "verifying"}
+          disabled={
+            !everyConsent ||
+            Boolean(selectedCapability) ||
+            phase === "verifying"
+          }
           onClick={startVerification}
         >
           Verify firmware for {selectedProfile.label}
@@ -521,7 +603,9 @@ function FlashStatusForRelease({
 
       {phase === "verifying" ? (
         <div role="status" className="verification-state">
-          Verifying firmware metadata, manifest, and merged image…
+          {selectedProfile?.provisioningKind === "verified-uf2-bootsel"
+            ? "Verifying firmware metadata and the exact UF2 bytes…"
+            : "Verifying firmware metadata, manifest, and merged image…"}
         </div>
       ) : null}
 
@@ -549,8 +633,9 @@ function FlashStatusForRelease({
             </div>
           </dl>
           <p>
-            Installation erases the device. Keep stable power connected and
-            select only the serial port for this board.
+            {verified.provisioningKind === "verified-uf2-bootsel"
+              ? "Keep stable power connected while copying the verified firmware."
+              : "Installation erases the device. Keep stable power connected and select only the serial port for this board."}
           </p>
           {publicBeta ? (
             <p className="flash-warning">
@@ -562,17 +647,38 @@ function FlashStatusForRelease({
           <a className="text-link" href={activeRelease.recoveryPath}>
             {`Version ${verified.version} recovery instructions`}
           </a>
-          <esp-web-install-button manifest={verified.manifestPath}>
-            <button
-              className="button button--primary"
-              type="button"
-              slot="activate"
-            >
-              {publicBeta
-                ? `Install PyBLE ${verified.version} beta`
-                : `Install PyBLE ${verified.version}`}
-            </button>
-          </esp-web-install-button>
+          {verified.provisioningKind === "verified-uf2-bootsel" &&
+          verified.downloadUrl ? (
+            <>
+              <a
+                className="button button--primary"
+                href={verified.downloadUrl}
+                download={`pyble-${verified.version}-rpi-pico2-w.uf2`}
+              >
+                Download verified UF2
+              </a>
+              <ol className="preview-steps">
+                <li>Disconnect the Pico 2 W.</li>
+                <li>Hold BOOTSEL while reconnecting USB.</li>
+                <li>Copy the verified UF2 to the mounted RP2350 volume.</li>
+                <li>
+                  Wait for reboot and confirm the PyBLE BLE advertisement.
+                </li>
+              </ol>
+            </>
+          ) : (
+            <esp-web-install-button manifest={verified.manifestPath}>
+              <button
+                className="button button--primary"
+                type="button"
+                slot="activate"
+              >
+                {publicBeta
+                  ? `Install PyBLE ${verified.version} beta`
+                  : `Install PyBLE ${verified.version}`}
+              </button>
+            </esp-web-install-button>
+          )}
         </div>
       ) : null}
     </section>

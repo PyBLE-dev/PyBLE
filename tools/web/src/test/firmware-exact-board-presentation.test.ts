@@ -4,6 +4,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  firmwareProfileDescriptors,
   type FirmwareReleaseDescriptor,
   isExactPublicBetaFirmwareRelease,
   releaseIncludesWaveshareLcd147b,
@@ -27,6 +28,12 @@ function releaseAtVersion(version: string): FirmwareReleaseDescriptor {
   release.releaseJson.path = `/firmware/v${version}/release.json`;
   release.schemaPath = `/firmware/v${version}/release.schema.json`;
   release.recoveryPath = `/firmware/v${version}/RECOVERY.md`;
+  if (version === "0.6.0" || version === "1.0.0") {
+    release.profiles = structuredClone(
+      firmwareProfileDescriptors(version),
+    ) as unknown as typeof release.profiles;
+    return release as unknown as FirmwareReleaseDescriptor;
+  }
   for (const profile of release.profiles) {
     profile.manifestPath = profile.manifestPath.replace(
       "/firmware/v0.5.1/",

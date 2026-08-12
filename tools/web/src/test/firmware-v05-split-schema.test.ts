@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Part of PyBLE (https://pyble.dev) — see /LICENSE.
 
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
-
 import { describe, expect, it } from "vitest";
 
 import {
@@ -12,13 +9,13 @@ import {
 } from "@/test/fixtures/firmware-release";
 
 describe("split v0.5 release schema", () => {
-  it("uses schema 3 and the exact ordered three-profile table", async () => {
-    const schema = JSON.parse(
-      await readFile(
-        join(process.cwd(), "src", "lib", "firmware-release-schema.json"),
-        "utf8",
-      ),
-    ) as {
+  it("preserves schema 3 and the exact ordered three-profile table", () => {
+    const fixture = createCurrentFirmwareReleaseFixture();
+    const schemaBytes = fixture.files.get("release.schema.json");
+    if (!schemaBytes) {
+      throw new Error("Current fixture is missing release.schema.json");
+    }
+    const schema = JSON.parse(new TextDecoder().decode(schemaBytes)) as {
       properties: {
         schema_version: { const: number };
         profiles: {
@@ -39,11 +36,9 @@ describe("split v0.5 release schema", () => {
       "esp32-s3-n16r8",
       "waveshare-esp32-s3-lcd-147b",
     ]);
-    expect(
-      createCurrentFirmwareReleaseFixture().release.profiles.map(
-        ({ id }) => id,
-      ),
-    ).toEqual(schema.properties.profiles.items.properties.id.enum);
+    expect(fixture.release.profiles.map(({ id }) => id)).toEqual(
+      schema.properties.profiles.items.properties.id.enum,
+    );
   });
 
   it("preserves immutable v0.4.2 as schema 2 with exactly two profiles", () => {

@@ -373,7 +373,7 @@ describe("external firmware bundle staging", () => {
   );
 
   it("accepts canonical prerelease and build SemVer during staging", async () => {
-    const version = "1.2.3-alpha.1+build.01";
+    const version = "0.5.1-alpha.1+build.01";
     const fixture = rewriteFixtureVersion(
       createCurrentFirmwareReleaseFixture(),
       version,
@@ -435,7 +435,7 @@ describe("external firmware bundle staging", () => {
     }
   });
 
-  it("freezes release schema version 3 to exactly the three prospective profiles", async () => {
+  it("freezes release schema version 4 to the exact five-profile order", async () => {
     const schema = JSON.parse(
       await readFile(
         join(process.cwd(), "src", "lib", "firmware-release-schema.json"),
@@ -447,26 +447,27 @@ describe("external firmware bundle staging", () => {
         profiles?: {
           minItems?: unknown;
           maxItems?: unknown;
-          items?: {
-            properties?: {
-              id?: { enum?: unknown[] };
-            };
-          };
+          prefixItems?: Array<{ properties?: { id?: { const?: unknown } } }>;
         };
       };
     };
 
-    expect(schema.properties?.schema_version?.const).toBe(3);
+    expect(schema.properties?.schema_version?.const).toBe(4);
     expect(schema.properties?.profiles).toMatchObject({
-      minItems: 3,
-      maxItems: 3,
+      minItems: 5,
+      maxItems: 5,
     });
-    expect(schema.properties?.profiles?.items?.properties?.id?.enum).toEqual([
+    expect(
+      schema.properties?.profiles?.prefixItems?.map(
+        ({ properties }) => properties?.id?.const,
+      ),
+    ).toEqual([
       "esp32-4mb",
       "esp32-s3-n16r8",
       "waveshare-esp32-s3-lcd-147b",
+      "esp32-c3-4mb",
+      "rpi-pico2-w",
     ]);
-    expect(JSON.stringify(schema)).not.toContain("esp32-c3-4mb");
   });
 
   it("makes the production CLI invoke the canonical validator for both public and candidate bundles", async () => {
