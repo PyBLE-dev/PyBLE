@@ -129,9 +129,11 @@ MUST remain usable, and a subsequent bounded RUN/console exchange MUST pass.
 
 The print-flood case freezes a transport priority invariant. At the minimum
 ATT MTU, both the STOP response and one-byte terminal RUN_STATE each fit one
-notification fragment. `CONSOLE_DATA` MUST therefore leave enough transport
-capacity for both control messages and MUST permit a pending STOP response to
-pre-empt the next console message promptly. Pre-emption occurs only at a
+notification fragment. `CONSOLE_DATA` MUST leave the two `msys_1` blocks used
+by one small control notification (data plus ATT wrapper). The STOP response
+submits first; paced terminal idle then reuses the blocks returned as that
+response drains. Bulk traffic MUST permit a pending STOP response to pre-empt
+the next console message promptly. Pre-emption occurs only at a
 complete PBLE/1 message boundary: fragments of the current message remain
 contiguous, no control fragment is inserted into a bulk message, and the app's
 single reassembly buffer never sees interleaved messages. The implementation

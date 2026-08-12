@@ -779,8 +779,9 @@ The console tee writes into a bounded staging buffer drained by the TX notificat
 
 For the frozen C3 engineering gate, TX scheduling has two behavioral classes:
 control (`RSP`, `RUN_STATE`, and other lifecycle traffic) and bulk
-(`CONSOLE_DATA`). Bulk admission always leaves enough service capacity for the
-one-fragment STOP response and terminal idle event. One PBLE/1 message remains
+(`CONSOLE_DATA`). Bulk admission always leaves the two `msys_1` blocks needed
+to submit the one-fragment STOP response (data plus ATT wrapper); paced
+terminal idle then reuses returned capacity. One PBLE/1 message remains
 atomic across all of its fragments, because the app owns a single reassembly
 buffer; control therefore never interleaves inside an already-started bulk
 message. At the next complete-message boundary, a pending STOP response wins
