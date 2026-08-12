@@ -1,0 +1,9 @@
+Exact shared source notice retained from ports/rp2/clocks_extra.c lines 1-5
+and ports/rp2/mutex_extra.c lines 1-5 at MicroPython commit
+e0e9fbb17ed6fd06bb76e266ae554784c9c80804:
+
+/*
+ * Copyright (c) 2020 Raspberry Pi (Trading) Ltd.
+ *
+ * SPDX-License-Identifier: BSD-3-Clause
+ */

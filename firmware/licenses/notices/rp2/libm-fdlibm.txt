@@ -1,0 +1,44 @@
+Exact retained-source provenance for the linked MicroPython float libm closure
+at commit e0e9fbb17ed6fd06bb76e266ae554784c9c80804.
+
+The following linked files preserve the Sun Microsystems/SunPro notice in
+their own headers and are assigned to the fdlibm owner:
+
+lib/libm/ef_rem_pio2.c
+lib/libm/ef_sqrt.c
+lib/libm/erf_lgamma.c
+lib/libm/kf_cos.c
+lib/libm/kf_rem_pio2.c
+lib/libm/kf_sin.c
+lib/libm/kf_tan.c
+lib/libm/sf_cos.c
+lib/libm/sf_erf.c
+lib/libm/sf_frexp.c
+lib/libm/sf_ldexp.c
+lib/libm/sf_modf.c
+lib/libm/sf_sin.c
+lib/libm/sf_tan.c
+lib/libm/wf_lgamma.c
+lib/libm/wf_tgamma.c
+
+The following linked files identify musl 0.9.15 provenance and also preserve
+the Sun Microsystems/SunPro notice in their own headers. They remain a
+separate mixed-terms owner pending independent review:
+
+lib/libm/asinfacosf.c
+lib/libm/atan2f.c
+lib/libm/atanf.c
+lib/libm/log1pf.c
+
+Shared source notice retained verbatim from each file above:
+
+/*
+ * ====================================================
+ * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.
+ *
+ * Developed at SunPro, a Sun Microsystems, Inc. business.
+ * Permission to use, copy, modify, and distribute this
+ * software is freely granted, provided that this notice 
+ * is preserved.
+ * ====================================================
+ */

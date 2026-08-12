@@ -1,0 +1,21 @@
+Exact source notices retained from MicroPython commit
+e0e9fbb17ed6fd06bb76e266ae554784c9c80804.
+
+lib/littlefs/lfs1.c lines 1-6:
+
+/*
+ * The little filesystem
+ *
+ * Copyright (c) 2017, Arm Limited. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
+ */
+
+lib/littlefs/lfs2.c lines 1-7:
+
+/*
+ * The little filesystem
+ *
+ * Copyright (c) 2022, The littlefs authors.
+ * Copyright (c) 2017, Arm Limited. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
+ */
