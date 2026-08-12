@@ -965,6 +965,7 @@ class V060LicenseAndProvenanceInventoryTests(unittest.TestCase):
                 "pico-sdk",
                 "btstack",
                 "cyw43",
+                "tinyusb",
                 "arm-gnu-runtime",
             ],
         )
