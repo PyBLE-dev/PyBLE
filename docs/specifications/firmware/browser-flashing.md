@@ -743,6 +743,15 @@ inventory would collapse. In particular:
   independently hashed and owned, and no same-directory alternate radio
   payload may substitute or be added.
 
+The CYW43 directory is not one license owner. The ordinary driver sources are
+one exact owner selected under the Raspberry-Pi-device grant, while each of
+the three payload paths above is a separate, most-specific owner. The Wi-Fi/
+CLM payload, signed Bluetooth firmware, and Broadcom-attributed NVRAM remain
+`review-required` until authoritative evidence maps those exact selected
+bytes to redistribution terms for an RP2350/Pico 2 W UF2. A repository-level
+grant, a grant for an older byte-different Wi-Fi image, or the fact that a
+payload was committed by an authorized contributor is not that mapping.
+
 That no-gap ownership covers every linked or frozen input and, at minimum,
 the selected MicroPython core and `ports/rp2` sources, lwIP, Mbed TLS,
 littlefs (LFS1/LFS2), oofatfs, libm, pico-sdk, BTstack, CYW43 driver, TinyUSB,
@@ -792,10 +801,12 @@ license-attribution proof; it does not replace this installed-binary proof.
 The RP2-specific grants are selected literally rather than approximated by a
 nearby license. In particular, BTstack retains both its stock non-commercial
 license and pico-sdk's complete supplemental `pico_btstack/LICENSE.RP` grant,
-and selects only that supplemental grant for use with Pico 2 W. CYW43 likewise
-retains the complete Raspberry-Pi-device grant used for Pico 2 W. Neither
-dependency's generic non-commercial file, nor BTstack's supplemental grant,
-is relabelled as BSD.
+and selects only that supplemental grant for use with Pico 2 W. The ordinary
+CYW43 driver sources retain the complete Raspberry-Pi-device grant used for
+Pico 2 W; that grant MUST NOT be silently extended to the three separately
+owned payload records without the exact authoritative mapping required above.
+Neither dependency's generic non-commercial file, nor BTstack's supplemental
+grant, is relabelled as BSD.
 Mbed TLS retains its source choice while recording the reviewed Apache-2.0
 redistribution selection;
 littlefs, lwIP, pico-sdk, oofatfs, TinyUSB, MicroPython, fdlibm-derived libm,

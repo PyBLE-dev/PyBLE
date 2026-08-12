@@ -1304,8 +1304,12 @@ This is software-level safety of the IDE/agent, **not** hardware/actuator safety
   objects bind their sources directly and unlinked host-tool depfiles are not
   firmware inputs. Every included byte MUST have one most-specific owner or
   exact generated derivation. That closure MUST cover
-  the selected three CYW43 Wi-Fi/Bluetooth/NVRAM payload headers, the distinct
-  CMSIS source/header license classes, `libm.h`, and GCC/newlib headers. The
+  the selected three CYW43 Wi-Fi/Bluetooth/NVRAM payload headers, with ordinary
+  driver code and each payload assigned to separate most-specific owners, the
+  distinct CMSIS source/header license classes, `libm.h`, and GCC/newlib
+  headers. Each CYW43 payload remains `review-required` until exact
+  authoritative redistribution terms bind its selected bytes; a broad driver
+  grant or older byte-different payload license cannot substitute. The
   cache MUST bind `pico2_w`, `rp2350-arm-s`, and the exact C/C++/ASM compiler
   frontends. Every observed installed toolchain byte MUST be byte-identical to
   its member in the hash/size/root-pinned official binary tar and installed

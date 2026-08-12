@@ -1485,7 +1485,12 @@ fails public replay.
 
 Real-shaped dependency fixtures require the exact Pico 2 W CYW43 Wi-Fi/CLM,
 Bluetooth, and NVRAM payload headers and reject an alternate payload from the
-same checkout. They assign `libm.h`, Apache-only CMSIS Core headers, the
+same checkout. They assign ordinary CYW43 driver code and each of those three
+payloads to separate most-specific owners, bind both header and embedded-data
+digests, and keep every payload owner `review-required` until authoritative
+terms identify that exact selected byte closure. A broad CYW43 owner or an
+older byte-different firmware grant fails. They also assign `libm.h`,
+Apache-only CMSIS Core headers, the
 dual-marked CMSIS system source/header, Raspberry Pi BSD CMSIS/device headers,
 GCC built-in headers, and newlib target headers to their distinct
 most-specific owners. A broad pico-sdk, libm, MicroPython, or toolchain root
@@ -1510,9 +1515,11 @@ CMake-selected source paths, and the pinned toolchain distribution identity;
 a sibling checkout or pico-sdk's unselected nested copy cannot substitute.
 BTstack requires both its complete stock non-commercial license and the
 pico-sdk supplemental `pico_btstack/LICENSE.RP` grant selected for this exact
-Pico 2 W image; CYW43 requires the complete Pico-device grant selected for
-this image rather than its generic non-commercial file. Neither supplemental
-grant may be represented as BSD. Mbed TLS preserves its source
+Pico 2 W image. Ordinary CYW43 driver code requires the complete Pico-device
+grant rather than its generic non-commercial file, while the selected Wi-Fi,
+Bluetooth, and NVRAM payload owners additionally require exact authoritative
+redistribution mappings and remain release-blocking without them. Neither
+supplemental grant may be represented as BSD. Mbed TLS preserves its source
 choice and reviewed Apache-2.0 selection, while fdlibm-derived libm and distinct libgcc/newlib
 classes retain their own notices, expressions, and exceptions. Every observed
 owner contributes, every contributing input has exactly one most-specific
