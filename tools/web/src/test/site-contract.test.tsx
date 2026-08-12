@@ -261,6 +261,10 @@ describe("public-site contract", () => {
       "href",
       "/support",
     );
+    expect(screen.getByRole("link", { name: "Get PyBLE" })).toHaveAttribute(
+      "href",
+      "/app",
+    );
   });
 
   it("states the vendor-neutral vision without claiming unavailable firmware is active", () => {
@@ -284,10 +288,10 @@ describe("public-site contract", () => {
       screen.queryByText(/unqualified firmware beta is available/i),
     ).not.toBeInTheDocument();
     expect(
-      screen.getByText(
-        /ESP32-C3 and more microcontroller families remain planned/i,
-      ),
-    ).toBeInTheDocument();
+      screen.getByText(/ESP32-C3 and Raspberry Pi Pico 2 W/i),
+    ).toHaveTextContent(
+      /engineering validation.*unavailable in the public installer/i,
+    );
     expect(
       screen.getByRole("heading", {
         level: 2,
@@ -295,7 +299,7 @@ describe("public-site contract", () => {
       }),
     ).toBeInTheDocument();
     expect(
-      screen.getByText("Initial beta firmware targets"),
+      screen.getByText("Public firmware availability"),
     ).toBeInTheDocument();
     expect(
       screen.getByText(/a validated PyBLE agent port is still required/i),
@@ -420,6 +424,9 @@ describe("public-site contract", () => {
     expect(footerLink).toHaveAttribute("href", repositoryUrl);
     expect(footerLink).toHaveAttribute("target", "_blank");
     expect(footerLink).toHaveAttribute("rel", "noopener noreferrer");
+    expect(
+      screen.getByText(/independent MIT-licensed project/i),
+    ).toHaveTextContent(/maintained under the SciLabPro project name/i);
   });
 
   it("publishes the approved iPad and Android testing links with verified local QR codes", async () => {
@@ -435,6 +442,12 @@ describe("public-site contract", () => {
     expect(
       within(testFlightSection).getByText(/external testing is open/i),
     ).toBeInTheDocument();
+    expect(testFlightSection).toHaveTextContent(
+      /firmware availability and qualification depend on the exact target.*check the firmware installer/i,
+    );
+    expect(testFlightSection).not.toHaveTextContent(
+      /ESP32-C3 is unavailable|v0\.4\.2|v0\.5\.1/i,
+    );
 
     const androidSection = screen.getByRole("region", {
       name: "Join the PyBLE Android internal test.",
