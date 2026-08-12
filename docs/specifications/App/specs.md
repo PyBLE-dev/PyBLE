@@ -1,6 +1,6 @@
 # PyBLE App — Requirements Specification
 
-Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-08-03
+Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-08-12
 
 ## 1. Purpose, Scope & Document Role
 
@@ -239,6 +239,25 @@ The client implements the PBLE/1 wire contract; it references [protocol.md](../p
   integration plugin can neither break nor enter the production artifact.
   MUST (*source: PRD §13.6, §16.1; verify: widget/Android physical-device;
   story: A-31/X-11*)
+- **FR-BLOCKS-1B — Explicit named pins (FROZEN · A-38 · `[docs]`
+  2026-08-12).** Every GPIO identity slot in the authored Blockly host,
+  example chooser/materializer, and bounded Python importer MUST accept either
+  its existing explicit non-negative integer form or an ASCII, case-sensitive
+  MicroPython `machine.Pin` name matching
+  `^[A-Za-z][A-Za-z0-9_]{0,15}$`. The block input MUST accept ordinary Blockly
+  `Number` or `String` values; examples MUST materialize integers as
+  `math_number` and names as `text`; generated Python MUST keep integers bare
+  and quote names (`Pin(2, ...)`, `Pin("LED", ...)`). The importer MUST accept
+  single- or double-quoted names under the same grammar and retain its
+  all-or-nothing semantic round-trip. Invalid identities MUST use the existing
+  repairable/`invalid_gpio` paths. Names MUST remain explicit user program
+  data: the app MUST NOT ship a per-board list, suggestion, default,
+  autocomplete, translation, `DeviceInfo`/profile gate, or automatic example
+  choice. Example-role uniqueness MUST compare canonical integer/name values;
+  all new visible guidance/errors MUST be ARB-sourced. The connected
+  MicroPython runtime remains authoritative for physical validity. MUST
+  (*source: ADR-0031, ADR-0021; verify: unit/asset/widget/integration/HIL;
+  story: A-38*)
 - **FR-BLOCKS-2** — Generated code MUST be inspectable as plain `.py` and MUST flow through the same upload/run path as the text editor (§8.2). MUST (*source: PRD §9.8; verify: integration; story: A-31*)
 - **FR-BLOCKS-3** — The app MUST allow running or saving the generated code through the `Connection` API. MUST (*source: PRD §9.8; verify: integration; story: A-31*)
 - **FR-BLOCKS-4** — The block bridge MUST bind to `Connection`/neutral types
@@ -248,13 +267,14 @@ The client implements the PBLE/1 wire contract; it references [protocol.md](../p
   PRD §9.8, app.md §6; verify: unit (no-leak gate); story: A-31*)
 - **FR-BLOCKS-5** — The GPIO toolbox MUST provide composable generic digital
   `machine.Pin` construction, write, and read blocks; generate the standard
-  MicroPython import/calls; require an explicit non-negative integral GPIO; and
-  MUST NOT contain or infer a board pin map, named onboard component, routing
-  profile, or claimed default/safe GPIO. This is the initial ESP-compatible
-  numeric-pin subset, not a claim that every MicroPython port uses numeric pin
-  identifiers; broader pin models require a later specified capability and
-  block contract. MUST (*source: PRD §9.8, §11.3; verify: unit/integration;
-  story: A-31*)
+  MicroPython import/calls; and require one explicit pin identity: either the
+  existing non-negative integral numeric literal or FR-BLOCKS-1B's bounded
+  user-entered name. It MUST NOT contain or infer a board pin map, suggested
+  named onboard component, routing profile, or claimed default/safe pin. This
+  integer/named-pin subset does not claim that a syntactically accepted
+  identity exists or is electrically suitable on every MicroPython port;
+  broader pin models require a later frozen block contract. MUST (*source: PRD
+  §9.8, §11.3, ADR-0031; verify: unit/integration; story: A-31/A-38*)
 - **FR-BLOCKS-6** — The **Time** toolbox category MUST provide
   `pyble_time_sleep_ms`, a statement block with a required explicit finite,
   non-negative integral `MILLISECONDS` literal, no shadow/default, and
@@ -277,8 +297,9 @@ The client implements the PBLE/1 wire contract; it references [protocol.md](../p
   Create copy MUST load an independent editable clone only over a semantically
   empty workspace; a non-empty or invalid workspace MUST require confirmed
   Replace workspace. GPIO examples MUST require the user to enter every GPIO
-  role before preview/copy, with pairwise-distinct numeric values for separate
-  roles, a localized duplicate-GPIO error, and no supplied or remembered pin.
+  role before preview/copy, with pairwise-distinct canonical integer-or-name
+  identities for separate roles, a localized duplicate-pin error, and no
+  supplied, suggested, or remembered pin.
   No example operation may automatically Run, Save, write a board file, or
   replace the text-editor document. MUST (*source: PRD §9.8, §11.3; verify:
   unit/widget/integration; story: A-31*)
@@ -317,7 +338,8 @@ The client implements the PBLE/1 wire contract; it references [protocol.md](../p
   ADR-0017: simple literals/names and arithmetic/Boolean/comparison expressions;
   assignment and numeric change; one-argument `print`; `if`/`elif`/`else`,
   `while`, bounded literal non-empty `range`; bounded top-level procedures;
-  explicit `machine.Pin` construction/read/write; explicit `time.sleep_ms`; and
+  explicit `machine.Pin` construction/read/write, including ADR-0031's bounded
+  integer-or-quoted-name identity; explicit `time.sleep_ms`; and
   ADR-0018's exact standard NeoPixel subset (constructor, three-item RGB tuple,
   indexed assignment, `fill`, and `write` with a definitely bound receiver),
   plus ADR-0023's exact positional `ST7789` constructor, `rgb565`, framebuffer
@@ -327,8 +349,8 @@ The client implements the PBLE/1 wire contract; it references [protocol.md](../p
   restore/generator, or semantic round-trip error MUST produce no candidate.
   The importer MUST NOT omit lines, emit a partial workspace, execute Python,
   use a raw-code escape block, choose/validate a board pin, or access the
-  network. MUST (*source: ADR-0017, ADR-0018, ADR-0023; verify:
-  unit/asset/integration; story: A-31*)
+  network. MUST (*source: ADR-0017, ADR-0018, ADR-0023, ADR-0031; verify:
+  unit/asset/integration; story: A-31/A-38*)
 - **FR-BLOCKS-12** — Exact reopen and Python conversion MUST share a
   non-mutating Preview/Create/Replace candidate flow. Diagnostics MUST carry a
   stable technical code/severity and one-based source range while all visible
@@ -436,11 +458,13 @@ landscape and stacked portrait surfaces. These requirements are fresh PyBLE
 layout behavior only; no third-party product source, asset, styling
 implementation, identifier, or block catalog is copied.
 
-**A-31 generic digital GPIO — FROZEN (`[docs]` 2026-07-28,
-[ADR-0015](../../decisions/0015-generic-micropython-gpio-blocks.md)).**
+**A-31 generic digital GPIO, extended by A-38 named pins — FROZEN (`[docs]`
+2026-08-12, [ADR-0015](../../decisions/0015-generic-micropython-gpio-blocks.md),
+[ADR-0031](../../decisions/0031-explicit-named-micropython-pins.md)).**
 The GPIO category contains three stable, composable block types:
-`pyble_gpio_pin` is a `Pin`-valued constructor with required `Number` input
-`GPIO`, `MODE` = `IN|OUT`, and `PULL` = `NONE|UP|DOWN`;
+`pyble_gpio_pin` is a `Pin`-valued constructor with required `GPIO` input
+accepting `Number|String`, `MODE` = `IN|OUT`, and
+`PULL` = `NONE|UP|DOWN`;
 `pyble_gpio_write` is a statement with required `Pin` input `PIN` and
 `LEVEL` = `LOW|HIGH`; and `pyble_gpio_read` is a `Number` value with required
 `Pin` input `PIN`. Standard variable set/get blocks own storage and reuse. A
@@ -450,21 +474,27 @@ user-name collision. `NONE` emits an explicit `None` pull argument,
 `UP`/`DOWN` emit `Pin.PULL_UP`/`Pin.PULL_DOWN`, write emits `.value(0|1)`, and read emits
 `.value()`. Output construction does not imply an initial level; deterministic
 level changes require an explicit write. Missing inputs, an invalid GPIO
-literal, or unknown enum tokens are generator errors using the existing
+identity, or unknown enum tokens are generator errors using the existing
 editable-workspace/stale-actions-disabled recovery boundary. If the workspace
 serialized successfully, that error payload MUST retain its current JSON and
 next monotonic revision so a recreated host restores the invalid-but-repairable
-workspace. A valid workspace-bearing error, including the first result from a
+workspace. An integer identity remains bare; a name matching
+`^[A-Za-z][A-Za-z0-9_]{0,15}$` is generated as a double-quoted string, so the
+standard forms include `Pin(2, Pin.OUT, None)` and
+`Pin("LED", Pin.OUT, None)`. A valid workspace-bearing error, including the first result from a
 restored host, MUST stop the host watchdog and keep the editor repairable while
 actions stay disabled until the active host publishes a later valid snapshot.
-No toolbox shadow or pin default/catalog is supplied, and the app does not
+No toolbox shadow, pin default, name suggestion, or pin catalog is supplied,
+and the app does not
 validate physical pin/mode/pull suitability from `DeviceInfo`; standard
 MicroPython on the board is authoritative. GPIO source remains ordinary
 `/blocks.py` content using the same Preview/Open/Save/Run path, with no new
 WebView-to-board, PBLE/1, or firmware operation.
 
-**A-31 beginner examples and Time block — FROZEN (`[docs]` 2026-07-28,
-[ADR-0016](../../decisions/0016-offline-beginner-blockly-examples.md)).**
+**A-31 beginner examples and Time block, extended by A-38 named pins — FROZEN
+(`[docs]` 2026-08-12,
+[ADR-0016](../../decisions/0016-offline-beginner-blockly-examples.md),
+[ADR-0031](../../decisions/0031-explicit-named-micropython-pins.md)).**
 A fresh **Time** category adds `pyble_time_sleep_ms`, a statement with a
 required `Number` input `MILLISECONDS`, no shadow/default, exact-once
 `from time import sleep_ms`, reserved-name protection, and
@@ -486,15 +516,18 @@ for the selectable, read-only source preview. Before that action, the preview
 surface MUST state that generation awaits an action; it MUST show a loading
 state only while generation is actually in progress. A GPIO fixture contains
 disconnected constructor sockets and role bindings only; the user must provide
-each finite, non-negative integral GPIO before source is previewed or copied,
-and values for separate roles must be pairwise distinct. A repeated role value
-produces a localized field error; this does not claim physical board validity.
+each pin identity as either a non-negative exact-safe integer or a name matching
+FR-BLOCKS-1B before source is previewed or copied, and canonical values for
+separate roles must be pairwise distinct. A repeated integer or exact
+case-sensitive name produces a localized field error; this does not claim
+physical board validity.
 While a required GPIO is absent or invalid, the source surface describes that
 entering every required GPIO enables generation; it does not promise automatic
 generation.
-Materialization connects ordinary number blocks in the clone and leaves no role
-placeholder or metadata in the active workspace. No board/chip default, named
-onboard component, remembered pin, or claimed safe value is supplied.
+Materialization connects an ordinary `math_number` block for an integer or
+ordinary `text` block for a name in the clone and leaves no role placeholder or
+metadata in the active workspace. No board/chip default, named-component
+suggestion, remembered pin, or claimed safe value is supplied.
 Wiring notes identify the roles, an external LED/resistor or button/pull
 behavior where relevant, and direct the user to their board documentation.
 The eighth fixture is the only named-board example. It contains the exact
@@ -646,8 +679,9 @@ levels of spaces-indented UTF-8. It admits only ADR-0017's enumerated literals,
 names, unary/arithmetic/Boolean/single-comparison expressions, simple
 assignment/`+=`, one-argument `print`, conditionals, `while`, non-empty
 literal `range`, bounded top-level procedures (≤16, ≤8 positional parameters),
-explicit standard `Pin`, and literal `sleep_ms`. Canonical imports are exact,
-unaliased, and use-dependent. Numeric literals fit JavaScript's exact
+explicit standard `Pin` with either its existing non-negative decimal integer
+or FR-BLOCKS-1B's single-/double-quoted name, and literal `sleep_ms`. Canonical
+imports are exact, unaliased, and use-dependent. Numeric literals fit JavaScript's exact
 safe-integer bound where Blockly needs integral values; `range` has a non-zero
 literal step and a direction that makes it non-empty. Integral-valued decimal
 float syntax and raw U+0000 strings are rejected because ordinary Blockly
@@ -680,6 +714,67 @@ text/keyboard insets. Parsing/validation/Preview/Create/Replace/cancel call no
 Connection, Save, Run, editor replacement, console, board-write, or network
 operation. Only an explicit file-open may read the selected pair, and only the
 existing explicit Blocks Save/Run writes it or executes Python.
+
+**A-38 explicit named MicroPython pins — FROZEN (`[docs]` 2026-08-12,
+[ADR-0031](../../decisions/0031-explicit-named-micropython-pins.md)).**
+
+**Story.** As a user of a compatible MicroPython board whose hardware is
+addressed by a standard named `machine.Pin` rather than a numeric GPIO, I want
+to enter the exact documented name in the existing Blocks GPIO surfaces so
+that I can preview, save, and run truthful Python without PyBLE carrying a
+board profile. The concrete validated case is the Pico 2 W onboard LED,
+addressed as `Pin("LED")`; the story is capability-defined and is not a
+Pico-only UI feature.
+
+**Scope.** A-38 extends only the pin-identity value accepted by
+`pyble_gpio_pin`, example GPIO roles, and ADR-0017's bounded importer. It does
+not add a block type, firmware/PBLE operation, board/name registry, default,
+suggestion, device gate, automatic example choice, or physical-validity claim.
+All existing one-way workspace, error retention, explicit example action,
+atomic replacement, exact sidecar, file-backed Save/Run, localization,
+offline, and no-leak boundaries remain in force.
+
+The acceptance criteria test authors MUST convert to `[red]` before the A-38
+implementation:
+
+- **A38-AC-1 (identity grammar)** — Each affected surface MUST preserve its
+  existing non-negative integer semantics and additionally accept only a
+  case-sensitive ASCII name matching `^[A-Za-z][A-Za-z0-9_]{0,15}$`. The
+  one- and sixteen-character boundaries MUST pass; empty, digit-led,
+  digits-only, spaced, hyphenated, non-ASCII, escaped, overlength, variable,
+  and arbitrary-expression forms MUST fail through the existing invalid-pin
+  path. MUST
+- **A38-AC-2 (ordinary Blocks and deterministic source)** — The GPIO input
+  MUST accept only ordinary Blockly `Number|String` values with no
+  shadow/default. Integers MUST use `math_number` and generate bare; names MUST
+  use `text` and generate as a quoted literal. A composed workspace containing
+  `LED` MUST generate `Pin("LED", ...)`, retain exact-once `machine.Pin`
+  import/name reservation, and remain repairable after an invalid identity.
+  MUST
+- **A38-AC-3 (examples)** — The native chooser MUST accept integer and named
+  roles, allow mixed forms, use a full text keyboard with suggestions and
+  autocorrection disabled, and materialize a deep clone with the matching
+  ordinary value-block type. Distinctness MUST compare canonical typed values;
+  duplicate integers or exact case-sensitive names MUST show localized errors.
+  No fixture, selection, or reopening MAY supply or remember a pin. MUST
+- **A38-AC-4 (bounded import)** — `Pin(2, ...)`, `Pin("LED", ...)`, and
+  `Pin('WL_GPIO0', ...)` MUST import to the corresponding ordinary value
+  blocks and pass generate→reparse semantic equality, including identity kind
+  and value. One invalid identity MUST yield `invalid_gpio` and no partial
+  candidate. Quote spelling MAY normalize; exact sidecar reopen remains
+  byte-exact. MUST
+- **A38-AC-5 (target neutrality and action safety)** — Validation/generation
+  MUST NOT read `DeviceInfo`, a provisioning profile, connection state, or a
+  pin catalog; Preview/Create/Replace MUST perform no Connection, Save, Run,
+  board, or network operation. MicroPython MUST remain the physical-validity
+  authority and its exception MUST remain visible. MUST
+- **A38-AC-6 (regression and hardware evidence)** — Unit, asset, widget, real
+  WebView, locale, offline/CSP, license, no-leak, and integration gates MUST
+  cover both identity branches without regressing numeric ESP32,
+  NeoPixel/TFT composition, or exact reopen. On the validated Pico 2 W, the
+  existing Blink example with user-entered `LED` MUST run through the ordinary
+  file-backed path and blink the physical onboard LED; that evidence MUST NOT
+  be converted into an app-side Pico profile. MUST
 
 - **FR-PLOTS-1** — The app MUST provide live plots (`fl_chart`, `lib/plots/`) over CSV/streamed values printed by the running program to the console stream. MUST (*source: PRD §9.8, §16.1; verify: widget/integration; story: A-32*)
 - **FR-PLOTS-2** — Plotting MUST be derived purely from program console output (no special data-event opcode); the app SHOULD let the user configure how console output is parsed into series. MUST/SHOULD (*source: PRD §9.8; verify: unit/widget; story: A-32*)
@@ -877,7 +972,7 @@ The local Drift database ([PRD §12.1](../prd.md), `lib/data/`) MUST model exact
 | FR-CONSOLE-* | §9.4 | A-21 | widget, golden |
 | FR-RUN-* | §9.5, §8.2, §8.3, §13.3 | A-11 | widget, integration |
 | FR-IMPORT-* | §9.7, §12.1 | A-33 | integration |
-| FR-BLOCKS-*/FR-PLOTS-* | §9.8, §16.1 | A-31, A-32 | integration, widget |
+| FR-BLOCKS-*/FR-PLOTS-* | §9.8, §16.1 | A-31, A-32, A-38 | unit, asset, widget, integration, HIL |
 | FR-ERR-* | §9.9 | A-21 | unit, widget |
 | FR-I18N-* | §9.10, §13.7 | X-12 | locale |
 | FR-UI-* | §19 | A-20, A-22 | golden, widget |

@@ -1,6 +1,6 @@
 # PyBLE App — Technical Design Document (TDD)
 
-Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-08-07
+Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-08-12
 
 ## 0. Naming note (acronym clash)
 
@@ -219,13 +219,14 @@ abstract interface class BleSession {
 
 **Responsibility:** host Blockly in a WebView, generating MicroPython for
 an inspectable, board-neutral subset with no board-specific defaults, including
-the current numeric-GPIO `machine.Pin`, NeoPixel, and explicit `pyble_st7789`
+explicit integer-or-bounded-name `machine.Pin`, NeoPixel, and explicit
+`pyble_st7789`
 TFT surfaces, plus paced programs
 through standard `time.sleep_ms`; expose generated code as inspectable plain `.py`; route it
 through the same upload/run/save path as the text editor; and load editable
-copies of the bundled beginner examples without automatic execution. Numeric
-pin identifiers and NeoPixel availability are not claimed for every MicroPython
-port. The TFT surface remains bundled regardless of target, while its generated
+copies of the bundled beginner examples without automatic execution. A
+syntactically accepted pin identity and NeoPixel availability are not claimed
+for every MicroPython port. The TFT surface remains bundled regardless of target, while its generated
 import requires the exact `waveshare-esp32-s3-lcd-147b` firmware or a
 user-installed API-compatible module; lean `esp32-s3-n16r8` firmware does not
 bundle it. No `DeviceInfo` or provisioning-profile gate controls the category,
@@ -287,7 +288,7 @@ step therefore writes each such token as the JavaScript template interpolation
 packaged file remains ordinary data. The build refuses any vendored asset that
 the host `file` classifier reports as `script text executable` (BLD-11).
 
-**Satisfies:** FR-BLOCKS-1..14, CON-6/7.
+**Satisfies:** FR-BLOCKS-1/1A/1B/2..14, CON-6/7.
 
 ### 4.7 `lib/plots/` — live plots
 
@@ -611,9 +612,9 @@ Drift schema versions with explicit `MigrationStrategy` step migrations (forward
 
 Blockly in a `webview_flutter` WebView, generating an inspectable,
 board-neutral MicroPython subset with no board-specific defaults
-(FR-BLOCKS-1), including the current numeric digital `machine.Pin`
-construction/read/write, standard NeoPixel, and explicit `pyble_st7789` TFT
-surfaces (FR-BLOCKS-5/13/14). The TFT authoring surface is always bundled; its
+(FR-BLOCKS-1), including explicit integer-or-bounded-name digital
+`machine.Pin` construction/read/write, standard NeoPixel, and explicit
+`pyble_st7789` TFT surfaces (FR-BLOCKS-1B/5/13/14). The TFT authoring surface is always bundled; its
 runtime is supplied by exact `waveshare-esp32-s3-lcd-147b` firmware or a
 user-installed API-compatible module, not lean `esp32-s3-n16r8` firmware.
 Generated code is inspectable plain `.py` and flows through the
@@ -727,20 +728,25 @@ changes retain the Blocks destination and provider snapshot; if Flutter
 recreates the platform view, the existing host-epoch restore handshake must
 publish a fresh revision before source actions re-enable.
 
-**A-31 generic digital GPIO — FROZEN (`[docs]` 2026-07-28,
-[ADR-0015](../../decisions/0015-generic-micropython-gpio-blocks.md)).**
+**A-31 generic digital GPIO, extended by A-38 named pins — FROZEN (`[docs]`
+2026-08-12, [ADR-0015](../../decisions/0015-generic-micropython-gpio-blocks.md),
+[ADR-0031](../../decisions/0031-explicit-named-micropython-pins.md)).**
 The fresh MIT GPIO extension registers its custom blocks and Python generators
 before workspace injection, then adds one GPIO category to the local toolbox:
 
 | Type | Shape | Generated MicroPython |
 |---|---|---|
-| `pyble_gpio_pin` | output `Pin`; required `GPIO` input checked `Number`; `MODE` field `IN|OUT`; `PULL` field `NONE|UP|DOWN` | `Pin(gpio, Pin.IN|Pin.OUT, None|Pin.PULL_UP|Pin.PULL_DOWN)`; explicit `None` disables any prior pull |
+| `pyble_gpio_pin` | output `Pin`; required `GPIO` input checked `Number|String`; `MODE` field `IN|OUT`; `PULL` field `NONE|UP|DOWN` | bare `Pin(2, ...)` or quoted `Pin("LED", ...)`; explicit `None` disables any prior pull |
 | `pyble_gpio_write` | statement; required `PIN` input checked `Pin`; `LEVEL` field `LOW|HIGH` | `pin.value(0|1)` |
 | `pyble_gpio_read` | output `Number`; required `PIN` input checked `Pin` | `pin.value()` |
 
-The constructor has no GPIO shadow/default. Users connect an explicit
-non-negative integral numeric literal and may store the returned object with
-standard variable set/get blocks. The Python generator installs
+The constructor has no GPIO shadow/default. Users connect either an explicit
+non-negative integral numeric literal through `math_number` or a
+case-sensitive name matching `^[A-Za-z][A-Za-z0-9_]{0,15}$` through `text`,
+and may store the returned object with standard variable set/get blocks. The
+generator independently validates the produced literal, keeps an integer bare,
+normalizes an accepted name to a double-quoted string, and rejects every other
+string/expression through the existing invalid-GPIO path. The Python generator installs
 `from machine import Pin` in its definitions/preamble map under one stable key
 and reserves `Pin` before name allocation; therefore any number of constructors
 produce one import and a user variable/procedure cannot shadow it. A workspace
@@ -751,8 +757,10 @@ composable. Constructing `Pin.OUT` does not choose an initial level; a
 deterministic level requires an explicit write.
 
 Definitions enforce the declared Blockly connection checks. Generators also
-reject disconnected sockets, non-finite/fractional/negative GPIO literals, and
-unknown restored enum tokens; they never substitute GPIO 0, a level, or a pull.
+reject disconnected sockets, non-finite/fractional/negative GPIO literals,
+empty/digit-led/non-ASCII/overlength or otherwise invalid names, arbitrary
+expressions, and unknown restored enum tokens; they never substitute GPIO 0, a
+name, a level, or a pull.
 Such failures publish the normal correlated generator error, retain the
 editable/serializable workspace, and disable Preview/Open/Save/Run until a
 fresh repaired snapshot arrives. Concretely, snapshot publication serializes
@@ -780,7 +788,8 @@ Node/unit tests execute the actual custom definitions and generators for every
 mode/pull/level branch, exact-once/no-import behavior, reserved-name
 sanitization, variable composition, required-input failures, invalid restored
 state, and workspace/revision retention across a generator-error host
-recreation. Asset-policy tests pin the IDs/category and exclude a pin catalog. A
+recreation. Asset-policy tests pin the IDs/category, integer/name grammar and
+generation, and exclusion of a pin catalog. A
 real WebView integration test serializes the GPIO workspace,
 recreates/restores it (including rotation), compares generated source before and
 after, then exercises Preview/Save/Run through the existing acknowledged
@@ -878,8 +887,10 @@ real WebView test restores,
 generates, and rotates a composed TFT workspace on iPadOS and Android before
 using the normal Preview/Save/Run path.
 
-**A-31 beginner examples and Time block — FROZEN (`[docs]` 2026-07-28,
-[ADR-0016](../../decisions/0016-offline-beginner-blockly-examples.md)).**
+**A-31 beginner examples and Time block, extended by A-38 named pins — FROZEN
+(`[docs]` 2026-08-12,
+[ADR-0016](../../decisions/0016-offline-beginner-blockly-examples.md),
+[ADR-0031](../../decisions/0031-explicit-named-micropython-pins.md)).**
 
 The PyBLE extension registers one additional statement before workspace
 injection:
@@ -924,7 +935,7 @@ Catalog order and IDs are fixed as `hello-pyble`, `count-repeatedly`,
 The decoder rejects an unknown catalog version, duplicate/unknown IDs or roles,
 missing ARB keys, non-object workspaces, duplicate block IDs, role bindings that
 do not resolve to a disconnected `pyble_gpio_pin.GPIO`, extra GPIO constructor
-sockets without a role, and catalog GPIO number blocks connected to those
+sockets without a role, and catalog GPIO value blocks connected to those
 sockets. It never treats catalog text as executable source. The manifest does
 not contain `source` or `sourceTemplate`; tests pin expected output while the
 production generator remains the runtime source authority.
@@ -946,7 +957,7 @@ uses the complete ordinary TFT block surface to draw a bounded colour, corner,
 and text pattern, call Show explicitly, and turn the backlight on explicitly.
 Its six connected `pyble_gpio_pin` blocks have disconnected `GPIO` sockets
 bound to the stable SCLK, MOSI, CS, D/C, reset, and backlight roles. Their
-`OUT`/`NONE` choices are visible, while the fixture supplies no GPIO number.
+`OUT`/`NONE` choices are visible, while the fixture supplies no pin identity.
 All other constructor choices are visible ordinary blocks: SPI ID 1,
 40,000,000 baud, polarity 0, phase 0, width 172, height 320, X offset 34,
 Y offset 0, BGR `True`, and inversion `True`. Localized wiring copy gives the
@@ -970,17 +981,18 @@ The candidate pipeline is isolated from the active workspace:
 catalog entry + ephemeral role values
   → schema/role validation
   → deep-cloned ordinary workspace
-  → connect ordinary math_number blocks for every GPIO role
+  → connect ordinary math_number or text blocks for every GPIO role
   → load into disposable scratch Blockly.Workspace
   → production Python generator
   → immutable {workspaceJson, source} candidate
   → Preview only, or explicit commit to the rendered workspace
 ```
 
-Role values are decimal finite, non-negative integers and are pairwise distinct
-when an example declares multiple roles. The UI supplies no
+Role values are non-negative exact-safe integers or names matching
+`^[A-Za-z][A-Za-z0-9_]{0,15}$`; mixed forms are valid and canonical typed
+values are pairwise distinct when an example declares multiple roles. The UI supplies no
 initial/suggested/remembered value and consults neither `DeviceInfo` nor a board
-profile. A duplicate numeric value shows a localized error on the conflicting
+profile. A duplicate integer or exact case-sensitive name shows a localized error on the conflicting
 role fields and keeps/returns focus to the first conflict; it is not presented
 as physical board-pin validation. The same validated candidate supplies both
 the read-only Python shown in the chooser and the subsequent copy, so the
@@ -1142,8 +1154,10 @@ parser, validator, and typed v1 subset model. It accepts only source within
 Indentation uses spaces, source contains no semicolon statement packing,
 identifiers are non-keyword ASCII Python identifiers, and integral Blockly
 literals fit `±9007199254740991`. Decimal float syntax is admitted only when
-its finite value is non-integral; integer-only `range`/GPIO/Time positions
-require decimal integer syntax, and raw U+0000 string content is rejected.
+its finite value is non-integral; integer-only `range`/Time positions require
+decimal integer syntax. A `Pin` identity is either the existing non-negative
+decimal integer or a single-/double-quoted name matching
+`^[A-Za-z][A-Za-z0-9_]{0,15}$`; raw U+0000 string content is rejected.
 
 Only the exact, unaliased, use-dependent leading imports
 `from machine import Pin`, `from time import sleep_ms`, and
@@ -1153,8 +1167,8 @@ Only the exact, unaliased, use-dependent leading imports
 required exactly when its symbol is used, occurs at most once, and the
 constructor line precedes the colour line when both occur. The
 statement/expression/function/range grammar and complete rejection list are
-normative in ADR-0017 §5 as extended by ADR-0018 and ADR-0023. The key mappings
-are:
+normative in ADR-0017 §5 as extended by ADR-0018, ADR-0023, and ADR-0031. The
+key mappings are:
 
 | Python subset node | Ordinary Blockly representation |
 |---|---|
@@ -1166,7 +1180,7 @@ are:
 | `while condition` | `controls_whileUntil` in `WHILE` mode |
 | literal `range(start, stop, step)` | `controls_for`, positive endpoint `stop - 1` or negative endpoint `stop + 1`, positive `BY = abs(step)` |
 | top-level function/call/final return | standard `procedures_defnoreturn`/`procedures_defreturn` and matching call block |
-| `Pin(...)`, `.value(0\|1)`, `.value()` | `pyble_gpio_pin`, `pyble_gpio_write`, `pyble_gpio_read` |
+| `Pin(integer-or-quoted-name, ...)`, `.value(0\|1)`, `.value()` | `pyble_gpio_pin` with `math_number` or `text`, `pyble_gpio_write`, `pyble_gpio_read` |
 | `sleep_ms(N)` | `pyble_time_sleep_ms` |
 | `NeoPixel(Pin(...), count)` | nested `pyble_neopixel_create` + `pyble_gpio_pin` |
 | `(red, green, blue)` in a NeoPixel colour position | `pyble_neopixel_rgb` |
@@ -1229,7 +1243,8 @@ statement/branch order, adjusted range semantics, function signatures/call
 kind, GPIO/Time choices, definite NeoPixel bindings/indices/RGB operations, TFT
 import order, complete constructor configuration, definite display bindings,
 RGB565 calls, draw operations, outline/filled choice, explicit Show, and
-Boolean backlight state;
+Boolean backlight state, and each Pin identity's integer/name kind and exact
+value;
 it ignores only disclosed formatting, redundant parentheses/blank lines, quote
 spelling, and visual layout. Any error at any
 stage discards the whole workspace. Comments/docstrings and every unsupported
@@ -1604,8 +1619,9 @@ hosted runner while preserving the single-entrypoint, single-binary device-test
 contract and a separately compiled production artifact.
 
 The Blockly suite verifies the offline asset, JavaScript channel,
-restore/recreation, source generation, examples, sidecar reopen, bounded Python
-import, and fake-Connection Save/Run flow in Android's actual WebView rather
+restore/recreation, integer/named-pin source generation, example
+materialization, sidecar reopen, bounded Python import, and fake-Connection
+Save/Run flow in Android's actual WebView rather
 than a host widget substitute. When an example GPIO field opens Android's real
 IME, the test keeps that reduced viewport and scrolls the footer action into a
 hit-testable region before tapping it; an off-screen coordinate is not accepted
@@ -1690,7 +1706,7 @@ Design element → satisfied requirement IDs. Each `FR-*`/`NFR-*`/`CON-*`/`DAT-*
 | Editor ([§4.3](#43-libeditor--code-editor), [§11.1](#111-editor)) | lib/editor | FR-EDIT-1..7, FR-RUN-1/4, NFR-A11Y-3 |
 | Console + error explanation ([§4.4](#44-libconsole--console-panel), [§11.4](#114-console--error-explanation), [§14.2](#142-traceback-annotation-beginner-errors)) | lib/console | FR-CONSOLE-1..7, FR-ERR-1..4, DAT-5 |
 | File explorer ([§4.5](#45-libfiles--workspace-file-explorer)) | lib/files | FR-FILES-1..8, FR-CONN-4/9, CON-3, SEC-7 |
-| Blocks ([§4.6](#46-libblocks--blockly-block-editor), [§11.2](#112-blocks)) | lib/blocks | FR-BLOCKS-1..14, CON-6/7 |
+| Blocks ([§4.6](#46-libblocks--blockly-block-editor), [§11.2](#112-blocks), [ADR-0031](../../decisions/0031-explicit-named-micropython-pins.md)) | lib/blocks | FR-BLOCKS-1/1A/1B/2..14, CON-6/7 |
 | Plots ([§4.7](#47-libplots--live-plots), [§11.3](#113-plots)) | lib/plots | FR-PLOTS-1..3, CON-7, OI-5 |
 | Connect flow + runtime `ConnectionManager` session ([§4.8](#48-libconnect--scanconnect-flow-ui), [ADR-0009](../../decisions/0009-runtime-connection-manager.md)) | lib/connect, lib/pble | FR-CONNECT-1..6, FR-CONN-6, FR-UI-3, FR-BLE-8, CON-8, SEC-6, NFR-USE-1 |
 | Screenless identity — label/identify caps, scan-list name, rename + Identify UI, privacy ([§4.8](#48-libconnect--scanconnect-flow-ui), [§7.1](#71-scan--connect), [§8.6](#86-hello--capabilities), [§8.9](#89-screenless-identity--identify-control-commands), [§11.5](#115-screenless-identity--rename--identify)) | lib/connect, lib/pble | FR-CONN-10/11/12, FR-CONNECT-1, FR-CONN-1/6, SEC-8/9 |
