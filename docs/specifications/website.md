@@ -143,6 +143,13 @@ drift. The global header's primary call to action MUST link to `/app` with
 platform-neutral PyBLE installation wording; Support remains available through
 normal navigation.
 
+The two home-page invitations MUST appear in one labelled **Choose your tablet
+beta** comparison group. Within that group the iPad external-beta and Android
+invited-internal-test cards MUST be peer siblings, render side by side when the
+viewport permits, and stack without changing order on narrower screens. Each
+card retains its own accessible heading, exact link, local QR, direct-device
+instructions, and channel-specific availability warning.
+
 Each QR code MUST be accompanied by an accessible link and visible
 instructions; it is an additional path, never the only way to open its testing
 channel. A changed or withdrawn destination requires the specification, content
