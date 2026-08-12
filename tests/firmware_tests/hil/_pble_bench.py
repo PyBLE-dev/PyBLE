@@ -24,16 +24,48 @@ PROFILE_ORDER = (
     "esp32-4mb",
     "esp32-s3-n16r8",
     "waveshare-esp32-s3-lcd-147b",
+    "esp32-c3-4mb",
+    "rpi-pico2-w",
 )
 PROFILE_TARGETS = {
     "esp32-4mb": "esp32",
     "esp32-s3-n16r8": "esp32-s3",
     "waveshare-esp32-s3-lcd-147b": "waveshare-esp32-s3-lcd-147b",
+    "esp32-c3-4mb": "esp32-c3",
+    "rpi-pico2-w": "rpi-pico2-w",
 }
 PROFILE_CHIPS = {
     "esp32-4mb": "esp32",
     "esp32-s3-n16r8": "esp32-s3",
     "waveshare-esp32-s3-lcd-147b": "esp32-s3",
+    "esp32-c3-4mb": "esp32-c3",
+    "rpi-pico2-w": "rpi-pico2-w",
+}
+
+V051_PROFILE_ORDER = PROFILE_ORDER[:3]
+PROFILE_RESOURCE_KINDS = {
+    profile_id: "rp2" if profile_id == "rpi-pico2-w" else "esp-idf"
+    for profile_id in PROFILE_ORDER
+}
+ESP_PROFILE_ORDER = PROFILE_ORDER[:4]
+PROFILE_REQUIRES_2M = {
+    "esp32-4mb": False,
+    "esp32-s3-n16r8": True,
+    "waveshare-esp32-s3-lcd-147b": True,
+    "esp32-c3-4mb": True,
+}
+PROFILE_TRANSPORTS = {
+    profile_id: {
+        "required_att_mtu": 247,
+        "required_put_window": 4 if profile_id == "rpi-pico2-w" else 8,
+        "required_chunk_bytes": 229,
+        "link_facts_kind": (
+            "btstack-observed-v1"
+            if profile_id == "rpi-pico2-w"
+            else "nimble-settled-v1"
+        ),
+    }
+    for profile_id in PROFILE_ORDER
 }
 
 WORKLOAD = {
@@ -49,9 +81,10 @@ WORKLOAD = {
     "reliability_file_bytes": 16384,
     "post_reliability_heap_samples": 1,
     "required_att_mtu": 247,
-    "required_put_window": 8,
     "required_chunk_bytes": 229,
 }
+
+V051_WORKLOAD = {**WORKLOAD, "required_put_window": 8}
 
 DERIVATION = {
     "application_image": "exact-byte-identical-two-root-v1",
@@ -76,6 +109,15 @@ THRESHOLD_KEYS = (
     "idf_internal_free_min_bytes",
     "idf_internal_largest_block_min_bytes",
     "idf_internal_minimum_free_min_bytes",
+    "reset_to_service_advertisement_max_ms",
+    "put_committed_goodput_min_bytes_per_second",
+    "get_verified_goodput_min_bytes_per_second",
+)
+
+RP2_THRESHOLD_KEYS = (
+    "firmware_bin_max_bytes",
+    "firmware_image_headroom_min_bytes",
+    "gc_free_min_bytes",
     "reset_to_service_advertisement_max_ms",
     "put_committed_goodput_min_bytes_per_second",
     "get_verified_goodput_min_bytes_per_second",
@@ -172,6 +214,42 @@ def _require_exact_keys(value, keys, label):
         raise BenchError(
             "%s has wrong keys (missing=%s extra=%s)" % (label, missing, extra)
         )
+
+
+def required_transport(*, profile_id=None, expected_chip=None):
+    """Return the exact v0.6 transport tuple without borrowing a profile row."""
+    if profile_id is not None:
+        if profile_id not in PROFILE_ORDER:
+            raise BenchError("profile is outside the current OI-1 order")
+        if (
+            expected_chip is not None
+            and PROFILE_CHIPS[profile_id] != expected_chip
+        ):
+            raise BenchError("expected chip disagrees with profile")
+        transport = PROFILE_TRANSPORTS[profile_id]
+    else:
+        matches = [
+            PROFILE_TRANSPORTS[candidate]
+            for candidate in PROFILE_ORDER
+            if PROFILE_CHIPS[candidate] == expected_chip
+        ]
+        triples = {
+            (
+                item["required_att_mtu"],
+                item["required_put_window"],
+                item["required_chunk_bytes"],
+            )
+            for item in matches
+        }
+        if len(triples) != 1:
+            raise BenchError("expected chip does not select one transport contract")
+        mtu, window, chunk = next(iter(triples))
+        return mtu, window, chunk
+    return (
+        transport["required_att_mtu"],
+        transport["required_put_window"],
+        transport["required_chunk_bytes"],
+    )
 
 
 def canonical_json_bytes(value):
@@ -577,7 +655,7 @@ def _integer_cap(caps, key, *, allow_zero=False):
     return value
 
 
-def validate_oi1_caps(caps, *, expected_chip, backend_mtu):
+def validate_oi1_caps(caps, *, expected_chip, backend_mtu, profile_id=None):
     chip = caps.get("chip", "")
     if chip != expected_chip:
         raise BenchError(
@@ -587,10 +665,9 @@ def validate_oi1_caps(caps, *, expected_chip, backend_mtu):
     window = _integer_cap(caps, "window")
     chunk = _integer_cap(caps, "chunk")
     free_mem = _integer_cap(caps, "free_mem", allow_zero=True)
-    required = (
-        WORKLOAD["required_att_mtu"],
-        WORKLOAD["required_put_window"],
-        WORKLOAD["required_chunk_bytes"],
+    required = required_transport(
+        profile_id=profile_id,
+        expected_chip=expected_chip,
     )
     if (mtu, window, chunk) != required:
         raise BenchError(
@@ -781,7 +858,13 @@ def path_payload(path):
     return _u16(len(encoded)) + encoded
 
 
-async def hello(central, next_id, *, expected_chip, timeout_s=10.0):
+async def hello(
+        central,
+        next_id,
+        *,
+        expected_chip,
+        profile_id=None,
+        timeout_s=10.0):
     response = await central.send_cmd(
         wire.OP_HELLO,
         next_id(),
@@ -796,6 +879,7 @@ async def hello(central, next_id, *, expected_chip, timeout_s=10.0):
         caps,
         expected_chip=expected_chip,
         backend_mtu=central.backend_mtu,
+        profile_id=profile_id,
     )
     try:
         central.confirm_caps_mtu(observed[0])
@@ -901,8 +985,11 @@ async def put_file(
         clock_ns=time.monotonic_ns,
         sleep=asyncio.sleep):
     data = bytes(data)
-    if window != WORKLOAD["required_put_window"]:
-        raise BenchError("OI-1 PUT requires window=8 with no override")
+    if window not in {
+        transport["required_put_window"]
+        for transport in PROFILE_TRANSPORTS.values()
+    }:
+        raise BenchError("OI-1 PUT window is outside the profile contracts")
     if chunk != WORKLOAD["required_chunk_bytes"]:
         raise BenchError("OI-1 PUT requires chunk=229 with no override")
     total = len(data)
@@ -1082,14 +1169,16 @@ async def roundtrip_file(
         payload,
         *,
         next_id,
+        window=8,
+        chunk=229,
         clock_ns=time.monotonic_ns):
     await remove_if_present(central, path, next_id)
     put = await put_file(
         central,
         path,
         payload,
-        window=WORKLOAD["required_put_window"],
-        chunk=WORKLOAD["required_chunk_bytes"],
+        window=window,
+        chunk=chunk,
         next_id=next_id,
         clock_ns=clock_ns,
     )
@@ -1126,6 +1215,7 @@ async def run_reliability(central, profile_id, *, next_id, clock_ns=time.monoton
     get_rtx_chunks = 0
     get_rtx_bytes = 0
     rewinds = 0
+    _, required_window, required_chunk = required_transport(profile_id=profile_id)
     await ensure_directory(central, "oi1", next_id)
     for index in range(attempted):
         payload = deterministic_payload(
@@ -1140,8 +1230,8 @@ async def run_reliability(central, profile_id, *, next_id, clock_ns=time.monoton
                 central,
                 path,
                 payload,
-                window=WORKLOAD["required_put_window"],
-                chunk=WORKLOAD["required_chunk_bytes"],
+                window=required_window,
+                chunk=required_chunk,
                 next_id=next_id,
                 clock_ns=clock_ns,
             )
@@ -1258,8 +1348,8 @@ def _validated_link_update(value, keys, label):
 
 def validate_transfer_link_facts(value, *, profile_id):
     """Validate the strict, identifier-free ADR-0027 transfer-session facts."""
-    if profile_id not in PROFILE_ORDER:
-        raise BenchError("profile is outside the current OI-1 order")
+    if profile_id not in ESP_PROFILE_ORDER:
+        raise BenchError("NimBLE transfer facts require an ESP profile")
     _require_exact_keys(
         value,
         ("dle", "phy", "connection_parameters", "tx_mbuf_starve_count"),
@@ -1322,22 +1412,22 @@ def validate_transfer_link_facts(value, *, profile_id):
     settled_rx = _require_nonnegative_int(
         phy["settled_rx"], "transfer_link_facts.phy.settled_rx"
     )
-    if PROFILE_CHIPS[profile_id] == "esp32-s3":
+    if PROFILE_REQUIRES_2M[profile_id]:
         if phy["required_2m"] is not True:
-            raise BenchError("S3 transfer facts must require 2M PHY")
+            raise BenchError("2M transfer facts must require 2M PHY")
         if not 1 <= phy_attempts <= 4:
-            raise BenchError("S3 PHY request attempts must be in 1..4")
+            raise BenchError("2M PHY request attempts must be in 1..4")
         if not phy_updates:
-            raise BenchError("S3 PHY updates must not be empty")
+            raise BenchError("2M PHY updates must not be empty")
         if (settled_tx, settled_rx) != (2, 2):
-            raise BenchError("S3 PHY must settle at 2M/2M")
+            raise BenchError("PHY must settle at 2M/2M")
         final_phy = phy_updates[-1]
         if (final_phy["status"], final_phy["tx"], final_phy["rx"]) != (
             0,
             settled_tx,
             settled_rx,
         ):
-            raise BenchError("final S3 PHY update does not confirm settled 2M/2M")
+            raise BenchError("final PHY update does not confirm settled 2M/2M")
     else:
         if phy["required_2m"] is not False:
             raise BenchError("classic transfer facts must compile out 2M PHY")
@@ -1392,10 +1482,11 @@ def validate_transfer_link_facts(value, *, profile_id):
 
 
 def validate_observation(value, *, profile_id):
+    _, required_window, _ = required_transport(profile_id=profile_id)
     _require_exact_keys(value, OBSERVATION_KEYS, "oi1_observation")
     for key, required in (
         ("observed_att_mtu", 247),
-        ("observed_window", 8),
+        ("observed_window", required_window),
         ("observed_chunk_bytes", 229),
         ("roundtrip_integrity_verified", 5),
         ("get_offset_sequences_validated", 5),

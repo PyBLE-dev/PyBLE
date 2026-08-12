@@ -17345,7 +17345,7 @@ def _main(argv: list[str] | None = None) -> int:
     )
     baseline_assembly_parser.add_argument(
         "profile_fragment_paths",
-        nargs=2,
+        nargs="+",
         type=Path,
     )
     baseline_assembly_parser.add_argument(
@@ -17406,7 +17406,7 @@ def _main(argv: list[str] | None = None) -> int:
     hil_assembly_parser.add_argument("candidate_dir", type=Path)
     hil_assembly_parser.add_argument(
         "profile_evidence_paths",
-        nargs=2,
+        nargs="+",
         type=Path,
     )
     hil_assembly_parser.add_argument("output_path", type=Path)

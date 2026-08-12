@@ -3,7 +3,7 @@
 # Part of PyBLE (https://pyble.dev) — see /LICENSE.
 #
 # Frozen OI-1 single-profile HIL orchestrator.  Baseline mode emits one
-# canonical profile fragment for later three-profile assembly; verify mode emits
+# canonical profile fragment for later source-era assembly; verify mode emits
 # the exact completed oi1_observation object after applying the committed
 # profile thresholds.
 
@@ -22,11 +22,18 @@ from _pble_bench import (
     BenchError,
     CommandIds,
     DERIVATION,
+    ESP_PROFILE_ORDER,
     PROFILE_CHIPS,
     PROFILE_ORDER,
+    PROFILE_REQUIRES_2M,
+    PROFILE_RESOURCE_KINDS,
     PROFILE_TARGETS,
+    PROFILE_TRANSPORTS,
     RedactedRawLog,
+    RP2_THRESHOLD_KEYS,
     THRESHOLD_KEYS,
+    V051_PROFILE_ORDER,
+    V051_WORKLOAD,
     WORKLOAD,
     atomic_write_canonical_json,
     canonical_json_bytes,
@@ -55,6 +62,8 @@ PROFILE_CAPACITIES = {
         16 * 1024 * 1024,
         8 * 1024 * 1024,
     ),
+    "esp32-c3-4mb": (4 * 1024 * 1024, 0),
+    "rpi-pico2-w": (4 * 1024 * 1024, 0),
 }
 
 SERIAL_ENDPOINT_GONE_ERRNOS = frozenset(
@@ -215,8 +224,8 @@ class LinkFactParser:
     )
 
     def __init__(self, profile_id):
-        if profile_id not in PROFILE_ORDER:
-            raise BenchError("profile is outside the current OI-1 order")
+        if profile_id not in ESP_PROFILE_ORDER:
+            raise BenchError("NimBLE link parsing requires an ESP profile")
         self.profile_id = profile_id
         self._stage = "dle"
         self._attempts = {"dle": 0, "phy": 0, "conn-param": 0}
@@ -280,8 +289,8 @@ class LinkFactParser:
         match = self._REQUEST.fullmatch(payload)
         if match is not None:
             phase, raw_attempt, context, raw_rc = match.groups()
-            if phase == "phy" and self.profile_id == "esp32-4mb":
-                raise BenchError("classic profile must not request PHY tuning")
+            if phase == "phy" and not PROFILE_REQUIRES_2M[self.profile_id]:
+                raise BenchError("this profile must not request PHY tuning")
             if phase != self._stage:
                 raise BenchError(
                     "link-tune request is out of order for phase %s" % phase
@@ -324,7 +333,7 @@ class LinkFactParser:
             ):
                 self._stage = (
                     "phy"
-                    if PROFILE_CHIPS[self.profile_id] == "esp32-s3"
+                    if PROFILE_REQUIRES_2M[self.profile_id]
                     else "phy-skip"
                 )
             self._record(
@@ -337,8 +346,8 @@ class LinkFactParser:
 
         match = self._PHY_COMPLETE.fullmatch(payload)
         if match is not None:
-            if PROFILE_CHIPS[self.profile_id] != "esp32-s3":
-                raise BenchError("classic profile must not report PHY updates")
+            if not PROFILE_REQUIRES_2M[self.profile_id]:
+                raise BenchError("this profile must not report PHY updates")
             status, tx, rx = (int(item) for item in match.groups())
             update = {"status": status, "tx": tx, "rx": rx}
             self._phy_updates.append(update)
@@ -353,8 +362,8 @@ class LinkFactParser:
             return True
 
         if self._CLASSIC_PHY_SKIP.fullmatch(payload) is not None:
-            if self.profile_id != "esp32-4mb":
-                raise BenchError("S3 profile must not compile out PHY tuning")
+            if PROFILE_REQUIRES_2M[self.profile_id]:
+                raise BenchError("2M profile must not compile out PHY tuning")
             if self._stage != "phy-skip" or self._classic_phy_skipped:
                 raise BenchError("classic PHY skip is out of order")
             self._classic_phy_skipped = True
@@ -393,7 +402,7 @@ class LinkFactParser:
         raise BenchError("malformed or unsupported link-tune record")
 
     def _facts(self, tx_mbuf_starve_count):
-        if PROFILE_CHIPS[self.profile_id] == "esp32-s3":
+        if PROFILE_REQUIRES_2M[self.profile_id]:
             phy = {
                 "required_2m": True,
                 "request_attempts": self._attempts["phy"],
@@ -469,6 +478,7 @@ async def collect_observation(profile_id, executor):
                     caps,
                     expected_chip=expected_chip,
                     backend_mtu=backend_mtu,
+                    profile_id=profile_id,
                 )
                 if observed_transport is None:
                     observed_transport = transport[:3]
@@ -835,6 +845,7 @@ class HardwareExecutor:
                 central,
                 self.ids.next,
                 expected_chip=self.args.expect_chip,
+                profile_id=self.args.profile,
             )
         except Exception:
             await central.disconnect()
@@ -935,6 +946,12 @@ class HardwareExecutor:
             path,
             payload,
             next_id=self.ids.next,
+            window=PROFILE_TRANSPORTS[self.args.profile][
+                "required_put_window"
+            ],
+            chunk=PROFILE_TRANSPORTS[self.args.profile][
+                "required_chunk_bytes"
+            ],
         )
         self.log.write(
             "roundtrip",
@@ -1002,42 +1019,90 @@ def _load_policy_thresholds(path, profile_id):
         raise BenchError("cannot load qualification policy: %s" % exc) from exc
     if not isinstance(policy, dict):
         raise BenchError("qualification policy is not an object")
-    expected_keys = {
+    schema_version = policy.get("schema_version")
+    common_keys = {
         "schema_version",
         "qualification_scope",
         "profile_order",
-        "deferred_profiles",
         "workload",
         "derivation",
         "baseline_evidence",
         "profiles",
     }
+    if schema_version == 2:
+        expected_keys = common_keys | {"deferred_profiles"}
+        profile_order = V051_PROFILE_ORDER
+        expected_scope = "pre-v1"
+        expected_workload = V051_WORKLOAD
+        if policy.get("deferred_profiles") != ["esp32-c3-4mb"]:
+            raise BenchError("qualification policy has the wrong deferred profile")
+    elif schema_version == 3:
+        expected_keys = common_keys
+        profile_order = PROFILE_ORDER
+        expected_scope = "v0.6.0-five-profile"
+        expected_workload = WORKLOAD
+    else:
+        raise BenchError("qualification policy schema_version must be 2 or 3")
     if set(policy) != expected_keys:
         raise BenchError("qualification policy has the wrong top-level keys")
-    if policy.get("schema_version") != 2:
-        raise BenchError("qualification policy schema_version must be 2")
-    if policy.get("qualification_scope") != "pre-v1":
-        raise BenchError("qualification policy scope must be pre-v1")
-    if policy.get("profile_order") != list(PROFILE_ORDER):
+    if policy.get("qualification_scope") != expected_scope:
+        raise BenchError("qualification policy has the wrong scope")
+    if policy.get("profile_order") != list(profile_order):
         raise BenchError("qualification policy has the wrong profile order")
-    if policy.get("deferred_profiles") != ["esp32-c3-4mb"]:
-        raise BenchError("qualification policy has the wrong deferred profile")
-    if policy.get("workload") != WORKLOAD or policy.get("derivation") != DERIVATION:
+    if (
+        policy.get("workload") != expected_workload
+        or policy.get("derivation") != DERIVATION
+    ):
         raise BenchError("qualification policy workload/derivation has drifted")
     profiles = policy.get("profiles")
     if (
         not isinstance(profiles, list)
-        or len(profiles) != len(PROFILE_ORDER)
+        or len(profiles) != len(profile_order)
         or [
             item.get("profile_id") if isinstance(item, dict) else None
             for item in profiles
         ]
-        != list(PROFILE_ORDER)
+        != list(profile_order)
     ):
         raise BenchError("qualification policy profiles have the wrong order")
+    if profile_id not in profile_order:
+        raise BenchError("qualification policy does not cover this profile")
     for item in profiles:
-        if set(item) != {"profile_id", "target", "thresholds"}:
-            raise BenchError("qualification policy profile has the wrong keys")
+        current_profile_id = item["profile_id"]
+        if schema_version == 2:
+            if set(item) != {"profile_id", "target", "thresholds"}:
+                raise BenchError("qualification policy profile has the wrong keys")
+            threshold_keys = THRESHOLD_KEYS
+        else:
+            if set(item) != {
+                "profile_id",
+                "target",
+                "resource_kind",
+                "transport",
+                "thresholds",
+            }:
+                raise BenchError("qualification policy profile has the wrong keys")
+            if item.get("resource_kind") != PROFILE_RESOURCE_KINDS[current_profile_id]:
+                raise BenchError("qualification policy resource kind disagrees")
+            if item.get("transport") != PROFILE_TRANSPORTS[current_profile_id]:
+                raise BenchError("qualification policy transport disagrees")
+            threshold_keys = (
+                RP2_THRESHOLD_KEYS
+                if PROFILE_RESOURCE_KINDS[current_profile_id] == "rp2"
+                else THRESHOLD_KEYS
+            )
+        if item.get("target") != PROFILE_TARGETS[current_profile_id]:
+            raise BenchError("qualification policy target disagrees with profile")
+        thresholds = item.get("thresholds")
+        if not isinstance(thresholds, dict) or set(thresholds) != set(threshold_keys):
+            raise BenchError("qualification policy thresholds have the wrong keys")
+        for key in threshold_keys:
+            if (
+                isinstance(thresholds[key], bool)
+                or not isinstance(thresholds[key], int)
+                or thresholds[key] <= 0
+            ):
+                raise BenchError("qualification policy threshold must be positive")
     matches = [
         item
         for item in profiles
@@ -1046,12 +1111,7 @@ def _load_policy_thresholds(path, profile_id):
     if len(matches) != 1:
         raise BenchError("qualification policy lacks one matching profile")
     entry = matches[0]
-    if entry.get("target") != PROFILE_TARGETS[profile_id]:
-        raise BenchError("qualification policy target disagrees with profile")
-    thresholds = entry.get("thresholds")
-    if not isinstance(thresholds, dict) or set(thresholds) != set(THRESHOLD_KEYS):
-        raise BenchError("qualification policy thresholds have the wrong keys")
-    return thresholds
+    return entry["thresholds"]
 
 
 def _parse_args(argv=None):

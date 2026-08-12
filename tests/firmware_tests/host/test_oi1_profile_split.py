@@ -23,6 +23,8 @@ PROFILE_ORDER = (
     "esp32-4mb",
     "esp32-s3-n16r8",
     EXACT_PROFILE,
+    "esp32-c3-4mb",
+    "rpi-pico2-w",
 )
 
 
@@ -50,7 +52,7 @@ def _s3_link_facts() -> dict:
 
 
 class ExactBoardOi1MatrixTests(unittest.TestCase):
-    def test_current_bench_order_has_three_distinct_profile_ids(self):
+    def test_current_bench_order_has_five_distinct_profile_ids(self):
         self.assertEqual(tuple(bench.PROFILE_ORDER), PROFILE_ORDER)
         self.assertEqual(
             bench.PROFILE_TARGETS,
@@ -58,6 +60,8 @@ class ExactBoardOi1MatrixTests(unittest.TestCase):
                 "esp32-4mb": "esp32",
                 "esp32-s3-n16r8": "esp32-s3",
                 EXACT_PROFILE: EXACT_PROFILE,
+                "esp32-c3-4mb": "esp32-c3",
+                "rpi-pico2-w": "rpi-pico2-w",
             },
         )
         self.assertEqual(
@@ -66,6 +70,8 @@ class ExactBoardOi1MatrixTests(unittest.TestCase):
                 "esp32-4mb": "esp32",
                 "esp32-s3-n16r8": "esp32-s3",
                 EXACT_PROFILE: "esp32-s3",
+                "esp32-c3-4mb": "esp32-c3",
+                "rpi-pico2-w": "rpi-pico2-w",
             },
         )
         self.assertEqual(

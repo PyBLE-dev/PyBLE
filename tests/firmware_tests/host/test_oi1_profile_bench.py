@@ -35,6 +35,10 @@ PROFILE_ORDER = (
     "esp32-s3-n16r8",
     "waveshare-esp32-s3-lcd-147b",
 )
+CURRENT_PROFILE_ORDER = PROFILE_ORDER + (
+    "esp32-c3-4mb",
+    "rpi-pico2-w",
+)
 HISTORICAL_V042_PROFILE_ORDER = (
     "esp32-4mb",
     "esp32-s3-n16r8",
@@ -43,11 +47,15 @@ PROFILE_TARGETS = {
     "esp32-4mb": "esp32",
     "esp32-s3-n16r8": "esp32-s3",
     "waveshare-esp32-s3-lcd-147b": "waveshare-esp32-s3-lcd-147b",
+    "esp32-c3-4mb": "esp32-c3",
+    "rpi-pico2-w": "rpi-pico2-w",
 }
 PROFILE_CHIPS = {
     "esp32-4mb": "esp32",
     "esp32-s3-n16r8": "esp32-s3",
     "waveshare-esp32-s3-lcd-147b": "esp32-s3",
+    "esp32-c3-4mb": "esp32-c3",
+    "rpi-pico2-w": "rpi-pico2-w",
 }
 POLICY_TARGETS = {
     "esp32-4mb": "esp32",
@@ -161,6 +169,7 @@ def _transfer_link_facts(profile_id):
     elif profile_id in (
         "esp32-s3-n16r8",
         "waveshare-esp32-s3-lcd-147b",
+        "esp32-c3-4mb",
     ):
         phy = {
             "required_2m": True,
@@ -240,8 +249,8 @@ def _valid_observation(profile_id):
 
 
 class FrozenConstantsTest(unittest.TestCase):
-    def test_exact_v051_candidate_profiles_and_workload_are_frozen(self):
-        self.assertEqual(tuple(bench.PROFILE_ORDER), PROFILE_ORDER)
+    def test_exact_v060_candidate_profiles_and_common_workload_are_frozen(self):
+        self.assertEqual(tuple(bench.PROFILE_ORDER), CURRENT_PROFILE_ORDER)
         self.assertEqual(
             bench.PROFILE_TARGETS,
             PROFILE_TARGETS,
@@ -262,7 +271,6 @@ class FrozenConstantsTest(unittest.TestCase):
                 "reliability_file_bytes": 16384,
                 "post_reliability_heap_samples": 1,
                 "required_att_mtu": 247,
-                "required_put_window": 8,
                 "required_chunk_bytes": 229,
             },
         )
@@ -334,7 +342,7 @@ class FrozenConstantsTest(unittest.TestCase):
             "qualification_scope": "pre-v1",
             "profile_order": list(PROFILE_ORDER),
             "deferred_profiles": ["esp32-c3-4mb"],
-            "workload": bench.WORKLOAD,
+            "workload": bench.V051_WORKLOAD,
             "derivation": bench.DERIVATION,
             "baseline_evidence": {
                 "path": "synthetic-v0.5.1-evidence.json",
@@ -395,8 +403,12 @@ class FrozenConstantsTest(unittest.TestCase):
             waveshare,
             bench.deterministic_payload("esp32-s3-n16r8", 0, 65536),
         )
+        c3 = bench.deterministic_payload("esp32-c3-4mb", 0, 65536)
+        pico = bench.deterministic_payload("rpi-pico2-w", 0, 65536)
+        self.assertNotEqual(c3, payload)
+        self.assertNotEqual(pico, c3)
         with self.assertRaises(ValueError):
-            bench.deterministic_payload("esp32-c3-4mb", 0, 65536)
+            bench.deterministic_payload("future-profile", 0, 65536)
 
 
 class LinkFactParserRedTests(unittest.TestCase):
@@ -420,10 +432,11 @@ class LinkFactParserRedTests(unittest.TestCase):
         for payload in payloads:
             self.assertTrue(parser.feed_line(self.line(payload)))
 
-    def test_both_s3_parsers_preserve_order_and_seal_after_session_end(self):
+    def test_all_2m_parsers_preserve_order_and_seal_after_session_end(self):
         for profile_id in (
             "esp32-s3-n16r8",
             "waveshare-esp32-s3-lcd-147b",
+            "esp32-c3-4mb",
         ):
             with self.subTest(profile_id=profile_id):
                 parser = self.parser(profile_id)
@@ -945,6 +958,26 @@ class CapsAndMtuTest(unittest.TestCase):
         with self.assertRaises(bench.BenchError):
             bench.parse_caps(b"mtu=247\nmtu=247\n")
 
+        pico_caps = bench.parse_caps(
+            b"chip=rpi-pico2-w\nmtu=247\nwindow=4\nchunk=229\nfree_mem=12345\n"
+        )
+        self.assertEqual(
+            bench.validate_oi1_caps(
+                pico_caps,
+                expected_chip="rpi-pico2-w",
+                backend_mtu=247,
+                profile_id="rpi-pico2-w",
+            ),
+            (247, 4, 229, 12345),
+        )
+        with self.assertRaises(bench.BenchError):
+            bench.validate_oi1_caps(
+                {**pico_caps, "window": "8"},
+                expected_chip="rpi-pico2-w",
+                backend_mtu=247,
+                profile_id="rpi-pico2-w",
+            )
+
     def test_unknown_backend_mtu_is_not_manufactured(self):
         class UnknownMtuClient:
             pass
@@ -1160,10 +1193,11 @@ class TransferLinkFactsObservationRedTests(unittest.TestCase):
                 with self.assertRaises(bench.BenchError):
                     self.validate(observation, profile_id)
 
-    def test_both_s3_final_phy_updates_must_confirm_the_settled_pair(self):
+    def test_all_2m_final_phy_updates_must_confirm_the_settled_pair(self):
         for profile_id in (
             "esp32-s3-n16r8",
             "waveshare-esp32-s3-lcd-147b",
+            "esp32-c3-4mb",
         ):
             with self.subTest(profile_id=profile_id):
                 observation = _valid_observation(profile_id)
@@ -1840,8 +1874,11 @@ class EvidenceAndCliTest(unittest.TestCase):
         c3 = list(required)
         c3[c3.index("esp32-4mb")] = "esp32-c3-4mb"
         c3[c3.index("esp32")] = "esp32-c3"
-        with self.assertRaises(SystemExit):
-            profile_bench._parse_args(c3)
+        self.assertEqual(profile_bench._parse_args(c3).profile, "esp32-c3-4mb")
+        pico = list(required)
+        pico[pico.index("esp32-4mb")] = "rpi-pico2-w"
+        pico[pico.index("esp32")] = "rpi-pico2-w"
+        self.assertEqual(profile_bench._parse_args(pico).profile, "rpi-pico2-w")
 
 
 if __name__ == "__main__":
