@@ -321,7 +321,7 @@ The normal pinned RP2350 link has one and only one admitted GCC specs control
 input: the exact token `--specs=nosys.specs`. Under the same scrubbed driver
 environment as the build, the pinned `bin/arm-none-eabi-g++` MUST resolve that
 token uniquely with `-print-file-name=nosys.specs` to the regular installed
-file `arm-none-eabi/lib/nosys.specs`, whose 203 bytes have SHA-256
+file `arm-none-eabi/lib/nosys.specs`, whose 277 bytes have SHA-256
 `24f0304a9ef660646fcb468d0ecf308b6e82ee5648e9b10b568e19ed4726d8d8`.
 Those bytes MUST equal source-snapshot path
 `newlib-cygwin/libgloss/libnosys/nosys.specs` at newlib-cygwin commit
