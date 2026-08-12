@@ -186,6 +186,13 @@ contract, and HIL matrix live in
   `firmware.uf2` (primary, BOOTSEL/picotool-flashable), `firmware.elf`,
   `firmware.bin`, provenance JSON (`port: "rp2"`), with a hard image-size gate
   of 1,572,864 bytes.
+- The first source identity that combines this RP2 port with the four existing
+  ESP build variants is agent version **0.6.0**. Version `0.5.1` remains the
+  earlier Waveshare/ESP source candidate and MUST NOT be retagged with different
+  bytes. Selecting `0.6.0` is source versioning only: Pico remains excluded
+  from public release metadata and the web installer until GP2, while every
+  publishable ESP or RP2 artifact still requires fresh version-bound build,
+  provenance, resource, recovery, and HIL evidence.
 
 ## 7. Footprint budget (provisional, per target)
 

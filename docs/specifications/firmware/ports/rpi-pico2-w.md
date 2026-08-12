@@ -52,6 +52,12 @@ retroactively qualify Pico or change a historical release. Any later combined
 source candidate requires its own versioned artifacts and fresh target-specific
 evidence before publication.
 
+The first combined source identity is **agent version `0.6.0`**. The existing
+`0.5.1` source identity predates this port and MUST NOT be reused for different
+bytes. This version selection does not qualify Pico, add it to ESP release
+metadata, or expose it in the installer; those transitions remain gated by
+P10, including GP2.
+
 ## P10. Gates (per PRD §1B.7 sub-gate allowance; G0–G4 untouched)
 
 - **GP0 build/boot:** image builds under the pinned toolchain, passes the size gate, boots advertising. *Verify: build.*

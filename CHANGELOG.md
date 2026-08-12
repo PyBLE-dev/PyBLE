@@ -9,6 +9,18 @@ are released independently from this monorepo.
 - Added public contributor, security, architecture, protocol, and validation
   documentation.
 
+### Firmware 0.6.0 source integration
+
+- Added the `rpi-pico2-w` portable frozen-Python agent port, its isolated RP2
+  build plane, and pinned Arm GNU toolchain input alongside the four existing
+  ESP build variants.
+- Recorded successful pre-GP2 Pico 2 W BLE/app operation and physical onboard
+  LED actuation as engineering evidence. Pico remains absent from public
+  release metadata and the web installer until its complete GP2 matrix passes.
+- Reserved a new source identity instead of reusing the earlier `0.5.1`
+  Waveshare/ESP candidate version; all publishable artifacts require fresh
+  version-bound build, provenance, resource, recovery, and HIL evidence.
+
 ### Firmware 0.5.1 source candidate — 2026-08-03
 
 - Defined the independently selected `waveshare-esp32-s3-lcd-147b`
