@@ -58,8 +58,12 @@ The home page MAY make these verified claims:
 - It is a free, MIT-licensed, tablet-first MicroPython IDE designed for
   microcontroller boards that can run MicroPython and host a compatible
   Bluetooth Low Energy PyBLE agent.
-- Classic ESP32, ESP32-S3, and ESP32-C3 are the initial beta firmware targets,
-  not the permanent platform boundary.
+- The source-selected `v0.6.0` engineering matrix has five exact targets:
+  `esp32-4mb`, `esp32-s3-n16r8`, `waveshare-esp32-s3-lcd-147b`,
+  `esp32-c3-4mb`, and `rpi-pico2-w`. This source/build posture is not five
+  public support claims: C3 and Pico 2 W remain behind their frozen production
+  qualification and publication gates, and every public installer claim stays
+  bound to its active release selector.
 - After one-time wired firmware provisioning, its normal workflow is BLE-first.
 - The app can scan/connect, edit, save, run, stop, soft reboot, exchange board
   files, and provide a live console over PBLE/1.
@@ -118,6 +122,9 @@ While either channel is active, the home page and `/app` MUST:
 
 - distinguish the iPad external beta from the Android internal test, without
   implying a production App Store or public Google Play release;
+- summarize both channels in the home-page hero and link its primary app action
+  to `/app`; the hero MUST NOT present the iPad channel as the only available
+  app test;
 - explain that an unapproved or signed-out visitor may be unable to open the
   restricted Google Play listing;
 - provide a normal HTTPS link that works on the device displaying the page;
@@ -655,6 +662,26 @@ followed by these five choices in this order:
 4. ESP32-C3 4 MiB (`esp32-c3-4mb`); and
 5. Raspberry Pi Pico 2 W (`rpi-pico2-w`).
 
+When this explicit loopback preview is active, the home page MUST derive its
+firmware summary from the same descriptor rather than falling back to the
+production no-release state. It MUST visibly say **LOCAL ENGINEERING PREVIEW
+v<version> — UNQUALIFIED**, state that the bytes are neither a public release
+nor a support claim, show the same five target IDs in descriptor order with
+their exact constraints and provisioning method, and link visibly to `/flash`.
+Every preview target status MUST remain engineering-only and unqualified. The
+home page MUST distinguish the four ESP Web Serial targets from Pico 2 W's
+UF2/BOOTSEL flow, but it MUST expose no artifact path, hash, consent control, or
+install/download action of its own.
+
+The preview-aware home page MUST NOT call ESP32-C3 merely planned, omit the
+Waveshare or Pico 2 W target, show stale `v0.4.2`/`v0.5.1` firmware copy, or use
+the words qualified, supported, or public release for the local bytes. It MUST
+NOT render the Waveshare photograph: the historical-photo exception below is
+confined to the exact-board reference on `/flash`. Without the explicit local
+preview, the home page remains bound only to the ordinary build-selected
+public-beta, candidate, qualified, or fail-closed production state and renders
+no preview wording or five-target engineering claim.
+
 The four ESP choices SHOULD be grouped as **ESP Web Serial** and Pico 2 W as
 **UF2 / BOOTSEL**, using native `optgroup` elements when grouping is rendered.
 The page MUST NOT infer a choice from USB identity, chip-family detection,
@@ -769,6 +796,11 @@ The v1 site is releasable when:
   actions for the four ESP targets, and uses only verified UF2 download plus
   BOOTSEL-copy guidance for Pico 2 W; it retains the reviewed Waveshare v0.5.0
   photograph solely as a visibly historical exact-board reference;
+- while that preview is active, the home page derives the same version and five
+  ordered target identities, constraints, methods, and unqualified state from
+  the descriptor; links to `/flash`; presents both approved app-test channels;
+  exposes no firmware action or artifact metadata; and contains neither stale
+  release copy nor the historical Waveshare photograph;
 - production builds reject or exclude every preview descriptor and staged
   artifact, keep C3 and Pico 2 W out of active release selection, and retain
   the fail-closed no-release state;
