@@ -135,7 +135,7 @@ def _candidate_hil_payload(
 class ProspectiveV051ReleaseMatrixTests(unittest.TestCase):
     def test_prospective_order_and_build_variant_are_exact(self):
         self.assertEqual(
-            RELEASE.RELEASE_PROFILE_ORDER,
+            RELEASE.V05_RELEASE_PROFILE_ORDER,
             PROSPECTIVE_V051_PROFILES,
         )
         exact = RELEASE.PROFILE_SPECS[EXACT_PROFILE]

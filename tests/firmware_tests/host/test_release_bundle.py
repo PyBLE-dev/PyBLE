@@ -75,6 +75,11 @@ RELEASE_PROFILE_ORDER = (
     "esp32-s3-n16r8",
     "waveshare-esp32-s3-lcd-147b",
 )
+V060_RELEASE_PROFILE_ORDER = (
+    *RELEASE_PROFILE_ORDER,
+    "esp32-c3-4mb",
+    "rpi-pico2-w",
+)
 QUALIFICATION_POLICY_RELATIVE = "firmware/qualification/oi1-gates.json"
 QUALIFICATION_WORKLOAD = {
     "reset_samples": 10,
@@ -1632,8 +1637,8 @@ class ReleaseProductionGatePresenceTest(unittest.TestCase):
             return
         self.assertEqual(
             getattr(RELEASE, "RELEASE_PROFILE_ORDER", None),
-            RELEASE_PROFILE_ORDER,
-            "the current bundle must package only hardware-qualified profiles",
+            V060_RELEASE_PROFILE_ORDER,
+            "the current source-selected bundle must expose the frozen v0.6 order",
         )
         self.assertEqual(
             set(RELEASE.TARGET_TO_PROFILE),
