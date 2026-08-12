@@ -196,10 +196,11 @@ class V060ProfileCatalogContractTests(unittest.TestCase):
             },
         )
 
-    def test_v060_release_layout_carries_rp2_primary_bytes_and_provenance(self):
+    def test_v060_release_layout_carries_only_public_rp2_image_bytes(self):
         files = set(RELEASE._expected_bundle_files(V060_PROFILE_ORDER))
         self.assertIn("rpi-pico2-w/firmware.uf2", files)
-        self.assertIn("rpi-pico2-w/pyble-build-provenance.json", files)
+        self.assertIn("rpi-pico2-w/firmware.bin", files)
+        self.assertNotIn("rpi-pico2-w/pyble-build-provenance.json", files)
         self.assertNotIn("rpi-pico2-w/manifest.json", files)
         self.assertNotIn("rpi-pico2-w/bootloader.bin", files)
         self.assertNotIn("rpi-pico2-w/partition-table.bin", files)
