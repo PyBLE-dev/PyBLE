@@ -27,10 +27,12 @@ BLE and PBLE/1.
 
 The immutable v0.4.2 public-beta bundle contains exactly `esp32-4mb` and
 `esp32-s3-n16r8`; its narrow validation does not make either a qualified-release
-profile and it MUST NOT acquire another profile. The v0.5.1 source candidate
-targets exactly these three **provisioning image profiles**. This contract does
-not assert that candidate binaries exist or qualify them for publication; each
-requires fresh reproducibility, license, exact-byte HIL, and activation gates:
+profile and it MUST NOT acquire another profile. The earlier v0.5.1 source
+candidate targeted exactly these three **provisioning image profiles** but did
+not complete qualification. The source-selected v0.6.0 tree retains them as
+the prospective public set. This contract does not assert that candidate
+binaries exist or qualify them for publication; each requires fresh
+reproducibility, license, exact-byte HIL, and activation gates:
 
 | Profile ID | ESP Web Tools `chipFamily` | Required target configuration | ESP image silicon window (`min_chip_rev_full`…`max_chip_rev_full`) | Merge settings | Browser image and component map |
 |---|---|---|---|---|---|
