@@ -37,6 +37,8 @@
 #include "py/mpthread.h"   // mp_thread_get_state — worker-origin gate
 
 #include "pble_console.h"
+#include "pble_ble.h"
+#include "pble_runner.h"
 
 // --- Frozen wire numbers (mirror protocol.md §4 — never redefined here) -------
 // §4 CONSOLE_DATA/CONSOLE_INPUT opcodes are frozen; their §6 payloads freeze at
@@ -53,6 +55,7 @@
 // CONSOLE_DATA payload = [stream] + up to CHUNK bytes; fits one 247-MTU Notify
 // with PBLE/1 framing, so a run's output streams without per-char fragmentation.
 #define PBLE_CONSOLE_CHUNK 200
+#define PBLE_CONSOLE_FRAME_OVERHEAD 15
 #define PBLE_STDIN_RING    256   // bounded stdin staging (power-of-two)
 
 // Per-chunk TX budget for CONSOLE_DATA. A tight `for i in range(80): print(...)`
@@ -102,12 +105,21 @@ void pble_console_out(uint8_t stream_tag, const char *buf, size_t len) {
     if (!on_worker()) {
         return;
     }
+    size_t max_chunk = pble_ble_mtu();
+    if (max_chunk <= PBLE_CONSOLE_FRAME_OVERHEAD) {
+        return;
+    }
+    max_chunk -= PBLE_CONSOLE_FRAME_OVERHEAD;
+    if (max_chunk > PBLE_CONSOLE_CHUNK) {
+        max_chunk = PBLE_CONSOLE_CHUNK;
+    }
+
     g_stage[0] = stream_tag;
     size_t off = 0;
-    while (off < len) {
+    while (off < len && !pble_runner_stop_requested()) {
         size_t n = len - off;
-        if (n > PBLE_CONSOLE_CHUNK) {
-            n = PBLE_CONSOLE_CHUNK;
+        if (n > max_chunk) {
+            n = max_chunk;
         }
         memcpy(g_stage + 1, buf + off, n);
         // pble_proto_emit_paced encodes [stream][bytes] as an EVT (ID=0) and

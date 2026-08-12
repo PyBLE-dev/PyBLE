@@ -42,9 +42,14 @@ void pble_ble_sm_config(void);
 //                         on the NimBLE host task — and RETRY. Backpressure policy
 //                         lives with the caller; the transport neither queues nor
 //                         blocks (FR-BLE-11), so it never buffers unbounded bytes.
+//   PBLE_TX_OVERSIZE (-3) paced traffic was not one transport fragment. Paced
+//                         callers must split at complete PBLE-message boundaries
+//                         before calling; the transport never permits fragments
+//                         from another message to interleave during a retry wait.
 #define PBLE_TX_OK       0
 #define PBLE_TX_NO_CONN  (-1)
 #define PBLE_TX_AGAIN    (-2)
+#define PBLE_TX_OVERSIZE (-3)
 
 // Sole TX path: fragment already-encoded PBLE/1 bytes (§3.2) and Notify each
 // packet on TX. Returns PBLE_TX_OK / PBLE_TX_NO_CONN / PBLE_TX_AGAIN (above).
@@ -57,12 +62,18 @@ void pble_ble_sm_config(void);
 // and PBLE_TX_AGAIN is always a clean "nothing sent, safe to retry".
 int pble_ble_notify(const uint8_t *msg, size_t len);
 
-// Paced TX for STREAMING callers (fs-worker / MP runner — NEVER the NimBLE host
-// task): on transient congestion (PBLE_TX_AGAIN) it blocks on the NOTIFY_TX
-// drain event and retries the SAME packet, up to [budget_ms] overall. Earlier
-// fragments are never resent. Returns PBLE_TX_OK, PBLE_TX_NO_CONN (link gone),
-// or PBLE_TX_AGAIN (budget exhausted while congested — caller aborts).
+// Paced TX for BULK streaming callers (fs-worker / console — NEVER the NimBLE
+// host task). The encoded message MUST fit one §3.2 fragment. Each retry makes
+// one Notify attempt while serialized, releases the TX mutex, then waits on the
+// drain event outside the mutex. The bulk path preserves enough exact msys_1
+// capacity for one immediate small control Notify. Returns PBLE_TX_OVERSIZE when
+// the one-fragment precondition is violated.
 int pble_ble_notify_paced(const uint8_t *msg, size_t len, uint32_t budget_ms);
+
+// Paced one-fragment CONTROL event. It follows the same bounded retry discipline
+// but consumes the capacity deliberately reserved from bulk traffic.
+int pble_ble_notify_control_paced(const uint8_t *msg, size_t len,
+                                  uint32_t budget_ms);
 
 // Replace the advertised name (label-else-`PyBLE-XXXX`) and re-advertise
 // pre-connect so the change shows in the scan list (FR-BLE-12). Display-only.

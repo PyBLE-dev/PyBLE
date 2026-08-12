@@ -55,6 +55,7 @@
 #include "nimble/nimble_port_freertos.h"
 #include "nimble/nimble_npl.h"   // ble_npl_callout: deferred link-tune (G5-impl)
 #include "os/os_mbuf.h"
+#include "os/os_mempool.h"
 #include "host/ble_hs.h"
 #include "host/util/util.h"
 #include "services/gap/ble_svc_gap.h"
@@ -76,6 +77,13 @@
 #define PBLE_FRAG_LAST      0x40
 #define PBLE_FRAG_IDX_MASK  0x3F
 #define PBLE_FRAG_IDX_MOD   64
+
+// A small notification uses one msys_1 block for its data mbuf and one for the
+// ATT command wrapper in pinned NimBLE. Bulk traffic must leave both available
+// so a host-task STOP response can be submitted immediately. The terminal
+// RUN_STATE(idle) reuses returned blocks after that response drains.
+#define PBLE_TX_BULK_RESERVE_BLOCKS 2
+#define PBLE_TX_ATT_WRAPPER_BLOCKS  1
 
 #if PBLE_ENABLE_SPLASH_READINESS
 // Boot-internal readiness snapshot (ADR-0024 / FR-SPLASH-4), exact image only.
@@ -376,10 +384,33 @@ static void pble_rx_ingest(const uint8_t *pkt, size_t len, uint16_t conn) {
 // (abort) from transient host/controller backpressure (retry). A NULL mbuf means
 // the host mbuf pool is drained by in-flight notifications — that is transient
 // backpressure, and nothing was sent for this packet.
-static int pble_notify_packet(const uint8_t *pkt, size_t len) {
+static int pble_msys1_num_free(void) {
+    struct os_mempool *pool = NULL;
+    struct os_mempool_info info;
+    while ((pool = os_mempool_info_get_next(pool, &info)) != NULL) {
+        if (strcmp(info.omi_name, "msys_1") == 0) {
+            return info.omi_num_free;
+        }
+    }
+    // Fail closed for bulk admission if the pinned pool cannot be identified.
+    return 0;
+}
+
+static int pble_notify_packet(const uint8_t *pkt, size_t len,
+                              uint8_t reserve_blocks) {
     struct os_mbuf *om = ble_hs_mbuf_from_flat(pkt, (uint16_t)len);
     if (om == NULL) {
         pble_tx_mbuf_starve++;   // GAP-2: host msys pool drained (pool-starve gate)
+        return PBLE_TX_AGAIN;
+    }
+    // The data chain above is already charged to msys_1. Before a BULK submit,
+    // preserve one block for this packet's ATT wrapper plus the two blocks a
+    // subsequent small control notification needs. Query msys_1 specifically:
+    // aggregate msys_1+msys_2 free space cannot satisfy these allocations.
+    if (reserve_blocks > 0 &&
+        pble_msys1_num_free() < PBLE_TX_ATT_WRAPPER_BLOCKS + reserve_blocks) {
+        os_mbuf_free_chain(om);
+        pble_tx_mbuf_starve++;
         return PBLE_TX_AGAIN;
     }
     // ble_gatts_notify_custom consumes the mbuf on both success and failure.
@@ -409,7 +440,7 @@ static int pble_notify_message(const uint8_t *msg, size_t len) {
 
     if (len == 0) {
         pkt[0] = PBLE_FRAG_FIRST | PBLE_FRAG_LAST;  // one empty FIRST+LAST packet
-        return pble_notify_packet(pkt, 1);
+        return pble_notify_packet(pkt, 1, 0);
     }
 
     size_t offset = 0;
@@ -428,7 +459,7 @@ static int pble_notify_message(const uint8_t *msg, size_t len) {
         }
         pkt[0] = hdr;
         memcpy(pkt + 1, msg + offset, chunk);
-        int rc = pble_notify_packet(pkt, chunk + 1);
+        int rc = pble_notify_packet(pkt, chunk + 1, 0);
         if (rc != PBLE_TX_OK) {
             return rc;   // propagate NO_CONN (abort) vs AGAIN (retriable) verbatim
         }
@@ -438,89 +469,70 @@ static int pble_notify_message(const uint8_t *msg, size_t len) {
     return PBLE_TX_OK;
 }
 
-// Paced variant for STREAMING senders (fs-worker / MP runner — NEVER the NimBLE
-// host task, which must stay free to drain): identical fragmentation, but a
-// per-PACKET PBLE_TX_AGAIN blocks on the NOTIFY_TX drain semaphore (bounded
-// slices, overall [deadline]) and retries the SAME packet — earlier fragments
-// are never resent, so no reassembly poisoning and no mbuf re-consumption.
-// Caller holds pble_tx_mutex (the fragment run stays atomic on TX).
-static int pble_notify_message_paced(const uint8_t *msg, size_t len,
-                                     TickType_t deadline) {
-    if (pble_conn_handle == BLE_HS_CONN_HANDLE_NONE) {
-        return PBLE_TX_NO_CONN;
-    }
-    size_t psize = pble_payload_size(pble_mtu_val);
-    uint8_t pkt[PBLE_FRAG_PKT_MAX];
-    size_t offset = 0;
-    uint8_t index = 0;
-
-    do {
-        size_t chunk = len - offset;
-        if (chunk > psize) {
-            chunk = psize;
-        }
-        uint8_t hdr = (uint8_t)(index % PBLE_FRAG_IDX_MOD);
-        if (index == 0) {
-            hdr |= PBLE_FRAG_FIRST;
-        }
-        if (offset + chunk >= len) {
-            hdr |= PBLE_FRAG_LAST;
-        }
-        pkt[0] = hdr;
-        memcpy(pkt + 1, msg + offset, chunk);
-
-        for (;;) {
-            int rc = pble_notify_packet(pkt, chunk + 1);
-            if (rc == PBLE_TX_OK) {
-                break;
-            }
-            if (rc != PBLE_TX_AGAIN) {
-                return rc;              // NO_CONN: the link is gone — abort.
-            }
-            TickType_t now = xTaskGetTickCount();
-            if (now >= deadline) {
-                return PBLE_TX_AGAIN;   // budget exhausted — caller aborts.
-            }
-            // Wait for TX space in bounded slices; ≥1 tick so a coarse tick
-            // rate can never truncate the wait to a busy-spin. The slice is ONE
-            // connection interval (15 ms), not 100 ms: NOTIFY_TX is a submit-
-            // time event, so after an msys-NULL there is NO future drain edge
-            // to wake on — the controller frees mbufs silently as events tick.
-            // A 100 ms slice dead-slept about seven events per starvation
-            // burst; the bounded 15 ms cadence guarantees progress.
-            TickType_t slice = deadline - now;
-            const TickType_t max_slice = pdMS_TO_TICKS(15) ? pdMS_TO_TICKS(15) : 1;
-            if (slice > max_slice) {
-                slice = max_slice;
-            }
-            if (slice == 0) {
-                slice = 1;
-            }
-            xSemaphoreTake(pble_tx_drain_sem, slice);
-        }
-        offset += chunk;
-        index++;
-    } while (offset < len);
-    return PBLE_TX_OK;
-}
-
-// Exported paced TX for streaming callers (see pble_ble.h). Serialized with
-// every other sender by the same recursive mutex; the critical section is
-// bounded by [budget_ms].
-int pble_ble_notify_paced(const uint8_t *msg, size_t len, uint32_t budget_ms) {
+// Paced one-fragment TX. A retry serializes exactly one Notify attempt, releases
+// the mutex, and only then waits. Complete PBLE messages therefore remain atomic
+// while a control sender can acquire the mutex during bulk backpressure.
+static int pble_ble_notify_paced_with_reserve(const uint8_t *msg, size_t len,
+                                              uint32_t budget_ms,
+                                              uint8_t reserve_blocks) {
     if (pble_tx_mutex == NULL || pble_tx_drain_sem == NULL) {
         return PBLE_TX_NO_CONN;
     }
+    if (pble_conn_handle == BLE_HS_CONN_HANDLE_NONE) {
+        return PBLE_TX_NO_CONN;
+    }
+    if (len > pble_payload_size(pble_mtu_val)) {
+        return PBLE_TX_OVERSIZE;
+    }
+
+    uint8_t pkt[PBLE_FRAG_PKT_MAX];
+    pkt[0] = PBLE_FRAG_FIRST | PBLE_FRAG_LAST;
+    if (len > 0) {
+        memcpy(pkt + 1, msg, len);
+    }
+
     TickType_t ticks = pdMS_TO_TICKS(budget_ms);
     if (ticks == 0) {
         ticks = 1;
     }
-    TickType_t deadline = xTaskGetTickCount() + ticks;
-    xSemaphoreTakeRecursive(pble_tx_mutex, portMAX_DELAY);
-    int rc = (len == 0) ? pble_notify_message(msg, len)
-                        : pble_notify_message_paced(msg, len, deadline);
-    xSemaphoreGiveRecursive(pble_tx_mutex);
-    return rc;
+    TickType_t started = xTaskGetTickCount();
+    const TickType_t max_slice = pdMS_TO_TICKS(15) ? pdMS_TO_TICKS(15) : 1;
+
+    for (;;) {
+        TickType_t elapsed = xTaskGetTickCount() - started;  // wrap-safe
+        if (elapsed >= ticks) {
+            return PBLE_TX_AGAIN;
+        }
+        TickType_t remaining = ticks - elapsed;
+        if (xSemaphoreTakeRecursive(pble_tx_mutex, remaining) != pdTRUE) {
+            return PBLE_TX_AGAIN;
+        }
+        int rc = pble_notify_packet(pkt, len + 1, reserve_blocks);
+        xSemaphoreGiveRecursive(pble_tx_mutex);
+        if (rc != PBLE_TX_AGAIN) {
+            return rc;
+        }
+
+        elapsed = xTaskGetTickCount() - started;
+        if (elapsed >= ticks) {
+            return PBLE_TX_AGAIN;
+        }
+        TickType_t slice = ticks - elapsed;
+        if (slice > max_slice) {
+            slice = max_slice;
+        }
+        xSemaphoreTake(pble_tx_drain_sem, slice);
+    }
+}
+
+int pble_ble_notify_paced(const uint8_t *msg, size_t len, uint32_t budget_ms) {
+    return pble_ble_notify_paced_with_reserve(
+        msg, len, budget_ms, PBLE_TX_BULK_RESERVE_BLOCKS);
+}
+
+int pble_ble_notify_control_paced(const uint8_t *msg, size_t len,
+                                  uint32_t budget_ms) {
+    return pble_ble_notify_paced_with_reserve(msg, len, budget_ms, 0);
 }
 
 // Sole TX path (FR-BLE-3/10): fragment already-encoded PBLE/1 bytes to

@@ -153,8 +153,8 @@ static void runner_emit_state(int st) {
     // across the bounded wait so the REPL + fs-worker keep running (the same
     // discipline as pble_fs.c's worker mailbox wait).
     MP_THREAD_GIL_EXIT();
-    (void)pble_proto_emit_paced(PBLE_OP_RUN_STATE, &b, 1,
-                                PBLE_RUNSTATE_TX_BUDGET_MS);
+    (void)pble_proto_emit_control_paced(PBLE_OP_RUN_STATE, &b, 1,
+                                        PBLE_RUNSTATE_TX_BUDGET_MS);
     MP_THREAD_GIL_ENTER();
 }
 
@@ -186,8 +186,13 @@ static bool runner_exec(uint8_t mode, const char *data, size_t len) {
         nlr_pop();
         ok = true;
     } else {
-        // Uncaught exception -> traceback to CONSOLE_DATA(stderr) (FR-RUN-9).
-        mp_obj_print_exception(&pble_console_stderr_print, MP_OBJ_FROM_PTR(nlr.ret_val));
+        // STOP's injected KeyboardInterrupt is expected lifecycle control, not
+        // a user failure. Suppress its traceback so it cannot compete with the
+        // ordered STOP response and terminal idle event. Real exceptions keep
+        // the frozen stderr traceback behavior (FR-RUN-9).
+        if (!pble_runner_stop_requested()) {
+            mp_obj_print_exception(&pble_console_stderr_print, MP_OBJ_FROM_PTR(nlr.ret_val));
+        }
         ok = false;
     }
     // Never let a pending exception leak into the next run.
@@ -222,7 +227,9 @@ void pble_runner_worker(void) {
         local[len] = '\0';
 
         // Fresh run: clear stop intent + any stale pending exception.
+        taskENTER_CRITICAL(&g_mux);
         g_stop_requested = false;
+        taskEXIT_CRITICAL(&g_mux);
         MP_STATE_THREAD(mp_pending_exception) = MP_OBJ_NULL;
 
         runner_emit_state(pble_rsm_on_started(&g_rsm));   // RUN_STATE(running)
@@ -302,18 +309,35 @@ static void inject_worker_kbd_interrupt(void) {
     }
 }
 
+bool pble_runner_stop_requested(void) {
+    bool requested;
+    taskENTER_CRITICAL(&g_mux);
+    requested = g_stop_requested;
+    taskEXIT_CRITICAL(&g_mux);
+    return requested;
+}
+
 uint8_t pble_runner_stop(const pble_frame_t *req, uint8_t *rsp, size_t *rlen, uint16_t conn) {
-    (void)req;
     (void)rsp;
     (void)conn;
     if (rlen) {
         *rlen = 0;
     }
+    // Submit the matching RSP{OK} before the interrupt can produce terminal
+    // RUN_STATE(idle), then suppress the dispatcher's generic duplicate reply.
+    uint8_t status = PBLE_OK;
+    if (pble_proto_emit_id(PBLE_TYPE_RSP, req->opcode, req->id,
+                           &status, 1) != 0) {
+        return PBLE_EBUSY;
+    }
+
     // Idempotent: STOP while idle is a no-op OK (the flag is cleared at next run
     // start). If running, the worker unwinds to RUN_STATE(idle) (FR-RUN-5/6/10).
+    taskENTER_CRITICAL(&g_mux);
     g_stop_requested = true;
+    taskEXIT_CRITICAL(&g_mux);
     inject_worker_kbd_interrupt();
-    return PBLE_OK;   // returns immediately from the host task (FR-BLE-11)
+    return PBLE_NO_RSP;   // exact RSP already submitted; never duplicate it
 }
 
 static void soft_reboot_timer_cb(void *arg) {
@@ -381,7 +405,9 @@ uint8_t pble_runner_soft_reboot(const pble_frame_t *req, uint8_t *rsp, size_t *r
     // Stop the worker while the response drains. The one-shot later marshals a
     // VM soft-reset to the MAIN task; init_agent() is idempotent, so the BLE
     // link is kept where possible (FR-RUN-8).
+    taskENTER_CRITICAL(&g_mux);
     g_stop_requested = true;
+    taskEXIT_CRITICAL(&g_mux);
     inject_worker_kbd_interrupt();
     return PBLE_NO_RSP;
 }

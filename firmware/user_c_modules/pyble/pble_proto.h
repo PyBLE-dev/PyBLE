@@ -114,6 +114,10 @@ int  pble_proto_emit(uint8_t opcode, const uint8_t *payload, size_t len);
 // budget_ms, retrying the SAME packet (see pble_ble_notify_paced).
 int  pble_proto_emit_paced(uint8_t opcode, const uint8_t *payload, size_t len,
                            uint32_t budget_ms);
+// Paced one-fragment CONTROL event. Unlike bulk paced traffic, this may consume
+// the exact msys_1 capacity that bulk submission preserves for control liveness.
+int  pble_proto_emit_control_paced(uint8_t opcode, const uint8_t *payload,
+                                   size_t len, uint32_t budget_ms);
 // Emit a frame with a caller-supplied TYPE + ID from a NON-dispatch context — the
 // async reply-by-ID path for the fs-worker (FILE_* RSPs replied off the host task).
 // `type_` = PBLE_TYPE_RSP echoes the originating request's `id_`; EVTs pass ID=0.

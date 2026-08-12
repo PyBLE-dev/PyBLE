@@ -87,6 +87,10 @@ uint8_t pble_runner_run_file(const char *path);
 // Current lifecycle state (0 idle / 1 running / 2 done / 3 error).
 int  pble_runner_state(void);
 
+// True only while STOP/soft-reboot is unwinding the active worker. Console
+// output uses this read-only signal to abandon the remainder of a flood.
+bool pble_runner_stop_requested(void);
+
 // Register 0x20/0x21/0x22 into pble_proto and provision the hand-off primitives.
 // Idempotent; call once at boot from init_agent() BEFORE the worker is launched.
 void pble_runner_register(void);
