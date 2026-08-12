@@ -173,6 +173,49 @@ class V060Oi1CatalogTests(unittest.TestCase):
             (4 * 1024 * 1024, 0),
         )
 
+    def test_v060_esp_baseline_fragment_uses_schema2_resource_identity(self):
+        profile = profile_bench.build_baseline_profile(
+            profile_id="esp32-4mb",
+            board_manufacturer="Espressif",
+            board_model="host-test board",
+            module_marking="host-test module",
+            device_flash_capacity_bytes=4 * 1024 * 1024,
+            device_psram_capacity_bytes=0,
+            firmware_sha256="1" * 64,
+            manifest_sha256="2" * 64,
+            install_sha256="3" * 64,
+            environment={
+                "desktop_os": "host-test",
+                "ble_backend": "host-test",
+                "ble_adapter": "host-test",
+                "python_version": "host-test",
+            },
+            oi1_build={},
+            oi1_observation={},
+        )
+
+        self.assertEqual(
+            set(profile),
+            {
+                "profile_id",
+                "target",
+                "resource_kind",
+                "board_manufacturer",
+                "board_model",
+                "module_marking",
+                "device_flash_capacity_bytes",
+                "device_psram_capacity_bytes",
+                "install_sha256",
+                "manifest_sha256",
+                "environment",
+                "oi1_build",
+                "oi1_observation",
+            },
+        )
+        self.assertEqual(profile["resource_kind"], "esp-idf")
+        self.assertEqual(profile["install_sha256"], "3" * 64)
+        self.assertNotIn("firmware_sha256", profile)
+
     def test_schema3_policy_accepts_five_target_discriminated_rows(self):
         policy = qualification_policy()
         self.assertNotIn("deferred_profiles", policy)
