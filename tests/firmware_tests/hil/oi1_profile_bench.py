@@ -199,6 +199,18 @@ def build_baseline_profile(
                 ),
             }
         )
+    elif install_sha256 is not None:
+        common.update(
+            {
+                "resource_kind": "esp-idf",
+                "install_sha256": _require_sha256(
+                    install_sha256, "install_sha256"
+                ),
+                "manifest_sha256": _require_sha256(
+                    manifest_sha256, "manifest_sha256"
+                ),
+            }
+        )
     else:
         common.update(
             {
@@ -1402,14 +1414,23 @@ def _validate_run_metadata(args):
         "board_manufacturer",
         "board_model",
         "module_marking",
-        "firmware_sha256",
         "ble_backend",
         "ble_adapter",
     ]
-    fields.append("install_sha256" if is_rp2 else "manifest_sha256")
+    fields.extend(
+        ("firmware_sha256", "install_sha256")
+        if is_rp2
+        else ("install_sha256", "manifest_sha256")
+    )
     for field in fields:
         if not getattr(args, field):
             raise BenchError("--%s is required for a real run" % field.replace("_", "-"))
+    forbidden_digest = "manifest_sha256" if is_rp2 else "firmware_sha256"
+    if getattr(args, forbidden_digest) is not None:
+        raise BenchError(
+            "--%s is forbidden for %s"
+            % (forbidden_digest.replace("_", "-"), args.profile)
+        )
     expected_flash, expected_psram = PROFILE_CAPACITIES[args.profile]
     if args.device_flash_capacity_bytes != expected_flash:
         raise BenchError(
