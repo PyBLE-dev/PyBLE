@@ -1,6 +1,6 @@
 # PyBLE Agent Firmware — Technical Design Document (TDD)
 
-Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-08-03
+Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-08-11
 
 > **Frozen at G0 (2026-07-01, `[docs]`):** the source-tree layout ([§10.5](#105-source-layout-frozen)), which realizes the frozen NFR-MAINT-2 six-module design and the [specs.md](specs.md) §5.1/§5.6/§6/§8 freeze. Design narrative elsewhere in this doc remains DRAFT and is pinned per-story by its `[red]` tests ([§4](#4-module-design)).
 >
@@ -1624,6 +1624,12 @@ Chip facts are owned by [hardware.md §1](../hardware.md#1-supported-chip-famili
   unavailable in the current v0.4.2 public beta pending exact-profile HIL. Its
   exact image revision window appears in release metadata only after a later
   candidate qualifies it.
+
+- **rpi-pico2-w (port in progress):** single-core-agent model on RP2350 —
+  BTstack SYNC events on the main thread, supervisor-owned execution, STOP via
+  the dupterm interrupt-char channel. Design is owned by the derived port spec
+  ([ports/rpi-pico2-w.md](ports/rpi-pico2-w.md)); nothing in §5 (ESP32 task
+  model) applies to it.
 
 ## 12. Error handling & status mapping
 

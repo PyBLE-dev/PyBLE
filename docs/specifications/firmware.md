@@ -1,6 +1,6 @@
 # PyBLE — Agent Firmware
 
-Status: **DRAFT** · Last updated: 2026-08-03
+Status: **DRAFT** · Last updated: 2026-08-11
 
 The PyBLE agent is small board-side firmware that turns a compatible
 MicroPython target into a PyBLE-speaking board: it advertises the BLE service,
@@ -31,6 +31,8 @@ Two viable implementations behind the same PBLE/1 contract:
 - **Native `USER_C_MODULE` agent (hardening target):** the hot paths (BLE I/O, framing, file chunking) move to C for throughput and RAM headroom, especially on ESP32-C3.
 
 Decision (revised 2026-07-01 — see [ADR-0006](../decisions/0006-native-c-agent-from-day-one.md)): **the agent base is a native `USER_C_MODULE` (C) from day one.** The module boundaries and the PBLE/1 wire are unchanged; the agent's `pble_*.c` sources are byte-compatible with the wire and are built module-by-module, each byte-identical to (and sharing the conformance corpus of) any interim frozen `.py` scaffold it replaces. The wire contract does not change across this move.
+
+Scoped deviation (2026-08-11 — see [ADR-0030](../decisions/0030-pico2w-portable-python-agent-first.md)): the `rpi-pico2-w` port ships the **portable frozen-Python agent first**, grown from the `firmware/pyble/` scaffolds and frozen into the image (embedded, never a user-deletable vfs file — that rule is not deviated). Each frozen module retires when its native BTstack `pble_*.c` twin reaches parity on the shared conformance corpus (port OI-P1). The PBLE/1 wire is invariant across the swap; the ESP32-family native agent is unchanged.
 
 ## 3. Modules
 
@@ -122,6 +124,17 @@ control-plane boundary, capability negotiation, workspace safety, and the
 conformance/HIL gates. Target-specific behavior belongs behind Layer 2; the app
 MUST NOT require a known-chip allowlist.
 
+### 4.1 Ports in progress
+
+| Target | Upstream port · board | BLE host | RTOS | Layer 2 |
+|---|---|---|---|---|
+| `rpi-pico2-w` | `rp2` · `RPI_PICO2_W` | BTstack (via `bluetooth`) | none (bare-metal pico-sdk) | `firmware/board_overlays/rpi-pico2-w/`, copied to `ports/rp2/boards/PYBLE_RPI_PICO2_W/` at build prep (submodule pristine, CON-1/CON-4 pattern) |
+
+The port's derived requirements, execution model, resource gates, provisioning
+contract, and HIL matrix live in
+[firmware/ports/rpi-pico2-w.md](firmware/ports/rpi-pico2-w.md), per
+[firmware/specs.md §1.1](firmware/specs.md).
+
 ## 5. Runtime rules
 
 - **BLE stays responsive while user code runs.** The runner executes user code on its own task; the BLE/agent task keeps servicing the link, so `STOP` always lands.
@@ -160,6 +173,19 @@ MUST NOT require a known-chip allowlist.
   **GitHub Release**. Future target ports MUST document and publish their
   matching artifact, integrity contract, recovery path, and HIL evidence.
 - Any unavoidable upstream patch is isolated under `firmware/patches/micropython-<tag>/` with a reason — never edited in place.
+- The `rpi-pico2-w` port builds via the sibling `firmware/scripts/build_rp2.sh`
+  (same `--plan`/fail-clean contract as `build.sh`; the existing ESP build
+  matrix remains `esp32`, lean `esp32-s3`, exact-board
+  `waveshare-esp32-s3-lcd-147b`, and `esp32-c3`). `versions.lock` gains
+  `[targets_rp2]` (PyBLE
+  target → upstream rp2 board) and `[arm_gnu_toolchain]` (pinned ARM GNU
+  release + SHA-256; the build verifies the compiler version and fails cleanly
+  on mismatch — never a silent substitution, BLD-4 equivalent). pico-sdk,
+  BTstack, cyw43-driver etc. are pinned transitively as `lib/` submodules of
+  the one `[micropython]` commit — no new external pin. Artifacts:
+  `firmware.uf2` (primary, BOOTSEL/picotool-flashable), `firmware.elf`,
+  `firmware.bin`, provenance JSON (`port: "rp2"`), with a hard image-size gate
+  of 1,572,864 bytes.
 
 ## 7. Footprint budget (provisional, per target)
 

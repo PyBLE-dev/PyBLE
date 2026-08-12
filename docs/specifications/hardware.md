@@ -1,6 +1,6 @@
 # PyBLE — Hardware Support & Pin Guidance
 
-Status: **DRAFT** · Last updated: 2026-08-03
+Status: **DRAFT** · Last updated: 2026-08-11
 
 PyBLE's platform scope is any microcontroller board that can run MicroPython
 and provide a Bluetooth Low Energy peripheral stack capable of hosting a
@@ -113,6 +113,16 @@ the documented pins. Constructing `machine.SPI(2)` reset the pinned ESP32-S3
 runtime, so the named-board Blocky example and TFT HIL workload MUST use bus 1.
 Other boards still supply their own explicit bus identifier.
 
+### 1.3 Ports in progress (not validated targets)
+
+| Board / family | Upstream port · board | BLE stack | Status |
+|---|---|---|---|
+| Raspberry Pi **Pico 2 W** (RP2350 + CYW43439 radio) | `rp2` · `RPI_PICO2_W` | BTstack via MicroPython `bluetooth` | **Agent port in progress** ([ADR-0030](../decisions/0030-pico2w-portable-python-agent-first.md)). NOT a supported target until its protocol-conformance, resource, recovery, and HIL gates pass ([firmware/ports/rpi-pico2-w.md](firmware/ports/rpi-pico2-w.md)); **no public compatibility claim**. |
+
+A port-in-progress row never widens the browser installer, the beta message
+matrix, or any published support statement. The port's PBLE/1 `chip` token is
+`rpi-pico2-w`; per §3, absent pin guidance MUST NOT block connection.
+
 ## 2. Requirements for a board to work with PyBLE
 
 1. A maintained upstream MicroPython port for the target.
@@ -127,7 +137,9 @@ Other boards still supply their own explicit bus identifier.
 6. That matching agent firmware installed through the target's documented
    provisioning path. The initial ESP32 release uses USB through
    `pyble.dev/flash` or a self-build; future ports may require another one-time
-   provisioning tool while normal PyBLE use remains BLE-first.
+   provisioning tool while normal PyBLE use remains BLE-first. The Pico 2 W
+   port-in-progress provisioning path is the RP2 UF2/BOOTSEL flow
+   (drag-and-drop or picotool); normal use remains BLE-first.
 
 No specific GPIO wiring is required — PyBLE is an IDE, not a board product. A board needs **no screen, no LED, and no buttons** to be fully usable; screenless identification is by advertised name (`PyBLE-XXXX`, or a user-set label) plus RSSI and the pre-connect INFO read. The **Identify** blink (`IDENTIFY`, `0x52`) is **best-effort and optional**: it works only if the user has configured a single status-LED GPIO (`SET_IDENTIFY_LED`, `0x51`); with no LED configured the board reports `has_identify = false` and `IDENTIFY` returns `EUNSUPPORTED` (`0x0A`). The app offers the Identify action only when `has_identify` is set.
 
