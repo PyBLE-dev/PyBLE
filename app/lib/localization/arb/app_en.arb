@@ -501,21 +501,21 @@
   "@blocksExamplesWiring": {
     "description": "Heading above generic wiring guidance for a selected example."
   },
-  "blocksExamplesChoosePins": "GPIO numbers vary by board. Enter every GPIO number to generate a preview; PyBLE never assumes a safe pin.",
+  "blocksExamplesChoosePins": "GPIO numbers vary by board, and pin names do too. Enter every GPIO number or exact pin name to generate a preview; PyBLE never assumes a safe pin.",
   "@blocksExamplesChoosePins": {
-    "description": "Safety guidance shown before a hardware example can be previewed or copied."
+    "description": "Safety guidance shown before a hardware example can be previewed or copied; PyBLE never suggests board-specific pin names."
   },
-  "blocksExamplesPinHint": "Use a non-negative GPIO number from your board documentation.",
+  "blocksExamplesPinHint": "Use a non-negative GPIO number or the exact pin name from your board documentation.",
   "@blocksExamplesPinHint": {
-    "description": "Helper text below each hardware-example GPIO input."
+    "description": "Helper text below each hardware-example GPIO input; a slot accepts a GPIO number or a MicroPython pin name (FR-BLOCKS-1B). PyBLE never suggests board-specific names."
   },
-  "blocksExamplesPinInvalid": "Enter a non-negative whole GPIO number.",
+  "blocksExamplesPinInvalid": "Enter a non-negative whole GPIO number, or a pin name that starts with a letter and uses up to 16 letters, digits, or underscores.",
   "@blocksExamplesPinInvalid": {
-    "description": "Validation message for a missing, negative, fractional, or non-numeric example GPIO."
+    "description": "Validation message when an example GPIO entry is neither a non-negative integer nor a pin name under the frozen FR-BLOCKS-1B grammar."
   },
-  "blocksExamplesPinsMustDiffer": "Choose different GPIO numbers for the button and LED.",
+  "blocksExamplesPinsMustDiffer": "Choose a different GPIO or pin name for the button and the LED.",
   "@blocksExamplesPinsMustDiffer": {
-    "description": "Cross-field validation message when separate hardware roles use the same GPIO number."
+    "description": "Cross-field validation message when separate hardware roles use the same GPIO number or pin name."
   },
   "blocksExamplesPreview": "Preview",
   "@blocksExamplesPreview": {
@@ -825,13 +825,13 @@
   "@blocksGpioReadTooltip": {
     "description": "Tooltip for the generic digital GPIO read block."
   },
-  "blocksGpioPinRequired": "GPIO pin number is required.",
+  "blocksGpioPinRequired": "A GPIO number or pin name is required.",
   "@blocksGpioPinRequired": {
-    "description": "Generator validation shown when a GPIO constructor has no pin number."
+    "description": "Generator validation shown when a GPIO constructor has no number or named-pin input."
   },
-  "blocksGpioPinInvalid": "GPIO pin number must be a finite non-negative integer literal.",
+  "blocksGpioPinInvalid": "GPIO must be a finite non-negative integer, or a pin name that starts with a letter and uses up to 16 letters, digits, or underscores.",
   "@blocksGpioPinInvalid": {
-    "description": "Generator validation shown when a GPIO constructor pin number is invalid."
+    "description": "Generator validation shown when a GPIO input is neither a valid non-negative integer nor a name under the FR-BLOCKS-1B grammar."
   },
   "blocksGpioModeInvalid": "GPIO pin mode is invalid.",
   "@blocksGpioModeInvalid": {

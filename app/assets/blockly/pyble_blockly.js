@@ -50,6 +50,11 @@
     LOW: "0",
     HIGH: "1",
   });
+  // FR-BLOCKS-1B: every GPIO slot accepts either a bare non-negative integer
+  // or a standard MicroPython machine.Pin name matching this frozen grammar.
+  // Names are always user-entered; the sealed asset ships no per-board name
+  // list, suggestion, or default (CON-7).
+  const gpioPinNamePattern = /^[A-Za-z][A-Za-z0-9_]{0,15}$/u;
   const tftRectStyles = Object.freeze({
     OUTLINE: "rect",
     FILLED: "fill_rect",
@@ -136,7 +141,7 @@
     return code;
   }
 
-  function gpioNumberCode(block, generator) {
+  function gpioSlotValue(block, generator) {
     const code = requiredValueCode(
       block,
       generator,
@@ -144,10 +149,18 @@
       python.Order.NONE,
       hostMessages.gpioPinRequiredError,
     );
-    if (!/^(?:0|[1-9][0-9]*)$/u.test(code) || !Number.isFinite(Number(code))) {
-      throw new Error(hostMessages.gpioPinInvalidError);
+    if (/^(?:0|[1-9][0-9]*)$/u.test(code) && Number.isFinite(Number(code))) {
+      return { number: code };
     }
-    return code;
+    // A connected value block generates a Python expression; only a plain
+    // single- or double-quoted string literal whose content matches the
+    // frozen pin-name grammar is a named pin. Anything else keeps the
+    // existing invalid-pin error path.
+    const quotedName = /^(["'])([A-Za-z0-9_]*)\1$/u.exec(code);
+    if (quotedName !== null && gpioPinNamePattern.test(quotedName[2])) {
+      return { name: quotedName[2] };
+    }
+    throw new Error(hostMessages.gpioPinInvalidError);
   }
 
   function millisecondsCode(block, generator) {
@@ -181,7 +194,7 @@
           {
             type: "input_value",
             name: "GPIO",
-            check: "Number",
+            check: ["Number", "String"],
           },
           {
             type: "field_dropdown",
@@ -256,7 +269,7 @@
     python.pythonGenerator.addReservedWords("Pin");
 
     python.pythonGenerator.forBlock.pyble_gpio_pin = (block, generator) => {
-      const gpio = gpioNumberCode(block, generator);
+      const gpio = gpioSlotValue(block, generator);
       const mode = selectedValue(
         block,
         "MODE",
@@ -270,8 +283,17 @@
         hostMessages.gpioPullInvalidError,
       );
       generator.definitions_["import_machine_pin"] = "from machine import Pin";
-      const args = [gpio, mode, pull];
-      return [`Pin(${args.join(", ")})`, python.Order.FUNCTION_CALL];
+      if (gpio.name !== undefined) {
+        // A named pin travels as a quoted Python string literal.
+        return [
+          `Pin("${gpio.name}", ${mode}, ${pull})`,
+          python.Order.FUNCTION_CALL,
+        ];
+      }
+      return [
+        `Pin(${gpio.number}, ${mode}, ${pull})`,
+        python.Order.FUNCTION_CALL,
+      ];
     };
 
     python.pythonGenerator.forBlock.pyble_gpio_write = (block, generator) => {

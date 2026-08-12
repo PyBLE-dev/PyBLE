@@ -352,19 +352,19 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get blocksExamplesChoosePins =>
-      'GPIO numbers vary by board. Enter every GPIO number to generate a preview; PyBLE never assumes a safe pin.';
+      'GPIO numbers vary by board, and pin names do too. Enter every GPIO number or exact pin name to generate a preview; PyBLE never assumes a safe pin.';
 
   @override
   String get blocksExamplesPinHint =>
-      'Use a non-negative GPIO number from your board documentation.';
+      'Use a non-negative GPIO number or the exact pin name from your board documentation.';
 
   @override
   String get blocksExamplesPinInvalid =>
-      'Enter a non-negative whole GPIO number.';
+      'Enter a non-negative whole GPIO number, or a pin name that starts with a letter and uses up to 16 letters, digits, or underscores.';
 
   @override
   String get blocksExamplesPinsMustDiffer =>
-      'Choose different GPIO numbers for the button and LED.';
+      'Choose a different GPIO or pin name for the button and the LED.';
 
   @override
   String get blocksExamplesPreview => 'Preview';
@@ -599,11 +599,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get blocksGpioReadTooltip => 'Read 0 or 1 from a digital input pin.';
 
   @override
-  String get blocksGpioPinRequired => 'GPIO pin number is required.';
+  String get blocksGpioPinRequired => 'A GPIO number or pin name is required.';
 
   @override
   String get blocksGpioPinInvalid =>
-      'GPIO pin number must be a finite non-negative integer literal.';
+      'GPIO must be a finite non-negative integer, or a pin name that starts with a letter and uses up to 16 letters, digits, or underscores.';
 
   @override
   String get blocksGpioModeInvalid => 'GPIO pin mode is invalid.';

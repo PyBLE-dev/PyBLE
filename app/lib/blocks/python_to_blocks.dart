@@ -2737,11 +2737,7 @@ class _WorkspaceBuilder {
     if (expression.arguments.length < 2 || expression.arguments.length > 3) {
       _fail('invalid_gpio', expression.line, expression.column);
     }
-    final int? gpio = _integerLiteral(
-      expression.arguments[0],
-      requireIntegerSyntax: true,
-    );
-    if (gpio == null || gpio < 0) {
+    if (_pinIdentity(expression.arguments[0]) == null) {
       _fail('invalid_gpio', expression.line, expression.column);
     }
     final String? mode = _pinConstant(expression.arguments[1]);
@@ -3981,10 +3977,7 @@ class _WorkspaceBuilder {
 
   Map<String, Object?> _pinBlock(_CallExpr expression) {
     _validatePinCall(expression);
-    final int gpio = _integerLiteral(
-      expression.arguments[0],
-      requireIntegerSyntax: true,
-    )!;
+    final Object gpio = _pinIdentity(expression.arguments[0])!;
     final String? mode = _pinConstant(expression.arguments[1]);
     if (mode != 'IN' && mode != 'OUT') {
       _fail('invalid_gpio', expression.line, expression.column);
@@ -4008,9 +4001,31 @@ class _WorkspaceBuilder {
     return _block(
       'pyble_gpio_pin',
       fields: <String, Object?>{'MODE': mode, 'PULL': pull},
-      inputs: <String, Object?>{'GPIO': _input(_numberBlock(gpio))},
+      inputs: <String, Object?>{
+        'GPIO': _input(
+          gpio is String
+              ? _block('text', fields: <String, Object?>{'TEXT': gpio})
+              : _numberBlock(gpio as int),
+        ),
+      },
     );
   }
+
+  /// FR-BLOCKS-1B pin identity: a non-negative integer literal (`int`), a
+  /// quoted `machine.Pin` name under the frozen grammar (`String`), or
+  /// `null` for anything else (the existing invalid-pin path).
+  Object? _pinIdentity(_Expr expression) {
+    if (expression is _StringExpr) {
+      return _pinNamePattern.hasMatch(expression.value)
+          ? expression.value
+          : null;
+    }
+    final int? gpio = _integerLiteral(expression, requireIntegerSyntax: true);
+    if (gpio == null || gpio < 0) return null;
+    return gpio;
+  }
+
+  static final RegExp _pinNamePattern = RegExp(r'^[A-Za-z][A-Za-z0-9_]{0,15}$');
 
   String? _pinConstant(_Expr expression) {
     if (expression is! _AttributeExpr ||

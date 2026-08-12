@@ -209,10 +209,10 @@ class _BlocksExamplesDialogState extends State<_BlocksExamplesDialog> {
       );
   }
 
-  Map<String, int>? get _gpioValues {
-    final Map<String, int> values = <String, int>{};
+  Map<String, Object>? get _gpioValues {
+    final Map<String, Object> values = <String, Object>{};
     for (final BlocksExampleGpioRole role in _selected.gpioRoles) {
-      final int? gpio = parseBlocksExampleGpio(
+      final Object? gpio = parseBlocksExampleGpio(
         _gpioControllers[role.role]!.text,
       );
       if (gpio == null) return null;
@@ -226,14 +226,14 @@ class _BlocksExamplesDialogState extends State<_BlocksExamplesDialog> {
 
   bool get _gpioValuesConflict {
     if (_selected.gpioRoles.length < 2) return false;
-    final List<int?> values = _selected.gpioRoles
+    final List<Object?> values = _selected.gpioRoles
         .map(
           (BlocksExampleGpioRole role) =>
               parseBlocksExampleGpio(_gpioControllers[role.role]!.text),
         )
         .toList(growable: false);
-    return values.every((int? value) => value != null) &&
-        values.whereType<int>().toSet().length != values.length;
+    return values.every((Object? value) => value != null) &&
+        values.nonNulls.toSet().length != values.length;
   }
 
   String? _gpioError(AppLocalizations l10n, BlocksExampleGpioRole role) {
@@ -269,13 +269,13 @@ class _BlocksExamplesDialogState extends State<_BlocksExamplesDialog> {
   }
 
   Future<BlocksExamplePreview?> _generatePreview() async {
-    final Map<String, int>? gpioValues = _gpioValues;
+    final Map<String, Object>? gpioValues = _gpioValues;
     if (_selected.requiresGpio && gpioValues == null) return null;
     final int epoch = ++_generationEpoch;
     final String workspaceJson;
     try {
       workspaceJson = _selected.materializeWorkspaceJson(
-        gpioValues ?? const <String, int>{},
+        gpioValues ?? const <String, Object>{},
       );
     } catch (error) {
       if (!mounted || epoch != _generationEpoch) return null;
@@ -559,7 +559,12 @@ class _BlocksExamplesDialogState extends State<_BlocksExamplesDialog> {
                 child: TextField(
                   key: _gpioFieldKeys[role.role],
                   controller: _gpioControllers[role.role],
-                  keyboardType: TextInputType.number,
+                  // Pin identities are numbers OR names (FR-BLOCKS-1B), so
+                  // the field needs a full keyboard; names are technical
+                  // identifiers, never autocorrected (FR-I18N-4).
+                  keyboardType: TextInputType.text,
+                  autocorrect: false,
+                  enableSuggestions: false,
                   textInputAction: TextInputAction.next,
                   decoration: InputDecoration(
                     labelText: _catalogMessage(l10n, role.labelKey),

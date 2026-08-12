@@ -682,28 +682,28 @@ abstract class AppLocalizations {
   /// **'Wiring'**
   String get blocksExamplesWiring;
 
-  /// Safety guidance shown before a hardware example can be previewed or copied.
+  /// Safety guidance shown before a hardware example can be previewed or copied; PyBLE never suggests board-specific pin names.
   ///
   /// In en, this message translates to:
-  /// **'GPIO numbers vary by board. Enter every GPIO number to generate a preview; PyBLE never assumes a safe pin.'**
+  /// **'GPIO numbers vary by board, and pin names do too. Enter every GPIO number or exact pin name to generate a preview; PyBLE never assumes a safe pin.'**
   String get blocksExamplesChoosePins;
 
-  /// Helper text below each hardware-example GPIO input.
+  /// Helper text below each hardware-example GPIO input; a slot accepts a GPIO number or a MicroPython pin name (FR-BLOCKS-1B). PyBLE never suggests board-specific names.
   ///
   /// In en, this message translates to:
-  /// **'Use a non-negative GPIO number from your board documentation.'**
+  /// **'Use a non-negative GPIO number or the exact pin name from your board documentation.'**
   String get blocksExamplesPinHint;
 
-  /// Validation message for a missing, negative, fractional, or non-numeric example GPIO.
+  /// Validation message when an example GPIO entry is neither a non-negative integer nor a pin name under the frozen FR-BLOCKS-1B grammar.
   ///
   /// In en, this message translates to:
-  /// **'Enter a non-negative whole GPIO number.'**
+  /// **'Enter a non-negative whole GPIO number, or a pin name that starts with a letter and uses up to 16 letters, digits, or underscores.'**
   String get blocksExamplesPinInvalid;
 
-  /// Cross-field validation message when separate hardware roles use the same GPIO number.
+  /// Cross-field validation message when separate hardware roles use the same GPIO number or pin name.
   ///
   /// In en, this message translates to:
-  /// **'Choose different GPIO numbers for the button and LED.'**
+  /// **'Choose a different GPIO or pin name for the button and the LED.'**
   String get blocksExamplesPinsMustDiffer;
 
   /// Non-mutating action that opens a larger view of Python generated for the selected example.
@@ -1114,16 +1114,16 @@ abstract class AppLocalizations {
   /// **'Read 0 or 1 from a digital input pin.'**
   String get blocksGpioReadTooltip;
 
-  /// Generator validation shown when a GPIO constructor has no pin number.
+  /// Generator validation shown when a GPIO constructor has no number or named-pin input.
   ///
   /// In en, this message translates to:
-  /// **'GPIO pin number is required.'**
+  /// **'A GPIO number or pin name is required.'**
   String get blocksGpioPinRequired;
 
-  /// Generator validation shown when a GPIO constructor pin number is invalid.
+  /// Generator validation shown when a GPIO input is neither a valid non-negative integer nor a name under the FR-BLOCKS-1B grammar.
   ///
   /// In en, this message translates to:
-  /// **'GPIO pin number must be a finite non-negative integer literal.'**
+  /// **'GPIO must be a finite non-negative integer, or a pin name that starts with a letter and uses up to 16 letters, digits, or underscores.'**
   String get blocksGpioPinInvalid;
 
   /// Generator validation shown when a GPIO constructor mode token is invalid.
