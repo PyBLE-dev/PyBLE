@@ -181,6 +181,32 @@ describe("firmware installer release copy", () => {
       expect(
         screen.queryByText(/ESP32-C3.*unavailable/i),
       ).not.toBeInTheDocument();
+
+      const boardSection = screen
+        .getByRole("heading", {
+          name: "Waveshare ESP32-S3-LCD-1.47B",
+        })
+        .closest("section");
+      expect(boardSection).toBeDefined();
+      expect(boardSection).toHaveTextContent(/Exact-board reference/i);
+      expect(boardSection).toHaveTextContent(
+        /historical identification reference/i,
+      );
+      expect(boardSection).toHaveTextContent(
+        /does not qualify.*local v0\.6\.0.*firmware bytes/i,
+      );
+      expect(boardSection).not.toHaveTextContent(/Validated display board/i);
+      const boardPhoto = screen.getByRole("img", {
+        name: "Actual Waveshare ESP32-S3-LCD-1.47B displaying the PyBLE v0.5.0 boot splash and app QR",
+      });
+      expect(boardSection).toContainElement(boardPhoto);
+      expect(boardPhoto).toHaveAttribute(
+        "src",
+        "/boards/esp32-s3-lcd-1.47b-pyble-v0.5.0.jpg",
+      );
+      expect(boardPhoto.closest("figure")).toHaveTextContent(
+        /Actual board.*PyBLE firmware v0\.5\.0/i,
+      );
     } finally {
       previewSelection.mockRestore();
     }
