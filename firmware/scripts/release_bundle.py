@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import argparse
 import ast
+import base64
+import binascii
 from collections import Counter
 import copy
 import ctypes
@@ -209,6 +211,25 @@ _RP2_ARM_RUNTIME_ATTRIBUTION = (
 )
 _RP2_ARM_RUNTIME_ATTRIBUTION_SHA256 = (
     "69d9dc56335dc27ddb9d9adde7775c339afe1259ecb2a3a0bcd48db83ff2ef9a"
+)
+_RP2_ARM_RUNTIME_NOTICES = (
+    "firmware/licenses/evidence/rp2/arm-gnu-toolchain/14.2.rel1/"
+    "runtime-notices-v1.json"
+)
+_RP2_ARM_RUNTIME_NOTICES_SHA256 = (
+    "66fb08b53797ece8dd29700a16f8efa2ec90b8fde97d4aea3124381112b991ea"
+)
+_RP2_ARM_RUNTIME_PUBLIC_NOTICE = (
+    "firmware/licenses/notices/rp2/"
+    "arm-gnu-toolchain-14.2.rel1-selected-runtime.txt"
+)
+_RP2_ARM_RUNTIME_PUBLIC_NOTICE_BYTES = 62_114
+_RP2_ARM_RUNTIME_PUBLIC_NOTICE_SHA256 = (
+    "6c88b3ed73bac10b85416aebfba654e7a9fb59a43c73cefc5e657f806d765316"
+)
+_RP2_ARM_RUNTIME_NOTICE_OWNER_IDS = (
+    "arm-gnu-gcc-runtime",
+    "arm-gnu-newlib-runtime",
 )
 _RP2_GCC_ENVIRONMENT_OVERRIDES = (
     "GCC_EXEC_PREFIX",
@@ -8048,6 +8069,367 @@ def _audit_validate_rp2_arm_runtime_closure(
     }
 
 
+def _audit_validate_rp2_arm_runtime_notices(
+    attribution: Any,
+    evidence: Any,
+    *,
+    repo_root: Path,
+) -> dict[str, Any]:
+    """Validate the exact contribution-scoped Arm GNU notice assets."""
+
+    root = Path(repo_root)
+    attribution_path = _audit_repo_file(
+        root,
+        _RP2_ARM_RUNTIME_ATTRIBUTION,
+        "RP2 Arm GNU runtime attribution",
+    )
+    attribution_raw = _read_regular_file_bytes(
+        attribution_path,
+        "RP2 Arm GNU runtime attribution",
+    )
+    _require(
+        _sha256_bytes(attribution_raw) == _RP2_ARM_RUNTIME_ATTRIBUTION_SHA256,
+        "RP2 Arm GNU runtime attribution bytes changed",
+    )
+    try:
+        expected_attribution = json.loads(
+            attribution_raw.decode("utf-8", errors="strict")
+        )
+    except (UnicodeError, TypeError, ValueError) as exc:
+        raise ReleaseError(
+            "RP2 Arm GNU runtime attribution is invalid JSON"
+        ) from exc
+    _require(
+        isinstance(attribution, dict) and attribution == expected_attribution,
+        "RP2 Arm GNU runtime notice attribution changed",
+    )
+
+    evidence_path = _audit_repo_file(
+        root,
+        _RP2_ARM_RUNTIME_NOTICES,
+        "RP2 Arm GNU runtime notice evidence",
+    )
+    evidence_raw = _read_regular_file_bytes(
+        evidence_path,
+        "RP2 Arm GNU runtime notice evidence",
+    )
+    _require(
+        _sha256_bytes(evidence_raw) == _RP2_ARM_RUNTIME_NOTICES_SHA256,
+        "RP2 Arm GNU runtime notice evidence bytes changed",
+    )
+    try:
+        expected_evidence = json.loads(
+            evidence_raw.decode("ascii", errors="strict")
+        )
+        canonical_evidence = (
+            json.dumps(
+                expected_evidence,
+                ensure_ascii=True,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+            + "\n"
+        ).encode("ascii")
+    except (UnicodeError, TypeError, ValueError) as exc:
+        raise ReleaseError(
+            "RP2 Arm GNU runtime notice evidence is invalid canonical JSON"
+        ) from exc
+    _require(
+        evidence_raw == canonical_evidence,
+        "RP2 Arm GNU runtime notice evidence is not canonical JSON",
+    )
+    _require(
+        isinstance(evidence, dict) and evidence == expected_evidence,
+        "RP2 Arm GNU runtime notice evidence differs from its frozen document",
+    )
+    normalized = _exact_keys(
+        evidence,
+        {
+            "schema_version",
+            "canonicalization",
+            "identity",
+            "record_schemas",
+            "sources",
+            "notice_blocks",
+            "public_notice",
+            "summary",
+        },
+        "RP2 Arm GNU runtime notice evidence",
+    )
+    _require(
+        type(normalized["schema_version"]) is int
+        and normalized["schema_version"] == 1
+        and normalized["canonicalization"]
+        == "UTF-8 JSON; sorted keys; compact separators; LF terminator",
+        "RP2 Arm GNU runtime notice schema or canonicalization changed",
+    )
+    identity = _exact_keys(
+        normalized["identity"],
+        {"runtime_attribution", "source_archive"},
+        "RP2 Arm GNU runtime notice identity",
+    )
+    _require(
+        identity
+        == {
+            "runtime_attribution": {
+                "path": _RP2_ARM_RUNTIME_ATTRIBUTION,
+                "sha256": _RP2_ARM_RUNTIME_ATTRIBUTION_SHA256,
+            },
+            "source_archive": expected_attribution["identity"]["source_archive"],
+        },
+        "RP2 Arm GNU runtime notice identity changed",
+    )
+    _require(
+        normalized["record_schemas"]
+        == {
+            "source": [
+                "owner_id",
+                "source_path",
+                "source_sha256",
+                "selection_reasons",
+                "notice_block_indices",
+            ],
+            "notice_block": [
+                "sha256",
+                "base64",
+                "first_owner_id",
+                "first_source_path",
+                "source_block_ordinal",
+            ],
+        },
+        "RP2 Arm GNU runtime notice record schemas changed",
+    )
+
+    notice_owner_ids = set(_RP2_ARM_RUNTIME_NOTICE_OWNER_IDS)
+    selected_sources: dict[tuple[str, str], tuple[str, set[str]]] = {}
+
+    def add_source(
+        owner_id: str,
+        source_path: str,
+        source_sha256: str,
+        reason: str,
+    ) -> None:
+        if owner_id not in notice_owner_ids:
+            return
+        identity_key = (owner_id, source_path)
+        prior_digest, reasons = selected_sources.setdefault(
+            identity_key,
+            (source_sha256, set()),
+        )
+        _require(
+            prior_digest == source_sha256,
+            "RP2 Arm GNU runtime notice source has conflicting digests",
+        )
+        reasons.add(reason)
+
+    for row in expected_attribution["headers"]:
+        add_source(row[0], row[3], row[2], "compiler-dependency-header")
+    for row in expected_attribution["generated_headers"]:
+        for source_path, source_sha256 in row[3]:
+            if source_path.endswith(("configure", "Makefile.am", "Makefile.in")):
+                continue
+            add_source(
+                row[0],
+                source_path,
+                source_sha256,
+                "generated-header-template",
+            )
+    for row in expected_attribution["archive_members"]:
+        add_source(row[0], row[4], row[5], "allocated-archive-member")
+    for row in expected_attribution["direct_inputs"]:
+        if row[3]:
+            add_source(
+                row[0],
+                row[4],
+                row[5],
+                "contributing-direct-input",
+            )
+    expected_source_rows = [
+        [owner_id, source_path, source_sha256, sorted(reasons)]
+        for (owner_id, source_path), (source_sha256, reasons)
+        in sorted(selected_sources.items())
+    ]
+    sources = normalized["sources"]
+    _require(
+        isinstance(sources, list)
+        and len(sources) == len(expected_source_rows) == 96,
+        "RP2 Arm GNU runtime notice source count changed",
+    )
+    source_rows: list[list[Any]] = []
+    for index, raw_source in enumerate(sources):
+        _require(
+            isinstance(raw_source, list) and len(raw_source) == 5,
+            "RP2 Arm GNU runtime notice source row %d changed" % index,
+        )
+        _require(
+            raw_source[:4] == expected_source_rows[index],
+            "RP2 Arm GNU runtime notice source selection changed",
+        )
+        indices = raw_source[4]
+        _require(
+            isinstance(indices, list)
+            and all(type(item) is int and item >= 0 for item in indices)
+            and indices == sorted(set(indices)),
+            "RP2 Arm GNU runtime notice block indices changed",
+        )
+        source_rows.append(raw_source)
+
+    blocks = normalized["notice_blocks"]
+    _require(
+        isinstance(blocks, list) and len(blocks) == 41,
+        "RP2 Arm GNU runtime unique notice-block count changed",
+    )
+    first_uses: dict[int, tuple[str, str, int]] = {}
+    occurrence_count = 0
+    for owner_id, source_path, _digest, _reasons, indices in source_rows:
+        for source_ordinal, block_index in enumerate(indices):
+            _require(
+                block_index < len(blocks),
+                "RP2 Arm GNU runtime notice block index is out of range",
+            )
+            first_uses.setdefault(
+                block_index,
+                (owner_id, source_path, source_ordinal),
+            )
+            occurrence_count += 1
+    _require(
+        set(first_uses) == set(range(len(blocks))) and occurrence_count == 46,
+        "RP2 Arm GNU runtime notice block occurrence closure changed",
+    )
+    decoded_blocks: list[bytes] = []
+    block_digests: set[str] = set()
+    for index, raw_block in enumerate(blocks):
+        _require(
+            isinstance(raw_block, list) and len(raw_block) == 5,
+            "RP2 Arm GNU runtime notice block row %d changed" % index,
+        )
+        digest, encoded, owner_id, source_path, source_ordinal = raw_block
+        _require(
+            isinstance(digest, str)
+            and SHA256_RE.fullmatch(digest) is not None
+            and isinstance(encoded, str)
+            and isinstance(owner_id, str)
+            and isinstance(source_path, str)
+            and type(source_ordinal) is int
+            and source_ordinal >= 0
+            and digest not in block_digests,
+            "RP2 Arm GNU runtime notice block identity changed",
+        )
+        try:
+            value = base64.b64decode(encoded, validate=True)
+        except (ValueError, binascii.Error) as exc:
+            raise ReleaseError(
+                "RP2 Arm GNU runtime notice block is invalid base64"
+            ) from exc
+        _require(
+            base64.b64encode(value).decode("ascii") == encoded
+            and _sha256_bytes(value) == digest
+            and b"copyright" in value.lower()
+            and (owner_id, source_path, source_ordinal) == first_uses[index],
+            "RP2 Arm GNU runtime notice block bytes or first use changed",
+        )
+        block_digests.add(digest)
+        decoded_blocks.append(value)
+
+    expected_summary = {
+        "owner_count": 2,
+        "source_count": 96,
+        "source_count_by_owner": {
+            "arm-gnu-gcc-runtime": 23,
+            "arm-gnu-newlib-runtime": 73,
+        },
+        "source_count_by_reason": {
+            "allocated-archive-member": 26,
+            "compiler-dependency-header": 62,
+            "contributing-direct-input": 2,
+            "generated-header-template": 6,
+        },
+        "source_notice_block_occurrence_count": 46,
+        "source_without_notice_block_count": 50,
+        "unique_notice_block_count": 41,
+    }
+    _require(
+        normalized["summary"] == expected_summary
+        and sum(not row[4] for row in source_rows) == 50,
+        "RP2 Arm GNU runtime notice summary changed",
+    )
+    public_notice_record = _exact_keys(
+        normalized["public_notice"],
+        {"path", "bytes", "sha256"},
+        "RP2 Arm GNU runtime public notice",
+    )
+    _require(
+        public_notice_record
+        == {
+            "path": _RP2_ARM_RUNTIME_PUBLIC_NOTICE,
+            "bytes": _RP2_ARM_RUNTIME_PUBLIC_NOTICE_BYTES,
+            "sha256": _RP2_ARM_RUNTIME_PUBLIC_NOTICE_SHA256,
+        },
+        "RP2 Arm GNU runtime public notice identity changed",
+    )
+    rendered = bytearray(
+        ((
+            "PyBLE RP2 Arm GNU selected runtime source notices\n\n"
+            "Runtime attribution SHA-256: %s\n"
+            "Source archive SHA-256: %s\n"
+            "Scope: exact sources selected by compiler-dependency headers, "
+            "generated-header\n"
+            "content templates, allocated archive members, or contributing "
+            "direct inputs.\n"
+            "Excluded: build tools, generator recipe files, LOAD-only archives, "
+            "and\n"
+            "noncontributing direct inputs. Exact source comment bytes follow; "
+            "identical\n"
+            "blocks are emitted once at their first canonical (owner, source "
+            "path) use.\n\n"
+        ) % (
+            _RP2_ARM_RUNTIME_ATTRIBUTION_SHA256,
+            expected_attribution["identity"]["source_archive"]["sha256"],
+        )).encode("ascii")
+    )
+    for raw_block, value in zip(blocks, decoded_blocks):
+        digest, _encoded, owner_id, source_path, source_ordinal = raw_block
+        rendered.extend(b"=" * 78 + b"\n")
+        rendered.extend(
+            ((
+                "Owner: %s\n"
+                "Source: %s\n"
+                "Source block: %d\n"
+                "Block SHA-256: %s\n"
+            ) % (owner_id, source_path, source_ordinal, digest)).encode(
+                "ascii"
+            )
+        )
+        rendered.extend(b"-" * 78 + b"\n")
+        rendered.extend(value)
+        if not value.endswith(b"\n"):
+            rendered.extend(b"\n")
+        rendered.extend(b"\n")
+    public_notice_path = _audit_repo_file(
+        root,
+        _RP2_ARM_RUNTIME_PUBLIC_NOTICE,
+        "RP2 Arm GNU selected runtime public notice",
+    )
+    public_notice = _read_regular_file_bytes(
+        public_notice_path,
+        "RP2 Arm GNU selected runtime public notice",
+    )
+    _require(
+        len(public_notice) == _RP2_ARM_RUNTIME_PUBLIC_NOTICE_BYTES
+        and _sha256_bytes(public_notice) == _RP2_ARM_RUNTIME_PUBLIC_NOTICE_SHA256
+        and public_notice == bytes(rendered),
+        "RP2 Arm GNU selected runtime public notice bytes changed",
+    )
+    return {
+        "evidence_path": evidence_path,
+        "evidence_sha256": _RP2_ARM_RUNTIME_NOTICES_SHA256,
+        "public_notice_path": public_notice_path,
+        "public_notice_bytes": _RP2_ARM_RUNTIME_PUBLIC_NOTICE_BYTES,
+        "public_notice_sha256": _RP2_ARM_RUNTIME_PUBLIC_NOTICE_SHA256,
+        "public_notice_owner_ids": list(_RP2_ARM_RUNTIME_NOTICE_OWNER_IDS),
+    }
+
+
 def _audit_rp2_reject_driver_overrides(
     arguments: list[str],
     *,
@@ -8697,8 +9079,39 @@ def _audit_observe_rp2_arm_runtime_closure(
         observed,
         repo_root=root,
     )
+    runtime_notices_path = _audit_repo_file(
+        root,
+        _RP2_ARM_RUNTIME_NOTICES,
+        "RP2 Arm GNU runtime notice evidence",
+    )
+    runtime_notices = _read_json(
+        runtime_notices_path,
+        "RP2 Arm GNU runtime notice evidence",
+    )
+    runtime_notice_result = _audit_validate_rp2_arm_runtime_notices(
+        attribution,
+        runtime_notices,
+        repo_root=root,
+    )
+    _require(
+        runtime_notice_result["public_notice_owner_ids"]
+        == result["public_notice_owner_ids"],
+        "RP2 Arm GNU runtime notice owners differ from contribution closure",
+    )
+    result["runtime_notices"] = {
+        "evidence_path": _RP2_ARM_RUNTIME_NOTICES,
+        "evidence_sha256": runtime_notice_result["evidence_sha256"],
+        "public_notice_path": _RP2_ARM_RUNTIME_PUBLIC_NOTICE,
+        "public_notice_bytes": runtime_notice_result["public_notice_bytes"],
+        "public_notice_sha256": runtime_notice_result["public_notice_sha256"],
+        "public_notice_owner_ids": copy.deepcopy(
+            runtime_notice_result["public_notice_owner_ids"]
+        ),
+    }
     evidence_paths = {
         attribution_path,
+        runtime_notice_result["evidence_path"],
+        runtime_notice_result["public_notice_path"],
         builder_path,
         retained_source_archive,
         resolved_specs,
@@ -10729,6 +11142,47 @@ def _audit_observe_rp2_license_inputs(
             (root / "firmware" / ".arm-gnu" / item[2]).resolve()
             for item in arm_runtime_observation["specs_inputs"]
         )
+        runtime_notice_contract = _exact_keys(
+            arm_runtime_result.get("runtime_notices"),
+            {
+                "evidence_path",
+                "evidence_sha256",
+                "public_notice_path",
+                "public_notice_bytes",
+                "public_notice_sha256",
+                "public_notice_owner_ids",
+            },
+            "RP2 Arm GNU runtime notice result",
+        )
+        expected_notice = {
+            "path": runtime_notice_contract["public_notice_path"],
+            "sha256": runtime_notice_contract["public_notice_sha256"],
+        }
+        notice_owner_ids = set(
+            runtime_notice_contract["public_notice_owner_ids"]
+        )
+        _require(
+            notice_owner_ids == set(_RP2_ARM_RUNTIME_NOTICE_OWNER_IDS),
+            "RP2 Arm GNU runtime public notice owner set changed",
+        )
+        for owner in owners:
+            selected_runtime_notices = [
+                item
+                for item in owner["notice_files"]
+                if item["path"] == expected_notice["path"]
+            ]
+            _require(
+                selected_runtime_notices
+                == ([expected_notice] if owner["id"] in notice_owner_ids else []),
+                "RP2 Arm GNU selected runtime notice is attached to the wrong owners",
+            )
+            _require(
+                all(
+                    item["path"] != runtime_notice_contract["evidence_path"]
+                    for item in owner["notice_files"]
+                ),
+                "RP2 Arm GNU runtime notice evidence must not be a public notice",
+            )
     (
         toolchain_distribution,
         toolchain_evidence_paths,

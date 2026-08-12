@@ -121,6 +121,10 @@
         {
           "path": "firmware/licenses/notices/gcc-runtime.txt",
           "sha256": "a802c58332092fe03d2e1746e940f212d12335e8c66ad1e50697b3cbb7b977ac"
+        },
+        {
+          "path": "firmware/licenses/notices/rp2/arm-gnu-toolchain-14.2.rel1-selected-runtime.txt",
+          "sha256": "6c88b3ed73bac10b85416aebfba654e7a9fb59a43c73cefc5e657f806d765316"
         }
       ],
       "selected_spdx_expression": "GPL-3.0-or-later WITH GCC-exception-3.1",
@@ -235,6 +239,10 @@
         {
           "path": "firmware/licenses/notices/newlib.txt",
           "sha256": "86e513fa6b578911be0efd6ccf304ca9afe91820ef2f75497636e8b7485ab2f4"
+        },
+        {
+          "path": "firmware/licenses/notices/rp2/arm-gnu-toolchain-14.2.rel1-selected-runtime.txt",
+          "sha256": "6c88b3ed73bac10b85416aebfba654e7a9fb59a43c73cefc5e657f806d765316"
         }
       ],
       "selected_spdx_expression": "LicenseRef-PyBLE-Newlib-Multilicense",
