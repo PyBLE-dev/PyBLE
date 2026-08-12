@@ -18,7 +18,25 @@ include("$(MPY_DIR)/extmod/asyncio")
 module("_boot.py", base_path="$(BOARD_DIR)", opt=3)
 
 # The copied-in frozen-Python agent package (prepare.sh lands it in this board
-# dir, incl. the build-generated pyble/_version.py). freeze() of the package
-# DIRECTORY freezes its modules under their on-device TOP-LEVEL names
-# (pyble_proto, pyble_ble, ... — the names the host suite imports).
-freeze("$(BOARD_DIR)/pyble", opt=3)
+# dir, including the build-generated pyble/_version.py). Keep the complete
+# input set literal: release auditing resolves these exact files without
+# executing this manifest or recursively trusting future directory contents.
+# They remain top-level modules on-device (pyble_proto, pyble_ble, ...), which
+# is the import surface used by the portable agent.
+freeze(
+    "$(BOARD_DIR)/pyble",
+    (
+        "__init__.py",
+        "_version.py",
+        "pyble_agent.py",
+        "pyble_ble.py",
+        "pyble_boot.py",
+        "pyble_console.py",
+        "pyble_device_config.py",
+        "pyble_fs.py",
+        "pyble_info.py",
+        "pyble_proto.py",
+        "pyble_runner.py",
+    ),
+    opt=3,
+)
