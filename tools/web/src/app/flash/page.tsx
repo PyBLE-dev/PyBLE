@@ -6,18 +6,22 @@ import { FlashStatus } from "@/components/flash-status";
 import { PageIntro } from "@/components/page-intro";
 import { WaveshareBoardPhoto } from "@/components/waveshare-board-photo";
 import { releaseIncludesWaveshareLcd147b } from "@/lib/firmware-release";
-import { firmwareReleaseSelectedAtBuild } from "@/lib/firmware-release-selection";
+import {
+  firmwareReleaseSelectedAtBuild,
+  localFirmwarePreviewSelectedAtBuild,
+} from "@/lib/firmware-release-selection";
 import { pageMetadata } from "@/lib/site";
 
 export const metadata = pageMetadata({
   title: "Firmware installer",
   description:
-    "Release status and requirements for installing PyBLE firmware on exact ESP32 and ESP32-S3 profiles, with ESP32-C3 planned.",
+    "Release status and provisioning requirements for five PyBLE firmware targets across ESP32 and Raspberry Pi Pico 2 W.",
   path: "/flash",
 });
 
 export default function FlashPage() {
-  const release = firmwareReleaseSelectedAtBuild();
+  const preview = localFirmwarePreviewSelectedAtBuild();
+  const release = preview ? null : firmwareReleaseSelectedAtBuild();
   const publicBeta = release?.deployment === "public-beta";
   const waveshareLcd147b = releaseIncludesWaveshareLcd147b(release);
   const qualifiedPublic = release !== null && waveshareLcd147b;
@@ -28,17 +32,19 @@ export default function FlashPage() {
         <p>
           One-time wired provisioning installs PyBLE-enabled MicroPython. Then
           develop over Bluetooth Low Energy from the tablet-first PyBLE app.
-          {publicBeta
-            ? " The current v0.4.2 installer is a hardware-tested firmware beta. Production Chrome erase/install and deliberately interrupted-flash recovery passed on both exact profiles. Complete release qualification is still pending; this is not a qualified release."
-            : qualifiedPublic
-              ? ` Qualified v${release.version} firmware is available for all three exact release profiles.`
-              : " The public install action remains unavailable until the final v0.6.0-derived bytes pass hardware validation on every included profile."}
+          {preview
+            ? ` LOCAL ENGINEERING PREVIEW v${preview.version} — UNQUALIFIED. This is not a public release.`
+            : publicBeta
+              ? " The current v0.4.2 installer is a hardware-tested firmware beta. Production Chrome erase/install and deliberately interrupted-flash recovery passed on both exact profiles. Complete release qualification is still pending; this is not a qualified release."
+              : qualifiedPublic
+                ? ` Qualified v${release.version} firmware is available for all three exact release profiles.`
+                : " The public install action remains unavailable until the final v0.6.0-derived bytes pass hardware validation on every included profile."}
         </p>
       </PageIntro>
 
       <section className="section">
         <div className="container flash-layout">
-          <FlashStatus release={release} />
+          <FlashStatus preview={preview} release={release} />
 
           <div className="flash-explainer">
             <section aria-labelledby="why-wired">
@@ -71,7 +77,7 @@ export default function FlashPage() {
                     the display boot splash.
                   </span>
                 </li>
-                {waveshareLcd147b ? (
+                {waveshareLcd147b || preview ? (
                   <li>
                     <strong>waveshare-esp32-s3-lcd-147b</strong>
                     <span>
@@ -142,39 +148,96 @@ export default function FlashPage() {
               </section>
             ) : null}
 
-            <section aria-labelledby="planned-profile">
-              <h2 id="planned-profile">Planned profile</h2>
-              <ul className="requirement-list planned-profile-list">
-                <li className="planned-profile-card" aria-disabled="true">
-                  <strong>esp32-c3-4mb</strong>
-                  <span>
-                    <b>Unavailable.</b> Exact-profile real-hardware validation
-                    is pending for ESP32-C3 revision v0.3 or newer with 4 MiB
-                    flash. No installer selection, firmware image, or recovery
-                    command is offered yet.
-                  </span>
-                </li>
-              </ul>
-            </section>
+            {preview ? (
+              <section aria-labelledby="preview-methods">
+                <h2 id="preview-methods">Two provisioning methods</h2>
+                <ul className="requirement-list">
+                  <li>
+                    <strong>ESP Web Tools · Web Serial</strong>
+                    <span>
+                      Direct local browser installation for the four exact ESP
+                      profiles after manifest and firmware verification.
+                    </span>
+                  </li>
+                  <li>
+                    <strong>Pico 2 W · BOOTSEL / UF2</strong>
+                    <span>
+                      Verify and download the UF2, then copy it to the mounted
+                      RP2350 BOOTSEL volume. This is not an ESP Web Tools flow.
+                    </span>
+                  </li>
+                </ul>
+              </section>
+            ) : (
+              <section aria-labelledby="planned-profile">
+                <h2 id="planned-profile">Planned profiles</h2>
+                <ul className="requirement-list planned-profile-list">
+                  <li className="planned-profile-card" aria-disabled="true">
+                    <strong>esp32-c3-4mb</strong>
+                    <span>
+                      <b>Unavailable.</b> Exact-profile real-hardware validation
+                      is pending for ESP32-C3 revision v0.3 or newer with 4 MiB
+                      flash. No installer selection, firmware image, or recovery
+                      command is offered yet.
+                    </span>
+                  </li>
+                  <li className="planned-profile-card" aria-disabled="true">
+                    <strong>rpi-pico2-w</strong>
+                    <span>
+                      <b>Unavailable.</b> The Pico 2 W port remains pre-GP2; no
+                      public UF2 download or installer action is offered yet.
+                    </span>
+                  </li>
+                </ul>
+              </section>
+            )}
 
             <section aria-labelledby="installer-requirements">
               <h2 id="installer-requirements">Before you connect</h2>
-              <ul className="requirement-list">
-                <li>
-                  <strong>Desktop Chromium over HTTPS</strong>
-                  <span>
-                    The installer uses Web Serial and Web Crypto. iPadOS cannot
-                    perform this wired provisioning step.
-                  </span>
-                </li>
-                <li>
-                  <strong>Data-capable USB and stable power</strong>
-                  <span>
-                    Back up board files, close other serial tools, and expect
-                    the installation to erase the device.
-                  </span>
-                </li>
-              </ul>
+              {preview ? (
+                <ul className="requirement-list">
+                  <li>
+                    <strong>Loopback Chromium + Web Crypto</strong>
+                    <span>
+                      Open this approval harness only at localhost. Every
+                      artifact is size- and SHA-256-verified before an action is
+                      shown.
+                    </span>
+                  </li>
+                  <li>
+                    <strong>ESP targets use Web Serial</strong>
+                    <span>
+                      Use a data-capable cable, stable power, and close every
+                      serial monitor before installing one of the four ESP
+                      profiles.
+                    </span>
+                  </li>
+                  <li>
+                    <strong>Pico 2 W does not use Web Serial</strong>
+                    <span>
+                      Its action downloads verified in-memory UF2 bytes for a
+                      manual BOOTSEL-volume copy. Back up board files first.
+                    </span>
+                  </li>
+                </ul>
+              ) : (
+                <ul className="requirement-list">
+                  <li>
+                    <strong>Desktop Chromium over HTTPS</strong>
+                    <span>
+                      The installer uses Web Serial and Web Crypto. iPadOS
+                      cannot perform this wired provisioning step.
+                    </span>
+                  </li>
+                  <li>
+                    <strong>Data-capable USB and stable power</strong>
+                    <span>
+                      Back up board files, close other serial tools, and expect
+                      the installation to erase the device.
+                    </span>
+                  </li>
+                </ul>
+              )}
             </section>
 
             <div className="installer-links">
@@ -216,81 +279,103 @@ export default function FlashPage() {
             <p className="eyebrow">Recovery</p>
             <h2>Recover an interrupted flash</h2>
           </div>
-          <div className="flash-explainer">
-            <p>
-              Installing PyBLE erases the board&apos;s existing firmware and
-              user workspace. Back up user files before installing. Use a normal
-              USB connection with a data-capable cable and stable power, close
-              every serial monitor or application holding the port, and select
-              the correct serial port.
-            </p>
-            <p>
-              Try automatic reset first. If it fails, use the manual BOOT/RESET
-              sequence: hold BOOT, tap RESET, then release BOOT. Button labels
-              vary by board.
-            </p>
-            <p>
-              It is safe to retry after permission denial, disconnect, timeout,
-              interrupted erase, interrupted write, verification failure, or
-              when a board no longer boots. Close serial monitors, reconnect
-              USB, manually enter the ROM bootloader, reload this page, and
-              retry the same verified profile. The installer rechecks the
-              reviewed SHA-256 metadata root and selected artifacts before it
-              exposes the install action.
-            </p>
-            <p>
-              For advanced merged-image recovery with the same version-matched
-              bundle bytes, run the command for the exact selected profile:
-            </p>
-            <ul className="readiness-list">
-              <li>
-                <code>
-                  python -m esptool --chip esp32 write_flash 0x1000{" "}
-                  <span>esp32-</span>
-                  <span>4mb/firmware.bin</span>
-                </code>
-              </li>
-              <li>
-                <code>
-                  python -m esptool --chip esp32s3 write_flash 0x0{" "}
-                  <span>esp32-s3-</span>
-                  <span>n16r8/firmware.bin</span>
-                </code>
-              </li>
-              {waveshareLcd147b ? (
+          {preview ? (
+            <div className="flash-explainer">
+              <p>
+                <strong>ESP recovery:</strong> reconnect the exact selected ESP
+                board, close serial monitors, enter its ROM bootloader with the
+                board-specific BOOT/RESET sequence if automatic reset fails,
+                then verify and retry that same profile.
+              </p>
+              <p>
+                <strong>Pico 2 W recovery:</strong> reconnect while holding
+                BOOTSEL, wait for the RP2350 volume, then copy the same verified
+                UF2 again. Pico provisioning does not use Web Serial or ESP ROM
+                recovery controls.
+              </p>
+              <p>
+                After either method, wait for reboot and confirm the expected
+                PyBLE BLE advertisement. A successful local operation remains
+                engineering evidence, not public qualification.
+              </p>
+            </div>
+          ) : (
+            <div className="flash-explainer">
+              <p>
+                Installing PyBLE erases the board&apos;s existing firmware and
+                user workspace. Back up user files before installing. Use a
+                normal USB connection with a data-capable cable and stable
+                power, close every serial monitor or application holding the
+                port, and select the correct serial port.
+              </p>
+              <p>
+                Try automatic reset first. If it fails, use the manual
+                BOOT/RESET sequence: hold BOOT, tap RESET, then release BOOT.
+                Button labels vary by board.
+              </p>
+              <p>
+                It is safe to retry after permission denial, disconnect,
+                timeout, interrupted erase, interrupted write, verification
+                failure, or when a board no longer boots. Close serial monitors,
+                reconnect USB, manually enter the ROM bootloader, reload this
+                page, and retry the same verified profile. The installer
+                rechecks the reviewed SHA-256 metadata root and selected
+                artifacts before it exposes the install action.
+              </p>
+              <p>
+                For advanced merged-image recovery with the same version-matched
+                bundle bytes, run the command for the exact selected profile:
+              </p>
+              <ul className="readiness-list">
+                <li>
+                  <code>
+                    python -m esptool --chip esp32 write_flash 0x1000{" "}
+                    <span>esp32-</span>
+                    <span>4mb/firmware.bin</span>
+                  </code>
+                </li>
                 <li>
                   <code>
                     python -m esptool --chip esp32s3 write_flash 0x0{" "}
-                    <span>waveshare-esp32-s3-lcd-147b/</span>
-                    <span>firmware.bin</span>
+                    <span>esp32-s3-</span>
+                    <span>n16r8/firmware.bin</span>
                   </code>
                 </li>
-              ) : null}
-            </ul>
-            <p>
-              As an advanced diagnostic or recovery alternative, the component
-              offsets are: bootloader at 0x1000 for classic ESP32 or 0x0 for
-              ESP32-S3, partition table at 0x8000, and application at 0x10000.
-              Use only the component files from that same bundle.
-            </p>
-            <p>
-              After flashing, perform a hard reset or power cycle. Expect the
-              board to advertise as <code>PyBLE-XXXX</code>, then make the first
-              connection from the PyBLE app.
-            </p>
-            <p>
-              Repeated resets, flash-size or PSRAM startup errors, or no BLE
-              advertisement can indicate a wrong memory profile. Stop instead of
-              trying random images, then use the{" "}
-              <a className="text-link" href="/support">
-                support route
-              </a>
-              . Safe diagnostic fields to share are the release version, profile
-              ID, board model or module marking, browser/OS versions, failed
-              stage, and redacted error text. Do not share secrets or personal
-              device labels.
-            </p>
-          </div>
+                {waveshareLcd147b ? (
+                  <li>
+                    <code>
+                      python -m esptool --chip esp32s3 write_flash 0x0{" "}
+                      <span>waveshare-esp32-s3-lcd-147b/</span>
+                      <span>firmware.bin</span>
+                    </code>
+                  </li>
+                ) : null}
+              </ul>
+              <p>
+                As an advanced diagnostic or recovery alternative, the component
+                offsets are: bootloader at 0x1000 for classic ESP32 or 0x0 for
+                ESP32-S3, partition table at 0x8000, and application at 0x10000.
+                Use only the component files from that same bundle.
+              </p>
+              <p>
+                After flashing, perform a hard reset or power cycle. Expect the
+                board to advertise as <code>PyBLE-XXXX</code>, then make the
+                first connection from the PyBLE app.
+              </p>
+              <p>
+                Repeated resets, flash-size or PSRAM startup errors, or no BLE
+                advertisement can indicate a wrong memory profile. Stop instead
+                of trying random images, then use the{" "}
+                <a className="text-link" href="/support">
+                  support route
+                </a>
+                . Safe diagnostic fields to share are the release version,
+                profile ID, board model or module marking, browser/OS versions,
+                failed stage, and redacted error text. Do not share secrets or
+                personal device labels.
+              </p>
+            </div>
+          )}
         </div>
       </section>
     </main>

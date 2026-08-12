@@ -10,9 +10,10 @@
   "scripts": {
     "dev": "next dev",
     "build": "npm run build:static && npm run build:sites",
-    "build:static": "next build",
-    "build:sites": "vinext build && node scripts/prepare-sites-output.js",
+    "build:static": "node scripts/assert-no-local-firmware-preview.js && next build",
+    "build:sites": "node scripts/assert-no-local-firmware-preview.js && vinext build && node scripts/prepare-sites-output.js",
     "firmware:stage": "node scripts/stage-firmware-release.js",
+    "firmware:preview": "node scripts/stage-local-firmware-preview.js",
     "licenses:web": "node scripts/generate-website-third-party-licenses.js --check",
     "start": "vinext start",
     "lint": "eslint . --max-warnings=0",

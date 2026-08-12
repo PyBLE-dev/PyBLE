@@ -6,10 +6,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { render, screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import FlashPage from "@/app/flash/page";
 import type { FirmwareReleaseDescriptor } from "@/lib/firmware-release";
+import * as firmwareSelection from "@/lib/firmware-release-selection";
+import type { LocalFirmwarePreviewDescriptor } from "@/lib/local-firmware-preview";
 import {
   hypotheticalPassedPublicFirmwareRelease,
   publicBetaFirmwareRelease,
@@ -54,8 +56,8 @@ function localPreviewArtifact(
   return { path, size, sha256: digestCharacter.repeat(64) };
 }
 
-function localFiveBoardPreview() {
-  const root = "/.pyble-preview-firmware";
+function localFiveBoardPreview(): LocalFirmwarePreviewDescriptor {
+  const root = "/.pyble-local-preview";
   return {
     schemaVersion: 1,
     deployment: "local-preview",
@@ -67,7 +69,7 @@ function localFiveBoardPreview() {
     profiles: [
       {
         id: "esp32-4mb",
-        label: "Classical ESP32 · 4 MiB",
+        label: "ESP32 · 4 MiB flash",
         chipFamily: "ESP32",
         buildTarget: "esp32",
         method: "esp-web-tools",
@@ -79,7 +81,7 @@ function localFiveBoardPreview() {
       },
       {
         id: "esp32-s3-n16r8",
-        label: "ESP32-S3 N16R8 · lean generic",
+        label: "ESP32-S3 · N16R8 · lean generic",
         chipFamily: "ESP32-S3",
         buildTarget: "esp32-s3",
         method: "esp-web-tools",
@@ -97,7 +99,7 @@ function localFiveBoardPreview() {
       },
       {
         id: "waveshare-esp32-s3-lcd-147b",
-        label: "Waveshare ESP32-S3-LCD-1.47B · exact B version",
+        label: "Waveshare ESP32-S3-LCD-1.47B · N16R8",
         chipFamily: "ESP32-S3",
         buildTarget: "waveshare-esp32-s3-lcd-147b",
         method: "esp-web-tools",
@@ -115,7 +117,7 @@ function localFiveBoardPreview() {
       },
       {
         id: "esp32-c3-4mb",
-        label: "ESP32-C3 · 4 MiB",
+        label: "ESP32-C3 revision v0.3+ · 4 MiB flash",
         chipFamily: "ESP32-C3",
         buildTarget: "esp32-c3",
         method: "esp-web-tools",
@@ -147,29 +149,12 @@ function localFiveBoardPreview() {
 
 describe("firmware installer release copy", () => {
   it("wires an explicit local five-board preview into /flash without changing the public default", async () => {
-    const previewRoot = await mkdtemp(
-      join(tmpdir(), "pyble-flash-local-preview-"),
-    );
-    const previewFile = join(previewRoot, "preview.json");
-    const mutableEnvironment = process.env as Record<
-      string,
-      string | undefined
-    >;
-    const previousPreview = process.env.PYBLE_LOCAL_FLASH_PREVIEW_FILE;
-    const previousPreviewFlag = process.env.PYBLE_LOCAL_FLASH_PREVIEW;
-    const previousSelection = process.env.PYBLE_FLASH_SELECTION_FILE;
-    const previousNodeEnvironment = process.env.NODE_ENV;
-    process.env.PYBLE_LOCAL_FLASH_PREVIEW = "1";
-    process.env.PYBLE_LOCAL_FLASH_PREVIEW_FILE = previewFile;
-    mutableEnvironment.NODE_ENV = "development";
-    delete process.env.PYBLE_FLASH_SELECTION_FILE;
+    const preview = localFiveBoardPreview();
+    const previewSelection = vi
+      .spyOn(firmwareSelection, "localFirmwarePreviewSelectedAtBuild")
+      .mockReturnValue(preview);
 
     try {
-      await writeFile(
-        previewFile,
-        JSON.stringify(localFiveBoardPreview()),
-        "utf8",
-      );
       render(<FlashPage />);
 
       expect(screen.getByRole("main")).toHaveTextContent(
@@ -197,27 +182,7 @@ describe("firmware installer release copy", () => {
         screen.queryByText(/ESP32-C3.*unavailable/i),
       ).not.toBeInTheDocument();
     } finally {
-      if (previousPreview === undefined) {
-        delete process.env.PYBLE_LOCAL_FLASH_PREVIEW_FILE;
-      } else {
-        process.env.PYBLE_LOCAL_FLASH_PREVIEW_FILE = previousPreview;
-      }
-      if (previousPreviewFlag === undefined) {
-        delete process.env.PYBLE_LOCAL_FLASH_PREVIEW;
-      } else {
-        process.env.PYBLE_LOCAL_FLASH_PREVIEW = previousPreviewFlag;
-      }
-      if (previousSelection === undefined) {
-        delete process.env.PYBLE_FLASH_SELECTION_FILE;
-      } else {
-        process.env.PYBLE_FLASH_SELECTION_FILE = previousSelection;
-      }
-      if (previousNodeEnvironment === undefined) {
-        delete mutableEnvironment.NODE_ENV;
-      } else {
-        mutableEnvironment.NODE_ENV = previousNodeEnvironment;
-      }
-      await rm(previewRoot, { recursive: true, force: true });
+      previewSelection.mockRestore();
     }
   });
 

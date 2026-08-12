@@ -135,7 +135,7 @@ const localFirmwarePreview: LocalFirmwarePreviewDescriptor = {
   profiles: [
     {
       id: "esp32-4mb",
-      label: "Classical ESP32 · 4 MiB",
+      label: "ESP32 · 4 MiB flash",
       chipFamily: "ESP32",
       buildTarget: "esp32",
       method: "esp-web-tools",
@@ -143,19 +143,19 @@ const localFirmwarePreview: LocalFirmwarePreviewDescriptor = {
       status: "engineering-preview",
       offset: 4096,
       manifest: {
-        path: "/.pyble-preview-firmware/esp32-4mb/manifest.json",
+        path: "/.pyble-local-preview/esp32-4mb/manifest.json",
         size: 234,
         sha256: "1".repeat(64),
       },
       firmware: {
-        path: "/.pyble-preview-firmware/esp32-4mb/firmware.bin",
+        path: "/.pyble-local-preview/esp32-4mb/firmware.bin",
         size: 1_920_000,
         sha256: "2".repeat(64),
       },
     },
     {
       id: "esp32-s3-n16r8",
-      label: "ESP32-S3 N16R8 · lean generic",
+      label: "ESP32-S3 · N16R8 · lean generic",
       chipFamily: "ESP32-S3",
       buildTarget: "esp32-s3",
       method: "esp-web-tools",
@@ -163,19 +163,19 @@ const localFirmwarePreview: LocalFirmwarePreviewDescriptor = {
       status: "engineering-preview",
       offset: 0,
       manifest: {
-        path: "/.pyble-preview-firmware/esp32-s3-n16r8/manifest.json",
+        path: "/.pyble-local-preview/esp32-s3-n16r8/manifest.json",
         size: 237,
         sha256: "3".repeat(64),
       },
       firmware: {
-        path: "/.pyble-preview-firmware/esp32-s3-n16r8/firmware.bin",
+        path: "/.pyble-local-preview/esp32-s3-n16r8/firmware.bin",
         size: 2_150_000,
         sha256: "4".repeat(64),
       },
     },
     {
       id: "waveshare-esp32-s3-lcd-147b",
-      label: "Waveshare ESP32-S3-LCD-1.47B · exact B version",
+      label: "Waveshare ESP32-S3-LCD-1.47B · N16R8",
       chipFamily: "ESP32-S3",
       buildTarget: "waveshare-esp32-s3-lcd-147b",
       method: "esp-web-tools",
@@ -183,19 +183,19 @@ const localFirmwarePreview: LocalFirmwarePreviewDescriptor = {
       status: "engineering-preview",
       offset: 0,
       manifest: {
-        path: "/.pyble-preview-firmware/waveshare-esp32-s3-lcd-147b/manifest.json",
+        path: "/.pyble-local-preview/waveshare-esp32-s3-lcd-147b/manifest.json",
         size: 259,
         sha256: "5".repeat(64),
       },
       firmware: {
-        path: "/.pyble-preview-firmware/waveshare-esp32-s3-lcd-147b/firmware.bin",
+        path: "/.pyble-local-preview/waveshare-esp32-s3-lcd-147b/firmware.bin",
         size: 2_170_000,
         sha256: "6".repeat(64),
       },
     },
     {
       id: "esp32-c3-4mb",
-      label: "ESP32-C3 · 4 MiB",
+      label: "ESP32-C3 revision v0.3+ · 4 MiB flash",
       chipFamily: "ESP32-C3",
       buildTarget: "esp32-c3",
       method: "esp-web-tools",
@@ -203,12 +203,12 @@ const localFirmwarePreview: LocalFirmwarePreviewDescriptor = {
       status: "engineering-preview",
       offset: 0,
       manifest: {
-        path: "/.pyble-preview-firmware/esp32-c3-4mb/manifest.json",
+        path: "/.pyble-local-preview/esp32-c3-4mb/manifest.json",
         size: 236,
         sha256: "7".repeat(64),
       },
       firmware: {
-        path: "/.pyble-preview-firmware/esp32-c3-4mb/firmware.bin",
+        path: "/.pyble-local-preview/esp32-c3-4mb/firmware.bin",
         size: 1_850_000,
         sha256: "8".repeat(64),
       },
@@ -222,7 +222,7 @@ const localFirmwarePreview: LocalFirmwarePreviewDescriptor = {
       qualified: false,
       status: "engineering-preview",
       firmware: {
-        path: "/.pyble-preview-firmware/rpi-pico2-w/firmware.uf2",
+        path: "/.pyble-local-preview/rpi-pico2-w/firmware.uf2",
         size: 1_690_112,
         sha256: "9".repeat(64),
       },
@@ -1056,7 +1056,9 @@ describe("local five-board engineering preview", () => {
     });
     expect(details).toHaveTextContent(/esp32-c3-4mb/i);
     expect(details).toHaveTextContent(/esp32 web tools.*web serial/i);
-    expect(details).toHaveTextContent(/unqualified local engineering preview/i);
+    expect(details).toHaveTextContent(
+      /local engineering preview.*unqualified/i,
+    );
     expect(details).toHaveTextContent(/version 0\.6\.0/i);
 
     const acknowledgements = screen.getByRole("group", {
@@ -1139,7 +1141,7 @@ describe("local five-board engineering preview", () => {
     const installer = document.querySelector("esp-web-install-button");
     expect(installer).toHaveAttribute(
       "manifest",
-      "/.pyble-preview-firmware/esp32-4mb/manifest.json",
+      "/.pyble-local-preview/esp32-4mb/manifest.json",
     );
     expect(screen.getByText(/local artifacts verified/i)).toBeInTheDocument();
   });
@@ -1179,7 +1181,7 @@ describe("local five-board engineering preview", () => {
     );
     expect(download).not.toHaveAttribute(
       "href",
-      "/.pyble-preview-firmware/rpi-pico2-w/firmware.uf2",
+      "/.pyble-local-preview/rpi-pico2-w/firmware.uf2",
     );
     expect(download).toHaveAttribute("download");
     expect(screen.getByText(/hold BOOTSEL.*connect/i)).toBeInTheDocument();

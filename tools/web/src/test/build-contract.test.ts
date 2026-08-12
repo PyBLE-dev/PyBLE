@@ -73,8 +73,10 @@ describe("production build contract", () => {
 
     expect(packageJson.scripts).toMatchObject({
       build: "npm run build:static && npm run build:sites",
-      "build:static": "next build",
-      "build:sites": "vinext build && node scripts/prepare-sites-output.js",
+      "build:static":
+        "node scripts/assert-no-local-firmware-preview.js && next build",
+      "build:sites":
+        "node scripts/assert-no-local-firmware-preview.js && vinext build && node scripts/prepare-sites-output.js",
     });
   });
 

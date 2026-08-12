@@ -155,6 +155,14 @@ export async function prepareSitesOutput(
   stagedFirmwareRoot = process.env.PYBLE_FIRMWARE_STAGED_ROOT,
   releaseValidator = validateFreshDeploymentBundle,
 ) {
+  if (
+    process.env.PYBLE_LOCAL_FLASH_PREVIEW ||
+    process.env.PYBLE_LOCAL_FLASH_PREVIEW_FILE
+  ) {
+    throw new Error(
+      "Sites output refuses local preview flags and engineering artifacts",
+    );
+  }
   const selectionFile = process.env.PYBLE_FLASH_SELECTION_FILE;
   if (Boolean(stagedFirmwareRoot) !== Boolean(selectionFile)) {
     throw new Error(

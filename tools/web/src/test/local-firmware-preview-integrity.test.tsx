@@ -8,6 +8,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { FlashStatus } from "@/components/flash-status";
 import {
+  installVerifiedLocalPreviewFetch,
   localFirmwareProfileTable,
   verifyLocalFirmwarePreviewProfile,
   type LocalFirmwarePreviewDescriptor,
@@ -69,7 +70,11 @@ function fixtureDescriptor({
 }
 
 function exactResponse(bytes: Uint8Array, url: string) {
-  const response = new Response(bytes, { status: 200 });
+  const body = bytes.buffer.slice(
+    bytes.byteOffset,
+    bytes.byteOffset + bytes.byteLength,
+  ) as ArrayBuffer;
+  const response = new Response(body, { status: 200 });
   Object.defineProperty(response, "url", { value: url });
   return response;
 }
@@ -101,22 +106,44 @@ describe("local firmware preview integrity", () => {
       return exactResponse(firmware, url.href);
     });
 
-    await expect(
-      verifyLocalFirmwarePreviewProfile({
-        descriptor,
-        fetcher,
-        origin,
-        profileId: "esp32-4mb",
-        subtle: globalThis.crypto.subtle,
-      }),
-    ).resolves.toEqual({
+    const verified = await verifyLocalFirmwarePreviewProfile({
+      descriptor,
+      fetcher,
+      origin,
+      profileId: "esp32-4mb",
+      subtle: globalThis.crypto.subtle,
+    });
+    expect(verified).toMatchObject({
       profileId: "esp32-4mb",
       method: "esp-web-tools",
       manifestPath: "/.pyble-local-preview/esp32-4mb/manifest.json",
       firmwarePath: "/.pyble-local-preview/esp32-4mb/firmware.bin",
       version: "0.6.0",
     });
+    expect(
+      Array.from(new Uint8Array(verified.verifiedManifestBytes ?? [])),
+    ).toEqual(Array.from(manifest));
+    expect(
+      Array.from(new Uint8Array(verified.verifiedFirmwareBytes ?? [])),
+    ).toEqual(Array.from(firmware));
     expect(fetcher).toHaveBeenCalledTimes(2);
+
+    const originalFetch = vi.fn(async () => new Response("changed on disk"));
+    const scope = { fetch: originalFetch as typeof fetch };
+    const cleanup = installVerifiedLocalPreviewFetch({
+      origin,
+      profile: verified,
+      scope,
+    });
+    await expect(
+      scope
+        .fetch("/.pyble-local-preview/esp32-4mb/firmware.bin")
+        .then((response) => response.arrayBuffer())
+        .then((bytes) => Array.from(new Uint8Array(bytes))),
+    ).resolves.toEqual(Array.from(firmware));
+    expect(originalFetch).not.toHaveBeenCalled();
+    cleanup();
+    expect(scope.fetch).toBe(originalFetch);
   });
 
   it("keeps the source identity, digest, destructive effect, and next action visible", () => {

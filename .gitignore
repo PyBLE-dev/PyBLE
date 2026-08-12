@@ -183,6 +183,8 @@ firmware/.arm-gnu/
 # ─── Release artifacts (published via GitHub Releases instead) ─────────────
 releases/
 dist/
+# Loopback-only firmware approval harness; never part of a web deployment.
+tools/web/public/.pyble-local-preview/
 
 # ─── Scratch / local-only notes (never committed at repo root) ─────────────
 local/

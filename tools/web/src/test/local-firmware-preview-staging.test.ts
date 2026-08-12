@@ -19,15 +19,24 @@ import { promisify } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { prepareSitesOutput } from "../../scripts/prepare-sites-output";
-import { stageLocalFirmwarePreview } from "../../scripts/stage-local-firmware-preview";
+import {
+  stageLocalFirmwarePreview,
+  validateRp2350Uf2,
+} from "../../scripts/stage-local-firmware-preview";
 import {
   firmwareReleaseSelectedAtBuild,
   localFirmwarePreviewSelectedAtBuild,
 } from "@/lib/firmware-release-selection";
+import {
+  verifyLocalFirmwarePreviewProfile,
+  type LocalFirmwarePreviewDescriptor,
+} from "@/lib/local-firmware-preview";
 
 const execFile = promisify(execFileCallback);
 const temporaryDirectories: string[] = [];
 const initialNodeEnvironment = process.env.NODE_ENV;
+const initialFirmwareSelection = process.env.PYBLE_FLASH_SELECTION_FILE;
+const mutableEnvironment = process.env as Record<string, string | undefined>;
 
 const espProfiles = [
   {
@@ -81,10 +90,15 @@ interface PreviewFixture {
 afterEach(async () => {
   delete process.env.PYBLE_LOCAL_FLASH_PREVIEW;
   delete process.env.PYBLE_LOCAL_FLASH_PREVIEW_FILE;
-  if (initialNodeEnvironment === undefined) {
-    delete process.env.NODE_ENV;
+  if (initialFirmwareSelection === undefined) {
+    delete process.env.PYBLE_FLASH_SELECTION_FILE;
   } else {
-    process.env.NODE_ENV = initialNodeEnvironment;
+    process.env.PYBLE_FLASH_SELECTION_FILE = initialFirmwareSelection;
+  }
+  if (initialNodeEnvironment === undefined) {
+    delete mutableEnvironment.NODE_ENV;
+  } else {
+    mutableEnvironment.NODE_ENV = initialNodeEnvironment;
   }
   vi.restoreAllMocks();
   await Promise.all(
@@ -110,25 +124,48 @@ function sha256(bytes: Uint8Array) {
 }
 
 function rp2350Uf2Fixture() {
-  const block = Buffer.alloc(512);
-  block.writeUInt32LE(0x0a324655, 0);
-  block.writeUInt32LE(0x9e5d5157, 4);
-  block.writeUInt32LE(0x00002000, 8);
-  block.writeUInt32LE(0x10000000, 12);
-  block.writeUInt32LE(256, 16);
-  block.writeUInt32LE(0, 20);
-  block.writeUInt32LE(1, 24);
-  block.writeUInt32LE(0xe48bff57, 28);
-  block.fill(0xef, 32, 288);
-  block.writeUInt32LE(0x0ab16f30, 508);
-  return block;
+  const firmwareBin = Buffer.alloc(300);
+  firmwareBin.forEach((_, index) => {
+    firmwareBin[index] = index & 0xff;
+  });
+  const extension = Buffer.alloc(512);
+  extension.writeUInt32LE(0x0a324655, 0);
+  extension.writeUInt32LE(0x9e5d5157, 4);
+  extension.writeUInt32LE(0x0000a000, 8);
+  extension.writeUInt32LE(0x10ffff00, 12);
+  extension.writeUInt32LE(256, 16);
+  extension.writeUInt32LE(0, 20);
+  extension.writeUInt32LE(2, 24);
+  extension.writeUInt32LE(0xe48bff57, 28);
+  extension.fill(0xef, 32, 288);
+  extension.writeUInt32LE(0x0ab16f30, 508);
+  const mainBlocks = [0, 1].map((blockNumber) => {
+    const block = Buffer.alloc(512);
+    block.writeUInt32LE(0x0a324655, 0);
+    block.writeUInt32LE(0x9e5d5157, 4);
+    block.writeUInt32LE(0x00002000, 8);
+    block.writeUInt32LE(0x10000000 + blockNumber * 256, 12);
+    block.writeUInt32LE(256, 16);
+    block.writeUInt32LE(blockNumber, 20);
+    block.writeUInt32LE(2, 24);
+    block.writeUInt32LE(0xe48bff59, 28);
+    firmwareBin
+      .subarray(blockNumber * 256, (blockNumber + 1) * 256)
+      .copy(block, 32);
+    block.writeUInt32LE(0x0ab16f30, 508);
+    return block;
+  });
+  return {
+    firmwareBin,
+    firmwareUf2: Buffer.concat([extension, ...mainBlocks]),
+  };
 }
 
 async function initialiseRepository(root: string) {
   await mkdir(join(root, "firmware"), { recursive: true });
   await writeFile(
     join(root, "firmware", "versions.lock"),
-    '[pyble]\nagent_version = "0.6.0"\nprotocol_version = "PBLE/1"\n',
+    '[micropython]\ncommit = "1111111111111111111111111111111111111111"\n\n[esp_idf]\ncommit = "2222222222222222222222222222222222222222"\n\n[pyble]\nagent_version = "0.6.0"\nprotocol_version = "PBLE/1"\n\n[arm_gnu_toolchain]\nrelease = "14.2.Rel1"\ngcc_version = "14.2.1 20241119"\n',
     "utf8",
   );
   await writeFile(
@@ -229,9 +266,12 @@ async function createPreviewFixture(): Promise<PreviewFixture> {
   }
 
   const picoRoot = join(rp2BuildRoot, "rpi-pico2-w");
-  const picoFirmware = rp2350Uf2Fixture();
+  const { firmwareBin: picoBin, firmwareUf2: picoFirmware } =
+    rp2350Uf2Fixture();
   await mkdir(picoRoot, { recursive: true });
   await writeFile(join(picoRoot, "firmware.uf2"), picoFirmware);
+  await writeFile(join(picoRoot, "firmware.bin"), picoBin);
+  await writeFile(join(picoRoot, "firmware.elf"), "ELF fixture");
   await writeJson(join(picoRoot, "pyble-build-provenance.json"), {
     schema_version: 1,
     target: "rpi-pico2-w",
@@ -240,9 +280,12 @@ async function createPreviewFixture(): Promise<PreviewFixture> {
     source_date_epoch: sourceDateEpoch,
     pyble: { commit: sourceCommit, clean: true },
     micropython: { commit: "1".repeat(40) },
-    arm_gnu_toolchain: { release: "14.2.Rel1", gcc: "gcc 14.2.1" },
+    arm_gnu_toolchain: {
+      release: "14.2.Rel1",
+      gcc: "arm-none-eabi-gcc 14.2.1 20241119",
+    },
     picotool: "picotool v2.3.0",
-    firmware_bin_bytes: 845_048,
+    firmware_bin_bytes: picoBin.byteLength,
   });
 
   return {
@@ -271,6 +314,29 @@ async function commitNonFirmwareChange(fixture: PreviewFixture) {
 }
 
 describe("local firmware engineering-preview staging", () => {
+  it("rejects incomplete RP2350 Arm UF2 streams", async () => {
+    const directory = await temporaryDirectory("preview-truncated-uf2");
+    const { firmwareUf2 } = rp2350Uf2Fixture();
+    const path = join(directory, "firmware.uf2");
+    await writeFile(path, firmwareUf2.subarray(0, -512));
+
+    await expect(validateRp2350Uf2(path)).rejects.toThrow(
+      /incomplete|RP2350 Arm/i,
+    );
+  });
+
+  it("rejects fake ESP bytes through the canonical build validator", async () => {
+    const fixture = await createPreviewFixture();
+
+    await expect(
+      stageLocalFirmwarePreview({
+        repositoryRoot: fixture.repositoryRoot,
+        espBuildRoot: fixture.espBuildRoot,
+        rp2BuildRoot: fixture.rp2BuildRoot,
+      }),
+    ).rejects.toThrow(/canonical|release_bundle\.py/i);
+  });
+
   it("stages five isolated, hash-bound v0.6.0 profiles from one unchanged firmware source", async () => {
     const fixture = await createPreviewFixture();
     await commitNonFirmwareChange(fixture);
@@ -280,6 +346,7 @@ describe("local firmware engineering-preview staging", () => {
       repositoryRoot: fixture.repositoryRoot,
       espBuildRoot: fixture.espBuildRoot,
       rp2BuildRoot: fixture.rp2BuildRoot,
+      espBuildValidator: async () => undefined,
       uf2Validator: validateUf2,
     });
     const outputRoot = join(
@@ -364,7 +431,7 @@ describe("local firmware engineering-preview staging", () => {
       });
       await expect(
         readFile(join(profileRoot, "firmware.bin")),
-      ).resolves.toEqual(sourceFirmware);
+      ).resolves.toEqual(Buffer.from(sourceFirmware ?? new Uint8Array()));
     }
 
     expect(descriptor.profiles.at(-1)).toEqual({
@@ -388,13 +455,40 @@ describe("local firmware engineering-preview staging", () => {
       readFile(join(outputRoot, "descriptor.json"), "utf8").then(JSON.parse),
     ).resolves.toEqual(descriptor);
 
-    process.env.NODE_ENV = "development";
+    const origin = "http://127.0.0.1:3000";
+    const verified = await verifyLocalFirmwarePreviewProfile({
+      descriptor: descriptor as unknown as LocalFirmwarePreviewDescriptor,
+      origin,
+      profileId: "esp32-4mb",
+      subtle: globalThis.crypto.subtle,
+      fetcher: async (input) => {
+        const url = new URL(input.toString());
+        const bytes = await readFile(
+          join(outputRoot, url.pathname.replace("/.pyble-local-preview/", "")),
+        );
+        const response = new Response(bytes, { status: 200 });
+        Object.defineProperty(response, "url", { value: url.href });
+        return response;
+      },
+    });
+    expect(verified).toMatchObject({
+      profileId: "esp32-4mb",
+      manifestPath: "/.pyble-local-preview/esp32-4mb/manifest.json",
+      firmwarePath: "/.pyble-local-preview/esp32-4mb/firmware.bin",
+    });
+
+    mutableEnvironment.NODE_ENV = "development";
+    delete process.env.PYBLE_FLASH_SELECTION_FILE;
     process.env.PYBLE_LOCAL_FLASH_PREVIEW = "1";
     process.env.PYBLE_LOCAL_FLASH_PREVIEW_FILE = join(
       outputRoot,
       "descriptor.json",
     );
-    expect(localFirmwarePreviewSelectedAtBuild()).toEqual(descriptor);
+    expect(
+      localFirmwarePreviewSelectedAtBuild(
+        join(fixture.repositoryRoot, "tools", "web"),
+      ),
+    ).toEqual(descriptor);
   });
 
   it("rejects non-regular inputs and firmware changes after the attested build commit", async () => {
@@ -413,6 +507,7 @@ describe("local firmware engineering-preview staging", () => {
         repositoryRoot: symlinkFixture.repositoryRoot,
         espBuildRoot: symlinkFixture.espBuildRoot,
         rp2BuildRoot: symlinkFixture.rp2BuildRoot,
+        espBuildValidator: async () => undefined,
         uf2Validator: async () => undefined,
       }),
     ).rejects.toThrow(/ordinary|regular|symbolic link/i);
@@ -433,6 +528,7 @@ describe("local firmware engineering-preview staging", () => {
         repositoryRoot: driftFixture.repositoryRoot,
         espBuildRoot: driftFixture.espBuildRoot,
         rp2BuildRoot: driftFixture.rp2BuildRoot,
+        espBuildValidator: async () => undefined,
         uf2Validator: async () => undefined,
       }),
     ).rejects.toThrow(/firmware.*(?:changed|drift)|source.*firmware/i);
@@ -446,6 +542,7 @@ describe("local preview remains outside every production publication path", () =
       repositoryRoot: fixture.repositoryRoot,
       espBuildRoot: fixture.espBuildRoot,
       rp2BuildRoot: fixture.rp2BuildRoot,
+      espBuildValidator: async () => undefined,
       uf2Validator: async () => undefined,
     });
     const selectionFile = join(
@@ -457,20 +554,29 @@ describe("local preview remains outside every production publication path", () =
       "descriptor.json",
     );
 
-    process.env.NODE_ENV = "development";
+    mutableEnvironment.NODE_ENV = "development";
+    delete process.env.PYBLE_FLASH_SELECTION_FILE;
     delete process.env.PYBLE_LOCAL_FLASH_PREVIEW;
     delete process.env.PYBLE_LOCAL_FLASH_PREVIEW_FILE;
-    expect(localFirmwarePreviewSelectedAtBuild()).toBeNull();
+    const packageRoot = join(fixture.repositoryRoot, "tools", "web");
+    expect(localFirmwarePreviewSelectedAtBuild(packageRoot)).toBeNull();
 
     process.env.PYBLE_LOCAL_FLASH_PREVIEW_FILE = selectionFile;
-    expect(() => localFirmwarePreviewSelectedAtBuild()).toThrow(
+    expect(() => localFirmwarePreviewSelectedAtBuild(packageRoot)).toThrow(
       /PYBLE_LOCAL_FLASH_PREVIEW=1|explicit/i,
     );
     process.env.PYBLE_LOCAL_FLASH_PREVIEW = "1";
-    expect(localFirmwarePreviewSelectedAtBuild()).toEqual(descriptor);
+    expect(localFirmwarePreviewSelectedAtBuild(packageRoot)).toEqual(
+      descriptor,
+    );
+    process.env.PYBLE_FLASH_SELECTION_FILE = "/tmp/public-release.json";
+    expect(() => localFirmwarePreviewSelectedAtBuild(packageRoot)).toThrow(
+      /cannot coexist|release selector/i,
+    );
+    delete process.env.PYBLE_FLASH_SELECTION_FILE;
 
-    process.env.NODE_ENV = "production";
-    expect(() => localFirmwarePreviewSelectedAtBuild()).toThrow(
+    mutableEnvironment.NODE_ENV = "production";
+    expect(() => localFirmwarePreviewSelectedAtBuild(packageRoot)).toThrow(
       /development|local preview/i,
     );
     expect(firmwareReleaseSelectedAtBuild()).toBeNull();
