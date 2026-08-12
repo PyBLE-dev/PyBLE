@@ -106,11 +106,13 @@ Where this document and [TDD.md](TDD.md) touch the same topic, this document win
   claimed by a release. The current v0.4.2 public-beta profile set is exactly
   `esp32-4mb` and `esp32-s3-n16r8`: its supplemental production-browser rows
   passed, while its formal qualification matrix remains pending. The v1.0
-  matrix additionally requires `esp32-c3-4mb`. The v0.5.1 source-candidate
-  matrix is exactly
+  matrix additionally requires `esp32-c3-4mb`. The earlier v0.5.1
+  source-candidate matrix was exactly
   `esp32-4mb`, `esp32-s3-n16r8`, and
   `waveshare-esp32-s3-lcd-147b`; each needs independent final-candidate HIL
-  before qualification (PRD §1B.3, §10.12).
+  before qualification; it completed no exact-byte qualification. Current
+  v0.6.0 source retains those prospective public profiles (PRD §1B.3,
+  §10.12).
 - **Frozen-Python agent** — agent modules baked into the firmware image as `.py` (frozen at build); the recommended first implementation.
 - **Native agent** — hot paths moved to a `USER_C_MODULE` for throughput/RAM, behind the unchanged PBLE/1 contract.
 - **Frozen user runtime** — an importable helper selected into an image for
@@ -289,8 +291,9 @@ are screenless.
   delta, and run a runtime import smoke on every exact profile included in
   that release. The historical v0.4.2 runtime-qualification matrix is the two
   published-beta profiles in §2.2 and remains open beyond the supplemental
-  browser run. The v0.5.1 source-candidate runtime matrix is the three profiles
-  in §2.2 and requires fresh independent evidence; `esp32-c3-4mb` runtime smoke
+  browser run. Current v0.6.0 source retains the three prospective public
+  profiles in §2.2 and requires fresh independent evidence;
+  `esp32-c3-4mb` runtime smoke
   remains required before that profile is enabled and before v1.0. Any visual
   LED smoke MUST take an operator-supplied GPIO, use a bounded dim sequence,
   and turn the pixel off on exit. MUST (*source: PRD §10.11, §10.13, §13.3;
@@ -713,11 +716,13 @@ Each still MUST have a complete numeric policy and final-candidate HIL record
 before the release may be called qualified. `esp32-c3-4mb` MUST NOT have a
 threshold entry or HIL row in that historical policy.
 
-The v0.5.1 source-candidate qualification set is exactly, and in this order,
+The earlier v0.5.1 source-candidate qualification set was exactly, and in this order,
 `esp32-4mb`, `esp32-s3-n16r8`, and
 `waveshare-esp32-s3-lcd-147b`. Each MUST have a complete numeric policy and
 final-candidate HIL record before new public bytes or installer selection can
-be enabled. Pre-split/two-profile evidence MUST NOT qualify this candidate.
+be enabled. It completed no exact-byte qualification. Current v0.6.0 source
+retains those prospective public profiles and requires fresh evidence;
+pre-split or earlier-candidate evidence MUST NOT qualify it.
 `esp32-c3-4mb` MUST NOT have a threshold entry or HIL row in this pre-v1
 policy. It remains a build/source/license-audit target, but its numeric
 qualification remains open and blocks enabling C3 and blocks v1.0. The v1.0
@@ -1120,7 +1125,8 @@ This is software-level safety of the IDE/agent, **not** hardware/actuator safety
 > BLD-1…22 are the build/versioning contract build-smith implements. The
 > 2026-07-29 amendments tighten BLD-5…8/13/14 and add BLD-17…22 before
 > X-10/X-11 code; the 2026-07-30 amendment froze the historical two-profile
-> subset and ADR-0028 replaces the current v0.5 set with three profiles. The
+> subset and ADR-0028 replaced the v0.5.1 set with three profiles. Current
+> v0.6.0 source retains those prospective profiles without approving them. The
 > release subset and makes the immutable same-origin directory canonical for
 > v0.x, with an optional byte-identical mirror, without weakening three-chip
 > or GitHub Release v1.0 parity. The concrete
@@ -1277,8 +1283,9 @@ This is software-level safety of the IDE/agent, **not** hardware/actuator safety
   schema-validated `release.json`, SHA-256/size metadata, and `SHA256SUMS`
   defined in
   [browser-flashing §§3–5](browser-flashing.md#3-same-origin-versioned-layout).
-  The split v0.5 bundle MUST use release schema 3 with exactly the three
-  current profiles; immutable v0.4.2 replay retains release schema 2 and its
+  Any split pre-v1 bundle from v0.5.0 onward MUST use release schema 3 with
+  exactly the three prospective public profiles; immutable v0.4.2 replay
+  retains release schema 2 and its
   historical two-profile order.
   Manifest paths MUST be relative, same-origin, version-confined, and free of
   redirects. — *(source: website §7; verify: build, website; story: X-10,

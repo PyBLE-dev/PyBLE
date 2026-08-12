@@ -26,8 +26,9 @@ Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-08-12
 > [ADR-0028](../../decisions/0028-separate-waveshare-lcd147b-firmware-profile.md)):**
 > the build matrix has four variants over three IDF targets. Generic S3 is
 > lean; only `waveshare-esp32-s3-lcd-147b` contains the display modules,
-> splash boot wrapper, and native readiness seam. Current v0.5 qualification
-> and web release evidence have three profiles; C3 remains deferred.
+> splash boot wrapper, and native readiness seam. The earlier v0.5.1
+> three-profile candidate did not complete qualification. Current v0.6.0
+> source retains those prospective public profiles; C3 remains unqualified.
 >
 > **Frozen ESP32-C3 engineering-qualification design (2026-08-12, `[docs]`,
 > [ADR-0032](../../decisions/0032-qualify-generic-esp32-c3-4mb-on-reference-hardware.md)):**
@@ -1106,8 +1107,9 @@ Candidate generation embeds the parsed policy, its exact-byte SHA-256, the
 matching baseline-evidence digest, and immutable build measurements in
 the source-era record selected by browser-flashing.md §9: immutable `v0.4.2`
 replay retains `PYBLE_HIL_RECORDS_V2` schema 2; the rejected pre-split v0.5
-engineering shape is V3 and cannot publish split bytes; current split v0.5 uses
-`PYBLE_HIL_RECORDS_V4` schema 4. Its runtime observation is pending.
+engineering shape is V3 and cannot publish split bytes; split candidates from
+v0.5.1 onward use `PYBLE_HIL_RECORDS_V4` schema 4. Current v0.6.0 runtime
+observations remain pending.
 Finalization may fill observations, operator fields, and derived
 checks only; it must prove the policy and build portions remain
 byte/semantically equal to the candidate.

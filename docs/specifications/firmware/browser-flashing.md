@@ -408,7 +408,8 @@ numerically-equal fractional value. This applies equally to build provenance,
 the release-tool lock, license policy and shipment ledger, audit receipts, HIL
 records, and `release.json`.
 
-Current v0.5 `release.json` schema version 3 MUST contain the following (the
+For split pre-v1 candidates from v0.5.0 onward, `release.json` schema version 3
+MUST contain the following (the
 version is the exact JSON integer `3`; booleans and numerically-equal
 fractional values are invalid). Version 3 is an intentional incompatible
 metadata revision: it freezes the exact three-profile order in §1 and MUST NOT
@@ -442,7 +443,7 @@ it keeps release schema version 2, exactly the historical ordered profiles
 `esp32-4mb` and `esp32-s3-n16r8`, and its original files and hashes. Validation
 MUST select that contract from exact release identity `0.4.2`, MUST reject a
 third profile or schema 3 there, and MUST reject schema 2, a two-profile order,
-or v0.4.2 artifacts for current v0.5 source. No validator, carry-forward
+or v0.4.2 artifacts for current v0.6.0 source. No validator, carry-forward
 deployment, or website descriptor may reinterpret or expand the immutable
 v0.4.2 tree.
 

@@ -1003,7 +1003,8 @@ Requirements:
 - A controlled refresh MUST retain earlier evidence, replace all three current
   profile threshold sets together, and rebuild and reverify the final
   candidate. Engineering-baseline observations do not qualify that candidate.
-- A v0.5 qualification of all three current profiles closes only that release
+- Qualification of all three prospective public profiles closes only that
+  release
   subset. The open C3 portion remains release-blocking for any C3 enablement
   and for v1.0; “to be measured on hardware” is not permission to claim C3.
 
@@ -1354,7 +1355,7 @@ PyBLE depends on third-party code at two layers (firmware upstream and Flutter p
 - The project SHOULD track upstream MicroPython and ESP-IDF release lines and plan a controlled upgrade before its pinned line reaches end-of-life, so PyBLE is never stranded on an unsupported base.
 - An upgrade MUST NOT be approved for a public candidate on the strength of CI
   alone: it requires the §17.1 HIL pass on every exact profile included in that
-  release. The three v0.5 profiles plus `esp32-c3-4mb` remain mandatory for
+  release. The three prospective public profiles plus `esp32-c3-4mb` remain mandatory for
   v1.0.
 - When a dependency is abandoned upstream, the project MUST either vendor it under MIT/Apache/BSD terms (with the source pinned and recorded) or replace it; an unmaintained dependency MUST NOT be left as a silent liability.
 
@@ -1717,4 +1718,4 @@ New significant decisions MUST be captured as additional ADRs (`docs/decisions/N
 | **Control plane** | The agent's protected layer that owns BLE, the runner, and the filesystem bridge. It MUST NOT be editable by user code; a frozen `while True` in user code MUST NOT be able to wedge BLE or block `STOP`. |
 | **Workspace** | The user's own files on the board — `/main.py`, `/lib/*.py`, `/data/*` (Layer 4). Just programs the agent runs; never the control plane. |
 | **Platform port / target adapter** | Layer-2 integration for a MicroPython target: BLE host, scheduler/interrupt boundary, storage/config, identity, build, and provisioning. The initial ESP32 port uses per-chip board overlays for `esp32` / `esp32-s3` / `esp32-c3`, copied into the upstream tree at build prep so the submodule stays pristine. |
-| **HIL** | Hardware-in-the-loop — validation and measurement performed on a real board (as opposed to host-side or fake-transport tests). Resource and BLE/goodput numbers are frozen only after HIL measurement for every exact profile claimed by a release. The immutable v0.4.2 matrix is `esp32-4mb` plus `esp32-s3-n16r8`; its supplemental browser rows passed while other formal rows remain pending. The v0.5.1 source-candidate matrix adds `waveshare-esp32-s3-lcd-147b`, and the two prospective S3 binaries require independent evidence. v1.0 additionally requires `esp32-c3-4mb`. |
+| **HIL** | Hardware-in-the-loop — validation and measurement performed on a real board (as opposed to host-side or fake-transport tests). Resource and BLE/goodput numbers are frozen only after HIL measurement for every exact profile claimed by a release. The immutable v0.4.2 matrix is `esp32-4mb` plus `esp32-s3-n16r8`; its supplemental browser rows passed while other formal rows remain pending. The earlier v0.5.1 source-candidate matrix added `waveshare-esp32-s3-lcd-147b` but completed no exact-byte qualification. Current v0.6.0 source retains those prospective public profiles, and the two S3 binaries require independent evidence. v1.0 additionally requires `esp32-c3-4mb`. |
