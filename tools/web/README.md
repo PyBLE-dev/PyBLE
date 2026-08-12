@@ -70,6 +70,16 @@ the vinext handler, and the exact Sites project binding.
 No application backend, remote CMS, analytics service, or web-font request is
 needed. A normal build needs no runtime or build-time environment variables.
 
+### Temporary build-dependency exception
+
+Vinext currently depends on `image-size` 2.0.2, and npm has no patched release
+for GHSA-w3rx-r6r6-pgpr or GHSA-5p2g-fcmc-qvqq. The dependency is confined to
+the owner-preview build: production deploys only `out/` and runs no Node.js
+process. Until a compatible fix exists, the test gate forbids filesystem
+metadata image routes under `src/app`, which are the vinext path that invokes
+the parser. Recheck this exception on every vinext or `image-size` update; do
+not describe `npm audit` as clean while the two related high findings remain.
+
 ## Production deployment
 
 The tested Nginx configuration and atomic release helper live in `deploy/`.

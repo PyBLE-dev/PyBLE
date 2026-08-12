@@ -388,6 +388,19 @@ a dynamic route renderer.
 Website source and tests participate in the no-leak gate. Comment-capable source
 files carry the MIT SPDX header. Generated output and dependencies are ignored.
 
+The vinext preview build currently brings in `image-size` 2.0.2, for which no
+patched npm release exists for GHSA-w3rx-r6r6-pgpr or
+GHSA-5p2g-fcmc-qvqq. This temporary exception is limited to the build-only
+preview dependency: production MUST continue to deploy only the checked static
+`out/` tree and MUST NOT run or upload the Node dependency closure. While the
+exception exists, authored App Router source MUST NOT add filesystem metadata
+image routes named `favicon`, `icon`, `apple-icon`, `opengraph-image`, or
+`twitter-image`, because vinext may pass those files to the affected parser at
+build time. The release gate MUST enforce that absence before either build,
+and maintainers MUST recheck the exception on every vinext or `image-size`
+update and remove it as soon as a patched compatible release is available.
+This exception does not permit an otherwise-fixable audit finding to remain.
+
 ### 6.1 Canonical production origin
 
 The canonical public deployment is Cloudflare in front of a dedicated HTTPS
