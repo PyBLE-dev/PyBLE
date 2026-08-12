@@ -32,7 +32,7 @@ export default function FlashPage() {
             ? " The current v0.4.2 installer is a hardware-tested firmware beta. Production Chrome erase/install and deliberately interrupted-flash recovery passed on both exact profiles. Complete release qualification is still pending; this is not a qualified release."
             : qualifiedPublic
               ? ` Qualified v${release.version} firmware is available for all three exact release profiles.`
-              : " The public install action remains unavailable until the final bytes pass hardware validation on all three prospective v0.5.1 profiles."}
+              : " The public install action remains unavailable until the final v0.6.0-derived bytes pass hardware validation on every included profile."}
         </p>
       </PageIntro>
 
