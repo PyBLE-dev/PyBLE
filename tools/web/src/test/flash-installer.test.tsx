@@ -48,6 +48,54 @@ interface VerifiedProfile {
   version: string;
 }
 
+type LocalPreviewProfileId =
+  | "esp32-4mb"
+  | "esp32-s3-n16r8"
+  | "waveshare-esp32-s3-lcd-147b"
+  | "esp32-c3-4mb"
+  | "rpi-pico2-w";
+
+type LocalPreviewMethod = "esp-web-tools" | "uf2-download";
+
+interface LocalPreviewProfile {
+  id: LocalPreviewProfileId;
+  label: string;
+  chipFamily: string;
+  buildTarget: string;
+  method: LocalPreviewMethod;
+  qualified: false;
+  status: "engineering-preview";
+  offset?: number;
+  manifest?: PreviewArtifact;
+  firmware: PreviewArtifact;
+}
+
+interface PreviewArtifact {
+  path: string;
+  size: number;
+  sha256: string;
+}
+
+interface LocalFirmwarePreviewDescriptor {
+  schemaVersion: 1;
+  deployment: "local-preview";
+  localOnly: true;
+  qualified: false;
+  version: string;
+  sourceCommit: string;
+  builtAt: string;
+  profiles: readonly LocalPreviewProfile[];
+}
+
+interface VerifiedLocalPreviewProfile {
+  profileId: LocalPreviewProfileId;
+  method: LocalPreviewMethod;
+  manifestPath?: string;
+  firmwarePath: string;
+  downloadUrl?: string;
+  version: string;
+}
+
 interface FlashStatusContractProps {
   capabilities?: BrowserCapabilities;
   installArtifactFetch?: (
@@ -55,11 +103,16 @@ interface FlashStatusContractProps {
     releaseKey: string,
   ) => () => void;
   loadInstaller?: () => Promise<void>;
+  preview?: LocalFirmwarePreviewDescriptor | null;
   release?: FirmwareReleaseDescriptor | null;
   verifyProfile?: (
     release: FirmwareReleaseDescriptor,
     profileId: FirmwareProfileId,
   ) => Promise<VerifiedProfile>;
+  verifyPreviewProfile?: (
+    preview: LocalFirmwarePreviewDescriptor,
+    profileId: LocalPreviewProfileId,
+  ) => Promise<VerifiedLocalPreviewProfile>;
 }
 
 const InstallerUnderTest =
@@ -69,6 +122,112 @@ const supportedCapabilities: BrowserCapabilities = {
   secureContext: true,
   webSerial: true,
   webCrypto: true,
+};
+
+const localFirmwarePreview: LocalFirmwarePreviewDescriptor = {
+  schemaVersion: 1,
+  deployment: "local-preview",
+  localOnly: true,
+  qualified: false,
+  version: "0.6.0",
+  sourceCommit: "e895a33642627401dbae5c8bd8110802ab143900",
+  builtAt: "2026-08-12T00:00:00Z",
+  profiles: [
+    {
+      id: "esp32-4mb",
+      label: "Classical ESP32 · 4 MiB",
+      chipFamily: "ESP32",
+      buildTarget: "esp32",
+      method: "esp-web-tools",
+      qualified: false,
+      status: "engineering-preview",
+      offset: 4096,
+      manifest: {
+        path: "/.pyble-preview-firmware/esp32-4mb/manifest.json",
+        size: 234,
+        sha256: "1".repeat(64),
+      },
+      firmware: {
+        path: "/.pyble-preview-firmware/esp32-4mb/firmware.bin",
+        size: 1_920_000,
+        sha256: "2".repeat(64),
+      },
+    },
+    {
+      id: "esp32-s3-n16r8",
+      label: "ESP32-S3 N16R8 · lean generic",
+      chipFamily: "ESP32-S3",
+      buildTarget: "esp32-s3",
+      method: "esp-web-tools",
+      qualified: false,
+      status: "engineering-preview",
+      offset: 0,
+      manifest: {
+        path: "/.pyble-preview-firmware/esp32-s3-n16r8/manifest.json",
+        size: 237,
+        sha256: "3".repeat(64),
+      },
+      firmware: {
+        path: "/.pyble-preview-firmware/esp32-s3-n16r8/firmware.bin",
+        size: 2_150_000,
+        sha256: "4".repeat(64),
+      },
+    },
+    {
+      id: "waveshare-esp32-s3-lcd-147b",
+      label: "Waveshare ESP32-S3-LCD-1.47B · exact B version",
+      chipFamily: "ESP32-S3",
+      buildTarget: "waveshare-esp32-s3-lcd-147b",
+      method: "esp-web-tools",
+      qualified: false,
+      status: "engineering-preview",
+      offset: 0,
+      manifest: {
+        path: "/.pyble-preview-firmware/waveshare-esp32-s3-lcd-147b/manifest.json",
+        size: 259,
+        sha256: "5".repeat(64),
+      },
+      firmware: {
+        path: "/.pyble-preview-firmware/waveshare-esp32-s3-lcd-147b/firmware.bin",
+        size: 2_170_000,
+        sha256: "6".repeat(64),
+      },
+    },
+    {
+      id: "esp32-c3-4mb",
+      label: "ESP32-C3 · 4 MiB",
+      chipFamily: "ESP32-C3",
+      buildTarget: "esp32-c3",
+      method: "esp-web-tools",
+      qualified: false,
+      status: "engineering-preview",
+      offset: 0,
+      manifest: {
+        path: "/.pyble-preview-firmware/esp32-c3-4mb/manifest.json",
+        size: 236,
+        sha256: "7".repeat(64),
+      },
+      firmware: {
+        path: "/.pyble-preview-firmware/esp32-c3-4mb/firmware.bin",
+        size: 1_850_000,
+        sha256: "8".repeat(64),
+      },
+    },
+    {
+      id: "rpi-pico2-w",
+      label: "Raspberry Pi Pico 2 W",
+      chipFamily: "RP2350",
+      buildTarget: "rpi-pico2-w",
+      method: "uf2-download",
+      qualified: false,
+      status: "engineering-preview",
+      firmware: {
+        path: "/.pyble-preview-firmware/rpi-pico2-w/firmware.uf2",
+        size: 1_690_112,
+        sha256: "9".repeat(64),
+      },
+    },
+  ],
 };
 
 function renderInstaller(overrides: Partial<FlashStatusContractProps> = {}) {
@@ -96,6 +255,69 @@ function renderInstaller(overrides: Partial<FlashStatusContractProps> = {}) {
     loadInstaller,
     verifyProfile,
   };
+}
+
+function verifiedPreviewProfile(
+  profileId: LocalPreviewProfileId,
+): VerifiedLocalPreviewProfile {
+  const profile = localFirmwarePreview.profiles.find(
+    (candidate) => candidate.id === profileId,
+  );
+  if (!profile) {
+    throw new Error(`Unknown local preview profile: ${profileId}`);
+  }
+  return {
+    profileId,
+    method: profile.method,
+    manifestPath: profile.manifest?.path,
+    firmwarePath: profile.firmware.path,
+    downloadUrl:
+      profile.method === "uf2-download"
+        ? `blob:pyble-local-preview-${profile.id}`
+        : undefined,
+    version: localFirmwarePreview.version,
+  };
+}
+
+function renderPreviewInstaller(
+  overrides: Partial<FlashStatusContractProps> = {},
+) {
+  const verifyPreviewProfile = vi.fn(
+    async (
+      _preview: LocalFirmwarePreviewDescriptor,
+      profileId: LocalPreviewProfileId,
+    ) => verifiedPreviewProfile(profileId),
+  );
+  const loadInstaller = vi.fn(async () => undefined);
+
+  const rendered = render(
+    <InstallerUnderTest
+      capabilities={supportedCapabilities}
+      loadInstaller={loadInstaller}
+      preview={localFirmwarePreview}
+      release={null}
+      verifyPreviewProfile={verifyPreviewProfile}
+      {...overrides}
+    />,
+  );
+
+  return { ...rendered, loadInstaller, verifyPreviewProfile };
+}
+
+function selectPreviewProfile(profileId: LocalPreviewProfileId) {
+  fireEvent.change(
+    screen.getByRole("combobox", { name: /choose a firmware target/i }),
+    { target: { value: profileId } },
+  );
+}
+
+function acceptPreviewConsents() {
+  const acknowledgements = screen.getByRole("group", {
+    name: /installation acknowledgements/i,
+  });
+  for (const checkbox of within(acknowledgements).getAllByRole("checkbox")) {
+    fireEvent.click(checkbox);
+  }
 }
 
 function verifiedProfileForRelease(
@@ -771,5 +993,250 @@ describe("browser firmware installer states", () => {
     expect(publicBetaFirmwareRelease.releaseJson.sha256).toMatch(
       /^[0-9a-f]{64}$/,
     );
+  });
+});
+
+describe("local five-board engineering preview", () => {
+  it("uses an unselected native target combobox grouped by provisioning method", () => {
+    renderPreviewInstaller();
+
+    expect(screen.getByRole("status")).toHaveTextContent(
+      /local engineering preview.*unqualified.*not a public release/i,
+    );
+    const selector = screen.getByRole("combobox", {
+      name: /choose a firmware target/i,
+    });
+    expect(selector).toHaveValue("");
+    const targetOptions = within(selector)
+      .getAllByRole("option")
+      .filter((option) => (option as HTMLOptionElement).value !== "");
+    expect(targetOptions).toHaveLength(5);
+    expect(
+      targetOptions.map((option) => (option as HTMLOptionElement).value),
+    ).toEqual([
+      "esp32-4mb",
+      "esp32-s3-n16r8",
+      "waveshare-esp32-s3-lcd-147b",
+      "esp32-c3-4mb",
+      "rpi-pico2-w",
+    ]);
+    expect(targetOptions.map((option) => option.textContent)).toEqual([
+      expect.stringMatching(/classical esp32/i),
+      expect.stringMatching(/esp32-s3.*lean/i),
+      expect.stringMatching(/waveshare.*exact/i),
+      expect.stringMatching(/esp32-c3/i),
+      expect.stringMatching(/raspberry pi pico 2 w/i),
+    ]);
+    const methodGroups = Array.from(selector.querySelectorAll("optgroup"));
+    expect(methodGroups).toHaveLength(2);
+    expect(methodGroups[0]?.getAttribute("label")).toMatch(
+      /esp.*direct install/i,
+    );
+    expect(methodGroups[0]?.querySelectorAll("option")).toHaveLength(4);
+    expect(methodGroups[1]?.getAttribute("label")).toMatch(/rp2.*uf2/i);
+    expect(methodGroups[1]?.querySelectorAll("option")).toHaveLength(1);
+    expect(
+      screen.queryByRole("region", {
+        name: /selected firmware target details/i,
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("group", {
+        name: /installation acknowledgements/i,
+      }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps explicit target, method, and unqualified status details visible after selection", () => {
+    renderPreviewInstaller();
+
+    selectPreviewProfile("esp32-c3-4mb");
+    const details = screen.getByRole("region", {
+      name: /selected firmware target details/i,
+    });
+    expect(details).toHaveTextContent(/esp32-c3-4mb/i);
+    expect(details).toHaveTextContent(/esp32 web tools.*web serial/i);
+    expect(details).toHaveTextContent(/unqualified local engineering preview/i);
+    expect(details).toHaveTextContent(/version 0\.6\.0/i);
+
+    const acknowledgements = screen.getByRole("group", {
+      name: /installation acknowledgements/i,
+    });
+    expect(acknowledgements.tagName).toBe("FIELDSET");
+    expect(acknowledgements.querySelector("legend")).toHaveTextContent(
+      /installation acknowledgements/i,
+    );
+    expect(
+      screen.getByRole("region", {
+        name: /selected firmware target details/i,
+      }),
+    ).toBe(details);
+  });
+
+  it.each([
+    {
+      id: "esp32-s3-n16r8" as const,
+      warning:
+        /16 MiB flash.*8 MiB Octal PSRAM.*lean.*no display runtime.*no splash/i,
+    },
+    {
+      id: "waveshare-esp32-s3-lcd-147b" as const,
+      warning: /only.*exact.*ESP32-S3-LCD-1\.47B.*B version.*display wiring/i,
+    },
+    {
+      id: "esp32-c3-4mb" as const,
+      warning: /ESP32-C3.*revision v0\.3 or newer.*4 MiB flash/i,
+    },
+    {
+      id: "rpi-pico2-w" as const,
+      warning: /hold BOOTSEL.*connect.*RP2350.*copy.*UF2/i,
+    },
+  ])("shows only the relevant $id warning", ({ id, warning }) => {
+    renderPreviewInstaller();
+
+    selectPreviewProfile(id);
+    const details = screen.getByRole("region", {
+      name: /selected firmware target details/i,
+    });
+    expect(details).toHaveTextContent(warning);
+  });
+
+  it("verifies an ESP image before loading its exact ESP Web Tools manifest", async () => {
+    let resolveVerification:
+      ((value: VerifiedLocalPreviewProfile) => void) | undefined;
+    const verifyPreviewProfile = vi.fn(
+      () =>
+        new Promise<VerifiedLocalPreviewProfile>((resolve) => {
+          resolveVerification = resolve;
+        }),
+    );
+    const loadInstaller = vi.fn(async () => undefined);
+    renderPreviewInstaller({ loadInstaller, verifyPreviewProfile });
+
+    selectPreviewProfile("esp32-4mb");
+    acceptPreviewConsents();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /verify firmware.*classical esp32/i,
+      }),
+    );
+
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      /verifying.*manifest.*firmware/i,
+    );
+    expect(verifyPreviewProfile).toHaveBeenCalledWith(
+      localFirmwarePreview,
+      "esp32-4mb",
+    );
+    expect(loadInstaller).not.toHaveBeenCalled();
+    expect(document.querySelector("esp-web-install-button")).toBeNull();
+
+    await act(async () => {
+      resolveVerification?.(verifiedPreviewProfile("esp32-4mb"));
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(loadInstaller).toHaveBeenCalledOnce());
+    const installer = document.querySelector("esp-web-install-button");
+    expect(installer).toHaveAttribute(
+      "manifest",
+      "/.pyble-preview-firmware/esp32-4mb/manifest.json",
+    );
+    expect(screen.getByText(/local artifacts verified/i)).toBeInTheDocument();
+  });
+
+  it("verifies Pico UF2 and exposes BOOTSEL download without Web Serial", async () => {
+    const loadInstaller = vi.fn(async () => undefined);
+    const { verifyPreviewProfile } = renderPreviewInstaller({
+      capabilities: {
+        secureContext: true,
+        webSerial: false,
+        webCrypto: true,
+      },
+      loadInstaller,
+    });
+
+    selectPreviewProfile("rpi-pico2-w");
+    acceptPreviewConsents();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /verify firmware.*raspberry pi pico 2 w/i,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("link", { name: /download.*uf2/i }),
+      ).toBeInTheDocument();
+    });
+    expect(verifyPreviewProfile).toHaveBeenCalledWith(
+      localFirmwarePreview,
+      "rpi-pico2-w",
+    );
+    const download = screen.getByRole("link", { name: /download.*uf2/i });
+    expect(download).toHaveAttribute(
+      "href",
+      "blob:pyble-local-preview-rpi-pico2-w",
+    );
+    expect(download).not.toHaveAttribute(
+      "href",
+      "/.pyble-preview-firmware/rpi-pico2-w/firmware.uf2",
+    );
+    expect(download).toHaveAttribute("download");
+    expect(screen.getByText(/hold BOOTSEL.*connect/i)).toBeInTheDocument();
+    expect(screen.getByText(/copy.*UF2.*mounted.*RP2350/i)).toBeInTheDocument();
+    expect(screen.queryByText(/web serial support/i)).not.toBeInTheDocument();
+    expect(loadInstaller).not.toHaveBeenCalled();
+    expect(document.querySelector("esp-web-install-button")).toBeNull();
+  });
+
+  it("resets acknowledgements and verification whenever the target changes", async () => {
+    renderPreviewInstaller();
+    selectPreviewProfile("esp32-4mb");
+    acceptPreviewConsents();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /verify firmware.*classical esp32/i,
+      }),
+    );
+    await waitFor(() => {
+      expect(document.querySelector("esp-web-install-button")).not.toBeNull();
+    });
+
+    selectPreviewProfile("esp32-c3-4mb");
+
+    const acknowledgements = screen.getByRole("group", {
+      name: /installation acknowledgements/i,
+    });
+    for (const checkbox of within(acknowledgements).getAllByRole("checkbox")) {
+      expect(checkbox).not.toBeChecked();
+    }
+    expect(screen.queryByText(/local artifacts verified/i)).toBeNull();
+    expect(document.querySelector("esp-web-install-button")).toBeNull();
+    expect(
+      screen.getByRole("button", { name: /verify firmware.*esp32-c3/i }),
+    ).toBeDisabled();
+  });
+
+  it("never exposes preview-only C3 or Pico actions without a local descriptor", () => {
+    render(
+      <InstallerUnderTest
+        capabilities={supportedCapabilities}
+        preview={null}
+        release={null}
+      />,
+    );
+
+    expect(screen.getByRole("status")).toHaveTextContent(
+      /installer unavailable/i,
+    );
+    expect(
+      screen.queryByRole("combobox", {
+        name: /choose a firmware target/i,
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: /download.*uf2/i }),
+    ).not.toBeInTheDocument();
+    expect(document.querySelector("esp-web-install-button")).toBeNull();
   });
 });

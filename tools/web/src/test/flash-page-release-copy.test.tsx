@@ -46,7 +46,174 @@ function hypotheticalQualifiedReleaseAtVersion(
   return release as unknown as FirmwareReleaseDescriptor;
 }
 
+function localPreviewArtifact(
+  path: string,
+  digestCharacter: string,
+  size = 1_024,
+) {
+  return { path, size, sha256: digestCharacter.repeat(64) };
+}
+
+function localFiveBoardPreview() {
+  const root = "/.pyble-preview-firmware";
+  return {
+    schemaVersion: 1,
+    deployment: "local-preview",
+    localOnly: true,
+    qualified: false,
+    version: "0.6.0",
+    sourceCommit: "e895a33642627401dbae5c8bd8110802ab143900",
+    builtAt: "2026-08-12T00:00:00Z",
+    profiles: [
+      {
+        id: "esp32-4mb",
+        label: "Classical ESP32 · 4 MiB",
+        chipFamily: "ESP32",
+        buildTarget: "esp32",
+        method: "esp-web-tools",
+        qualified: false,
+        status: "engineering-preview",
+        offset: 4096,
+        manifest: localPreviewArtifact(`${root}/esp32-4mb/manifest.json`, "1"),
+        firmware: localPreviewArtifact(`${root}/esp32-4mb/firmware.bin`, "2"),
+      },
+      {
+        id: "esp32-s3-n16r8",
+        label: "ESP32-S3 N16R8 · lean generic",
+        chipFamily: "ESP32-S3",
+        buildTarget: "esp32-s3",
+        method: "esp-web-tools",
+        qualified: false,
+        status: "engineering-preview",
+        offset: 0,
+        manifest: localPreviewArtifact(
+          `${root}/esp32-s3-n16r8/manifest.json`,
+          "3",
+        ),
+        firmware: localPreviewArtifact(
+          `${root}/esp32-s3-n16r8/firmware.bin`,
+          "4",
+        ),
+      },
+      {
+        id: "waveshare-esp32-s3-lcd-147b",
+        label: "Waveshare ESP32-S3-LCD-1.47B · exact B version",
+        chipFamily: "ESP32-S3",
+        buildTarget: "waveshare-esp32-s3-lcd-147b",
+        method: "esp-web-tools",
+        qualified: false,
+        status: "engineering-preview",
+        offset: 0,
+        manifest: localPreviewArtifact(
+          `${root}/waveshare-esp32-s3-lcd-147b/manifest.json`,
+          "5",
+        ),
+        firmware: localPreviewArtifact(
+          `${root}/waveshare-esp32-s3-lcd-147b/firmware.bin`,
+          "6",
+        ),
+      },
+      {
+        id: "esp32-c3-4mb",
+        label: "ESP32-C3 · 4 MiB",
+        chipFamily: "ESP32-C3",
+        buildTarget: "esp32-c3",
+        method: "esp-web-tools",
+        qualified: false,
+        status: "engineering-preview",
+        offset: 0,
+        manifest: localPreviewArtifact(
+          `${root}/esp32-c3-4mb/manifest.json`,
+          "7",
+        ),
+        firmware: localPreviewArtifact(
+          `${root}/esp32-c3-4mb/firmware.bin`,
+          "8",
+        ),
+      },
+      {
+        id: "rpi-pico2-w",
+        label: "Raspberry Pi Pico 2 W",
+        chipFamily: "RP2350",
+        buildTarget: "rpi-pico2-w",
+        method: "uf2-download",
+        qualified: false,
+        status: "engineering-preview",
+        firmware: localPreviewArtifact(`${root}/rpi-pico2-w/firmware.uf2`, "9"),
+      },
+    ],
+  };
+}
+
 describe("firmware installer release copy", () => {
+  it("wires an explicit local five-board preview into /flash without changing the public default", async () => {
+    const previewRoot = await mkdtemp(
+      join(tmpdir(), "pyble-flash-local-preview-"),
+    );
+    const previewFile = join(previewRoot, "preview.json");
+    const mutableEnvironment = process.env as Record<
+      string,
+      string | undefined
+    >;
+    const previousPreview = process.env.PYBLE_LOCAL_FLASH_PREVIEW_FILE;
+    const previousSelection = process.env.PYBLE_FLASH_SELECTION_FILE;
+    const previousNodeEnvironment = process.env.NODE_ENV;
+    process.env.PYBLE_LOCAL_FLASH_PREVIEW_FILE = previewFile;
+    mutableEnvironment.NODE_ENV = "development";
+    delete process.env.PYBLE_FLASH_SELECTION_FILE;
+
+    try {
+      await writeFile(
+        previewFile,
+        JSON.stringify(localFiveBoardPreview()),
+        "utf8",
+      );
+      render(<FlashPage />);
+
+      expect(screen.getByRole("main")).toHaveTextContent(
+        /local engineering preview.*v?0\.6\.0.*unqualified.*not a public release/i,
+      );
+      const selector = screen.getByRole("combobox", {
+        name: /choose a firmware target/i,
+      });
+      expect(
+        within(selector)
+          .getAllByRole("option")
+          .filter((option) => (option as HTMLOptionElement).value !== "")
+          .map((option) => (option as HTMLOptionElement).value),
+      ).toEqual([
+        "esp32-4mb",
+        "esp32-s3-n16r8",
+        "waveshare-esp32-s3-lcd-147b",
+        "esp32-c3-4mb",
+        "rpi-pico2-w",
+      ]);
+      expect(screen.getByRole("main")).toHaveTextContent(
+        /ESP Web Tools.*Web Serial.*Pico 2 W.*BOOTSEL.*UF2/i,
+      );
+      expect(
+        screen.queryByText(/ESP32-C3.*unavailable/i),
+      ).not.toBeInTheDocument();
+    } finally {
+      if (previousPreview === undefined) {
+        delete process.env.PYBLE_LOCAL_FLASH_PREVIEW_FILE;
+      } else {
+        process.env.PYBLE_LOCAL_FLASH_PREVIEW_FILE = previousPreview;
+      }
+      if (previousSelection === undefined) {
+        delete process.env.PYBLE_FLASH_SELECTION_FILE;
+      } else {
+        process.env.PYBLE_FLASH_SELECTION_FILE = previousSelection;
+      }
+      if (previousNodeEnvironment === undefined) {
+        delete mutableEnvironment.NODE_ENV;
+      } else {
+        mutableEnvironment.NODE_ENV = previousNodeEnvironment;
+      }
+      await rm(previewRoot, { recursive: true, force: true });
+    }
+  });
+
   it("keeps the historical public beta available without a current exact-board claim", async () => {
     const selectionRoot = await mkdtemp(
       join(tmpdir(), "pyble-flash-qualified-selection-"),
