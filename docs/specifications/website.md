@@ -136,6 +136,13 @@ While either channel is active, the home page and `/app` MUST:
   shortener, tracking redirect, remote QR service, or third-party runtime
   request.
 
+The home-page channel invitations MUST remain firmware-release-neutral: they
+describe how to obtain each app beta and direct users to `/flash` for current
+target availability instead of duplicating a version/profile matrix that can
+drift. The global header's primary call to action MUST link to `/app` with
+platform-neutral PyBLE installation wording; Support remains available through
+normal navigation.
+
 Each QR code MUST be accompanied by an accessible link and visible
 instructions; it is an additional path, never the only way to open its testing
 channel. A changed or withdrawn destination requires the specification, content
@@ -309,6 +316,11 @@ and identify PyBLE as an independent open-source project maintained by Viwat
 Vchirawongkwin under the SciLabPro project name. It MUST state that PyBLE is not
 an official Chulalongkorn University project or app; it MUST NOT claim that
 SciLabPro is a legal entity.
+
+The global footer MUST use the same bounded identity posture: PyBLE is an
+independent, MIT-licensed project maintained under the SciLabPro project name.
+It MUST NOT describe SciLabPro as an organization or imply university
+ownership.
 
 The privacy route MUST keep these systems and data flows distinct:
 
