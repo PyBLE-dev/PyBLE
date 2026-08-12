@@ -996,7 +996,7 @@ def _validate_run(value: dict[str, Any]) -> None:
 
 def validate_combined_qualification_result(
     value: Any,
-    expected_version: str = "0.5.0",
+    expected_version: str,
     *,
     expected_measurement: dict[str, Any] | None = None,
 ) -> dict[str, Any]:

@@ -38,6 +38,7 @@ from _pble_central import (
     rsp_status,
     status_name,
 )
+from target_smoke import expected_agent_from_lock
 
 
 SCHEMA_VERSION = 1
@@ -46,7 +47,7 @@ EXPECTED_CHIP = "esp32-s3"
 BOARD_MODEL = "ESP32-S3-LCD-1.47B"
 FLASH_CAPACITY_BYTES = 16 * 1024 * 1024
 PSRAM_CAPACITY_BYTES = 8 * 1024 * 1024
-EXPECTED_AGENT_VERSION = "0.5.1"
+EXPECTED_AGENT_VERSION = expected_agent_from_lock()
 EXPECTED_MPY_VERSION = "1.28.0"
 BOOT_PARTITION_IMMUTABLE_END = 0x9000
 APPLICATION_OFFSET = 0x10000

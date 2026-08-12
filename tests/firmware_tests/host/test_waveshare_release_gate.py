@@ -15,6 +15,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import tomllib
 import unittest
 from unittest import mock
 
@@ -62,7 +63,9 @@ FINAL_TEST, FINAL_TEST_ERROR = load_module(
     HERE / "test_release_finalization.py",
 )
 
-PROSPECTIVE_VERSION = "0.5.1"
+with (REPO_ROOT / "firmware" / "versions.lock").open("rb") as handle:
+    PROSPECTIVE_VERSION = tomllib.load(handle)["pyble"]["agent_version"]
+EARLIER_WAVESHARE_SOURCE_VERSION = "0.5.1"
 
 
 def canonical_bytes(value):
@@ -153,7 +156,7 @@ def install_prospective_qualification_policy(original, repo, build_root=None):
 
 
 def install_prospective_source_version(original, fixture):
-    """Select v0.5.1 before a temporary release-license graph is frozen."""
+    """Select the current version before a release-license graph is frozen."""
 
     original(fixture)
     lock_path = fixture.firmware / "versions.lock"
@@ -589,7 +592,7 @@ class FinalizationIntegrationTests(unittest.TestCase):
             ),
         )
 
-    def test_v051_finalization_requires_and_consumes_exact_private_result(self):
+    def test_current_finalization_requires_and_consumes_exact_private_result(self):
         missing_output = self.fixture.license_fixture.root / "missing-result"
         with mock.patch.object(
             RELEASE,
@@ -599,7 +602,9 @@ class FinalizationIntegrationTests(unittest.TestCase):
             self.finalize(missing_output, result_path=False)
         self.assertFalse(missing_output.exists())
 
-        output = self.fixture.license_fixture.root / "public-v0.5.1"
+        output = self.fixture.license_fixture.root / (
+            "public-v%s" % PROSPECTIVE_VERSION
+        )
         candidate_before = FINAL_TEST.tree_bytes(self.fixture.candidate)
         original_gate = GATE.validate_result_file
         with mock.patch.object(
@@ -827,7 +832,7 @@ class SourceEraTests(unittest.TestCase):
             new=prospective_policy,
         ):
             prospective = BUNDLE_TEST.ReleaseFixture(
-                firmware_version=PROSPECTIVE_VERSION
+                firmware_version=EARLIER_WAVESHARE_SOURCE_VERSION
             )
         try:
             historical_bundle = historical.make_bundle(public=False)
@@ -860,7 +865,7 @@ class SourceEraTests(unittest.TestCase):
                 historical_bundle,
             )
             new_report = RELEASE._candidate_hil_report(
-                PROSPECTIVE_VERSION,
+                EARLIER_WAVESHARE_SOURCE_VERSION,
                 provenance,
                 prospective_release["profiles"],
                 prospective_policy,
@@ -880,7 +885,7 @@ class SourceEraTests(unittest.TestCase):
         with self.assertRaises(RELEASE.ReleaseError):
             RELEASE._validate_hil_source_era(
                 RELEASE._parse_hil_report(old_report),
-                PROSPECTIVE_VERSION,
+                EARLIER_WAVESHARE_SOURCE_VERSION,
             )
         self.assertEqual(
             RELEASE._validate_hil_source_era(
