@@ -69,9 +69,43 @@ class RP2LicenseDispositionTests(unittest.TestCase):
                 "arm-gnu-gcc-runtime",
                 "arm-gnu-newlib-runtime",
                 "cyw43-driver",
-                "pico-sdk-cmsis",
             },
         )
+
+    def test_cmsis_closure_is_split_by_exact_terms(self) -> None:
+        expected = {
+            "pico-sdk-cmsis-core": (
+                "Apache-2.0",
+                {
+                    "lib/pico-sdk/src/rp2_common/cmsis/stub/CMSIS/Core/Include"
+                },
+            ),
+            "pico-sdk-cmsis": (
+                "Apache-2.0 AND BSD-3-Clause",
+                {
+                    "lib/pico-sdk/src/rp2_common/cmsis/stub/CMSIS/Device/"
+                    "RP2350/Include/system_RP2350.h",
+                    "lib/pico-sdk/src/rp2_common/cmsis/stub/CMSIS/Device/"
+                    "RP2350/Source/system_RP2350.c",
+                },
+            ),
+            "pico-sdk-cmsis-rp2350": (
+                "BSD-3-Clause",
+                {
+                    "lib/pico-sdk/src/rp2_common/cmsis/stub/CMSIS/Device/"
+                    "RP2350/Include/RP2350.h"
+                },
+            ),
+        }
+        for owner_id, (expression, roots) in expected.items():
+            with self.subTest(owner=owner_id):
+                owner = self.owners[owner_id]
+                self.assertEqual(owner["disposition"], "allow")
+                self.assertEqual(owner["source_spdx_expression"], expression)
+                self.assertEqual(owner["selected_spdx_expression"], expression)
+                self.assertEqual(
+                    {item["path"] for item in owner["source_roots"]}, roots
+                )
 
     def test_toolchain_owners_cover_frontends_and_compiler_headers(self) -> None:
         gcc = {
