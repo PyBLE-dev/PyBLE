@@ -960,10 +960,12 @@ v0.5.1 source-candidate contract measures the three exact profiles `esp32-4mb`,
 `esp32-s3-n16r8`, and `waveshare-esp32-s3-lcd-147b` independently. S3 PSRAM is
 useful Python headroom but
 MUST NOT conceal internal-RAM pressure, so the gate records Python GC memory
-and internal ESP-IDF heap separately. The design still targets the
-**ESP32-C3 floor** for v1.0 (single-core RISC-V, ~400 KB SRAM —
-[hardware.md §1](../hardware.md#1-supported-chip-families-v1)); C3 measurement
-is deferred until matching hardware exists and remains the binding v1.0 gate.
+and internal ESP-IDF heap separately. The v0.6.0 five-profile candidate
+includes the **ESP32-C3 floor** (single-core RISC-V, ~400 KB SRAM —
+[hardware.md §1](../hardware.md#1-supported-chip-families-v1)). Its
+candidate-bound measurement is mandatory and remains pending until the C3
+resource and HIL gates pass; source support or attached hardware alone is not
+qualification evidence.
 
 ### 8.2 Static vs dynamic
 
@@ -1239,6 +1241,7 @@ uses this identical relative generated-source layout:
     esp32-s3/micropython/
     waveshare-esp32-s3-lcd-147b/micropython/
     esp32-c3/micropython/
+    rpi-pico2-w/micropython/
 ```
 
 Each directory is an independent checkout of the MicroPython repository URL
@@ -1246,16 +1249,18 @@ and full commit pinned in `versions.lock`. Before it is admitted, its `origin`
 URL MUST equal that canonical locked URL, `HEAD` MUST equal the locked commit,
 and its tracked tree MUST be clean. The target's application
 `project_description.json` `project_path` MUST resolve to
-`.sources/<variant>/micropython/ports/esp32` in that same build root; a
-description that names the canonical submodule, another variant's checkout, or
-an escaped/symlinked location is fatal.
+`.sources/<variant>/micropython/ports/esp32` in that same build root. Pico's
+CMake cache, link command, map, and dependency metadata MUST instead resolve
+to `.sources/rpi-pico2-w/micropython/ports/rp2`. A build description that
+names the canonical submodule, another profile's checkout, or an
+escaped/symlinked location is fatal.
 
-All variant-scoped mutable preparation, including board-copy and ESP-IDF
-submodule/managed-component materialization, runs inside that variant's checkout
-and build directory. No variant may share, replace, delete, or mutate another
-variant's checkout or `ports/esp32/managed_components`. The four
-checkouts remain retained until linked-inventory/license audit, bundle
-validation, and the two-root comparison have all completed.
+All profile-scoped mutable preparation, including board-copy, ESP-IDF
+submodule/managed-component materialization, and RP2 frozen-module generation,
+runs inside that profile's checkout and build directory. No profile may share,
+replace, delete, or mutate another profile's checkout or managed build state.
+The five checkouts remain retained until linked-inventory/license audit,
+bundle validation, and the two-root comparison have all completed.
 
 Isolation does not establish a second proof root. Candidate-controlled inputs
 in the canonical PyBLE checkout — including `versions.lock`, board overlays,
@@ -1270,10 +1275,11 @@ exact public tree, manifest, separate integrity/provenance metadata, recovery,
 HIL report, activation, and rollback are frozen in
 [browser-flashing.md](browser-flashing.md). Identical immutable bytes publish
 both at the versioned `pyble.dev` path and through the matching GitHub Release,
-with exact release-profile parity: two hardware-tested beta profiles in the
-immutable v0.4.2 history; three independently qualified profiles in the current
-pre-v1 candidate before any new publication; and all four including C3 at v1.0
-(BLD-7/17…22). `DEVICE_INFO`/HELLO,
+with exact source-era profile parity: two hardware-tested beta profiles in the
+immutable v0.4.2 history; the unfinished three-profile v0.5.1 source candidate
+retained only as history; and exactly five profiles in the pending v0.6.0
+candidate. No v0.6.0 profile is published until the atomic five-profile gate
+passes (BLD-7/17…22). `DEVICE_INFO`/HELLO,
 `manifest.json`/`release.json`, tag, and release notes make agent/protocol/
 upstream/source/artifact versions recoverable (BLD-13); the agent follows
 SemVer (BLD-12).
@@ -1301,8 +1307,11 @@ firmware/
   release-tools.lock                # hash-pinned SBOM/release Python closure (BLD-8)      [build-smith]
   licenses/
     license-policy.json             # reviewed source/archive -> SPDX/text/NOTICE policy   [build-smith]
+    rp2-license-policy.json         # independent RP2 linked/frozen/runtime policy          [build-smith]
     excluded-cves.yaml              # hash-pinned offline SBOM input; empty by policy      [build-smith]
     texts/                          # exact reviewed third-party license/NOTICE texts       [build-smith]
+    evidence/rp2/                   # exact RP2 dependency/toolchain evidence bytes          [build-smith]
+    notices/rp2/                    # exact source-header and attribution notices            [build-smith]
   upstream/
     README.md                       # clean-submodule rationale (F-15)                    [build-smith]
     micropython/                    # Layer 1 — pinned submodule, pristine (CON-1/2)      [build-smith / .gitmodules]
@@ -1323,8 +1332,10 @@ firmware/
     esp32/  esp32-s3/  esp32-c3/     # lean Layer-2 variants, copied at build prep          [build-smith]
     waveshare-esp32-s3-lcd-147b/     # exact-board esp32s3 build variant                    [build-smith]
       pyble_waveshare_lcd147b.py    # exact-board fresh-install splash companion           [runtime-engineer]
+    rpi-pico2-w/                    # RP2350/CYW43 portable frozen-agent overlay             [build-smith]
   scripts/
     build.sh  build_all.sh          # per-variant / all-four build (BLD-3/4)               [build-smith]
+    build_rp2.sh                    # retained-source Pico ELF/BIN/UF2 build                 [build-smith]
     release_bundle.py               # deterministic manifest/integrity/license bundle      [build-smith]
     upgrade_micropython.sh          # controlled pin bump (BLD-9)                           [build-smith]
   build/releases/                   # generated candidate/public bundles; gitignored        [build output]
