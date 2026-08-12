@@ -160,8 +160,8 @@ FIXTURE_RUNTIME_ROOTS = {
 FIXTURE_RUNTIME_CONTRIBUTORS = {
     "lib/crti.o": None,
     "lib/crtbegin.o": None,
-    "lib/libgcc.a": "_divsi3.o",
-    "lib/libg.a": "lib_a-memcpy.o",
+    "lib/libgcc.a": "shared.o",
+    "lib/libg.a": "shared.o",
     "lib/libm.a": "lib_a-sinf.o",
 }
 FIXTURE_OWNER_IDS = tuple(
@@ -198,6 +198,30 @@ def canonical_json_bytes(value: object) -> bytes:
     return (
         json.dumps(value, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
     ).encode("utf-8")
+
+
+def archive_bytes(members: list[tuple[str, bytes]]) -> bytes:
+    """Build a tiny deterministic SysV ar fixture without host tooling."""
+
+    result = bytearray(b"!<arch>\n")
+    for name, payload in members:
+        encoded_name = (name + "/").encode("ascii")
+        if len(encoded_name) > 16:
+            raise AssertionError("synthetic ar member name is too long")
+        header = (
+            encoded_name.ljust(16, b" ")
+            + b"0".ljust(12, b" ")
+            + b"0".ljust(6, b" ")
+            + b"0".ljust(6, b" ")
+            + b"100644".ljust(8, b" ")
+            + str(len(payload)).encode("ascii").ljust(10, b" ")
+            + b"`\n"
+        )
+        result.extend(header)
+        result.extend(payload)
+        if len(payload) % 2:
+            result.extend(b"\n")
+    return bytes(result)
 
 
 def policy_owner_for_path(
@@ -242,7 +266,10 @@ class RP2SemanticFixture:
         )
         self.root = Path(self.temporary.name)
         self.repo = self.root / "repo"
-        self.build = self.root / "build"
+        # Production builds live below the checkout.  Keeping the fixture in
+        # that conventional layout exercises the narrower build namespace
+        # whenever an input is also lexically below the repository root.
+        self.build = self.repo / "firmware" / "build"
         self.target = self.build / "rpi-pico2-w"
         self.source = (
             self.build / ".sources" / "rpi-pico2-w" / "micropython"
@@ -287,18 +314,41 @@ class RP2SemanticFixture:
             ((
                 '[micropython]\ncommit = "%s"\nrepo = '
                 '"https://github.com/micropython/micropython"\n'
+                'ref = "v1.28.0"\n'
+                '[esp_idf]\ncommit = "%s"\nrepo = '
+                '"https://github.com/espressif/esp-idf"\n'
+                'ref = "v5.5.1"\n'
                 '[pyble]\nagent_version = "0.6.0"\n'
+                'protocol_version = "PBLE/1"\n'
                 '[arm_gnu_toolchain]\nrelease = "14.2.Rel1"\n'
                 'gcc_version = "14.2.1 20241119"\n'
                 'url = "https://example.invalid/arm-gnu.tar.xz"\n'
                 'sha256 = "%s"\n'
-            ) % ("1" * 40, "2" * 64)).encode("utf-8"),
+            ) % ("1" * 40, "4" * 40, "2" * 64)).encode("utf-8"),
         )
         self.write(
             self.repo,
             "firmware/board_overlays/rpi-pico2-w/manifest.py",
-            b'module("rp2.py", base_path="$(PORT_DIR)/modules", opt=3)\n',
+            (
+                'module("rp2.py", base_path="$(PORT_DIR)/modules", opt=3)\n'
+                'include("$(MPY_DIR)/extmod/asyncio")\n'
+            ).encode(),
         )
+        self.write(
+            self.source,
+            "extmod/asyncio/manifest.py",
+            (
+                'package("asyncio", ("__init__.py", "core.py"), '
+                'base_path="..", opt=3)\n'
+                'module("uasyncio.py", opt=3)\n'
+            ).encode(),
+        )
+        for relative in (
+            "extmod/asyncio/__init__.py",
+            "extmod/asyncio/core.py",
+            "extmod/asyncio/uasyncio.py",
+        ):
+            self.write(self.source, relative, b"# synthetic asyncio input\n")
 
         for owner, namespace, logical_path in FIXTURE_DIRECT_SOURCES:
             root = self.repo if namespace == "repo" else self.source
@@ -359,10 +409,26 @@ class RP2SemanticFixture:
             for paths in FIXTURE_RUNTIME_ROOTS.values()
             for path in paths
         }:
+            member = FIXTURE_RUNTIME_CONTRIBUTORS.get(logical_path)
+            value = (
+                archive_bytes(
+                    [
+                        (
+                            member,
+                            (
+                                "synthetic member %s from %s\n"
+                                % (member, logical_path)
+                            ).encode(),
+                        )
+                    ]
+                )
+                if member is not None
+                else ("synthetic runtime input %s\n" % logical_path).encode()
+            )
             self.write(
                 self.repo,
                 "firmware/.arm-gnu/%s" % logical_path,
-                ("synthetic runtime input %s\n" % logical_path).encode(),
+                value,
             )
 
     def _initialize_retained_checkout(self) -> None:
@@ -436,6 +502,7 @@ class RP2SemanticFixture:
         object_owners: dict[str, str] = {}
         self.direct_objects: dict[str, list[str]] = {}
         direct_mappings: list[tuple[Path, Path]] = []
+        asm_mappings: list[tuple[Path, Path]] = []
         for index, (owner, namespace, logical_path) in enumerate(
             FIXTURE_DIRECT_SOURCES
         ):
@@ -457,9 +524,12 @@ class RP2SemanticFixture:
             objects.append(relative)
             object_owners[relative] = owner
             self.direct_objects.setdefault(owner, []).append(relative)
-            direct_mappings.append((source, obj))
+            if logical_path == "ports/rp2/main.c":
+                asm_mappings.append((source, obj))
+            else:
+                direct_mappings.append((source, obj))
         generated_sources = {
-            "pins_rpi_pico2_w.c": "generated/pins_rpi_pico2_w.c",
+            "pins_PYBLE_RPI_PICO2_W.c": "pins_PYBLE_RPI_PICO2_W.c",
             "frozen_content.c": "frozen_content.c",
             "bs2_default_padded_checksummed.S": (
                 "pico-sdk/src/rp2350/boot_stage2/bs2_default_padded_checksummed.S"
@@ -471,9 +541,16 @@ class RP2SemanticFixture:
                 relative,
                 ("/* synthetic derived %s */\n" % name).encode(),
             )
+            if name == "bs2_default_padded_checksummed.S":
+                object_relative = (
+                    "pico-sdk/src/rp2350/boot_stage2/CMakeFiles/"
+                    "bs2_default_library.dir/bs2_default_padded_checksummed.S.o"
+                )
+            else:
+                object_relative = "CMakeFiles/firmware.dir/generated/%s.o" % name
             generated_object = self.write(
                 self.target,
-                "CMakeFiles/firmware.dir/generated/%s.o" % name,
+                object_relative,
                 ("synthetic derived object %s\n" % name).encode(),
             )
             object_relative = generated_object.relative_to(self.target).as_posix()
@@ -493,7 +570,18 @@ class RP2SemanticFixture:
             "CMakeFiles/firmware.dir/link.txt",
             link.encode(),
         )
-        map_records = ["LOAD %s" % path for path in objects]
+        map_records = [
+            "Archive member included to satisfy reference by file (symbol)",
+            "",
+        ]
+        map_records.extend(
+            "%s(%s)"
+            % (self.repo / "firmware/.arm-gnu" / logical_path, member)
+            for logical_path, member in FIXTURE_RUNTIME_CONTRIBUTORS.items()
+            if member is not None
+        )
+        map_records.extend(["", "Discarded input sections", ""])
+        map_records.extend("LOAD %s" % path for path in objects)
         map_records.extend("LOAD %s" % path for path in runtime_inputs)
         address = 0x10000000
         for path in objects:
@@ -517,13 +605,25 @@ class RP2SemanticFixture:
         )
         mappings = []
         for source, output in direct_mappings:
+            self.write(
+                self.target,
+                output.relative_to(self.target).as_posix() + ".d",
+                b"synthetic dependency file\n",
+            )
             mappings.append(
                 '  "%s" "%s" "gcc" "%s.d"'
                 % (source, output, output)
             )
         for name, relative in generated_sources.items():
+            if name == "bs2_default_padded_checksummed.S":
+                continue
             source = self.target / relative
             output = self.target / ("CMakeFiles/firmware.dir/generated/%s.o" % name)
+            self.write(
+                self.target,
+                output.relative_to(self.target).as_posix() + ".d",
+                b"synthetic generated dependency file\n",
+            )
             mappings.append(
                 '  "%s" "%s" "gcc" "%s.d"'
                 % (source, output, output)
@@ -531,15 +631,48 @@ class RP2SemanticFixture:
         self.write(
             self.target,
             "CMakeFiles/firmware.dir/DependInfo.cmake",
-            ("set(CMAKE_DEPENDS_DEPENDENCY_FILES\n%s\n)\n" % "\n".join(mappings)).encode(),
+            (
+                "set(CMAKE_DEPENDS_DEPENDENCY_FILES\n%s\n)\n"
+                "set(CMAKE_DEPENDS_CHECK_ASM\n%s\n)\n"
+                % (
+                    "\n".join(mappings),
+                    "\n".join(
+                        '  "%s" "%s"' % (source, output)
+                        for source, output in asm_mappings
+                    ),
+                )
+            ).encode(),
+        )
+        bootstage_source = self.target / generated_sources[
+            "bs2_default_padded_checksummed.S"
+        ]
+        bootstage_output = (
+            self.target
+            / "pico-sdk/src/rp2350/boot_stage2/CMakeFiles/"
+            "bs2_default_library.dir/bs2_default_padded_checksummed.S.o"
+        )
+        self.write(
+            self.target,
+            "pico-sdk/src/rp2350/boot_stage2/CMakeFiles/"
+            "bs2_default_library.dir/DependInfo.cmake",
+            (
+                'set(CMAKE_DEPENDS_CHECK_ASM\n  "%s" "%s"\n)\n'
+                % (bootstage_source, bootstage_output)
+            ).encode(),
         )
         self.write(self.target, "firmware.elf", b"\x7fELF synthetic complete\n")
         self.write(
             self.target,
             "CMakeCache.txt",
             (
-                "MICROPY_DIR:PATH=%s\nPICO_SDK_PATH:PATH=%s\n"
-                % (self.source, self.source / "lib/pico-sdk")
+                "CMAKE_HOME_DIRECTORY:INTERNAL=%s\n"
+                "MICROPY_BOARD_DIR:UNINITIALIZED=%s\n"
+                "PICO_SDK_PATH:PATH=%s\n"
+                % (
+                    self.source / "ports/rp2",
+                    self.source / "ports/rp2/boards/PYBLE_RPI_PICO2_W",
+                    self.source / "lib/pico-sdk",
+                )
             ).encode(),
         )
         self.write(
@@ -555,17 +688,18 @@ class RP2SemanticFixture:
                     "schema_version": 1,
                     "target": "rpi-pico2-w",
                     "port": "rp2",
+                    "board": "PYBLE_RPI_PICO2_W",
+                    "source_date_epoch": 1786464000,
                     "pyble": {"commit": "3" * 40, "clean": True},
                     "micropython": {
                         "commit": self.source_refs["fixture-micropython-mit"][0],
-                        "origin": "https://github.com/micropython/micropython",
-                        "clean": True,
-                        "retained_source": "build/.sources/rpi-pico2-w/micropython",
                     },
                     "arm_gnu_toolchain": {
                         "release": "14.2.Rel1",
                         "gcc": "arm-none-eabi-gcc 14.2.1 20241119",
                     },
+                    "picotool": "picotool v2.3.0 (synthetic)",
+                    "firmware_bin_bytes": 4,
                 }
             ),
         )
@@ -667,7 +801,7 @@ class RP2SemanticFixture:
 
     def _owner_source_identity(self, owner: str) -> tuple[str, str]:
         if owner == "fixture-pyble":
-            return "3" * 40, "https://github.com/PyBLE-dev/PyBLE"
+            return "0.6.0", "https://github.com/PyBLE-dev/PyBLE"
         if owner in FIXTURE_RUNTIME_ROOTS:
             return "14.2.Rel1", "https://example.invalid/arm-gnu.tar.xz"
         return self.source_refs[owner]
@@ -857,6 +991,100 @@ class RP2PolicyAndObserverContractTests(unittest.TestCase):
                 self.assertEqual(set(record), {"identifier", "path", "sha256"})
             for record in owner["notice_files"]:
                 self.assertEqual(set(record), {"path", "sha256"})
+
+    def test_policy_spdx_semantics_and_locked_bytes_fail_closed(self) -> None:
+        validate = RELEASE._audit_validate_rp2_license_policy
+        policy = copy.deepcopy(self.fixture.policy)
+        cmsis = next(
+            owner
+            for owner in policy["source_owners"]
+            if owner["id"] == "fixture-pico-sdk-cmsis-reviewed"
+        )
+        cmsis["selected_spdx_expression"] = "Apache-2.0 OR BSD-3-Clause"
+        with self.assertRaisesRegex(RELEASE.ReleaseError, "SPDX|weakens|terms"):
+            validate(
+                policy,
+                repo_root=self.fixture.repo,
+                build_root=self.fixture.build,
+            )
+
+        policy = copy.deepcopy(self.fixture.policy)
+        ordinary = next(
+            owner
+            for owner in policy["source_owners"]
+            if owner["id"] == "fixture-micropython-mit"
+        )
+        ordinary["source_spdx_expression"] = "Unknown-9.9"
+        ordinary["selected_spdx_expression"] = "Unknown-9.9"
+        with self.assertRaisesRegex(RELEASE.ReleaseError, "unknown|SPDX"):
+            validate(
+                policy,
+                repo_root=self.fixture.repo,
+                build_root=self.fixture.build,
+            )
+
+        policy = copy.deepcopy(self.fixture.policy)
+        ordinary = next(
+            owner
+            for owner in policy["source_owners"]
+            if owner["id"] == "fixture-micropython-mit"
+        )
+        ordinary["source_spdx_expression"] = "LicenseRef-PyBLE-Unbound"
+        ordinary["selected_spdx_expression"] = "LicenseRef-PyBLE-Unbound"
+        with self.assertRaisesRegex(RELEASE.ReleaseError, "license|cover|text"):
+            validate(
+                policy,
+                repo_root=self.fixture.repo,
+                build_root=self.fixture.build,
+            )
+
+        policy_path = (
+            self.fixture.repo / "firmware/licenses/rp2-license-policy.json"
+        )
+        policy_path.parent.mkdir(parents=True, exist_ok=True)
+        policy_path.write_bytes(canonical_json_bytes(self.fixture.policy))
+        locked = {
+            "inputs": {
+                "rp2_license_policy_path": (
+                    "firmware/licenses/rp2-license-policy.json"
+                ),
+                "rp2_license_policy_sha256": digest(policy_path.read_bytes()),
+            }
+        }
+        RELEASE._audit_load_rp2_license_policy(
+            self.fixture.repo,
+            self.fixture.build,
+            locked,
+        )
+        for label, mutate in (
+            (
+                "missing-hash",
+                lambda value: value["inputs"].pop(
+                    "rp2_license_policy_sha256"
+                ),
+            ),
+            (
+                "wrong-path",
+                lambda value: value["inputs"].__setitem__(
+                    "rp2_license_policy_path", "firmware/licenses/missing.json"
+                ),
+            ),
+            (
+                "wrong-hash",
+                lambda value: value["inputs"].__setitem__(
+                    "rp2_license_policy_sha256", "f" * 64
+                ),
+            ),
+        ):
+            with self.subTest(label=label):
+                changed = copy.deepcopy(locked)
+                mutate(changed)
+                with self.assertRaises(RELEASE.ReleaseError):
+                    RELEASE._audit_load_rp2_license_policy(
+                        self.fixture.repo,
+                        self.fixture.build,
+                        changed,
+                    )
 
     def test_checked_in_policy_is_canonical_and_retains_reviewed_terms(self) -> None:
         path = REPO_ROOT / "firmware/licenses/rp2-license-policy.json"
@@ -1094,6 +1322,40 @@ class RP2PolicyAndObserverContractTests(unittest.TestCase):
             any(str(self.fixture.root) in key for key in observed["input_sha256"]),
             "semantic receipts must use logical paths, not host paths",
         )
+        nested_build = self.fixture.repo / "firmware/build"
+        nested_input = self.fixture.write(
+            nested_build,
+            "rpi-pico2-w/namespace.o",
+            b"synthetic nested build input\n",
+        )
+        self.assertEqual(
+            RELEASE._audit_rp2_logical_path(
+                nested_input,
+                repo_root=self.fixture.repo,
+                build_root=nested_build,
+            ),
+            "build/rpi-pico2-w/namespace.o",
+        )
+
+    def test_review_required_is_observable_and_semantically_bound(self) -> None:
+        baseline = self.fixture.observe()
+        policy = copy.deepcopy(self.fixture.policy)
+        selected = next(
+            owner
+            for owner in policy["source_owners"]
+            if owner["id"] == "fixture-arm-newlib-runtime"
+        )
+        selected["disposition"] = "review-required"
+        observed = self.fixture.observe(policy)
+        owner = next(
+            item
+            for item in observed["owners"]
+            if item["id"] == selected["id"]
+        )
+        self.assertEqual(owner["disposition"], "review-required")
+        self.assertNotEqual(
+            observed["semantic_sha256"], baseline["semantic_sha256"]
+        )
 
     def test_retained_checkout_is_mandatory_and_canonical_source_is_rejected(self) -> None:
         retained = self.fixture.source
@@ -1118,33 +1380,44 @@ class RP2PolicyAndObserverContractTests(unittest.TestCase):
 
     def test_retained_commit_origin_and_clean_tree_are_recomputed(self) -> None:
         original = copy.deepcopy(self.fixture.provenance)
-        for label, mutate in (
-            (
-                "commit",
-                lambda value: value["micropython"].__setitem__(
-                    "commit", "f" * 40
-                ),
-            ),
-            (
-                "origin",
-                lambda value: value["micropython"].__setitem__(
-                    "origin", "https://example.invalid/substitute"
-                ),
-            ),
-            (
-                "clean",
-                lambda value: value["micropython"].__setitem__("clean", False),
-            ),
-        ):
-            with self.subTest(label=label):
-                self.fixture.provenance = copy.deepcopy(original)
-                mutate(self.fixture.provenance)
-                with self.assertRaises(RELEASE.ReleaseError):
-                    self.fixture.observe()
+        self.fixture.provenance["micropython"]["commit"] = "f" * 40
+        with self.assertRaises(RELEASE.ReleaseError):
+            self.fixture.observe()
         self.fixture.provenance = original
+        original_origin = self.fixture.git(
+            self.fixture.source, "remote", "get-url", "origin"
+        )
+        self.fixture.git(
+            self.fixture.source,
+            "remote",
+            "set-url",
+            "origin",
+            "https://example.invalid/substitute",
+        )
+        with self.assertRaises(RELEASE.ReleaseError):
+            self.fixture.observe()
+        self.fixture.git(
+            self.fixture.source,
+            "remote",
+            "set-url",
+            "origin",
+            original_origin,
+        )
         selected = self.fixture.source / "lib/tinyusb/src/device/usbd.c"
         selected.write_bytes(selected.read_bytes() + b"/* dirty */\n")
         with self.assertRaisesRegex(RELEASE.ReleaseError, "dirty|changed|source"):
+            self.fixture.observe()
+
+    def test_arbitrary_rp2_board_paths_are_not_treated_as_generated(self) -> None:
+        generated = (
+            self.fixture.source
+            / "ports/rp2/boards/PYBLE_RPI_PICO2_W/generated.c"
+        )
+        generated.parent.mkdir(parents=True, exist_ok=True)
+        generated.write_text("/* generated board input */\n", encoding="utf-8")
+        with self.assertRaisesRegex(
+            RELEASE.ReleaseError, "board|inventory|untracked|unowned|generated"
+        ):
             self.fixture.observe()
 
     def test_link_command_rejects_shell_response_duplicate_escape_and_map_gaps(self) -> None:
@@ -1176,6 +1449,20 @@ class RP2PolicyAndObserverContractTests(unittest.TestCase):
                 encoding="utf-8",
             )
             with self.assertRaises(RELEASE.ReleaseError):
+                self.fixture.observe()
+
+        with self.subTest(label="symlink-parent-bypass"):
+            alternate = self.fixture.target / "alternate-link-root"
+            alternate.mkdir()
+            symlink = self.fixture.target / "linked-parent"
+            symlink.symlink_to(alternate, target_is_directory=True)
+            changed = original_link.replace(
+                first_object,
+                "linked-parent/../%s" % first_object,
+                1,
+            )
+            link.write_text(changed, encoding="utf-8")
+            with self.assertRaisesRegex(RELEASE.ReleaseError, "symlink|RP2"):
                 self.fixture.observe()
 
     def test_allocated_map_contribution_not_load_presence_defines_shipment(self) -> None:
@@ -1211,9 +1498,41 @@ class RP2PolicyAndObserverContractTests(unittest.TestCase):
             "a command-listed noncontributor must be bound without being shipped",
         )
 
+    def test_runtime_archive_members_are_path_distinct_and_byte_bound(self) -> None:
+        observed = self.fixture.observe()
+        runtime_records = {
+            Path(record["logical_path"]).name: record
+            for owner in observed["owners"]
+            for record in owner.get("link_inputs", [])
+            if record.get("archive_members")
+        }
+        self.assertIn("libgcc.a", runtime_records)
+        self.assertIn("libg.a", runtime_records)
+        gcc_member = runtime_records["libgcc.a"]["archive_members"][0]
+        newlib_member = runtime_records["libg.a"]["archive_members"][0]
+        self.assertEqual(gcc_member["member"], newlib_member["member"])
+        self.assertNotEqual(
+            gcc_member["member_sha256"],
+            newlib_member["member_sha256"],
+            "equal basenames in different archives must retain distinct bytes",
+        )
+
+        archive = self.fixture.repo / "firmware/.arm-gnu/lib/libgcc.a"
+        archive.write_bytes(
+            archive_bytes(
+                [(gcc_member["member"], b"tampered synthetic member\n")]
+            )
+        )
+        changed = self.fixture.observe()
+        self.assertNotEqual(
+            observed["semantic_sha256"],
+            changed["semantic_sha256"],
+            "an archive-member byte mutation must change the semantic receipt",
+        )
+
     def test_generated_linked_objects_require_derivation_not_prefix_ownership(self) -> None:
         generated = (
-            "pins_rpi_pico2_w.c",
+            "pins_PYBLE_RPI_PICO2_W.c",
             "frozen_content.c",
             "bs2_default_padded_checksummed.S",
         )
@@ -1253,6 +1572,16 @@ class RP2PolicyAndObserverContractTests(unittest.TestCase):
             "canonical-source-map": original.replace(
                 str(self.fixture.source),
                 str(self.fixture.repo / "firmware/upstream/micropython"),
+            ),
+            "duplicate-asm-map": original.replace(
+                "set(CMAKE_DEPENDS_CHECK_ASM\n",
+                "set(CMAKE_DEPENDS_CHECK_ASM\n"
+                + next(
+                    line + "\n"
+                    for line in original.splitlines()
+                    if '"asm"' not in line
+                    and "ports/rp2/main.c" in line
+                ),
             ),
         }
         for label, changed in mutations.items():
@@ -1324,6 +1653,10 @@ class RP2PolicyAndObserverContractTests(unittest.TestCase):
             (
                 "duplicate",
                 original_manifest + original_manifest,
+            ),
+            (
+                "directory-recursion",
+                'freeze("$(BOARD_DIR)/pyble", opt=3)\n',
             ),
         ):
             with self.subTest(kind="frozen", mutation=label):
@@ -1429,6 +1762,115 @@ class RP2AuditOrchestrationContractTests(unittest.TestCase):
                 )
         self.assertEqual(observe.call_count, 2)
         self.assertFalse(evidence.exists())
+
+    def test_review_required_observation_cannot_publish(self) -> None:
+        policy = copy.deepcopy(self.fixture.policy)
+        policy["source_owners"][-1]["disposition"] = "review-required"
+        observed = self.fixture.observe(policy)
+        evidence = self.fixture.root / "review-required-evidence"
+        with (
+            mock.patch.object(
+                RELEASE,
+                "_audit_load_tool_lock",
+                return_value={
+                    "inputs": {
+                        "excluded_cves_path": "firmware/excluded-cves.json",
+                    },
+                    "_artifact_hashes": {"fixture": "a" * 64},
+                },
+            ),
+            mock.patch.object(
+                RELEASE,
+                "_audit_load_policy",
+                return_value={"schema_version": 2},
+            ),
+            mock.patch.object(
+                RELEASE,
+                "_audit_load_rp2_license_policy",
+                return_value=policy,
+            ),
+            mock.patch.object(
+                RELEASE,
+                "_audit_observe_rp2_license_inputs",
+                return_value=observed,
+            ),
+            mock.patch.object(RELEASE, "_audit_release_licenses_v2") as esp,
+        ):
+            excluded = self.fixture.repo / "firmware/excluded-cves.json"
+            excluded.parent.mkdir(exist_ok=True)
+            excluded.write_text("{}\n", encoding="utf-8")
+            with self.assertRaisesRegex(RELEASE.ReleaseError, "review-required"):
+                RELEASE.audit_release_licenses(
+                    build_root=self.fixture.build,
+                    repo_root=self.fixture.repo,
+                    evidence_dir=evidence,
+                    runner=lambda *_args, **_kwargs: None,
+                )
+        esp.assert_not_called()
+        self.assertFalse(evidence.exists())
+
+    def test_public_replay_rejects_live_build_and_policy_mutations(self) -> None:
+        helper = getattr(RELEASE, "_audit_verify_rp2_semantic_replay", None)
+        self.assertTrue(callable(helper))
+        if not callable(helper):
+            return
+        observed = self.fixture.observe()
+        receipt_inputs = {
+            "semantic/rp2-license-closure": observed["semantic_sha256"],
+            **{
+                "rp2-input/%s" % name: value
+                for name, value in observed["input_sha256"].items()
+            },
+        }
+        policy_holder = [self.fixture.policy]
+        with (
+            mock.patch.object(RELEASE, "_audit_load_tool_lock", return_value={}),
+            mock.patch.object(
+                RELEASE,
+                "_audit_load_rp2_license_policy",
+                side_effect=lambda *_args: policy_holder[0],
+            ),
+        ):
+            helper(
+                receipt_inputs=receipt_inputs,
+                persisted_documents=observed["role_documents"],
+                build_root=self.fixture.build,
+                repo_root=self.fixture.repo,
+                provenance=self.fixture.provenance,
+            )
+            paths = (
+                self.fixture.target / "firmware.elf.map",
+                self.fixture.target / "CMakeCache.txt",
+                self.fixture.target
+                / self.fixture.direct_objects["fixture-pyble"][0],
+            )
+            for path in paths:
+                with self.subTest(path=path.name):
+                    original = path.read_bytes()
+                    path.write_bytes(original + b"\n# post-review mutation\n")
+                    try:
+                        with self.assertRaises(RELEASE.ReleaseError):
+                            helper(
+                                receipt_inputs=receipt_inputs,
+                                persisted_documents=observed["role_documents"],
+                                build_root=self.fixture.build,
+                                repo_root=self.fixture.repo,
+                                provenance=self.fixture.provenance,
+                            )
+                    finally:
+                        path.write_bytes(original)
+            policy_holder[0] = copy.deepcopy(self.fixture.policy)
+            policy_holder[0]["source_owners"][-1][
+                "disposition"
+            ] = "review-required"
+            with self.assertRaisesRegex(RELEASE.ReleaseError, "review-required"):
+                helper(
+                    receipt_inputs=receipt_inputs,
+                    persisted_documents=observed["role_documents"],
+                    build_root=self.fixture.build,
+                    repo_root=self.fixture.repo,
+                    provenance=self.fixture.provenance,
+                )
 
     def test_notice_merge_is_semantic_sorted_and_hash_deduplicated(self) -> None:
         merge = getattr(RELEASE, "_audit_merge_release_notices", None)

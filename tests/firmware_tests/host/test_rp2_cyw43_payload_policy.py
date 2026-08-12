@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import importlib.util
 import json
@@ -110,25 +111,36 @@ class RP2Cyw43PayloadPolicyTests(unittest.TestCase):
         parser = getattr(release_bundle, "_audit_rp2_c_array_payload")
         cases = {
             "expression": (
-                "const unsigned char payload[] = {0x01, SOME_MACRO};\n",
+                "const unsigned char payload[] CYW43_RESOURCE_ATTRIBUTE = "
+                "{0x01, SOME_MACRO};\n",
                 2,
             ),
             "designator": (
-                "const unsigned char payload[] = {[0] = 0x01};\n",
+                "const unsigned char payload[] CYW43_RESOURCE_ATTRIBUTE = "
+                "{[0] = 0x01};\n",
                 1,
             ),
             "duplicate": (
-                "const unsigned char payload[] = {0x01};\n"
-                "const unsigned char payload[] = {0x01};\n",
+                "const unsigned char payload[] CYW43_RESOURCE_ATTRIBUTE = "
+                "{0x01};\n"
+                "const unsigned char payload[] CYW43_RESOURCE_ATTRIBUTE = "
+                "{0x01};\n",
                 1,
             ),
             "wrong-length": (
-                "const unsigned char payload[] = {0x01};\n",
+                "const unsigned char payload[] CYW43_RESOURCE_ATTRIBUTE = "
+                "{0x01};\n",
                 2,
             ),
             "trailing-declaration": (
-                "const unsigned char payload[] = {0x01};\nint surprise = 1;\n",
+                "const unsigned char payload[] CYW43_RESOURCE_ATTRIBUTE = "
+                "{0x01};\nint surprise = 1;\n",
                 1,
+            ),
+            "out-of-range-octal": (
+                "const uint8_t payload[] CYW43_RESOURCE_ATTRIBUTE = "
+                '"\\777";\n',
+                2,
             ),
         }
         for label, (source, expected_length) in cases.items():
@@ -137,6 +149,31 @@ class RP2Cyw43PayloadPolicyTests(unittest.TestCase):
                 path.write_text(source, encoding="utf-8")
                 with self.assertRaises(release_bundle.ReleaseError):
                     parser(path, "payload", expected_length)
+
+    def test_reviewed_owner_cannot_retain_an_unresolved_or_choice(self) -> None:
+        policy = json.loads(POLICY.read_text(encoding="utf-8"))
+        owner = next(
+            item
+            for item in policy["source_owners"]
+            if item["id"] == "cyw43-bt-firmware-payload"
+        )
+        self.assertEqual(owner["disposition"], "review-required")
+        self.assertEqual(
+            owner["selected_spdx_expression"],
+            owner["source_spdx_expression"],
+        )
+        mutated = copy.deepcopy(policy)
+        next(
+            item
+            for item in mutated["source_owners"]
+            if item["id"] == owner["id"]
+        )["disposition"] = "allow"
+        with self.assertRaises(release_bundle.ReleaseError):
+            release_bundle._audit_validate_rp2_license_policy(
+                mutated,
+                repo_root=ROOT,
+                build_root=ROOT / "firmware/build",
+            )
 
 
 if __name__ == "__main__":

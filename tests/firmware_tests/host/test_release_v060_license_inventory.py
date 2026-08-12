@@ -125,6 +125,7 @@ class V060LicenseFixture:
         self._make_builds()
         self._make_esp_evidence()
         self._make_rp2_evidence()
+        self.rp2_observation = self._make_rp2_observation()
         self._make_release_inventory()
         self._make_receipt()
 
@@ -175,6 +176,52 @@ class V060LicenseFixture:
             "Synthetic complete GCC Runtime Library Exception fixture text.\n",
             encoding="utf-8",
         )
+        license_text = firmware / "licenses" / "rp2-fixture-mit.txt"
+        license_text.parent.mkdir(parents=True)
+        license_text.write_text(
+            "Synthetic complete MIT fixture text.\n",
+            encoding="utf-8",
+        )
+        policy_path = firmware / "licenses" / "rp2-license-policy.json"
+        write_json(
+            policy_path,
+            {
+                "schema_version": 1,
+                "profile_id": "rpi-pico2-w",
+                "target": "rpi-pico2-w",
+                "source_owners": [
+                    {
+                        "id": "fixture-rp2",
+                        "source_roots": [
+                            {"namespace": "repo", "path": "firmware"}
+                        ],
+                        "source_ref": "0.6.0-fixture",
+                        "source_url": "https://example.invalid/pyble-rp2-fixture",
+                        "source_spdx_expression": "MIT",
+                        "selected_spdx_expression": "MIT",
+                        "copyright": "Synthetic PyBLE RP2 fixture",
+                        "license_texts": [
+                            {
+                                "identifier": "MIT",
+                                "path": "firmware/licenses/rp2-fixture-mit.txt",
+                                "sha256": sha256_path(license_text),
+                            }
+                        ],
+                        "notice_files": [],
+                        "disposition": "allow",
+                    }
+                ],
+            },
+        )
+        self.tool_lock = {
+            "inputs": {
+                "rp2_license_policy_path": (
+                    "firmware/licenses/rp2-license-policy.json"
+                ),
+                "rp2_license_policy_sha256": sha256_path(policy_path),
+            },
+            "_artifact_hashes": {"esp-idf-sbom": "6" * 64},
+        }
 
     def _provenance(self, target: str, rp2: bool = False) -> dict[str, object]:
         value: dict[str, object] = {
@@ -412,6 +459,34 @@ class V060LicenseFixture:
                 },
             )
 
+    def _make_rp2_observation(self) -> dict[str, object]:
+        role_documents = {
+            role: json.loads(
+                (
+                    self.evidence
+                    / "rp2"
+                    / ("rpi-pico2-w--%s.json" % role)
+                ).read_text(encoding="utf-8")
+            )
+            for role in RP2_ROLES
+        }
+        input_sha256 = {
+            "repo/firmware/licenses/rp2-license-policy.json": (
+                self.tool_lock["inputs"]["rp2_license_policy_sha256"]
+            )
+        }
+        payload = {
+            "input_sha256": input_sha256,
+            "owners": [{"id": "fixture-rp2", "disposition": "allow"}],
+            "notice_records": [],
+            "role_documents": role_documents,
+            "generated_object_derivations": [],
+        }
+        return {
+            "semantic_sha256": sha256_bytes(canonical_json_bytes(payload)),
+            **payload,
+        }
+
     def _make_release_inventory(self) -> None:
         profiles = []
         for profile_id, target in ESP_TARGETS.items():
@@ -494,7 +569,17 @@ class V060LicenseFixture:
             {
                 "schema_version": 2,
                 "notice_sha256": sha256_bytes(self.notice.encode("utf-8")),
-                "input_sha256": {"synthetic-policy": "5" * 64},
+                "input_sha256": {
+                    "semantic/rp2-license-closure": self.rp2_observation[
+                        "semantic_sha256"
+                    ],
+                    **{
+                        "rp2-input/%s" % name: digest
+                        for name, digest in self.rp2_observation[
+                            "input_sha256"
+                        ].items()
+                    },
+                },
                 "executed_artifacts": {"esp-idf-sbom": "6" * 64},
                 "execution_identity": {"fixture": "network-isolated"},
                 "identities": identities,
@@ -543,13 +628,25 @@ class V060LicenseInventoryContractTests(unittest.TestCase):
         helper = self.verifier()
         if not callable(helper):
             return None
-        return helper(
-            evidence_dir=self.fixture.evidence,
-            build_root=self.fixture.build,
-            repo_root=self.fixture.repo,
-            notice=self.fixture.notice,
-            firmware_version="0.6.0",
-        )
+        with (
+            mock.patch.object(
+                RELEASE,
+                "_audit_load_tool_lock",
+                return_value=self.fixture.tool_lock,
+            ),
+            mock.patch.object(
+                RELEASE,
+                "_audit_observe_rp2_license_inputs",
+                return_value=copy.deepcopy(self.fixture.rp2_observation),
+            ),
+        ):
+            return helper(
+                evidence_dir=self.fixture.evidence,
+                build_root=self.fixture.build,
+                repo_root=self.fixture.repo,
+                notice=self.fixture.notice,
+                firmware_version="0.6.0",
+            )
 
     def test_source_era_inventory_is_exact_and_preserves_history(self) -> None:
         helper = RELEASE._release_license_inventory_for_version
@@ -717,11 +814,14 @@ class V060LicenseInventoryContractTests(unittest.TestCase):
         if not callable(helper):
             return
         sentinel = RELEASE.ReleaseError("heterogeneous receipt dispatch sentinel")
-        with mock.patch.object(
-            RELEASE,
-            "_audit_verify_release_inventory_evidence",
-            side_effect=sentinel,
-        ) as verifier:
+        with (
+            mock.patch.object(
+                RELEASE,
+                "_audit_verify_release_inventory_evidence",
+                side_effect=sentinel,
+            ) as verifier,
+            mock.patch.object(RELEASE, "_audit_verify_packaged_build") as packaged,
+        ):
             with self.assertRaisesRegex(
                 RELEASE.ReleaseError,
                 "heterogeneous receipt dispatch sentinel",
@@ -731,9 +831,11 @@ class V060LicenseInventoryContractTests(unittest.TestCase):
                     evidence_dir=self.fixture.evidence,
                     build_root=self.fixture.build,
                     repo_root=self.fixture.repo,
+                    bundle=self.fixture.root / "bundle",
                     release={"identity": {"version": "0.6.0"}},
                 )
             verifier.assert_called_once()
+            packaged.assert_called_once()
 
         for public_seam in (
             RELEASE.create_bundle,

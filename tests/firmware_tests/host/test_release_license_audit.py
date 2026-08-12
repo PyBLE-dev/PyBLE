@@ -3516,8 +3516,11 @@ class ProductionAuditPublicationTests(unittest.TestCase):
             build.mkdir()
             repo.mkdir()
             wheelhouse.mkdir()
-            evidence = root / "evidence"
-            notice = root / "THIRD_PARTY_LICENSES.txt"
+            outputs = root / "outputs"
+            outputs.mkdir()
+            publication = outputs / "license-audit"
+            evidence = publication / "evidence"
+            notice = publication / "THIRD_PARTY_LICENSES.txt"
 
             class FakeLockedRunner:
                 def __init__(self, **_kwargs):
@@ -3559,8 +3562,9 @@ class ProductionAuditPublicationTests(unittest.TestCase):
             )
             self.assertTrue((evidence / "audit-receipt.json").is_file())
 
-            failed_evidence = root / "failed-evidence"
-            failed_notice = root / "FAILED_THIRD_PARTY_LICENSES.txt"
+            failed_publication = outputs / "failed-license-audit"
+            failed_evidence = failed_publication / "evidence"
+            failed_notice = failed_publication / "THIRD_PARTY_LICENSES.txt"
             with mock.patch.object(
                 RELEASE,
                 "LockedWheelSbomRunner",
@@ -3595,8 +3599,11 @@ class ProductionAuditPublicationTests(unittest.TestCase):
             build.mkdir()
             repo.mkdir()
             wheelhouse.mkdir()
-            evidence = root / "evidence"
-            notice = root / "THIRD_PARTY_LICENSES.txt"
+            outputs = root / "outputs"
+            outputs.mkdir()
+            publication = outputs / "license-audit"
+            evidence = publication / "evidence"
+            notice = publication / "THIRD_PARTY_LICENSES.txt"
 
             class FakeLockedRunner:
                 def __init__(self, **_kwargs):
@@ -3614,6 +3621,7 @@ class ProductionAuditPublicationTests(unittest.TestCase):
                     "{}\n",
                     encoding="utf-8",
                 )
+                publication.mkdir()
                 evidence.mkdir()
                 (evidence / "contender.txt").write_text(
                     "do not replace\n",

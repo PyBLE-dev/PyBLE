@@ -64,6 +64,7 @@ class RP2DepfileFixture:
         "lib/cyw43-driver/firmware/cyw43_btfw_43439.h",
         "lib/cyw43-driver/firmware/wifi_nvram_43439.h",
     )
+    CYW43_ALTERNATE = "lib/cyw43-driver/firmware/wb4343WA1_alt_combined.h"
     CMSIS_INPUTS = (
         "lib/pico-sdk/src/rp2_common/cmsis/stub/CMSIS/Core/Include/cmsis_compiler.h",
         "lib/pico-sdk/src/rp2_common/cmsis/stub/CMSIS/Core/Include/cmsis_gcc.h",
@@ -113,6 +114,11 @@ class RP2DepfileFixture:
     def _add_retained_dependencies(self) -> None:
         for relative in self.CYW43_PAYLOADS:
             self.write(self.source, relative, ("/* %s */\n" % relative).encode())
+        self.write(
+            self.source,
+            self.CYW43_ALTERNATE,
+            ("/* %s */\n" % self.CYW43_ALTERNATE).encode(),
+        )
         for relative in self.CMSIS_INPUTS:
             self.write(self.source, relative, ("/* %s */\n" % relative).encode())
         for relative in (self.LIBM_HEADER, "ports/rp2/escaped header #1.h"):
@@ -278,6 +284,10 @@ class RP2DepfileFixture:
             "math.c": (self.source / self.LIBM_HEADER,),
             "pble_agent.c": (
                 self.source / "ports/rp2/escaped header #1.h",
+                # GCC depfiles can repeat a header reached through separate
+                # include paths.  The raw depfile digest binds multiplicity;
+                # every token must still be parsed and owner-classified.
+                self.source / "ports/rp2/escaped header #1.h",
                 self.toolchain / self.GCC_HEADER,
                 self.toolchain / self.NEWLIB_HEADER,
             ),
@@ -374,6 +384,21 @@ class RP2CompilerDependencyClosureTests(unittest.TestCase):
         finally:
             depfile.write_bytes(original)
 
+        extra = (
+            self.fixture.target
+            / "CMakeFiles/firmware.dir/fixture/unowned-extra.o.d"
+        )
+        extra.write_text(
+            "CMakeFiles/firmware.dir/fixture/unowned-extra.o: %s\n"
+            % make_escape(str(self.fixture.source / "ports/rp2/main.c")),
+            encoding="utf-8",
+        )
+        try:
+            with self.assertRaises(RELEASE.ReleaseError):
+                self.fixture.observe()
+        finally:
+            extra.unlink()
+
     def test_board_platform_and_all_frontend_identities_are_exact(self) -> None:
         self.fixture.observe()
         cache = self.fixture.target / "CMakeCache.txt"
@@ -433,6 +458,28 @@ class RP2CompilerDependencyClosureTests(unittest.TestCase):
                 for item in self.fixture.CYW43_PAYLOADS
             },
         )
+        depfile = next(
+            path
+            for path in self.fixture.depfiles
+            if "cyw43_ctrl" in path.read_text(encoding="utf-8")
+        )
+        original = depfile.read_text(encoding="utf-8")
+        depfile.write_text(
+            original.rstrip("\n")
+            + " \\\n  "
+            + make_escape(
+                str(self.fixture.source / self.fixture.CYW43_ALTERNATE)
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        try:
+            with self.assertRaisesRegex(
+                RELEASE.ReleaseError, "CYW43|payload|dependency"
+            ):
+                self.fixture.observe()
+        finally:
+            depfile.write_text(original, encoding="utf-8")
 
     def test_custom_license_ref_authority_does_not_cross_owner_boundary(self) -> None:
         validate = RELEASE._audit_validate_rp2_license_policy
