@@ -1088,8 +1088,12 @@ and `"btstack-observed-v1"`. Each ESP transport object has the same keys with
 window `8` and `link_facts_kind: "nimble-settled-v1"`. The Pico observation's
 target-specific transport facts contain exactly `ble_host` (`"btstack"`),
 `observed_att_mtu` (`247`), `observed_window` (`4`),
-`observed_chunk_bytes` (`229`), and positive integer
-`console_tx_budget_ms`; ESP DLE/PHY/session-end fields are forbidden.
+`observed_chunk_bytes` (`229`), and the positive integer
+`console_tx_budget_ms` frozen by the Pico P8/OI-P3 runtime-source amendment;
+ESP DLE/PHY/session-end fields are forbidden. The bench MUST obtain the pacing
+value from that exact source-bound contract and MUST reject an
+operator-selectable numeric replacement. Until P8/OI-P3 freezes the value and
+units, a Pico fragment is inadmissible even if it contains a positive integer.
 
 Every V5 profile record additionally binds both real-app results. `app_hil`
 has exactly `ipad` and `android`; each entry has exactly non-empty

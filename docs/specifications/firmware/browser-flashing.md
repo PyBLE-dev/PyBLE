@@ -2073,6 +2073,45 @@ profile_gate_summary
 entry has exactly non-empty `app_version`, `app_build`, `os_major`, and
 `status: "passed"`. One platform cannot substitute for the other.
 
+V5 completion JSON MUST be produced mechanically; an operator MUST NOT copy a
+candidate record or hand-author its gate map. The release tool therefore
+provides a `create-hil-completion` operation before `assemble-hil-report`. It
+accepts exactly one pending candidate, one profile ID, that profile's
+verify-mode OI observation, one canonical operator-input object, the canonical
+qualification checkout, and one new no-replace output path. The
+operator-input object contains exactly the physical board descriptions and
+capacities, UTC test time, operator/sign-off and environment strings, the six
+operator checks other than `footprint_reliability`, both completed `app_hil`
+rows, and the redacted console log. It cannot contain status, release/source
+identity, artifact digests, policy, build measurements, OI thresholds,
+`footprint_reliability`, or `profile_gate_summary`.
+
+For C3 and Pico the operation additionally requires that profile's exclusive
+mode-`0600` private qualification result. It validates the result against the
+candidate's exact `release.json` and install bytes and copies only the
+validator-derived gate map into the completion fragment. It rejects a private
+result for the other three profiles and rejects any operator-supplied gate
+map. It validates the observation against the embedded policy, creates one
+canonical exclusive mode-`0600` fragment without replacement, rereads it, and
+changes no candidate byte. `assemble-hil-report` then accepts exactly five of
+these fragments, in any input order, and still derives
+`footprint_reliability` itself.
+
+The C3/Pico gate module provides a separate `create-result` operation so the
+private result never requires hand-authored identity or digest fields. It
+accepts the immutable candidate directory, exact profile ID, one explicit
+`--passed-gate` occurrence for every gate frozen for that profile, and a new
+output path. The operation derives firmware version, candidate `release.json`
+SHA-256, candidate install SHA-256, schema, status, and gate ordering; writes
+canonical JSON as one exclusive mode-`0600` regular file; validates the file;
+and refuses missing, duplicate, extra, non-passed, mixed-profile, changed, or
+pre-existing inputs. Supplying the gate names is an operator attestation made
+only after the corresponding build, unit/conformance, HIL, app, provisioning,
+and physical-observation records have actually passed and remain retained.
+The operation does not run a gate, infer a pass from a build, create a
+threshold, or turn pending evidence into a result. This section freezes an
+evidence-writing workflow and records no passed result.
+
 The four ESP records use `resource_kind: "esp-idf"` and
 `provisioning_kind: "esp-web-serial"`. Each additionally has exact
 `manifest_sha256`; the V4 ESP `oi1_build`, heap observations, and

@@ -38,9 +38,20 @@ Reassembled RX message cap **4096 bytes** (covers RUN source ≤ 2048 + headers)
 
 `gatts_set_buffer(rx_handle, ≥247, False)` immediately after service registration (the default attribute buffer is ~20 bytes — **silent truncation** otherwise; hardware-verified 2026-08-11: the app's 71-byte HELLO arrived as 19 bytes without it). `ble.config(mtu=247)` after `active(True)` to pin the ceiling. Module-local **numeric IRQ constants** (modbluetooth exports no `_IRQ_*` names; hardware-verified AttributeError without them). Contingency: if HIL shows write-without-response merge/loss, escalate to `append=True` + a blob reframer — not default.
 
-## P8. Console & pacing (FROZEN method, HIL-tuned constants)
+## P8. Console & pacing (FROZEN method; numeric tuning still open)
 
 One `io.IOBase` object serving three roles: stdout tee (gated on the run-active flag — the main-thread equivalent of the ESP32 worker-origin gate) emitting `CONSOLE_DATA` `[stream:u8][bytes ≤200]` chunks; a 256-byte stdin ring (drop-on-overflow) for `CONSOLE_INPUT`; and the `0x03` STOP channel (P3). BTstack queues congested notifies on the heap rather than dropping (the inverse of the ESP32 mbuf-starve loss mode): emission uses a token-bucket budget whose constants are HIL-tuned; a dead link degrades to drop-and-continue, never a wedge (the `PBLE_CONSOLE_TX_BUDGET_MS` twin).
+
+The current portable implementation exposes byte-capacity and bytes-per-ms
+token-bucket constants, not an authoritative millisecond budget. The `250 ms`
+native ESP constant and the `250` value used by host fixtures therefore MUST
+NOT be copied into Pico release evidence as though the Pico runtime reported
+it. Before a Pico baseline fragment is admissible, one positive pacing value
+and its units MUST be frozen here, represented by an exact runtime-source
+constant, and consumed by the OI bench without an operator-selectable numeric
+override. Until that amendment lands, OI-P3 remains release-blocking and a
+merely positive `console_tx_budget_ms` supplied on the command line is not
+qualification evidence.
 
 ## P9. Build & provisioning contract (RP2-BLD, FROZEN)
 
@@ -86,8 +97,9 @@ build facts are raw `firmware.bin` byte length, the exact 1,572,864-byte image
 limit, and their non-negative headroom. Its 16 runtime heap snapshots contain
 exactly `gc_free_bytes` and `gc_allocated_bytes`; ESP-IDF heap keys are
 forbidden. Transport evidence records BTstack, negotiated ATT MTU, advertised
-window/chunk, and the frozen console pacing budget; ESP/NimBLE DLE/PHY/serial
-link-settlement keys are forbidden.
+window/chunk, and the source-bound console pacing budget after P8/OI-P3 freezes
+it; ESP/NimBLE DLE/PHY/serial link-settlement keys are forbidden. An arbitrary
+positive operator-supplied value cannot satisfy this field.
 
 The release artifact is `rpi-pico2-w/firmware.uf2`. Release metadata binds its
 exact byte size/SHA-256 and the raw `firmware.bin` size/SHA-256 used for static
