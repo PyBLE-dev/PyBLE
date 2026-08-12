@@ -1085,6 +1085,7 @@ class Rp2HardwareExecutor(HardwareExecutor):
     def __init__(self, args, reset, raw_log):
         super().__init__(args, reset, raw_log)
         self._capture_started = False
+        self._hello_transport = None
 
     async def begin_transfer_link_capture(self, profile_id):
         if profile_id != "rpi-pico2-w":
@@ -1108,12 +1109,24 @@ class Rp2HardwareExecutor(HardwareExecutor):
             )
         self.log.write("transfer_link_settled")
 
+    async def reset_connect_hello(self, sample_index):
+        result = await super().reset_connect_hello(sample_index)
+        _latency, caps, backend_mtu, _connection = result
+        self._hello_transport = {
+            "observed_att_mtu": backend_mtu,
+            "observed_window": int(caps["window"]),
+            "observed_chunk_bytes": int(caps["chunk"]),
+        }
+        return result
+
     def _btstack_facts(self):
+        if self._hello_transport is None:
+            raise BenchError(
+                "RP2 HELLO transport observation has not been captured"
+            )
         return {
             "ble_host": "btstack",
-            "observed_att_mtu": 247,
-            "observed_window": 4,
-            "observed_chunk_bytes": 229,
+            **self._hello_transport,
             "console_tx_budget_ms": self.args.console_tx_budget_ms,
         }
 
