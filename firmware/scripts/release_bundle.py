@@ -257,12 +257,19 @@ PROFILE_SPECS = {
     "rpi-pico2-w": {
         "target": "rpi-pico2-w",
         "port": "rp2",
+        # ``board`` is the public upstream hardware identity.  The build is
+        # intentionally produced from PyBLE's private overlay, whose name is
+        # recorded separately so public metadata never leaks a build-system
+        # implementation detail into the supported-board contract.
         "board": "RPI_PICO2_W",
+        "build_board": "PYBLE_RPI_PICO2_W",
         "provisioning": "uf2-bootsel",
         "primary_artifact": "firmware.uf2",
         "resource_artifact": "firmware.bin",
         "provenance": "pyble-build-provenance.json",
         "image_limit_bytes": RP2_IMAGE_LIMIT_BYTES,
+        "flash_size_bytes": 4 * 1024 * 1024,
+        "psram": {"required": False, "size_bytes": 0, "type": "not-required"},
     },
 }
 TARGET_TO_PROFILE = {
@@ -1579,7 +1586,7 @@ def _validate_rp2_build_provenance(
         "%s build provenance port mismatch" % target,
     )
     _require(
-        record["board"] == spec["board"],
+        record["board"] == spec["build_board"],
         "%s build provenance board mismatch" % target,
     )
     epoch = record["source_date_epoch"]
@@ -1672,6 +1679,7 @@ def _reconstruct_rp2350_uf2(uf2: bytes, target: str) -> bytes:
     )
     arm_blocks: list[tuple[int, int, int, bytes]] = []
     extension_blocks = 0
+    rp2_ignore_block_tag = 0x9957E304
     for offset in range(0, len(uf2), 512):
         block = uf2[offset : offset + 512]
         magic_start0, magic_start1, flags, address, payload_size, block_number, total_blocks, family = struct.unpack_from(
@@ -1689,11 +1697,12 @@ def _reconstruct_rp2350_uf2(uf2: bytes, target: str) -> bytes:
             "%s firmware.uf2 payload length is invalid" % target,
         )
         payload = block[32 : 32 + payload_size]
-        _require(
-            all(value == 0 for value in block[32 + payload_size : 508]),
-            "%s firmware.uf2 contains nonzero bytes outside a block payload" % target,
-        )
         if flags == 0x00002000 and family == 0xE48BFF59:
+            _require(
+                all(value == 0 for value in block[32 + payload_size : 508]),
+                "%s firmware.uf2 contains nonzero bytes outside a block payload"
+                % target,
+            )
             arm_blocks.append((address, block_number, total_blocks, payload))
         elif (
             flags == 0x0000A000
@@ -1703,6 +1712,19 @@ def _reconstruct_rp2350_uf2(uf2: bytes, target: str) -> bytes:
             and block_number == 0
             and total_blocks == 2
         ):
+            extension_end = 32 + payload_size + 4
+            _require(
+                struct.unpack_from("<I", block, 32 + payload_size)[0]
+                == rp2_ignore_block_tag
+                and all(value == 0 for value in block[extension_end:508]),
+                "%s firmware.uf2 RP2 ignore-block extension tag is invalid"
+                % target,
+            )
+            _require(
+                offset == 0,
+                "%s firmware.uf2 RP2 ignore-block extension must be first"
+                % target,
+            )
             extension_blocks += 1
         else:
             raise ReleaseError(
@@ -8969,7 +8991,7 @@ def _release_profile_order_for_version(
     """Return the immutable public profile order for one source era."""
 
     core = _firmware_release_core(firmware_version, "firmware source version")
-    if core == (0, 4, 2):
+    if core < (0, 5, 0):
         return HISTORICAL_V042_RELEASE_PROFILE_ORDER
     if core < (0, 6, 0):
         return V05_RELEASE_PROFILE_ORDER
@@ -8980,7 +9002,7 @@ def _release_metadata_schema_version_for_version(firmware_version: str) -> int:
     """Select the immutable release-metadata schema for one source era."""
 
     core = _firmware_release_core(firmware_version, "firmware source version")
-    if core == (0, 4, 2):
+    if core < (0, 5, 0):
         return 2
     return 3 if core < (0, 6, 0) else 4
 
@@ -8989,7 +9011,7 @@ def _hil_schema_version_for_version(firmware_version: str) -> int:
     """Select the exact HIL record schema for one source era."""
 
     core = _firmware_release_core(firmware_version, "firmware source version")
-    if core == (0, 4, 2):
+    if core < (0, 5, 0):
         return 2
     return 4 if core < (0, 6, 0) else 5
 
@@ -9000,9 +9022,109 @@ def _qualification_policy_schema_version_for_version(
     """Select the immutable OI-1 policy schema for one source era."""
 
     core = _firmware_release_core(firmware_version, "firmware source version")
-    if core == (0, 4, 2):
+    if core < (0, 5, 0):
         return 1
     return 2 if core < (0, 6, 0) else 3
+
+
+def _require_source_era_evidence_count(
+    evidence: list[Path],
+    firmware_version: str,
+    label: str,
+) -> list[Path]:
+    """Require one evidence input per profile in the selected source era."""
+
+    _require(isinstance(evidence, list), "%s must be an array" % label)
+    expected = len(_release_profile_order_for_version(firmware_version))
+    _require(
+        len(evidence) == expected,
+        "%s must contain exactly %d source-era inputs" % (label, expected),
+    )
+    return evidence
+
+
+def _release_license_inventory_for_version(
+    firmware_version: str,
+) -> list[dict[str, Any]]:
+    """Return the explicit per-port redistributed-input review inventory."""
+
+    inventory: list[dict[str, Any]] = []
+    for profile_id in _release_profile_order_for_version(firmware_version):
+        spec = PROFILE_SPECS[profile_id]
+        is_rp2 = spec["port"] == "rp2"
+        inventory.append(
+            {
+                "profile_id": profile_id,
+                "target": spec["target"],
+                "resource_kind": "rp2" if is_rp2 else "esp-idf",
+                "roles": (
+                    [
+                        "linked-inputs",
+                        "frozen-modules",
+                        "pico-sdk",
+                        "btstack",
+                        "cyw43",
+                        "arm-gnu-runtime",
+                    ]
+                    if is_rp2
+                    else ["application", "bootloader"]
+                ),
+            }
+        )
+    return inventory
+
+
+def _require_release_license_inventory(
+    value: Any,
+    firmware_version: str,
+) -> dict[str, Any]:
+    """Validate an exact, provenance-bound heterogeneous review receipt.
+
+    This helper deliberately validates evidence; it never derives or fills a
+    missing review result.  The production audit must emit this receipt from
+    the exact reviewed build before a heterogeneous release can be admitted.
+    """
+
+    receipt = _exact_keys(
+        value,
+        {"profile_order", "inventories"},
+        "release license inventory receipt",
+    )
+    expected = _release_license_inventory_for_version(firmware_version)
+    _require(
+        receipt["profile_order"]
+        == [item["profile_id"] for item in expected],
+        "release license inventory profile order is stale or incomplete",
+    )
+    inventories = receipt["inventories"]
+    _require(
+        isinstance(inventories, list) and len(inventories) == len(expected),
+        "release license inventory coverage is incomplete",
+    )
+    for actual, contract in zip(inventories, expected):
+        item = _exact_keys(
+            actual,
+            {
+                "profile_id",
+                "resource_kind",
+                "roles",
+                "provenance_sha256",
+            },
+            "release license inventory %s" % contract["profile_id"],
+        )
+        _require(
+            item["profile_id"] == contract["profile_id"]
+            and item["resource_kind"] == contract["resource_kind"]
+            and item["roles"] == contract["roles"],
+            "release license inventory differs for %s" % contract["profile_id"],
+        )
+        _require(
+            isinstance(item["provenance_sha256"], str)
+            and SHA256_RE.fullmatch(item["provenance_sha256"]) is not None,
+            "release license inventory provenance is unbound for %s"
+            % contract["profile_id"],
+        )
+    return receipt
 
 
 def _waveshare_lcd147b_capable_version(firmware_version: str) -> bool:
@@ -12688,6 +12810,12 @@ def _audit_verify_release_evidence(
             _read_lock(root)["pyble"]["agent_version"]
         )
     )
+    if tuple(release_profile_order) == V060_RELEASE_PROFILE_ORDER:
+        raise ReleaseError(
+            "v0.6.0 license admission requires a persisted heterogeneous "
+            "release-inventory receipt; the current ESP-only audit receipt "
+            "cannot qualify RP2"
+        )
     _require(
         not evidence.is_symlink(),
         "license review evidence root must not be a symlink",
@@ -13046,8 +13174,27 @@ def _stage_profile_artifacts(
             destination.chmod(0o600)
 
 
+def _stage_rp2_profile_artifacts(
+    *,
+    profile_dir: Path,
+    source_paths: dict[str, Path],
+    private: bool,
+) -> None:
+    """Stage only the verified UF2 installer and its raw resource image."""
+
+    profile_dir.mkdir(mode=0o700 if private else 0o777)
+    copies = (
+        (source_paths["install"], profile_dir / "firmware.uf2"),
+        (source_paths["resource-image"], profile_dir / "firmware.bin"),
+    )
+    for source, destination in copies:
+        shutil.copyfile(source, destination)
+        if private:
+            destination.chmod(0o600)
+
+
 def _release_schema(firmware_version: str | None = None) -> dict[str, Any]:
-    source_version = firmware_version or "0.5.0"
+    source_version = firmware_version or "0.6.0"
     profile_order = _release_profile_order_for_version(source_version)
     schema_version = _release_metadata_schema_version_for_version(source_version)
     sha = {"type": "string", "pattern": "^[0-9a-f]{64}$"}
@@ -13930,6 +14077,23 @@ def _qualification_build_measurement(
 ) -> dict[str, int]:
     spec = PROFILE_SPECS[profile_id]
     directory = Path(bundle) / profile_id
+    if spec["port"] == "rp2":
+        try:
+            firmware_bin_bytes = (directory / "firmware.bin").stat().st_size
+        except OSError as exc:
+            raise ReleaseError(
+                "OI-1 RP2 resource image is missing for %s" % profile_id
+            ) from exc
+        headroom = spec["image_limit_bytes"] - firmware_bin_bytes
+        _require(
+            firmware_bin_bytes > 0 and headroom >= 0,
+            "OI-1 RP2 resource image exceeds its bound for %s" % profile_id,
+        )
+        return {
+            "firmware_bin_bytes": firmware_bin_bytes,
+            "firmware_image_limit_bytes": spec["image_limit_bytes"],
+            "firmware_image_headroom_bytes": headroom,
+        }
     try:
         application = (directory / "application.bin").read_bytes()
         partition_table = (directory / "partition-table.bin").read_bytes()
@@ -13972,6 +14136,35 @@ def _validate_qualification_build(
     thresholds: dict[str, int],
     profile_id: str,
 ) -> dict[str, int]:
+    if PROFILE_SPECS[profile_id]["port"] == "rp2":
+        build = _exact_keys(
+            value,
+            {
+                "firmware_bin_bytes",
+                "firmware_image_limit_bytes",
+                "firmware_image_headroom_bytes",
+            },
+            "OI-1 build for %s" % profile_id,
+        )
+        for key in build:
+            _qualification_integer(
+                build[key],
+                "OI-1 %s build %s" % (profile_id, key),
+            )
+        _require(
+            build == expected
+            and build["firmware_image_limit_bytes"] == RP2_IMAGE_LIMIT_BYTES
+            and build["firmware_image_headroom_bytes"]
+            == build["firmware_image_limit_bytes"] - build["firmware_bin_bytes"],
+            "OI-1 RP2 build measurements disagree for %s" % profile_id,
+        )
+        _require(
+            build["firmware_bin_bytes"] <= thresholds["firmware_bin_max_bytes"]
+            and build["firmware_image_headroom_bytes"]
+            >= thresholds["firmware_image_headroom_min_bytes"],
+            "OI-1 RP2 image threshold failed for %s" % profile_id,
+        )
+        return build
     build = _exact_keys(
         value,
         {
@@ -14036,16 +14229,25 @@ def _qualification_integer_array(
     return result
 
 
-def _validate_heap_snapshot(value: Any, label: str) -> dict[str, int]:
+def _validate_heap_snapshot(
+    value: Any,
+    label: str,
+    *,
+    rp2: bool = False,
+) -> dict[str, int]:
     snapshot = _exact_keys(
         value,
-        {
-            "gc_free_bytes",
-            "gc_allocated_bytes",
-            "idf_internal_free_bytes",
-            "idf_internal_largest_block_bytes",
-            "idf_internal_minimum_free_bytes",
-        },
+        (
+            {"gc_free_bytes", "gc_allocated_bytes"}
+            if rp2
+            else {
+                "gc_free_bytes",
+                "gc_allocated_bytes",
+                "idf_internal_free_bytes",
+                "idf_internal_largest_block_bytes",
+                "idf_internal_minimum_free_bytes",
+            }
+        ),
         label,
     )
     for key in snapshot:
@@ -14058,6 +14260,32 @@ def _validate_transfer_link_facts(
     profile_id: str,
 ) -> dict[str, Any]:
     """Validate the exact, redacted ADR-0027 settlement record."""
+
+    if PROFILE_SPECS[profile_id]["port"] == "rp2":
+        facts = _exact_keys(
+            value,
+            {
+                "ble_host",
+                "observed_att_mtu",
+                "observed_window",
+                "observed_chunk_bytes",
+                "console_tx_budget_ms",
+            },
+            "OI-1 RP2 transfer facts for %s" % profile_id,
+        )
+        _require(
+            facts["ble_host"] == "btstack"
+            and type(facts["observed_att_mtu"]) is int
+            and facts["observed_att_mtu"] == 247
+            and type(facts["observed_window"]) is int
+            and facts["observed_window"] == 4
+            and type(facts["observed_chunk_bytes"]) is int
+            and facts["observed_chunk_bytes"] == 229
+            and type(facts["console_tx_budget_ms"]) is int
+            and facts["console_tx_budget_ms"] > 0,
+            "OI-1 RP2 BTstack transport facts are invalid for %s" % profile_id,
+        )
+        return facts
 
     facts = _exact_keys(
         value,
@@ -14228,6 +14456,7 @@ def _validate_qualification_observation(
     *,
     firmware_version: str,
 ) -> dict[str, Any]:
+    is_rp2 = PROFILE_SPECS[profile_id]["port"] == "rp2"
     observation_keys = {
         "observed_att_mtu",
         "observed_window",
@@ -14273,7 +14502,9 @@ def _validate_qualification_observation(
         )
     transport = {
         "observed_att_mtu": QUALIFICATION_WORKLOAD["required_att_mtu"],
-        "observed_window": QUALIFICATION_WORKLOAD["required_put_window"],
+        "observed_window": (
+            4 if is_rp2 else QUALIFICATION_WORKLOAD["required_put_window"]
+        ),
         "observed_chunk_bytes": QUALIFICATION_WORKLOAD["required_chunk_bytes"],
     }
     for key, expected in transport.items():
@@ -14317,6 +14548,7 @@ def _validate_qualification_observation(
             _validate_heap_snapshot(
                 snapshot,
                 "OI-1 %s[%d]" % (key, index),
+                rp2=is_rp2,
             )
             for index, snapshot in enumerate(samples)
         )
@@ -14324,18 +14556,24 @@ def _validate_qualification_observation(
         _validate_heap_snapshot(
             observation["heap_post_reliability"],
             "OI-1 heap_post_reliability",
+            rp2=is_rp2,
         )
     )
     heap_thresholds = {
         "gc_free_bytes": "gc_free_min_bytes",
-        "idf_internal_free_bytes": "idf_internal_free_min_bytes",
-        "idf_internal_largest_block_bytes": (
-            "idf_internal_largest_block_min_bytes"
-        ),
-        "idf_internal_minimum_free_bytes": (
-            "idf_internal_minimum_free_min_bytes"
-        ),
     }
+    if not is_rp2:
+        heap_thresholds.update(
+            {
+                "idf_internal_free_bytes": "idf_internal_free_min_bytes",
+                "idf_internal_largest_block_bytes": (
+                    "idf_internal_largest_block_min_bytes"
+                ),
+                "idf_internal_minimum_free_bytes": (
+                    "idf_internal_minimum_free_min_bytes"
+                ),
+            }
+        )
     _require(
         len(heap_groups)
         == (
@@ -14485,6 +14723,28 @@ def _validate_baseline_build(
     value: Any,
     profile_id: str,
 ) -> dict[str, int]:
+    if PROFILE_SPECS[profile_id]["port"] == "rp2":
+        build = _exact_keys(
+            value,
+            {
+                "firmware_bin_bytes",
+                "firmware_image_limit_bytes",
+                "firmware_image_headroom_bytes",
+            },
+            "OI-1 baseline build for %s" % profile_id,
+        )
+        for key in build:
+            _qualification_integer(
+                build[key],
+                "OI-1 baseline %s build %s" % (profile_id, key),
+            )
+        _require(
+            build["firmware_image_limit_bytes"] == RP2_IMAGE_LIMIT_BYTES
+            and build["firmware_image_headroom_bytes"]
+            == build["firmware_image_limit_bytes"] - build["firmware_bin_bytes"],
+            "OI-1 baseline RP2 headroom arithmetic failed for %s" % profile_id,
+        )
+        return build
     build = _exact_keys(
         value,
         {
@@ -14512,7 +14772,7 @@ def _derived_qualification_thresholds(
     build: dict[str, int],
     observation: dict[str, Any],
     *,
-    firmware_version: str,
+    firmware_version: str = "0.4.2",
 ) -> dict[str, int]:
     heap_samples = (
         observation["heap_post_hello"]
@@ -14547,24 +14807,24 @@ def _derived_qualification_thresholds(
         else ((reset_max + 9) // 10) * 10
     )
 
+    image_thresholds = (
+        {
+            "firmware_bin_max_bytes": build["firmware_bin_bytes"],
+            "firmware_image_headroom_min_bytes": build[
+                "firmware_image_headroom_bytes"
+            ],
+        }
+        if "firmware_bin_bytes" in build
+        else {
+            "application_image_max_bytes": build["application_image_bytes"],
+            "application_headroom_min_bytes": build[
+                "application_headroom_bytes"
+            ],
+        }
+    )
     derived = {
-        "application_image_max_bytes": build["application_image_bytes"],
-        "application_headroom_min_bytes": build[
-            "application_headroom_bytes"
-        ],
+        **image_thresholds,
         "gc_free_min_bytes": floor_min("gc_free_bytes", 1024),
-        "idf_internal_free_min_bytes": floor_min(
-            "idf_internal_free_bytes",
-            1024,
-        ),
-        "idf_internal_largest_block_min_bytes": floor_min(
-            "idf_internal_largest_block_bytes",
-            1024,
-        ),
-        "idf_internal_minimum_free_min_bytes": floor_min(
-            "idf_internal_minimum_free_bytes",
-            1024,
-        ),
         "reset_to_service_advertisement_max_ms": reset_threshold,
         "put_committed_goodput_min_bytes_per_second": (
             put_min // 100
@@ -14575,6 +14835,20 @@ def _derived_qualification_thresholds(
         )
         * 100,
     }
+    if "firmware_bin_bytes" not in build:
+        derived.update(
+            {
+                "idf_internal_free_min_bytes": floor_min(
+                    "idf_internal_free_bytes", 1024
+                ),
+                "idf_internal_largest_block_min_bytes": floor_min(
+                    "idf_internal_largest_block_bytes", 1024
+                ),
+                "idf_internal_minimum_free_min_bytes": floor_min(
+                    "idf_internal_minimum_free_bytes", 1024
+                ),
+            }
+        )
     for key, value in derived.items():
         _qualification_integer(
             value,
@@ -14591,6 +14865,12 @@ def _validate_qualification_baseline(
     *,
     firmware_version: str | None = None,
 ) -> dict[str, Any]:
+    profile_order = (
+        _release_profile_order_for_version(firmware_version)
+        if firmware_version is not None
+        else tuple(policy["profile_order"])
+    )
+    schema_version = 2 if tuple(profile_order) == V060_RELEASE_PROFILE_ORDER else 1
     baseline = _exact_keys(
         value,
         {
@@ -14606,11 +14886,16 @@ def _validate_qualification_baseline(
     )
     _require(
         type(baseline["schema_version"]) is int
-        and baseline["schema_version"] == 1,
-        "OI-1 baseline schema_version must be 1",
+        and baseline["schema_version"] == schema_version,
+        "OI-1 baseline schema_version does not match the source era",
     )
     _require(
-        baseline["measurement_contract"] == "oi1-pre-v1-v1",
+        baseline["measurement_contract"]
+        == (
+            "oi1-five-profile-v1"
+            if schema_version == 2
+            else "oi1-pre-v1-v1"
+        ),
         "OI-1 baseline measurement contract changed",
     )
     _require(
@@ -14647,11 +14932,6 @@ def _validate_qualification_baseline(
         and UTC_RE.fullmatch(baseline["created_at"]) is not None,
         "OI-1 baseline created_at must be UTC RFC3339",
     )
-    profile_order = (
-        _release_profile_order_for_version(firmware_version)
-        if firmware_version is not None
-        else tuple(policy["profile_order"])
-    )
     _require(
         baseline["profile_order"] == list(profile_order),
         "OI-1 baseline profile order must match the source-era release order",
@@ -14672,30 +14952,44 @@ def _validate_qualification_baseline(
         entry["profile_id"]: entry for entry in policy["profiles"]
     }
     for profile_id, raw_profile in zip(profile_order, profiles):
+        spec = PROFILE_SPECS[profile_id]
+        is_rp2 = spec["port"] == "rp2"
+        profile_keys = {
+            "profile_id",
+            "target",
+            "board_manufacturer",
+            "board_model",
+            "module_marking",
+            "device_flash_capacity_bytes",
+            "device_psram_capacity_bytes",
+            "environment",
+            "oi1_build",
+            "oi1_observation",
+        }
+        if schema_version == 2:
+            profile_keys.add("resource_kind")
+            profile_keys.update(
+                {"install_sha256", "resource_image_sha256"}
+                if is_rp2
+                else {"install_sha256", "manifest_sha256"}
+            )
+        else:
+            profile_keys.update({"firmware_sha256", "manifest_sha256"})
         profile = _exact_keys(
             raw_profile,
-            {
-                "profile_id",
-                "target",
-                "board_manufacturer",
-                "board_model",
-                "module_marking",
-                "device_flash_capacity_bytes",
-                "device_psram_capacity_bytes",
-                "firmware_sha256",
-                "manifest_sha256",
-                "environment",
-                "oi1_build",
-                "oi1_observation",
-            },
+            profile_keys,
             "OI-1 baseline profile %s" % profile_id,
         )
-        spec = PROFILE_SPECS[profile_id]
         _require(
             profile["profile_id"] == profile_id
             and profile["target"] == spec["target"],
             "OI-1 baseline profile identity mismatch for %s" % profile_id,
         )
+        if schema_version == 2:
+            _require(
+                profile["resource_kind"] == ("rp2" if is_rp2 else "esp-idf"),
+                "OI-1 baseline resource kind mismatch for %s" % profile_id,
+            )
         for field in (
             "board_manufacturer",
             "board_model",
@@ -14715,7 +15009,16 @@ def _validate_qualification_baseline(
             == spec["psram"]["size_bytes"],
             "OI-1 baseline physical topology mismatch for %s" % profile_id,
         )
-        for field in ("firmware_sha256", "manifest_sha256"):
+        digest_fields = (
+            (
+                ("install_sha256", "resource_image_sha256")
+                if is_rp2
+                else ("install_sha256", "manifest_sha256")
+            )
+            if schema_version == 2
+            else ("firmware_sha256", "manifest_sha256")
+        )
+        for field in digest_fields:
             _require(
                 isinstance(profile[field], str)
                 and SHA256_RE.fullmatch(profile[field]) is not None,
@@ -14772,7 +15075,7 @@ def _parse_hil_report(text: str) -> dict[str, Any]:
     )
     marker_version, encoded_payload = matches[0]
     marker_match = match_objects[0]
-    if marker_version in ("3", "4"):
+    if marker_version in ("3", "4", "5"):
         _require(
             text[: marker_match.start()] == HIL_REPORT_SHELL_PREFIX
             and text[marker_match.end() :] == HIL_REPORT_SHELL_SUFFIX,
@@ -14792,6 +15095,14 @@ def _parse_hil_report(text: str) -> dict[str, Any]:
     }
     if marker_version in ("3", "4"):
         expected_keys.add("waveshare_lcd147b_qualification")
+    elif marker_version == "5":
+        expected_keys.update(
+            {
+                "waveshare_lcd147b_qualification",
+                "esp32_c3_qualification",
+                "rpi_pico2_w_qualification",
+            }
+        )
     payload = _exact_keys(
         payload,
         expected_keys,
@@ -14820,7 +15131,7 @@ def _validate_hil_source_era(
     payload: dict[str, Any],
     firmware_version: str,
 ) -> dict[str, Any]:
-    """Keep retained V2 releases exact and admit V4 only from v0.5.0."""
+    """Require the exact HIL envelope selected by the firmware source era."""
 
     base_keys = {
         "schema_version",
@@ -14829,10 +15140,18 @@ def _validate_hil_source_era(
         "qualification_policy",
         "records",
     }
-    capable = _waveshare_lcd147b_capable_version(firmware_version)
     expected_keys = set(base_keys)
-    if capable:
+    schema_version = _hil_schema_version_for_version(firmware_version)
+    if schema_version == 4:
         expected_keys.add("waveshare_lcd147b_qualification")
+    elif schema_version == 5:
+        expected_keys.update(
+            {
+                "waveshare_lcd147b_qualification",
+                "esp32_c3_qualification",
+                "rpi_pico2_w_qualification",
+            }
+        )
     _exact_keys(payload, expected_keys, "source-era HIL records")
     _require(
         type(payload["schema_version"]) is int
@@ -14867,7 +15186,7 @@ def _render_hil_report_payload(text: str, payload: dict[str, Any]) -> bytes:
     matches = list(HIL_MARKER_RE.finditer(text))
     _require(len(matches) == 1, "HIL report marker cannot be rewritten exactly")
     schema_version = payload.get("schema_version")
-    _require(schema_version in (2, 4), "HIL report schema cannot be rendered")
+    _require(schema_version in (2, 4, 5), "HIL report schema cannot be rendered")
     marker = (
         "<!-- PYBLE_HIL_RECORDS_V%d\n" % schema_version
         + json.dumps(payload, indent=2, sort_keys=False)
@@ -14888,6 +15207,7 @@ def _validate_hil(
     public: bool,
     *,
     repo_root: Path,
+    allow_unfinalized_gate_summaries: bool = False,
 ) -> dict[str, Any]:
     payload = _parse_hil_report(
         report_path.read_text(encoding="utf-8", errors="strict")
@@ -14975,6 +15295,186 @@ def _validate_hil(
     for record in records:
         profile_id = record["profile_id"]
         profile = profile_by_id[profile_id]
+        if payload["schema_version"] == 5:
+            spec = PROFILE_SPECS[profile_id]
+            is_rp2 = spec["port"] == "rp2"
+            v5_required = {
+                "profile_id",
+                "target",
+                "resource_kind",
+                "provisioning_kind",
+                "status",
+                "board_manufacturer",
+                "board_model",
+                "module_marking",
+                "device_flash_capacity_bytes",
+                "device_psram_capacity_bytes",
+                "firmware_version",
+                "tag",
+                "source_commit",
+                "install_sha256",
+                "tested_at",
+                "operator",
+                "maintainer_signoff",
+                "desktop_os",
+                "chromium_version",
+                "ble_backend",
+                "ble_adapter",
+                "python_version",
+                "checks",
+                "app_hil",
+                "profile_gate_summary",
+                "oi1_policy",
+                "oi1_build",
+                "oi1_observation",
+                "redacted_console_log",
+            }
+            if not is_rp2:
+                v5_required.add("manifest_sha256")
+            _exact_keys(record, v5_required, "HIL %s" % profile_id)
+            _require(
+                record["target"] == spec["target"]
+                and record["resource_kind"] == ("rp2" if is_rp2 else "esp-idf")
+                and record["provisioning_kind"]
+                == ("verified-uf2-bootsel" if is_rp2 else "esp-web-serial"),
+                "HIL target/provisioning identity mismatch for %s" % profile_id,
+            )
+            _require(
+                record["status"] == profile["hil_status"]
+                and record["firmware_version"] == identity["version"]
+                and record["tag"] == identity["tag"]
+                and record["source_commit"] == identity["_source_commit"],
+                "HIL release identity mismatch for %s" % profile_id,
+            )
+            _require(
+                record["install_sha256"] == profile["install"]["sha256"],
+                "HIL install hash mismatch for %s" % profile_id,
+            )
+            if not is_rp2:
+                _require(
+                    record["manifest_sha256"] == profile["manifest"]["sha256"],
+                    "HIL manifest hash mismatch for %s" % profile_id,
+                )
+            policy_entry = policy_by_id[profile_id]
+            _require(
+                record["oi1_policy"] == policy_entry,
+                "HIL OI-1 policy binding mismatch for %s" % profile_id,
+            )
+            _validate_qualification_build(
+                record["oi1_build"],
+                _qualification_build_measurement(Path(bundle), profile_id),
+                policy_entry["thresholds"],
+                profile_id,
+            )
+            v5_checks = {
+                "provisioning_install",
+                "provisioning_recovery",
+                "advertising_info_hello",
+                "pble_workflow",
+                "safe_boot_reconnect",
+                "filesystem_resume_reliability",
+                "footprint_reliability",
+            }
+            checks = _exact_keys(
+                record["checks"], v5_checks, "HIL %s checks" % profile_id
+            )
+            app_hil = _exact_keys(
+                record["app_hil"], {"ipad", "android"}, "HIL %s app_hil" % profile_id
+            )
+            text_fields = (
+                "board_manufacturer",
+                "board_model",
+                "module_marking",
+                "tested_at",
+                "operator",
+                "maintainer_signoff",
+                "desktop_os",
+                "chromium_version",
+                "ble_backend",
+                "ble_adapter",
+                "python_version",
+                "redacted_console_log",
+            )
+            if public:
+                _require(
+                    record["status"] == "passed"
+                    and record["device_flash_capacity_bytes"]
+                    == spec["flash_size_bytes"]
+                    and record["device_psram_capacity_bytes"]
+                    == spec["psram"]["size_bytes"]
+                    and all(value == "passed" for value in checks.values()),
+                    "public HIL result is incomplete for %s" % profile_id,
+                )
+                for field in text_fields:
+                    _require(
+                        isinstance(record[field], str)
+                        and bool(record[field].strip())
+                        and PLACEHOLDER_RE.fullmatch(record[field].strip()) is None,
+                        "public HIL %s field %s is missing" % (profile_id, field),
+                    )
+                _require(
+                    UTC_RE.fullmatch(record["tested_at"]) is not None,
+                    "public HIL tested_at is not UTC RFC3339",
+                )
+                for platform_name in ("ipad", "android"):
+                    platform_result = _exact_keys(
+                        app_hil[platform_name],
+                        {"app_version", "app_build", "os_major", "status"},
+                        "HIL %s %s app result" % (profile_id, platform_name),
+                    )
+                    _require(
+                        platform_result["status"] == "passed"
+                        and all(
+                            isinstance(platform_result[key], str)
+                            and bool(platform_result[key].strip())
+                            for key in ("app_version", "app_build", "os_major")
+                        ),
+                        "HIL %s %s app result is incomplete"
+                        % (profile_id, platform_name),
+                    )
+                _validate_qualification_observation(
+                    record["oi1_observation"],
+                    policy_entry["thresholds"],
+                    profile_id,
+                    firmware_version=identity["version"],
+                )
+                expected_gates = (
+                    tuple("C3-G%d" % index for index in range(7))
+                    if profile_id == "esp32-c3-4mb"
+                    else (
+                        ("GP0", "GP1", "GP2")
+                        if profile_id == "rpi-pico2-w"
+                        else ()
+                    )
+                )
+                if expected_gates and not allow_unfinalized_gate_summaries:
+                    gate_summary = _exact_keys(
+                        record["profile_gate_summary"],
+                        set(expected_gates),
+                        "HIL %s profile gates" % profile_id,
+                    )
+                    _require(
+                        all(gate_summary[key] == "passed" for key in expected_gates),
+                        "HIL profile gates are incomplete for %s" % profile_id,
+                    )
+                else:
+                    _require(
+                        record["profile_gate_summary"] is None,
+                        "HIL profile gate summary is not in its expected phase",
+                    )
+            else:
+                _require(
+                    record["status"] == "pending"
+                    and record["device_flash_capacity_bytes"] == 0
+                    and record["device_psram_capacity_bytes"] == 0
+                    and all(record[field] == "" for field in text_fields)
+                    and all(value == "pending" for value in checks.values())
+                    and app_hil == {"ipad": None, "android": None}
+                    and record["profile_gate_summary"] is None
+                    and record["oi1_observation"] is None,
+                    "candidate HIL fields must remain pending for %s" % profile_id,
+                )
+            continue
         _exact_keys(record, required, "HIL %s" % profile_id)
         _require(record["status"] == profile["hil_status"], "HIL status disagreement")
         _require(
@@ -15093,6 +15593,23 @@ def _validate_hil(
                 record["oi1_observation"] is None,
                 "candidate HIL OI-1 observation must remain null",
             )
+    if payload["schema_version"] == 5:
+        summaries = (
+            payload["waveshare_lcd147b_qualification"],
+            payload["esp32_c3_qualification"],
+            payload["rpi_pico2_w_qualification"],
+        )
+        if not public or allow_unfinalized_gate_summaries:
+            _require(
+                all(summary is None for summary in summaries),
+                "V5 qualification summaries must remain null before finalization",
+            )
+        else:
+            _require(
+                all(isinstance(summary, dict) for summary in summaries),
+                "public V5 qualification summaries are incomplete",
+            )
+        return payload
     if _waveshare_lcd147b_capable_version(identity["version"]):
         summary = payload["waveshare_lcd147b_qualification"]
         if public:
@@ -15581,6 +16098,7 @@ def _candidate_hil_report(
     qualification_policy_sha256: str,
     bundle: Path,
 ) -> str:
+    hil_schema_version = _hil_schema_version_for_version(version)
     policy_by_id = {
         entry["profile_id"]: entry
         for entry in qualification_policy["profiles"]
@@ -15588,6 +16106,56 @@ def _candidate_hil_report(
     records = []
     for profile in profile_records:
         profile_id = profile["id"]
+        spec = PROFILE_SPECS[profile_id]
+        if hil_schema_version == 5:
+            is_rp2 = spec["port"] == "rp2"
+            record = {
+                "profile_id": profile_id,
+                "target": spec["target"],
+                "resource_kind": "rp2" if is_rp2 else "esp-idf",
+                "provisioning_kind": (
+                    "verified-uf2-bootsel" if is_rp2 else "esp-web-serial"
+                ),
+                "status": "pending",
+                "board_manufacturer": "",
+                "board_model": "",
+                "module_marking": "",
+                "device_flash_capacity_bytes": 0,
+                "device_psram_capacity_bytes": 0,
+                "firmware_version": version,
+                "tag": "firmware-v%s" % version,
+                "source_commit": provenance["pyble"]["commit"],
+                "install_sha256": profile["install"]["sha256"],
+                "tested_at": "",
+                "operator": "",
+                "maintainer_signoff": "",
+                "desktop_os": "",
+                "chromium_version": "",
+                "ble_backend": "",
+                "ble_adapter": "",
+                "python_version": "",
+                "checks": {
+                    "provisioning_install": "pending",
+                    "provisioning_recovery": "pending",
+                    "advertising_info_hello": "pending",
+                    "pble_workflow": "pending",
+                    "safe_boot_reconnect": "pending",
+                    "filesystem_resume_reliability": "pending",
+                    "footprint_reliability": "pending",
+                },
+                "app_hil": {"ipad": None, "android": None},
+                "profile_gate_summary": None,
+                "oi1_policy": copy.deepcopy(policy_by_id[profile_id]),
+                "oi1_build": _qualification_build_measurement(
+                    Path(bundle), profile_id
+                ),
+                "oi1_observation": None,
+                "redacted_console_log": "",
+            }
+            if not is_rp2:
+                record["manifest_sha256"] = profile["manifest"]["sha256"]
+            records.append(record)
+            continue
         records.append(
             {
                 "profile_id": profile_id,
@@ -15628,8 +16196,6 @@ def _candidate_hil_report(
                 "redacted_console_log": "",
             }
         )
-    capable = _waveshare_lcd147b_capable_version(version)
-    hil_schema_version = _hil_schema_version_for_version(version)
     payload = {
         "schema_version": hil_schema_version,
         "candidate_release_json_sha256": "",
@@ -15637,8 +16203,16 @@ def _candidate_hil_report(
         "qualification_policy": copy.deepcopy(qualification_policy),
         "records": records,
     }
-    if capable:
+    if hil_schema_version == 4:
         payload["waveshare_lcd147b_qualification"] = None
+    elif hil_schema_version == 5:
+        payload.update(
+            {
+                "waveshare_lcd147b_qualification": None,
+                "esp32_c3_qualification": None,
+                "rpi_pico2_w_qualification": None,
+            }
+        )
     return (
         HIL_REPORT_SHELL_PREFIX
         + "<!-- PYBLE_HIL_RECORDS_V%d\n" % payload["schema_version"]
@@ -15965,6 +16539,27 @@ def _validate_staged_baseline_inputs(
     for profile_id in profile_order:
         target = PROFILE_SPECS[profile_id]["target"]
         expected[profile_id] = ("directory",)
+        if PROFILE_SPECS[profile_id]["port"] == "rp2":
+            for output_name, source_name in (
+                ("firmware.uf2", "install"),
+                ("firmware.bin", "resource-image"),
+            ):
+                source_record = source_snapshot.get(
+                    "build/%s/%s" % (target, source_name)
+                )
+                _require(
+                    isinstance(source_record, tuple)
+                    and len(source_record) == 2
+                    and isinstance(source_record[0], int)
+                    and isinstance(source_record[1], str),
+                    "baseline RP2 source snapshot is incomplete",
+                )
+                expected["%s/%s" % (profile_id, output_name)] = (
+                    "file",
+                    source_record[0],
+                    source_record[1],
+                )
+            continue
         manifest_bytes = (
             json.dumps(
                 _manifest(version, profile_id),
@@ -16101,15 +16696,17 @@ def create_baseline_inputs(
         builds_root,
         reproducibility_root,
         repo_root=root,
+        firmware_version=version,
     )
-    validated = {
-        target: validate_build(
-            target,
-            builds_root / target,
-            repo_root=root,
+    validated: dict[str, dict[str, Any]] = {}
+    for profile_id in profile_order:
+        spec = PROFILE_SPECS[profile_id]
+        target = spec["target"]
+        validated[target] = (
+            validate_rp2_build(target, builds_root / target, repo_root=root)
+            if spec["port"] == "rp2"
+            else validate_build(target, builds_root / target, repo_root=root)
         )
-        for target in TARGET_TO_PROFILE
-    }
     _require_one_build_source_identity(list(validated.values()))
     creation_snapshot = _baseline_creation_snapshot(root, validated)
 
@@ -16120,28 +16717,37 @@ def create_baseline_inputs(
     try:
         for profile_id in profile_order:
             target = PROFILE_SPECS[profile_id]["target"]
-            _stage_profile_artifacts(
-                profile_dir=staging / profile_id,
-                source_paths=validated[target]["paths"],
-                version=version,
-                profile_id=profile_id,
-                include_bootloader=False,
-                private=True,
-            )
+            if PROFILE_SPECS[profile_id]["port"] == "rp2":
+                _stage_rp2_profile_artifacts(
+                    profile_dir=staging / profile_id,
+                    source_paths=validated[target]["paths"],
+                    private=True,
+                )
+            else:
+                _stage_profile_artifacts(
+                    profile_dir=staging / profile_id,
+                    source_paths=validated[target]["paths"],
+                    version=version,
+                    profile_id=profile_id,
+                    include_bootloader=False,
+                    private=True,
+                )
 
         compare_build_roots(
             builds_root,
             reproducibility_root,
             repo_root=root,
+            firmware_version=version,
         )
-        revalidated = {
-            target: validate_build(
-                target,
-                builds_root / target,
-                repo_root=root,
+        revalidated: dict[str, dict[str, Any]] = {}
+        for profile_id in profile_order:
+            spec = PROFILE_SPECS[profile_id]
+            target = spec["target"]
+            revalidated[target] = (
+                validate_rp2_build(target, builds_root / target, repo_root=root)
+                if spec["port"] == "rp2"
+                else validate_build(target, builds_root / target, repo_root=root)
             )
-            for target in TARGET_TO_PROFILE
-        }
         _require_one_build_source_identity(list(revalidated.values()))
         _require(
             _baseline_creation_snapshot(root, revalidated)
@@ -16176,10 +16782,6 @@ def assemble_oi1_baseline(
     inputs = Path(baseline_inputs_dir)
     fragments = [Path(path) for path in profile_fragment_paths]
     _require(
-        len(fragments) == len(RELEASE_PROFILE_ORDER),
-        "OI-1 baseline assembly requires exactly two profile fragments",
-    )
-    _require(
         isinstance(created_at, str) and UTC_RE.fullmatch(created_at) is not None,
         "OI-1 baseline created_at must be UTC RFC3339",
     )
@@ -16198,20 +16800,28 @@ def assemble_oi1_baseline(
         "OI-1 proof checkout HEAD must be full lowercase 40-hex",
     )
     firmware_version = _read_lock(root)["pyble"]["agent_version"]
+    profile_order = _release_profile_order_for_version(firmware_version)
+    _require_source_era_evidence_count(
+        fragments,
+        firmware_version,
+        "OI-1 baseline fragments",
+    )
     input_snapshot = _release_tree_snapshot(inputs, "OI-1 baseline inputs")
-    expected_inputs = {
-        profile_id
-        for profile_id in RELEASE_PROFILE_ORDER
-    } | {
-        "%s/%s" % (profile_id, filename)
-        for profile_id in RELEASE_PROFILE_ORDER
-        for filename in (
-            "manifest.json",
-            "firmware.bin",
-            "application.bin",
-            "partition-table.bin",
+    expected_inputs = set(profile_order)
+    for profile_id in profile_order:
+        filenames = (
+            ("firmware.uf2", "firmware.bin")
+            if PROFILE_SPECS[profile_id]["port"] == "rp2"
+            else (
+                "manifest.json",
+                "firmware.bin",
+                "application.bin",
+                "partition-table.bin",
+            )
         )
-    }
+        expected_inputs.update(
+            "%s/%s" % (profile_id, filename) for filename in filenames
+        )
     _require(
         set(input_snapshot) == expected_inputs,
         "OI-1 baseline input tree layout is not exact",
@@ -16229,7 +16839,7 @@ def assemble_oi1_baseline(
         )
         profile_id = fragment.get("profile_id")
         _require(
-            profile_id in RELEASE_PROFILE_ORDER,
+            profile_id in profile_order,
             "OI-1 baseline fragment has an unknown profile",
         )
         _require(
@@ -16238,46 +16848,88 @@ def assemble_oi1_baseline(
         )
         fragment_by_id[profile_id] = fragment
     _require(
-        set(fragment_by_id) == set(RELEASE_PROFILE_ORDER),
+        set(fragment_by_id) == set(profile_order),
         "OI-1 baseline fragments do not cover the exact profile set",
     )
 
     policy_profiles: list[dict[str, Any]] = []
     baseline_profiles: list[dict[str, Any]] = []
-    for profile_id in RELEASE_PROFILE_ORDER:
+    policy_schema_version = _qualification_policy_schema_version_for_version(
+        firmware_version
+    )
+    baseline_schema_version = 2 if policy_schema_version == 3 else 1
+    for profile_id in profile_order:
         profile = fragment_by_id[profile_id]
         profile_dir = inputs / profile_id
-        expected_manifest_bytes = (
-            json.dumps(
-                _manifest(firmware_version, profile_id),
-                indent=2,
-                sort_keys=False,
+        spec = PROFILE_SPECS[profile_id]
+        is_rp2 = spec["port"] == "rp2"
+        if is_rp2:
+            install_bytes = _read_regular_file_bytes(
+                profile_dir / "firmware.uf2",
+                "OI-1 %s staged UF2" % profile_id,
             )
-            + "\n"
-        ).encode("utf-8")
-        manifest_bytes = _read_regular_file_bytes(
-            profile_dir / "manifest.json",
-            "OI-1 %s staged manifest" % profile_id,
+            resource_bytes = _read_regular_file_bytes(
+                profile_dir / "firmware.bin",
+                "OI-1 %s staged resource image" % profile_id,
+            )
+            _require(
+                profile.get("target") == spec["target"]
+                and profile.get("resource_kind") == "rp2",
+                "OI-1 baseline RP2 identity mismatch for %s" % profile_id,
+            )
+            _require(
+                profile.get("install_sha256") == _sha256_bytes(install_bytes)
+                and profile.get("resource_image_sha256")
+                == _sha256_bytes(resource_bytes),
+                "OI-1 baseline RP2 hashes do not match staged bytes for %s"
+                % profile_id,
+            )
+        else:
+            if policy_schema_version == 3:
+                _require(
+                    profile.get("target") == spec["target"]
+                    and profile.get("resource_kind") == "esp-idf",
+                    "OI-1 baseline ESP identity mismatch for %s" % profile_id,
+                )
+        expected_manifest_bytes = (
+            b""
+            if is_rp2
+            else (
+                json.dumps(
+                    _manifest(firmware_version, profile_id),
+                    indent=2,
+                    sort_keys=False,
+                )
+                + "\n"
+            ).encode("utf-8")
         )
-        firmware_bytes = _read_regular_file_bytes(
-            profile_dir / "firmware.bin",
-            "OI-1 %s staged firmware" % profile_id,
-        )
-        _require(
-            manifest_bytes == expected_manifest_bytes,
-            "OI-1 staged manifest differs from the production generator for %s"
-            % profile_id,
-        )
-        _require(
-            profile.get("manifest_sha256") == _sha256_bytes(manifest_bytes),
-            "OI-1 baseline manifest hash does not match staged bytes for %s"
-            % profile_id,
-        )
-        _require(
-            profile.get("firmware_sha256") == _sha256_bytes(firmware_bytes),
-            "OI-1 baseline firmware hash does not match staged bytes for %s"
-            % profile_id,
-        )
+        if not is_rp2:
+            manifest_bytes = _read_regular_file_bytes(
+                profile_dir / "manifest.json",
+                "OI-1 %s staged manifest" % profile_id,
+            )
+            firmware_bytes = _read_regular_file_bytes(
+                profile_dir / "firmware.bin",
+                "OI-1 %s staged firmware" % profile_id,
+            )
+            _require(
+                manifest_bytes == expected_manifest_bytes,
+                "OI-1 staged manifest differs from the production generator for %s"
+                % profile_id,
+            )
+            expected_install_field = (
+                "install_sha256" if policy_schema_version == 3 else "firmware_sha256"
+            )
+            _require(
+                profile.get("manifest_sha256") == _sha256_bytes(manifest_bytes),
+                "OI-1 baseline manifest hash does not match staged bytes for %s"
+                % profile_id,
+            )
+            _require(
+                profile.get(expected_install_field) == _sha256_bytes(firmware_bytes),
+                "OI-1 baseline firmware hash does not match staged bytes for %s"
+                % profile_id,
+            )
         build = _validate_baseline_build(
             profile.get("oi1_build"),
             profile_id,
@@ -16291,26 +16943,49 @@ def assemble_oi1_baseline(
             profile.get("oi1_observation"),
             None,
             profile_id,
+            firmware_version=firmware_version,
         )
         policy_profiles.append(
-            {
+            ({
                 "profile_id": profile_id,
-                "target": PROFILE_SPECS[profile_id]["target"],
+                "target": spec["target"],
+                "resource_kind": "rp2" if is_rp2 else "esp-idf",
+                "transport": {
+                    "required_att_mtu": 247,
+                    "required_put_window": 4 if is_rp2 else 8,
+                    "required_chunk_bytes": 229,
+                    "link_facts_kind": (
+                        "btstack-observed-v1" if is_rp2 else "nimble-settled-v1"
+                    ),
+                },
                 "thresholds": _derived_qualification_thresholds(
                     build,
                     observation,
+                    firmware_version=firmware_version,
                 ),
-            }
+            } if policy_schema_version == 3 else {
+                "profile_id": profile_id,
+                "target": spec["target"],
+                "thresholds": _derived_qualification_thresholds(
+                    build,
+                    observation,
+                    firmware_version=firmware_version,
+                ),
+            })
         )
         baseline_profiles.append(copy.deepcopy(profile))
 
     baseline = {
-        "schema_version": 1,
-        "measurement_contract": "oi1-pre-v1-v1",
+        "schema_version": baseline_schema_version,
+        "measurement_contract": (
+            "oi1-five-profile-v1"
+            if baseline_schema_version == 2
+            else "oi1-pre-v1-v1"
+        ),
         "source_commit": source_commit,
         "firmware_version": firmware_version,
         "created_at": created_at,
-        "profile_order": list(RELEASE_PROFILE_ORDER),
+        "profile_order": list(profile_order),
         "profiles": baseline_profiles,
     }
     baseline_relative = (
@@ -16319,25 +16994,38 @@ def assemble_oi1_baseline(
     baseline_path = root / baseline_relative
     baseline_bytes = _canonical_json_bytes(baseline)
     policy = {
-        "schema_version": 1,
-        "qualification_scope": "pre-v1",
-        "profile_order": list(RELEASE_PROFILE_ORDER),
-        "deferred_profiles": ["esp32-c3-4mb"],
-        "workload": copy.deepcopy(QUALIFICATION_WORKLOAD),
-        "derivation": copy.deepcopy(QUALIFICATION_DERIVATION),
+        "schema_version": policy_schema_version,
+        "qualification_scope": (
+            "v0.6.0-five-profile" if policy_schema_version == 3 else "pre-v1"
+        ),
+        "profile_order": list(profile_order),
+        "workload": {
+            key: copy.deepcopy(value)
+            for key, value in QUALIFICATION_WORKLOAD.items()
+            if policy_schema_version != 3 or key != "required_put_window"
+        },
+        "derivation": copy.deepcopy(
+            _qualification_derivation_for_version(firmware_version)
+        ),
         "baseline_evidence": {
             "path": baseline_relative,
             "sha256": _sha256_bytes(baseline_bytes),
         },
         "profiles": policy_profiles,
     }
+    if policy_schema_version in (1, 2):
+        policy["deferred_profiles"] = ["esp32-c3-4mb"]
     policy_bytes = _canonical_json_bytes(policy)
     _validate_qualification_baseline(
         baseline,
         source_commit,
         policy,
+        firmware_version=firmware_version,
     )
-    _validate_qualification_policy(policy)
+    _validate_qualification_policy(
+        policy,
+        firmware_version=firmware_version,
+    )
 
     policy_path = root / QUALIFICATION_POLICY_RELATIVE
     try:
@@ -16366,6 +17054,8 @@ def assemble_oi1_baseline(
     baseline_staging: Path | None = None
     policy_staging: Path | None = None
     try:
+        baseline_path.parent.mkdir(parents=True, exist_ok=True)
+        policy_path.parent.mkdir(parents=True, exist_ok=True)
         baseline_staging = _stage_regular_file_bytes(
             baseline_path,
             baseline_bytes,
@@ -16445,10 +17135,15 @@ def create_bundle(
     reproducibility_root = Path(reproducibility_build_root)
     validation_root = root if (root / ".git").exists() else None
     _require_distinct_build_roots(builds_root, reproducibility_root)
+    _require_frozen_release_lock(root)
+    lock = _read_lock(root)
+    version = lock["pyble"]["agent_version"]
+    profile_order = _release_profile_order_for_version(version)
     compare_build_roots(
         builds_root,
         reproducibility_root,
         repo_root=validation_root,
+        firmware_version=version,
     )
     output = Path(output_dir)
     try:
@@ -16461,28 +17156,41 @@ def create_bundle(
         ) from exc
     else:
         raise ReleaseError("immutable release output already exists: %s" % output)
-    _require_frozen_release_lock(root)
-    lock = _read_lock(root)
-    version = lock["pyble"]["agent_version"]
-    profile_order = _release_profile_order_for_version(version)
     checked_provenance = _validate_create_provenance(root, provenance, lock)
-    validated = {
-        target: validate_build(
-            target,
-            builds_root / target,
-            repo_root=validation_root,
+    validated: dict[str, dict[str, Any]] = {}
+    for profile_id in profile_order:
+        spec = PROFILE_SPECS[profile_id]
+        target = spec["target"]
+        validated[target] = (
+            validate_rp2_build(
+                target,
+                builds_root / target,
+                repo_root=validation_root,
+            )
+            if spec["port"] == "rp2"
+            else validate_build(
+                target,
+                builds_root / target,
+                repo_root=validation_root,
+            )
         )
-        for target in TARGET_TO_PROFILE
-    }
     _require_one_build_source_identity(list(validated.values()))
     for target, item in validated.items():
         build_provenance = item["provenance"]
-        _require(
-            build_provenance["pyble"]["commit"] == checked_provenance["pyble"]["commit"]
+        same_source = (
+            build_provenance["pyble"]["commit"]
+            == checked_provenance["pyble"]["commit"]
             and build_provenance["micropython"]["commit"]
             == checked_provenance["micropython"]["commit"]
-            and build_provenance["esp_idf"]["commit"]
-            == checked_provenance["esp_idf"]["commit"],
+        )
+        if "esp_idf" in build_provenance:
+            same_source = (
+                same_source
+                and build_provenance["esp_idf"]["commit"]
+                == checked_provenance["esp_idf"]["commit"]
+            )
+        _require(
+            same_source,
             "%s build provenance does not match the release source identity" % target,
         )
     creation_snapshot = _release_creation_snapshot(root, validated)
@@ -16538,14 +17246,21 @@ def create_bundle(
     try:
         for profile_id in profile_order:
             target = PROFILE_SPECS[profile_id]["target"]
-            _stage_profile_artifacts(
-                profile_dir=staging / profile_id,
-                source_paths=validated[target]["paths"],
-                version=version,
-                profile_id=profile_id,
-                include_bootloader=True,
-                private=False,
-            )
+            if PROFILE_SPECS[profile_id]["port"] == "rp2":
+                _stage_rp2_profile_artifacts(
+                    profile_dir=staging / profile_id,
+                    source_paths=validated[target]["paths"],
+                    private=False,
+                )
+            else:
+                _stage_profile_artifacts(
+                    profile_dir=staging / profile_id,
+                    source_paths=validated[target]["paths"],
+                    version=version,
+                    profile_id=profile_id,
+                    include_bootloader=True,
+                    private=False,
+                )
 
         _write_json(
             staging / "release.schema.json",
@@ -16562,8 +17277,32 @@ def create_bundle(
         for profile_id in profile_order:
             spec = PROFILE_SPECS[profile_id]
             profile_dir = staging / profile_id
-            profiles.append(
-                {
+            if spec["port"] == "rp2":
+                profiles.append(
+                    {
+                        "id": profile_id,
+                        "target": spec["target"],
+                        "provisioning_kind": "verified-uf2-bootsel",
+                        "board": spec["board"],
+                        "hil_status": "pending",
+                        "install": {
+                            **_artifact(
+                                profile_dir / "firmware.uf2",
+                                "%s/firmware.uf2" % profile_id,
+                            ),
+                            "format": "uf2",
+                        },
+                        "resource_image": {
+                            **_artifact(
+                                profile_dir / "firmware.bin",
+                                "%s/firmware.bin" % profile_id,
+                            ),
+                            "image_limit_bytes": spec["image_limit_bytes"],
+                        },
+                    }
+                )
+                continue
+            profile_record = {
                     "id": profile_id,
                     "chip_family": spec["chip_family"],
                     "silicon_revision": copy.deepcopy(spec["silicon_revision"]),
@@ -16603,7 +17342,14 @@ def create_bundle(
                         )
                     ],
                 }
-            )
+            if _release_metadata_schema_version_for_version(version) == 4:
+                profile_record.update(
+                    {
+                        "target": spec["target"],
+                        "provisioning_kind": "esp-web-serial",
+                    }
+                )
+            profiles.append(profile_record)
 
         (staging / "HIL_REPORT.md").write_text(
             _candidate_hil_report(
@@ -16662,6 +17408,7 @@ def create_bundle(
             builds_root,
             reproducibility_root,
             repo_root=validation_root,
+            firmware_version=version,
         )
         _require(
             _release_creation_snapshot(root, validated) == creation_snapshot,
@@ -16746,11 +17493,16 @@ def _validate_hil_promotion_envelope(
 
 
 def _completed_hil_report(payload: dict[str, Any]) -> bytes:
+    schema_version = payload.get("schema_version")
+    _require(
+        schema_version in (2, 4, 5),
+        "completed HIL payload has an unsupported schema",
+    )
     return (
         "# PyBLE firmware HIL report\n\n"
         "This completed report was mechanically assembled from the immutable "
         "candidate and bounded per-profile evidence.\n\n"
-        "<!-- PYBLE_HIL_RECORDS_V2\n"
+        "<!-- PYBLE_HIL_RECORDS_V%d\n" % schema_version
     ).encode("utf-8") + _canonical_json_bytes(payload).rstrip(b"\n") + b"\n-->\n"
 
 
@@ -16767,10 +17519,6 @@ def assemble_completed_hil_report(
     evidence_paths = [Path(path) for path in profile_evidence_paths]
     output = Path(output_path)
     qualification_root = Path(qualification_repo_root)
-    _require(
-        len(evidence_paths) == len(RELEASE_PROFILE_ORDER),
-        "completed HIL assembly requires exactly two profile evidence files",
-    )
     operator_checks = (
         "browser_erase_install",
         "family_offsets_reset",
@@ -16831,6 +17579,13 @@ def assemble_completed_hil_report(
         public=False,
         qualification_repo_root=qualification_root,
     )
+    firmware_version = release["identity"]["version"]
+    profile_order = _release_profile_order_for_version(firmware_version)
+    _require_source_era_evidence_count(
+        evidence_paths,
+        firmware_version,
+        "completed HIL evidence",
+    )
     _require(
         all(
             profile["hil_status"] == "pending"
@@ -16860,7 +17615,7 @@ def assemble_completed_hil_report(
         )
         profile_id = completion["profile_id"]
         _require(
-            profile_id in RELEASE_PROFILE_ORDER,
+            profile_id in profile_order,
             "HIL completion evidence has an unknown profile",
         )
         _require(
@@ -16869,7 +17624,7 @@ def assemble_completed_hil_report(
         )
         evidence_by_id[profile_id] = completion
     _require(
-        set(evidence_by_id) == set(RELEASE_PROFILE_ORDER),
+        set(evidence_by_id) == set(profile_order),
         "HIL completion evidence does not cover the exact profile set",
     )
 
@@ -16897,6 +17652,7 @@ def assemble_completed_hil_report(
             completion["oi1_observation"],
             policy_by_id[profile_id]["thresholds"],
             profile_id,
+            firmware_version=firmware_version,
         )
 
         record["status"] = "passed"
@@ -16960,6 +17716,8 @@ def finalize_public_bundle(
     license_build_root: Path,
     repo_root: Path,
     waveshare_lcd147b_qualification_result: Path | None = None,
+    esp32_c3_qualification_result: Path | None = None,
+    rpi_pico2_w_qualification_result: Path | None = None,
 ) -> Path:
     """Promote one audited, HIL-qualified candidate without mutating it."""
 
@@ -16972,6 +17730,16 @@ def finalize_public_bundle(
     qualification_result = (
         Path(waveshare_lcd147b_qualification_result)
         if waveshare_lcd147b_qualification_result is not None
+        else None
+    )
+    c3_qualification_result = (
+        Path(esp32_c3_qualification_result)
+        if esp32_c3_qualification_result is not None
+        else None
+    )
+    pico_qualification_result = (
+        Path(rpi_pico2_w_qualification_result)
+        if rpi_pico2_w_qualification_result is not None
         else None
     )
 
@@ -17061,6 +17829,23 @@ def finalize_public_bundle(
     profile_order = _release_profile_order_for_version(firmware_version)
     _validate_hil_source_era(completed_hil, firmware_version)
     _validate_hil_promotion_envelope(candidate_hil, completed_hil)
+
+    v060 = tuple(profile_order) == V060_RELEASE_PROFILE_ORDER
+    if v060:
+        _require(
+            c3_qualification_result is not None
+            and pico_qualification_result is not None,
+            "v0.6.0 finalization requires both C3 and Pico private "
+            "qualification results",
+        )
+        raise ReleaseError(
+            "v0.6.0 finalization remains closed until strict C3 and Pico "
+            "private-result validators are implemented"
+        )
+    _require(
+        c3_qualification_result is None and pico_qualification_result is None,
+        "pre-v0.6.0 finalization rejects C3/Pico qualification results",
+    )
 
     lcd_capable = _waveshare_lcd147b_capable_version(firmware_version)
     _require(
@@ -17401,6 +18186,14 @@ def _main(argv: list[str] | None = None) -> int:
         "--waveshare-lcd147b-qualification-result",
         type=Path,
     )
+    finalize_parser.add_argument(
+        "--esp32-c3-qualification-result",
+        type=Path,
+    )
+    finalize_parser.add_argument(
+        "--rpi-pico2-w-qualification-result",
+        type=Path,
+    )
 
     hil_assembly_parser = subparsers.add_parser("assemble-hil-report")
     hil_assembly_parser.add_argument("candidate_dir", type=Path)
@@ -17537,6 +18330,10 @@ def _main(argv: list[str] | None = None) -> int:
             repo_root=args.repo_root,
             waveshare_lcd147b_qualification_result=(
                 args.waveshare_lcd147b_qualification_result
+            ),
+            esp32_c3_qualification_result=args.esp32_c3_qualification_result,
+            rpi_pico2_w_qualification_result=(
+                args.rpi_pico2_w_qualification_result
             ),
         )
         print(output)
