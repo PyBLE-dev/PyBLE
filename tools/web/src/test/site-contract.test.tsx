@@ -283,7 +283,7 @@ describe("public-site contract", () => {
     ).toBeInTheDocument();
     expect(
       screen.getAllByText(/firmware installer is currently unavailable/i),
-    ).toHaveLength(2);
+    ).toHaveLength(1);
     expect(
       screen.queryByText(/unqualified firmware beta is available/i),
     ).not.toBeInTheDocument();

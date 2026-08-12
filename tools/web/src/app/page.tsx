@@ -20,8 +20,15 @@ import {
 } from "@/components/icons";
 import { WaveshareBoardPhoto } from "@/components/waveshare-board-photo";
 import { releaseIncludesWaveshareLcd147b } from "@/lib/firmware-release";
-import { firmwareReleaseSelectedAtBuild } from "@/lib/firmware-release-selection";
-import { firmwareTargetsForRelease, siteConfig } from "@/lib/site";
+import {
+  firmwareReleaseSelectedAtBuild,
+  localFirmwarePreviewSelectedAtBuild,
+} from "@/lib/firmware-release-selection";
+import {
+  firmwareTargetsForLocalPreview,
+  firmwareTargetsForRelease,
+  siteConfig,
+} from "@/lib/site";
 
 export const metadata: Metadata = {
   title: {
@@ -70,25 +77,32 @@ const workflowStepsAfterProvision = [
 ] as const;
 
 export default function HomePage() {
-  const firmwareRelease = firmwareReleaseSelectedAtBuild();
+  const preview = localFirmwarePreviewSelectedAtBuild();
+  const firmwareRelease = preview ? null : firmwareReleaseSelectedAtBuild();
   const publicBeta = firmwareRelease?.deployment === "public-beta";
   const waveshareLcd147b = releaseIncludesWaveshareLcd147b(firmwareRelease);
   const qualifiedPublic = firmwareRelease !== null && waveshareLcd147b;
-  const firmwareTargetGroupLabel = qualifiedPublic
-    ? "Qualified public firmware targets"
-    : "Initial beta firmware targets";
-  const firmwareTargets = firmwareTargetsForRelease(firmwareRelease);
+  const firmwareTargetGroupLabel = preview
+    ? `Five exact v${preview.version} engineering targets`
+    : qualifiedPublic
+      ? "Qualified public firmware targets"
+      : "Public firmware availability";
+  const firmwareTargets = preview
+    ? firmwareTargetsForLocalPreview(preview)
+    : firmwareTargetsForRelease(firmwareRelease);
   const steps = [
     {
       number: "01",
       title: "Provision once",
-      body: publicBeta
-        ? `Use USB once to install the exact matching v${firmwareRelease.version} hardware-tested beta. Production Chrome install and interrupted-flash recovery passed on both exact profiles; complete release qualification continues.`
-        : qualifiedPublic
-          ? `Use USB once to install the exact matching qualified v${firmwareRelease.version} firmware.`
-          : firmwareRelease
-            ? `Check the protected candidate instructions before provisioning v${firmwareRelease.version}.`
-            : "Check firmware status before provisioning; the installer is currently unavailable.",
+      body: preview
+        ? `Use USB once with the exact v${preview.version} engineering image for your target. The four ESP targets use Web Serial; Pico 2 W uses a verified UF2 download and BOOTSEL copy. Local preview bytes are unqualified.`
+        : publicBeta
+          ? `Use USB once to install the exact matching v${firmwareRelease.version} hardware-tested beta. Production Chrome install and interrupted-flash recovery passed on both exact profiles; complete release qualification continues.`
+          : qualifiedPublic
+            ? `Use USB once to install the exact matching qualified v${firmwareRelease.version} firmware.`
+            : firmwareRelease
+              ? `Check the protected candidate instructions before provisioning v${firmwareRelease.version}.`
+              : "Check firmware status before provisioning; the installer is currently unavailable.",
     },
     ...workflowStepsAfterProvision,
   ];
@@ -100,16 +114,23 @@ export default function HomePage() {
           <div className="hero__copy">
             <div className="status-badge">
               <span className="status-dot" aria-hidden="true" />
-              iPad beta now open
+              iPad external beta + Android internal test
             </div>
             <p className="eyebrow eyebrow--light">
               Python over Bluetooth Low Energy
             </p>
             <h1>Code your MicroPython board. Leave the cable behind.</h1>
             <p className="hero__lede">
-              PyBLE is a free, tablet-first IDE designed for boards that run
-              MicroPython and support Bluetooth Low Energy.{" "}
-              {publicBeta ? (
+              PyBLE is a free, open-source, tablet-first IDE designed for boards
+              that run MicroPython and support Bluetooth Low Energy.{" "}
+              {preview ? (
+                <>
+                  LOCAL ENGINEERING PREVIEW v{preview.version} — UNQUALIFIED.
+                  This loopback build exposes exact local artifacts for five
+                  firmware targets. These bytes are not a public release or
+                  support claim.
+                </>
+              ) : publicBeta ? (
                 <>
                   Public v{firmwareRelease.version} firmware is a
                   hardware-tested beta for the exact esp32-4mb and
@@ -135,15 +156,22 @@ export default function HomePage() {
                   status before provisioning a board.
                 </>
               )}{" "}
-              ESP32-C3 and more microcontroller families remain planned.
+              {!preview ? (
+                <>
+                  ESP32-C3 and Raspberry Pi Pico 2 W are under engineering
+                  validation and remain unavailable in the public installer.
+                </>
+              ) : null}
             </p>
             <div className="button-row">
               <Link className="button button--primary" href="/app">
-                Join the iPad beta
+                Install PyBLE on iPad or Android
                 <ArrowIcon />
               </Link>
-              <Link className="button button--ghost" href="#workflow">
-                See how it works
+              <Link className="button button--ghost" href="/flash">
+                {preview
+                  ? "Review five-target firmware preview"
+                  : "Review firmware availability"}
               </Link>
             </div>
             <ul className="hero__proof" aria-label="PyBLE principles">
@@ -251,14 +279,15 @@ export default function HomePage() {
             <h2>Start visually. See the real code.</h2>
             <p>
               Build offline with eight editable beginner examples, including an
-              explicit TFT display example, numeric-GPIO blocks, and the
-              standard MicroPython NeoPixel API. Generated Python is always
-              visible and editable.
+              explicit TFT display example, explicit numeric or named GPIO pins
+              such as <code>Pin(&quot;LED&quot;)</code>, and the standard
+              MicroPython NeoPixel API. Generated Python is always visible and
+              editable.
             </p>
             <ul className="check-list">
               <li>
                 <CheckIcon />
-                Choose the pin for your own board
+                Enter the numeric GPIO or named pin for your own board
               </li>
               <li>
                 <CheckIcon />
@@ -297,9 +326,11 @@ export default function HomePage() {
               {firmwareTargets.map((target) => (
                 <div
                   className={
-                    target.planned
-                      ? "target-grid__target target-grid__target--planned"
-                      : "target-grid__target"
+                    "preview" in target
+                      ? "target-grid__target target-grid__target--preview"
+                      : target.planned
+                        ? "target-grid__target target-grid__target--planned"
+                        : "target-grid__target"
                   }
                   key={target.id}
                 >
@@ -316,6 +347,11 @@ export default function HomePage() {
                   <small className="target-grid__constraint">
                     {target.constraint}
                   </small>
+                  {"method" in target ? (
+                    <small className="target-grid__method">
+                      {target.method}
+                    </small>
+                  ) : null}
                   <small className="target-grid__status">{target.status}</small>
                 </div>
               ))}
@@ -395,28 +431,11 @@ export default function HomePage() {
             <p className="eyebrow">External testing is open</p>
             <h2 id="testflight-title">Join the PyBLE beta on TestFlight.</h2>
             <p className="beta-invite__lede">
-              Install the free iPad beta through Apple TestFlight now.{" "}
-              {publicBeta ? (
-                <>
-                  The exact v{firmwareRelease.version} hardware-tested firmware
-                  beta is available for esp32-4mb and esp32-s3-n16r8. Production
-                  Chrome install and interrupted-flash recovery passed on both
-                  exact profiles; complete release qualification continues.
-                </>
-              ) : qualifiedPublic ? (
-                <>
-                  Qualified v{firmwareRelease.version} firmware is available for
-                  all three exact profiles: esp32-4mb, lean generic
-                  esp32-s3-n16r8, and separate waveshare-esp32-s3-lcd-147b.
-                </>
-              ) : (
-                <>
-                  The firmware installer is currently unavailable; check its
-                  status before connecting a board.
-                </>
-              )}{" "}
-              ESP32-C3 is unavailable. After one-time USB setup, everyday coding
-              runs over Bluetooth Low Energy.
+              Install the free iPad external beta through Apple TestFlight.
+              Firmware availability and qualification depend on the exact
+              target; check the firmware installer before provisioning. After
+              one-time USB setup, everyday coding runs over Bluetooth Low
+              Energy.
             </p>
             <div className="button-row beta-invite__actions">
               <a

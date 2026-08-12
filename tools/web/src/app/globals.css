@@ -1171,6 +1171,14 @@ h3 {
   line-height: 1.45;
 }
 
+.target-grid .target-grid__method {
+  margin-top: 11px;
+  color: #b9d7ff;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 .target-grid .target-grid__status {
   margin-top: 9px;
   color: var(--warning);
@@ -1180,6 +1188,13 @@ h3 {
 
 .target-grid > .target-grid__target--planned {
   border-style: dashed;
+}
+
+.target-grid > .target-grid__target--preview {
+  border-color: rgb(255 202 104 / 34%);
+  background:
+    linear-gradient(145deg, rgb(255 202 104 / 8%), transparent 55%),
+    rgb(255 255 255 / 5%);
 }
 
 .target-grid__target--planned .target-grid__status {

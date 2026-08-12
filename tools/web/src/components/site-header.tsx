@@ -27,8 +27,8 @@ export function SiteHeader() {
             </ul>
           </nav>
 
-          <Link className="header-cta" href="/support">
-            Beta support
+          <Link className="header-cta" href="/app">
+            Get PyBLE
           </Link>
 
           <details className="mobile-menu">

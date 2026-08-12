@@ -8,6 +8,10 @@ import {
   hasExactFirmwareProfileDescriptors,
   releaseIncludesWaveshareLcd147b,
 } from "@/lib/firmware-release";
+import {
+  type LocalFirmwarePreviewDescriptor,
+  localFirmwareProfileTable,
+} from "@/lib/local-firmware-preview";
 
 export const siteConfig = {
   name: "PyBLE",
@@ -96,6 +100,29 @@ export function firmwareTargetsForRelease(
 }
 
 export const initialFirmwareTargets = firmwareTargetsForRelease(null);
+
+export function firmwareTargetsForLocalPreview(
+  preview: LocalFirmwarePreviewDescriptor,
+) {
+  return preview.profiles.map((profile) => {
+    const definition = localFirmwareProfileTable.find(
+      ({ id }) => id === profile.id,
+    );
+    if (!definition) {
+      throw new Error(`unknown local firmware target: ${profile.id}`);
+    }
+    return {
+      id: profile.id,
+      target: definition.label,
+      constraint: definition.requirements,
+      method:
+        profile.method === "esp-web-tools" ? "ESP Web Serial" : "UF2 / BOOTSEL",
+      status: `v${preview.version} local engineering preview · unqualified · not public`,
+      planned: false,
+      preview: true,
+    } as const;
+  });
+}
 
 export function absoluteUrl(path: string): string {
   return new URL(path, siteConfig.origin).toString();
