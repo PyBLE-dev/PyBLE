@@ -67,13 +67,15 @@ The home page MAY make these verified claims:
 - After one-time wired firmware provisioning, its normal workflow is BLE-first.
 - The app can scan/connect, edit, save, run, stop, soft reboot, exchange board
   files, and provide a live console over PBLE/1.
-- Blocks runs offline, includes editable beginner examples, supports the
-  current explicit numeric-GPIO and standard MicroPython NeoPixel subset, and
-  can reopen exact sidecars or import a deliberately bounded Python subset.
-  Numeric GPIO and NeoPixel are initially validated on ESP32-family firmware
-  and MUST NOT be promised for every future port. The bundled TFT authoring
-  surface requires the separate exact-board firmware or a user-installed
-  compatible runtime; it is not a generic-S3 firmware claim.
+- Blocks runs offline, includes editable beginner examples, supports explicit
+  numeric GPIOs, bounded named `machine.Pin` identities such as `Pin("LED")`,
+  and the standard MicroPython NeoPixel subset, and can reopen exact sidecars
+  or import a deliberately bounded Python subset. Numeric GPIO and NeoPixel are
+  initially validated on ESP32-family firmware; named pins are accepted only
+  when the user enters the exact upstream board identity and are not a website
+  promise that a name exists on every target. The bundled TFT authoring surface
+  requires the separate exact-board firmware or a user-installed compatible
+  runtime; it is not a generic-S3 firmware claim.
 - PBLE/1 is an open PyBLE-owned protocol.
 
 Compatibility copy MUST distinguish platform scope from current support:
