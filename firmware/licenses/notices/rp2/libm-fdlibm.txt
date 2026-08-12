@@ -11,6 +11,7 @@ lib/libm/kf_cos.c
 lib/libm/kf_rem_pio2.c
 lib/libm/kf_sin.c
 lib/libm/kf_tan.c
+lib/libm/libm.h
 lib/libm/sf_cos.c
 lib/libm/sf_erf.c
 lib/libm/sf_frexp.c

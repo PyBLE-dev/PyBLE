@@ -116,8 +116,8 @@
       "source_url": "https://sourceware.org/git/newlib-cygwin.git"
     },
     {
-      "copyright": "Copyright (C) 2009 BlueKitchen GmbH",
-      "disposition": "review-required",
+      "copyright": "Copyright (C) 2009, 2014, 2016-2018 BlueKitchen GmbH",
+      "disposition": "allow",
       "id": "btstack",
       "license_texts": [
         {
@@ -172,23 +172,28 @@
       "source_url": "https://github.com/georgerobotics/cyw43-driver.git"
     },
     {
-      "copyright": "Copyright (C) 1993 by Sun Microsystems, Inc.",
-      "disposition": "review-required",
+      "copyright": "Copyright (C) 1993 by Sun Microsystems, Inc.; Copyright (c) 2013-2026 Damien P. George",
+      "disposition": "allow",
       "id": "libm-fdlibm-sun",
       "license_texts": [
         {
           "identifier": "LicenseRef-PyBLE-Fdlibm-Sun",
           "path": "firmware/licenses/texts/LicenseRef-PyBLE-Fdlibm-Sun.txt",
           "sha256": "a8af75f945e13c583b21d53b09a2adf757e7ef6e1521ad67d0d8648dd2b765a8"
+        },
+        {
+          "identifier": "MIT",
+          "path": "firmware/licenses/texts/MIT.txt",
+          "sha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5"
         }
       ],
       "notice_files": [
         {
           "path": "firmware/licenses/notices/rp2/libm-fdlibm.txt",
-          "sha256": "90f99a5589ee9c43e9ce2c395eb8b4154074c37a4beb913ea01293af338a9df4"
+          "sha256": "a59df5f3908d27c5bc016f4b28b0b330f874dc0bd87277516bbb78cf90dbd8b1"
         }
       ],
-      "selected_spdx_expression": "LicenseRef-PyBLE-Fdlibm-Sun",
+      "selected_spdx_expression": "LicenseRef-PyBLE-Fdlibm-Sun AND MIT",
       "source_ref": "e0e9fbb17ed6fd06bb76e266ae554784c9c80804",
       "source_roots": [
         {
@@ -218,6 +223,10 @@
         {
           "namespace": "micropython",
           "path": "lib/libm/kf_tan.c"
+        },
+        {
+          "namespace": "micropython",
+          "path": "lib/libm/libm.h"
         },
         {
           "namespace": "micropython",
@@ -256,12 +265,12 @@
           "path": "lib/libm/wf_tgamma.c"
         }
       ],
-      "source_spdx_expression": "LicenseRef-PyBLE-Fdlibm-Sun",
+      "source_spdx_expression": "LicenseRef-PyBLE-Fdlibm-Sun AND MIT",
       "source_url": "https://github.com/micropython/micropython"
     },
     {
-      "copyright": "Copyright © 2005-2014 Rich Felker, et al.",
-      "disposition": "review-required",
+      "copyright": "Copyright © 2005-2014 Rich Felker, et al.; Copyright (c) 2013-2026 Damien P. George",
+      "disposition": "allow",
       "id": "libm-musl",
       "license_texts": [
         {
@@ -312,8 +321,8 @@
       "source_url": "https://github.com/micropython/micropython"
     },
     {
-      "copyright": "Copyright © musl contributors; Copyright (C) 1993 by Sun Microsystems, Inc.",
-      "disposition": "review-required",
+      "copyright": "Copyright © musl contributors; Copyright (C) 1993 by Sun Microsystems, Inc.; Copyright (c) 2013-2026 Damien P. George",
+      "disposition": "allow",
       "id": "libm-musl-sun",
       "license_texts": [
         {
@@ -334,7 +343,7 @@
         },
         {
           "path": "firmware/licenses/notices/rp2/libm-fdlibm.txt",
-          "sha256": "90f99a5589ee9c43e9ce2c395eb8b4154074c37a4beb913ea01293af338a9df4"
+          "sha256": "a59df5f3908d27c5bc016f4b28b0b330f874dc0bd87277516bbb78cf90dbd8b1"
         }
       ],
       "selected_spdx_expression": "LicenseRef-PyBLE-Fdlibm-Sun AND MIT",

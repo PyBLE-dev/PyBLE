@@ -69,7 +69,8 @@ The `v1.1.16` copy is from commit
 `70ca142d257e2690a1f8eda8a296e64a6d1b16d8aee6784f8ddcf67f3163635d`).
 The exact Sun/fdlibm grant and selected-source attribution are retained in
 `texts/LicenseRef-PyBLE-Fdlibm-Sun.txt` and
-`notices/rp2/libm-fdlibm.txt`; the related owners remain `review-required`.
+`notices/rp2/libm-fdlibm.txt`. The exact Sun and MIT terms and MicroPython
+adaptation attribution have been reviewed for the selected libm owners.
 
 The Arm GNU evidence is from Arm's official 14.2.Rel1 source release at
 `https://developer.arm.com/-/media/Files/downloads/gnu/14.2.rel1/srcrel/`.
@@ -87,8 +88,9 @@ The locked Darwin Arm64 binary distribution remains independently pinned in
 `firmware/versions.lock` by SHA-256
 `c7c78ffab9bebfce91d99d3c24da6bf4b81c01e16cf551eb2ff9f25b9e0a3818`.
 
-The current fail-closed review queue is: BTstack's supplemental Raspberry Pi
-grant, the CYW43 Raspberry Pi grant, the fdlibm/Sun and adapted-musl libm
-classes, the dual-marked pico-sdk CMSIS source, and the exact GCC/newlib
-runtime closure. Their evidence is retained, but none is represented as an
-approved release conclusion.
+The current fail-closed review queue is: the CYW43 Raspberry Pi grant as
+applied to the selected embedded firmware arrays, the complete pico-sdk CMSIS
+source/header closure, and the exact GCC/newlib runtime closure. Their
+evidence is retained, but none is represented as an approved release
+conclusion. The target-scoped BTstack grant and the exact fdlibm/adapted-musl
+classes are approved only for the hash-bound owner records above.
