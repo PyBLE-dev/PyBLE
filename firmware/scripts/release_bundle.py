@@ -22,6 +22,7 @@ import binascii
 from collections import Counter
 import copy
 import ctypes
+import datetime as datetime_module
 from email.parser import BytesParser
 import errno
 import hashlib
@@ -82,6 +83,10 @@ def _load_v060_profile_gate() -> Any:
 
 _WAVESHARE_LCD147B_GATE = _load_waveshare_lcd147b_gate()
 _V060_PROFILE_GATE = _load_v060_profile_gate()
+_V060_PROFILE_GATE_SOURCE = Path(_V060_PROFILE_GATE.__file__).resolve(strict=True)
+_V060_PROFILE_GATE_SOURCE_SHA256 = hashlib.sha256(
+    _V060_PROFILE_GATE_SOURCE.read_bytes()
+).hexdigest()
 
 
 class ReleaseError(RuntimeError):
@@ -19655,7 +19660,7 @@ def _validate_transfer_link_facts(
             and type(facts["observed_chunk_bytes"]) is int
             and facts["observed_chunk_bytes"] == 229
             and type(facts["console_tx_budget_ms"]) is int
-            and facts["console_tx_budget_ms"] > 0,
+            and facts["console_tx_budget_ms"] == 103,
             "OI-1 RP2 BTstack transport facts are invalid for %s" % profile_id,
         )
         return facts
@@ -20855,8 +20860,10 @@ def _validate_hil(
             if public:
                 _require(
                     record["status"] == "passed"
+                    and type(record["device_flash_capacity_bytes"]) is int
                     and record["device_flash_capacity_bytes"]
                     == spec["flash_size_bytes"]
+                    and type(record["device_psram_capacity_bytes"]) is int
                     and record["device_psram_capacity_bytes"]
                     == spec["psram"]["size_bytes"]
                     and all(value == "passed" for value in checks.values()),
@@ -20870,7 +20877,7 @@ def _validate_hil(
                         "public HIL %s field %s is missing" % (profile_id, field),
                     )
                 _require(
-                    UTC_RE.fullmatch(record["tested_at"]) is not None,
+                    _is_exact_utc_second(record["tested_at"]),
                     "public HIL tested_at is not UTC RFC3339",
                 )
                 for platform_name in ("ipad", "android"):
@@ -20922,7 +20929,9 @@ def _validate_hil(
             else:
                 _require(
                     record["status"] == "pending"
+                    and type(record["device_flash_capacity_bytes"]) is int
                     and record["device_flash_capacity_bytes"] == 0
+                    and type(record["device_psram_capacity_bytes"]) is int
                     and record["device_psram_capacity_bytes"] == 0
                     and all(record[field] == "" for field in text_fields)
                     and all(value == "pending" for value in checks.values())
@@ -23166,6 +23175,700 @@ def _completed_hil_report(payload: dict[str, Any]) -> bytes:
     )
 
 
+_V5_OPERATOR_CHECKS = (
+    "provisioning_install",
+    "provisioning_recovery",
+    "advertising_info_hello",
+    "pble_workflow",
+    "safe_boot_reconnect",
+    "filesystem_resume_reliability",
+)
+_V5_OPERATOR_FIELDS = (
+    "board_manufacturer",
+    "board_model",
+    "module_marking",
+    "device_flash_capacity_bytes",
+    "device_psram_capacity_bytes",
+    "tested_at",
+    "operator",
+    "maintainer_signoff",
+    "desktop_os",
+    "chromium_version",
+    "ble_backend",
+    "ble_adapter",
+    "python_version",
+    "redacted_console_log",
+)
+_V5_COMPLETION_INPUT_MAX_BYTES = 4 * 1024 * 1024
+_V5_COMPLETION_FRAGMENT_FIELDS = {
+    *_V5_OPERATOR_FIELDS,
+    "checks",
+    "app_hil",
+    "profile_id",
+    "profile_gate_summary",
+    "oi1_observation",
+}
+
+
+def _is_exact_utc_second(value: Any) -> bool:
+    if type(value) is not str or UTC_RE.fullmatch(value) is None:
+        return False
+    try:
+        parsed = datetime_module.datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ")
+    except ValueError:
+        return False
+    return parsed.strftime("%Y-%m-%dT%H:%M:%SZ") == value
+
+
+def _completion_unique_object(
+    pairs: list[tuple[str, Any]],
+) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        _require(key not in result, "completion input duplicates a JSON key")
+        result[key] = value
+    return result
+
+
+def _completion_reject_constant(value: str) -> None:
+    raise ReleaseError("completion input contains non-JSON %s" % value)
+
+
+def _stable_completion_bytes(
+    path: Path,
+    label: str,
+    *,
+    maximum: int = _V5_COMPLETION_INPUT_MAX_BYTES,
+    exclusive: bool = False,
+) -> tuple[bytes, tuple[Any, ...]]:
+    """Read one bounded input twice through held, no-follow directory fds."""
+
+    chain: list[tuple[int, Path, tuple[int, int, int]]] = []
+    try:
+        source = _V060_PROFILE_GATE._absolute_lexical_path(Path(path), label)
+        _require(source.name not in ("", ".", ".."), "%s name is unsafe" % label)
+        chain = _V060_PROFILE_GATE._open_directory_chain(
+            source.parent,
+            label=label + " parent",
+            create=False,
+        )
+        raw, identity = _V060_PROFILE_GATE._read_regular_at(
+            chain[-1][0],
+            source.name,
+            label=label,
+            maximum=maximum,
+        )
+        _V060_PROFILE_GATE._verify_directory_chain(chain, label + " parent")
+        if exclusive:
+            _require(
+                stat_module.S_IMODE(identity[2]) == 0o600 and identity[3] == 1,
+                "%s must be one exclusive mode-0600 regular file" % label,
+            )
+        chain_identity = tuple(
+            (os.fspath(directory), directory_identity)
+            for _descriptor, directory, directory_identity in chain
+        )
+        snapshot = (
+            os.fspath(source),
+            identity,
+            chain_identity,
+            hashlib.sha256(raw).hexdigest(),
+        )
+        return raw, snapshot
+    except _V060_PROFILE_GATE.QualificationError as exc:
+        raise ReleaseError("%s is missing, changed, or unsafe: %s" % (label, exc)) from exc
+    finally:
+        _V060_PROFILE_GATE._close_directory_chain(chain)
+
+
+def _read_canonical_json_object(
+    path: Path,
+    label: str,
+) -> tuple[dict[str, Any], tuple[Any, ...]]:
+    raw, snapshot = _stable_completion_bytes(Path(path), label)
+    try:
+        value = json.loads(
+            raw.decode("utf-8", errors="strict"),
+            object_pairs_hook=_completion_unique_object,
+            parse_constant=_completion_reject_constant,
+        )
+    except ReleaseError:
+        raise
+    except (UnicodeDecodeError, TypeError, ValueError) as exc:
+        raise ReleaseError("%s is not strict UTF-8 JSON" % label) from exc
+    _require(type(value) is dict, "%s must be a JSON object" % label)
+    _require(
+        raw == _canonical_json_bytes(value),
+        "%s must use canonical JSON bytes" % label,
+    )
+    return value, snapshot
+
+
+def _validate_v5_operator_input(
+    value: Any,
+    profile_id: str,
+) -> dict[str, Any]:
+    operator_input = _exact_keys(
+        value,
+        {*_V5_OPERATOR_FIELDS, "checks", "app_hil"},
+        "V5 HIL operator input for %s" % profile_id,
+    )
+    spec = PROFILE_SPECS[profile_id]
+    _require(
+        type(operator_input["device_flash_capacity_bytes"]) is int
+        and operator_input["device_flash_capacity_bytes"]
+        == spec["flash_size_bytes"]
+        and type(operator_input["device_psram_capacity_bytes"]) is int
+        and operator_input["device_psram_capacity_bytes"]
+        == spec["psram"]["size_bytes"],
+        "V5 HIL operator input physical topology differs for %s" % profile_id,
+    )
+    text_fields = (
+        "board_manufacturer",
+        "board_model",
+        "module_marking",
+        "tested_at",
+        "operator",
+        "maintainer_signoff",
+        "desktop_os",
+        "chromium_version",
+        "ble_backend",
+        "ble_adapter",
+        "python_version",
+        "redacted_console_log",
+    )
+    for field in text_fields:
+        item = operator_input[field]
+        _require(
+            type(item) is str
+            and bool(item.strip())
+            and PLACEHOLDER_RE.fullmatch(item.strip()) is None,
+            "V5 HIL operator input %s is missing or a placeholder" % field,
+        )
+    _require(
+        _is_exact_utc_second(operator_input["tested_at"]),
+        "V5 HIL operator input tested_at is not UTC RFC3339",
+    )
+    checks = _exact_keys(
+        operator_input["checks"],
+        set(_V5_OPERATOR_CHECKS),
+        "V5 HIL operator checks for %s" % profile_id,
+    )
+    _require(
+        all(checks[name] == "passed" for name in _V5_OPERATOR_CHECKS),
+        "V5 HIL operator checks are incomplete for %s" % profile_id,
+    )
+    app_hil = _exact_keys(
+        operator_input["app_hil"],
+        {"ipad", "android"},
+        "V5 HIL app results for %s" % profile_id,
+    )
+    for platform_name in ("ipad", "android"):
+        result = _exact_keys(
+            app_hil[platform_name],
+            {"app_version", "app_build", "os_major", "status"},
+            "V5 HIL %s app result for %s" % (platform_name, profile_id),
+        )
+        _require(
+            result["status"] == "passed"
+            and all(
+                type(result[key]) is str and bool(result[key].strip())
+                for key in ("app_version", "app_build", "os_major")
+            ),
+            "V5 HIL %s app result is incomplete for %s"
+            % (platform_name, profile_id),
+        )
+        for key in ("app_version", "app_build", "os_major"):
+            _require(
+                PLACEHOLDER_RE.fullmatch(result[key].strip()) is None,
+                "V5 HIL %s app result contains a placeholder for %s"
+                % (platform_name, profile_id),
+            )
+    return operator_input
+
+
+def _validate_v5_completion_fragment(
+    value: Any,
+    *,
+    profile_id: str,
+    observation: dict[str, Any],
+    gate_summary: dict[str, str] | None,
+) -> dict[str, Any]:
+    fragment = _exact_keys(
+        value,
+        _V5_COMPLETION_FRAGMENT_FIELDS,
+        "V5 HIL completion fragment for %s" % profile_id,
+    )
+    _require(
+        fragment["profile_id"] == profile_id,
+        "V5 HIL completion fragment profile changed",
+    )
+    _validate_v5_operator_input(
+        {
+            field: copy.deepcopy(fragment[field])
+            for field in (*_V5_OPERATOR_FIELDS, "checks", "app_hil")
+        },
+        profile_id,
+    )
+    _require(
+        fragment["oi1_observation"] == observation
+        and fragment["profile_gate_summary"] == gate_summary,
+        "V5 HIL completion derived fields changed",
+    )
+    return fragment
+
+
+def _write_completion_fragment_no_replace(
+    output: Path,
+    payload: bytes,
+    *,
+    pre_publish_check: Any,
+    post_publish_check: Any,
+) -> Path:
+    """Durably create one private fragment or remove every partial write."""
+
+    _require(
+        type(payload) is bytes
+        and 0 < len(payload) <= _V5_COMPLETION_INPUT_MAX_BYTES,
+        "HIL completion fragment bytes are outside their bound",
+    )
+    chain: list[tuple[int, Path, tuple[int, int, int]]] = []
+    descriptor = -1
+    reader = -1
+    created = False
+    preserve = False
+    created_identity: tuple[int, int] | None = None
+    try:
+        target = _V060_PROFILE_GATE._absolute_lexical_path(
+            Path(output), "HIL completion fragment"
+        )
+        _require(
+            target.name not in ("", ".", ".."),
+            "HIL completion fragment name is unsafe",
+        )
+        chain = _V060_PROFILE_GATE._open_directory_chain(
+            target.parent,
+            label="HIL completion fragment parent",
+            create=True,
+        )
+        parent_descriptor = chain[-1][0]
+        pre_publish_check()
+        _V060_PROFILE_GATE._verify_directory_chain(
+            chain, "HIL completion fragment parent"
+        )
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
+        if hasattr(os, "O_CLOEXEC"):
+            flags |= os.O_CLOEXEC
+        descriptor = os.open(
+            target.name,
+            flags,
+            0o600,
+            dir_fd=parent_descriptor,
+        )
+        created = True
+        opened = os.fstat(descriptor)
+        created_identity = (opened.st_dev, opened.st_ino)
+        _require(
+            stat_module.S_ISREG(opened.st_mode),
+            "HIL completion fragment output is unsafe",
+        )
+        os.fchmod(descriptor, 0o600)
+        offset = 0
+        while offset < len(payload):
+            written = os.write(descriptor, payload[offset:])
+            if written <= 0:
+                raise OSError("short HIL completion fragment write")
+            offset += written
+        os.fsync(descriptor)
+        after = os.fstat(descriptor)
+        _require(
+            stat_module.S_ISREG(after.st_mode)
+            and stat_module.S_IMODE(after.st_mode) == 0o600
+            and after.st_nlink == 1
+            and after.st_size == len(payload)
+            and (after.st_dev, after.st_ino) == created_identity,
+            "HIL completion fragment output is unsafe",
+        )
+        os.close(descriptor)
+        descriptor = -1
+
+        _V060_PROFILE_GATE._verify_directory_chain(
+            chain, "HIL completion fragment parent"
+        )
+        read_flags = os.O_RDONLY | os.O_NOFOLLOW
+        if hasattr(os, "O_CLOEXEC"):
+            read_flags |= os.O_CLOEXEC
+        reader = os.open(target.name, read_flags, dir_fd=parent_descriptor)
+        written_raw, written_identity = _V060_PROFILE_GATE._read_open_regular(
+            reader,
+            label="HIL completion fragment",
+            maximum=_V5_COMPLETION_INPUT_MAX_BYTES,
+        )
+        _require(
+            written_raw == payload
+            and (written_identity[0], written_identity[1]) == created_identity
+            and stat_module.S_IMODE(written_identity[2]) == 0o600
+            and written_identity[3] == 1,
+            "HIL completion fragment write verification failed",
+        )
+        os.close(reader)
+        reader = -1
+
+        post_publish_check()
+        _V060_PROFILE_GATE._verify_directory_chain(
+            chain, "HIL completion fragment parent"
+        )
+        reader = os.open(target.name, read_flags, dir_fd=parent_descriptor)
+        final_raw, final_identity = _V060_PROFILE_GATE._read_open_regular(
+            reader,
+            label="HIL completion fragment",
+            maximum=_V5_COMPLETION_INPUT_MAX_BYTES,
+        )
+        _require(
+            final_raw == payload
+            and (final_identity[0], final_identity[1]) == created_identity
+            and stat_module.S_IMODE(final_identity[2]) == 0o600
+            and final_identity[3] == 1,
+            "HIL completion fragment changed during final validation",
+        )
+        os.close(reader)
+        reader = -1
+        os.fsync(parent_descriptor)
+        _V060_PROFILE_GATE._verify_directory_chain(
+            chain, "HIL completion fragment parent"
+        )
+        preserve = True
+        return target
+    except _V060_PROFILE_GATE.QualificationError as exc:
+        raise ReleaseError("HIL completion fragment is unsafe: %s" % exc) from exc
+    except OSError as exc:
+        raise ReleaseError("HIL completion fragment could not be written") from exc
+    finally:
+        if reader >= 0:
+            try:
+                os.close(reader)
+            except OSError:
+                pass
+        if descriptor >= 0:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+        if created and not preserve:
+            _V060_PROFILE_GATE._remove_created_result(
+                chain[-1][0],
+                target.name,
+                created_identity,
+            )
+        _V060_PROFILE_GATE._close_directory_chain(chain)
+
+
+def create_hil_completion_fragment(
+    *,
+    candidate_dir: Path,
+    profile_id: str,
+    operator_input_path: Path,
+    oi1_observation_path: Path,
+    output_path: Path,
+    qualification_repo_root: Path,
+    profile_qualification_result: Path | None,
+) -> Path:
+    """Derive one candidate-bound V5 completion fragment without gate input."""
+
+    try:
+        candidate = _V060_PROFILE_GATE._absolute_lexical_path(
+            Path(candidate_dir), "HIL completion candidate"
+        )
+        output = _V060_PROFILE_GATE._absolute_lexical_path(
+            Path(output_path), "HIL completion fragment"
+        )
+    except _V060_PROFILE_GATE.QualificationError as exc:
+        raise ReleaseError("HIL completion path is unsafe: %s" % exc) from exc
+    qualification_root = Path(qualification_repo_root)
+    _require(
+        profile_id in V060_RELEASE_PROFILE_ORDER,
+        "V5 HIL completion profile is unsupported",
+    )
+    _require(
+        not output.is_relative_to(candidate),
+        "HIL completion output must not be inside the candidate",
+    )
+    release_raw, candidate_release_snapshot = _stable_completion_bytes(
+        candidate / "release.json",
+        "candidate release.json",
+        maximum=2 * 1024 * 1024,
+    )
+    pending_report_raw, pending_report_snapshot = _stable_completion_bytes(
+        candidate / "HIL_REPORT.md",
+        "candidate HIL report",
+    )
+    candidate_snapshot = _release_tree_snapshot(candidate, "candidate release")
+    release = validate_bundle(
+        candidate,
+        public=False,
+        qualification_repo_root=qualification_root,
+    )
+    _require(
+        release["identity"]["version"] == "0.6.0"
+        and [profile["id"] for profile in release["profiles"]]
+        == list(V060_RELEASE_PROFILE_ORDER)
+        and all(profile["hil_status"] == "pending" for profile in release["profiles"]),
+        "HIL completion requires the exact fully pending v0.6.0 candidate",
+    )
+    _require(
+        _release_tree_snapshot(candidate, "candidate release")
+        == candidate_snapshot,
+        "candidate release changed during HIL completion validation",
+    )
+    try:
+        pending_report_text = pending_report_raw.decode("utf-8", errors="strict")
+    except UnicodeDecodeError as exc:
+        raise ReleaseError("candidate HIL report is not strict UTF-8") from exc
+    pending_payload = _parse_hil_report(pending_report_text)
+    _validate_hil_source_era(pending_payload, "0.6.0")
+    _require(
+        pending_payload["schema_version"] == 5
+        and pending_payload["qualification_policy"]["schema_version"] == 3
+        and pending_payload["qualification_policy"]["profile_order"]
+        == list(V060_RELEASE_PROFILE_ORDER)
+        and pending_payload["candidate_release_json_sha256"] == ""
+        and all(
+            pending_payload[name] is None
+            for name in (
+                "waveshare_lcd147b_qualification",
+                "esp32_c3_qualification",
+                "rpi_pico2_w_qualification",
+            )
+        ),
+        "HIL completion requires the untouched V5 pending report",
+    )
+    records = pending_payload["records"]
+    _require(
+        [record.get("profile_id") for record in records]
+        == list(V060_RELEASE_PROFILE_ORDER),
+        "pending V5 record order changed",
+    )
+    _require(
+        all(
+            item["status"] == "pending"
+            and item["app_hil"] == {"ipad": None, "android": None}
+            and item["profile_gate_summary"] is None
+            and item["oi1_observation"] is None
+            for item in records
+        ),
+        "HIL completion requires all five V5 records to remain pending",
+    )
+    record = next(item for item in records if item["profile_id"] == profile_id)
+    _require(
+        record["status"] == "pending"
+        and record["profile_gate_summary"] is None
+        and record["oi1_observation"] is None,
+        "selected V5 record is not pending",
+    )
+    policy_by_id = {
+        item["profile_id"]: item
+        for item in pending_payload["qualification_policy"]["profiles"]
+    }
+    _require(
+        record["oi1_policy"] == policy_by_id[profile_id],
+        "selected V5 record policy differs from the embedded policy",
+    )
+
+    operator_input, operator_snapshot = _read_canonical_json_object(
+        Path(operator_input_path),
+        "V5 HIL operator input",
+    )
+    operator_input = _validate_v5_operator_input(operator_input, profile_id)
+    observation, observation_snapshot = _read_canonical_json_object(
+        Path(oi1_observation_path),
+        "V5 OI-1 verify observation",
+    )
+    _validate_qualification_observation(
+        observation,
+        policy_by_id[profile_id]["thresholds"],
+        profile_id,
+        firmware_version="0.6.0",
+    )
+
+    candidate_release_digest = hashlib.sha256(release_raw).hexdigest()
+    result_path = (
+        Path(profile_qualification_result)
+        if profile_qualification_result is not None
+        else None
+    )
+    private_snapshot: tuple[Any, ...] | None = None
+    private_safe_snapshot: tuple[Any, ...] | None = None
+    gate_source_snapshot: tuple[Any, ...] | None = None
+    gate_summary: dict[str, str] | None = None
+    gated_profile = profile_id in ("esp32-c3-4mb", "rpi-pico2-w")
+    _require(
+        gated_profile == (result_path is not None),
+        (
+            "C3/Pico HIL completion requires its private qualification result"
+            if gated_profile
+            else "this HIL completion profile rejects a private gate result"
+        ),
+    )
+    if result_path is not None:
+        try:
+            _gate_source_raw, gate_source_snapshot = _stable_completion_bytes(
+                _V060_PROFILE_GATE_SOURCE,
+                "loaded v0.6 profile qualification validator",
+                maximum=2 * 1024 * 1024,
+            )
+            _require(
+                hashlib.sha256(_gate_source_raw).hexdigest()
+                == _V060_PROFILE_GATE_SOURCE_SHA256,
+                "loaded v0.6 profile qualification validator changed",
+            )
+            _private_raw, private_safe_snapshot = _stable_completion_bytes(
+                result_path,
+                "private profile qualification result",
+                maximum=_V060_PROFILE_GATE.MAX_RESULT_BYTES,
+                exclusive=True,
+            )
+            private_snapshot = _V060_PROFILE_GATE.private_result_snapshot(
+                result_path
+            )
+            private_summary = _V060_PROFILE_GATE.validate_result_file(
+                result_path,
+                artifact_path=(
+                    candidate / profile_id / PROFILE_SPECS[profile_id]["primary_artifact"]
+                ),
+                expected_profile_id=profile_id,
+                expected_version="0.6.0",
+                candidate_release_json_sha256=candidate_release_digest,
+            )
+        except _V060_PROFILE_GATE.QualificationError as exc:
+            raise ReleaseError(
+                "private profile qualification result is invalid: %s" % exc
+            ) from exc
+        gate_summary = copy.deepcopy(private_summary["gates"])
+
+    fragment = {
+        "profile_id": profile_id,
+        **{
+            field: copy.deepcopy(operator_input[field])
+            for field in _V5_OPERATOR_FIELDS
+        },
+        "checks": copy.deepcopy(operator_input["checks"]),
+        "app_hil": copy.deepcopy(operator_input["app_hil"]),
+        "profile_gate_summary": gate_summary,
+        "oi1_observation": copy.deepcopy(observation),
+    }
+    _validate_v5_completion_fragment(
+        fragment,
+        profile_id=profile_id,
+        observation=observation,
+        gate_summary=gate_summary,
+    )
+    raw = _canonical_json_bytes(fragment)
+
+    def unchanged() -> None:
+        current_release_raw, current_release_snapshot = _stable_completion_bytes(
+            candidate / "release.json",
+            "candidate release.json",
+            maximum=2 * 1024 * 1024,
+        )
+        current_report_raw, current_report_snapshot = _stable_completion_bytes(
+            candidate / "HIL_REPORT.md",
+            "candidate HIL report",
+        )
+        _require(
+            _release_tree_snapshot(candidate, "candidate release")
+            == candidate_snapshot
+            and current_release_snapshot == candidate_release_snapshot
+            and current_report_snapshot == pending_report_snapshot
+            and current_release_raw == release_raw
+            and current_report_raw == pending_report_raw,
+            "candidate release changed while HIL completion was created",
+        )
+        current_release = validate_bundle(
+            candidate,
+            public=False,
+            qualification_repo_root=qualification_root,
+        )
+        _require(
+            current_release == release,
+            "candidate or qualification policy changed while HIL completion was created",
+        )
+        _current_operator, current_operator_snapshot = _read_canonical_json_object(
+            Path(operator_input_path), "V5 HIL operator input"
+        )
+        _current_observation, current_observation_snapshot = (
+            _read_canonical_json_object(
+                Path(oi1_observation_path), "V5 OI-1 verify observation"
+            )
+        )
+        _require(
+            current_operator_snapshot == operator_snapshot
+            and current_observation_snapshot == observation_snapshot,
+            "HIL completion input changed while it was used",
+        )
+        if result_path is not None:
+            try:
+                current_gate_raw, current_gate_source_snapshot = (
+                    _stable_completion_bytes(
+                        _V060_PROFILE_GATE_SOURCE,
+                        "loaded v0.6 profile qualification validator",
+                        maximum=2 * 1024 * 1024,
+                    )
+                )
+                _current_private_raw, current_private_safe_snapshot = (
+                    _stable_completion_bytes(
+                        result_path,
+                        "private profile qualification result",
+                        maximum=_V060_PROFILE_GATE.MAX_RESULT_BYTES,
+                        exclusive=True,
+                    )
+                )
+                current = _V060_PROFILE_GATE.private_result_snapshot(result_path)
+                current_summary = _V060_PROFILE_GATE.validate_result_file(
+                    result_path,
+                    artifact_path=(
+                        candidate
+                        / profile_id
+                        / PROFILE_SPECS[profile_id]["primary_artifact"]
+                    ),
+                    expected_profile_id=profile_id,
+                    expected_version="0.6.0",
+                    candidate_release_json_sha256=candidate_release_digest,
+                )
+            except _V060_PROFILE_GATE.QualificationError as exc:
+                raise ReleaseError(
+                    "private profile qualification result became unsafe: %s" % exc
+                ) from exc
+            _require(
+                hashlib.sha256(current_gate_raw).hexdigest()
+                == _V060_PROFILE_GATE_SOURCE_SHA256
+                and current_gate_source_snapshot == gate_source_snapshot
+                and current_private_safe_snapshot == private_safe_snapshot
+                and current == private_snapshot
+                and current_summary["gates"] == gate_summary,
+                "private profile qualification result or validator changed while it was used",
+            )
+
+    def post_write_validate() -> None:
+        written, _written_snapshot = _read_canonical_json_object(
+            output,
+            "V5 HIL completion fragment",
+        )
+        _validate_v5_completion_fragment(
+            written,
+            profile_id=profile_id,
+            observation=observation,
+            gate_summary=gate_summary,
+        )
+        unchanged()
+
+    return _write_completion_fragment_no_replace(
+        output,
+        raw,
+        pre_publish_check=unchanged,
+        post_publish_check=post_write_validate,
+    )
+
+
 def assemble_completed_hil_report(
     *,
     candidate_dir: Path,
@@ -23996,6 +24699,25 @@ def _main(argv: list[str] | None = None) -> int:
         type=Path,
     )
 
+    hil_completion_parser = subparsers.add_parser("create-hil-completion")
+    hil_completion_parser.add_argument("candidate_dir", type=Path)
+    hil_completion_parser.add_argument(
+        "profile_id",
+        choices=V060_RELEASE_PROFILE_ORDER,
+    )
+    hil_completion_parser.add_argument("operator_input_path", type=Path)
+    hil_completion_parser.add_argument("oi1_observation_path", type=Path)
+    hil_completion_parser.add_argument("output_path", type=Path)
+    hil_completion_parser.add_argument(
+        "--qualification-repo-root",
+        required=True,
+        type=Path,
+    )
+    hil_completion_parser.add_argument(
+        "--profile-qualification-result",
+        type=Path,
+    )
+
     args = parser.parse_args(argv)
     if args.command == "validate-build":
         validate_build(args.target, args.build_dir)
@@ -24130,6 +24852,17 @@ def _main(argv: list[str] | None = None) -> int:
             profile_evidence_paths=args.profile_evidence_paths,
             output_path=args.output_path,
             qualification_repo_root=args.qualification_repo_root,
+        )
+        print(output)
+    elif args.command == "create-hil-completion":
+        output = create_hil_completion_fragment(
+            candidate_dir=args.candidate_dir,
+            profile_id=args.profile_id,
+            operator_input_path=args.operator_input_path,
+            oi1_observation_path=args.oi1_observation_path,
+            output_path=args.output_path,
+            qualification_repo_root=args.qualification_repo_root,
+            profile_qualification_result=args.profile_qualification_result,
         )
         print(output)
     return 0
