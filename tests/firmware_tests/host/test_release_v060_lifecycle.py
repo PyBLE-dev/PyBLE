@@ -282,7 +282,6 @@ def pending_profiles() -> list[dict[str, object]]:
     profiles: list[dict[str, object]] = []
     for profile_id in ESP_PROFILE_ORDER:
         spec = RELEASE.PROFILE_SPECS[profile_id]
-        directory = staged / profile_id
         profiles.append(
             {
                 "id": profile_id,
