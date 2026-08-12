@@ -41,6 +41,7 @@ done < <(find "$ROOT" \
                -o -path '*/app/assets/blockly/vendor' \
                -o -path '*/firmware/.esp-idf' \
                -o -path '*/.esp-idf' \
+               -o -path "$ROOT/firmware/.arm-gnu" \
                -o -path '*/.idf_tools' \
                -o -path '*/.claude' \
                -o -path '*/docs' \
