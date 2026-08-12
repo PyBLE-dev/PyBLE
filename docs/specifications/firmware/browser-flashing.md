@@ -725,9 +725,12 @@ worktree, symlink, or source path inconsistent with the CMake cache and map is
 fatal.
 
 The RP2-specific grants are selected literally rather than approximated by a
-nearby license. In particular, BTstack retains its complete BSD-3-Clause
-license bytes, while CYW43 retains the complete Raspberry-Pi-device grant used
-for Pico 2 W; CYW43's generic non-commercial file is not relabelled as BSD.
+nearby license. In particular, BTstack retains both its stock non-commercial
+license and pico-sdk's complete supplemental `pico_btstack/LICENSE.RP` grant,
+and selects only that supplemental grant for use with Pico 2 W. CYW43 likewise
+retains the complete Raspberry-Pi-device grant used for Pico 2 W. Neither
+dependency's generic non-commercial file, nor BTstack's supplemental grant,
+is relabelled as BSD.
 Mbed TLS retains its source choice while recording the reviewed Apache-2.0
 redistribution selection;
 littlefs, lwIP, pico-sdk, oofatfs, TinyUSB, MicroPython, fdlibm-derived libm,

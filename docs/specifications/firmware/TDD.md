@@ -1464,9 +1464,11 @@ separate source and selected SPDX expressions. Tests require exact retained
 MicroPython and nested gitlink SHAs, clean trees, canonical origins, actual
 CMake-selected source paths, and the pinned toolchain distribution identity;
 a sibling checkout or pico-sdk's unselected nested copy cannot substitute.
-BTstack requires its complete BSD-3-Clause bytes; CYW43 requires the complete
-Pico-device grant selected for this image rather than its generic
-non-commercial file or a guessed BSD label. Mbed TLS preserves its source
+BTstack requires both its complete stock non-commercial license and the
+pico-sdk supplemental `pico_btstack/LICENSE.RP` grant selected for this exact
+Pico 2 W image; CYW43 requires the complete Pico-device grant selected for
+this image rather than its generic non-commercial file. Neither supplemental
+grant may be represented as BSD. Mbed TLS preserves its source
 choice and reviewed Apache-2.0 selection, while fdlibm-derived libm and distinct libgcc/newlib
 classes retain their own notices, expressions, and exceptions. Every observed
 owner contributes, every contributing input has exactly one most-specific
