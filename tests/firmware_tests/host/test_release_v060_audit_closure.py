@@ -477,8 +477,11 @@ class EvidenceNoticeAtomicPublicationTests(unittest.TestCase):
         self.build.mkdir()
         self.repo.mkdir()
         self.wheelhouse.mkdir()
-        self.evidence = self.root / "evidence"
-        self.notice = self.root / "THIRD_PARTY_LICENSES.txt"
+        self.outputs = self.root / "outputs"
+        self.outputs.mkdir()
+        self.publication = self.outputs / "license-audit"
+        self.evidence = self.publication / "evidence"
+        self.notice = self.publication / "THIRD_PARTY_LICENSES.txt"
 
     def tearDown(self) -> None:
         self.temporary.cleanup()
@@ -510,6 +513,7 @@ class EvidenceNoticeAtomicPublicationTests(unittest.TestCase):
 
     def test_existing_notice_is_never_replaced(self) -> None:
         contender = b"another publisher owns these notice bytes\n"
+        self.publication.mkdir()
         self.notice.write_bytes(contender)
         with self.assertRaisesRegex(
             RELEASE.ReleaseError,
@@ -519,24 +523,46 @@ class EvidenceNoticeAtomicPublicationTests(unittest.TestCase):
         self.assertEqual(self.notice.read_bytes(), contender)
         self.assertFalse(self.evidence.exists())
 
-    def test_interruption_between_pair_members_rolls_back_both(self) -> None:
+    def test_interruption_before_the_single_commit_publishes_neither(self) -> None:
         with mock.patch.object(
-            RELEASE.os,
-            "replace",
+            RELEASE,
+            "_atomic_publish_no_replace",
             side_effect=SystemExit("synthetic publication interruption"),
         ):
             with self.assertRaises(SystemExit):
                 self.publish()
-        self.assertFalse(self.evidence.exists())
-        self.assertFalse(self.notice.exists())
+        self.assertFalse(self.publication.exists())
+
+    def test_interruption_after_the_single_commit_leaves_the_complete_pair(
+        self,
+    ) -> None:
+        original_publish = RELEASE._atomic_publish_no_replace
+
+        def publish_then_interrupt(source: Path, destination: Path, label: str):
+            original_publish(source, destination, label)
+            raise SystemExit("synthetic post-commit interruption")
+
+        with mock.patch.object(
+            RELEASE,
+            "_atomic_publish_no_replace",
+            side_effect=publish_then_interrupt,
+        ):
+            with self.assertRaises(SystemExit):
+                self.publish()
+        self.assertTrue((self.evidence / "audit-receipt.json").is_file())
+        self.assertEqual(
+            self.notice.read_text(encoding="utf-8"),
+            "Synthetic reviewed notice.\n",
+        )
 
     def test_notice_race_is_no_replace_and_rolls_back_evidence(self) -> None:
         original_publish = RELEASE._atomic_publish_no_replace
         contender = b"concurrent notice owner\n"
 
         def install_notice_contender(source: Path, destination: Path, label: str):
-            original_publish(source, destination, label)
+            self.publication.mkdir()
             self.notice.write_bytes(contender)
+            original_publish(source, destination, label)
 
         with mock.patch.object(
             RELEASE,
