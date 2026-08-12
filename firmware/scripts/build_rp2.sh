@@ -54,9 +54,7 @@ CREATED_OUT=""
 SOURCE_INCOMING=""
 BUILD_COMPLETE=0
 
-cleanup_failed_build() {
-  rc=$?
-  trap - EXIT HUP INT TERM
+cleanup_created_build_state() {
   if [ "$BUILD_COMPLETE" -ne 1 ]; then
     if [ -n "$CREATED_OUT" ] && [ -e "$CREATED_OUT" ] && [ ! -L "$CREATED_OUT" ]; then
       rm -rf -- "$CREATED_OUT"
@@ -68,7 +66,20 @@ cleanup_failed_build() {
       rm -rf -- "$SOURCE_INCOMING"
     fi
   fi
+}
+
+cleanup_on_exit() {
+  rc=$?
+  trap - EXIT HUP INT TERM
+  cleanup_created_build_state
   exit "$rc"
+}
+
+cleanup_on_signal() {
+  signal_status="$1"
+  trap - EXIT HUP INT TERM
+  cleanup_created_build_state
+  exit "$signal_status"
 }
 
 usage() {
@@ -232,6 +243,30 @@ assert_regular_file() {
   fi
 }
 
+assert_build_subdirectory() {
+  path="$1"
+  label="$2"
+  if [ -L "$path" ] || [ ! -d "$path" ]; then
+    echo "build_rp2.sh: $label is missing, symlinked, or not a directory: $path" >&2
+    return 1
+  fi
+  physical="$(cd "$path" 2>/dev/null && pwd -P)" || {
+    echo "build_rp2.sh: cannot resolve $label: $path" >&2
+    return 1
+  }
+  case "$physical" in
+    "$BUILD_ROOT"/*) : ;;
+    *)
+      echo "build_rp2.sh: $label escapes the resolved build root: $path" >&2
+      return 1
+      ;;
+  esac
+  if [ "$physical" != "$path" ]; then
+    echo "build_rp2.sh: $label contains a symlinked ancestor: $path" >&2
+    return 1
+  fi
+}
+
 MODE=build
 if [ "${1:-}" = "--plan" ]; then
   MODE=plan
@@ -389,7 +424,30 @@ if ! BUILD_ROOT="$(cd "$BUILD_ROOT" 2>/dev/null && pwd -P)"; then
   echo "build_rp2.sh: cannot resolve the firmware build root" >&2
   exit 1
 fi
+if [ "$BUILD_ROOT" = "/" ]; then
+  echo "build_rp2.sh: refusing filesystem root as the firmware build root" >&2
+  exit 1
+fi
+SOURCES_ROOT="$BUILD_ROOT/.sources"
+if [ -L "$SOURCES_ROOT" ] || { [ -e "$SOURCES_ROOT" ] && [ ! -d "$SOURCES_ROOT" ]; }; then
+  echo "build_rp2.sh: retained source root is symlinked or not a directory: $SOURCES_ROOT" >&2
+  exit 1
+fi
+if [ ! -d "$SOURCES_ROOT" ]; then
+  mkdir -- "$SOURCES_ROOT" || exit 1
+fi
+assert_build_subdirectory "$SOURCES_ROOT" "retained source root" || exit 1
+
 SOURCE_OWNER="$BUILD_ROOT/.sources/$TARGET"
+if [ -L "$SOURCE_OWNER" ] || { [ -e "$SOURCE_OWNER" ] && [ ! -d "$SOURCE_OWNER" ]; }; then
+  echo "build_rp2.sh: target source root is symlinked or not a directory: $SOURCE_OWNER" >&2
+  exit 1
+fi
+if [ ! -d "$SOURCE_OWNER" ]; then
+  mkdir -- "$SOURCE_OWNER" || exit 1
+fi
+assert_build_subdirectory "$SOURCE_OWNER" "target source root" || exit 1
+
 RETAINED_UPSTREAM="$SOURCE_OWNER/micropython"
 OUT="$BUILD_ROOT/$TARGET"
 if [ -e "$RETAINED_UPSTREAM" ] || [ -L "$RETAINED_UPSTREAM" ]; then
@@ -400,8 +458,10 @@ if [ -e "$OUT" ] || [ -L "$OUT" ]; then
   echo "build_rp2.sh: refusing pre-existing target build directory: $OUT" >&2
   exit 1
 fi
-mkdir -p "$SOURCE_OWNER" || exit 1
-trap cleanup_failed_build EXIT HUP INT TERM
+trap cleanup_on_exit EXIT
+trap 'cleanup_on_signal 129' HUP
+trap 'cleanup_on_signal 130' INT
+trap 'cleanup_on_signal 143' TERM
 SOURCE_INCOMING="$(mktemp -d "$SOURCE_OWNER/.micropython.incoming.XXXXXX")" || {
   echo "build_rp2.sh: cannot create retained source staging directory" >&2
   exit 1
@@ -602,7 +662,7 @@ esac
 
 PROVENANCE="$OUT/pyble-build-provenance.json"
 PROVENANCE_TMP="$OUT/.pyble-build-provenance.json.$$"
-{
+if ! {
   printf '{\n'
   printf '  "schema_version": 1,\n'
   printf '  "target": "%s",\n' "$TARGET"
@@ -616,7 +676,15 @@ PROVENANCE_TMP="$OUT/.pyble-build-provenance.json.$$"
   printf '  "firmware_bin_bytes": %s\n' "$BIN_SIZE"
   printf '}\n'
 } > "$PROVENANCE_TMP"
-mv "$PROVENANCE_TMP" "$PROVENANCE"
+then
+  echo "build_rp2.sh: could not write build provenance" >&2
+  exit 1
+fi
+if ! mv -- "$PROVENANCE_TMP" "$PROVENANCE"; then
+  echo "build_rp2.sh: could not atomically admit build provenance" >&2
+  exit 1
+fi
+assert_regular_file "$PROVENANCE" "pyble-build-provenance.json" || exit 1
 
 BUILD_COMPLETE=1
 trap - EXIT HUP INT TERM
