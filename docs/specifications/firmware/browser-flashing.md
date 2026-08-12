@@ -2125,8 +2125,11 @@ The Pico record uses `resource_kind: "rp2"` and
 ESP-only keys are forbidden. Its install digest binds `firmware.uf2`; its
 `oi1_build`, heap snapshots, transport facts, and policy row use the exact
 [specs.md §5.3.5](specs.md#535-v060-five-profile-successor-policy-and-evidence)
-RP2 shapes. Its `profile_gate_summary` has exactly `GP0`, `GP1`, and `GP2`, all
-`passed`. Provisioning checks prove browser size/SHA verification, download
+RP2 shapes. In particular, `console_tx_budget_ms` is exactly `103`, the
+source-derived empty-to-full refill horizon `ceil(2048 / 20)`; an operator
+cannot supply or override it. Its `profile_gate_summary` has exactly `GP0`,
+`GP1`, and `GP2`, all `passed`. Provisioning checks prove browser
+size/SHA verification, download
 from the verified in-memory bytes, manual BOOTSEL copy, automatic reboot, and
 recovery from a deliberately interrupted/failed copy using the same UF2.
 

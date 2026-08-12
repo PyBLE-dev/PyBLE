@@ -44,11 +44,12 @@ running. Opening a serial port can toggle control lines, so close Thonny,
 
 Pico uses `--operator-reset`, the exact candidate `firmware.bin` and
 `firmware.uf2`, and the physical power/reset prompts; it never opens the ESP
-reset UART. Its pacing fact is still blocked by P8/OI-P3: the current runtime
-has token-capacity/refill constants but no authoritative millisecond value.
-Do not pass the ESP native `250 ms` value or the host-fixture `250` as Pico
-evidence. The release baseline starts only after that value and its units are
-source-bound and the bench no longer accepts an operator override.
+reset UART. Its pacing fact is source-bound: capacity `2048` bytes divided by
+refill rate `20` bytes/ms has the exact ceiling horizon `103 ms`. The bench
+imports and rechecks that runtime formula and records
+`console_tx_budget_ms = 103`; it has no pacing-number option. Do not pass the
+unrelated ESP native
+`250 ms` wait budget or a host-fixture value as Pico evidence.
 
 ## OI-1 profile qualification
 
@@ -168,9 +169,9 @@ the exact Pico identity:
 --device-psram-capacity-bytes 0
 ```
 
-This command is intentionally incomplete while P8/OI-P3 is open: do not add
-an invented `--console-tx-budget-ms`. The source-bound pacing amendment and its
-GREEN bench change must land first.
+Do not add `--console-tx-budget-ms`. Pico evidence always uses the frozen
+runtime-derived `103 ms` refill horizon, and the CLI rejects an operator
+override.
 
 Baseline output is deliberately one **profile fragment**, not a release
 approval. The immutable `v0.4.2` evidence remains frozen as its historical

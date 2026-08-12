@@ -38,20 +38,30 @@ Reassembled RX message cap **4096 bytes** (covers RUN source ≤ 2048 + headers)
 
 `gatts_set_buffer(rx_handle, ≥247, False)` immediately after service registration (the default attribute buffer is ~20 bytes — **silent truncation** otherwise; hardware-verified 2026-08-11: the app's 71-byte HELLO arrived as 19 bytes without it). `ble.config(mtu=247)` after `active(True)` to pin the ceiling. Module-local **numeric IRQ constants** (modbluetooth exports no `_IRQ_*` names; hardware-verified AttributeError without them). Contingency: if HIL shows write-without-response merge/loss, escalate to `append=True` + a blob reframer — not default.
 
-## P8. Console & pacing (FROZEN method; numeric tuning still open)
+## P8. Console & pacing (FROZEN method and refill horizon)
 
-One `io.IOBase` object serving three roles: stdout tee (gated on the run-active flag — the main-thread equivalent of the ESP32 worker-origin gate) emitting `CONSOLE_DATA` `[stream:u8][bytes ≤200]` chunks; a 256-byte stdin ring (drop-on-overflow) for `CONSOLE_INPUT`; and the `0x03` STOP channel (P3). BTstack queues congested notifies on the heap rather than dropping (the inverse of the ESP32 mbuf-starve loss mode): emission uses a token-bucket budget whose constants are HIL-tuned; a dead link degrades to drop-and-continue, never a wedge (the `PBLE_CONSOLE_TX_BUDGET_MS` twin).
+One `io.IOBase` object serving three roles: stdout tee (gated on the run-active flag — the main-thread equivalent of the ESP32 worker-origin gate) emitting `CONSOLE_DATA` `[stream:u8][bytes ≤200]` chunks; a 256-byte stdin ring (drop-on-overflow) for `CONSOLE_INPUT`; and the `0x03` STOP channel (P3). BTstack queues congested notifies on the heap rather than dropping (the inverse of the ESP32 mbuf-starve loss mode): emission uses the bounded token bucket below; a dead link degrades to drop-and-continue, never a wedge.
 
-The current portable implementation exposes byte-capacity and bytes-per-ms
-token-bucket constants, not an authoritative millisecond budget. The `250 ms`
-native ESP constant and the `250` value used by host fixtures therefore MUST
-NOT be copied into Pico release evidence as though the Pico runtime reported
-it. Before a Pico baseline fragment is admissible, one positive pacing value
-and its units MUST be frozen here, represented by an exact runtime-source
-constant, and consumed by the OI bench without an operator-selectable numeric
-override. Until that amendment lands, OI-P3 remains release-blocking and a
-merely positive `console_tx_budget_ms` supplied on the command line is not
-qualification evidence.
+The portable token bucket has exact capacity `TX_CAPACITY = 2048` bytes and
+exact refill rate `TX_REFILL_PER_MS = 20` bytes per millisecond. Its
+source-derived maximum empty-to-full refill horizon is therefore frozen as:
+
+```text
+TX_BUDGET_MS = ceil(TX_CAPACITY / TX_REFILL_PER_MS)
+             = (2048 + 20 - 1) // 20
+             = 103 ms
+```
+
+`TX_BUDGET_MS` and the release-evidence field `console_tx_budget_ms` mean only
+that refill horizon. They are not a blocking Notify timeout, per-chunk sleep,
+or promise to retain every flood byte. The runtime MUST define all three
+positive integer constants and MUST derive `TX_BUDGET_MS` with the exact
+ceiling formula above. The OI bench MUST import that runtime value, verify the
+same formula, record exactly `103`, and expose no operator-selectable pacing
+number. The native ESP `PBLE_CONSOLE_TX_BUDGET_MS = 250` wait budget is a
+different mechanism and MUST NOT enter Pico evidence. This closes OI-P3's
+numeric-definition item without recording a HIL pass; STOP/flood behavior and
+the complete GP2 matrix remain release-blocking.
 
 ## P9. Build & provisioning contract (RP2-BLD, FROZEN)
 
@@ -97,9 +107,9 @@ build facts are raw `firmware.bin` byte length, the exact 1,572,864-byte image
 limit, and their non-negative headroom. Its 16 runtime heap snapshots contain
 exactly `gc_free_bytes` and `gc_allocated_bytes`; ESP-IDF heap keys are
 forbidden. Transport evidence records BTstack, negotiated ATT MTU, advertised
-window/chunk, and the source-bound console pacing budget after P8/OI-P3 freezes
-it; ESP/NimBLE DLE/PHY/serial link-settlement keys are forbidden. An arbitrary
-positive operator-supplied value cannot satisfy this field.
+window/chunk, and `console_tx_budget_ms: 103`, the source-bound P8 empty-to-full
+refill horizon; ESP/NimBLE DLE/PHY/serial link-settlement keys are forbidden.
+Any other or operator-supplied value fails the observation.
 
 The release artifact is `rpi-pico2-w/firmware.uf2`. Release metadata binds its
 exact byte size/SHA-256 and the raw `firmware.bin` size/SHA-256 used for static
@@ -138,6 +148,8 @@ board-agnostic (CON-7: the name is user-entered, never suggested).
 
 - **OI-P1** — native-BTstack module retirement (ADR-0030).
 - **OI-P2** — `ble.config('mac')` boot-stability probe (spec footnote only; identity already derives from `unique_id`).
-- **OI-P3** — console pacing constants (HIL-tuned at F-27).
+- **OI-P3** — CLOSED for the source-derived `103 ms` refill-horizon
+  definition; GP2 still validates the resulting console-flood/STOP behavior on
+  the final candidate.
 - **OI-P4** — NeoPixel claim withheld until the upstream package + `machine.bitstream` primitive are validated on rp2 (FR-LIB rule).
 - **OI-P5** — core1 fs-worker increment (restores transfer-during-run concurrency).

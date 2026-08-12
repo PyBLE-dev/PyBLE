@@ -1063,7 +1063,12 @@ before its first write,
 independent of ambient umask, and a pre-existing path is rejected. The result
 writes atomically and never silently drops a successful sample. RP2 instead
 uses its frozen BTstack observation and reset adapter and forbids ESP-only
-session/DLE/PHY fields.
+session/DLE/PHY fields. The RP2 bench imports the portable console's exact
+`TX_CAPACITY = 2048` bytes, `TX_REFILL_PER_MS = 20` bytes/ms, and derived
+`TX_BUDGET_MS = 103` ms. It independently requires the exact integer ceiling
+formula `(TX_CAPACITY + TX_REFILL_PER_MS - 1) // TX_REFILL_PER_MS` and records
+that value as `console_tx_budget_ms`. There is no CLI or environment override
+for this source-bound fact.
 
 #### 8.5.2 Threshold policy lifecycle
 
