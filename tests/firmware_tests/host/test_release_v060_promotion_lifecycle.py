@@ -231,7 +231,7 @@ class V5CompletionAndPromotionContractTests(unittest.TestCase):
             "profiles": lifecycle_fixture.pending_profiles(),
         }
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            root = Path(temporary).resolve()
             candidate = root / "candidate"
             candidate.mkdir()
             (candidate / "release.json").write_bytes(b"{}\n")
@@ -306,7 +306,7 @@ class V5CompletionAndPromotionContractTests(unittest.TestCase):
             "profiles": lifecycle_fixture.pending_profiles(),
         }
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            root = Path(temporary).resolve()
             candidate = root / "candidate"
             candidate.mkdir()
             (candidate / "release.json").write_bytes(b"{}\n")
@@ -380,7 +380,7 @@ class V5CompletionAndPromotionContractTests(unittest.TestCase):
             "profiles": lifecycle_fixture.pending_profiles(),
         }
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            root = Path(temporary).resolve()
             candidate = root / "candidate"
             candidate.mkdir()
             (candidate / "release.json").write_bytes(b"{}\n")
