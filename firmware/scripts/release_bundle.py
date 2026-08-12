@@ -61,7 +61,25 @@ def _load_waveshare_lcd147b_gate() -> Any:
     return module
 
 
+def _load_v060_profile_gate() -> Any:
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "qualification"
+        / "v060_profile_release_gate.py"
+    ).resolve(strict=True)
+    spec = importlib.util.spec_from_file_location(
+        "_pyble_release_v060_profile_gate",
+        source,
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError("cannot load the v0.6 profile qualification validator")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 _WAVESHARE_LCD147B_GATE = _load_waveshare_lcd147b_gate()
+_V060_PROFILE_GATE = _load_v060_profile_gate()
 
 
 class ReleaseError(RuntimeError):
@@ -150,6 +168,15 @@ RP2_QUALIFICATION_THRESHOLD_KEYS = (
 )
 RP2_IMAGE_LIMIT_BYTES = 1_572_864
 ROLE_ORDER = ("bootloader", "partition-table", "application")
+RP2_LICENSE_AUDIT_ROLES = (
+    "linked-inputs",
+    "frozen-modules",
+    "pico-sdk",
+    "btstack",
+    "cyw43",
+    "tinyusb",
+    "arm-gnu-runtime",
+)
 DOCUMENT_KEYS = (
     "third_party_licenses",
     "release_notes",
@@ -9058,14 +9085,7 @@ def _release_license_inventory_for_version(
                 "target": spec["target"],
                 "resource_kind": "rp2" if is_rp2 else "esp-idf",
                 "roles": (
-                    [
-                        "linked-inputs",
-                        "frozen-modules",
-                        "pico-sdk",
-                        "btstack",
-                        "cyw43",
-                        "arm-gnu-runtime",
-                    ]
+                    list(RP2_LICENSE_AUDIT_ROLES)
                     if is_rp2
                     else ["application", "bootloader"]
                 ),
@@ -9125,6 +9145,592 @@ def _require_release_license_inventory(
             % contract["profile_id"],
         )
     return receipt
+
+
+def _audit_v060_canonical_json(path: Path, label: str) -> Any:
+    """Read one stable, canonical JSON evidence file without following links."""
+
+    payload = _read_regular_file_bytes(path, label)
+    try:
+        value = json.loads(payload.decode("utf-8", errors="strict"))
+    except (UnicodeError, TypeError, ValueError) as exc:
+        raise ReleaseError("%s is not canonical UTF-8 JSON" % label) from exc
+    _require(
+        payload == _canonical_json_bytes(value),
+        "%s bytes are not canonical JSON" % label,
+    )
+    return value
+
+
+def _audit_v060_tree_sha256(path: Path, label: str) -> str:
+    """Hash a retained tree using the frozen v0.6 receipt encoding."""
+
+    root = Path(path)
+    try:
+        mode = root.lstat().st_mode
+    except OSError as exc:
+        raise ReleaseError("%s is missing" % label) from exc
+    _require(
+        stat_module.S_ISDIR(mode) and not stat_module.S_ISLNK(mode),
+        "%s must be a regular non-symlink directory" % label,
+    )
+    digest = hashlib.sha256()
+    found = False
+    for item in sorted(root.rglob("*")):
+        try:
+            item_mode = item.lstat().st_mode
+        except OSError as exc:
+            raise ReleaseError("%s changed while it was hashed" % label) from exc
+        _require(
+            not stat_module.S_ISLNK(item_mode),
+            "%s contains a symlink" % label,
+        )
+        if stat_module.S_ISDIR(item_mode):
+            continue
+        _require(
+            stat_module.S_ISREG(item_mode),
+            "%s contains a special file" % label,
+        )
+        relative = item.relative_to(root).as_posix().encode("utf-8")
+        digest.update(relative)
+        digest.update(b"\0")
+        digest.update(_read_regular_file_bytes(item, label))
+        digest.update(b"\0")
+        found = True
+    _require(found, "%s contains no source files" % label)
+    return digest.hexdigest()
+
+
+def _audit_v060_digest(value: Any, label: str) -> str:
+    _require(
+        isinstance(value, str) and SHA256_RE.fullmatch(value) is not None,
+        "%s must be lowercase 64-hex" % label,
+    )
+    return value
+
+
+def _audit_v060_logical_file(
+    logical_path: Any,
+    *,
+    repo_root: Path,
+    build_root: Path,
+    label: str,
+) -> tuple[str, Path]:
+    logical = _safe_relative_path(logical_path, label)
+    prefix, separator, relative = logical.partition("/")
+    _require(
+        bool(separator) and prefix in {"repo", "build"} and bool(relative),
+        "%s must use the repo/ or build/ namespace" % label,
+    )
+    root = repo_root if prefix == "repo" else build_root
+    return logical, _audit_repo_file(root, relative, label)
+
+
+def _audit_v060_input_records(
+    value: Any,
+    *,
+    repo_root: Path,
+    build_root: Path,
+    label: str,
+    licenses: bool,
+) -> list[dict[str, str]]:
+    _require(
+        isinstance(value, list) and bool(value),
+        "%s must be a nonempty array" % label,
+    )
+    normalized: list[dict[str, str]] = []
+    logical_paths: set[str] = set()
+    for index, raw in enumerate(value):
+        record_label = "%s[%d]" % (label, index)
+        record = _exact_keys(
+            raw,
+            {"kind", "logical_path", "sha256"},
+            record_label,
+        )
+        kind = record["kind"]
+        _require(
+            isinstance(kind, str)
+            and re.fullmatch(r"[a-z][a-z0-9-]*", kind) is not None
+            and (not licenses or kind == "license"),
+            "%s kind is invalid" % record_label,
+        )
+        logical, source = _audit_v060_logical_file(
+            record["logical_path"],
+            repo_root=repo_root,
+            build_root=build_root,
+            label="%s logical path" % record_label,
+        )
+        digest = _audit_v060_digest(
+            record["sha256"],
+            "%s digest" % record_label,
+        )
+        _require(
+            logical not in logical_paths,
+            "%s duplicates a logical input" % label,
+        )
+        _require(
+            _sha256_path(source) == digest,
+            "%s input changed after review" % record_label,
+        )
+        logical_paths.add(logical)
+        normalized.append(
+            {"kind": kind, "logical_path": logical, "sha256": digest}
+        )
+    return normalized
+
+
+def _audit_verify_release_inventory_evidence(
+    *,
+    evidence_dir: Path,
+    build_root: Path,
+    repo_root: Path,
+    notice: str,
+    firmware_version: str,
+) -> dict[str, Any]:
+    """Recompute the persisted heterogeneous v0.6 license inventory.
+
+    The eight ESP raw/reviewed documents remain the outputs of the pinned
+    ESP-IDF audit.  RP2 evidence is deliberately port-discriminated and binds
+    real build/source/license bytes; it is never synthesized from ESP SBOM
+    records.  This verifier only admits the exact schema frozen for v0.6.0.
+    """
+
+    _require(
+        firmware_version == "0.6.0",
+        "heterogeneous release-license evidence is exact to v0.6.0",
+    )
+    evidence = Path(evidence_dir)
+    builds = Path(build_root)
+    root = Path(repo_root)
+    for path, label in (
+        (evidence, "license evidence root"),
+        (builds, "license build root"),
+        (root, "license repository root"),
+    ):
+        try:
+            mode = path.lstat().st_mode
+        except OSError as exc:
+            raise ReleaseError("%s is missing" % label) from exc
+        _require(
+            stat_module.S_ISDIR(mode) and not stat_module.S_ISLNK(mode),
+            "%s must be a regular non-symlink directory" % label,
+        )
+    _require(
+        not evidence.resolve().is_relative_to(root.resolve())
+        and not evidence.resolve().is_relative_to(builds.resolve()),
+        "license evidence must be outside source and build roots",
+    )
+
+    actual_evidence: dict[str, Path] = {}
+    for path in sorted(evidence.rglob("*")):
+        relative = path.relative_to(evidence).as_posix()
+        try:
+            mode = path.lstat().st_mode
+        except OSError as exc:
+            raise ReleaseError("license evidence changed during validation") from exc
+        _require(
+            not stat_module.S_ISLNK(mode),
+            "license review evidence contains a symlink",
+        )
+        if stat_module.S_ISDIR(mode):
+            continue
+        _require(
+            stat_module.S_ISREG(mode),
+            "license review evidence contains a special file",
+        )
+        actual_evidence[relative] = path
+
+    receipt_path = evidence / "audit-receipt.json"
+    receipt = _exact_keys(
+        _audit_v060_canonical_json(receipt_path, "v0.6 license audit receipt"),
+        {
+            "schema_version",
+            "notice_sha256",
+            "input_sha256",
+            "executed_artifacts",
+            "execution_identity",
+            "identities",
+            "evidence_sha256",
+            "release_inventory_path",
+            "release_inventory_sha256",
+        },
+        "v0.6 license audit receipt",
+    )
+    _require(
+        type(receipt["schema_version"]) is int
+        and receipt["schema_version"] == 2,
+        "v0.6 license audit receipt schema_version must be 2",
+    )
+    notice_sha256 = _sha256_bytes(notice.encode("utf-8"))
+    _require(
+        receipt["notice_sha256"] == notice_sha256,
+        "v0.6 release notice differs from the reviewed receipt",
+    )
+    for key in ("input_sha256", "executed_artifacts"):
+        hashes = receipt[key]
+        _require(
+            isinstance(hashes, dict)
+            and bool(hashes)
+            and all(
+                isinstance(name, str)
+                and bool(name)
+                and isinstance(digest, str)
+                and SHA256_RE.fullmatch(digest) is not None
+                for name, digest in hashes.items()
+            ),
+            "v0.6 receipt %s is invalid" % key,
+        )
+    _require(
+        isinstance(receipt["execution_identity"], dict)
+        and bool(receipt["execution_identity"]),
+        "v0.6 receipt execution identity is missing",
+    )
+
+    evidence_hashes = receipt["evidence_sha256"]
+    _require(
+        isinstance(evidence_hashes, dict) and bool(evidence_hashes),
+        "v0.6 receipt evidence inventory is missing",
+    )
+    expected_evidence_paths = set(actual_evidence) - {"audit-receipt.json"}
+    _require(
+        set(evidence_hashes) == expected_evidence_paths,
+        "v0.6 license evidence coverage is stale or incomplete",
+    )
+    for relative, digest_value in evidence_hashes.items():
+        safe = _safe_relative_path(relative, "v0.6 license evidence")
+        digest = _audit_v060_digest(
+            digest_value,
+            "v0.6 license evidence %s" % safe,
+        )
+        _require(
+            _sha256_path(actual_evidence[safe]) == digest,
+            "v0.6 license evidence was changed after review",
+        )
+
+    _require(
+        receipt["release_inventory_path"] == "release-inventory.json",
+        "v0.6 release inventory path changed",
+    )
+    inventory_digest = _audit_v060_digest(
+        receipt["release_inventory_sha256"],
+        "v0.6 release inventory digest",
+    )
+    _require(
+        evidence_hashes.get("release-inventory.json") == inventory_digest,
+        "v0.6 release inventory is not receipt-bound",
+    )
+    inventory_path = actual_evidence["release-inventory.json"]
+    _require(
+        _sha256_path(inventory_path) == inventory_digest,
+        "v0.6 release inventory changed after review",
+    )
+    inventory = _exact_keys(
+        _audit_v060_canonical_json(inventory_path, "v0.6 release inventory"),
+        {
+            "schema_version",
+            "firmware_version",
+            "profile_order",
+            "notice_sha256",
+            "profiles",
+        },
+        "v0.6 release inventory",
+    )
+    _require(
+        type(inventory["schema_version"]) is int
+        and inventory["schema_version"] == 1
+        and inventory["firmware_version"] == firmware_version
+        and inventory["profile_order"] == list(V060_RELEASE_PROFILE_ORDER)
+        and inventory["notice_sha256"] == notice_sha256,
+        "v0.6 release inventory identity is stale or substituted",
+    )
+
+    contracts = _release_license_inventory_for_version(firmware_version)
+    profiles = inventory["profiles"]
+    _require(
+        isinstance(profiles, list)
+        and len(profiles) == len(contracts),
+        "v0.6 release inventory profile coverage is incomplete",
+    )
+    expected_identities: list[dict[str, str]] = []
+    lock = _read_lock(root)
+    rp2_source_identity: dict[str, Any] | None = None
+    rp2_provenance: dict[str, Any] | None = None
+    rp2_link_text: str | None = None
+    for profile, contract in zip(profiles, contracts):
+        profile_id = contract["profile_id"]
+        profile = _exact_keys(
+            profile,
+            {
+                "profile_id",
+                "target",
+                "resource_kind",
+                "build_provenance_sha256",
+                "roles",
+            },
+            "v0.6 release inventory %s" % profile_id,
+        )
+        _require(
+            profile["profile_id"] == profile_id
+            and profile["target"] == contract["target"]
+            and profile["resource_kind"] == contract["resource_kind"],
+            "v0.6 release inventory profile %s is substituted" % profile_id,
+        )
+        provenance_path = (
+            builds / contract["target"] / "pyble-build-provenance.json"
+        )
+        _audit_no_symlink_components(builds, provenance_path, "build provenance")
+        provenance_bytes = _read_regular_file_bytes(
+            provenance_path,
+            "%s build provenance" % profile_id,
+        )
+        provenance_digest = _audit_v060_digest(
+            profile["build_provenance_sha256"],
+            "%s build provenance digest" % profile_id,
+        )
+        _require(
+            _sha256_bytes(provenance_bytes) == provenance_digest,
+            "%s build provenance changed after license review" % profile_id,
+        )
+        try:
+            provenance = json.loads(provenance_bytes.decode("utf-8", errors="strict"))
+        except (UnicodeError, TypeError, ValueError) as exc:
+            raise ReleaseError("%s build provenance is invalid" % profile_id) from exc
+        _require(
+            isinstance(provenance, dict)
+            and provenance.get("target") == contract["target"],
+            "%s build provenance target is substituted" % profile_id,
+        )
+
+        roles = profile["roles"]
+        _require(
+            isinstance(roles, list)
+            and [role.get("role") for role in roles if isinstance(role, dict)]
+            == contract["roles"],
+            "%s license roles are missing, reordered, or substituted" % profile_id,
+        )
+        if contract["resource_kind"] == "esp-idf":
+            for role_record, role in zip(roles, contract["roles"]):
+                role_record = _exact_keys(
+                    role_record,
+                    {
+                        "role",
+                        "raw_path",
+                        "raw_sha256",
+                        "reviewed_path",
+                        "reviewed_sha256",
+                    },
+                    "%s/%s license evidence" % (profile_id, role),
+                )
+                expected_raw = "raw/%s--%s.spdx.tag" % (profile_id, role)
+                expected_reviewed = "spdx/%s--%s.spdx.json" % (profile_id, role)
+                _require(
+                    role_record["raw_path"] == expected_raw
+                    and role_record["reviewed_path"] == expected_reviewed,
+                    "%s/%s ESP evidence path changed" % (profile_id, role),
+                )
+                for path_key, digest_key in (
+                    ("raw_path", "raw_sha256"),
+                    ("reviewed_path", "reviewed_sha256"),
+                ):
+                    relative = role_record[path_key]
+                    digest = _audit_v060_digest(
+                        role_record[digest_key],
+                        "%s/%s ESP evidence digest" % (profile_id, role),
+                    )
+                    _require(
+                        evidence_hashes.get(relative) == digest
+                        and _sha256_path(actual_evidence[relative]) == digest,
+                        "%s/%s ESP evidence changed" % (profile_id, role),
+                    )
+                _audit_v060_canonical_json(
+                    actual_evidence[expected_reviewed],
+                    "%s/%s reviewed ESP evidence" % (profile_id, role),
+                )
+                expected_identities.append(
+                    {"profile_id": profile_id, "role": role}
+                )
+            continue
+
+        _require(
+            provenance.get("port") == "rp2"
+            and isinstance(provenance.get("micropython"), dict)
+            and isinstance(provenance.get("arm_gnu_toolchain"), dict),
+            "RP2 build provenance lacks its port/source/toolchain identity",
+        )
+        rp2_provenance = provenance
+        for role_record, role in zip(roles, contract["roles"]):
+            role_record = _exact_keys(
+                role_record,
+                {"role", "evidence_path", "evidence_sha256"},
+                "RP2 %s inventory record" % role,
+            )
+            expected_path = "rp2/rpi-pico2-w--%s.json" % role
+            evidence_digest = _audit_v060_digest(
+                role_record["evidence_sha256"],
+                "RP2 %s evidence digest" % role,
+            )
+            _require(
+                role_record["evidence_path"] == expected_path
+                and evidence_hashes.get(expected_path) == evidence_digest
+                and _sha256_path(actual_evidence[expected_path]) == evidence_digest,
+                "RP2 %s evidence is missing or changed" % role,
+            )
+            document = _exact_keys(
+                _audit_v060_canonical_json(
+                    actual_evidence[expected_path],
+                    "RP2 %s evidence" % role,
+                ),
+                {
+                    "schema_version",
+                    "profile_id",
+                    "target",
+                    "resource_kind",
+                    "role",
+                    "build_provenance_sha256",
+                    "source_identity",
+                    "inputs",
+                    "license_inputs",
+                },
+                "RP2 %s evidence" % role,
+            )
+            _require(
+                type(document["schema_version"]) is int
+                and document["schema_version"] == 1
+                and document["profile_id"] == profile_id
+                and document["target"] == contract["target"]
+                and document["resource_kind"] == "rp2"
+                and document["role"] == role
+                and document["build_provenance_sha256"] == provenance_digest,
+                "RP2 %s evidence identity is stale or substituted" % role,
+            )
+            source_identity = _exact_keys(
+                document["source_identity"],
+                {
+                    "micropython_commit",
+                    "rp2_port_tree_sha256",
+                    "arm_gnu_toolchain",
+                },
+                "RP2 %s source identity" % role,
+            )
+            if rp2_source_identity is None:
+                rp2_source_identity = copy.deepcopy(source_identity)
+            _require(
+                source_identity == rp2_source_identity,
+                "RP2 source identity differs across license roles",
+            )
+            inputs = _audit_v060_input_records(
+                document["inputs"],
+                repo_root=root,
+                build_root=builds,
+                label="RP2 %s inputs" % role,
+                licenses=False,
+            )
+            licenses = _audit_v060_input_records(
+                document["license_inputs"],
+                repo_root=root,
+                build_root=builds,
+                label="RP2 %s license inputs" % role,
+                licenses=True,
+            )
+            kinds = {item["kind"] for item in inputs}
+            required_kinds = {
+                "linked-inputs": {
+                    "linked-elf",
+                    "linker-command",
+                    "micropython-rp2-source",
+                },
+                "frozen-modules": {
+                    "frozen-manifest",
+                    "frozen-content",
+                    "frozen-mpy",
+                },
+                "pico-sdk": {"linked-source"},
+                "btstack": {"linked-source"},
+                "cyw43": {"linked-source"},
+                "tinyusb": {"linked-source"},
+                "arm-gnu-runtime": {
+                    "linked-runtime-archive",
+                    "toolchain-pin",
+                },
+            }[role]
+            _require(
+                required_kinds.issubset(kinds) and bool(licenses),
+                "RP2 %s lacks exact linked/license input evidence" % role,
+            )
+            if role == "linked-inputs":
+                linker_record = next(
+                    item for item in inputs if item["kind"] == "linker-command"
+                )
+                _logical, linker_path = _audit_v060_logical_file(
+                    linker_record["logical_path"],
+                    repo_root=root,
+                    build_root=builds,
+                    label="RP2 linker command",
+                )
+                try:
+                    rp2_link_text = linker_path.read_text(
+                        encoding="utf-8", errors="strict"
+                    )
+                except (OSError, UnicodeError) as exc:
+                    raise ReleaseError("RP2 linker command is unreadable") from exc
+                _require(
+                    "rp2" in rp2_link_text.lower(),
+                    "RP2 linker command lacks the RP2 port input",
+                )
+            expected_identities.append({"profile_id": profile_id, "role": role})
+
+    _require(
+        receipt["identities"] == expected_identities,
+        "v0.6 license receipt identities are incomplete or reordered",
+    )
+    _require(
+        rp2_source_identity is not None
+        and rp2_provenance is not None
+        and rp2_link_text is not None,
+        "RP2 release-license evidence is incomplete",
+    )
+    rp2_source = builds / ".sources" / "rpi-pico2-w" / "micropython"
+    expected_port_digest = _audit_v060_tree_sha256(
+        rp2_source / "ports" / "rp2",
+        "retained MicroPython/rp2 source",
+    )
+    arm_identity = _exact_keys(
+        rp2_source_identity["arm_gnu_toolchain"],
+        {"release", "gcc", "versions_lock_sha256"},
+        "RP2 ARM GNU source identity",
+    )
+    arm_lock = lock.get("arm_gnu_toolchain")
+    _require(
+        rp2_source_identity["micropython_commit"]
+        == lock["micropython"]["commit"]
+        == rp2_provenance["micropython"].get("commit")
+        and rp2_source_identity["rp2_port_tree_sha256"]
+        == expected_port_digest,
+        "retained MicroPython/rp2 source identity changed",
+    )
+    _require(
+        isinstance(arm_lock, dict)
+        and arm_identity["release"] == arm_lock.get("release")
+        and isinstance(arm_lock.get("gcc_version"), str)
+        and arm_lock["gcc_version"] in arm_identity["gcc"]
+        and arm_identity["versions_lock_sha256"]
+        == _sha256_path(root / "firmware" / "versions.lock")
+        and rp2_provenance["arm_gnu_toolchain"].get("release")
+        == arm_identity["release"]
+        and rp2_provenance["arm_gnu_toolchain"].get("gcc")
+        == arm_identity["gcc"],
+        "RP2 ARM GNU runtime identity differs from versions.lock/provenance",
+    )
+    link_text_lower = rp2_link_text.lower()
+    _require(
+        all(
+            token in link_text_lower
+            for token in ("pico-sdk", "btstack", "cyw43", "tinyusb")
+        )
+        and ("-lgcc" in link_text_lower or "libgcc" in link_text_lower),
+        "RP2 linker command lacks one reviewed dependency/runtime input",
+    )
+    return inventory
 
 
 def _waveshare_lcd147b_capable_version(firmware_version: str) -> bool:
@@ -12803,19 +13409,31 @@ def _audit_verify_release_evidence(
     evidence = Path(evidence_dir)
     builds = Path(build_root)
     root = Path(repo_root)
-    release_profile_order = (
-        _release_profile_order_for_version(release["identity"]["version"])
+    firmware_version = (
+        release["identity"]["version"]
         if release is not None
-        else _release_profile_order_for_version(
-            _read_lock(root)["pyble"]["agent_version"]
-        )
+        else _read_lock(root)["pyble"]["agent_version"]
     )
+    release_profile_order = _release_profile_order_for_version(firmware_version)
     if tuple(release_profile_order) == V060_RELEASE_PROFILE_ORDER:
-        raise ReleaseError(
-            "v0.6.0 license admission requires a persisted heterogeneous "
-            "release-inventory receipt; the current ESP-only audit receipt "
-            "cannot qualify RP2"
+        _audit_verify_release_inventory_evidence(
+            evidence_dir=evidence,
+            build_root=builds,
+            repo_root=root,
+            notice=notice,
+            firmware_version=firmware_version,
         )
+        if bundle is not None or release is not None:
+            _require(
+                bundle is not None and release is not None,
+                "packaged-build evidence comparison is incomplete",
+            )
+            _audit_verify_packaged_build(
+                bundle=Path(bundle),
+                release=release,
+                build_root=builds,
+            )
+        return
     _require(
         not evidence.is_symlink(),
         "license review evidence root must not be a symlink",
@@ -15181,6 +15799,90 @@ def _bind_waveshare_lcd147b_hil_summary(
     return completed
 
 
+def _bind_v060_hil_qualification_summaries(
+    payload: dict[str, Any],
+    *,
+    waveshare_lcd147b_summary: dict[str, Any],
+    esp32_c3_summary: dict[str, Any],
+    rpi_pico2_w_summary: dict[str, Any],
+    firmware_version: str,
+) -> dict[str, Any]:
+    """Perform V5's sole atomic null-to-three-summary transition."""
+
+    _validate_hil_source_era(payload, firmware_version)
+    _require(
+        firmware_version == "0.6.0"
+        and payload["schema_version"] == 5,
+        "V5 qualification summaries require exact firmware version 0.6.0",
+    )
+    summary_inputs = {
+        "waveshare_lcd147b_qualification": waveshare_lcd147b_summary,
+        "esp32_c3_qualification": esp32_c3_summary,
+        "rpi_pico2_w_qualification": rpi_pico2_w_summary,
+    }
+    _require(
+        all(payload[key] is None for key in summary_inputs)
+        and all(type(summary) is dict for summary in summary_inputs.values()),
+        "V5 qualification summaries require three derived inputs and three nulls",
+    )
+    records = payload["records"]
+    _require(
+        type(records) is list
+        and len(records) == len(V060_RELEASE_PROFILE_ORDER)
+        and all(type(record) is dict for record in records)
+        and [record.get("profile_id") for record in records]
+        == list(V060_RELEASE_PROFILE_ORDER),
+        "V5 qualification summary record parity changed",
+    )
+    by_id = {record["profile_id"]: record for record in records}
+    _require(
+        all(
+            by_id[profile_id].get("profile_gate_summary") is None
+            for profile_id in V05_RELEASE_PROFILE_ORDER
+        ),
+        "V5 non-C3/RP2 record gate summaries must remain null",
+    )
+    expected_c3_gates = {"C3-G%d" % index for index in range(7)}
+    expected_pico_gates = {"GP0", "GP1", "GP2"}
+    c3_gates = _exact_keys(
+        esp32_c3_summary.get("gates"),
+        expected_c3_gates,
+        "V5 C3 qualification gates",
+    )
+    pico_gates = _exact_keys(
+        rpi_pico2_w_summary.get("gates"),
+        expected_pico_gates,
+        "V5 Pico qualification gates",
+    )
+    _require(
+        esp32_c3_summary.get("profile_id") == "esp32-c3-4mb"
+        and rpi_pico2_w_summary.get("profile_id") == "rpi-pico2-w"
+        and all(value == "passed" for value in c3_gates.values())
+        and all(value == "passed" for value in pico_gates.values()),
+        "V5 profile qualification summaries are incomplete or substituted",
+    )
+    completed_c3_gates = _exact_keys(
+        by_id["esp32-c3-4mb"].get("profile_gate_summary"),
+        expected_c3_gates,
+        "completed V5 C3 record gates",
+    )
+    completed_pico_gates = _exact_keys(
+        by_id["rpi-pico2-w"].get("profile_gate_summary"),
+        expected_pico_gates,
+        "completed V5 Pico record gates",
+    )
+    _require(
+        completed_c3_gates == c3_gates
+        and completed_pico_gates == pico_gates,
+        "completed V5 record gates differ from validated private results",
+    )
+
+    completed = copy.deepcopy(payload)
+    for key, summary in summary_inputs.items():
+        completed[key] = copy.deepcopy(summary)
+    return completed
+
+
 def _render_hil_report_payload(text: str, payload: dict[str, Any]) -> bytes:
     _parse_hil_report(text)
     matches = list(HIL_MARKER_RE.finditer(text))
@@ -15447,7 +16149,7 @@ def _validate_hil(
                         else ()
                     )
                 )
-                if expected_gates and not allow_unfinalized_gate_summaries:
+                if expected_gates:
                     gate_summary = _exact_keys(
                         record["profile_gate_summary"],
                         set(expected_gates),
@@ -15608,6 +16310,57 @@ def _validate_hil(
             _require(
                 all(isinstance(summary, dict) for summary in summaries),
                 "public V5 qualification summaries are incomplete",
+            )
+            try:
+                _WAVESHARE_LCD147B_GATE.validate_public_summary(
+                    payload["waveshare_lcd147b_qualification"],
+                    firmware_path=(
+                        Path(bundle)
+                        / "waveshare-esp32-s3-lcd-147b"
+                        / "firmware.bin"
+                    ),
+                    expected_version=identity["version"],
+                    candidate_release_json_sha256=candidate_digest,
+                )
+                _V060_PROFILE_GATE.validate_public_summary(
+                    payload["esp32_c3_qualification"],
+                    artifact_path=(
+                        Path(bundle) / "esp32-c3-4mb" / "firmware.bin"
+                    ),
+                    expected_profile_id="esp32-c3-4mb",
+                    expected_version=identity["version"],
+                    candidate_release_json_sha256=candidate_digest,
+                )
+                _V060_PROFILE_GATE.validate_public_summary(
+                    payload["rpi_pico2_w_qualification"],
+                    artifact_path=(
+                        Path(bundle) / "rpi-pico2-w" / "firmware.uf2"
+                    ),
+                    expected_profile_id="rpi-pico2-w",
+                    expected_version=identity["version"],
+                    candidate_release_json_sha256=candidate_digest,
+                )
+            except (
+                _WAVESHARE_LCD147B_GATE.QualificationError,
+                _V060_PROFILE_GATE.QualificationError,
+            ) as exc:
+                raise ReleaseError(
+                    "public V5 qualification summary is invalid: %s" % exc
+                ) from exc
+            _require(
+                payload["esp32_c3_qualification"]["gates"]
+                == next(
+                    record["profile_gate_summary"]
+                    for record in records
+                    if record["profile_id"] == "esp32-c3-4mb"
+                )
+                and payload["rpi_pico2_w_qualification"]["gates"]
+                == next(
+                    record["profile_gate_summary"]
+                    for record in records
+                    if record["profile_id"] == "rpi-pico2-w"
+                ),
+                "public V5 top-level and record gate summaries disagree",
             )
         return payload
     if _waveshare_lcd147b_capable_version(identity["version"]):
@@ -16227,21 +16980,53 @@ def _release_notes(
     built_at: str,
     provenance: dict[str, Any],
 ) -> str:
+    profile_order = _release_profile_order_for_version(version)
+    profile_descriptions = {
+        "esp32-4mb": (
+            "- `esp32-4mb`: classic ESP32 with exactly 4 MiB flash.\n"
+        ),
+        "esp32-s3-n16r8": (
+            "- `esp32-s3-n16r8`: ESP32-S3 N16R8-class only — exactly 16 MiB "
+            "flash plus 8 MiB Octal PSRAM; lean common runtime, with no bundled "
+            "board-specific display drivers.\n"
+        ),
+        "waveshare-esp32-s3-lcd-147b": (
+            "- `waveshare-esp32-s3-lcd-147b`: exact Waveshare "
+            "ESP32-S3-LCD-1.47B B-version only; includes its ST7789 runtime and "
+            "fresh-install PyBLE splash with persistent disable.\n"
+        ),
+        "esp32-c3-4mb": (
+            "- `esp32-c3-4mb`: ESP32-C3 revision v0.3 or newer with exactly "
+            "4 MiB flash and no PSRAM requirement.\n"
+        ),
+        "rpi-pico2-w": (
+            "- `rpi-pico2-w`: Raspberry Pi Pico 2 W (RP2350 with CYW43439); "
+            "verified UF2 download followed by manual BOOTSEL copy.\n"
+        ),
+    }
+    supported_profiles = "".join(
+        profile_descriptions[profile_id] for profile_id in profile_order
+    )
+    if tuple(profile_order) == V060_RELEASE_PROFILE_ORDER:
+        provisioning = (
+            "The four ESP profiles use ESP Web Serial from a supported desktop "
+            "Chromium browser. The `rpi-pico2-w` profile instead uses a verified "
+            "UF2 download and manual copy to the BOOTSEL mass-storage volume. "
+            "iPadOS cannot perform either wired provisioning step. "
+        )
+    else:
+        provisioning = (
+            "Wired provisioning requires a supported desktop Chromium browser; "
+            "iPadOS cannot perform this step. "
+        )
     return (
         "# PyBLE firmware %s — %s\n\n"
         "Supported browser profiles:\n\n"
-        "- `esp32-4mb`: classic ESP32 with exactly 4 MiB flash.\n"
-        "- `esp32-s3-n16r8`: ESP32-S3 N16R8-class only — exactly 16 MiB "
-        "flash plus 8 MiB Octal PSRAM; lean common runtime, with no bundled "
-        "board-specific display drivers.\n"
-        "- `waveshare-esp32-s3-lcd-147b`: exact Waveshare "
-        "ESP32-S3-LCD-1.47B B-version only; includes its ST7789 runtime and "
-        "fresh-install PyBLE splash with persistent disable.\n\n"
+        "%s\n"
         "Agent `%s`; protocol `PBLE/1`; MicroPython `%s` @ `%s`; ESP-IDF "
         "`%s` @ `%s`; PyBLE source `%s`; tag `firmware-v%s`.\n\n"
         "Installation is destructive and erases the existing firmware and "
-        "workspace. Back up board files first. Wired provisioning requires a "
-        "supported desktop Chromium browser; iPadOS cannot perform this step. "
+        "workspace. Back up board files first. %s"
         "Runtime use remains BLE-first. Upgrade only with the same exact "
         "qualified profile. See `RECOVERY.md` before installing.\n\n"
         "Known limitations: the initial profile set covers only the exact "
@@ -16250,6 +17035,7 @@ def _release_notes(
         % (
             version,
             built_at[:10],
+            supported_profiles,
             version,
             provenance["micropython"]["ref"],
             provenance["micropython"]["commit"],
@@ -16257,18 +17043,57 @@ def _release_notes(
             provenance["esp_idf"]["commit"],
             provenance["pyble"]["commit"],
             version,
+            provisioning,
         )
     )
 
 
 def _recovery_guide(version: str) -> str:
+    profile_order = _release_profile_order_for_version(version)
+    esp_commands = {
+        "esp32-4mb": (
+            "python -m esptool --chip esp32 write_flash 0x1000 "
+            "esp32-4mb/firmware.bin"
+        ),
+        "esp32-s3-n16r8": (
+            "python -m esptool --chip esp32s3 write_flash 0x0 "
+            "esp32-s3-n16r8/firmware.bin"
+        ),
+        "waveshare-esp32-s3-lcd-147b": (
+            "python -m esptool --chip esp32s3 write_flash 0x0 "
+            "waveshare-esp32-s3-lcd-147b/firmware.bin"
+        ),
+        "esp32-c3-4mb": (
+            "python -m esptool --chip esp32c3 write_flash 0x0 "
+            "esp32-c3-4mb/firmware.bin"
+        ),
+    }
+    command_block = "\n".join(
+        esp_commands[profile_id]
+        for profile_id in profile_order
+        if profile_id in esp_commands
+    )
+    pico_recovery = ""
+    if "rpi-pico2-w" in profile_order:
+        pico_recovery = (
+            "Pico 2 W recovery uses the same verified "
+            "`rpi-pico2-w/firmware.uf2` bytes. Disconnect the board, hold "
+            "BOOTSEL while reconnecting USB, re-verify the versioned UF2 size "
+            "and SHA-256, and copy it to the mounted mass-storage volume. Wait "
+            "for automatic reboot, then confirm the `PyBLE-XXXX` BLE "
+            "advertisement and connect from the app. After an interrupted or "
+            "failed copy, repeat this procedure with the same verified UF2; "
+            "never substitute another profile.\n\n"
+        )
+    component_families = "S3 and C3" if "esp32-c3-4mb" in profile_order else "S3"
     return (
         "# PyBLE firmware %s recovery\n\n"
         "Installing PyBLE erases the board's existing firmware and user "
         "workspace. Back up files before installation. Use a data-capable USB "
         "cable, stable power, close every serial monitor/application holding "
         "the port, and select the correct serial device.\n\n"
-        "If automatic reset fails, hold BOOT, tap RESET, then release BOOT. "
+        "For an ESP profile, if automatic reset fails, hold BOOT, tap RESET, "
+        "then release BOOT. "
         "Button names vary by board. After permission denial, disconnect, "
         "timeout, interrupted erase/write, verification failure, or a board "
         "that no longer boots: close the serial user, reconnect USB, enter the "
@@ -16276,21 +17101,25 @@ def _recovery_guide(version: str) -> str:
         "guess another image.\n\n"
         "Advanced merged-image recovery commands using these exact bytes:\n\n"
         "```sh\n"
-        "python -m esptool --chip esp32 write_flash 0x1000 esp32-4mb/firmware.bin\n"
-        "python -m esptool --chip esp32s3 write_flash 0x0 esp32-s3-n16r8/firmware.bin\n"
-        "python -m esptool --chip esp32s3 write_flash 0x0 "
-        "waveshare-esp32-s3-lcd-147b/firmware.bin\n"
+        "%s\n"
         "```\n\n"
         "Component diagnostics use the bundled bootloader at `0x1000` for "
-        "classic ESP32 and `0x0` for S3, partition table at `0x8000`, and "
+        "classic ESP32 and `0x0` for %s, partition table at `0x8000`, and "
         "application at `0x10000`. Power-cycle after flashing, expect a "
         "`PyBLE-XXXX` BLE advertisement, then connect from the app.\n\n"
+        "%s"
         "Repeated resets, flash-size errors, PSRAM startup errors, or no "
         "advertisement can indicate a wrong memory profile. Stop; do not try "
         "random images. Report only release `%s`, profile ID, board model/module "
         "marking, browser/OS versions, failed stage, and redacted error text at "
         "https://pyble.dev/support/. Do not share secrets or personal device "
-        "labels.\n" % (version, version)
+        "labels.\n" % (
+            version,
+            command_block,
+            component_families,
+            pico_recovery,
+            version,
+        )
     )
 
 
@@ -17464,6 +18293,19 @@ def _validate_hil_promotion_envelope(
             and completed_payload["waveshare_lcd147b_qualification"] is None,
             "completed V4 HIL must retain the candidate LCD qualification null",
         )
+    elif candidate_payload["schema_version"] == 5:
+        _require(
+            all(
+                candidate_payload[key] is None
+                and completed_payload[key] is None
+                for key in (
+                    "waveshare_lcd147b_qualification",
+                    "esp32_c3_qualification",
+                    "rpi_pico2_w_qualification",
+                )
+            ),
+            "completed V5 HIL must retain all candidate qualification nulls",
+        )
     candidate_records = candidate_payload["records"]
     completed_records = completed_payload["records"]
     _require(
@@ -17471,14 +18313,29 @@ def _validate_hil_promotion_envelope(
         "completed HIL changed candidate record parity",
     )
     immutable_record_fields = (
-        "profile_id",
-        "firmware_version",
-        "tag",
-        "source_commit",
-        "manifest_sha256",
-        "firmware_sha256",
-        "oi1_policy",
-        "oi1_build",
+        (
+            "profile_id",
+            "target",
+            "resource_kind",
+            "provisioning_kind",
+            "firmware_version",
+            "tag",
+            "source_commit",
+            "install_sha256",
+            "oi1_policy",
+            "oi1_build",
+        )
+        if candidate_payload["schema_version"] == 5
+        else (
+            "profile_id",
+            "firmware_version",
+            "tag",
+            "source_commit",
+            "manifest_sha256",
+            "firmware_sha256",
+            "oi1_policy",
+            "oi1_build",
+        )
     )
     for candidate_record, completed_record in zip(
         candidate_records,
@@ -17490,6 +18347,53 @@ def _validate_hil_promotion_envelope(
                 "completed HIL changed candidate-frozen %s for %s"
                 % (key, candidate_record["profile_id"]),
             )
+        if candidate_payload["schema_version"] == 5:
+            _require(
+                ("manifest_sha256" in candidate_record)
+                == ("manifest_sha256" in completed_record)
+                and (
+                    "manifest_sha256" not in candidate_record
+                    or candidate_record["manifest_sha256"]
+                    == completed_record["manifest_sha256"]
+                ),
+                "completed HIL changed candidate-frozen manifest for %s"
+                % candidate_record["profile_id"],
+            )
+            profile_id = candidate_record["profile_id"]
+            expected_gate_names = (
+                tuple("C3-G%d" % index for index in range(7))
+                if profile_id == "esp32-c3-4mb"
+                else (
+                    ("GP0", "GP1", "GP2")
+                    if profile_id == "rpi-pico2-w"
+                    else ()
+                )
+            )
+            _require(
+                candidate_record["profile_gate_summary"] is None,
+                "candidate HIL profile gates must remain null for %s"
+                % profile_id,
+            )
+            if expected_gate_names:
+                completed_gates = _exact_keys(
+                    completed_record["profile_gate_summary"],
+                    set(expected_gate_names),
+                    "completed HIL profile gates for %s" % profile_id,
+                )
+                _require(
+                    all(
+                        completed_gates[name] == "passed"
+                        for name in expected_gate_names
+                    ),
+                    "completed HIL profile gates are incomplete for %s"
+                    % profile_id,
+                )
+            else:
+                _require(
+                    completed_record["profile_gate_summary"] is None,
+                    "completed HIL has unexpected profile gates for %s"
+                    % profile_id,
+                )
 
 
 def _completed_hil_report(payload: dict[str, Any]) -> bytes:
@@ -17499,11 +18403,12 @@ def _completed_hil_report(payload: dict[str, Any]) -> bytes:
         "completed HIL payload has an unsupported schema",
     )
     return (
-        "# PyBLE firmware HIL report\n\n"
-        "This completed report was mechanically assembled from the immutable "
-        "candidate and bounded per-profile evidence.\n\n"
-        "<!-- PYBLE_HIL_RECORDS_V%d\n" % schema_version
-    ).encode("utf-8") + _canonical_json_bytes(payload).rstrip(b"\n") + b"\n-->\n"
+        HIL_REPORT_SHELL_PREFIX.encode("utf-8")
+        + ("<!-- PYBLE_HIL_RECORDS_V%d\n" % schema_version).encode("utf-8")
+        + _canonical_json_bytes(payload).rstrip(b"\n")
+        + b"\n-->"
+        + HIL_REPORT_SHELL_SUFFIX.encode("utf-8")
+    )
 
 
 def assemble_completed_hil_report(
@@ -17513,13 +18418,13 @@ def assemble_completed_hil_report(
     output_path: Path,
     qualification_repo_root: Path,
 ) -> Path:
-    """Create a candidate-bound completed HIL V2 report without Markdown edits."""
+    """Create a source-era candidate-bound HIL report without Markdown edits."""
 
     candidate = Path(candidate_dir)
     evidence_paths = [Path(path) for path in profile_evidence_paths]
     output = Path(output_path)
     qualification_root = Path(qualification_repo_root)
-    operator_checks = (
+    legacy_operator_checks = (
         "browser_erase_install",
         "family_offsets_reset",
         "advertising_info_hello",
@@ -17527,10 +18432,13 @@ def assemble_completed_hil_report(
         "neopixel_reboot",
         "interrupted_flash_recovery",
     )
-    all_checks = (
-        *operator_checks[:-1],
-        "footprint_reliability",
-        operator_checks[-1],
+    v5_operator_checks = (
+        "provisioning_install",
+        "provisioning_recovery",
+        "advertising_info_hello",
+        "pble_workflow",
+        "safe_boot_reconnect",
+        "filesystem_resume_reliability",
     )
     mutable_fields = (
         "board_manufacturer",
@@ -17581,6 +18489,18 @@ def assemble_completed_hil_report(
     )
     firmware_version = release["identity"]["version"]
     profile_order = _release_profile_order_for_version(firmware_version)
+    hil_schema_version = _hil_schema_version_for_version(firmware_version)
+    if hil_schema_version == 5:
+        operator_checks = v5_operator_checks
+        all_checks = (*v5_operator_checks, "footprint_reliability")
+        completion_fields.update({"app_hil", "profile_gate_summary"})
+    else:
+        operator_checks = legacy_operator_checks
+        all_checks = (
+            *legacy_operator_checks[:-1],
+            "footprint_reliability",
+            legacy_operator_checks[-1],
+        )
     _require_source_era_evidence_count(
         evidence_paths,
         firmware_version,
@@ -17662,6 +18582,33 @@ def assemble_completed_hil_report(
         record["oi1_observation"] = copy.deepcopy(
             completion["oi1_observation"]
         )
+        if hil_schema_version == 5:
+            app_results = _exact_keys(
+                completion["app_hil"],
+                {"ipad", "android"},
+                "HIL completion app results for %s" % profile_id,
+            )
+            for platform_name in ("ipad", "android"):
+                platform_result = _exact_keys(
+                    app_results[platform_name],
+                    {"app_version", "app_build", "os_major", "status"},
+                    "HIL completion %s app result for %s"
+                    % (platform_name, profile_id),
+                )
+                _require(
+                    platform_result["status"] == "passed"
+                    and all(
+                        isinstance(platform_result[key], str)
+                        and bool(platform_result[key].strip())
+                        for key in ("app_version", "app_build", "os_major")
+                    ),
+                    "HIL completion %s app result is incomplete for %s"
+                    % (platform_name, profile_id),
+                )
+            record["app_hil"] = copy.deepcopy(app_results)
+            record["profile_gate_summary"] = copy.deepcopy(
+                completion["profile_gate_summary"]
+            )
 
     _validate_hil_promotion_envelope(pending_payload, completed_payload)
     report_bytes = _completed_hil_report(completed_payload)
@@ -17688,6 +18635,7 @@ def assemble_completed_hil_report(
             identity,
             True,
             repo_root=qualification_root,
+            allow_unfinalized_gate_summaries=(hil_schema_version == 5),
         )
         _atomic_publish_no_replace(
             staging,
@@ -17838,14 +18786,11 @@ def finalize_public_bundle(
             "v0.6.0 finalization requires both C3 and Pico private "
             "qualification results",
         )
-        raise ReleaseError(
-            "v0.6.0 finalization remains closed until strict C3 and Pico "
-            "private-result validators are implemented"
+    else:
+        _require(
+            c3_qualification_result is None and pico_qualification_result is None,
+            "pre-v0.6.0 finalization rejects C3/Pico qualification results",
         )
-    _require(
-        c3_qualification_result is None and pico_qualification_result is None,
-        "pre-v0.6.0 finalization rejects C3/Pico qualification results",
-    )
 
     lcd_capable = _waveshare_lcd147b_capable_version(firmware_version)
     _require(
@@ -17859,6 +18804,10 @@ def finalize_public_bundle(
     )
     qualification_snapshot: tuple[Any, ...] | None = None
     qualification_summary: dict[str, Any] | None = None
+    c3_qualification_snapshot: tuple[Any, ...] | None = None
+    c3_qualification_summary: dict[str, Any] | None = None
+    pico_qualification_snapshot: tuple[Any, ...] | None = None
+    pico_qualification_summary: dict[str, Any] | None = None
     promoted_report_bytes = completed_report_bytes
     if qualification_result is not None:
         qualification_snapshot = _lcd_qualification_snapshot(qualification_result)
@@ -17880,11 +18829,67 @@ def finalize_public_bundle(
             completed_report_bytes,
             qualification_result,
         )
-        promoted_hil = _bind_waveshare_lcd147b_hil_summary(
-            completed_hil,
-            qualification_summary,
-            firmware_version=firmware_version,
-        )
+        if v060:
+            _require(
+                c3_qualification_result is not None
+                and pico_qualification_result is not None,
+                "v0.6.0 private qualification inputs disappeared",
+            )
+            try:
+                c3_qualification_snapshot = (
+                    _V060_PROFILE_GATE.private_result_snapshot(
+                        c3_qualification_result
+                    )
+                )
+                pico_qualification_snapshot = (
+                    _V060_PROFILE_GATE.private_result_snapshot(
+                        pico_qualification_result
+                    )
+                )
+                c3_qualification_summary = (
+                    _V060_PROFILE_GATE.validate_result_file(
+                        c3_qualification_result,
+                        artifact_path=(
+                            candidate / "esp32-c3-4mb" / "firmware.bin"
+                        ),
+                        expected_profile_id="esp32-c3-4mb",
+                        expected_version=firmware_version,
+                        candidate_release_json_sha256=(
+                            candidate_release_json_sha256
+                        ),
+                    )
+                )
+                pico_qualification_summary = (
+                    _V060_PROFILE_GATE.validate_result_file(
+                        pico_qualification_result,
+                        artifact_path=(
+                            candidate / "rpi-pico2-w" / "firmware.uf2"
+                        ),
+                        expected_profile_id="rpi-pico2-w",
+                        expected_version=firmware_version,
+                        candidate_release_json_sha256=(
+                            candidate_release_json_sha256
+                        ),
+                    )
+                )
+            except _V060_PROFILE_GATE.QualificationError as exc:
+                raise ReleaseError(
+                    "private v0.6.0 profile qualification result is invalid: %s"
+                    % exc
+                ) from exc
+            promoted_hil = _bind_v060_hil_qualification_summaries(
+                completed_hil,
+                waveshare_lcd147b_summary=qualification_summary,
+                esp32_c3_summary=c3_qualification_summary,
+                rpi_pico2_w_summary=pico_qualification_summary,
+                firmware_version=firmware_version,
+            )
+        else:
+            promoted_hil = _bind_waveshare_lcd147b_hil_summary(
+                completed_hil,
+                qualification_summary,
+                firmware_version=firmware_version,
+            )
         promoted_report_bytes = _render_hil_report_payload(
             completed_report_text,
             promoted_hil,
@@ -18024,6 +19029,33 @@ def finalize_public_bundle(
                 _lcd_qualification_snapshot(qualification_result)
                 == qualification_snapshot,
                 "private LCD qualification result changed during finalization",
+            )
+        if v060:
+            _require(
+                c3_qualification_result is not None
+                and pico_qualification_result is not None,
+                "v0.6.0 private qualification inputs disappeared",
+            )
+            try:
+                current_c3_snapshot = (
+                    _V060_PROFILE_GATE.private_result_snapshot(
+                        c3_qualification_result
+                    )
+                )
+                current_pico_snapshot = (
+                    _V060_PROFILE_GATE.private_result_snapshot(
+                        pico_qualification_result
+                    )
+                )
+            except _V060_PROFILE_GATE.QualificationError as exc:
+                raise ReleaseError(
+                    "private v0.6.0 qualification result changed or became unsafe: %s"
+                    % exc
+                ) from exc
+            _require(
+                current_c3_snapshot == c3_qualification_snapshot
+                and current_pico_snapshot == pico_qualification_snapshot,
+                "private C3/Pico qualification result changed during finalization",
             )
         _atomic_publish_no_replace(staging, output, "public release")
         staging = None
