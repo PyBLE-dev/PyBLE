@@ -338,6 +338,23 @@ class RP2BuildFixture:
             """,
         )
         _write_executable(
+            self.fake_bin / "mv",
+            r"""
+            #!/usr/bin/env bash
+            set -eu
+            destination=""
+            for argument in "$@"; do
+              destination="$argument"
+            done
+            if [ "${PYBLE_TEST_MUTATION:-}" = "provenance-mv-fail" ]; then
+              case "$destination" in
+                */pyble-build-provenance.json) exit 97 ;;
+              esac
+            fi
+            exec "$PYBLE_REAL_MV" "$@"
+            """,
+        )
+        _write_executable(
             self.fake_bin / "make",
             r"""
             #!/usr/bin/env bash
@@ -386,6 +403,9 @@ class RP2BuildFixture:
               mkdir -p "$(dirname "$compiler")"
               printf '#!/bin/sh\nexit 0\n' > "$compiler"
               chmod 755 "$compiler"
+              if [ -n "${PYBLE_TEST_SIGNAL:-}" ]; then
+                kill "-$PYBLE_TEST_SIGNAL" "$PPID"
+              fi
               exit 0
             fi
 
@@ -425,6 +445,10 @@ class RP2BuildFixture:
                 "$PYBLE_ARM_TOOLCHAIN_DIR"
             } > "$output/CMakeCache.txt"
 
+            if [ "${PYBLE_TEST_MUTATION:-}" = "provenance-temp-write-fail" ]; then
+              mkdir "$output/.pyble-build-provenance.json.$PPID"
+            fi
+
             """,
         )
 
@@ -444,6 +468,7 @@ class RP2BuildFixture:
         *,
         fail_phase: str = "",
         mutation: str = "",
+        signal_name: str = "",
     ) -> subprocess.CompletedProcess[str]:
         hostile = str(self.base / "HOSTILE")
         env = {
@@ -457,7 +482,9 @@ class RP2BuildFixture:
             "PYBLE_PREPARE_LOG": str(self.prepare_log),
             "PYBLE_TEST_FAIL_PHASE": fail_phase,
             "PYBLE_TEST_MUTATION": mutation,
+            "PYBLE_TEST_SIGNAL": signal_name,
             "PYBLE_TEST_FORBIDDEN_PATH": str(self.repo.resolve()),
+            "PYBLE_REAL_MV": shutil.which("mv") or "/bin/mv",
             "GIT_ALLOW_PROTOCOL": "file",
             "GIT_CONFIG_NOSYSTEM": "1",
             "GIT_CONFIG_GLOBAL": os.devnull,
@@ -717,6 +744,63 @@ class RP2RetainedSourceBehaviorTests(unittest.TestCase):
                     self.assertFalse(
                         (fixture.output / "pyble-build-provenance.json").exists()
                     )
+                finally:
+                    fixture.cleanup()
+
+    def test_provenance_admission_failures_remove_all_new_build_state(self) -> None:
+        for mutation in ("provenance-temp-write-fail", "provenance-mv-fail"):
+            with self.subTest(mutation=mutation):
+                fixture = RP2BuildFixture()
+                try:
+                    completed = fixture.execute(mutation=mutation)
+                    self.assertEqual(len(fixture.make_records()), 2)
+                    self.assertNotEqual(completed.returncode, 0, completed.stdout)
+                    self.assertFalse(fixture.output.exists())
+                    self.assertFalse(fixture.retained.exists())
+                    self.assertFalse(
+                        (
+                            fixture.output
+                            / "pyble-build-provenance.json"
+                        ).exists()
+                    )
+                finally:
+                    fixture.cleanup()
+
+    def test_symlinked_source_ancestors_are_rejected_without_escape(self) -> None:
+        for ancestor in (".sources", ".sources/rpi-pico2-w"):
+            with self.subTest(ancestor=ancestor):
+                fixture = RP2BuildFixture()
+                try:
+                    escaped = fixture.base / "escaped-source-root"
+                    escaped.mkdir()
+                    sentinel = escaped / "sentinel"
+                    sentinel.write_bytes(b"outside build root\n")
+                    link = fixture.build_root / ancestor
+                    link.parent.mkdir(parents=True, exist_ok=True)
+                    link.symlink_to(escaped, target_is_directory=True)
+
+                    completed = fixture.execute()
+
+                    self.assertNotEqual(completed.returncode, 0, completed.stdout)
+                    self.assertEqual(
+                        sorted(path.name for path in escaped.iterdir()),
+                        ["sentinel"],
+                    )
+                    self.assertEqual(sentinel.read_bytes(), b"outside build root\n")
+                    self.assertFalse(fixture.make_log.exists())
+                finally:
+                    fixture.cleanup()
+
+    def test_signals_after_successful_step_fail_and_clean_build_state(self) -> None:
+        for signal_name in ("INT", "TERM"):
+            with self.subTest(signal=signal_name):
+                fixture = RP2BuildFixture()
+                try:
+                    completed = fixture.execute(signal_name=signal_name)
+                    self.assertEqual(len(fixture.make_records()), 1)
+                    self.assertNotEqual(completed.returncode, 0, completed.stdout)
+                    self.assertFalse(fixture.output.exists())
+                    self.assertFalse(fixture.retained.exists())
                 finally:
                     fixture.cleanup()
 
