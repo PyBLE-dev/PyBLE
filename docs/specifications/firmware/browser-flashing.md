@@ -729,6 +729,14 @@ inventory would collapse. In particular:
 
 - `lib/libm/libm.h` is a compiled dependency with its combined retained
   musl/Sun attribution; it is not covered by the MIT-only `math.c` owner;
+- `lib/libm/fdlibm.h` retains the Sun fdlibm grant and MicroPython adaptation
+  terms and is owned with the exact fdlibm class, not a broad MicroPython or
+  MIT-only fallback;
+- the selected `lib/re1.5` compiler dependencies are BSD-3-Clause and the
+  selected `lib/uzlib` compiler dependencies are Zlib; each observed file is
+  assigned to its exact component owner rather than a broad `lib/` or
+  MicroPython owner (unobserved differently licensed files in either
+  directory cannot widen that root);
 - CMSIS Core headers carrying Apache-2.0, the dual-marked RP2350 system source
   and system header, and Raspberry Pi BSD-3-Clause device/exception headers
   are separately owned at their most-specific paths;

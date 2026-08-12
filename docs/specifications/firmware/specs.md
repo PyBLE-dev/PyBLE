@@ -1306,8 +1306,10 @@ This is software-level safety of the IDE/agent, **not** hardware/actuator safety
   exact generated derivation. That closure MUST cover
   the selected three CYW43 Wi-Fi/Bluetooth/NVRAM payload headers, with ordinary
   driver code and each payload assigned to separate most-specific owners, the
-  distinct CMSIS source/header license classes, `libm.h`, and GCC/newlib
-  headers. Each CYW43 payload remains `review-required` until exact
+  distinct CMSIS source/header license classes, `libm.h`, `fdlibm.h`, the
+  exact BSD-3-Clause `re1.5` and Zlib `uzlib` dependency files, and GCC/newlib
+  headers. A broad MicroPython or `lib/` root MUST NOT stand in for those
+  component terms. Each CYW43 payload remains `review-required` until exact
   authoritative redistribution terms bind its selected bytes; a broad driver
   grant or older byte-different payload license cannot substitute. The
   cache MUST bind `pico2_w`, `rp2350-arm-s`, and the exact C/C++/ASM compiler

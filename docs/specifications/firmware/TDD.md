@@ -1490,11 +1490,13 @@ payloads to separate most-specific owners, bind both header and embedded-data
 digests, and keep every payload owner `review-required` until authoritative
 terms identify that exact selected byte closure. A broad CYW43 owner or an
 older byte-different firmware grant fails. They also assign `libm.h`,
-Apache-only CMSIS Core headers, the
+`fdlibm.h`, the exact observed BSD-3-Clause `re1.5` sources and header, the
+exact observed Zlib `uzlib` sources and headers, Apache-only CMSIS Core
+headers, the
 dual-marked CMSIS system source/header, Raspberry Pi BSD CMSIS/device headers,
 GCC built-in headers, and newlib target headers to their distinct
-most-specific owners. A broad pico-sdk, libm, MicroPython, or toolchain root
-cannot erase those classes.
+most-specific owners. A broad pico-sdk, libm, `lib/`, MicroPython, or toolchain
+root cannot erase those classes.
 
 Cache/toolchain fixtures require `PICO_BOARD=pico2_w`,
 `PICO_PLATFORM=rp2350-arm-s`, exact retained board/SDK paths, and one pinned
