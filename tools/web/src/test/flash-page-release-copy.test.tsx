@@ -156,8 +156,10 @@ describe("firmware installer release copy", () => {
       string | undefined
     >;
     const previousPreview = process.env.PYBLE_LOCAL_FLASH_PREVIEW_FILE;
+    const previousPreviewFlag = process.env.PYBLE_LOCAL_FLASH_PREVIEW;
     const previousSelection = process.env.PYBLE_FLASH_SELECTION_FILE;
     const previousNodeEnvironment = process.env.NODE_ENV;
+    process.env.PYBLE_LOCAL_FLASH_PREVIEW = "1";
     process.env.PYBLE_LOCAL_FLASH_PREVIEW_FILE = previewFile;
     mutableEnvironment.NODE_ENV = "development";
     delete process.env.PYBLE_FLASH_SELECTION_FILE;
@@ -199,6 +201,11 @@ describe("firmware installer release copy", () => {
         delete process.env.PYBLE_LOCAL_FLASH_PREVIEW_FILE;
       } else {
         process.env.PYBLE_LOCAL_FLASH_PREVIEW_FILE = previousPreview;
+      }
+      if (previousPreviewFlag === undefined) {
+        delete process.env.PYBLE_LOCAL_FLASH_PREVIEW;
+      } else {
+        process.env.PYBLE_LOCAL_FLASH_PREVIEW = previousPreviewFlag;
       }
       if (previousSelection === undefined) {
         delete process.env.PYBLE_FLASH_SELECTION_FILE;

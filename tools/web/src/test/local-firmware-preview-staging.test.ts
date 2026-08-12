@@ -79,6 +79,7 @@ interface PreviewFixture {
 }
 
 afterEach(async () => {
+  delete process.env.PYBLE_LOCAL_FLASH_PREVIEW;
   delete process.env.PYBLE_LOCAL_FLASH_PREVIEW_FILE;
   if (initialNodeEnvironment === undefined) {
     delete process.env.NODE_ENV;
@@ -388,6 +389,7 @@ describe("local firmware engineering-preview staging", () => {
     ).resolves.toEqual(descriptor);
 
     process.env.NODE_ENV = "development";
+    process.env.PYBLE_LOCAL_FLASH_PREVIEW = "1";
     process.env.PYBLE_LOCAL_FLASH_PREVIEW_FILE = join(
       outputRoot,
       "descriptor.json",
@@ -456,10 +458,15 @@ describe("local preview remains outside every production publication path", () =
     );
 
     process.env.NODE_ENV = "development";
+    delete process.env.PYBLE_LOCAL_FLASH_PREVIEW;
     delete process.env.PYBLE_LOCAL_FLASH_PREVIEW_FILE;
     expect(localFirmwarePreviewSelectedAtBuild()).toBeNull();
 
     process.env.PYBLE_LOCAL_FLASH_PREVIEW_FILE = selectionFile;
+    expect(() => localFirmwarePreviewSelectedAtBuild()).toThrow(
+      /PYBLE_LOCAL_FLASH_PREVIEW=1|explicit/i,
+    );
+    process.env.PYBLE_LOCAL_FLASH_PREVIEW = "1";
     expect(localFirmwarePreviewSelectedAtBuild()).toEqual(descriptor);
 
     process.env.NODE_ENV = "production";
