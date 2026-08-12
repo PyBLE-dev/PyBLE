@@ -259,6 +259,26 @@ class V060Oi1CatalogTests(unittest.TestCase):
     def test_profile_cli_accepts_all_five_exact_profile_chip_pairs(self):
         for profile_id in PROFILE_ORDER:
             with self.subTest(profile_id=profile_id):
+                target_args = (
+                    [
+                        "--operator-reset",
+                        "--firmware-bin",
+                        "firmware.bin",
+                        "--firmware-uf2",
+                        "firmware.uf2",
+                        "--console-tx-budget-ms",
+                        "250",
+                    ]
+                    if profile_id == "rpi-pico2-w"
+                    else [
+                        "--reset-port",
+                        "/dev/private-test-reset",
+                        "--application-bin",
+                        "application.bin",
+                        "--partition-table-bin",
+                        "partition-table.bin",
+                    ]
+                )
                 with redirect_stderr(io.StringIO()):
                     args = profile_bench._parse_args(
                         [
@@ -270,17 +290,12 @@ class V060Oi1CatalogTests(unittest.TestCase):
                             PROFILE_CHIPS[profile_id],
                             "--address",
                             "private-test-address",
-                            "--reset-port",
-                            "/dev/private-test-reset",
-                            "--application-bin",
-                            "application.bin",
-                            "--partition-table-bin",
-                            "partition-table.bin",
                             "--raw-log",
                             "raw.jsonl",
                             "--output",
                             "profile.json",
-                        ]
+                            *target_args,
+                        ],
                     )
                 self.assertEqual(args.profile, profile_id)
                 self.assertEqual(args.expect_chip, PROFILE_CHIPS[profile_id])
