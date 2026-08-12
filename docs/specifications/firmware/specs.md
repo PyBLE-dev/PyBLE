@@ -1294,9 +1294,15 @@ This is software-level safety of the IDE/agent, **not** hardware/actuator safety
   pinned PyBLE, retained Berkeley DB, and zero-byte IDF ELF-anchor exceptions
   only in the exact roots, names, and object topologies frozen in
   [browser-flashing §6](browser-flashing.md#6-licensing-and-release-notes).
-  The same release gate MUST independently inventory RP2 linked inputs, frozen
-  modules, pico-sdk/BTstack/CYW43 dependencies, and the pinned ARM GNU runtime;
-  ESP-IDF SBOM evidence MUST NOT be fabricated or reused for RP2. —
+  The same release gate MUST use the independent, reviewed RP2 policy and
+  observer frozen in browser-flashing §6. It safely reconciles the exact
+  `link.txt`, structural linker map, archive/direct-object ownership, and
+  literal frozen manifest with no gaps across MicroPython core/`rp2`, lwIP,
+  Mbed TLS, littlefs, oofatfs, libm, pico-sdk, BTstack, CYW43, TinyUSB, and the
+  pinned ARM GNU runtime. It MUST bind the exact retained checkout and nested
+  SHAs/origins, complete reviewed license/notice bytes, and identical
+  before/after observations into the schema-v2 receipt. ESP-IDF SBOM evidence
+  MUST NOT be fabricated or reused for RP2. —
   *(source: PRD §15.2, §15.3,
   [firmware.md §6](../firmware.md#6-build--distribution); verify: build; story:
   X-11)*

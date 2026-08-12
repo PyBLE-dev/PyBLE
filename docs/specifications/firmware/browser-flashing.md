@@ -619,10 +619,12 @@ public notice.
 The conservative build audit runs against all eight authoritative ESP-IDF
 descriptions: application and bootloader `project_description.json` for each
 of the four ESP build variants. The v0.6.0 released notice classifies the
-dependency union of all four packaged ESP profiles. A separate RP2 inventory
-MUST reconcile the exact linked ELF inputs, frozen manifest, MicroPython/rp2,
-pico-sdk, BTstack, CYW43, TinyUSB, and pinned ARM GNU runtime/license inputs;
-it joins the released union without inventing ESP-IDF SBOM evidence for RP2.
+dependency union of all four packaged ESP profiles. A separate reviewed RP2
+policy and observer MUST reconcile the exact linked ELF inputs, literal frozen
+manifest, MicroPython core and `rp2` port, lwIP, Mbed TLS, littlefs, oofatfs,
+libm, pico-sdk, BTstack, CYW43, TinyUSB, and pinned ARM GNU runtime/license
+inputs. That inventory joins the released union without inventing or reusing
+ESP-IDF SBOM evidence for RP2.
 The immutable v0.4.2 replay instead retains its historical six descriptions
 over three build targets and the redistributed dependency union of its two
 packaged profiles. Validation MUST select the complete audit contract from
@@ -665,10 +667,120 @@ The generator MUST:
   complete texts by their reviewed SHA-256, then produce byte-identical output
   in the second clean build.
 
-The following resolution rules are part of that fail-closed mapping:
+**Independent RP2 policy and observer.**
+`firmware/licenses/rp2-license-policy.json` is a separate reviewed, hash-bound
+input. Its exact top-level keys are `schema_version`, `profile_id`, `target`,
+and `source_owners`; `schema_version` is the exact JSON integer `1`, and the
+identity is exactly `rpi-pico2-w`. Each canonical, identifier-sorted owner has
+exactly `id`, `source_roots`, `source_ref`, `source_url`,
+`source_spdx_expression`, `selected_spdx_expression`, `copyright`,
+`license_texts`, `notice_files`, and `disposition`. A source root has exactly
+`namespace` and `path`, where the namespace is `repo`, `micropython`, or
+`arm-gnu-toolchain`; a license-text record has exactly `identifier`, `path`,
+and `sha256`; and a notice record has exactly `path` and `sha256`. Lists are
+nonempty where applicable, unique, and canonical. The most-specific lexical
+root in one namespace owns an input; no owner or equal-specificity ambiguity
+is fatal. Every owner MUST contribute an observed input, while every observed
+input has exactly one owner. Separate owners are required where one dependency
+contains linked subcomponents under different terms, and the source and
+selected expressions remain distinct (including the Mbed TLS choice and the
+compiler/newlib runtime classes). Thus the catalog represents every mandatory
+dependency class below but is not an unsafe fixed-count allowlist. A boolean
+or numerically equal fractional schema version is invalid. The policy MUST NOT
+import an ESP package identity or resolution as proof for an RP2 input.
 
-1. The audit retains all six **exact raw** `esp-idf-sbom` outputs and six
-   normalized reviewed SPDX documents. Raw tag/value files use `.spdx.tag`;
+The observer starts from the exact retained `firmware.elf`, its
+`CMakeFiles/firmware.dir/link.txt`, `firmware.elf.map`, CMake cache, build
+provenance, archives, and direct objects. All are regular non-symlink files
+below their admitted roots. It tokenizes `link.txt` as one shell-free argument
+serialization: quoting and escaping are decoded, but shell control,
+redirection, substitution, response-file syntax (including driver-wrapped
+forms), duplicate operands, path escape, an unknown operand shape, or a
+missing/extra link input is fatal. The GNU linker map is parsed structurally,
+never by substring or basename. Exact archive/member contributors and direct
+object `LOAD` records MUST reconcile one for one with the link arguments and
+existing bytes; command-listed non-contributors are recorded as such and are
+not presented as shipped. Every contributing object is owned by exactly one
+source and one reviewed dependency class. An unowned, ambiguously owned,
+duplicated, map-only, or link-only input is fatal.
+
+That no-gap ownership covers every linked or frozen input and, at minimum,
+the selected MicroPython core and `ports/rp2` sources, lwIP, Mbed TLS,
+littlefs (LFS1/LFS2), oofatfs, libm, pico-sdk, BTstack, CYW43 driver, TinyUSB,
+and ARM GNU runtime archives. The exact compiler-supplied `libgcc`, newlib
+`libc`/`libm`, and any other contributing runtime archive and its applicable
+runtime exception/terms are observed rather than inferred from the compiler
+name. A similarly named source tree, a configured but non-contributing
+library, or a directory-wide scan cannot fill a gap.
+
+The retained MicroPython checkout MUST equal the exact locked commit, clean
+tree, and canonical origin in build provenance. Every selected nested
+checkout—including `lib/lwip`, `lib/mbedtls`, `lib/pico-sdk`, `lib/btstack`,
+`lib/cyw43-driver`, and `lib/tinyusb`—is independently bound to its exact
+gitlink/submodule SHA, clean tree, canonical origin, and selected path. Nested
+copies below pico-sdk do not substitute for the selected MicroPython paths:
+the observer proves the actual CMake-selected checkout for each linked object.
+A dirty checkout, missing gitlink, origin drift, SHA mismatch, alternate
+worktree, symlink, or source path inconsistent with the CMake cache and map is
+fatal.
+
+The RP2-specific grants are selected literally rather than approximated by a
+nearby license. In particular, BTstack retains its complete BSD-3-Clause
+license bytes, while CYW43 retains the complete Raspberry-Pi-device grant used
+for Pico 2 W; CYW43's generic non-commercial file is not relabelled as BSD.
+Mbed TLS retains its source choice while recording the reviewed Apache-2.0
+redistribution selection;
+littlefs, lwIP, pico-sdk, oofatfs, TinyUSB, MicroPython, fdlibm-derived libm,
+and each contributing ARM GNU/newlib class retain their own exact expressions,
+exceptions, copyright notices, and complete texts. One broad MicroPython MIT
+record or one toolchain expression cannot cover these distinct inputs.
+
+RP2 frozen inputs are resolved without executing manifest code. Only the
+reviewed literal manifest operations and literal arguments may select a
+manifest, module, package, source, destination, optimization, or metadata
+value. Imports, assignments, control flow, computed arguments, unknown calls,
+directory recursion, unresolved variables, duplicate destinations, path
+escape, and symlinks are fatal. Every traversed manifest and selected source
+is hashed, and the literal result MUST reconcile exactly with the generated
+frozen content and the linked object that contains it.
+
+For every resolved RP2 dependency the policy identifies the complete reviewed
+license bytes and every redistribution-required notice/attribution byte; a
+filename, SPDX label, package directory, installed copy, or upstream URL alone
+is not proof. Changed, missing, partial, ambiguous, incompatible, or
+unreviewed bytes fail closed. The final notice may deduplicate identical
+complete texts only by their reviewed SHA-256.
+
+The RP2 observer records a canonical semantic hash plus every exact input
+path/SHA-256 before any of the eight v0.6 ESP SBOM executions. After those
+executions and immediately before evidence and notice publication, it repeats
+the complete observation and requires identical hashes and semantics. This
+second observation includes the ELF, link command, map, CMake cache,
+provenance, every archive/object/source, literal frozen inputs and generated
+output, checkout/git metadata, policy, license/notice bytes, and toolchain
+runtime inputs. Replacing bytes while restoring timestamps is therefore
+fatal.
+
+The v0.6 audit emits a canonical `audit-receipt.json` with exact JSON integer
+`schema_version: 2`. It binds the notice, complete input/evidence hashes,
+execution identity, release inventory, all eight ESP role identities, and
+exactly these seven RP2 evidence roles: `linked-inputs`, `frozen-modules`,
+`pico-sdk`, `btstack`, `cyw43`, `tinyusb`, and `arm-gnu-runtime`. The canonical
+schema-v1 `release-inventory.json` contains exactly the five release profiles
+in policy order, binds each packaged provenance, and distinguishes each ESP
+application/bootloader raw and reviewed document from the Pico role
+documents. A missing, extra, duplicated, reordered, cross-profile, or
+self-consistently rehashed substitution is fatal. Generation uses a new
+destination and publishes nothing unless the existing complete ESP audit and
+this independent RP2 audit both pass; public verification repeats both from
+the exact packaged builds.
+
+The following ESP-IDF resolution rules are part of that fail-closed mapping:
+
+1. The v0.6 audit retains all eight **exact raw** `esp-idf-sbom` outputs and
+   eight normalized reviewed SPDX documents. Retained source-era v0.5.1 and
+   v0.4.2 evidence keeps its frozen historical count and shape; it is never
+   expanded to resemble v0.6. Raw tag/value files use `.spdx.tag`;
    only normalized JSON files use `.spdx.json`. The receipt hashes both sets,
    the exact raw package-property sets and complete relationship multisets, the
    locked wheel closure and execution/isolation identity, and every exact
@@ -839,9 +951,10 @@ The following resolution rules are part of that fail-closed mapping:
    tree, or a compiler/runtime archive has no such exception: its digest is
    predeclared in reviewed policy and MUST match exactly.
 
-   After all six offline SBOM executions, the observer MUST rebuild this exact
-   generated-input context and require byte-for-byte equality with the initial
-   observations. Rechecking only archive/tree digests is insufficient:
+   After all eight v0.6 offline SBOM executions, the observer MUST rebuild this
+   exact generated-input context and require byte-for-byte equality with the
+   initial observations. A source-era verifier uses its frozen historical
+   count. Rechecking only archive/tree digests is insufficient:
    project/compile/map/link documents, metadata inputs, archive sources, direct
    outputs, and direct sources are all race-sensitive release inputs.
 
@@ -1088,7 +1201,7 @@ The reviewed license catalog is identifier-exact. Every identifier and
 exception used by a raw, reviewed, resolved-input, or supplemental expression
 MUST name one hash-bound complete text record; a text for a different
 identifier is not interchangeable merely because both are permissive. The raw
-six-document union for the frozen tool includes `Apache-2.0`,
+v0.6 eight-document union for the frozen tool includes `Apache-2.0`,
 `BSD-2-Clause`, `BSD-2-Clause-Views`, `BSD-3-Clause`, `CC0-1.0`, `ISC`, `MIT`,
 `Unlicense`, and `LLVM-exception`. Linked or supplemental inputs additionally
 require `BSD-1-Clause`, `GPL-2.0-or-later`, `GPL-3.0-or-later`,
@@ -1136,9 +1249,12 @@ The initial reviewed source closure also preserves:
 - the NimBLE NOTICE, ESP-IDF third-party copyright summary, per-family
   controller/coexistence/PHY/Wi-Fi binary-library attribution, and the
   Tensilica `libxt_hal.a` MIT attribution; and
-- exact managed-component lock/source/license identity for the linked LAN867x
-  and TinyUSB components. A diagnostic component-manager hash without the
-  fetched candidate source and license bytes is insufficient.
+- exact managed-component lock/source/license identity for the linked ESP-IDF
+  LAN867x and TinyUSB components. A diagnostic component-manager hash without
+  the fetched candidate source and license bytes is insufficient. These ESP
+  records do not prove the RP2 dependency: the Pico audit independently binds
+  its selected MicroPython `lib/tinyusb` checkout, contributing inputs, and
+  complete license/notice bytes in the required `tinyusb` role.
 
 Raw records for BLE Mesh and controller families not selected by a profile
 remain byte-exact in the raw graph and use `not-shipped` resolutions with

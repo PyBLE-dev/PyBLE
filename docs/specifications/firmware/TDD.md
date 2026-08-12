@@ -1447,6 +1447,49 @@ compiler/newlib runtime archives against `license-policy.json`. It runs
 offline with isolated caches and rejects any unknown or stale input before a
 candidate can be promoted.
 
+RP2 uses its own `rp2-license-policy.json` and observer, never an invented ESP
+SBOM. Tests safely parse the exact shell-free `link.txt` and structural GNU
+linker map, reconcile each contributing archive member and direct object to
+one exact source owner, retain non-contributing command inputs without calling
+them shipped, and reject response files, shell syntax, path escape, symlinks,
+duplicates, malformed maps/archives, basename matches, link/map disagreement,
+or missing and ambiguous ownership. No-gap fixtures include MicroPython core
+and `ports/rp2`, lwIP, Mbed TLS, both littlefs generations, oofatfs, libm,
+pico-sdk, BTstack and its actually linked third parties, CYW43, TinyUSB, and
+every contributing ARM GNU/newlib runtime archive. Deleting or substituting
+one class fails even when the remaining evidence is canonically rehashed.
+
+The policy's canonical source-owner catalog uses namespace/path roots and
+separate source and selected SPDX expressions. Tests require exact retained
+MicroPython and nested gitlink SHAs, clean trees, canonical origins, actual
+CMake-selected source paths, and the pinned toolchain distribution identity;
+a sibling checkout or pico-sdk's unselected nested copy cannot substitute.
+BTstack requires its complete BSD-3-Clause bytes; CYW43 requires the complete
+Pico-device grant selected for this image rather than its generic
+non-commercial file or a guessed BSD label. Mbed TLS preserves its source
+choice and reviewed Apache-2.0 selection, while fdlibm-derived libm and distinct libgcc/newlib
+classes retain their own notices, expressions, and exceptions. Every observed
+owner contributes, every contributing input has exactly one most-specific
+owner, and complete license plus required NOTICE/COPYRIGHT bytes are
+digest-bound. Tests reject an unused owner, an owner gap or tie, partial text,
+wrong identifier, missing attribution, changed byte, or one broad MicroPython
+or toolchain expression standing in for the heterogeneous closure.
+
+The RP2 frozen-manifest tests execute no manifest code: only reviewed literal
+operations and arguments may select a traversed manifest, source,
+destination, optimization, or metadata value. They require the literal result
+to equal the generated frozen content and linked owner, and reject imports,
+assignments, control flow, computed/unknown calls, directory recursion,
+unresolved values, duplicates, escape, and symlinks. The observer hashes the
+ELF, CMake cache, link/map documents, provenance, archives, objects, sources,
+frozen inputs/output, checkout metadata, policy, license/notice bytes, and
+toolchain inputs before the eight ESP runs and repeats the full semantic
+observation immediately before publication. A byte change with restored
+timestamps is fatal. Tests require schema-v2 receipt coverage of all eight ESP
+identities and exactly the seven RP2 roles, plus the canonical five-profile
+schema-v1 release inventory; missing, extra, reordered, cross-profile, and
+self-consistently rehashed substitutions fail.
+
 Pinned nested manifests are resolved by their literal package/module
 selections, and the result must equal generated frozen content. Archive member
 names are a multiset: duplicate basenames are legal, while absent map members
@@ -1510,16 +1553,21 @@ validated results and receipts retain only the canonical relative frontend
 catalog and contain no host-absolute tools-home, cache, frontend,
 installed-root, or runtime path.
 
-All six exact raw SBOM outputs and all six normalized reviewed documents stay
-with build-review evidence. Raw package fields and relationship graphs are
-validated as exact evidence, including literal `NOASSERTION` states; reviewed
-immutable metadata is added only in the normalized layer with explicit policy
-attribution. Supplemental packages cover redistributed frozen or linked inputs
-that the raw ESP-IDF graph omits: NeoPixel plus the contributing
+All eight v0.6 exact raw SBOM outputs and all eight normalized reviewed
+documents stay with build-review evidence. Retained v0.5.1 and v0.4.2 replay
+fixtures keep their frozen source-era counts and shapes. Raw package fields
+and relationship graphs are validated as exact evidence, including literal
+`NOASSERTION` states; reviewed immutable metadata is added only in the
+normalized layer with explicit policy attribution. Supplemental packages
+cover redistributed frozen or linked inputs that the raw ESP-IDF graph omits:
+NeoPixel plus the contributing
 `libmbedcrypto.a`, `libmbedtls.a`, and `libmbedx509.a` archives in the initial
 profiles. Tests preserve omitted `PackageVersion` as an absent `versionInfo`
-property for the real-shaped LAN867x/TinyUSB records and reject an invented
-empty or reviewed value. Supplemental choice tests retain Mbed TLS's original
+property for the real-shaped ESP-IDF LAN867x/TinyUSB records and reject an
+invented empty or reviewed value. Those records never satisfy Pico coverage:
+RP2 independently proves its selected MicroPython `lib/tinyusb` checkout,
+linked sources, and complete notice in the `tinyusb` role. Supplemental choice
+tests retain Mbed TLS's original
 `(Apache-2.0 OR GPL-2.0-or-later)` evidence while selecting only
 `Apache-2.0` for redistribution. Resolved runtime cases include
 libgcc/libstdc++ with the GCC exception, newlib libc/libc_nano/libm_nano with
