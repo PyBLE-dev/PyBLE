@@ -2,9 +2,9 @@
 // Part of PyBLE (https://pyble.dev) — see /LICENSE.
 
 import { execFile as execFileCallback } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { promisify } from "node:util";
 
 import { describe, expect, it } from "vitest";
@@ -16,6 +16,20 @@ import {
 } from "@/test/fixtures/firmware-release";
 
 const execFile = promisify(execFileCallback);
+
+async function authoredFiles(root: string, relative = ""): Promise<string[]> {
+  const entries = await readdir(join(root, relative), { withFileTypes: true });
+  const paths: string[] = [];
+  for (const entry of entries) {
+    const child = join(relative, entry.name);
+    if (entry.isDirectory()) {
+      paths.push(...(await authoredFiles(root, child)));
+    } else {
+      paths.push(child);
+    }
+  }
+  return paths;
+}
 
 function noticeSection(notice: string, installedPath: string) {
   const marker = `Installed path: ${installedPath}`;
@@ -60,6 +74,30 @@ describe("production build contract", () => {
         "sha512-3pwkeFFm5Fj7UQo8SJNYK5RXrtNCpq6X9QoI6bMT4GBZWgrJqjn0YvM9ihG74BtMoSFYXfmDtkehuxe50PTMPQ==",
       license: "Apache-2.0",
     });
+  });
+
+  it("patches remediable dependencies and bounds the build-only image parser exception", async () => {
+    const [packageJson, packageLock, appFiles] = await Promise.all([
+      readFile(join(process.cwd(), "package.json"), "utf8").then(JSON.parse),
+      readFile(join(process.cwd(), "package-lock.json"), "utf8").then(
+        JSON.parse,
+      ),
+      authoredFiles(join(process.cwd(), "src", "app")),
+    ]);
+
+    expect(packageJson.overrides?.next?.postcss).toBe("8.5.26");
+    expect(packageLock.packages?.["node_modules/postcss"]?.version).toBe(
+      "8.5.26",
+    );
+    expect(packageLock.packages?.["node_modules/nanoid"]?.version).toBe(
+      "3.3.18",
+    );
+
+    const metadataImageRoute =
+      /^(?:favicon|icon|apple-icon|opengraph-image|twitter-image)(?:\..+)?$/;
+    expect(
+      appFiles.filter((path) => metadataImageRoute.test(basename(path))),
+    ).toEqual([]);
   });
 
   it("checks and publishes a deterministic notice for the exact website dependency closure", async () => {
