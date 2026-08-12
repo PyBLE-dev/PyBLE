@@ -13,13 +13,15 @@ release through this boundary.
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import os
 from pathlib import Path
 import re
 import stat
-from typing import Any
+import sys
+from typing import Any, Callable
 
 
 class QualificationError(RuntimeError):
@@ -57,6 +59,76 @@ _BASE_KEYS = {
     "candidate_release_json_sha256",
     "gates",
 }
+_CANDIDATE_PROFILE_ORDER = (
+    "esp32-4mb",
+    "esp32-s3-n16r8",
+    "waveshare-esp32-s3-lcd-147b",
+    C3_PROFILE_ID,
+    PICO_PROFILE_ID,
+)
+_ESP_PROFILE_METADATA = {
+    "esp32-4mb": {
+        "target": "esp32",
+        "chip_family": "ESP32",
+        "silicon_revision": {"minimum_full": 0, "maximum_full": 399},
+        "flash_size_bytes": 4 * 1024 * 1024,
+        "psram": {"required": False, "size_bytes": 0, "type": "not-required"},
+        "frequency_hz": 40_000_000,
+        "install_offset": 0x1000,
+        "component_offsets": (0x1000, 0x8000, 0x10000),
+    },
+    "esp32-s3-n16r8": {
+        "target": "esp32-s3",
+        "chip_family": "ESP32-S3",
+        "silicon_revision": {"minimum_full": 0, "maximum_full": 99},
+        "flash_size_bytes": 16 * 1024 * 1024,
+        "psram": {"required": True, "size_bytes": 8 * 1024 * 1024, "type": "octal"},
+        "frequency_hz": 80_000_000,
+        "install_offset": 0,
+        "component_offsets": (0, 0x8000, 0x10000),
+    },
+    "waveshare-esp32-s3-lcd-147b": {
+        "target": "waveshare-esp32-s3-lcd-147b",
+        "chip_family": "ESP32-S3",
+        "silicon_revision": {"minimum_full": 0, "maximum_full": 99},
+        "flash_size_bytes": 16 * 1024 * 1024,
+        "psram": {"required": True, "size_bytes": 8 * 1024 * 1024, "type": "octal"},
+        "frequency_hz": 80_000_000,
+        "install_offset": 0,
+        "component_offsets": (0, 0x8000, 0x10000),
+    },
+    C3_PROFILE_ID: {
+        "target": "esp32-c3",
+        "chip_family": "ESP32-C3",
+        "silicon_revision": {"minimum_full": 3, "maximum_full": 199},
+        "flash_size_bytes": 4 * 1024 * 1024,
+        "psram": {"required": False, "size_bytes": 0, "type": "not-required"},
+        "frequency_hz": 80_000_000,
+        "install_offset": 0,
+        "component_offsets": (0, 0x8000, 0x10000),
+    },
+}
+_COMPONENTS = (
+    ("bootloader", "bootloader.bin"),
+    ("partition-table", "partition-table.bin"),
+    ("application", "application.bin"),
+)
+_DOCUMENT_PATHS = {
+    "third_party_licenses": "THIRD_PARTY_LICENSES.txt",
+    "release_notes": "RELEASE_NOTES.md",
+    "recovery": "RECOVERY.md",
+    "hil_report": "HIL_REPORT.md",
+}
+_UTC_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+_FILE_ID_FIELDS = (
+    "st_dev",
+    "st_ino",
+    "st_mode",
+    "st_nlink",
+    "st_size",
+    "st_mtime_ns",
+    "st_ctime_ns",
+)
 
 
 def _require(condition: bool, message: str) -> None:
@@ -343,12 +415,801 @@ def validate_public_summary(
     )
 
 
+def _strict_json_object(raw: bytes, label: str) -> dict[str, Any]:
+    """Decode strict JSON without imposing private-result key ordering."""
+
+    try:
+        value = json.loads(
+            raw.decode("utf-8", errors="strict"),
+            object_pairs_hook=_unique_object,
+            parse_constant=_reject_constant,
+        )
+    except QualificationError:
+        raise
+    except (UnicodeDecodeError, ValueError, TypeError) as exc:
+        raise QualificationError("%s is not strict UTF-8 JSON" % label) from exc
+    _require(type(value) is dict, "%s must be a JSON object" % label)
+    return value
+
+
+def _absolute_lexical_path(path: Path, label: str) -> Path:
+    """Return an absolute path without resolving or accepting symlink hops."""
+
+    _require(os.name == "posix", "%s requires reviewed POSIX dirfd support" % label)
+    _require(
+        hasattr(os, "O_DIRECTORY") and hasattr(os, "O_NOFOLLOW"),
+        "%s requires no-follow directory opens" % label,
+    )
+    try:
+        raw = os.fspath(path)
+        _require(type(raw) is str and bool(raw), "%s path is invalid" % label)
+        _require(
+            all(component not in (".", "..") for component in raw.split(os.sep)),
+            "%s path contains lexical navigation" % label,
+        )
+        value = Path(os.path.abspath(raw))
+    except (OSError, TypeError, ValueError) as exc:
+        raise QualificationError("%s path is invalid" % label) from exc
+    _require(value.is_absolute(), "%s path must be absolute" % label)
+    return value
+
+
+def _directory_identity(value: os.stat_result) -> tuple[int, int, int]:
+    return (value.st_dev, value.st_ino, value.st_mode)
+
+
+def _verify_directory_chain(
+    chain: list[tuple[int, Path, tuple[int, int, int]]],
+    label: str,
+) -> None:
+    """Prove every held directory still names the original non-symlink inode."""
+
+    for descriptor, path, expected in chain:
+        try:
+            held = os.fstat(descriptor)
+            visible = path.lstat()
+        except OSError as exc:
+            raise QualificationError("%s directory chain changed" % label) from exc
+        _require(
+            stat.S_ISDIR(held.st_mode)
+            and stat.S_ISDIR(visible.st_mode)
+            and not stat.S_ISLNK(visible.st_mode)
+            and _directory_identity(held) == expected
+            and _directory_identity(visible) == expected,
+            "%s directory chain changed" % label,
+        )
+
+
+def _verify_output_parent(
+    chain: list[tuple[int, Path, tuple[int, int, int]]],
+) -> None:
+    """Named seam for before/after output-parent race verification."""
+
+    _verify_directory_chain(chain, "qualification result parent")
+
+
+def _close_directory_chain(
+    chain: list[tuple[int, Path, tuple[int, int, int]]],
+) -> None:
+    for descriptor, _path, _identity in reversed(chain):
+        try:
+            os.close(descriptor)
+        except OSError:
+            pass
+
+
+def _open_directory_chain(
+    path: Path,
+    *,
+    label: str,
+    create: bool,
+) -> list[tuple[int, Path, tuple[int, int, int]]]:
+    """Open each absolute directory component with held no-follow dirfds."""
+
+    directory = _absolute_lexical_path(path, label)
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
+    chain: list[tuple[int, Path, tuple[int, int, int]]] = []
+    try:
+        descriptor = os.open(os.sep, flags)
+        root_stat = os.fstat(descriptor)
+        _require(stat.S_ISDIR(root_stat.st_mode), "%s root is unsafe" % label)
+        chain.append((descriptor, Path(os.sep), _directory_identity(root_stat)))
+        current = Path(os.sep)
+        for component in directory.parts[1:]:
+            parent_descriptor = chain[-1][0]
+            try:
+                descriptor = os.open(component, flags, dir_fd=parent_descriptor)
+            except FileNotFoundError:
+                _require(create, "%s directory is missing" % label)
+                try:
+                    os.mkdir(component, 0o700, dir_fd=parent_descriptor)
+                except FileExistsError:
+                    # A concurrent creator is accepted only if the no-follow
+                    # open below proves it created a directory, never a link.
+                    pass
+                descriptor = os.open(component, flags, dir_fd=parent_descriptor)
+            current = current / component
+            opened = os.fstat(descriptor)
+            _require(stat.S_ISDIR(opened.st_mode), "%s ancestor is unsafe" % label)
+            chain.append((descriptor, current, _directory_identity(opened)))
+        _verify_directory_chain(chain, label)
+        return chain
+    except QualificationError:
+        _close_directory_chain(chain)
+        raise
+    except OSError as exc:
+        _close_directory_chain(chain)
+        raise QualificationError("%s directory chain is unsafe" % label) from exc
+
+
+def _read_open_regular(
+    descriptor: int,
+    *,
+    label: str,
+    maximum: int,
+) -> tuple[bytes, tuple[int, ...]]:
+    """Read an already no-follow-opened regular file twice and bind identity."""
+
+    before = os.fstat(descriptor)
+    _require(stat.S_ISREG(before.st_mode), "%s must be a regular file" % label)
+    _require(0 < before.st_size <= maximum, "%s size is outside its bound" % label)
+
+    def read_once() -> bytes:
+        chunks: list[bytes] = []
+        remaining = maximum + 1
+        while remaining:
+            chunk = os.read(descriptor, min(remaining, 1024 * 1024))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        return b"".join(chunks)
+
+    raw = read_once()
+    os.lseek(descriptor, 0, os.SEEK_SET)
+    repeated = read_once()
+    after = os.fstat(descriptor)
+    _require(
+        len(raw) == before.st_size
+        and raw == repeated
+        and all(
+            getattr(before, field) == getattr(after, field)
+            for field in _FILE_ID_FIELDS
+        ),
+        "%s changed while it was read" % label,
+    )
+    return raw, tuple(getattr(before, field) for field in _FILE_ID_FIELDS)
+
+
+def _read_regular_at(
+    directory_descriptor: int,
+    name: str,
+    *,
+    label: str,
+    maximum: int,
+) -> tuple[bytes, tuple[int, ...]]:
+    flags = os.O_RDONLY | os.O_NOFOLLOW
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
+    descriptor = -1
+    try:
+        descriptor = os.open(name, flags, dir_fd=directory_descriptor)
+        return _read_open_regular(descriptor, label=label, maximum=maximum)
+    except QualificationError:
+        raise
+    except OSError as exc:
+        raise QualificationError("%s is missing or unsafe" % label) from exc
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
+
+def _artifact_record(
+    value: Any,
+    *,
+    expected_path: str,
+    label: str,
+    offset: int | None = None,
+    role: str | None = None,
+) -> dict[str, Any]:
+    keys = {"path", "size", "sha256"}
+    if offset is not None:
+        keys.add("offset")
+    if role is not None:
+        keys.add("role")
+    record = _exact_dict(value, keys, label)
+    _require(record["path"] == expected_path, "%s path changed" % label)
+    _require(
+        type(record["size"]) is int and record["size"] > 0,
+        "%s size is invalid" % label,
+    )
+    _require(
+        type(record["sha256"]) is str
+        and _SHA256_RE.fullmatch(record["sha256"]) is not None,
+        "%s digest is invalid" % label,
+    )
+    if offset is not None:
+        _require(record["offset"] == offset, "%s offset changed" % label)
+    if role is not None:
+        _require(record["role"] == role, "%s role changed" % label)
+    return record
+
+
+def _validate_candidate_provenance(value: Any) -> None:
+    provenance = _exact_dict(
+        value,
+        {"pyble", "micropython", "esp_idf", "patch_count", "runner", "tools"},
+        "candidate provenance",
+    )
+    pyble = _exact_dict(
+        provenance["pyble"], {"commit", "clean"}, "candidate PyBLE provenance"
+    )
+    _require(
+        type(pyble["commit"]) is str
+        and re.fullmatch(r"[0-9a-f]{40}", pyble["commit"]) is not None
+        and pyble["clean"] is True,
+        "candidate PyBLE provenance changed",
+    )
+    for name in ("micropython", "esp_idf"):
+        source = _exact_dict(
+            provenance[name], {"ref", "commit"}, "candidate %s provenance" % name
+        )
+        _require(
+            type(source["ref"]) is str
+            and bool(source["ref"])
+            and type(source["commit"]) is str
+            and re.fullmatch(r"[0-9a-f]{40}", source["commit"]) is not None,
+            "candidate %s provenance changed" % name,
+        )
+    _require(
+        type(provenance["patch_count"]) is int
+        and provenance["patch_count"] >= 0,
+        "candidate patch count changed",
+    )
+    runner = _exact_dict(
+        provenance["runner"], {"os", "architecture"}, "candidate runner"
+    )
+    _require(
+        all(type(runner[key]) is str and bool(runner[key].strip()) for key in runner),
+        "candidate runner changed",
+    )
+    tools = provenance["tools"]
+    _require(type(tools) is list and bool(tools), "candidate tools are missing")
+    names: list[str] = []
+    for index, tool in enumerate(tools):
+        item = _exact_dict(
+            tool, {"name", "version"}, "candidate tool %d" % index
+        )
+        _require(
+            all(type(item[key]) is str and bool(item[key].strip()) for key in item),
+            "candidate tool metadata changed",
+        )
+        names.append(item["name"])
+    _require(
+        names == sorted(names) and len(names) == len(set(names)),
+        "candidate tool order changed",
+    )
+
+
+def _validate_candidate_release(
+    release: Any,
+    *,
+    profile_id: str,
+    artifact_size: int,
+    artifact_sha256: str,
+) -> str:
+    """Validate the frozen V4 five-profile metadata used by this gate writer."""
+
+    value = _exact_dict(
+        release,
+        {"schema_version", "identity", "provenance", "installer", "profiles", "documents"},
+        "candidate release",
+    )
+    _require(value["schema_version"] == 4, "candidate release schema changed")
+    identity = _exact_dict(
+        value["identity"],
+        {"version", "tag", "agent_version", "protocol_version", "built_at"},
+        "candidate release identity",
+    )
+    _require(
+        identity["version"] == "0.6.0"
+        and identity["tag"] == "firmware-v0.6.0"
+        and identity["agent_version"] == "0.6.0"
+        and identity["protocol_version"] == "PBLE/1"
+        and type(identity["built_at"]) is str
+        and _UTC_RE.fullmatch(identity["built_at"]) is not None,
+        "candidate is not the exact v0.6.0 release source era",
+    )
+    _validate_candidate_provenance(value["provenance"])
+    _require(
+        value["installer"] == {"package": "esp-web-tools", "version": "10.4.0"},
+        "candidate installer metadata changed",
+    )
+    profiles = value["profiles"]
+    _require(
+        type(profiles) is list
+        and [item.get("id") if type(item) is dict else None for item in profiles]
+        == list(_CANDIDATE_PROFILE_ORDER),
+        "candidate profile order changed",
+    )
+    for current_profile_id, raw_profile in zip(_CANDIDATE_PROFILE_ORDER, profiles):
+        if current_profile_id == PICO_PROFILE_ID:
+            item = _exact_dict(
+                raw_profile,
+                {
+                    "id",
+                    "target",
+                    "provisioning_kind",
+                    "board",
+                    "hil_status",
+                    "install",
+                    "resource_image",
+                },
+                "candidate Pico profile",
+            )
+            _require(
+                item["id"] == PICO_PROFILE_ID
+                and item["target"] == PICO_PROFILE_ID
+                and item["provisioning_kind"] == "verified-uf2-bootsel"
+                and item["board"] == "RPI_PICO2_W"
+                and item["hil_status"] == "pending",
+                "candidate Pico profile metadata changed",
+            )
+            install = _exact_dict(
+                item["install"],
+                {"path", "size", "sha256", "format"},
+                "candidate Pico install",
+            )
+            _require(install["format"] == "uf2", "candidate Pico format changed")
+            install = _artifact_record(
+                {key: install[key] for key in ("path", "size", "sha256")},
+                expected_path="rpi-pico2-w/firmware.uf2",
+                label="candidate Pico install",
+            )
+            resource = _exact_dict(
+                item["resource_image"],
+                {"path", "size", "sha256", "image_limit_bytes"},
+                "candidate Pico resource image",
+            )
+            _require(
+                resource["image_limit_bytes"] == 1_572_864,
+                "candidate Pico image limit changed",
+            )
+            _artifact_record(
+                {key: resource[key] for key in ("path", "size", "sha256")},
+                expected_path="rpi-pico2-w/firmware.bin",
+                label="candidate Pico resource image",
+            )
+            if profile_id == PICO_PROFILE_ID:
+                _require(
+                    install["size"] == artifact_size
+                    and install["sha256"] == artifact_sha256,
+                    "candidate Pico install does not bind firmware.uf2",
+                )
+            continue
+
+        spec = _ESP_PROFILE_METADATA[current_profile_id]
+        item = _exact_dict(
+            raw_profile,
+            {
+                "id",
+                "target",
+                "provisioning_kind",
+                "chip_family",
+                "silicon_revision",
+                "requirements",
+                "flash",
+                "hil_status",
+                "manifest",
+                "install",
+                "components",
+            },
+            "candidate %s profile" % current_profile_id,
+        )
+        requirements = _exact_dict(
+            item["requirements"],
+            {"flash_size_bytes", "psram"},
+            "candidate %s requirements" % current_profile_id,
+        )
+        _require(
+            item["id"] == current_profile_id
+            and item["target"] == spec["target"]
+            and item["provisioning_kind"] == "esp-web-serial"
+            and item["chip_family"] == spec["chip_family"]
+            and item["silicon_revision"] == spec["silicon_revision"]
+            and requirements["flash_size_bytes"] == spec["flash_size_bytes"]
+            and requirements["psram"] == spec["psram"]
+            and item["flash"]
+            == {"mode": "dio", "frequency_hz": spec["frequency_hz"]}
+            and item["hil_status"] == "pending",
+            "candidate %s profile metadata changed" % current_profile_id,
+        )
+        _artifact_record(
+            item["manifest"],
+            expected_path="%s/manifest.json" % current_profile_id,
+            label="candidate %s manifest" % current_profile_id,
+        )
+        install = _artifact_record(
+            item["install"],
+            expected_path="%s/firmware.bin" % current_profile_id,
+            label="candidate %s install" % current_profile_id,
+            offset=spec["install_offset"],
+        )
+        components = item["components"]
+        _require(
+            type(components) is list and len(components) == len(_COMPONENTS),
+            "candidate %s component count changed" % current_profile_id,
+        )
+        for component, (role, filename), component_offset in zip(
+            components, _COMPONENTS, spec["component_offsets"]
+        ):
+            _artifact_record(
+                component,
+                expected_path="%s/%s" % (current_profile_id, filename),
+                label="candidate %s %s" % (current_profile_id, role),
+                offset=component_offset,
+                role=role,
+            )
+        if profile_id == current_profile_id:
+            _require(
+                install["size"] == artifact_size
+                and install["sha256"] == artifact_sha256,
+                "candidate %s install does not bind firmware.bin"
+                % current_profile_id,
+            )
+
+    documents = _exact_dict(
+        value["documents"], set(_DOCUMENT_PATHS), "candidate documents"
+    )
+    for key, expected_path in _DOCUMENT_PATHS.items():
+        _artifact_record(
+            documents[key],
+            expected_path=expected_path,
+            label="candidate document %s" % key,
+        )
+    return identity["version"]
+
+
+def _candidate_snapshot(
+    candidate_dir: Path,
+    profile_id: str,
+) -> tuple[Any, ...]:
+    """Bind candidate directory, release bytes, artifact bytes, and metadata."""
+
+    _require(profile_id in _GATES_BY_PROFILE, "qualification profile is unsupported")
+    candidate_root = _absolute_lexical_path(candidate_dir, "candidate")
+    chain = _open_directory_chain(candidate_root, label="candidate", create=False)
+    profile_descriptor = -1
+    try:
+        release_raw, release_identity = _read_regular_at(
+            chain[-1][0],
+            "release.json",
+            label="candidate release.json",
+            maximum=2 * 1024 * 1024,
+        )
+        flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+        if hasattr(os, "O_CLOEXEC"):
+            flags |= os.O_CLOEXEC
+        profile_path = candidate_root / profile_id
+        profile_descriptor = os.open(profile_id, flags, dir_fd=chain[-1][0])
+        profile_stat = os.fstat(profile_descriptor)
+        _require(stat.S_ISDIR(profile_stat.st_mode), "candidate profile is unsafe")
+        chain.append(
+            (profile_descriptor, profile_path, _directory_identity(profile_stat))
+        )
+        profile_descriptor = -1
+        expected_name, _digest_key = _ARTIFACT_BY_PROFILE[profile_id]
+        artifact_raw, artifact_identity = _read_regular_at(
+            chain[-1][0],
+            expected_name,
+            label="candidate %s" % expected_name,
+            maximum=64 * 1024 * 1024,
+        )
+        _verify_directory_chain(chain, "candidate")
+    except QualificationError:
+        raise
+    except OSError as exc:
+        raise QualificationError("candidate profile is missing or unsafe") from exc
+    finally:
+        if profile_descriptor >= 0:
+            os.close(profile_descriptor)
+        chain_identity = tuple(
+            (os.fspath(path), identity) for _descriptor, path, identity in chain
+        )
+        _close_directory_chain(chain)
+
+    artifact_sha256 = hashlib.sha256(artifact_raw).hexdigest()
+    release = _strict_json_object(release_raw, "candidate release.json")
+    version = _validate_candidate_release(
+        release,
+        profile_id=profile_id,
+        artifact_size=len(artifact_raw),
+        artifact_sha256=artifact_sha256,
+    )
+    artifact_path = candidate_root / profile_id / expected_name
+    return (
+        version,
+        hashlib.sha256(release_raw).hexdigest(),
+        artifact_path,
+        artifact_sha256,
+        candidate_root,
+        release_identity,
+        artifact_identity,
+        chain_identity,
+    )
+
+
+def _candidate_identity(
+    candidate_dir: Path,
+    profile_id: str,
+) -> tuple[str, str, Path, str]:
+    """Return the public identity fields from one full candidate snapshot."""
+
+    snapshot = _candidate_snapshot(candidate_dir, profile_id)
+    return snapshot[0], snapshot[1], snapshot[2], snapshot[3]
+
+
+def _remove_created_result(
+    parent_descriptor: int,
+    name: str,
+    created_identity: tuple[int, int] | None,
+) -> None:
+    """Best-effort rollback through the held parent, never through a path."""
+
+    try:
+        if created_identity is not None:
+            visible = os.stat(name, dir_fd=parent_descriptor, follow_symlinks=False)
+            if (visible.st_dev, visible.st_ino) != created_identity:
+                return
+        os.unlink(name, dir_fd=parent_descriptor)
+        try:
+            os.fsync(parent_descriptor)
+        except OSError:
+            pass
+    except OSError:
+        pass
+
+
+def _write_exclusive_result(
+    path: Path,
+    raw: bytes,
+    *,
+    post_write_check: Callable[[], None] | None = None,
+) -> None:
+    """Durably create one no-replace result or remove every partial write."""
+
+    _require(
+        type(raw) is bytes and 0 < len(raw) <= MAX_RESULT_BYTES,
+        "qualification result bytes are outside their bound",
+    )
+    output = _absolute_lexical_path(path, "qualification result")
+    _require(output.name not in ("", ".", ".."), "qualification result name is unsafe")
+    chain = _open_directory_chain(
+        output.parent,
+        label="qualification result parent",
+        create=True,
+    )
+    parent_descriptor = chain[-1][0]
+    descriptor = -1
+    reader = -1
+    created = False
+    preserve = False
+    created_identity: tuple[int, int] | None = None
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
+    try:
+        _verify_output_parent(chain)
+        try:
+            descriptor = os.open(
+                output.name,
+                flags,
+                0o600,
+                dir_fd=parent_descriptor,
+            )
+        except FileExistsError as exc:
+            raise QualificationError(
+                "qualification result output already exists"
+            ) from exc
+        created = True
+        opened = os.fstat(descriptor)
+        created_identity = (opened.st_dev, opened.st_ino)
+        _require(stat.S_ISREG(opened.st_mode), "qualification result output is unsafe")
+        os.fchmod(descriptor, 0o600)
+        offset = 0
+        while offset < len(raw):
+            written = os.write(descriptor, raw[offset:])
+            if written <= 0:
+                raise OSError("short qualification result write")
+            offset += written
+        os.fsync(descriptor)
+        after = os.fstat(descriptor)
+        _require(
+            stat.S_ISREG(after.st_mode)
+            and stat.S_IMODE(after.st_mode) == 0o600
+            and after.st_nlink == 1
+            and after.st_size == len(raw)
+            and (after.st_dev, after.st_ino) == created_identity,
+            "qualification result output is unsafe",
+        )
+        os.close(descriptor)
+        descriptor = -1
+
+        _verify_output_parent(chain)
+        read_flags = os.O_RDONLY | os.O_NOFOLLOW
+        if hasattr(os, "O_CLOEXEC"):
+            read_flags |= os.O_CLOEXEC
+        reader = os.open(output.name, read_flags, dir_fd=parent_descriptor)
+        written_raw, written_identity = _read_open_regular(
+            reader,
+            label="qualification result",
+            maximum=MAX_RESULT_BYTES,
+        )
+        _require(
+            written_raw == raw
+            and (written_identity[0], written_identity[1]) == created_identity
+            and stat.S_IMODE(written_identity[2]) == 0o600
+            and written_identity[3] == 1,
+            "qualification result write verification failed",
+        )
+        os.close(reader)
+        reader = -1
+        if post_write_check is not None:
+            post_write_check()
+        _verify_output_parent(chain)
+        reader = os.open(output.name, read_flags, dir_fd=parent_descriptor)
+        final_raw, final_identity = _read_open_regular(
+            reader,
+            label="qualification result",
+            maximum=MAX_RESULT_BYTES,
+        )
+        _require(
+            final_raw == raw
+            and (final_identity[0], final_identity[1]) == created_identity
+            and stat.S_IMODE(final_identity[2]) == 0o600
+            and final_identity[3] == 1,
+            "qualification result changed during final validation",
+        )
+        os.close(reader)
+        reader = -1
+        os.fsync(parent_descriptor)
+        _verify_output_parent(chain)
+        preserve = True
+    except QualificationError:
+        raise
+    except OSError as exc:
+        raise QualificationError("qualification result could not be written") from exc
+    finally:
+        if reader >= 0:
+            try:
+                os.close(reader)
+            except OSError:
+                pass
+        if descriptor >= 0:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+        if created and not preserve:
+            _remove_created_result(
+                parent_descriptor,
+                output.name,
+                created_identity,
+            )
+        _close_directory_chain(chain)
+
+
+def create_result_file(
+    *,
+    candidate_dir: Path,
+    profile_id: str,
+    passed_gates: list[str],
+    output_path: Path,
+) -> Path:
+    """Derive and create one candidate-bound private gate result safely."""
+
+    expected_gates = _GATES_BY_PROFILE.get(profile_id)
+    _require(expected_gates is not None, "qualification profile is unsupported")
+    _require(
+        type(passed_gates) is list
+        and all(type(item) is str for item in passed_gates)
+        and len(passed_gates) == len(set(passed_gates))
+        and set(passed_gates) == set(expected_gates),
+        "passed gates must cover the exact profile gate set once",
+    )
+    candidate_snapshot = _candidate_snapshot(
+        Path(candidate_dir),
+        profile_id,
+    )
+    version, release_sha256, artifact_path, artifact_sha256 = candidate_snapshot[:4]
+    candidate_root = candidate_snapshot[4]
+    output = _absolute_lexical_path(output_path, "qualification result")
+    _require(
+        not output.is_relative_to(candidate_root),
+        "qualification result output must not be inside the candidate",
+    )
+    _expected_name, digest_key = _ARTIFACT_BY_PROFILE[profile_id]
+    result = {
+        "schema_version": RESULT_SCHEMA_VERSION,
+        "status": "passed",
+        "profile_id": profile_id,
+        "firmware_version": version,
+        "candidate_release_json_sha256": release_sha256,
+        digest_key: artifact_sha256,
+        "gates": {name: "passed" for name in expected_gates},
+    }
+    raw = canonical_json_bytes(result)
+    def validate_before_preserve() -> None:
+        validate_result_file(
+            output,
+            artifact_path=artifact_path,
+            expected_profile_id=profile_id,
+            expected_version=version,
+            candidate_release_json_sha256=release_sha256,
+        )
+        _require(
+            _candidate_snapshot(Path(candidate_dir), profile_id) == candidate_snapshot,
+            "candidate changed while qualification result was created",
+        )
+
+    _write_exclusive_result(
+        output,
+        raw,
+        post_write_check=validate_before_preserve,
+    )
+    return output
+
+
+def _main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        epilog=(
+            "create-result derives candidate identity and accepts one "
+            "--passed-gate per frozen profile gate"
+        ),
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    create_parser = subparsers.add_parser("create-result")
+    create_parser.add_argument("candidate_dir", type=Path)
+    create_parser.add_argument(
+        "profile_id",
+        choices=(C3_PROFILE_ID, PICO_PROFILE_ID),
+    )
+    create_parser.add_argument("output_path", type=Path)
+    create_parser.add_argument(
+        "--passed-gate",
+        action="append",
+        required=True,
+        dest="passed_gates",
+    )
+    args = parser.parse_args(argv)
+    try:
+        created = create_result_file(
+            candidate_dir=args.candidate_dir,
+            profile_id=args.profile_id,
+            passed_gates=args.passed_gates,
+            output_path=args.output_path,
+        )
+    except QualificationError as exc:
+        print("qualification result creation failed: %s" % exc, file=sys.stderr)
+        return 1
+    print(created)
+    return 0
+
+
 __all__ = (
     "C3_PROFILE_ID",
     "PICO_PROFILE_ID",
     "QualificationError",
     "canonical_json_bytes",
+    "create_result_file",
     "private_result_snapshot",
     "validate_public_summary",
     "validate_result_file",
 )
+
+
+if __name__ == "__main__":
+    raise SystemExit(_main())

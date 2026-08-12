@@ -10,6 +10,7 @@
 import argparse
 import asyncio
 import errno
+import importlib.util
 import json
 import platform
 import re
@@ -75,6 +76,46 @@ SERIAL_ENDPOINT_GONE_ERRNOS = frozenset(
 )
 PRE_CAPTURE_SESSION_END_TIMEOUT_MS = 2000
 SERIAL_POLL_INTERVAL_SECONDS = 0.01
+
+
+def _load_rp2_console_pacing():
+    """Import and validate the exact source-bound Pico pacing constants."""
+
+    source = (
+        Path(__file__).resolve().parents[3]
+        / "firmware"
+        / "pyble"
+        / "pyble_console.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "pyble_oi1_rp2_console_contract",
+        source,
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError("cannot load the Pico console pacing contract")
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+    except Exception as exc:
+        raise RuntimeError("cannot import the Pico console pacing contract") from exc
+    values = (
+        getattr(module, "TX_CAPACITY", None),
+        getattr(module, "TX_REFILL_PER_MS", None),
+        getattr(module, "TX_BUDGET_MS", None),
+    )
+    if not all(type(value) is int and value > 0 for value in values):
+        raise RuntimeError("Pico console pacing constants must be positive integers")
+    capacity, refill_per_ms, budget_ms = values
+    if budget_ms != (capacity + refill_per_ms - 1) // refill_per_ms:
+        raise RuntimeError("Pico console pacing refill horizon changed")
+    return values
+
+
+(
+    RP2_CONSOLE_TX_CAPACITY,
+    RP2_CONSOLE_TX_REFILL_PER_MS,
+    RP2_CONSOLE_TX_BUDGET_MS,
+) = _load_rp2_console_pacing()
 
 
 def _require_text(value, label):
@@ -1127,7 +1168,7 @@ class Rp2HardwareExecutor(HardwareExecutor):
         return {
             "ble_host": "btstack",
             **self._hello_transport,
-            "console_tx_budget_ms": self.args.console_tx_budget_ms,
+            "console_tx_budget_ms": RP2_CONSOLE_TX_BUDGET_MS,
         }
 
     async def seal_transfer_link_facts(self, timeout_ms):
@@ -1302,7 +1343,6 @@ def _parse_args(argv=None):
     )
     parser.add_argument("--firmware-bin")
     parser.add_argument("--firmware-uf2")
-    parser.add_argument("--console-tx-budget-ms", type=int)
     parser.add_argument(
         "--policy",
         help="committed oi1-gates.json (required only in verify mode)",
@@ -1336,18 +1376,15 @@ def _parse_args(argv=None):
     rp2_inputs = (
         args.firmware_bin,
         args.firmware_uf2,
-        args.console_tx_budget_ms,
     )
     if is_rp2:
         if not args.operator_reset or any(value is None for value in rp2_inputs):
             parser.error(
                 "Pico 2 W requires --operator-reset, --firmware-bin, "
-                "--firmware-uf2, and --console-tx-budget-ms"
+                "and --firmware-uf2"
             )
         if any(value is not None for value in esp_inputs):
             parser.error("Pico 2 W forbids ESP reset and build inputs")
-        if args.console_tx_budget_ms <= 0:
-            parser.error("--console-tx-budget-ms must be positive")
     else:
         if any(value is None for value in esp_inputs):
             parser.error(

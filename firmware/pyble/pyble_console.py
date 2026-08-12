@@ -52,10 +52,13 @@ CHUNK = 200
 STDIN_RING = 256
 STOP_CHAR = 0x03
 
-# Token-bucket defaults (bytes of capacity; bytes refilled per elapsed ms).
-# INITIAL values pending HIL tuning on the physical Pico 2 W — port spec OI-P3.
+# Frozen Pico token-bucket contract (port spec P8/OI-P3): capacity in bytes,
+# refill in bytes per elapsed millisecond, and the exact empty-to-full refill
+# horizon in milliseconds.  TX_BUDGET_MS is evidence metadata; it does not
+# block, sleep, or change the token arithmetic below.
 TX_CAPACITY = 2048
 TX_REFILL_PER_MS = 20
+TX_BUDGET_MS = (TX_CAPACITY + TX_REFILL_PER_MS - 1) // TX_REFILL_PER_MS
 
 
 class Console(_IOBase):
