@@ -1,97 +1,10 @@
 {
   "profile_id": "rpi-pico2-w",
-  "schema_version": 2,
+  "schema_version": 1,
   "source_owners": [
     {
-      "component_kind": "build-tool",
-      "copyright": "Copyright (C) 1990-2024 Free Software Foundation, Inc.",
-      "disposition": "allow",
-      "id": "arm-gnu-binutils-build-tools",
-      "license_texts": [
-        {
-          "identifier": "GPL-3.0-or-later",
-          "path": "firmware/licenses/texts/GPL-3.0-or-later.txt",
-          "sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903"
-        }
-      ],
-      "notice_files": [
-        {
-          "path": "firmware/licenses/evidence/rp2/arm-gnu-toolchain/14.2.rel1/runtime-attribution-v1.json",
-          "sha256": "6c8fd8e26105c96e370738c3d8e210a7c40ab03f58f7edbb82fb7d854c96b891"
-        },
-        {
-          "path": "firmware/licenses/evidence/rp2/arm-gnu-toolchain/14.2.rel1/source-manifest.txt",
-          "sha256": "470cdb8bae9f5fed96c17b10834bbd22820e933cfad99914c3f37997cae36745"
-        },
-        {
-          "path": "firmware/licenses/evidence/rp2/arm-gnu-toolchain/14.2.rel1/source-sha256.txt",
-          "sha256": "453b10cec11a2cc603d9485b0b7cb409c17dd250da3d4f390c17cece7ebf4ff5"
-        }
-      ],
-      "selected_spdx_expression": "GPL-3.0-or-later",
-      "source_ref": "14.2.Rel1",
-      "source_roots": [
-        {
-          "namespace": "arm-gnu-toolchain",
-          "path": "arm-none-eabi/bin/as"
-        },
-        {
-          "namespace": "arm-gnu-toolchain",
-          "path": "arm-none-eabi/bin/ld"
-        }
-      ],
-      "source_spdx_expression": "GPL-3.0-or-later",
-      "source_url": "https://sourceware.org/git/binutils-gdb.git"
-    },
-    {
-      "component_kind": "build-tool",
       "copyright": "Copyright (C) 1989-2024 Free Software Foundation, Inc.",
-      "disposition": "allow",
-      "id": "arm-gnu-gcc-build-tools",
-      "license_texts": [
-        {
-          "identifier": "GPL-3.0-or-later",
-          "path": "firmware/licenses/texts/GPL-3.0-or-later.txt",
-          "sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903"
-        }
-      ],
-      "notice_files": [
-        {
-          "path": "firmware/licenses/evidence/rp2/arm-gnu-toolchain/14.2.rel1/runtime-attribution-v1.json",
-          "sha256": "6c8fd8e26105c96e370738c3d8e210a7c40ab03f58f7edbb82fb7d854c96b891"
-        },
-        {
-          "path": "firmware/licenses/evidence/rp2/arm-gnu-toolchain/14.2.rel1/source-manifest.txt",
-          "sha256": "470cdb8bae9f5fed96c17b10834bbd22820e933cfad99914c3f37997cae36745"
-        },
-        {
-          "path": "firmware/licenses/evidence/rp2/arm-gnu-toolchain/14.2.rel1/source-sha256.txt",
-          "sha256": "453b10cec11a2cc603d9485b0b7cb409c17cece7ebf4ff5"
-        }
-      ],
-      "selected_spdx_expression": "GPL-3.0-or-later",
-      "source_ref": "14.2.Rel1",
-      "source_roots": [
-        {
-          "namespace": "arm-gnu-toolchain",
-          "path": "bin/arm-none-eabi-g++"
-        },
-        {
-          "namespace": "arm-gnu-toolchain",
-          "path": "bin/arm-none-eabi-gcc"
-        },
-        {
-          "namespace": "arm-gnu-toolchain",
-          "path": "libexec/gcc/arm-none-eabi/14.2.1/collect2"
-        }
-      ],
-      "source_spdx_expression": "GPL-3.0-or-later",
-      "source_url": "https://gcc.gnu.org/git/gcc.git"
-    },
-    {
-      "component_kind": "runtime",
-      "copyright": "Copyright (C) 1989-2024 Free Software Foundation, Inc.",
-      "disposition": "allow",
+      "disposition": "review-required",
       "id": "arm-gnu-gcc-runtime",
       "license_texts": [
         {
@@ -106,10 +19,6 @@
         }
       ],
       "notice_files": [
-        {
-          "path": "firmware/licenses/evidence/rp2/arm-gnu-toolchain/14.2.rel1/runtime-attribution-v1.json",
-          "sha256": "6c8fd8e26105c96e370738c3d8e210a7c40ab03f58f7edbb82fb7d854c96b891"
-        },
         {
           "path": "firmware/licenses/evidence/rp2/arm-gnu-toolchain/14.2.rel1/source-manifest.txt",
           "sha256": "470cdb8bae9f5fed96c17b10834bbd22820e933cfad99914c3f37997cae36745"
@@ -133,6 +42,14 @@
         {
           "namespace": "arm-gnu-toolchain",
           "path": "arm-none-eabi/lib/thumb/v8-m.main+fp/softfp/libstdc++.a"
+        },
+        {
+          "namespace": "arm-gnu-toolchain",
+          "path": "bin/arm-none-eabi-g++"
+        },
+        {
+          "namespace": "arm-gnu-toolchain",
+          "path": "bin/arm-none-eabi-gcc"
         },
         {
           "namespace": "arm-gnu-toolchain",
@@ -163,50 +80,8 @@
       "source_url": "https://gcc.gnu.org/git/gcc.git"
     },
     {
-      "component_kind": "runtime",
-      "copyright": "Newlib/Libgloss contributors; exact terms retained in COPYING.LIBGLOSS",
-      "disposition": "allow",
-      "id": "arm-gnu-libgloss-runtime",
-      "license_texts": [
-        {
-          "identifier": "LicenseRef-PyBLE-Libgloss-Multilicense",
-          "path": "firmware/licenses/texts/COPYING.LIBGLOSS.arm-gnu-14.2.rel1.txt",
-          "sha256": "bdaffd5fff30cb5fc7a239a4fa0b95f703590f7b3813ca7f4e76ff46437aeb81"
-        }
-      ],
-      "notice_files": [
-        {
-          "path": "firmware/licenses/evidence/rp2/arm-gnu-toolchain/14.2.rel1/runtime-attribution-v1.json",
-          "sha256": "6c8fd8e26105c96e370738c3d8e210a7c40ab03f58f7edbb82fb7d854c96b891"
-        },
-        {
-          "path": "firmware/licenses/evidence/rp2/arm-gnu-toolchain/14.2.rel1/source-manifest.txt",
-          "sha256": "470cdb8bae9f5fed96c17b10834bbd22820e933cfad99914c3f37997cae36745"
-        },
-        {
-          "path": "firmware/licenses/evidence/rp2/arm-gnu-toolchain/14.2.rel1/source-sha256.txt",
-          "sha256": "453b10cec11a2cc603d9485b0b7cb409c17cece7ebf4ff5"
-        }
-      ],
-      "selected_spdx_expression": "LicenseRef-PyBLE-Libgloss-Multilicense",
-      "source_ref": "14.2.Rel1",
-      "source_roots": [
-        {
-          "namespace": "arm-gnu-toolchain",
-          "path": "arm-none-eabi/lib/thumb/v8-m.main+fp/softfp/crt0.o"
-        },
-        {
-          "namespace": "arm-gnu-toolchain",
-          "path": "arm-none-eabi/lib/thumb/v8-m.main+fp/softfp/libnosys.a"
-        }
-      ],
-      "source_spdx_expression": "LicenseRef-PyBLE-Libgloss-Multilicense",
-      "source_url": "https://sourceware.org/git/newlib-cygwin.git"
-    },
-    {
-      "component_kind": "runtime",
       "copyright": "Newlib contributors; exact component-wise notices retained in COPYING.NEWLIB",
-      "disposition": "allow",
+      "disposition": "review-required",
       "id": "arm-gnu-newlib-runtime",
       "license_texts": [
         {
@@ -216,10 +91,6 @@
         }
       ],
       "notice_files": [
-        {
-          "path": "firmware/licenses/evidence/rp2/arm-gnu-toolchain/14.2.rel1/runtime-attribution-v1.json",
-          "sha256": "6c8fd8e26105c96e370738c3d8e210a7c40ab03f58f7edbb82fb7d854c96b891"
-        },
         {
           "path": "firmware/licenses/evidence/rp2/arm-gnu-toolchain/14.2.rel1/source-manifest.txt",
           "sha256": "470cdb8bae9f5fed96c17b10834bbd22820e933cfad99914c3f37997cae36745"
@@ -242,6 +113,10 @@
         },
         {
           "namespace": "arm-gnu-toolchain",
+          "path": "arm-none-eabi/lib/thumb/v8-m.main+fp/softfp/crt0.o"
+        },
+        {
+          "namespace": "arm-gnu-toolchain",
           "path": "arm-none-eabi/lib/thumb/v8-m.main+fp/softfp/libc.a"
         },
         {
@@ -251,6 +126,10 @@
         {
           "namespace": "arm-gnu-toolchain",
           "path": "arm-none-eabi/lib/thumb/v8-m.main+fp/softfp/libm.a"
+        },
+        {
+          "namespace": "arm-gnu-toolchain",
+          "path": "arm-none-eabi/lib/thumb/v8-m.main+fp/softfp/libnosys.a"
         }
       ],
       "source_spdx_expression": "LicenseRef-PyBLE-Newlib-Multilicense",
@@ -503,7 +382,7 @@
       "source_url": "https://github.com/micropython/micropython"
     },
     {
-      "copyright": "Copyright © 2005-2014 Rich Felker, et al.; Copyright (c) 2013-2026 Damien P. George",
+      "copyright": "Copyright \u00a9 2005-2014 Rich Felker, et al.; Copyright (c) 2013-2026 Damien P. George",
       "disposition": "allow",
       "id": "libm-musl",
       "license_texts": [
@@ -555,7 +434,7 @@
       "source_url": "https://github.com/micropython/micropython"
     },
     {
-      "copyright": "Copyright © musl contributors; Copyright (C) 1993 by Sun Microsystems, Inc.; Copyright (c) 2013-2026 Damien P. George",
+      "copyright": "Copyright \u00a9 musl contributors; Copyright (C) 1993 by Sun Microsystems, Inc.; Copyright (c) 2013-2026 Damien P. George",
       "disposition": "allow",
       "id": "libm-musl-sun",
       "license_texts": [
