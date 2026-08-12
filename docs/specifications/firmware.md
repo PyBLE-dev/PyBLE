@@ -212,6 +212,124 @@ contract, and HIL matrix live in
   reusable evidence validators MUST receive the expected candidate version
   explicitly.
 
+### 6.1 RP2 Arm GNU runtime-license closure
+
+The `rpi-pico2-w` release audit MUST distinguish a tool or file being used by
+the build from bytes being incorporated into the installable firmware. These
+terms are normative:
+
+- A **build tool** is an executable which transforms or links inputs, including
+  the GCC drivers and their resolved GCC/binutils helpers. It is part of the
+  reproducibility and Eligible Compilation closure, but is not thereby a
+  component contained in `firmware.uf2`.
+- A **link input** is a direct object or archive present in the exact final link
+  command or the linker's `LOAD` inventory. Presence alone does not prove that
+  it contributed bytes.
+- A **compiler-dependency header** is an exact regular file recorded by a
+  compiler depfile for Target Code. Its incorporated source text is a shipped
+  contribution even though it is not a linker operand.
+- An **allocated contributor** is a direct input section or an exact archive
+  member section proven to land in loadable bytes from which `firmware.bin` and
+  `firmware.uf2` are reconstructed. An archive-inclusion row, symbol-resolution
+  row, or `LOAD` row is insufficient by itself.
+- The **install payload** is the verified RP2350 Arm byte stream reconstructed
+  from `firmware.uf2` and its byte-identical sibling `firmware.bin`. Debug-only,
+  discarded, and zero-sized ELF sections are not install-payload contributions.
+
+Every observed build tool, link input, compiler-dependency header, direct
+object, archive, and allocated archive member MUST nevertheless resolve to one
+most-specific owner and to the exact retained official binary-distribution
+bytes. Audit receipts MUST retain noncontributing link inputs with
+`contributes: false`; public firmware notices MUST be generated only for
+runtime owners with at least one compiler-dependency header or allocated
+contributor. Build tools and runtime inputs that are only loaded and discarded
+MUST NOT be described as contents of the firmware. A later build in which such
+an input contributes MUST fail closed until its exact source/license mapping is
+admitted and MUST then include its notice.
+
+The Arm GNU 14.2.Rel1 closure is exactly five independently reviewed owners:
+
+| Owner | Kind | Exact scope | Selected terms |
+|---|---|---|---|
+| `arm-gnu-gcc-build-tools` | build tool | pinned `gcc`, `g++`, and resolved `collect2` | `GPL-3.0-or-later` |
+| `arm-gnu-binutils-build-tools` | build tool | resolved GNU assembler and linker | `GPL-3.0-or-later` |
+| `arm-gnu-gcc-runtime` | runtime | observed GCC/libstdc++ headers, `libgcc.a`, `libstdc++.a`, and GCC `crt*.o` | `GPL-3.0-or-later WITH GCC-exception-3.1` |
+| `arm-gnu-newlib-runtime` | runtime | observed newlib headers plus `libc.a`, `libg.a`, and `libm.a` | the exact Newlib multilicense compilation |
+| `arm-gnu-libgloss-runtime` | runtime | `crt0.o` and `libnosys.a` | the exact, separate Libgloss multilicense compilation |
+
+The GCC Runtime Library Exception MUST NOT be assigned to GCC compiler
+executables. Conversely, `crt0.o` and `libnosys.a` MUST NOT be assigned to
+newlib's `COPYING.NEWLIB`: their source component is libgloss and its governing
+compilation is `COPYING.LIBGLOSS`. All five owners may be reviewed `allow` only
+for the exact source and binary identities below; an unresolved owner actually
+used as a build tool or incorporated at runtime remains release-blocking.
+
+The official binary archive is the 134,812,148-byte
+`arm-gnu-toolchain-14.2.rel1-darwin-arm64-arm-none-eabi.tar.xz`, SHA-256
+`c7c78ffab9bebfce91d99d3c24da6bf4b81c01e16cf551eb2ff9f25b9e0a3818`.
+The independently retained official source snapshot is the 311,500,280-byte
+`arm-gnu-toolchain-src-snapshot-14.2.rel1.tar.xz`, SHA-256
+`e6405f20f8a817a50d92dbf7974d0ee77708dfdf9e79900a59c5d343b464ef9c`.
+Its manifest, SHA-256
+`470cdb8bae9f5fed96c17b10834bbd22820e933cfad99914c3f37997cae36745`,
+selects binutils-gdb commit
+`74c7803f0cc8d3d66513b6d6549bff2fbe737a7d`, GCC commit
+`a05ea1e5ee0867191bb432a84c055be99dbdbc16`, and newlib-cygwin commit
+`7923059bff6c120c6fb74b63c7553ea345c0a8f3`. The lock MUST pin the source
+snapshot URL, filename, byte length, format, and digest; the final receipt MUST
+prove the retained snapshot and manifest again rather than trusting a prose
+claim or an unbound checksum file.
+
+One canonical, hash-bound Arm runtime-attribution document MUST map:
+
+1. every observed build-tool path and helper SHA-256 to the binary archive and
+   the selected GCC or binutils source component;
+2. every observed runtime archive and direct-object SHA-256 to its component;
+3. every allocated `(archive path, archive SHA-256, member name, member
+   SHA-256)` and every contributing direct object to one source path, source
+   SHA-256, source commit, and license basis; and
+4. every exact depfile-selected toolchain header to a byte-identical source
+   file or an explicit, hash-bound generation recipe.
+
+For the frozen audit vector there are exactly 29 allocated archive members:
+six from `libgcc.a`, twenty-two from `libg.a`, and one from `libm.a`. The exact
+direct contributors are `crti.o`, `crtbegin.o`, and `crtend.o`; `crt0.o` and
+`crtn.o` are loaded but noncontributing. `libstdc++.a`, `libc.a`, and
+`libnosys.a` have zero allocated members. There are exactly 66 selected
+toolchain headers: fifty newlib, nine GCC, and seven libstdc++. The attribution
+contract and its host test freeze every member, source, and digest rather than
+relying on these counts alone.
+
+Four selected installed headers require explicit derivations:
+
+- newlib `_newlib_version.h` is generated from `_newlib_version.hin`;
+- newlib `newlib.h` is generated from `newlib.hin`;
+- GCC `limits.h` is the configured concatenation of `limitx.h`, `glimits.h`,
+  and `limity.h`; and
+- libstdc++ `bits/c++config.h` is generated from
+  `libstdc++-v3/include/bits/c++config` by the pinned source Makefile recipe.
+
+GCC `syslimits.h` is not an unowned generated file: it is byte-identical to
+`gcc/gcc/gsyslimits.h`. All other selected headers MUST byte-match their named
+source snapshot file. Newlib notice output MUST retain the complete exact
+`COPYING.NEWLIB` and the exact selected per-file copyright statements; the
+component-wide compilation's consolidated year ranges do not replace an exact
+binary-redistribution notice. Libgloss MUST analogously retain the exact
+`COPYING.LIBGLOSS` bytes.
+
+Finally, use of the GCC exception is conditional on an **Eligible Compilation
+receipt** for each release build. The auditor MUST derive, not accept as an
+unchecked assertion, that every Target Code recipe uses the pinned GCC C, C++,
+or assembler driver; the final link uses the pinned GCC driver; the resolved
+assembler, linker, and `collect2` helpers byte-match the official archive and
+map to the approved GCC/binutils commits; and no compiler launcher, wrapper,
+`-fplugin`, external optimizer, or unreviewed GCC intermediate-representation
+or LTO path participates. The receipt MUST bind the CMake cache, every relevant
+`flags.make` and `build.make`, all depfiles, `link.txt`, the linker map, ELF,
+BIN, and UF2 digests. An absent recipe, extra Target Code object, changed tool
+or helper, unknown flag path, unmapped member/header, or source/archive mismatch
+MUST fail closed before a public candidate can be assembled.
+
 ## 7. Footprint budget (provisional, per target)
 
 The measurement method is frozen in
