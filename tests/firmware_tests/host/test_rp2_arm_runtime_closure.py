@@ -33,6 +33,9 @@ LIBGLOSS = (
 ATTRIBUTION_SHA256 = (
     "6c8fd8e26105c96e370738c3d8e210a7c40ab03f58f7edbb82fb7d854c96b891"
 )
+NOSYS_SPECS_SHA256 = (
+    "24f0304a9ef660646fcb468d0ecf308b6e82ee5648e9b10b568e19ed4726d8d8"
+)
 LIBGLOSS_SHA256 = (
     "bdaffd5fff30cb5fc7a239a4fa0b95f703590f7b3813ca7f4e76ff46437aeb81"
 )
@@ -269,6 +272,27 @@ class RP2ArmRuntimeClosureTests(unittest.TestCase):
                     },
                 )
 
+    def test_nosys_specs_is_one_exact_noncontributing_libgloss_control(
+        self,
+    ) -> None:
+        self.assertEqual(
+            self.attribution.get("specs_inputs"),
+            [
+                [
+                    "arm-gnu-libgloss-runtime",
+                    "--specs=nosys.specs",
+                    "arm-none-eabi/lib/nosys.specs",
+                    203,
+                    NOSYS_SPECS_SHA256,
+                    "newlib-cygwin/libgloss/libnosys/nosys.specs",
+                    203,
+                    NOSYS_SPECS_SHA256,
+                    "libgloss-default-compilation",
+                    False,
+                ]
+            ],
+        )
+
     def test_all_66_headers_and_four_generation_recipes_are_frozen(self) -> None:
         exact = self.attribution["headers"]
         generated = self.attribution["generated_headers"]
@@ -344,6 +368,7 @@ class RP2ArmRuntimeClosureTests(unittest.TestCase):
         return {
             "identity": copy.deepcopy(attribution["identity"]),
             "build_tools": copy.deepcopy(attribution["build_tools"]),
+            "specs_inputs": copy.deepcopy(attribution["specs_inputs"]),
             "runtime_archives": copy.deepcopy(attribution["runtime_archives"]),
             "direct_inputs": copy.deepcopy(attribution["direct_inputs"]),
             "archive_members": copy.deepcopy(attribution["archive_members"]),
@@ -354,6 +379,7 @@ class RP2ArmRuntimeClosureTests(unittest.TestCase):
                     attribution["eligible_compilation"]["required_receipt_kinds"]
                 ),
                 "compiler_launchers": [],
+                "driver_environment_overrides": [],
                 "external_ir_consumers": [],
                 "compile_recipes": [
                     {
@@ -373,7 +399,13 @@ class RP2ArmRuntimeClosureTests(unittest.TestCase):
                     },
                 ],
                 "link_driver": "bin/arm-none-eabi-g++",
-                "link_arguments": ["-Wl,--gc-sections"],
+                "link_arguments": [
+                    "--specs=nosys.specs",
+                    "-Wl,--gc-sections",
+                ],
+                "resolved_specs_inputs": copy.deepcopy(
+                    attribution["specs_inputs"]
+                ),
                 "source_archive_sha256": (
                     SOURCE_LOCK_CONTRACT["source_archive_sha256"]
                 ),
@@ -585,6 +617,54 @@ class RP2ArmRuntimeClosureTests(unittest.TestCase):
             with self.subTest(case=label), self.assertRaises(RELEASE.ReleaseError):
                 guard(arguments, label=label)
 
+    def test_only_exact_nosys_specs_is_admitted_for_the_pinned_link(self) -> None:
+        guard = RELEASE._audit_rp2_reject_driver_overrides
+        guard(
+            ["--specs=nosys.specs", "-Wl,--gc-sections"],
+            label="pinned-link",
+            allowed_specs={"--specs=nosys.specs"},
+        )
+        for arguments in (
+            ["-specs=nosys.specs"],
+            ["--specs", "nosys.specs"],
+            ["--specs=/tmp/nosys.specs"],
+            ["--specs=nano.specs"],
+            ["--specs=nosys.specs", "--specs=nano.specs"],
+        ):
+            with self.subTest(arguments=arguments), self.assertRaises(
+                RELEASE.ReleaseError
+            ):
+                guard(
+                    arguments,
+                    label="substituted-link",
+                    allowed_specs={"--specs=nosys.specs"},
+                )
+
+    def test_validator_hash_binds_resolved_nosys_specs_without_notice(self) -> None:
+        observed = self.expected_observation()
+        result = self.validate(observed)
+        self.assertNotIn(
+            "arm-gnu-libgloss-runtime",
+            result["public_notice_owner_ids"],
+        )
+        replacements = {
+            2: "arm-none-eabi/lib/substituted.specs",
+            3: 204,
+            4: "0" * 64,
+            5: "newlib-cygwin/libgloss/libnosys/substituted.specs",
+            6: 204,
+            7: "0" * 64,
+            8: "substituted-compilation",
+            9: True,
+        }
+        for index, replacement in replacements.items():
+            changed = copy.deepcopy(observed)
+            changed["specs_inputs"][0][index] = replacement
+            with self.subTest(index=index), self.assertRaises(
+                RELEASE.ReleaseError
+            ):
+                self.validate(changed)
+
     def test_eligible_receipt_binds_empty_driver_environment(self) -> None:
         observed = self.expected_observation()
         receipt = observed["eligible_compilation_receipt"]
@@ -604,6 +684,9 @@ class RP2ArmRuntimeClosureTests(unittest.TestCase):
         end = source.index("\ndef _audit_rp2_owner_for_path(", start)
         observer = source[start:end]
         self.assertIn('"driver_environment_overrides": []', observer)
+        self.assertIn('"resolved_specs_inputs"', observer)
+        self.assertIn('"-print-file-name=%s"', observer)
+        self.assertIn('allowed_specs={"--specs=nosys.specs"}', observer)
         self.assertIn('"firmware/scripts/build_rp2.sh"', observer)
         self.assertGreaterEqual(
             observer.count("_audit_rp2_reject_driver_overrides("),
