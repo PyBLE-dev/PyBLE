@@ -68,7 +68,9 @@ class RP2LicenseDispositionTests(unittest.TestCase):
             {
                 "arm-gnu-gcc-runtime",
                 "arm-gnu-newlib-runtime",
-                "cyw43-driver",
+                "cyw43-bt-firmware-payload",
+                "cyw43-nvram-payload",
+                "cyw43-wifi-clm-payload",
             },
         )
 
