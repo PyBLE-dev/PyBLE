@@ -44,6 +44,26 @@ function noticeSection(notice: string, installedPath: string) {
 }
 
 describe("production build contract", () => {
+  it("refuses loopback preview artifacts before either production build", async () => {
+    const [packageJson, guardSource] = await Promise.all([
+      readFile(join(process.cwd(), "package.json"), "utf8").then(JSON.parse),
+      readFile(
+        join(process.cwd(), "scripts", "assert-no-local-firmware-preview.js"),
+        "utf8",
+      ),
+    ]);
+
+    expect(packageJson.scripts["build:static"]).toMatch(
+      /^node scripts\/assert-no-local-firmware-preview\.js && /,
+    );
+    expect(packageJson.scripts["build:sites"]).toMatch(
+      /^node scripts\/assert-no-local-firmware-preview\.js && /,
+    );
+    expect(guardSource).toContain(".pyble-local-preview");
+    expect(guardSource).toMatch(/lstat|stat/);
+    expect(guardSource).toMatch(/refus|forbid|local preview/i);
+  });
+
   it("builds the portable export and the Sites vinext artifact", async () => {
     const packageJson = JSON.parse(
       await readFile(join(process.cwd(), "package.json"), "utf8"),
