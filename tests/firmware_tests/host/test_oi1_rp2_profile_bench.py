@@ -46,6 +46,51 @@ RP2_LINK_FACTS = {
 }
 
 
+def _rp2_observation() -> dict:
+    heap = {"gc_free_bytes": 9001, "gc_allocated_bytes": 1000}
+    durations = [1_000_000_000] * 5
+    return {
+        "observed_att_mtu": 247,
+        "observed_window": 4,
+        "observed_chunk_bytes": 229,
+        "reset_to_service_advertisement_ms": [100] * 10,
+        "heap_default_free_post_hello_bytes": [8192] * 10,
+        "heap_post_hello": [dict(heap) for _ in range(10)],
+        "put_unique_committed_bytes": [65536] * 5,
+        "put_duration_ns": durations,
+        "put_committed_goodput_bytes_per_second": [65536] * 5,
+        "get_unique_verified_bytes": [65536] * 5,
+        "get_duration_ns": durations,
+        "get_verified_goodput_bytes_per_second": [65536] * 5,
+        "put_retransmitted_chunks": [0] * 5,
+        "put_retransmitted_bytes": [0] * 5,
+        "get_retransmitted_chunks": [0] * 5,
+        "get_retransmitted_bytes": [0] * 5,
+        "roundtrip_integrity_verified": 5,
+        "get_offset_sequences_validated": 5,
+        "roundtrip_unexpected_disconnects": 0,
+        "roundtrip_integrity_failures": 0,
+        "heap_post_roundtrip": [dict(heap) for _ in range(5)],
+        "reliability": {
+            "attempted_files": 20,
+            "completed_files": 20,
+            "verified_files": 20,
+            "bytes_per_file": 16384,
+            "total_payload_bytes": 327680,
+            "unexpected_disconnects": 0,
+            "integrity_failures": 0,
+            "failed_statuses": 0,
+            "retransmitted_chunks": 0,
+            "retransmitted_bytes": 0,
+            "rewinds": 0,
+        },
+        "heap_post_reliability": dict(heap),
+        "transfer_link_facts": dict(RP2_LINK_FACTS),
+        "physical_power_cycle_advertising": "passed",
+        "raw_log_sha256": "a" * 64,
+    }
+
+
 def _common_cli(profile: str, chip: str) -> list[str]:
     return [
         "--mode",
@@ -273,6 +318,71 @@ class Rp2BuildAndHeapTests(unittest.TestCase):
                 [b"__PYBLE_OI1_HEAP_nonce=9001,1000,1,1,1\n"],
                 "nonce",
             )
+
+    def test_rp2_thresholds_and_observation_are_target_discriminated(self):
+        build = {
+            "firmware_bin_bytes": 256,
+            "firmware_image_limit_bytes": RP2_IMAGE_LIMIT_BYTES,
+            "firmware_image_headroom_bytes": RP2_IMAGE_LIMIT_BYTES - 256,
+        }
+        observation = _rp2_observation()
+        self.assertIs(
+            bench.validate_observation(observation, profile_id=PICO_PROFILE),
+            observation,
+        )
+        thresholds = bench.derive_thresholds(build, observation)
+        self.assertEqual(
+            thresholds,
+            {
+                "firmware_bin_max_bytes": 256,
+                "firmware_image_headroom_min_bytes": (
+                    RP2_IMAGE_LIMIT_BYTES - 256
+                ),
+                "gc_free_min_bytes": 8192,
+                "reset_to_service_advertisement_max_ms": 3000,
+                "put_committed_goodput_min_bytes_per_second": 62200,
+                "get_verified_goodput_min_bytes_per_second": 62200,
+            },
+        )
+        self.assertEqual(
+            bench.evaluate_thresholds(build, observation, thresholds),
+            thresholds,
+        )
+
+        contaminated = _rp2_observation()
+        contaminated["heap_post_hello"][0]["idf_internal_free_bytes"] = 1
+        with self.assertRaises(bench.BenchError):
+            bench.validate_observation(
+                contaminated,
+                profile_id=PICO_PROFILE,
+            )
+
+    def test_rp2_baseline_fragment_binds_install_and_resource_hashes(self):
+        profile = profile_bench.build_baseline_profile(
+            profile_id=PICO_PROFILE,
+            board_manufacturer="Raspberry Pi",
+            board_model="Pico 2 W",
+            module_marking="RP2350 + CYW43439",
+            device_flash_capacity_bytes=4 * 1024 * 1024,
+            device_psram_capacity_bytes=0,
+            firmware_sha256="1" * 64,
+            manifest_sha256=None,
+            install_sha256="2" * 64,
+            resource_image_sha256="1" * 64,
+            environment={
+                "desktop_os": "host-fake",
+                "ble_backend": "host-fake",
+                "ble_adapter": "host-fake",
+                "python_version": "host-fake",
+            },
+            oi1_build={},
+            oi1_observation={},
+        )
+        self.assertEqual(profile["resource_kind"], "rp2")
+        self.assertEqual(profile["install_sha256"], "2" * 64)
+        self.assertEqual(profile["resource_image_sha256"], "1" * 64)
+        self.assertNotIn("manifest_sha256", profile)
+        self.assertNotIn("firmware_sha256", profile)
 
 
 class _FakeLog:

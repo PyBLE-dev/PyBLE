@@ -102,6 +102,15 @@ HEAP_KEYS = (
     "idf_internal_minimum_free_bytes",
 )
 
+RP2_HEAP_KEYS = (
+    "gc_free_bytes",
+    "gc_allocated_bytes",
+)
+
+RP2_IMAGE_LIMIT_BYTES = 1_572_864
+RP2_UF2_ARM_FAMILY = 0xE48BFF59
+RP2_UF2_EXTENSION_FAMILY = 0xE48BFF57
+
 THRESHOLD_KEYS = (
     "application_image_max_bytes",
     "application_headroom_min_bytes",
@@ -456,6 +465,99 @@ def oi1_build_from_paths(application_path, partition_table_path):
     )
 
 
+def _reconstruct_rp2350_uf2(uf2):
+    uf2 = bytes(uf2)
+    if not uf2 or len(uf2) % 512:
+        raise BenchError("RP2 firmware.uf2 is not a complete UF2 stream")
+    arm_blocks = []
+    extension_blocks = 0
+    for offset in range(0, len(uf2), 512):
+        block = uf2[offset : offset + 512]
+        (
+            magic_start0,
+            magic_start1,
+            flags,
+            address,
+            payload_size,
+            block_number,
+            total_blocks,
+            family,
+        ) = struct.unpack_from("<IIIIIIII", block, 0)
+        magic_end = struct.unpack_from("<I", block, 508)[0]
+        if (
+            magic_start0 != 0x0A324655
+            or magic_start1 != 0x9E5D5157
+            or magic_end != 0x0AB16F30
+        ):
+            raise BenchError("RP2 firmware.uf2 block magic is invalid")
+        if payload_size <= 0 or payload_size > 476:
+            raise BenchError("RP2 firmware.uf2 payload length is invalid")
+        payload = block[32 : 32 + payload_size]
+        if any(block[32 + payload_size : 508]):
+            raise BenchError(
+                "RP2 firmware.uf2 contains bytes outside a block payload"
+            )
+        if flags == 0x00002000 and family == RP2_UF2_ARM_FAMILY:
+            arm_blocks.append(
+                (address, block_number, total_blocks, payload)
+            )
+        elif (
+            flags == 0x0000A000
+            and family == RP2_UF2_EXTENSION_FAMILY
+            and address == 0x10FFFF00
+            and payload_size == 256
+            and block_number == 0
+            and total_blocks == 2
+        ):
+            extension_blocks += 1
+        else:
+            raise BenchError(
+                "RP2 firmware.uf2 contains an unexpected family block"
+            )
+    if not arm_blocks or extension_blocks != 1:
+        raise BenchError("RP2 firmware.uf2 lacks one exact RP2350 image")
+    expected_total = arm_blocks[0][2]
+    if expected_total != len(arm_blocks):
+        raise BenchError("RP2 firmware.uf2 image block count is incomplete")
+    for index, (address, block_number, total_blocks, payload) in enumerate(
+        arm_blocks
+    ):
+        if (
+            len(payload) != 256
+            or block_number != index
+            or total_blocks != expected_total
+            or address != 0x10000000 + index * 256
+        ):
+            raise BenchError("RP2 firmware.uf2 image sequence is incomplete")
+    return b"".join(
+        payload for _address, _number, _total, payload in arm_blocks
+    )
+
+
+def rp2_oi1_build_from_paths(firmware_bin_path, firmware_uf2_path):
+    raw_image = _read_regular_file(firmware_bin_path, "RP2 firmware.bin")
+    install_image = _read_regular_file(firmware_uf2_path, "RP2 firmware.uf2")
+    if not raw_image:
+        raise BenchError("RP2 firmware.bin must be nonempty")
+    if len(raw_image) > RP2_IMAGE_LIMIT_BYTES:
+        raise BenchError("RP2 firmware.bin exceeds the frozen image limit")
+    reconstructed = _reconstruct_rp2350_uf2(install_image)
+    if (
+        len(reconstructed) < len(raw_image)
+        or reconstructed[: len(raw_image)] != raw_image
+        or any(reconstructed[len(raw_image) :])
+    ):
+        raise BenchError(
+            "RP2 firmware.uf2 does not reconstruct its sibling firmware.bin"
+        )
+    return {
+        "firmware_bin_bytes": len(raw_image),
+        "firmware_image_limit_bytes": RP2_IMAGE_LIMIT_BYTES,
+        "firmware_image_headroom_bytes": RP2_IMAGE_LIMIT_BYTES
+        - len(raw_image),
+    }
+
+
 def floor_quantum(value, quantum):
     _require_nonnegative_int(value, "value")
     _require_positive_int(quantum, "quantum")
@@ -468,24 +570,108 @@ def ceil_quantum(value, quantum):
     return ((value + quantum - 1) // quantum) * quantum
 
 
-def _validated_heap(snapshot, label):
-    _require_exact_keys(snapshot, HEAP_KEYS, label)
+def _validated_heap(snapshot, label, keys=HEAP_KEYS):
+    _require_exact_keys(snapshot, keys, label)
     return {
         key: _require_nonnegative_int(snapshot[key], "%s.%s" % (label, key))
-        for key in HEAP_KEYS
+        for key in keys
     }
 
 
-def derive_thresholds(oi1_build, observation):
-    _require_exact_keys(
-        oi1_build,
-        (
-            "application_image_bytes",
-            "factory_partition_bytes",
-            "application_headroom_bytes",
-        ),
-        "oi1_build",
+def _resource_build_kind(oi1_build):
+    if not isinstance(oi1_build, dict):
+        raise BenchError("oi1_build must be an object")
+    keys = set(oi1_build)
+    if keys == {
+        "application_image_bytes",
+        "factory_partition_bytes",
+        "application_headroom_bytes",
+    }:
+        return "esp-idf"
+    if keys == {
+        "firmware_bin_bytes",
+        "firmware_image_limit_bytes",
+        "firmware_image_headroom_bytes",
+    }:
+        return "rp2"
+    raise BenchError("oi1_build has the wrong target-specific keys")
+
+
+def _qualification_samples(observation, *, heap_keys):
+    if not isinstance(observation, dict):
+        raise BenchError("oi1_observation must be an object")
+    post_hello = observation.get("heap_post_hello")
+    post_roundtrip = observation.get("heap_post_roundtrip")
+    post_reliability = observation.get("heap_post_reliability")
+    if not isinstance(post_hello, list) or len(post_hello) != 10:
+        raise BenchError("heap_post_hello must contain 10 snapshots")
+    if not isinstance(post_roundtrip, list) or len(post_roundtrip) != 5:
+        raise BenchError("heap_post_roundtrip must contain 5 snapshots")
+    snapshots = [
+        _validated_heap(item, "heap snapshot", heap_keys)
+        for item in post_hello + post_roundtrip
+    ]
+    snapshots.append(
+        _validated_heap(post_reliability, "heap_post_reliability", heap_keys)
     )
+
+    reset_samples = observation.get("reset_to_service_advertisement_ms")
+    put_goodput = observation.get("put_committed_goodput_bytes_per_second")
+    get_goodput = observation.get("get_verified_goodput_bytes_per_second")
+    if not isinstance(reset_samples, list) or len(reset_samples) != 10:
+        raise BenchError("reset latency must contain 10 samples")
+    if not isinstance(put_goodput, list) or len(put_goodput) != 5:
+        raise BenchError("PUT goodput must contain 5 samples")
+    if not isinstance(get_goodput, list) or len(get_goodput) != 5:
+        raise BenchError("GET goodput must contain 5 samples")
+    return (
+        snapshots,
+        [
+            _require_nonnegative_int(value, "reset latency")
+            for value in reset_samples
+        ],
+        [_require_positive_int(value, "PUT goodput") for value in put_goodput],
+        [_require_positive_int(value, "GET goodput") for value in get_goodput],
+    )
+
+
+def derive_thresholds(oi1_build, observation):
+    resource_kind = _resource_build_kind(oi1_build)
+    if resource_kind == "rp2":
+        firmware_size = _require_nonnegative_int(
+            oi1_build["firmware_bin_bytes"], "firmware_bin_bytes"
+        )
+        image_limit = _require_nonnegative_int(
+            oi1_build["firmware_image_limit_bytes"],
+            "firmware_image_limit_bytes",
+        )
+        headroom = _require_nonnegative_int(
+            oi1_build["firmware_image_headroom_bytes"],
+            "firmware_image_headroom_bytes",
+        )
+        if image_limit != RP2_IMAGE_LIMIT_BYTES:
+            raise BenchError("RP2 firmware image limit has drifted")
+        if image_limit - firmware_size != headroom:
+            raise BenchError("RP2 firmware image headroom arithmetic disagrees")
+        snapshots, _resets, put_goodput, get_goodput = _qualification_samples(
+            observation,
+            heap_keys=RP2_HEAP_KEYS,
+        )
+        return {
+            "firmware_bin_max_bytes": firmware_size,
+            "firmware_image_headroom_min_bytes": headroom,
+            "gc_free_min_bytes": floor_quantum(
+                min(item["gc_free_bytes"] for item in snapshots), 1024
+            ),
+            "reset_to_service_advertisement_max_ms": 3000,
+            "put_committed_goodput_min_bytes_per_second": floor_quantum(
+                (min(put_goodput) * 95) // 100, 100
+            ),
+            "get_verified_goodput_min_bytes_per_second": floor_quantum(
+                (min(get_goodput) * 95) // 100, 100
+            ),
+        }
+
     application_size = _require_nonnegative_int(
         oi1_build["application_image_bytes"], "application_image_bytes"
     )
@@ -498,37 +684,10 @@ def derive_thresholds(oi1_build, observation):
     if factory_size - application_size != headroom:
         raise BenchError("application headroom arithmetic does not agree")
 
-    post_hello = observation.get("heap_post_hello")
-    post_roundtrip = observation.get("heap_post_roundtrip")
-    post_reliability = observation.get("heap_post_reliability")
-    if not isinstance(post_hello, list) or len(post_hello) != 10:
-        raise BenchError("heap_post_hello must contain 10 snapshots")
-    if not isinstance(post_roundtrip, list) or len(post_roundtrip) != 5:
-        raise BenchError("heap_post_roundtrip must contain 5 snapshots")
-    snapshots = [
-        _validated_heap(item, "heap snapshot")
-        for item in post_hello + post_roundtrip
-    ]
-    snapshots.append(_validated_heap(post_reliability, "heap_post_reliability"))
-
-    reset_samples = observation.get("reset_to_service_advertisement_ms")
-    put_goodput = observation.get("put_committed_goodput_bytes_per_second")
-    get_goodput = observation.get("get_verified_goodput_bytes_per_second")
-    if not isinstance(reset_samples, list) or len(reset_samples) != 10:
-        raise BenchError("reset latency must contain 10 samples")
-    if not isinstance(put_goodput, list) or len(put_goodput) != 5:
-        raise BenchError("PUT goodput must contain 5 samples")
-    if not isinstance(get_goodput, list) or len(get_goodput) != 5:
-        raise BenchError("GET goodput must contain 5 samples")
-    reset_samples = [
-        _require_nonnegative_int(value, "reset latency") for value in reset_samples
-    ]
-    put_goodput = [
-        _require_positive_int(value, "PUT goodput") for value in put_goodput
-    ]
-    get_goodput = [
-        _require_positive_int(value, "GET goodput") for value in get_goodput
-    ]
+    snapshots, _resets, put_goodput, get_goodput = _qualification_samples(
+        observation,
+        heap_keys=HEAP_KEYS,
+    )
 
     return {
         "application_image_max_bytes": application_size,
@@ -561,10 +720,55 @@ def derive_thresholds(oi1_build, observation):
 
 
 def evaluate_thresholds(oi1_build, observation, thresholds):
-    _require_exact_keys(thresholds, THRESHOLD_KEYS, "thresholds")
-    for key in THRESHOLD_KEYS:
+    resource_kind = _resource_build_kind(oi1_build)
+    threshold_keys = (
+        RP2_THRESHOLD_KEYS if resource_kind == "rp2" else THRESHOLD_KEYS
+    )
+    _require_exact_keys(thresholds, threshold_keys, "thresholds")
+    for key in threshold_keys:
         _require_positive_int(thresholds[key], "thresholds.%s" % key)
     derived = derive_thresholds(oi1_build, observation)
+    if resource_kind == "rp2":
+        heap_snapshots = (
+            observation["heap_post_hello"]
+            + observation["heap_post_roundtrip"]
+            + [observation["heap_post_reliability"]]
+        )
+        ceiling_checks = {
+            "firmware_bin_max_bytes": oi1_build["firmware_bin_bytes"],
+            "reset_to_service_advertisement_max_ms": max(
+                observation["reset_to_service_advertisement_ms"]
+            ),
+        }
+        floor_checks = {
+            "firmware_image_headroom_min_bytes": oi1_build[
+                "firmware_image_headroom_bytes"
+            ],
+            "gc_free_min_bytes": min(
+                item["gc_free_bytes"] for item in heap_snapshots
+            ),
+            "put_committed_goodput_min_bytes_per_second": min(
+                observation["put_committed_goodput_bytes_per_second"]
+            ),
+            "get_verified_goodput_min_bytes_per_second": min(
+                observation["get_verified_goodput_bytes_per_second"]
+            ),
+        }
+        failures = []
+        for key, actual in ceiling_checks.items():
+            if actual > thresholds[key]:
+                failures.append(
+                    "%s=%d exceeds %d" % (key, actual, thresholds[key])
+                )
+        for key, actual in floor_checks.items():
+            if actual < thresholds[key]:
+                failures.append(
+                    "%s=%d is below %d" % (key, actual, thresholds[key])
+                )
+        if failures:
+            raise BenchError("OI-1 threshold failure: " + "; ".join(failures))
+        return derived
+
     failures = []
     ceiling_checks = {
         "application_image_max_bytes": oi1_build["application_image_bytes"],
@@ -706,6 +910,21 @@ def heap_probe_source(nonce):
     )
 
 
+def rp2_heap_probe_source(nonce):
+    if (
+        not isinstance(nonce, str)
+        or not re.fullmatch(r"[0-9A-Za-z_-]{1,64}", nonce)
+    ):
+        raise BenchError("heap-probe nonce is invalid")
+    marker = HEAP_MARKER_PREFIX + nonce
+    return (
+        "import gc\n"
+        "gc.collect()\n"
+        "_gf=gc.mem_free();_ga=gc.mem_alloc()\n"
+        'print("%s=%%d,%%d"%%(_gf,_ga))\n' % marker
+    )
+
+
 def parse_heap_probe_output(chunks, nonce):
     if not isinstance(chunks, (list, tuple)):
         raise BenchError("heap-probe output must be a chunk sequence")
@@ -732,6 +951,34 @@ def parse_heap_probe_output(chunks, nonce):
     values = matches[0]
     snapshot = dict(zip(HEAP_KEYS, values))
     return _validated_heap(snapshot, "heap probe")
+
+
+def parse_rp2_heap_probe_output(chunks, nonce):
+    if not isinstance(chunks, (list, tuple)):
+        raise BenchError("heap-probe output must be a chunk sequence")
+    try:
+        output = b"".join(bytes(chunk) for chunk in chunks).decode(
+            "ascii", errors="strict"
+        )
+    except (TypeError, ValueError, UnicodeDecodeError) as exc:
+        raise BenchError("heap-probe output is not strict ASCII") from exc
+    pattern = re.compile(
+        r"^"
+        + re.escape(HEAP_MARKER_PREFIX + nonce)
+        + r"=([0-9]+),([0-9]+)$"
+    )
+    matches = []
+    for line in output.splitlines():
+        match = pattern.fullmatch(line)
+        if match:
+            matches.append(tuple(int(value, 10) for value in match.groups()))
+    if len(matches) != 1:
+        raise BenchError(
+            "RP2 heap probe produced %d matching marker lines; expected one"
+            % len(matches)
+        )
+    snapshot = dict(zip(RP2_HEAP_KEYS, matches[0]))
+    return _validated_heap(snapshot, "RP2 heap probe", RP2_HEAP_KEYS)
 
 
 def goodput_bps(unique_bytes, duration_ns):
@@ -940,6 +1187,69 @@ async def run_heap_probe(
                 raise BenchError("heap probe timed out before RUN_STATE(done)")
             await sleep(0.002)
     return parse_heap_probe_output(stdout_chunks, nonce)
+
+
+async def run_rp2_heap_probe(
+        central,
+        next_id,
+        *,
+        nonce=None,
+        timeout_s=DEFAULT_EVENT_TIMEOUT_S,
+        sleep=asyncio.sleep):
+    """Collect the RP2 GC-only heap shape without importing an ESP module."""
+    if nonce is None:
+        nonce = hashlib.sha256(
+            ("%d:%d" % (time.monotonic_ns(), os.getpid())).encode("ascii")
+        ).hexdigest()[:16]
+    source = rp2_heap_probe_source(nonce).encode("utf-8")
+    cursor = central.event_cursor()
+    response = await central.send_cmd(
+        wire.OP_RUN,
+        next_id(),
+        b"\x01" + source,
+        timeout=timeout_s,
+    )
+    status = rsp_status(response)
+    if status != wire.ST_OK:
+        raise StatusFailure("RUN RP2 heap probe", status)
+    stdout_chunks = []
+    deadline = time.monotonic() + timeout_s
+    terminal = None
+    while terminal is None:
+        cursor, events = central.events_since(cursor)
+        for event in events:
+            if event.opcode == wire.OP_CONSOLE_DATA:
+                if not event.payload:
+                    raise BenchError(
+                        "RP2 heap probe emitted malformed CONSOLE_DATA"
+                    )
+                stream = event.payload[0]
+                if stream == 1:
+                    raise BenchError(
+                        "RP2 heap probe emitted stderr: %s"
+                        % event.payload[1:].decode("utf-8", errors="replace")
+                    )
+                if stream == 0:
+                    stdout_chunks.append(event.payload[1:])
+            elif event.opcode == wire.OP_RUN_STATE:
+                if len(event.payload) != 1:
+                    raise BenchError(
+                        "RP2 heap probe emitted malformed RUN_STATE"
+                    )
+                state = event.payload[0]
+                if state == 2:
+                    terminal = "done"
+                elif state == 3:
+                    raise BenchError(
+                        "RP2 heap probe ended in RUN_STATE(error)"
+                    )
+        if terminal is None:
+            if time.monotonic() >= deadline:
+                raise BenchError(
+                    "RP2 heap probe timed out before RUN_STATE(done)"
+                )
+            await sleep(0.002)
+    return parse_rp2_heap_probe_output(stdout_chunks, nonce)
 
 
 async def _require_status(central, opcode, next_id, payload, operation, timeout=10.0):
@@ -1348,6 +1658,38 @@ def _validated_link_update(value, keys, label):
 
 def validate_transfer_link_facts(value, *, profile_id):
     """Validate the strict, identifier-free ADR-0027 transfer-session facts."""
+    if profile_id == "rpi-pico2-w":
+        _require_exact_keys(
+            value,
+            (
+                "ble_host",
+                "observed_att_mtu",
+                "observed_window",
+                "observed_chunk_bytes",
+                "console_tx_budget_ms",
+            ),
+            "transfer_link_facts",
+        )
+        if value["ble_host"] != "btstack":
+            raise BenchError("RP2 transfer facts must identify BTstack")
+        for key, required in (
+            ("observed_att_mtu", 247),
+            ("observed_window", 4),
+            ("observed_chunk_bytes", 229),
+        ):
+            actual = _require_nonnegative_int(
+                value[key], "transfer_link_facts.%s" % key
+            )
+            if actual != required:
+                raise BenchError(
+                    "RP2 transfer_link_facts.%s=%d, required %d"
+                    % (key, actual, required)
+                )
+        _require_positive_int(
+            value["console_tx_budget_ms"],
+            "transfer_link_facts.console_tx_budget_ms",
+        )
+        return value
     if profile_id not in ESP_PROFILE_ORDER:
         raise BenchError("NimBLE transfer facts require an ESP profile")
     _require_exact_keys(
@@ -1483,6 +1825,9 @@ def validate_transfer_link_facts(value, *, profile_id):
 
 def validate_observation(value, *, profile_id):
     _, required_window, _ = required_transport(profile_id=profile_id)
+    heap_keys = (
+        RP2_HEAP_KEYS if profile_id == "rpi-pico2-w" else HEAP_KEYS
+    )
     _require_exact_keys(value, OBSERVATION_KEYS, "oi1_observation")
     for key, required in (
         ("observed_att_mtu", 247),
@@ -1546,10 +1891,22 @@ def validate_observation(value, *, profile_id):
                     % (goodput_key, reported, expected)
                 )
     for index, snapshot in enumerate(value["heap_post_hello"]):
-        _validated_heap(snapshot, "heap_post_hello[%d]" % index)
+        _validated_heap(
+            snapshot,
+            "heap_post_hello[%d]" % index,
+            heap_keys,
+        )
     for index, snapshot in enumerate(value["heap_post_roundtrip"]):
-        _validated_heap(snapshot, "heap_post_roundtrip[%d]" % index)
-    _validated_heap(value["heap_post_reliability"], "heap_post_reliability")
+        _validated_heap(
+            snapshot,
+            "heap_post_roundtrip[%d]" % index,
+            heap_keys,
+        )
+    _validated_heap(
+        value["heap_post_reliability"],
+        "heap_post_reliability",
+        heap_keys,
+    )
     validate_reliability(value["reliability"])
     validate_transfer_link_facts(
         value["transfer_link_facts"], profile_id=profile_id

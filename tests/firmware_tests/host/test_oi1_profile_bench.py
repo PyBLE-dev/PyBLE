@@ -1878,7 +1878,33 @@ class EvidenceAndCliTest(unittest.TestCase):
         pico = list(required)
         pico[pico.index("esp32-4mb")] = "rpi-pico2-w"
         pico[pico.index("esp32")] = "rpi-pico2-w"
-        self.assertEqual(profile_bench._parse_args(pico).profile, "rpi-pico2-w")
+        with self.assertRaises(SystemExit):
+            profile_bench._parse_args(pico)
+        pico_only = [
+            "--mode",
+            "baseline",
+            "--profile",
+            "rpi-pico2-w",
+            "--expect-chip",
+            "rpi-pico2-w",
+            "--address",
+            "test-address",
+            "--operator-reset",
+            "--firmware-bin",
+            "firmware.bin",
+            "--firmware-uf2",
+            "firmware.uf2",
+            "--console-tx-budget-ms",
+            "250",
+            "--raw-log",
+            "raw.jsonl",
+            "--output",
+            "observation.json",
+        ]
+        self.assertEqual(
+            profile_bench._parse_args(pico_only).profile,
+            "rpi-pico2-w",
+        )
 
 
 if __name__ == "__main__":

@@ -44,8 +44,12 @@ from _pble_bench import (
     hello,
     measure_reset_to_advertisement,
     oi1_build_from_paths,
+    parse_rp2_heap_probe_output,
+    rp2_heap_probe_source,
+    rp2_oi1_build_from_paths,
     roundtrip_file,
     run_heap_probe,
+    run_rp2_heap_probe,
     run_reliability,
     validate_observation,
     validate_oi1_caps,
@@ -101,6 +105,8 @@ def build_baseline_profile(
         device_psram_capacity_bytes,
         firmware_sha256,
         manifest_sha256,
+        install_sha256=None,
+        resource_image_sha256=None,
         environment,
         oi1_build,
         oi1_observation):
@@ -122,7 +128,7 @@ def build_baseline_profile(
             "python_version",
         )
     }
-    return {
+    common = {
         "profile_id": profile_id,
         "target": PROFILE_TARGETS[profile_id],
         "board_manufacturer": _require_text(
@@ -136,12 +142,34 @@ def build_baseline_profile(
         "device_psram_capacity_bytes": _require_nonnegative_int(
             device_psram_capacity_bytes, "device_psram_capacity_bytes"
         ),
-        "firmware_sha256": _require_sha256(firmware_sha256, "firmware_sha256"),
-        "manifest_sha256": _require_sha256(manifest_sha256, "manifest_sha256"),
         "environment": normalized_environment,
         "oi1_build": oi1_build,
         "oi1_observation": oi1_observation,
     }
+    if profile_id == "rpi-pico2-w":
+        common.update(
+            {
+                "resource_kind": "rp2",
+                "install_sha256": _require_sha256(
+                    install_sha256, "install_sha256"
+                ),
+                "resource_image_sha256": _require_sha256(
+                    resource_image_sha256, "resource_image_sha256"
+                ),
+            }
+        )
+    else:
+        common.update(
+            {
+                "firmware_sha256": _require_sha256(
+                    firmware_sha256, "firmware_sha256"
+                ),
+                "manifest_sha256": _require_sha256(
+                    manifest_sha256, "manifest_sha256"
+                ),
+            }
+        )
+    return common
 
 
 def output_for_mode(mode, baseline_profile, observation):
@@ -679,6 +707,46 @@ class SerialResetController:
             raise first_error
 
 
+class Rp2OperatorResetController:
+    """Prompt-only Pico reset/power seam; it deliberately owns no tty."""
+
+    def __init__(self, operator_action=None):
+        if operator_action is None:
+            operator_action = input
+        if not callable(operator_action):
+            raise BenchError("RP2 operator action must be callable")
+        self._operator_action = operator_action
+        self._closed = False
+
+    def _prompt(self, message):
+        if self._closed:
+            raise BenchError("RP2 operator reset controller is closed")
+        self._operator_action(message)
+
+    def assert_reset(self):
+        self._prompt(
+            "Disconnect all Pico 2 W power, confirm the board is off, "
+            "then press Enter: "
+        )
+
+    def release_reset(self):
+        self._prompt(
+            "Reconnect Pico 2 W power now, then press Enter immediately: "
+        )
+
+    def power_off(self):
+        self._prompt(
+            "Disconnect all Pico 2 W power, confirm the board is off, "
+            "then press Enter: "
+        )
+
+    def power_on(self):
+        self._prompt("Reconnect Pico 2 W power now, then press Enter: ")
+
+    def close(self, **_kwargs):
+        self._closed = True
+
+
 class AdvertisementWatcher:
     """Streaming, address-bound, service-UUID-filtered Bleak scanner."""
 
@@ -1011,6 +1079,91 @@ class HardwareExecutor:
         return self.log.sha256()
 
 
+class Rp2HardwareExecutor(HardwareExecutor):
+    """Pico executor with GC/BTstack evidence and no ESP UART dependency."""
+
+    def __init__(self, args, reset, raw_log):
+        super().__init__(args, reset, raw_log)
+        self._capture_started = False
+
+    async def begin_transfer_link_capture(self, profile_id):
+        if profile_id != "rpi-pico2-w":
+            raise BenchError("RP2 executor requires the Pico 2 W profile")
+        if self._capture_started:
+            raise BenchError("RP2 transfer link capture has already started")
+        self._capture_started = True
+        self.log.write("transfer_link_capture_started", profile_id=profile_id)
+
+    async def await_transfer_link_settlement(self, timeout_ms):
+        if not self._capture_started:
+            raise BenchError("RP2 transfer link capture has not started")
+        if (
+            isinstance(timeout_ms, bool)
+            or not isinstance(timeout_ms, int)
+            or timeout_ms <= 0
+            or timeout_ms > 5000
+        ):
+            raise BenchError(
+                "RP2 transfer link settlement timeout must be 1..5000 ms"
+            )
+        self.log.write("transfer_link_settled")
+
+    def _btstack_facts(self):
+        return {
+            "ble_host": "btstack",
+            "observed_att_mtu": 247,
+            "observed_window": 4,
+            "observed_chunk_bytes": 229,
+            "console_tx_budget_ms": self.args.console_tx_budget_ms,
+        }
+
+    async def seal_transfer_link_facts(self, timeout_ms):
+        if not self._capture_started:
+            raise BenchError("RP2 transfer link capture has not started")
+        if (
+            isinstance(timeout_ms, bool)
+            or not isinstance(timeout_ms, int)
+            or timeout_ms <= 0
+            or timeout_ms > 2000
+        ):
+            raise BenchError("RP2 transfer link seal timeout must be 1..2000 ms")
+        facts = self._btstack_facts()
+        validate_transfer_link_facts(facts, profile_id="rpi-pico2-w")
+        self.log.write("transfer_link_facts", facts=facts)
+        return facts
+
+    async def heap_snapshot(self, connection):
+        snapshot = await run_rp2_heap_probe(connection, self.ids.next)
+        self.log.write("heap_snapshot", **snapshot)
+        return snapshot
+
+    async def disconnect(self, connection):
+        await connection.disconnect()
+        self.log.write("disconnect")
+
+    async def physical_power_cycle(self):
+        self.reset.power_off()
+        watcher = AdvertisementWatcher(self.args.address)
+        await watcher.start()
+        try:
+            await asyncio.sleep(1.0)
+            if watcher.first_match_ns is not None:
+                raise BenchError(
+                    "board still advertised during the physical-power-off check"
+                )
+            self.reset.power_on()
+            if watcher.first_match_ns is None:
+                await watcher.wait_for_match(WORKLOAD["advertising_timeout_ms"])
+        except asyncio.TimeoutError as exc:
+            raise BenchError(
+                "no fresh advertisement after physical power cycle"
+            ) from exc
+        finally:
+            await watcher.stop()
+        self.log.write("physical_power_cycle", result="passed")
+        return "passed"
+
+
 def _load_policy_thresholds(path, profile_id):
     try:
         payload = Path(path).read_bytes()
@@ -1124,12 +1277,19 @@ def _parse_args(argv=None):
     parser.add_argument("--address", required=True, help="exact BLE UUID/MAC from scan")
     parser.add_argument(
         "--reset-port",
-        required=True,
         help="explicit USB serial device whose RTS is wired to EN/reset",
     )
     parser.add_argument("--reset-baud", type=int, default=115200)
-    parser.add_argument("--application-bin", required=True)
-    parser.add_argument("--partition-table-bin", required=True)
+    parser.add_argument("--application-bin")
+    parser.add_argument("--partition-table-bin")
+    parser.add_argument(
+        "--operator-reset",
+        action="store_true",
+        help="use the injected operator reset/power seam for Pico 2 W",
+    )
+    parser.add_argument("--firmware-bin")
+    parser.add_argument("--firmware-uf2")
+    parser.add_argument("--console-tx-budget-ms", type=int)
     parser.add_argument(
         "--policy",
         help="committed oi1-gates.json (required only in verify mode)",
@@ -1143,6 +1303,7 @@ def _parse_args(argv=None):
     parser.add_argument("--device-psram-capacity-bytes", type=int)
     parser.add_argument("--firmware-sha256")
     parser.add_argument("--manifest-sha256")
+    parser.add_argument("--install-sha256")
     parser.add_argument("--ble-backend")
     parser.add_argument("--ble-adapter")
     args = parser.parse_args(argv)
@@ -1153,19 +1314,49 @@ def _parse_args(argv=None):
         )
     if args.mode == "verify" and not args.policy:
         parser.error("--policy is required in verify mode")
+    is_rp2 = args.profile == "rpi-pico2-w"
+    esp_inputs = (
+        args.reset_port,
+        args.application_bin,
+        args.partition_table_bin,
+    )
+    rp2_inputs = (
+        args.firmware_bin,
+        args.firmware_uf2,
+        args.console_tx_budget_ms,
+    )
+    if is_rp2:
+        if not args.operator_reset or any(value is None for value in rp2_inputs):
+            parser.error(
+                "Pico 2 W requires --operator-reset, --firmware-bin, "
+                "--firmware-uf2, and --console-tx-budget-ms"
+            )
+        if any(value is not None for value in esp_inputs):
+            parser.error("Pico 2 W forbids ESP reset and build inputs")
+        if args.console_tx_budget_ms <= 0:
+            parser.error("--console-tx-budget-ms must be positive")
+    else:
+        if any(value is None for value in esp_inputs):
+            parser.error(
+                "ESP profiles require --reset-port, --application-bin, "
+                "and --partition-table-bin"
+            )
+        if args.operator_reset or any(value is not None for value in rp2_inputs):
+            parser.error("ESP profiles forbid RP2 reset and build inputs")
     return args
 
 
 def _validate_run_metadata(args):
-    fields = (
+    is_rp2 = args.profile == "rpi-pico2-w"
+    fields = [
         "board_manufacturer",
         "board_model",
         "module_marking",
         "firmware_sha256",
-        "manifest_sha256",
         "ble_backend",
         "ble_adapter",
-    )
+    ]
+    fields.append("install_sha256" if is_rp2 else "manifest_sha256")
     for field in fields:
         if not getattr(args, field):
             raise BenchError("--%s is required for a real run" % field.replace("_", "-"))
@@ -1180,11 +1371,15 @@ def _validate_run_metadata(args):
             "physical PSRAM capacity must equal %d for %s"
             % (expected_psram, args.profile)
         )
+    build_inputs = (
+        [args.firmware_bin, args.firmware_uf2]
+        if is_rp2
+        else [args.application_bin, args.partition_table_bin]
+    )
     paths = [
         Path(args.raw_log).expanduser().resolve(),
         Path(args.output).expanduser().resolve(),
-        Path(args.application_bin).expanduser().resolve(),
-        Path(args.partition_table_bin).expanduser().resolve(),
+        *(Path(path).expanduser().resolve() for path in build_inputs),
     ]
     if len(set(paths)) != len(paths):
         raise BenchError("raw log, output, and build inputs must be distinct paths")
@@ -1200,10 +1395,17 @@ def _close_run_resources(reset, raw_log):
 
 async def _run(args):
     _validate_run_metadata(args)
-    oi1_build = oi1_build_from_paths(
-        args.application_bin,
-        args.partition_table_bin,
-    )
+    is_rp2 = args.profile == "rpi-pico2-w"
+    if is_rp2:
+        oi1_build = rp2_oi1_build_from_paths(
+            args.firmware_bin,
+            args.firmware_uf2,
+        )
+    else:
+        oi1_build = oi1_build_from_paths(
+            args.application_bin,
+            args.partition_table_bin,
+        )
     raw_log = RedactedRawLog(args.raw_log)
     reset = None
     try:
@@ -1211,12 +1413,14 @@ async def _run(args):
             "measurement_start",
             mode=args.mode,
             profile_id=args.profile,
-            application_image_bytes=oi1_build["application_image_bytes"],
-            factory_partition_bytes=oi1_build["factory_partition_bytes"],
-            application_headroom_bytes=oi1_build["application_headroom_bytes"],
+            **oi1_build,
         )
-        reset = SerialResetController(args.reset_port, args.reset_baud)
-        executor = HardwareExecutor(args, reset, raw_log)
+        if is_rp2:
+            reset = Rp2OperatorResetController()
+            executor = Rp2HardwareExecutor(args, reset, raw_log)
+        else:
+            reset = SerialResetController(args.reset_port, args.reset_baud)
+            executor = HardwareExecutor(args, reset, raw_log)
         try:
             observation = await collect_observation(args.profile, executor)
         except Exception as exc:
@@ -1237,6 +1441,10 @@ async def _run(args):
         device_psram_capacity_bytes=args.device_psram_capacity_bytes,
         firmware_sha256=args.firmware_sha256,
         manifest_sha256=args.manifest_sha256,
+        install_sha256=args.install_sha256,
+        resource_image_sha256=(
+            args.firmware_sha256 if is_rp2 else None
+        ),
         environment={
             "desktop_os": platform.platform(),
             "ble_backend": args.ble_backend,
@@ -1248,7 +1456,7 @@ async def _run(args):
     )
     output = output_for_mode(args.mode, baseline_profile, observation)
     atomic_write_canonical_json(args.output, output)
-    if args.mode == "baseline":
+    if args.mode == "baseline" and output is baseline_profile:
         sys.stderr.buffer.write(
             b"Derived profile thresholds (not a release policy):\n"
             + canonical_json_bytes(derive_thresholds(oi1_build, observation))
