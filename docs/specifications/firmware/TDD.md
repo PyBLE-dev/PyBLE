@@ -1529,6 +1529,13 @@ same-named token or text on another owner cannot authorize it. A complete
 audit generation fails atomically until that exact owner is independently
 changed to `allow`.
 
+Publication tests stage `evidence/` and `THIRD_PARTY_LICENSES.txt` below one
+hidden sibling of an absent output root, fsync the complete pair, and expose it
+with one no-replace rename. They inject failure before that rename, process
+interruption after it, and a concurrent destination creator. The only admitted
+outcomes are no output, the contender's untouched root, or the complete
+evidence-plus-notice pair; a half-published pair and notice replacement fail.
+
 The RP2 frozen-manifest tests execute no manifest code: only reviewed literal
 operations and arguments may select a traversed manifest, source,
 destination, optimization, or metadata value. They require the literal result

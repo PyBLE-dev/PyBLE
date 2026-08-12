@@ -1314,8 +1314,10 @@ This is software-level safety of the IDE/agent, **not** hardware/actuator safety
   that carries its complete text, while `review-required` remains observable
   and release-blocking. The audit MUST bind the exact retained checkout and
   nested SHAs/origins, complete reviewed license/notice bytes, and identical
-  before/after observations into the schema-v2 receipt. ESP-IDF SBOM evidence
-  MUST NOT be fabricated or reused for RP2. —
+  before/after observations into the schema-v2 receipt. Its evidence and
+  notice MUST be exact children of one new publication root committed by one
+  no-replace rename; two arbitrary output paths are not an atomic publication
+  contract. ESP-IDF SBOM evidence MUST NOT be fabricated or reused for RP2. —
   *(source: PRD §15.2, §15.3,
   [firmware.md §6](../firmware.md#6-build--distribution); verify: build; story:
   X-11)*

@@ -854,6 +854,20 @@ destination and publishes nothing unless the existing complete ESP audit and
 this independent RP2 audit both pass; public verification repeats both from
 the exact packaged builds.
 
+The generated evidence directory and `THIRD_PARTY_LICENSES.txt` are one
+publication unit, not two independently replaced paths. The production audit
+accepts a single new publication root whose exact children are `evidence/`
+and `THIRD_PARTY_LICENSES.txt`. It prepares and fsyncs both children in a
+same-filesystem hidden sibling and commits the absent publication root with
+one no-replace rename. The destination parent already exists and is a regular
+non-symlink directory, while the publication root itself MUST be absent. A
+crash before the rename leaves neither public child; a crash after it leaves
+both. A concurrent creator wins without any byte being overwritten. An API
+that accepts legacy evidence/notice paths MUST require those paths to have the
+same absent parent and the exact child basenames above; arbitrary sibling
+outputs below an existing mixed-content directory are rejected because POSIX
+cannot commit them as one crash-atomic unit.
+
 The following ESP-IDF resolution rules are part of that fail-closed mapping:
 
 1. The v0.6 audit retains all eight **exact raw** `esp-idf-sbom` outputs and
