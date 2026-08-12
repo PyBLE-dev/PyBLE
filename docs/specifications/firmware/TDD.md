@@ -1,6 +1,6 @@
 # PyBLE Agent Firmware — Technical Design Document (TDD)
 
-Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-08-11
+Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-08-12
 
 > **Frozen at G0 (2026-07-01, `[docs]`):** the source-tree layout ([§10.5](#105-source-layout-frozen)), which realizes the frozen NFR-MAINT-2 six-module design and the [specs.md](specs.md) §5.1/§5.6/§6/§8 freeze. Design narrative elsewhere in this doc remains DRAFT and is pinned per-story by its `[red]` tests ([§4](#4-module-design)).
 >
@@ -28,6 +28,13 @@ Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-08-11
 > lean; only `waveshare-esp32-s3-lcd-147b` contains the display modules,
 > splash boot wrapper, and native readiness seam. Current v0.5 qualification
 > and web release evidence have three profiles; C3 remains deferred.
+>
+> **Frozen ESP32-C3 engineering-qualification design (2026-08-12, `[docs]`,
+> [ADR-0032](../../decisions/0032-qualify-generic-esp32-c3-4mb-on-reference-hardware.md)):**
+> [§5.4](#54-console-backpressure) freezes whole-message control priority under
+> console flood and [§11](#11-per-chip-design-notes) binds it to the
+> ESP32-C3-MINI-1-N4 reference contract. All observations remain pending; this
+> design does not add C3 to the current release policy or public artifacts.
 
 ## 0. Naming note (acronym clash)
 
@@ -769,6 +776,21 @@ Because the link is serviced by the BLE/agent context and user code lives on the
 ### 5.4 Console backpressure
 
 The console tee writes into a bounded staging buffer drained by the TX notification path. When BLE is slower than the program's output, the tee applies backpressure: the runner thread blocks briefly on a full buffer rather than dropping data or growing the heap without bound (protects NFR-FP-HEAP and keeps console latency bounded, NFR-PERF-3). `CONSOLE_INPUT` bytes are queued and delivered to the runner's `stdin` (FR-CON-3).
+
+For the frozen C3 engineering gate, TX scheduling has two behavioral classes:
+control (`RSP`, `RUN_STATE`, and other lifecycle traffic) and bulk
+(`CONSOLE_DATA`). Bulk admission always leaves enough service capacity for the
+one-fragment STOP response and terminal idle event. One PBLE/1 message remains
+atomic across all of its fragments, because the app owns a single reassembly
+buffer; control therefore never interleaves inside an already-started bulk
+message. At the next complete-message boundary, a pending STOP response wins
+before another console message, followed by `RUN_STATE(idle)`. Backpressure,
+reserved transport credits, a priority queue, or another bounded mechanism MAY
+realize the invariant; tests bind the observable capacity, ordering, valid
+reassembly, and 500 ms terminal deadline rather than an unproved lock layout.
+This is required for both a quiet tight loop and a loop continuously printing
+to stdout
+([C3-G2](ports/esp32-c3-4mb.md#c3-g2--run-console-and-authoritative-stop-frozen)).
 
 ### 5.5 Identify blink (non-blocking)
 
@@ -1616,8 +1638,11 @@ Chip facts are owned by [hardware.md §1](../hardware.md#1-supported-chip-famili
 - **esp32-c3 (hardest — validate early):** single-core RISC-V, ~400 KB SRAM,
   least RAM. The **binding footprint constraint** (NFR-FP-C3). With one core,
   the BLE/agent and runner tasks time-share; STOP responsiveness
-  ([§5.2](#52-stop-delivery)) and console backpressure
-  ([§5.4](#54-console-backpressure)) must be validated here first. If
+  ([§5.2](#52-stop-delivery)) and console backpressure/control priority
+  ([§5.4](#54-console-backpressure)) must be validated here first. The selected
+  ESP32-C3-MINI-1-N4 v0.4/4 MiB/no-PSRAM engineering reference, complete gate
+  matrix, and public-admission boundary live in the
+  [derived C3 contract](ports/esp32-c3-4mb.md); every result remains pending. If
   frozen-Python does not fit, hot paths go native (D1,
   [§8.6](#86-esp32-c3-mitigation)). The known `esp32-c3-4mb` provisioning
   profile is defined only for C3 silicon revision v0.3 or newer but remains
@@ -1683,7 +1708,7 @@ This is where the Technical Design meets **Test-Driven Development** ([§0](#0-n
 | `pyble_ble` | fragment/reassemble logic (pure), adv-name = label-else-`PyBLE-XXXX` | fragmentation vs MTU matrix | NimBLE-only config | NimBLE buffer sizing | adv/scan-filter, MTU 247, INFO read, label shows in scan |
 | `pyble_fs` | jail resolution, CRC accumulate, temp-rename | put/get window + resume + CRC vs fake | — | file-buffer footprint | multi-file upload, dropped-link resume |
 | `pyble_runner` | state-machine transitions | RUN/STOP/RUN_STATE sequence | — | — | STOP vs `while True: pass`, traceback→stderr |
-| `pyble_console` | tee + backpressure logic | CONSOLE_DATA stream tagging | — | staging-buffer footprint | live stdout/stdin latency |
+| `pyble_console` | tee + backpressure and control-priority logic | CONSOLE_DATA stream tagging; whole-message non-interleaving | — | staging-buffer/transport-reserve footprint | live stdout/stdin latency; C3 print-flood STOP response then idle in <500 ms |
 | `pyble_info` | caps assembly (incl. device_id/label/has_identify/identify_led), label bound→ERANGE, identify EUNSUPPORTED-when-unset, version negotiation | HELLO/DEVICE_INFO identity fields, SET_LABEL/SET_IDENTIFY_LED/IDENTIFY round-trip | — | — | real chip/mpy/free_mem/has_sd, label↔NVS persist across reboot, non-blocking blink |
 | `pyble_agent` | dispatch wiring, lock serialization | EBUSY, single-writer | frozen-manifest build | flash/heap gates | cold-boot safety, fail-safe |
 | `pyble_st7789` (Layer 4) | inert import; API/signature; RGB565; controller sequence; clipping; byte order; 4092-byte chunk bound; failure cleanup | no PBLE/1 surface | exact-board-only source/manifest/license resolution; generic S3 omission | independent exact-board image/headroom gate | exact 172 × 320 pattern, backlight, reboot import, concurrent PBLE responsiveness |
@@ -1734,7 +1759,9 @@ PBLE/1 **conformance** tests run against an **in-memory fake transport** shared 
   cold-boot safety (NFR-SAFE-3), candidate-browser install, and
   interrupted-flash recovery from an access-controlled,
   production-equivalent HTTPS deployment (BLD-20/21). C3 HIL and
-  footprint/goodput gates remain open, block C3 enablement, and block v1.0.
+  footprint/goodput gates remain open, block C3 enablement, and block v1.0;
+  their now-frozen engineering matrix is
+  [C3-G0…C3-G7](ports/esp32-c3-4mb.md) and records no passed observation.
   The historical v0.4.2 matrix remains exactly `esp32-4mb` plus
   `esp32-s3-n16r8`. Its supplemental production-browser run completed only the
   browser-install and interrupted-recovery rows for both profiles; the other

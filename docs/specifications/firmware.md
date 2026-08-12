@@ -1,6 +1,6 @@
 # PyBLE — Agent Firmware
 
-Status: **DRAFT** · Last updated: 2026-08-11
+Status: **DRAFT** · Last updated: 2026-08-12
 
 The PyBLE agent is small board-side firmware that turns a compatible
 MicroPython target into a PyBLE-speaking board: it advertises the BLE service,
@@ -99,7 +99,12 @@ topology plus its display stack). That source contract does not authorize new
 public bytes or selector activation: fresh reproducible builds, license audit,
 and final-candidate HIL remain required independently for all three profiles.
 `esp32-c3-4mb` remains a known initial v1 profile but is unavailable and has no
-public image until exact-profile real-hardware validation is complete. ESP Web
+public image until exact-profile real-hardware validation is complete. Its
+ESP32-C3-MINI-1-N4 v0.4/4 MiB/no-PSRAM engineering reference and still-pending
+identity, behavior, resource, dual-app, and reference-carrier peripheral gates
+are frozen separately in
+[firmware/ports/esp32-c3-4mb.md](firmware/ports/esp32-c3-4mb.md); this adds no
+build variant or board-routing profile. ESP Web
 Tools detects the chip family but cannot by that fact alone prove the required
 flash/PSRAM topology or distinguish the two S3 images. The full compatibility,
 artifact, historical public-beta, and candidate-gate contracts are frozen in
@@ -210,7 +215,7 @@ The scope is profile-specific:
 | `esp32-4mb` | v0.4.2 browser install/recovery passed; refresh the current-source baseline and verify the final candidate | Required before v0.5.1 candidate qualification and installer activation |
 | `esp32-s3-n16r8` | v0.4.2 browser install/recovery passed; measure the lean N16R8 bytes/runtime independently, derive thresholds, then verify the final candidate | Required before v0.5.1 candidate qualification and installer activation |
 | `waveshare-esp32-s3-lcd-147b` | No public exact-byte qualification; measure the exact-board bytes/runtime independently, derive thresholds, then verify the final candidate and display gate | Required before v0.5.1 candidate qualification and installer activation |
-| `esp32-c3-4mb` | Deferred; no current threshold or HIL row | Blocks C3 enablement and v1.0, but not qualification of the three-profile candidate |
+| `esp32-c3-4mb` | Engineering contract frozen; all observations, threshold, and HIL rows pending ([derived contract](firmware/ports/esp32-c3-4mb.md)) | Blocks C3 enablement and v1.0, but not qualification of the three-profile candidate |
 
 The enforced metrics are:
 

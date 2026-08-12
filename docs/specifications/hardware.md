@@ -1,6 +1,6 @@
 # PyBLE — Hardware Support & Pin Guidance
 
-Status: **DRAFT** · Last updated: 2026-08-11
+Status: **DRAFT** · Last updated: 2026-08-12
 
 PyBLE's platform scope is any microcontroller board that can run MicroPython
 and provide a Bluetooth Low Energy peripheral stack capable of hosting a
@@ -46,7 +46,7 @@ under the same PBLE/1 protocol.
 | `esp32-4mb` | Classic ESP32; 4 MiB external SPI flash; no PSRAM assumed | `ESP32` | v0.4.2 hardware-tested beta; browser install/recovery passed; qualification pending. The v0.5.1 source candidate requires fresh exact-byte qualification. | Only boards whose module documentation confirms this flash layout |
 | `esp32-s3-n16r8` | ESP32-S3; 16 MiB flash; 8 MiB Octal PSRAM; lean board-neutral payload | `ESP32-S3` | v0.4.2 hardware-tested beta; browser install/recovery passed; qualification pending. The v0.5.1 source candidate requires independent exact-byte qualification. | N16R8-class modules only; no bundled TFT driver or splash |
 | `waveshare-esp32-s3-lcd-147b` | Exact Waveshare ESP32-S3-LCD-1.47B; 16 MiB flash; 8 MiB Octal PSRAM | `ESP32-S3` | v0.5.1 source candidate only; independent exact-board qualification required before publication | B-version board only, if qualified; exact-image contract bundles the ST7789 runtime and fresh-install QR splash |
-| `esp32-c3-4mb` | ESP32-C3 revision v0.3 or newer; 4 MiB external flash; no PSRAM assumed | `ESP32-C3` | Unavailable pending exact-profile HIL | No public installer compatibility claim yet |
+| `esp32-c3-4mb` | ESP32-C3 revision v0.3 or newer; 4 MiB addressable flash; no PSRAM assumed | `ESP32-C3` | Engineering contract frozen; every result pending | No public installer compatibility claim yet |
 
 The installer family check cannot establish flash capacity, PSRAM type, USB
 wiring, or power integrity. The user therefore selects and confirms the exact
@@ -59,6 +59,11 @@ other peripheral exists. The Waveshare row is separate even though ESP Web
 Tools reports the same family for both S3 images and cannot distinguish them.
 The C3 profile is neither selectable nor published while its status is
 unavailable; owning or building the target is not a substitute for HIL. The
+ESP32-C3-MINI-1-N4 v0.4/4 MiB/no-PSRAM module is the selected physical
+engineering reference for that generic profile, with all gates still pending
+under [its derived qualification contract](firmware/ports/esp32-c3-4mb.md).
+The carrier's reported GPIO8 NeoPixel is an operator-supplied test input only,
+not a generic pin promise or board-routing profile. The
 immutable v0.4.2 machine-readable resource policy and HIL ledger contain
 exactly the first two profile IDs and no C3 thresholds or record. The
 [supplemental production-browser attestation](../validation/browser-flashing/v0.4.2-production.md)
