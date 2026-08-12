@@ -1299,8 +1299,21 @@ This is software-level safety of the IDE/agent, **not** hardware/actuator safety
   `link.txt`, structural linker map, archive/direct-object ownership, and
   literal frozen manifest with no gaps across MicroPython core/`rp2`, lwIP,
   Mbed TLS, littlefs, oofatfs, libm, pico-sdk, BTstack, CYW43, TinyUSB, and the
-  pinned ARM GNU runtime. It MUST bind the exact retained checkout and nested
-  SHAs/origins, complete reviewed license/notice bytes, and identical
+  pinned ARM GNU runtime. Every C/C++ object in the final firmware target MUST
+  have its one declared, safely parsed, hash-bound compiler depfile; assembly
+  objects bind their sources directly and unlinked host-tool depfiles are not
+  firmware inputs. Every included byte MUST have one most-specific owner or
+  exact generated derivation. That closure MUST cover
+  the selected three CYW43 Wi-Fi/Bluetooth/NVRAM payload headers, the distinct
+  CMSIS source/header license classes, `libm.h`, and GCC/newlib headers. The
+  cache MUST bind `pico2_w`, `rp2350-arm-s`, and the exact C/C++/ASM compiler
+  frontends. Every observed installed toolchain byte MUST be byte-identical to
+  its member in the hash/size/root-pinned official binary tar and installed
+  manifest; a version string alone is insufficient. Custom `LicenseRef`
+  approval is confined to the exact hash-bound `allow`/`project-owned` owner
+  that carries its complete text, while `review-required` remains observable
+  and release-blocking. The audit MUST bind the exact retained checkout and
+  nested SHAs/origins, complete reviewed license/notice bytes, and identical
   before/after observations into the schema-v2 receipt. ESP-IDF SBOM evidence
   MUST NOT be fabricated or reused for RP2. —
   *(source: PRD §15.2, §15.3,

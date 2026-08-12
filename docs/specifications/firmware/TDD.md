@@ -1470,6 +1470,39 @@ pico-sdk, BTstack and its actually linked third parties, CYW43, TinyUSB, and
 every contributing ARM GNU/newlib runtime archive. Deleting or substituting
 one class fails even when the remaining evidence is canonically rehashed.
 
+The same fixtures derive every compiler depfile belonging to the linked
+firmware target from its C/C++ DependInfo records; assembly records, for which
+CMake does not emit `.o.d`, bind their source bytes directly. Unlinked host
+tools' depfiles are excluded. Tests parse GNU Make escaping/continuations
+without execution, require each declared depfile target/object and DependInfo
+source to agree, and hash every depfile and included byte. They reject a
+missing/extra target depfile, a hidden second rule,
+variable/function/directive syntax, malformed escape, duplicate dependency,
+source mismatch, missing file, unowned include, generated input without exact
+derivation, path escape, and terminal or ancestor symlinks. Mutating only a
+header or depfile while restoring timestamps changes the semantic hash and
+fails public replay.
+
+Real-shaped dependency fixtures require the exact Pico 2 W CYW43 Wi-Fi/CLM,
+Bluetooth, and NVRAM payload headers and reject an alternate payload from the
+same checkout. They assign `libm.h`, Apache-only CMSIS Core headers, the
+dual-marked CMSIS system source/header, Raspberry Pi BSD CMSIS/device headers,
+GCC built-in headers, and newlib target headers to their distinct
+most-specific owners. A broad pico-sdk, libm, MicroPython, or toolchain root
+cannot erase those classes.
+
+Cache/toolchain fixtures require `PICO_BOARD=pico2_w`,
+`PICO_PLATFORM=rp2350-arm-s`, exact retained board/SDK paths, and one pinned
+`arm-none-eabi-gcc` C/ASM plus `arm-none-eabi-g++` C++ frontend, with matching
+`PICO_COMPILER_*` values. They reject an omitted frontend, PATH or sibling
+compiler, mixed roots, digest drift, or cache disagreement. The exact official
+ARM GNU binary tar is retained below the derived toolchain cache, verified by
+locked URL-basename/size/SHA-256/format/root, safely parsed, and used to
+byte-compare every observed frontend, header, runtime input, and installed
+release manifest. Tests reject installed-only evidence, a caller-selected
+cache, absent or changed archive/manifest, unsafe/duplicate members, and an
+installed file not equal to its unique official-tar member.
+
 The policy's canonical source-owner catalog uses namespace/path roots and
 separate source and selected SPDX expressions. Tests require exact retained
 MicroPython and nested gitlink SHAs, clean trees, canonical origins, actual
@@ -1487,6 +1520,14 @@ owner, and complete license plus required NOTICE/COPYRIGHT bytes are
 digest-bound. Tests reject an unused owner, an owner gap or tie, partial text,
 wrong identifier, missing attribution, changed byte, or one broad MicroPython
 or toolchain expression standing in for the heterogeneous closure.
+
+Custom `LicenseRef` tests are owner-scoped without adding an approval-list
+field: the exact `allow`/`project-owned` owner record must carry every custom
+token in its own expressions and the matching complete text path/digest. A
+same-named token or text on another owner cannot authorize it. A complete
+`review-required` record remains observable and changes the semantic hash, but
+audit generation fails atomically until that exact owner is independently
+changed to `allow`.
 
 The RP2 frozen-manifest tests execute no manifest code: only reviewed literal
 operations and arguments may select a traversed manifest, source,
@@ -1807,6 +1848,9 @@ PBLE/1 **conformance** tests run against an **in-memory fake transport** shared 
   exact-board companion source/cardinality and first-party MIT
   classification,
   duplicate archive members,
+  complete RP2 compiler-depfile/include ownership, selected CYW43 payloads,
+  distinct CMSIS/libm/toolchain-header classes, exact RP2 cache/compiler
+  identity, and official ARM GNU binary-tar/install byte parity,
   real tag/value `NOASSERTION` plus concrete-license records, verified
   external toolchain inputs, generated component receipts, exact raw/reviewed
   evidence sets, supplemental source-tree packages, identifier-to-text
