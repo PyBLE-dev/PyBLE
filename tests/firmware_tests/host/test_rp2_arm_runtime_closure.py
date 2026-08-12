@@ -31,7 +31,7 @@ LIBGLOSS = (
 )
 
 ATTRIBUTION_SHA256 = (
-    "6c8fd8e26105c96e370738c3d8e210a7c40ab03f58f7edbb82fb7d854c96b891"
+    "69d9dc56335dc27ddb9d9adde7775c339afe1259ecb2a3a0bcd48db83ff2ef9a"
 )
 NOSYS_SPECS_SHA256 = (
     "24f0304a9ef660646fcb468d0ecf308b6e82ee5648e9b10b568e19ed4726d8d8"
@@ -79,6 +79,7 @@ OWNER_CONTRACT = {
         "kind": "runtime",
         "expression": "LicenseRef-PyBLE-Libgloss-Multilicense",
         "roots": {
+            "arm-none-eabi/lib/nosys.specs",
             "arm-none-eabi/lib/thumb/v8-m.main+fp/softfp/crt0.o",
             "arm-none-eabi/lib/thumb/v8-m.main+fp/softfp/libnosys.a",
         },

@@ -62,6 +62,9 @@
     ["arm-gnu-binutils-build-tools", "arm-none-eabi/bin/as", "a5aa5b3d0c3c80017ee312233c88e4a131baed0b6efe3324f94324e6c20f0064", "assembler"],
     ["arm-gnu-binutils-build-tools", "arm-none-eabi/bin/ld", "cfe173600ce23ca212b75c4aebc94a5dc1db3f69cd6ba7af77ac13856e2ce605", "linker"]
   ],
+  "specs_inputs": [
+    ["arm-gnu-libgloss-runtime", "--specs=nosys.specs", "arm-none-eabi/lib/nosys.specs", 277, "24f0304a9ef660646fcb468d0ecf308b6e82ee5648e9b10b568e19ed4726d8d8", "newlib-cygwin/libgloss/libnosys/nosys.specs", 277, "24f0304a9ef660646fcb468d0ecf308b6e82ee5648e9b10b568e19ed4726d8d8", "libgloss-default-compilation", false]
+  ],
   "runtime_archives": [
     ["arm-gnu-gcc-runtime", "lib/gcc/arm-none-eabi/14.2.1/thumb/v8-m.main+fp/softfp/libgcc.a", "d418423c43a7eaa7066ad99da860d7cc43619de536d9e1480b82dbaa193198be", 6],
     ["arm-gnu-gcc-runtime", "arm-none-eabi/lib/thumb/v8-m.main+fp/softfp/libstdc++.a", "7aa89cdb586943582d63c8c55d97543b8887c212004ab852d67042f23b66b06f", 0],

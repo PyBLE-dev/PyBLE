@@ -195,6 +195,38 @@ _RP2_LICENSE_OWNER_KEYS = {
     "notice_files",
     "disposition",
 }
+_RP2_LICENSE_OWNER_V2_KEYS = _RP2_LICENSE_OWNER_KEYS | {"component_kind"}
+_RP2_ARM_RUNTIME_OWNER_CONTRACT = {
+    "arm-gnu-binutils-build-tools": "build-tool",
+    "arm-gnu-gcc-build-tools": "build-tool",
+    "arm-gnu-gcc-runtime": "runtime",
+    "arm-gnu-libgloss-runtime": "runtime",
+    "arm-gnu-newlib-runtime": "runtime",
+}
+_RP2_ARM_RUNTIME_ATTRIBUTION = (
+    "firmware/licenses/evidence/rp2/arm-gnu-toolchain/14.2.rel1/"
+    "runtime-attribution-v1.json"
+)
+_RP2_ARM_RUNTIME_ATTRIBUTION_SHA256 = (
+    "69d9dc56335dc27ddb9d9adde7775c339afe1259ecb2a3a0bcd48db83ff2ef9a"
+)
+_RP2_GCC_ENVIRONMENT_OVERRIDES = (
+    "GCC_EXEC_PREFIX",
+    "COMPILER_PATH",
+    "LIBRARY_PATH",
+    "CPATH",
+    "C_INCLUDE_PATH",
+    "CPLUS_INCLUDE_PATH",
+    "OBJC_INCLUDE_PATH",
+    "DEPENDENCIES_OUTPUT",
+    "SUNPRO_DEPENDENCIES",
+    "GCC_COMPARE_DEBUG",
+    "CMAKE_C_COMPILER_LAUNCHER",
+    "CMAKE_CXX_COMPILER_LAUNCHER",
+    "CMAKE_ASM_COMPILER_LAUNCHER",
+    "RULE_LAUNCH_COMPILE",
+    "RULE_LAUNCH_LINK",
+)
 DOCUMENT_KEYS = (
     "third_party_licenses",
     "release_notes",
@@ -7468,10 +7500,10 @@ def _audit_validate_rp2_license_policy(
         _RP2_LICENSE_POLICY_KEYS,
         "RP2 license policy",
     )
+    schema_version = policy["schema_version"]
     _require(
-        type(policy["schema_version"]) is int
-        and policy["schema_version"] == 1,
-        "RP2 license policy schema_version must be the exact integer 1",
+        type(schema_version) is int and schema_version in {1, 2},
+        "RP2 license policy schema_version must be the exact integer 1 or 2",
     )
     _require(
         policy["profile_id"] == "rpi-pico2-w"
@@ -7488,9 +7520,16 @@ def _audit_validate_rp2_license_policy(
     root_identities: set[tuple[str, str]] = set()
     license_ref_sha256: dict[str, str] = {}
     for index, raw in enumerate(raw_owners):
+        raw_identifier = raw.get("id") if isinstance(raw, dict) else None
+        arm_runtime_owner = raw_identifier in _RP2_ARM_RUNTIME_OWNER_CONTRACT
+        expected_owner_keys = (
+            _RP2_LICENSE_OWNER_V2_KEYS
+            if schema_version == 2 and arm_runtime_owner
+            else _RP2_LICENSE_OWNER_KEYS
+        )
         owner = _exact_keys(
             raw,
-            _RP2_LICENSE_OWNER_KEYS,
+            expected_owner_keys,
             "RP2 license owner %d" % index,
         )
         identifier = _audit_rp2_nonempty(owner["id"], "RP2 owner id")
@@ -7500,6 +7539,19 @@ def _audit_validate_rp2_license_policy(
             "RP2 license owner id is invalid or duplicated",
         )
         owner_ids.add(identifier)
+        component_kind = owner.get("component_kind")
+        if schema_version == 2:
+            _require(
+                arm_runtime_owner
+                == (component_kind in {"build-tool", "runtime"}),
+                "RP2 schema-2 component_kind scope is invalid",
+            )
+            if arm_runtime_owner:
+                _require(
+                    component_kind
+                    == _RP2_ARM_RUNTIME_OWNER_CONTRACT[identifier],
+                    "RP2 ARM GNU component_kind changed for %s" % identifier,
+                )
         roots = owner["source_roots"]
         _require(
             isinstance(roots, list) and bool(roots),
@@ -7701,27 +7753,28 @@ def _audit_validate_rp2_license_policy(
             == sorted(normalized_notices, key=lambda item: item["path"]),
             "RP2 owner %s notices are not canonical" % identifier,
         )
-        owners.append(
-            {
-                "id": identifier,
-                "source_roots": normalized_roots,
-                "source_ref": source_ref,
-                "source_url": source_url,
-                "source_spdx_expression": source_expression,
-                "selected_spdx_expression": selected_expression,
-                "copyright": copyright_value,
-                "license_texts": normalized_licenses,
-                "notice_files": normalized_notices,
-                "disposition": disposition,
-            }
-        )
+        normalized_owner = {
+            "id": identifier,
+            "source_roots": normalized_roots,
+            "source_ref": source_ref,
+            "source_url": source_url,
+            "source_spdx_expression": source_expression,
+            "selected_spdx_expression": selected_expression,
+            "copyright": copyright_value,
+            "license_texts": normalized_licenses,
+            "notice_files": normalized_notices,
+            "disposition": disposition,
+        }
+        if component_kind is not None:
+            normalized_owner["component_kind"] = component_kind
+        owners.append(normalized_owner)
     _require(
         [owner["id"] for owner in owners]
         == sorted(owner["id"] for owner in owners),
         "RP2 license policy owners are not canonical",
     )
     return {
-        "schema_version": 1,
+        "schema_version": schema_version,
         "profile_id": "rpi-pico2-w",
         "target": "rpi-pico2-w",
         "source_owners": owners,
@@ -7766,6 +7819,904 @@ def _audit_load_rp2_license_policy(
         repo_root=Path(repo_root),
         build_root=Path(build_root),
     )
+
+
+def _audit_validate_rp2_arm_runtime_closure(
+    attribution: Any,
+    observed: Any,
+    *,
+    repo_root: Path,
+) -> dict[str, Any]:
+    """Validate the hash-frozen Arm GNU contribution and compilation receipt."""
+
+    root = Path(repo_root)
+    expected_path = _audit_repo_file(
+        root,
+        _RP2_ARM_RUNTIME_ATTRIBUTION,
+        "RP2 Arm GNU runtime attribution",
+    )
+    expected_raw = _read_regular_file_bytes(
+        expected_path, "RP2 Arm GNU runtime attribution"
+    )
+    _require(
+        _sha256_bytes(expected_raw) == _RP2_ARM_RUNTIME_ATTRIBUTION_SHA256,
+        "RP2 Arm GNU runtime attribution bytes changed",
+    )
+    try:
+        expected = json.loads(expected_raw.decode("utf-8", errors="strict"))
+    except (UnicodeError, TypeError, ValueError) as exc:
+        raise ReleaseError("RP2 Arm GNU runtime attribution is invalid JSON") from exc
+    _require(
+        isinstance(attribution, dict) and attribution == expected,
+        "RP2 Arm GNU runtime attribution differs from its frozen document",
+    )
+    _require(isinstance(observed, dict), "RP2 Arm GNU observation must be an object")
+
+    exact_observation_keys = (
+        "identity",
+        "build_tools",
+        "specs_inputs",
+        "runtime_archives",
+        "archive_members",
+        "headers",
+        "generated_headers",
+    )
+    for key in exact_observation_keys:
+        _require(
+            key in observed and observed[key] == expected[key],
+            "RP2 Arm GNU %s observation changed" % key.replace("_", " "),
+        )
+    expected_direct = expected["direct_inputs"]
+    observed_direct = observed.get("direct_inputs")
+    _require(
+        isinstance(observed_direct, list)
+        and len(observed_direct) == len(expected_direct),
+        "RP2 Arm GNU direct-input inventory changed",
+    )
+    for expected_item, observed_item in zip(expected_direct, observed_direct):
+        _require(
+            isinstance(observed_item, list)
+            and len(observed_item) == len(expected_item)
+            and type(observed_item[3]) is bool
+            and observed_item[:3] == expected_item[:3]
+            and observed_item[4:] == expected_item[4:],
+            "RP2 Arm GNU direct-input source mapping changed",
+        )
+
+    receipt = _exact_keys(
+        observed.get("eligible_compilation_receipt"),
+        {
+            "bound_kinds",
+            "compiler_launchers",
+            "driver_environment_overrides",
+            "external_ir_consumers",
+            "compile_recipes",
+            "link_driver",
+            "link_arguments",
+            "resolved_specs_inputs",
+            "source_archive_sha256",
+        },
+        "RP2 Eligible Compilation receipt",
+    )
+    eligible = _exact_keys(
+        expected.get("eligible_compilation"),
+        {
+            "forbidden_arguments",
+            "forbid_compiler_launchers",
+            "forbid_external_ir_consumers",
+            "required_receipt_kinds",
+            "target_code_drivers",
+            "link_driver",
+        },
+        "RP2 Eligible Compilation contract",
+    )
+    bound_kinds = receipt["bound_kinds"]
+    _require(
+        isinstance(bound_kinds, list)
+        and len(bound_kinds) == len(set(bound_kinds))
+        and set(bound_kinds) == set(eligible["required_receipt_kinds"]),
+        "RP2 Eligible Compilation receipt kinds changed",
+    )
+    _require(
+        receipt["compiler_launchers"] == []
+        and receipt["driver_environment_overrides"] == []
+        and receipt["external_ir_consumers"] == [],
+        "RP2 Eligible Compilation uses an unreviewed environment, launcher, or IR consumer",
+    )
+    recipes = receipt["compile_recipes"]
+    _require(
+        isinstance(recipes, list) and bool(recipes),
+        "RP2 Eligible Compilation has no compile recipes",
+    )
+    allowed_drivers = set(eligible["target_code_drivers"])
+    for index, raw_recipe in enumerate(recipes):
+        recipe = _exact_keys(
+            raw_recipe,
+            {"language", "driver", "arguments"},
+            "RP2 Eligible Compilation recipe %d" % index,
+        )
+        _require(
+            recipe["language"] in {"C", "CXX", "ASM"}
+            and recipe["driver"] in allowed_drivers
+            and isinstance(recipe["arguments"], list)
+            and all(isinstance(item, str) and "\x00" not in item for item in recipe["arguments"]),
+            "RP2 Eligible Compilation recipe changed driver or syntax",
+        )
+        _audit_rp2_reject_driver_overrides(
+            recipe["arguments"],
+            label="RP2 Eligible Compilation recipe %d" % index,
+        )
+        lowered = [item.lower() for item in recipe["arguments"]]
+        for forbidden in eligible["forbidden_arguments"]:
+            _require(
+                not any(
+                    item == forbidden.lower()
+                    or item.startswith(forbidden.lower() + "=")
+                    for item in lowered
+                ),
+                "RP2 Eligible Compilation uses forbidden %s" % forbidden,
+            )
+    link_arguments = receipt["link_arguments"]
+    if isinstance(link_arguments, list):
+        _audit_rp2_reject_driver_overrides(
+            link_arguments,
+            label="RP2 Eligible Compilation link recipe",
+            allowed_specs={"--specs=nosys.specs"},
+        )
+    _require(
+        receipt["link_driver"] == eligible["link_driver"]
+        and receipt["resolved_specs_inputs"] == expected["specs_inputs"]
+        and isinstance(link_arguments, list)
+        and all(isinstance(item, str) and "\x00" not in item for item in link_arguments)
+        and not any(
+            item.lower() == "-flto" or item.lower().startswith("-flto=")
+            or item.lower() == "-fplugin"
+            or item.lower().startswith("-fplugin=")
+            for item in link_arguments
+        ),
+        "RP2 Eligible Compilation link recipe is not admitted",
+    )
+    source_archive = expected["identity"]["source_archive"]
+    _require(
+        receipt["source_archive_sha256"] == source_archive["sha256"],
+        "RP2 Eligible Compilation source archive identity changed",
+    )
+    arm_lock = _read_lock(root).get("arm_gnu_toolchain")
+    _require(
+        isinstance(arm_lock, dict)
+        and arm_lock.get("source_archive_filename") == source_archive["filename"]
+        and arm_lock.get("source_archive_bytes") == source_archive["bytes"]
+        and arm_lock.get("source_archive_format") == "tar.xz"
+        and arm_lock.get("source_archive_sha256") == source_archive["sha256"]
+        and arm_lock.get("source_manifest_path")
+        == expected["identity"]["source_manifest"]["path"]
+        and arm_lock.get("source_manifest_sha256")
+        == expected["identity"]["source_manifest"]["sha256"],
+        "RP2 Arm GNU source archive or manifest lock changed",
+    )
+    retained_source_archive = (
+        root
+        / "firmware"
+        / ".arm-gnu"
+        / ".pyble-dist"
+        / source_archive["filename"]
+    )
+    _audit_regular_compile_file(
+        retained_source_archive, "RP2 retained Arm GNU source archive"
+    )
+    _require(
+        retained_source_archive.stat().st_size == source_archive["bytes"]
+        and _sha256_path(retained_source_archive) == source_archive["sha256"],
+        "RP2 retained Arm GNU source archive bytes changed",
+    )
+    source_manifest_path = _audit_repo_file(
+        root,
+        expected["identity"]["source_manifest"]["path"],
+        "RP2 Arm GNU source manifest",
+    )
+    _require(
+        _sha256_path(source_manifest_path)
+        == expected["identity"]["source_manifest"]["sha256"],
+        "RP2 Arm GNU source manifest bytes changed",
+    )
+
+    contributing_owner_ids: set[str] = {
+        item[0] for item in expected["headers"] + expected["generated_headers"]
+    }
+    contributing_owner_ids.update(
+        item[0] for item in expected["direct_inputs"] if item[3]
+    )
+    contributing_owner_ids.update(item[0] for item in expected["archive_members"])
+    # A replay may deliberately exercise a future exact direct contributor.
+    # The source mapping is already frozen in the attribution row, so its
+    # contribution changes notice scope without weakening source ownership.
+    contributing_owner_ids.update(
+        item[0] for item in observed["direct_inputs"] if item[3]
+    )
+    kinds = {
+        item["id"]: item["kind"] for item in expected["components"]
+    }
+    public_notice_owner_ids = sorted(
+        owner_id
+        for owner_id in contributing_owner_ids
+        if kinds.get(owner_id) == "runtime"
+    )
+    return {
+        "eligible_compilation": True,
+        "contributing_owner_ids": sorted(contributing_owner_ids),
+        "public_notice_owner_ids": public_notice_owner_ids,
+    }
+
+
+def _audit_rp2_reject_driver_overrides(
+    arguments: list[str],
+    *,
+    label: str,
+    allowed_specs: set[str] | None = None,
+) -> None:
+    """Reject GCC arguments that can replace helpers, specs, or search roots."""
+
+    _require(
+        isinstance(arguments, list)
+        and all(isinstance(item, str) and "\x00" not in item for item in arguments),
+        "%s GCC argument vector is invalid" % label,
+    )
+    admitted_specs = set() if allowed_specs is None else set(allowed_specs)
+    _require(
+        all(
+            isinstance(item, str)
+            and item.startswith("--specs=")
+            and item.count("=") == 1
+            for item in admitted_specs
+        ),
+        "%s admitted GCC specs vector is invalid" % label,
+    )
+    observed_specs: list[str] = []
+    for argument in arguments:
+        lowered = argument.lower()
+        specs_argument = (
+            lowered in {"-specs", "--specs"}
+            or lowered.startswith("-specs=")
+            or lowered.startswith("--specs=")
+        )
+        if specs_argument:
+            _require(
+                argument in admitted_specs,
+                "%s uses a GCC helper/search/spec override: %s"
+                % (label, argument),
+            )
+            observed_specs.append(argument)
+            continue
+        _require(
+            not (
+                argument == "-B"
+                or argument.startswith("-B")
+                or lowered in {"-wrapper", "-fuse-ld"}
+                or lowered.startswith("-wrapper=")
+                or lowered.startswith("-fuse-ld=")
+                or lowered == "--sysroot"
+                or lowered.startswith("--sysroot=")
+                or lowered == "-isysroot"
+                or lowered.startswith("-isysroot=")
+                or (
+                    lowered.startswith("-isysroot")
+                    and lowered != "-isysroot"
+                )
+                or argument.startswith("@")
+            ),
+            "%s uses a GCC helper/search/spec override: %s" % (label, argument),
+        )
+    _require(
+        len(observed_specs) == len(admitted_specs)
+        and set(observed_specs) == admitted_specs,
+        "%s does not use the exact admitted GCC specs vector" % label,
+    )
+
+
+def _audit_observe_rp2_arm_runtime_closure(
+    *,
+    repo_root: Path,
+    target_root: Path,
+    cache: Path,
+    mappings: dict[Path, Path],
+    link_path: Path,
+    map_loads: list[Path],
+    direct_contributors: set[Path],
+    archive_members: list[dict[str, Any]],
+    compiler_dependency_closure: list[dict[str, Any]],
+) -> tuple[dict[str, Any], dict[str, Any], set[Path]]:
+    """Derive the Arm runtime vector and Eligible Compilation receipt."""
+
+    root = Path(repo_root)
+    target = Path(target_root)
+    attribution_path = _audit_repo_file(
+        root,
+        _RP2_ARM_RUNTIME_ATTRIBUTION,
+        "RP2 Arm GNU runtime attribution",
+    )
+    attribution = _read_json(
+        attribution_path, "RP2 Arm GNU runtime attribution"
+    )
+    arm = _read_lock(root).get("arm_gnu_toolchain")
+    _require(isinstance(arm, dict), "RP2 ARM GNU lock section is missing")
+
+    builder_path = _audit_repo_file(
+        root,
+        "firmware/scripts/build_rp2.sh",
+        "RP2 retained-source build driver",
+    )
+    builder_text = _read_regular_file_bytes(
+        builder_path, "RP2 retained-source build driver"
+    ).decode("utf-8", errors="strict")
+    scrub_marker = (
+        "# Never allow ambient compiler/make flags to influence the pinned build.\n"
+        "unset \\\n"
+    )
+    scrub_end = '\n\nmake -C "$RETAINED_UPSTREAM/mpy-cross"'
+    _require(
+        builder_text.count(scrub_marker) == 1
+        and builder_text.count(scrub_end) == 1,
+        "RP2 build driver environment scrub is missing or ambiguous",
+    )
+    scrub_source = builder_text.split(scrub_marker, 1)[1].split(scrub_end, 1)[0]
+    scrub_lines = scrub_source.splitlines()
+    scrubbed_variables: list[str] = []
+    for index, line in enumerate(scrub_lines):
+        continued = line.endswith(" \\")
+        value = line[:-2] if continued else line
+        _require(
+            line.startswith("  ")
+            and re.fullmatch(r"[A-Z][A-Z0-9_]*", value.strip()) is not None
+            and continued == (index < len(scrub_lines) - 1),
+            "RP2 build driver environment scrub is malformed",
+        )
+        scrubbed_variables.append(value.strip())
+    _require(
+        len(scrubbed_variables) == len(set(scrubbed_variables))
+        and set(_RP2_GCC_ENVIRONMENT_OVERRIDES) <= set(scrubbed_variables),
+        "RP2 build driver does not scrub every GCC resolution override",
+    )
+
+    cache_text = _read_regular_file_bytes(cache, "RP2 CMake cache").decode(
+        "utf-8", errors="strict"
+    )
+    for launcher_key in (
+        "CMAKE_C_COMPILER_LAUNCHER",
+        "CMAKE_CXX_COMPILER_LAUNCHER",
+        "CMAKE_ASM_COMPILER_LAUNCHER",
+        "RULE_LAUNCH_COMPILE",
+        "RULE_LAUNCH_LINK",
+    ):
+        _require(
+            not re.search(
+                r"^%s(?::[^=]+)?=(?!$).+" % re.escape(launcher_key),
+                cache_text,
+                re.MULTILINE,
+            ),
+            "RP2 Eligible Compilation uses a compiler/link launcher",
+        )
+
+    make_root = target / "CMakeFiles" / "firmware.dir"
+    flags_path = make_root / "flags.make"
+    build_path = make_root / "build.make"
+    flags_text = _read_regular_file_bytes(
+        flags_path, "RP2 firmware target flags.make"
+    ).decode("utf-8", errors="strict")
+    build_text = _read_regular_file_bytes(
+        build_path, "RP2 firmware target build.make"
+    ).decode("utf-8", errors="strict")
+    toolchain = (root / "firmware" / ".arm-gnu").resolve()
+    compiler_by_language = {
+        "C": (toolchain / arm["c_asm_frontend_path"]).resolve(),
+        "CXX": (toolchain / arm["cxx_frontend_path"]).resolve(),
+        "ASM": (toolchain / arm["c_asm_frontend_path"]).resolve(),
+    }
+    compile_recipes: list[dict[str, Any]] = []
+    for language, compiler in compiler_by_language.items():
+        _audit_regular_compile_file(compiler, "RP2 pinned %s compiler" % language)
+        comment = "# compile %s with %s" % (language, compiler)
+        _require(
+            flags_text.count(comment) == 1,
+            "RP2 flags.make lacks one pinned %s compiler identity" % language,
+        )
+        variable = "%s_FLAGS" % language
+        match = re.search(
+            r"^%s = (.*)$" % re.escape(variable), flags_text, re.MULTILINE
+        )
+        _require(match is not None, "RP2 flags.make lacks %s" % variable)
+        try:
+            arguments = shlex.split(match.group(1), posix=True)
+        except ValueError as exc:
+            raise ReleaseError("RP2 %s flags are malformed" % language) from exc
+        _audit_rp2_reject_driver_overrides(
+            arguments,
+            label="RP2 %s flags" % language,
+        )
+        _require(
+            bool(arguments)
+            and os.fspath(compiler) in build_text
+            and not any(
+                token.lower() == "-flto"
+                or token.lower().startswith("-flto=")
+                or token.lower() == "-fplugin"
+                or token.lower().startswith("-fplugin=")
+                for token in arguments
+            ),
+            "RP2 %s compilation recipe is not eligible" % language,
+        )
+        compile_recipes.append(
+            {
+                "language": language,
+                "driver": compiler.relative_to(toolchain).as_posix(),
+                "arguments": arguments,
+            }
+        )
+    # Every mapped target-code object must have exactly one concrete compile
+    # recipe using the language-appropriate pinned driver. This checks the
+    # generated rules themselves, rather than inferring use from flags alone.
+    compile_rule_outputs: set[Path] = set()
+    compile_make_paths = sorted(target.rglob("build.make"))
+    compile_flags_paths: set[Path] = set()
+    for compile_make in compile_make_paths:
+        make_text = _read_regular_file_bytes(
+            compile_make, "RP2 generated target build.make"
+        ).decode("utf-8", errors="strict")
+        for raw_line in make_text.splitlines():
+            if not raw_line.startswith("\t") or " -c " not in raw_line or " -o " not in raw_line:
+                continue
+            try:
+                words = shlex.split(raw_line.strip(), posix=True)
+            except ValueError as exc:
+                raise ReleaseError("RP2 target compile rule is malformed") from exc
+            command_cwd = target
+            if len(words) >= 4 and words[0] == "cd" and words[2] == "&&":
+                command_cwd = _audit_rp2_admitted_path(
+                    words[1],
+                    relative_to=target,
+                    roots=(target,),
+                    label="RP2 target compile-rule working directory",
+                )
+                words = words[3:]
+            if words.count("-c") != 1 or words.count("-o") != 1:
+                continue
+            output_raw = Path(words[words.index("-o") + 1])
+            output_candidate = (
+                output_raw if output_raw.is_absolute() else command_cwd / output_raw
+            ).resolve(strict=False)
+            if output_candidate not in mappings:
+                # Host-only Pico SDK utilities are generated beneath the same
+                # CMake tree. They are not target-code inputs and need not
+                # survive a retained firmware build.
+                continue
+            _audit_rp2_reject_driver_overrides(
+                words,
+                label="RP2 target-code compile rule",
+            )
+            output = _audit_rp2_admitted_path(
+                os.fspath(output_raw),
+                relative_to=command_cwd,
+                roots=(target,),
+                label="RP2 target compile-rule output",
+            )
+            source = _audit_rp2_admitted_path(
+                words[words.index("-c") + 1],
+                relative_to=command_cwd,
+                roots=(target, target.parent, root),
+                label="RP2 target compile-rule source",
+            )
+            language = (
+                "CXX" if source.suffix in {".cc", ".cpp", ".cxx"} else
+                "ASM" if source.suffix.lower() in {".s", ".asm"} else "C"
+            )
+            _require(
+                mappings[output].resolve() == source.resolve()
+                and Path(words[0]).resolve() == compiler_by_language[language]
+                and output not in compile_rule_outputs
+                and not any(
+                    token.lower() == "-flto"
+                    or token.lower().startswith("-flto=")
+                    or token.lower() == "-fplugin"
+                    or token.lower().startswith("-fplugin=")
+                    for token in words
+                ),
+                "RP2 target-code compile rule changed driver, source, or flags",
+            )
+            compile_rule_outputs.add(output)
+            local_flags = compile_make.parent / "flags.make"
+            _audit_regular_compile_file(local_flags, "RP2 target flags.make")
+            flags_text_value = _read_regular_file_bytes(
+                local_flags, "RP2 target flags.make"
+            ).decode("utf-8", errors="strict")
+            for flags_match in re.finditer(
+                r"^(?:ASM|C|CXX)_FLAGS = (.*)$",
+                flags_text_value,
+                re.MULTILINE,
+            ):
+                try:
+                    local_arguments = shlex.split(flags_match.group(1), posix=True)
+                except ValueError as exc:
+                    raise ReleaseError("RP2 target flags are malformed") from exc
+                _audit_rp2_reject_driver_overrides(
+                    local_arguments,
+                    label="RP2 target flags",
+                )
+            flags_value = flags_text_value.lower()
+            _require(
+                "-flto" not in flags_value and "-fplugin" not in flags_value,
+                "RP2 target flags use an ineligible IR/plugin path",
+            )
+            compile_flags_paths.add(local_flags)
+    _require(
+        compile_rule_outputs == set(mappings),
+        "RP2 target-code compile recipe inventory is incomplete or extra",
+    )
+    depfiles = sorted(
+        Path(os.fspath(output) + ".d").resolve()
+        for output in mappings
+        if Path(os.fspath(output) + ".d").is_file()
+    )
+    _require(bool(depfiles), "RP2 Eligible Compilation has no compiler depfiles")
+
+    link_text = _read_regular_file_bytes(
+        link_path, "RP2 linker command"
+    ).decode("utf-8", errors="strict").rstrip("\n")
+    try:
+        link_words = shlex.split(link_text, posix=True)
+    except ValueError as exc:
+        raise ReleaseError("RP2 linker command is malformed") from exc
+    _require(
+        bool(link_words)
+        and Path(link_words[0]).resolve() == compiler_by_language["CXX"],
+        "RP2 Eligible Compilation link driver changed",
+    )
+    _audit_rp2_reject_driver_overrides(
+        link_words[1:],
+        label="RP2 linker command",
+        allowed_specs={"--specs=nosys.specs"},
+    )
+
+    expected_build_tools: list[list[str]] = []
+    for owner_id, relative, digest, purpose in attribution["build_tools"]:
+        tool = _audit_repo_file(toolchain, relative, "RP2 Arm GNU build tool")
+        _require(
+            _sha256_path(tool) == digest,
+            "RP2 Arm GNU build tool bytes changed: %s" % relative,
+        )
+        expected_build_tools.append([owner_id, relative, digest, purpose])
+
+    helper_query = {
+        "assembler": (compiler_by_language["C"], "as"),
+        "linker": (compiler_by_language["CXX"], "ld"),
+        "collect2": (compiler_by_language["CXX"], "collect2"),
+    }
+    resolved_helpers: dict[str, Path] = {}
+    for purpose, (driver, program) in helper_query.items():
+        try:
+            completed = subprocess.run(
+                [os.fspath(driver), "-print-prog-name=%s" % program],
+                cwd=target,
+                env={"LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin"},
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=False,
+                timeout=30,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise ReleaseError("RP2 compiler helper resolution failed") from exc
+        _require(
+            completed.returncode == 0
+            and completed.stdout.count("\n") <= 1
+            and bool(completed.stdout.strip()),
+            "RP2 compiler helper resolution failed",
+        )
+        resolved_helpers[purpose] = Path(completed.stdout.strip()).resolve()
+    expected_helpers = {
+        purpose: (toolchain / relative).resolve()
+        for _owner, relative, _digest, purpose in expected_build_tools
+        if purpose in helper_query
+    }
+    _require(
+        resolved_helpers == expected_helpers,
+        "RP2 GCC driver resolves substituted assembler/linker/collect2 helpers",
+    )
+
+    expected_specs_inputs = attribution["specs_inputs"]
+    _require(
+        isinstance(expected_specs_inputs, list)
+        and len(expected_specs_inputs) == 1
+        and isinstance(expected_specs_inputs[0], list)
+        and len(expected_specs_inputs[0]) == 10,
+        "RP2 GCC specs attribution is not one exact row",
+    )
+    (
+        specs_owner,
+        specs_token,
+        specs_relative,
+        specs_bytes,
+        specs_sha256,
+        specs_source_relative,
+        specs_source_bytes,
+        specs_source_sha256,
+        specs_basis,
+        specs_contributes,
+    ) = expected_specs_inputs[0]
+    _require(
+        specs_token == "--specs=nosys.specs"
+        and link_words[1:].count(specs_token) == 1
+        and specs_owner == "arm-gnu-libgloss-runtime"
+        and specs_basis == "libgloss-default-compilation"
+        and specs_contributes is False,
+        "RP2 GCC specs token, owner, basis, or contribution changed",
+    )
+    try:
+        specs_query = subprocess.run(
+            [
+                os.fspath(compiler_by_language["CXX"]),
+                specs_token,
+                "-print-file-name=%s" % Path(specs_relative).name,
+            ],
+            cwd=target,
+            env={"LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin"},
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+            timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise ReleaseError("RP2 GCC specs resolution failed") from exc
+    _require(
+        specs_query.returncode == 0
+        and specs_query.stdout.count("\n") <= 1
+        and bool(specs_query.stdout.strip())
+        and specs_query.stdout.strip() != Path(specs_relative).name,
+        "RP2 GCC specs resolution is missing or ambiguous",
+    )
+    resolved_specs = Path(specs_query.stdout.strip()).resolve()
+    expected_specs = (toolchain / specs_relative).resolve()
+    _require(
+        resolved_specs == expected_specs,
+        "RP2 GCC driver resolves a substituted specs input",
+    )
+    specs_value = _read_regular_file_bytes(
+        resolved_specs, "RP2 resolved GCC specs input"
+    )
+    _require(
+        len(specs_value) == specs_bytes
+        and _sha256_bytes(specs_value) == specs_sha256,
+        "RP2 resolved GCC specs bytes changed",
+    )
+
+    retained_source_archive = (
+        root
+        / "firmware"
+        / ".arm-gnu"
+        / ".pyble-dist"
+        / arm["source_archive_filename"]
+    )
+    _audit_regular_compile_file(
+        retained_source_archive, "RP2 retained Arm GNU source archive"
+    )
+    try:
+        with tarfile.open(retained_source_archive, mode="r:xz") as handle:
+            source_matches = [
+                member
+                for member in handle.getmembers()
+                if member.name == specs_source_relative
+            ]
+            _require(
+                len(source_matches) == 1
+                and source_matches[0].isfile()
+                and not source_matches[0].issym()
+                and not source_matches[0].islnk()
+                and source_matches[0].size == specs_source_bytes,
+                "RP2 source snapshot GCC specs member changed",
+            )
+            extracted = handle.extractfile(source_matches[0])
+            _require(
+                extracted is not None,
+                "RP2 source snapshot GCC specs member is unreadable",
+            )
+            specs_source_value = extracted.read()
+    except (OSError, tarfile.TarError) as exc:
+        raise ReleaseError("RP2 retained Arm GNU source archive is unreadable") from exc
+    _require(
+        len(specs_source_value) == specs_source_bytes
+        and _sha256_bytes(specs_source_value) == specs_source_sha256
+        and specs_source_value == specs_value,
+        "RP2 installed GCC specs differs from its exact source snapshot file",
+    )
+    observed_specs_inputs = [
+        [
+            specs_owner,
+            specs_token,
+            resolved_specs.relative_to(toolchain).as_posix(),
+            len(specs_value),
+            _sha256_bytes(specs_value),
+            specs_source_relative,
+            len(specs_source_value),
+            _sha256_bytes(specs_source_value),
+            specs_basis,
+            False,
+        ]
+    ]
+
+    load_by_relative = {
+        path.resolve().relative_to(toolchain).as_posix(): path.resolve()
+        for path in map_loads
+        if path.resolve().is_relative_to(toolchain)
+    }
+    archive_member_counts = Counter(
+        record["archive"].resolve()
+        for record in archive_members
+        for _digest in record["member_sha256"]
+    )
+    runtime_archives: list[list[Any]] = []
+    for owner_id, relative, digest, _count in attribution["runtime_archives"]:
+        path = load_by_relative.get(relative)
+        _require(path is not None, "RP2 runtime archive is absent from map LOAD")
+        count = archive_member_counts[path]
+        runtime_archives.append([owner_id, relative, _sha256_path(path), count])
+
+    direct_inputs: list[list[Any]] = []
+    for frozen in attribution["direct_inputs"]:
+        owner_id, relative, _digest, _contributes, source, source_digest, basis = frozen
+        path = load_by_relative.get(relative)
+        _require(path is not None, "RP2 direct runtime input is absent from map LOAD")
+        direct_inputs.append(
+            [
+                owner_id,
+                relative,
+                _sha256_path(path),
+                path in direct_contributors,
+                source,
+                source_digest,
+                basis,
+            ]
+        )
+
+    frozen_members = {
+        (item[1], item[2], item[3]): item for item in attribution["archive_members"]
+    }
+    observed_member_by_identity: dict[tuple[str, str, str], list[Any]] = {}
+    archive_name_by_path = {
+        load_by_relative[item[1]].resolve(): item[1].rsplit("/", 1)[-1]
+        for item in attribution["runtime_archives"]
+    }
+    for record in archive_members:
+        archive_name = archive_name_by_path.get(record["archive"].resolve())
+        _require(archive_name is not None, "RP2 allocated member has an unknown archive")
+        _require(
+            record["multiplicity"] == len(record["member_sha256"]),
+            "RP2 allocated archive/member multiplicity changed",
+        )
+        for digest in record["member_sha256"]:
+            frozen = frozen_members.get((archive_name, record["member"], digest))
+            _require(
+                frozen is not None,
+                "RP2 allocated archive/member lacks an exact source mapping",
+            )
+            identity = (archive_name, record["member"], digest)
+            _require(
+                identity not in observed_member_by_identity,
+                "RP2 allocated archive/member identity is duplicated",
+            )
+            observed_member_by_identity[identity] = copy.deepcopy(frozen)
+    _require(
+        set(observed_member_by_identity) == set(frozen_members),
+        "RP2 allocated archive/member closure is incomplete or extra",
+    )
+    observed_members = [
+        observed_member_by_identity[(item[1], item[2], item[3])]
+        for item in attribution["archive_members"]
+    ]
+
+    closure_dependencies = {
+        dependency["logical_path"]: dependency
+        for record in compiler_dependency_closure
+        for dependency in record["dependencies"]
+        if dependency["logical_path"].startswith("repo/firmware/.arm-gnu/")
+    }
+    headers: list[list[Any]] = []
+    generated_headers: list[list[Any]] = []
+    for frozen in attribution["headers"]:
+        logical = "repo/firmware/.arm-gnu/" + frozen[1]
+        dependency = closure_dependencies.get(logical)
+        _require(
+            dependency is not None
+            and dependency["owner_id"] == frozen[0],
+            "RP2 Arm GNU header is absent or has a different owner",
+        )
+        headers.append(
+            [frozen[0], frozen[1], dependency["sha256"], frozen[3]]
+        )
+    for frozen in attribution["generated_headers"]:
+        logical = "repo/firmware/.arm-gnu/" + frozen[1]
+        dependency = closure_dependencies.get(logical)
+        _require(
+            dependency is not None
+            and dependency["owner_id"] == frozen[0],
+            "RP2 generated Arm GNU header is absent or has a different owner",
+        )
+        generated_headers.append(
+            [frozen[0], frozen[1], dependency["sha256"], frozen[3], frozen[4]]
+        )
+    expected_header_paths = {
+        "repo/firmware/.arm-gnu/" + item[1]
+        for item in attribution["headers"] + attribution["generated_headers"]
+    }
+    _require(
+        set(closure_dependencies) == expected_header_paths,
+        "RP2 Arm GNU compiler-header closure is incomplete or extra",
+    )
+
+    observed = {
+        "identity": {
+            "binary_archive": {
+                "bytes": arm["archive_bytes"],
+                "filename": arm["archive_filename"],
+                "sha256": arm["sha256"],
+            },
+            "source_archive": {
+                "bytes": arm["source_archive_bytes"],
+                "filename": arm["source_archive_filename"],
+                "sha256": arm["source_archive_sha256"],
+            },
+            "source_manifest": {
+                "path": arm["source_manifest_path"],
+                "sha256": arm["source_manifest_sha256"],
+            },
+            "source_commits": copy.deepcopy(attribution["identity"]["source_commits"]),
+        },
+        "runtime_archives": runtime_archives,
+        "specs_inputs": observed_specs_inputs,
+        "direct_inputs": direct_inputs,
+        "archive_members": observed_members,
+        "headers": headers,
+        "generated_headers": generated_headers,
+    }
+    observed["build_tools"] = expected_build_tools
+    observed["eligible_compilation_receipt"] = {
+        "bound_kinds": list(
+            attribution["eligible_compilation"]["required_receipt_kinds"]
+        ),
+        "compiler_launchers": [],
+        "driver_environment_overrides": [],
+        "external_ir_consumers": [],
+        "compile_recipes": compile_recipes,
+        "link_driver": compiler_by_language["CXX"].relative_to(toolchain).as_posix(),
+        "link_arguments": link_words[1:],
+        "resolved_specs_inputs": copy.deepcopy(observed_specs_inputs),
+        "source_archive_sha256": arm["source_archive_sha256"],
+    }
+    result = _audit_validate_rp2_arm_runtime_closure(
+        attribution,
+        observed,
+        repo_root=root,
+    )
+    evidence_paths = {
+        attribution_path,
+        builder_path,
+        retained_source_archive,
+        resolved_specs,
+        cache,
+        flags_path,
+        build_path,
+        link_path,
+        target / "firmware.elf.map",
+        target / "firmware.elf",
+        target / "firmware.bin",
+        target / "firmware.uf2",
+        *depfiles,
+        *compile_make_paths,
+        *compile_flags_paths,
+    }
+    for evidence in evidence_paths:
+        _audit_regular_compile_file(evidence, "RP2 Eligible Compilation evidence")
+    return observed, result, evidence_paths
 
 
 def _audit_rp2_owner_for_path(
@@ -9717,7 +10668,6 @@ def _audit_observe_rp2_license_inputs(
     )
     mappings.update(bootstage_mapping)
     _audit_regular_compile_file(elf_path, "RP2 linked ELF")
-
     observed_owners = {
         owner["id"]: {
             "id": owner["id"],
@@ -9751,6 +10701,33 @@ def _audit_observe_rp2_license_inputs(
             build_root=builds,
             owners=owners,
             project_owner=project_owners[0],
+        )
+    arm_runtime_observation: dict[str, Any] | None = None
+    arm_runtime_result: dict[str, Any] | None = None
+    arm_runtime_evidence_paths: set[Path] = set()
+    if validated["schema_version"] == 2:
+        (
+            arm_runtime_observation,
+            arm_runtime_result,
+            arm_runtime_evidence_paths,
+        ) = _audit_observe_rp2_arm_runtime_closure(
+            repo_root=root,
+            target_root=target,
+            cache=cache,
+            mappings=mappings,
+            link_path=link_path,
+            map_loads=map_loads,
+            direct_contributors=direct_contributors,
+            archive_members=archive_members,
+            compiler_dependency_closure=compiler_dependency_closure,
+        )
+        compiler_toolchain_inputs.update(
+            (root / "firmware" / ".arm-gnu" / item[1]).resolve()
+            for item in arm_runtime_observation["build_tools"]
+        )
+        compiler_toolchain_inputs.update(
+            (root / "firmware" / ".arm-gnu" / item[2]).resolve()
+            for item in arm_runtime_observation["specs_inputs"]
         )
     (
         toolchain_distribution,
@@ -9984,6 +10961,19 @@ def _audit_observe_rp2_license_inputs(
             (root / "firmware" / ".arm-gnu").resolve()
         )
     }
+    if arm_runtime_observation is not None:
+        observed_toolchain_paths.update(
+            (
+                root / "firmware" / ".arm-gnu" / item[1]
+            ).resolve()
+            for item in arm_runtime_observation["build_tools"]
+        )
+        observed_toolchain_paths.update(
+            (
+                root / "firmware" / ".arm-gnu" / item[2]
+            ).resolve()
+            for item in arm_runtime_observation["specs_inputs"]
+        )
     for owner in owners:
         for source_root in owner["source_roots"]:
             if source_root["namespace"] != "arm-gnu-toolchain":
@@ -10065,11 +11055,35 @@ def _audit_observe_rp2_license_inputs(
             }
         )
     for owner in owners:
-        _require(
-            bool(observed_owners[owner["id"]]["contributing_inputs"]),
-            "RP2 owner %s has no contributing linked or frozen input"
-            % owner["id"],
-        )
+        if owner.get("component_kind") == "build-tool":
+            _require(
+                owner["id"]
+                in {
+                    item[0] for item in arm_runtime_observation["build_tools"]
+                },
+                "RP2 build-tool owner is absent from the Eligible Compilation",
+            )
+        elif (
+            owner.get("component_kind") == "runtime"
+            and arm_runtime_result is not None
+            and owner["id"]
+            not in arm_runtime_result["contributing_owner_ids"]
+        ):
+            _require(
+                owner["id"]
+                in {
+                    item[0]
+                    for item in arm_runtime_observation["specs_inputs"]
+                }
+                or bool(observed_owners[owner["id"]]["link_inputs"]),
+                "RP2 noncontributing runtime owner is absent from the exact closure",
+            )
+        else:
+            _require(
+                bool(observed_owners[owner["id"]]["contributing_inputs"]),
+                "RP2 owner %s has no contributing linked or frozen input"
+                % owner["id"],
+            )
     frozen_content = target / "frozen_content.c"
     if not frozen_content.is_file():
         frozen_content = target / "frozen_content.c"
@@ -10165,7 +11179,14 @@ def _audit_observe_rp2_license_inputs(
                 persisted.startswith(("repo/", "build/")),
                 "RP2 selected license lacks a persisted namespace",
             )
-        if owner["disposition"] != "project-owned":
+        if (
+            owner["disposition"] != "project-owned"
+            and (
+                owner.get("component_kind") != "build-tool"
+                or arm_runtime_result is None
+                or owner["id"] in arm_runtime_result["public_notice_owner_ids"]
+            )
+        ):
             def complete_text(record: dict[str, str]) -> dict[str, str]:
                 _logical, path = _audit_rp2_logical_file(
                     record["path"],
@@ -10259,6 +11280,7 @@ def _audit_observe_rp2_license_inputs(
             *(source for _destination, source in frozen_sources),
             *compiler_evidence_paths,
             *toolchain_evidence_paths,
+            *arm_runtime_evidence_paths,
         )
     }
     input_paths.update(control_input_paths)
@@ -10279,6 +11301,17 @@ def _audit_observe_rp2_license_inputs(
         ),
         "compiler_dependency_closure": compiler_dependency_closure,
         "toolchain_distribution": toolchain_distribution,
+        "arm_runtime_closure": arm_runtime_result,
+        "arm_runtime_observation": arm_runtime_observation,
+        "arm_runtime_input_sha256": (
+            {
+                _audit_rp2_logical_path(path, repo_root=root, build_root=builds):
+                    _sha256_path(path)
+                for path in sorted(arm_runtime_evidence_paths)
+            }
+            if arm_runtime_result is not None
+            else None
+        ),
     }
     return {
         "semantic_sha256": _sha256_bytes(_canonical_json_bytes(semantic_payload)),
@@ -12451,6 +13484,13 @@ def _audit_verify_rp2_semantic_replay(
         provenance=provenance,
         policy=policy,
     )
+    if policy["schema_version"] == 2:
+        _require(
+            replay.get("arm_runtime_closure", {}).get("eligible_compilation")
+            is True
+            and isinstance(replay.get("arm_runtime_observation"), dict),
+            "RP2 public replay lacks the Arm runtime Eligible Compilation",
+        )
     _require(
         all(
             owner.get("disposition") != "review-required"
