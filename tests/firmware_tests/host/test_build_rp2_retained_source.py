@@ -655,7 +655,7 @@ class RP2RetainedSourceBehaviorTests(unittest.TestCase):
             self.assertEqual(len(final_records), 1, records)
             compiler = Path(final_records[0]["env"]["MICROPY_MPYCROSS"])
             self.assertTrue(
-                compiler.is_relative_to(fixture.retained / "mpy-cross"),
+                compiler.is_relative_to(fixture.retained.resolve() / "mpy-cross"),
                 "the port must use mpy-cross built in the retained checkout",
             )
             self.assertTrue(compiler.is_file() and not compiler.is_symlink())
