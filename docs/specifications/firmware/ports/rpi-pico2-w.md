@@ -65,6 +65,27 @@ P10, including GP2.
 - **GP1 parity:** host unit + shared conformance corpus green for every grown module. *Verify: unit/conformance.*
 - **GP2 HIL:** the HIL matrix (port stories F-27) green on the physical Pico 2 W, resource baseline recorded. *Verify: HIL/size.* "Hardware-tested"/supported flips ONLY at GP2; until then the port appears in no installer, matrix, or public claim.
 
+## Bench evidence (2026-08-11, pre-GP2)
+
+Recorded from the physical Pico 2 W + the unchanged iPad app (build 0.1.0):
+connect + HELLO (`chip=rpi-pico2-w`, MTU negotiated) ✓; editor RUN of
+`print("Hi")` with console output and terminal RUN_STATE ✓; real GPIO actuation
+✓ — `Pin("LED", Pin.OUT)` blink observed on the onboard CYW43 `WL_GPIO0` LED,
+ten cycles, then `done` on the console. USB CDC + BLE concurrently served by
+the supervisor. The remaining GP2 matrix (file ops over BLE, windowed
+PUT/resume goodput, STOP latency, print-flood, re-advertise, fail-safe,
+autorun) is pending a bench central without the stale-bond obstruction; the
+port status stays **in progress**.
+
+Board reality note: the Pico 2 W onboard LED has **no integer GPIO** — it is
+`Pin("LED")` (CYW43 `WL_GPIO0`, upstream `pins.csv: LED,EXT_GPIO0`). A numeric
+GPIO choice in the app's Blocks examples drives a bare header pin on this
+board. Closed same-day by app story **A-38** (FR-BLOCKS-1B, named pins in the
+Blocks GPIO surfaces): the Blink example with the named pin `LED` was
+hardware-verified on this board through the real iPad app — materialized
+`Pin("LED", Pin.OUT)`, uploaded, ran, LED blinked. The app remains
+board-agnostic (CON-7: the name is user-entered, never suggested).
+
 ## P11. Open items
 
 - **OI-P1** — native-BTstack module retirement (ADR-0030).
