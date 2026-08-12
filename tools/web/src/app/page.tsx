@@ -422,115 +422,131 @@ export default function HomePage() {
       </section>
 
       <section
-        className="section beta-invite"
-        id="testflight"
-        aria-labelledby="testflight-title"
+        className="section beta-hub"
+        aria-labelledby="beta-channels-title"
       >
-        <div className="container beta-invite__card">
-          <div className="beta-invite__copy">
-            <p className="eyebrow">External testing is open</p>
-            <h2 id="testflight-title">Join the PyBLE beta on TestFlight.</h2>
-            <p className="beta-invite__lede">
-              Install the free iPad external beta through Apple TestFlight.
-              Firmware availability and qualification depend on the exact
-              target; check the firmware installer before provisioning. After
-              one-time USB setup, everyday coding runs over Bluetooth Low
-              Energy.
+        <div className="container">
+          <div className="section-heading beta-hub__heading">
+            <p className="eyebrow">PyBLE for iPad + Android</p>
+            <h2 id="beta-channels-title">Choose your tablet beta.</h2>
+            <p>
+              Both builds come from the same open-source Flutter app. Choose the
+              testing channel for your tablet; neither is a production app store
+              release.
             </p>
-            <div className="button-row beta-invite__actions">
-              <a
-                className="button button--primary"
-                href={siteConfig.testFlightUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Open in TestFlight
-                <ArrowIcon />
-              </a>
-              <Link className="button button--secondary" href="/flash">
-                Check firmware status
-              </Link>
-            </div>
           </div>
-          <figure className="beta-invite__qr">
-            <a
-              className="beta-invite__qr-link"
-              href={siteConfig.testFlightUrl}
-              target="_blank"
-              rel="noopener noreferrer"
+          <div className="beta-channel-grid">
+            <section
+              className="beta-invite__card beta-invite__card--channel"
+              id="testflight"
+              aria-labelledby="testflight-title"
             >
-              <Image
-                src="/testflight/pyble-testflight-qr.svg"
-                width={360}
-                height={360}
-                alt="QR code for the PyBLE beta on Apple TestFlight"
-              />
-            </a>
-            <figcaption>
-              <strong>Scan with your iPad camera</strong>
-              <span>Or open this address on the device:</span>
-              <span className="beta-invite__url">
-                testflight.apple.com/join/yU4e8s6d
-              </span>
-            </figcaption>
-          </figure>
-        </div>
-      </section>
+              <div className="beta-invite__copy">
+                <p className="eyebrow">External testing is open</p>
+                <h3 id="testflight-title">
+                  Join the PyBLE beta on TestFlight.
+                </h3>
+                <p className="beta-invite__lede">
+                  Install the free iPad external beta through Apple TestFlight.
+                  Firmware availability and qualification depend on the exact
+                  target; check the firmware installer before provisioning.
+                  After one-time USB setup, everyday coding runs over Bluetooth
+                  Low Energy.
+                </p>
+                <div className="button-row beta-invite__actions">
+                  <a
+                    className="button button--primary"
+                    href={siteConfig.testFlightUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Open in TestFlight
+                    <ArrowIcon />
+                  </a>
+                  <Link className="button button--secondary" href="/flash">
+                    Check firmware status
+                  </Link>
+                </div>
+              </div>
+              <figure className="beta-invite__qr">
+                <a
+                  className="beta-invite__qr-link"
+                  href={siteConfig.testFlightUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <Image
+                    src="/testflight/pyble-testflight-qr.svg"
+                    width={360}
+                    height={360}
+                    alt="QR code for the PyBLE beta on Apple TestFlight"
+                  />
+                </a>
+                <figcaption>
+                  <strong>Scan with your iPad camera</strong>
+                  <span>Or open this address on the device:</span>
+                  <span className="beta-invite__url">
+                    testflight.apple.com/join/yU4e8s6d
+                  </span>
+                </figcaption>
+              </figure>
+            </section>
 
-      <section
-        className="section beta-invite android-invite"
-        id="android-internal-test"
-        aria-labelledby="android-internal-test-title"
-      >
-        <div className="container beta-invite__card">
-          <div className="beta-invite__copy">
-            <p className="eyebrow">Android internal testing</p>
-            <h2 id="android-internal-test-title">
-              Join the PyBLE Android internal test.
-            </h2>
-            <p className="beta-invite__lede">
-              The Android build is available only to approved internal testers
-              signed in with an invited Google account. An unapproved or
-              signed-out visitor may find the listing unavailable. This is not a
-              public Google Play release.
-            </p>
-            <div className="button-row beta-invite__actions">
-              <a
-                className="button button--primary"
-                href={siteConfig.googlePlayInternalTestUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Open Android internal test
-                <ArrowIcon />
-              </a>
-              <Link className="button button--secondary" href="/support">
-                Get support
-              </Link>
-            </div>
-          </div>
-          <figure className="beta-invite__qr">
-            <a
-              className="beta-invite__qr-link"
-              href={siteConfig.googlePlayInternalTestUrl}
-              target="_blank"
-              rel="noopener noreferrer"
+            <section
+              className="beta-invite__card beta-invite__card--channel beta-invite__card--android"
+              id="android-internal-test"
+              aria-labelledby="android-internal-test-title"
             >
-              <Image
-                src="/google-play/pyble-google-play-internal-test-qr.svg"
-                width={360}
-                height={360}
-                alt="QR code for the PyBLE Android internal test on Google Play"
-              />
-            </a>
-            <figcaption>
-              <strong>Scan with your Android camera</strong>
-              <span>Sign in with the Google account that was invited:</span>
-              <span className="beta-invite__url">
-                {siteConfig.googlePlayInternalTestUrl}
-              </span>
-            </figcaption>
-          </figure>
+              <div className="beta-invite__copy">
+                <p className="eyebrow">Android internal testing</p>
+                <h3 id="android-internal-test-title">
+                  Join the PyBLE Android internal test.
+                </h3>
+                <p className="beta-invite__lede">
+                  The Android build is available only to approved internal
+                  testers signed in with an invited Google account. An
+                  unapproved or signed-out visitor may find the listing
+                  unavailable. This is not a public Google Play release.
+                </p>
+                <div className="button-row beta-invite__actions">
+                  <a
+                    className="button button--primary"
+                    href={siteConfig.googlePlayInternalTestUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Open Android internal test
+                    <ArrowIcon />
+                  </a>
+                  <Link className="button button--secondary" href="/support">
+                    Get support
+                  </Link>
+                </div>
+              </div>
+              <figure className="beta-invite__qr">
+                <a
+                  className="beta-invite__qr-link"
+                  href={siteConfig.googlePlayInternalTestUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <Image
+                    src="/google-play/pyble-google-play-internal-test-qr.svg"
+                    width={360}
+                    height={360}
+                    alt="QR code for the PyBLE Android internal test on Google Play"
+                  />
+                </a>
+                <figcaption>
+                  <strong>Scan with your Android camera</strong>
+                  <span>Sign in with the Google account that was invited:</span>
+                  <span className="beta-invite__url">
+                    {siteConfig.googlePlayInternalTestUrl}
+                  </span>
+                </figcaption>
+              </figure>
+            </section>
+          </div>
         </div>
       </section>
     </main>
