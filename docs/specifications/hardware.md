@@ -43,9 +43,9 @@ under the same PBLE/1 protocol.
 
 | Image profile | Required memory configuration | Installer family check | Release status | Public compatibility claim |
 |---|---|---|---|---|
-| `esp32-4mb` | Classic ESP32; 4 MiB external SPI flash; no PSRAM assumed | `ESP32` | v0.4.2 hardware-tested beta; browser install/recovery passed; qualification pending. The v0.5.1 source candidate requires fresh exact-byte qualification. | Only boards whose module documentation confirms this flash layout |
-| `esp32-s3-n16r8` | ESP32-S3; 16 MiB flash; 8 MiB Octal PSRAM; lean board-neutral payload | `ESP32-S3` | v0.4.2 hardware-tested beta; browser install/recovery passed; qualification pending. The v0.5.1 source candidate requires independent exact-byte qualification. | N16R8-class modules only; no bundled TFT driver or splash |
-| `waveshare-esp32-s3-lcd-147b` | Exact Waveshare ESP32-S3-LCD-1.47B; 16 MiB flash; 8 MiB Octal PSRAM | `ESP32-S3` | v0.5.1 source candidate only; independent exact-board qualification required before publication | B-version board only, if qualified; exact-image contract bundles the ST7789 runtime and fresh-install QR splash |
+| `esp32-4mb` | Classic ESP32; 4 MiB external SPI flash; no PSRAM assumed | `ESP32` | v0.4.2 hardware-tested beta; browser install/recovery passed; qualification pending. Current v0.6.0 source requires fresh exact-byte qualification. | Only boards whose module documentation confirms this flash layout |
+| `esp32-s3-n16r8` | ESP32-S3; 16 MiB flash; 8 MiB Octal PSRAM; lean board-neutral payload | `ESP32-S3` | v0.4.2 hardware-tested beta; browser install/recovery passed; qualification pending. Current v0.6.0 source requires independent exact-byte qualification. | N16R8-class modules only; no bundled TFT driver or splash |
+| `waveshare-esp32-s3-lcd-147b` | Exact Waveshare ESP32-S3-LCD-1.47B; 16 MiB flash; 8 MiB Octal PSRAM | `ESP32-S3` | Current v0.6.0 source only; independent exact-board qualification required before publication | B-version board only, if qualified; exact-image contract bundles the ST7789 runtime and fresh-install QR splash |
 | `esp32-c3-4mb` | ESP32-C3 revision v0.3 or newer; 4 MiB addressable flash; no PSRAM assumed | `ESP32-C3` | Engineering contract frozen; every result pending | No public installer compatibility claim yet |
 
 The installer family check cannot establish flash capacity, PSRAM type, USB
@@ -68,9 +68,10 @@ immutable v0.4.2 machine-readable resource policy and HIL ledger contain
 exactly the first two profile IDs and no C3 thresholds or record. The
 [supplemental production-browser attestation](../validation/browser-flashing/v0.4.2-production.md)
 records the two completed browser rows; the ledger's other formal rows remain
-pending. A v0.5.1 candidate policy and HIL report MUST instead be generated as
-one fresh three-profile set containing the first three profile IDs; the
-pre-split/two-profile evidence cannot qualify it. C3 continues to build and
+pending. The unfinished v0.5.1 candidate policy/HIL work is historical and
+cannot qualify the source-selected v0.6.0 tree. A future release candidate MUST
+generate one fresh profile set for every profile it includes; pre-split or
+earlier-candidate evidence cannot qualify it. C3 continues to build and
 participate in source/reproducibility/license audits, but its real-board
 resource qualification remains required before C3 enablement and before v1.0.
 

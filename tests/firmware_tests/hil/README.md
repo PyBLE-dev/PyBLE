@@ -139,9 +139,9 @@ and exact pin map; the generic S3 image must remain free of all of them.
 Baseline output is deliberately one **profile fragment**, not a release
 approval. The immutable `v0.4.2` evidence remains frozen as its historical
 two-profile envelope and must not be broadened or reinterpreted. For the
-prospective `v0.5.1` source candidate, one fragment is not a substitute for the
-required fresh three-profile envelope. Retain all three successful
-current-source fragments, then assemble the envelope and policy without
+source-selected `v0.6.0` tree, one fragment is not a substitute for a fresh
+profile envelope. Retain every successful current-source fragment required by
+the prospective release, then assemble the envelope and policy without
 hand-editing JSON:
 
 ```sh
@@ -161,7 +161,7 @@ canonical commit-scoped evidence file, and atomically updates
 `firmware/qualification/oi1-gates.json` with mechanically derived thresholds.
 Review and commit both generated files together. The individual bench command
 also prints its derived thresholds for review; neither fragment nor assembled
-baseline is release approval, and neither claims that `v0.5.1` has completed
+baseline is release approval, and neither claims that `v0.6.0` has completed
 exact-byte HIL qualification or is ready for publication.
 
 After that policy exists, run the exact final candidate in verify mode:

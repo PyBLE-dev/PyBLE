@@ -1383,10 +1383,12 @@ These are tracked, release-blocking where noted; they MUST be closed before the 
   [§17.1](../prd.md), [`versions.lock`](../../../firmware/versions.lock)).
   That historical selection and the supplemental browser run were not complete
   hardware approval. Before current release builds and HIL, the exact committed
-  lock bytes MUST be deliberately selected again as candidate-frozen immutable
-  inputs for the v0.5.1 source candidate. That selection is still not hardware
-  approval: the exact candidate MUST pass HIL on every one of the three profiles
-  in §5.3. C3 remains mandatory before C3 enablement and before v1.0. A pin
+  lock bytes are now source-selected with agent version v0.6.0. Before any
+  release build or HIL, that exact committed state MUST be deliberately frozen
+  as the candidate input. Selection is still not hardware approval: the exact
+  candidate MUST pass HIL on every included profile in §5.3. Earlier v0.5.1
+  candidate evidence cannot qualify v0.6.0. C3 remains mandatory before C3
+  enablement and before v1.0. A pin
   change creates a new candidate and resets all candidate-bound evidence. —
   *(verify: build, HIL)*
 - **OI-3 — Frozen → native split point TBD.** The agent starts frozen-Python; the decision of which hot paths (BLE I/O, framing, file chunking) move to a native `USER_C_MODULE`, and on which chip the budget forces it, is open and determined by HIL footprint/throughput measurement ([firmware.md §2](../firmware.md#2-agent-base-native-vs-frozen), [PRD §10.2](../prd.md)). The PBLE/1 wire contract MUST NOT change across the move (NFR-MAINT-3). — *(verify: size, conformance, HIL)*

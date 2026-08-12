@@ -92,19 +92,22 @@ exact v0.4.2 bundle is offered as a hardware-tested beta for `esp32-4mb`
 (classic ESP32, 4 MiB flash) and `esp32-s3-n16r8` (ESP32-S3, 16 MiB flash plus
 8 MiB Octal PSRAM). On both exact profiles, browser installation and
 interrupted-flash recovery passed; complete release qualification remains
-pending. The v0.5.1 source candidate set is exactly `esp32-4mb`,
+pending. The earlier v0.5.1 source candidate set was exactly `esp32-4mb`,
 `esp32-s3-n16r8` (lean ESP32-S3, 16 MiB flash plus 8 MiB Octal PSRAM), and
 `waveshare-esp32-s3-lcd-147b` (the exact B-version board with the same memory
-topology plus its display stack). That source contract does not authorize new
-public bytes or selector activation: fresh reproducible builds, license audit,
-and final-candidate HIL remain required independently for all three profiles.
+topology plus its display stack). The current source-selected version is
+v0.6.0 and retains those prospective public profiles while adding C3 and RP2
+engineering source. Neither source contract authorizes new public bytes or
+selector activation: fresh reproducible builds, license audit, and
+final-candidate HIL remain required independently for every profile included
+in a later release.
 `esp32-c3-4mb` remains a known initial v1 profile but is unavailable and has no
 public image until exact-profile real-hardware validation is complete. Its
 ESP32-C3-MINI-1-N4 v0.4/4 MiB/no-PSRAM engineering reference and still-pending
 identity, behavior, resource, dual-app, and reference-carrier peripheral gates
 are frozen separately in
 [firmware/ports/esp32-c3-4mb.md](firmware/ports/esp32-c3-4mb.md); this adds no
-build variant or board-routing profile. ESP Web
+public image or app-side board-routing profile. ESP Web
 Tools detects the chip family but cannot by that fact alone prove the required
 flash/PSRAM topology or distinguish the two S3 images. The full compatibility,
 artifact, historical public-beta, and candidate-gate contracts are frozen in
@@ -198,6 +201,12 @@ contract, and HIL matrix live in
   from public release metadata and the web installer until GP2, while every
   publishable ESP or RP2 artifact still requires fresh version-bound build,
   provenance, resource, recovery, and HIL evidence.
+- `firmware/versions.lock` is the sole selected agent-version source for every
+  maintained target. Release builds generate both native and frozen-Python
+  identity from that value. Live/current-source HIL runners MUST derive their
+  expected version from the same lock, never hard-code an earlier candidate;
+  reusable evidence validators MUST receive the expected candidate version
+  explicitly.
 
 ## 7. Footprint budget (provisional, per target)
 
@@ -205,16 +214,17 @@ The measurement method is frozen in
 [firmware/specs.md §5.3](firmware/specs.md#53-footprint-gates-nfr-fp);
 the v0.4.2 two-profile policy and evidence remain immutable history. The
 exact-board split invalidates any pre-split v0.5 baseline for current-source
-qualification, so the v0.5.1 source candidate requires the controlled
-three-profile refresh defined there. No current-source numeric qualification is
+qualification. The unfinished v0.5.1 candidate evidence cannot qualify the
+source-selected v0.6.0 tree, which requires a fresh controlled profile refresh
+defined there. No current-source numeric qualification is
 claimed until the retained baseline, policy, and final-candidate records exist.
 The scope is profile-specific:
 
 | Profile | Current numeric status | Release effect |
 |---|---|---|
-| `esp32-4mb` | v0.4.2 browser install/recovery passed; refresh the current-source baseline and verify the final candidate | Required before v0.5.1 candidate qualification and installer activation |
-| `esp32-s3-n16r8` | v0.4.2 browser install/recovery passed; measure the lean N16R8 bytes/runtime independently, derive thresholds, then verify the final candidate | Required before v0.5.1 candidate qualification and installer activation |
-| `waveshare-esp32-s3-lcd-147b` | No public exact-byte qualification; measure the exact-board bytes/runtime independently, derive thresholds, then verify the final candidate and display gate | Required before v0.5.1 candidate qualification and installer activation |
+| `esp32-4mb` | v0.4.2 browser install/recovery passed; refresh the current-source baseline and verify the final candidate | Required before any v0.6.0-derived candidate qualification and installer activation |
+| `esp32-s3-n16r8` | v0.4.2 browser install/recovery passed; measure the lean N16R8 bytes/runtime independently, derive thresholds, then verify the final candidate | Required before any v0.6.0-derived candidate qualification and installer activation |
+| `waveshare-esp32-s3-lcd-147b` | No public exact-byte qualification; measure the exact-board bytes/runtime independently, derive thresholds, then verify the final candidate and display gate | Required before any v0.6.0-derived candidate qualification and installer activation |
 | `esp32-c3-4mb` | Engineering contract frozen; all observations, threshold, and HIL rows pending ([derived contract](firmware/ports/esp32-c3-4mb.md)) | Blocks C3 enablement and v1.0, but not qualification of the three-profile candidate |
 
 The enforced metrics are:
