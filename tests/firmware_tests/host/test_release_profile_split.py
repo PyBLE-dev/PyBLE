@@ -23,7 +23,7 @@ WAVESHARE_GATE_PATH = (
     FIRMWARE_DIR / "qualification" / "waveshare_lcd147b_release_gate.py"
 )
 EXACT_PROFILE = "waveshare-esp32-s3-lcd-147b"
-CURRENT_PROFILES = (
+PROSPECTIVE_V051_PROFILES = (
     "esp32-4mb",
     "esp32-s3-n16r8",
     EXACT_PROFILE,
@@ -73,6 +73,33 @@ def _synthetic_policy(
     }
 
 
+def _synthetic_v051_qualification_policy() -> dict:
+    """Return policy-shaped data for admission tests, never release evidence."""
+
+    return {
+        "schema_version": 2,
+        "qualification_scope": "pre-v1",
+        "profile_order": list(PROSPECTIVE_V051_PROFILES),
+        "deferred_profiles": ["esp32-c3-4mb"],
+        "workload": dict(RELEASE.QUALIFICATION_WORKLOAD),
+        "derivation": dict(RELEASE.QUALIFICATION_DERIVATION_V3),
+        "baseline_evidence": {
+            "path": "docs/validation/firmware/oi1/{}.json".format("5" * 40),
+            "sha256": "6" * 64,
+        },
+        "profiles": [
+            {
+                "profile_id": profile_id,
+                "target": RELEASE.PROFILE_SPECS[profile_id]["target"],
+                "thresholds": {
+                    key: 1 for key in RELEASE.QUALIFICATION_THRESHOLD_KEYS
+                },
+            }
+            for profile_id in PROSPECTIVE_V051_PROFILES
+        ],
+    }
+
+
 def _candidate_hil_payload(
     version: str,
     profile_ids: tuple[str, ...],
@@ -105,9 +132,12 @@ def _candidate_hil_payload(
     return int(match.group(1)), json.loads(match.group(2))
 
 
-class CurrentReleaseMatrixTests(unittest.TestCase):
-    def test_current_public_order_and_build_variant_are_exact(self):
-        self.assertEqual(RELEASE.RELEASE_PROFILE_ORDER, CURRENT_PROFILES)
+class ProspectiveV051ReleaseMatrixTests(unittest.TestCase):
+    def test_prospective_order_and_build_variant_are_exact(self):
+        self.assertEqual(
+            RELEASE.RELEASE_PROFILE_ORDER,
+            PROSPECTIVE_V051_PROFILES,
+        )
         exact = RELEASE.PROFILE_SPECS[EXACT_PROFILE]
         self.assertEqual(exact["target"], EXACT_PROFILE)
         self.assertEqual(exact["idf_target"], "esp32s3")
@@ -124,15 +154,15 @@ class CurrentReleaseMatrixTests(unittest.TestCase):
             EXACT_PROFILE,
         )
 
-    def test_release_schema_is_v3_with_exactly_three_profiles(self):
-        schema = RELEASE._release_schema()
+    def test_v051_release_schema_is_v3_with_exactly_three_profiles(self):
+        schema = RELEASE._release_schema("0.5.1")
         self.assertEqual(schema["properties"]["schema_version"], {"const": 3})
         profiles = schema["properties"]["profiles"]
         self.assertEqual(profiles["minItems"], 3)
         self.assertEqual(profiles["maxItems"], 3)
         self.assertEqual(
             profiles["items"]["properties"]["id"]["enum"],
-            list(CURRENT_PROFILES),
+            list(PROSPECTIVE_V051_PROFILES),
         )
 
     def test_four_build_variants_create_eight_license_roles(self):
@@ -183,8 +213,8 @@ class HistoricalReplayTests(unittest.TestCase):
             HISTORICAL_V042_PROFILES,
         )
         self.assertEqual(
-            RELEASE._release_profile_order_for_version("0.5.0"),
-            CURRENT_PROFILES,
+            RELEASE._release_profile_order_for_version("0.5.1"),
+            PROSPECTIVE_V051_PROFILES,
         )
 
     def test_release_and_hil_schema_versions_are_source_era_bound(self):
@@ -192,35 +222,73 @@ class HistoricalReplayTests(unittest.TestCase):
             RELEASE._release_metadata_schema_version_for_version("0.4.2"), 2
         )
         self.assertEqual(
-            RELEASE._release_metadata_schema_version_for_version("0.5.0"), 3
+            RELEASE._release_metadata_schema_version_for_version("0.5.1"), 3
         )
         self.assertEqual(RELEASE._hil_schema_version_for_version("0.4.2"), 2)
-        self.assertEqual(RELEASE._hil_schema_version_for_version("0.5.0"), 4)
+        self.assertEqual(RELEASE._hil_schema_version_for_version("0.5.1"), 4)
 
 
-class CurrentQualificationMatrixRedTests(unittest.TestCase):
-    def test_current_oi_policy_is_schema_2_in_exact_release_order(self):
+class CheckedInHistoricalV042QualificationPolicyTests(unittest.TestCase):
+    def test_checked_in_policy_is_retained_schema_1_in_v042_order(self):
         policy = json.loads(
             QUALIFICATION_POLICY_PATH.read_text(encoding="utf-8")
         )
-        self.assertEqual(policy["schema_version"], 2)
-        self.assertEqual(policy["profile_order"], list(CURRENT_PROFILES))
+        self.assertEqual(policy["schema_version"], 1)
+        self.assertEqual(
+            policy["profile_order"],
+            list(HISTORICAL_V042_PROFILES),
+        )
         self.assertEqual(
             [entry["profile_id"] for entry in policy["profiles"]],
-            list(CURRENT_PROFILES),
+            list(HISTORICAL_V042_PROFILES),
         )
         self.assertIs(
             RELEASE._validate_qualification_policy(
                 policy,
-                firmware_version="0.5.0",
+                firmware_version="0.4.2",
             ),
             policy,
         )
 
-    def test_current_oi_policy_measures_both_s3_logical_builds(self):
+    def test_checked_in_policy_does_not_claim_waveshare_qualification(self):
         policy = json.loads(
             QUALIFICATION_POLICY_PATH.read_text(encoding="utf-8")
         )
+        targets = {
+            entry["profile_id"]: entry["target"]
+            for entry in policy["profiles"]
+        }
+        self.assertEqual(
+            targets,
+            {
+                "esp32-4mb": "esp32",
+                "esp32-s3-n16r8": "esp32-s3",
+            },
+        )
+        self.assertNotIn(EXACT_PROFILE, targets)
+
+
+class ProspectiveV051AdmissionTests(unittest.TestCase):
+    def test_synthetic_schema_2_policy_admits_exact_release_order(self):
+        policy = _synthetic_v051_qualification_policy()
+        self.assertIs(
+            RELEASE._validate_qualification_policy(
+                policy,
+                firmware_version="0.5.1",
+            ),
+            policy,
+        )
+        with self.assertRaisesRegex(
+            RELEASE.ReleaseError,
+            "schema_version does not match the source era",
+        ):
+            RELEASE._validate_qualification_policy(
+                policy,
+                firmware_version="0.4.2",
+            )
+
+    def test_synthetic_policy_separates_both_s3_logical_builds(self):
+        policy = _synthetic_v051_qualification_policy()
         targets = {
             entry["profile_id"]: entry["target"]
             for entry in policy["profiles"]
@@ -242,17 +310,17 @@ class CurrentQualificationMatrixRedTests(unittest.TestCase):
             targets[EXACT_PROFILE],
         )
 
-    def test_v050_candidate_hil_is_v4_with_three_independent_records(self):
+    def test_v051_candidate_hil_is_v4_with_three_independent_records(self):
         marker_version, payload = _candidate_hil_payload(
-            "0.5.0",
-            CURRENT_PROFILES,
+            "0.5.1",
+            PROSPECTIVE_V051_PROFILES,
             policy_schema_version=2,
         )
         self.assertEqual(marker_version, 4)
         self.assertEqual(payload["schema_version"], 4)
         self.assertEqual(
             [record["profile_id"] for record in payload["records"]],
-            list(CURRENT_PROFILES),
+            list(PROSPECTIVE_V051_PROFILES),
         )
         exact_records = [
             record
@@ -272,12 +340,12 @@ class CurrentQualificationMatrixRedTests(unittest.TestCase):
             "candidate_release_json_sha256": "",
             "qualification_policy_sha256": "4" * 64,
             "qualification_policy": _synthetic_policy(
-                CURRENT_PROFILES,
+                PROSPECTIVE_V051_PROFILES,
                 schema_version=2,
             ),
             "records": [
                 {"profile_id": profile_id}
-                for profile_id in CURRENT_PROFILES
+                for profile_id in PROSPECTIVE_V051_PROFILES
             ],
             "waveshare_lcd147b_qualification": None,
         }
@@ -296,7 +364,7 @@ class CurrentQualificationMatrixRedTests(unittest.TestCase):
             parsed = RELEASE._parse_hil_report(report)
         self.assertEqual(parsed, payload)
         self.assertIs(
-            RELEASE._validate_hil_source_era(parsed, "0.5.0"),
+            RELEASE._validate_hil_source_era(parsed, "0.5.1"),
             parsed,
         )
 

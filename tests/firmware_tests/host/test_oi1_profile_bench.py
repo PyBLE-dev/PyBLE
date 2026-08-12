@@ -35,6 +35,10 @@ PROFILE_ORDER = (
     "esp32-s3-n16r8",
     "waveshare-esp32-s3-lcd-147b",
 )
+HISTORICAL_V042_PROFILE_ORDER = (
+    "esp32-4mb",
+    "esp32-s3-n16r8",
+)
 PROFILE_TARGETS = {
     "esp32-4mb": "esp32",
     "esp32-s3-n16r8": "esp32-s3",
@@ -236,7 +240,7 @@ def _valid_observation(profile_id):
 
 
 class FrozenConstantsTest(unittest.TestCase):
-    def test_exact_current_profiles_and_workload_are_frozen(self):
+    def test_exact_v051_candidate_profiles_and_workload_are_frozen(self):
         self.assertEqual(tuple(bench.PROFILE_ORDER), PROFILE_ORDER)
         self.assertEqual(
             bench.PROFILE_TARGETS,
@@ -273,57 +277,92 @@ class FrozenConstantsTest(unittest.TestCase):
             },
         )
 
-    def test_committed_policy_has_schema2_three_profile_identity_structure(self):
-        policy = json.loads(
-            (
-                REPO_ROOT / "firmware" / "qualification" / "oi1-gates.json"
-            ).read_text(encoding="utf-8")
+    def test_committed_v042_policy_remains_immutable_two_profile_evidence(self):
+        policy_path = (
+            REPO_ROOT / "firmware" / "qualification" / "oi1-gates.json"
         )
-        self.assertEqual(policy["schema_version"], 2)
-        self.assertEqual(policy["profile_order"], list(PROFILE_ORDER))
-        self.assertEqual(policy["derivation"], bench.DERIVATION)
+        payload = policy_path.read_bytes()
+        policy = json.loads(payload.decode("utf-8"))
+
+        self.assertEqual(
+            hashlib.sha256(payload).hexdigest(),
+            "635c484501bc0b81806f9f582de4b482d30283a72f5f95eb0b892652f7575629",
+        )
+        self.assertEqual(policy["schema_version"], 1)
+        self.assertEqual(
+            policy["profile_order"],
+            list(HISTORICAL_V042_PROFILE_ORDER),
+        )
         self.assertEqual(
             [entry["profile_id"] for entry in policy["profiles"]],
-            list(PROFILE_ORDER),
+            list(HISTORICAL_V042_PROFILE_ORDER),
         )
         self.assertEqual(
             {
                 entry["profile_id"]: entry["target"]
                 for entry in policy["profiles"]
             },
-            POLICY_TARGETS,
+            {
+                "esp32-4mb": "esp32",
+                "esp32-s3-n16r8": "esp32-s3",
+            },
         )
         self.assertEqual(
+            policy["baseline_evidence"],
             {
-                entry["profile_id"]: entry["thresholds"]
-                for entry in policy["profiles"]
-                if entry["profile_id"] != "waveshare-esp32-s3-lcd-147b"
-            },
-            {
-                "esp32-4mb": {
-                    "application_headroom_min_bytes": 331424,
-                    "application_image_max_bytes": 1700192,
-                    "gc_free_min_bytes": 135168,
-                    "get_verified_goodput_min_bytes_per_second": 12900,
-                    "idf_internal_free_min_bytes": 86016,
-                    "idf_internal_largest_block_min_bytes": 81920,
-                    "idf_internal_minimum_free_min_bytes": 86016,
-                    "put_committed_goodput_min_bytes_per_second": 6900,
-                    "reset_to_service_advertisement_max_ms": 3000,
-                },
-                "esp32-s3-n16r8": {
-                    "application_headroom_min_bytes": 397184,
-                    "application_image_max_bytes": 1699968,
-                    "gc_free_min_bytes": 8318976,
-                    "get_verified_goodput_min_bytes_per_second": 13600,
-                    "idf_internal_free_min_bytes": 181248,
-                    "idf_internal_largest_block_min_bytes": 106496,
-                    "idf_internal_minimum_free_min_bytes": 181248,
-                    "put_committed_goodput_min_bytes_per_second": 6800,
-                    "reset_to_service_advertisement_max_ms": 3000,
-                },
+                "path": (
+                    "docs/validation/firmware/oi1/"
+                    "2f38c43838b0f8cfbd10fab8e6561ae523927968.json"
+                ),
+                "sha256": (
+                    "deee0f1630c781ee38a9887a5df5388f2d1ec8879fdb8570"
+                    "886555bf5f4f8be5"
+                ),
             },
         )
+
+    def test_v051_three_profile_policy_contract_uses_synthetic_evidence(self):
+        synthetic_thresholds = {
+            profile_id: {
+                key: profile_index * 100 + key_index
+                for key_index, key in enumerate(sorted(THRESHOLD_KEYS), start=1)
+            }
+            for profile_index, profile_id in enumerate(PROFILE_ORDER, start=1)
+        }
+        policy = {
+            "schema_version": 2,
+            "qualification_scope": "pre-v1",
+            "profile_order": list(PROFILE_ORDER),
+            "deferred_profiles": ["esp32-c3-4mb"],
+            "workload": bench.WORKLOAD,
+            "derivation": bench.DERIVATION,
+            "baseline_evidence": {
+                "path": "synthetic-v0.5.1-evidence.json",
+                "sha256": "0" * 64,
+            },
+            "profiles": [
+                {
+                    "profile_id": profile_id,
+                    "target": POLICY_TARGETS[profile_id],
+                    "thresholds": synthetic_thresholds[profile_id],
+                }
+                for profile_id in PROFILE_ORDER
+            ],
+        }
+
+        with tempfile.TemporaryDirectory() as temporary:
+            policy_path = Path(temporary) / "oi1-gates-v0.5.1-synthetic.json"
+            policy_path.write_bytes(bench.canonical_json_bytes(policy))
+            for profile_id in PROFILE_ORDER:
+                with self.subTest(profile_id=profile_id):
+                    self.assertEqual(
+                        profile_bench._load_policy_thresholds(
+                            policy_path,
+                            profile_id,
+                        ),
+                        synthetic_thresholds[profile_id],
+                    )
+
         for entry in policy["profiles"]:
             with self.subTest(profile_id=entry["profile_id"]):
                 thresholds = entry["thresholds"]

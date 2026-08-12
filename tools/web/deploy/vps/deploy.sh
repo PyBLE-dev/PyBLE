@@ -824,6 +824,7 @@ find "${incoming_release}" -type f -exec chmod 0644 {} +
 for required_file in \
     index.html \
     404.html \
+    app.html \
     privacy.html \
     support.html \
     flash.html \
@@ -1115,9 +1116,10 @@ cleanup_smoke() {
 }
 trap cleanup_smoke EXIT
 
-for route in / /privacy /support /flash; do
+for route in / /app /privacy /support /flash; do
     case "${route}" in
         /) route_file=index.html ;;
+        /app) route_file=app.html ;;
         /privacy) route_file=privacy.html ;;
         /support) route_file=support.html ;;
         /flash) route_file=flash.html ;;

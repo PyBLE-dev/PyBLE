@@ -27,6 +27,7 @@ try:
     import pble_ble
 
     pble_ble.init_agent()
+
     # S4 (VM-thread model): run user code on a _thread WORKER so the main task
     # keeps the REPL + banner. Launched once, after the agent is up.
     import _thread

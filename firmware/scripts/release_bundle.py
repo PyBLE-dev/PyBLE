@@ -23,6 +23,7 @@ import ctypes
 from email.parser import BytesParser
 import errno
 import hashlib
+import importlib.util
 import io
 import json
 import os
@@ -43,13 +44,42 @@ from urllib.parse import urlsplit
 import zipfile
 
 
+def _load_waveshare_lcd147b_gate() -> Any:
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "qualification"
+        / "waveshare_lcd147b_release_gate.py"
+    ).resolve(strict=True)
+    spec = importlib.util.spec_from_file_location(
+        "_pyble_release_waveshare_lcd147b_gate",
+        source,
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError("cannot load the LCD qualification validator")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_WAVESHARE_LCD147B_GATE = _load_waveshare_lcd147b_gate()
+
+
 class ReleaseError(RuntimeError):
     """A fail-closed release-contract violation."""
 
 
-RELEASE_PROFILE_ORDER = ("esp32-4mb", "esp32-s3-n16r8")
+HISTORICAL_V042_RELEASE_PROFILE_ORDER = ("esp32-4mb", "esp32-s3-n16r8")
+RELEASE_PROFILE_ORDER = (
+    "esp32-4mb",
+    "esp32-s3-n16r8",
+    "waveshare-esp32-s3-lcd-147b",
+)
 QUALIFICATION_POLICY_RELATIVE = "firmware/qualification/oi1-gates.json"
 QUALIFICATION_BASELINE_RE = re.compile(
+    r"^docs/validation/firmware/oi1/"
+    r"([0-9a-f]{40})\.json$"
+)
+QUALIFICATION_V042_BASELINE_RE = re.compile(
     r"^docs/validation/firmware/oi1/"
     r"([0-9a-f]{40})\.json$"
 )
@@ -69,13 +99,28 @@ QUALIFICATION_WORKLOAD = {
     "required_put_window": 8,
     "required_chunk_bytes": 229,
 }
-QUALIFICATION_DERIVATION = {
+QUALIFICATION_DERIVATION_V1 = {
     "application_image": "exact-byte-identical-two-root-v1",
     "application_headroom": "factory-minus-application-v1",
     "heap_floor": "floor-min-1024-v1",
     "boot_ceiling": "ceil-max-10-v1",
     "goodput_floor": "floor-min-100-v1",
 }
+QUALIFICATION_DERIVATION_V2 = {
+    "application_image": "exact-byte-identical-two-root-v1",
+    "application_headroom": "factory-minus-application-v1",
+    "heap_floor": "floor-min-1024-v1",
+    "boot_ceiling": "ceil-max-plus-300-10-v2",
+    "goodput_floor": "floor-95pct-min-100-v2",
+}
+QUALIFICATION_DERIVATION_V3 = {
+    "application_image": "exact-byte-identical-two-root-v1",
+    "application_headroom": "factory-minus-application-v1",
+    "heap_floor": "floor-min-1024-v1",
+    "boot_ceiling": "fixed-product-slo-3000-v3",
+    "goodput_floor": "floor-95pct-min-100-v2",
+}
+QUALIFICATION_DERIVATION = QUALIFICATION_DERIVATION_V3
 QUALIFICATION_THRESHOLD_KEYS = (
     "application_image_max_bytes",
     "application_headroom_min_bytes",
@@ -125,6 +170,25 @@ PROFILE_SPECS = {
     },
     "esp32-s3-n16r8": {
         "target": "esp32-s3",
+        "idf_target": "esp32s3",
+        "chip_family": "ESP32-S3",
+        "chip_id": 9,
+        "flash_size": "16MB",
+        "flash_size_bytes": 16 * 1024 * 1024,
+        "flash_freq": "80m",
+        "frequency_hz": 80_000_000,
+        "header_size_freq": 0x4F,
+        "base_offset": 0,
+        "component_offsets": (0, 0x8000, 0x10000),
+        "silicon_revision": {"minimum_full": 0, "maximum_full": 99},
+        "psram": {
+            "required": True,
+            "size_bytes": 8 * 1024 * 1024,
+            "type": "octal",
+        },
+    },
+    "waveshare-esp32-s3-lcd-147b": {
+        "target": "waveshare-esp32-s3-lcd-147b",
         "idf_target": "esp32s3",
         "chip_family": "ESP32-S3",
         "chip_id": 9,
@@ -265,6 +329,9 @@ PARTITION_LAYOUTS = {
         },
     ),
 }
+PARTITION_LAYOUTS["waveshare-esp32-s3-lcd-147b"] = copy.deepcopy(
+    PARTITION_LAYOUTS["esp32-s3"]
+)
 
 _SEMVER_NUMERIC = r"(?:0|[1-9][0-9]*)"
 _SEMVER_PRERELEASE = r"(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)"
@@ -285,10 +352,17 @@ COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 UTC_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 HIL_MARKER_RE = re.compile(
-    r"<!--\s*PYBLE_HIL_RECORDS_V2\s*(\{.*?\})\s*-->",
+    r"<!--\s*PYBLE_HIL_RECORDS_V([234])\s*(\{.*?\})\s*-->",
     re.DOTALL,
 )
 HIL_ANY_MARKER_RE = re.compile(r"<!--\s*PYBLE_HIL_RECORDS_V[0-9]+\b")
+HIL_REPORT_SHELL_PREFIX = (
+    "# PyBLE firmware HIL report\n\n"
+    "This access-controlled candidate is pending real-board browser install "
+    "and interrupted-flash recovery on every exact profile. Fill every "
+    "record without changing firmware or manifest bytes.\n\n"
+)
+HIL_REPORT_SHELL_SUFFIX = "\n"
 PLACEHOLDER_RE = re.compile(
     r"^(?:unknown|placeholder|todo|tbd|n/?a|none)$", re.IGNORECASE
 )
@@ -577,9 +651,11 @@ def _micropython_generated_path_is_allowed(relative: str) -> bool:
     prefixes = (
         "ports/esp32/boards/PYBLE_ESP32/",
         "ports/esp32/boards/PYBLE_ESP32_S3/",
+        "ports/esp32/boards/PYBLE_WAVESHARE_ESP32_S3_LCD_147B/",
         "ports/esp32/boards/PYBLE_ESP32_C3/",
         "ports/esp32/build-PYBLE_ESP32/",
         "ports/esp32/build-PYBLE_ESP32_S3/",
+        "ports/esp32/build-PYBLE_WAVESHARE_ESP32_S3_LCD_147B/",
         "ports/esp32/build-PYBLE_ESP32_C3/",
         "mpy-cross/build/",
     )
@@ -1293,7 +1369,7 @@ def validate_build(
         re.search(r"(?m)^CONFIG_APP_REPRODUCIBLE_BUILD=y$", sdkconfig) is not None,
         "%s build did not enable ESP-IDF reproducibility" % target,
     )
-    if target in ("esp32-s3", "esp32-c3"):
+    if spec["idf_target"] in ("esp32s3", "esp32c3"):
         _require(
             re.search(r"(?m)^CONFIG_XTAL_FREQ_AUTO=y$", sdkconfig) is None,
             "%s build resolved automatic crystal selection" % target,
@@ -1742,6 +1818,11 @@ def generate_third_party_licenses(build_root: Path, repo_root: Path) -> str:
 LICENSE_AUDIT_PROFILES = (
     ("esp32-4mb", "esp32", "esp32"),
     ("esp32-s3-n16r8", "esp32-s3", "esp32s3"),
+    (
+        "waveshare-esp32-s3-lcd-147b",
+        "waveshare-esp32-s3-lcd-147b",
+        "esp32s3",
+    ),
     ("esp32-c3-4mb", "esp32-c3", "esp32c3"),
 )
 LICENSE_AUDIT_ROLES = ("application", "bootloader")
@@ -1754,9 +1835,30 @@ FROZEN_TARGET_SETTINGS = {
         "board": "PYBLE_ESP32_S3",
         "architecture": "xtensawin",
     },
+    "waveshare-esp32-s3-lcd-147b": {
+        "board": "PYBLE_WAVESHARE_ESP32_S3_LCD_147B",
+        "architecture": "xtensawin",
+    },
     "esp32-c3": {
         "board": "PYBLE_ESP32_C3",
         "architecture": "rv32imc",
+    },
+}
+_AUDIT_FIRST_PARTY_FROZEN_SOURCES = {
+    "pyble_waveshare_lcd147b.py": {
+        "target": "waveshare-esp32-s3-lcd-147b",
+        "introduced_version": "0.5.0",
+        "canonical_path": (
+            "firmware/board_overlays/waveshare-esp32-s3-lcd-147b/"
+            "pyble_waveshare_lcd147b.py"
+        ),
+        "spdx_expression": "MIT",
+    },
+    "pyble_st7789.py": {
+        "target": "waveshare-esp32-s3-lcd-147b",
+        "introduced_version": "0.5.0",
+        "canonical_path": "firmware/python_modules/pyble_st7789.py",
+        "spdx_expression": "MIT",
     },
 }
 LICENSE_AUDIT_KNOWN_SPDX = COMPATIBLE_SPDX | {
@@ -3555,6 +3657,10 @@ def _audit_v2_manifest_evidence(
 ) -> list[dict[str, Any]]:
     """Validate canonical literal-manifest evidence derived by the collector."""
 
+    firmware_version = _read_lock(Path(repo_root))["pyble"]["agent_version"]
+    includes_first_party_field = bool(
+        _audit_first_party_frozen_sources_for_version(firmware_version)
+    )
     _require(
         isinstance(raw_evidence, list) and bool(raw_evidence),
         "literal manifest evidence must be nonempty",
@@ -3565,21 +3671,24 @@ def _audit_v2_manifest_evidence(
     normalized: list[dict[str, Any]] = []
     seen_targets: set[str] = set()
     for raw_record in raw_evidence:
+        expected_fields = {
+            "target",
+            "architecture",
+            "frozen_content_sha256",
+            "qstrdefs_sha256",
+            "mpy_cross",
+            "generator_tools",
+            "frozen_mpy",
+            "linked_frozen_object",
+            "generated_board_manifest",
+            "manifests",
+            "selections",
+        }
+        if includes_first_party_field:
+            expected_fields.add("first_party_frozen_sources")
         record = _exact_keys(
             raw_record,
-            {
-                "target",
-                "architecture",
-                "frozen_content_sha256",
-                "qstrdefs_sha256",
-                "mpy_cross",
-                "generator_tools",
-                "frozen_mpy",
-                "linked_frozen_object",
-                "generated_board_manifest",
-                "manifests",
-                "selections",
-            },
+            expected_fields,
             "literal manifest evidence record",
         )
         target = record["target"]
@@ -3820,6 +3929,35 @@ def _audit_v2_manifest_evidence(
             == sorted(selections, key=lambda item: item["destination"]),
             "%s frozen source selections are not canonically ordered" % target,
         )
+        first_party_frozen_sources = (
+            _audit_first_party_frozen_source_evidence(
+                repo_root=repo_root,
+                target=target,
+                board_dir=(
+                    Path(repo_root)
+                    / "firmware"
+                    / "upstream"
+                    / "micropython"
+                    / "ports"
+                    / "esp32"
+                    / "boards"
+                    / FROZEN_TARGET_SETTINGS[target]["board"]
+                ),
+                selections={
+                    selection["destination"]: (
+                        Path(repo_root) / selection["source_path"]
+                    )
+                    for selection in selections
+                },
+                firmware_version=firmware_version,
+            )
+        )
+        if includes_first_party_field:
+            _require(
+                record["first_party_frozen_sources"]
+                == first_party_frozen_sources,
+                "%s first-party frozen source evidence changed" % target,
+            )
 
         frozen_mpy_raw = record["frozen_mpy"]
         _require(
@@ -3894,29 +4032,32 @@ def _audit_v2_manifest_evidence(
             linked_raw["sha256"],
             "%s linked frozen object digest" % target,
         )
-        normalized.append(
-            {
-                "target": target,
-                "architecture": architecture,
-                "frozen_content_sha256": frozen_digest,
-                "qstrdefs_sha256": qstr_digest,
-                "mpy_cross": {
-                    "path": mpy_cross_path,
-                    "sha256": mpy_cross_digest,
-                },
-                "generator_tools": generators,
-                "frozen_mpy": frozen_mpy,
-                "linked_frozen_object": {
-                    "component": linked_component,
-                    "archive_path": linked_archive,
-                    "member": linked_member,
-                    "sha256": linked_digest,
-                },
-                "generated_board_manifest": generated_board_manifest,
-                "manifests": manifests,
-                "selections": selections,
-            }
-        )
+        normalized_record = {
+            "target": target,
+            "architecture": architecture,
+            "frozen_content_sha256": frozen_digest,
+            "qstrdefs_sha256": qstr_digest,
+            "mpy_cross": {
+                "path": mpy_cross_path,
+                "sha256": mpy_cross_digest,
+            },
+            "generator_tools": generators,
+            "frozen_mpy": frozen_mpy,
+            "linked_frozen_object": {
+                "component": linked_component,
+                "archive_path": linked_archive,
+                "member": linked_member,
+                "sha256": linked_digest,
+            },
+            "generated_board_manifest": generated_board_manifest,
+            "manifests": manifests,
+            "selections": selections,
+        }
+        if includes_first_party_field:
+            normalized_record["first_party_frozen_sources"] = (
+                first_party_frozen_sources
+            )
+        normalized.append(normalized_record)
     _require(
         seen_targets == expected_targets,
         "literal manifest evidence does not cover the exact release targets",
@@ -8132,6 +8273,17 @@ def _audit_resolve_manifest_context(
                         and not source.exists()
                     ):
                         source = repo_root / "firmware" / destination
+                    elif (
+                        base_value == "$(BOARD_DIR)"
+                        and destination in _AUDIT_FIRST_PARTY_FROZEN_SOURCES
+                        and not source.exists()
+                    ):
+                        source = (
+                            repo_root
+                            / _AUDIT_FIRST_PARTY_FROZEN_SOURCES[destination][
+                                "canonical_path"
+                            ]
+                        )
                     add_selection(
                         destination,
                         source,
@@ -8399,6 +8551,196 @@ def _audit_rebuild_mpy_cross(
     return digest
 
 
+def _firmware_release_core(
+    value: str,
+    label: str,
+) -> tuple[int, int, int]:
+    """Return the SemVer release core used by source-introduction gates."""
+
+    _require(
+        isinstance(value, str) and SEMVER_RE.fullmatch(value) is not None,
+        "%s must be canonical SemVer" % label,
+    )
+    core = value.split("+", 1)[0].split("-", 1)[0]
+    major, minor, patch = core.split(".")
+    return int(major), int(minor), int(patch)
+
+
+def _release_profile_order_for_version(
+    firmware_version: str,
+) -> tuple[str, ...]:
+    """Return the immutable public profile order for one source era."""
+
+    core = _firmware_release_core(firmware_version, "firmware source version")
+    if core == (0, 4, 2):
+        return HISTORICAL_V042_RELEASE_PROFILE_ORDER
+    return RELEASE_PROFILE_ORDER
+
+
+def _release_metadata_schema_version_for_version(firmware_version: str) -> int:
+    """Keep published v0.4.2 metadata exact; v0.5 uses the split schema."""
+
+    return 2 if _firmware_release_core(
+        firmware_version, "firmware source version"
+    ) == (0, 4, 2) else 3
+
+
+def _hil_schema_version_for_version(firmware_version: str) -> int:
+    """Select historical HIL V2 or current three-record HIL V4."""
+
+    return 2 if _firmware_release_core(
+        firmware_version, "firmware source version"
+    ) == (0, 4, 2) else 4
+
+
+def _qualification_policy_schema_version_for_version(
+    firmware_version: str,
+) -> int:
+    """Select the immutable OI-1 policy schema for one source era."""
+
+    return 1 if _firmware_release_core(
+        firmware_version, "firmware source version"
+    ) == (0, 4, 2) else 2
+
+
+def _waveshare_lcd147b_capable_version(firmware_version: str) -> bool:
+    """Return whether this source era ships the qualified LCD companion."""
+
+    return _firmware_release_core(
+        firmware_version,
+        "firmware source version",
+    ) >= (0, 5, 0)
+
+
+def _audit_first_party_frozen_sources_for_version(
+    firmware_version: str,
+) -> dict[str, dict[str, str]]:
+    """Select only first-party frozen sources shipped by this source era."""
+
+    selected = {}
+    version_core = _firmware_release_core(
+        firmware_version,
+        "firmware source version",
+    )
+    for destination, contract in _AUDIT_FIRST_PARTY_FROZEN_SOURCES.items():
+        introduced = contract["introduced_version"]
+        if version_core >= _firmware_release_core(
+            introduced,
+            "first-party frozen source introduction version",
+        ):
+            selected[destination] = contract
+    return selected
+
+
+def _audit_first_party_frozen_source_evidence(
+    *,
+    repo_root: Path,
+    target: str,
+    board_dir: Path,
+    selections: dict[str, Path],
+    firmware_version: str | None = None,
+) -> list[dict[str, str]]:
+    """Bind canonical PyBLE Python sources to their generated board copies."""
+
+    root = Path(repo_root).absolute()
+    source_version = (
+        firmware_version
+        if firmware_version is not None
+        else _read_lock(root)["pyble"]["agent_version"]
+    )
+    active_contracts = _audit_first_party_frozen_sources_for_version(
+        source_version
+    )
+    records: list[dict[str, str]] = []
+    for destination, contract in sorted(
+        _AUDIT_FIRST_PARTY_FROZEN_SOURCES.items()
+    ):
+        generated = Path(board_dir).absolute() / destination
+        if destination not in active_contracts:
+            _require(
+                destination not in selections,
+                "%s must not select unavailable first-party frozen source %s"
+                % (target, destination),
+            )
+            _require(
+                not generated.exists() and not generated.is_symlink(),
+                "%s contains an unavailable generated first-party source %s"
+                % (target, destination),
+            )
+            continue
+
+        canonical_relative = contract["canonical_path"]
+        canonical = _audit_repo_file(
+            root,
+            canonical_relative,
+            "first-party frozen source %s" % destination,
+        )
+        expected_target = contract["target"]
+        if target != expected_target:
+            _require(
+                destination not in selections,
+                "%s must not select first-party frozen source %s"
+                % (target, destination),
+            )
+            _require(
+                not generated.exists() and not generated.is_symlink(),
+                "%s contains a stray generated first-party source %s"
+                % (target, destination),
+            )
+            continue
+
+        _require(
+            destination in selections
+            and selections[destination].resolve() == canonical.resolve(),
+            "%s must select canonical first-party source %s"
+            % (target, destination),
+        )
+        try:
+            canonical_text = canonical.read_text(
+                encoding="utf-8",
+                errors="strict",
+            )
+        except (OSError, UnicodeError) as exc:
+            raise ReleaseError(
+                "first-party frozen source %s is not strict UTF-8"
+                % destination
+            ) from exc
+        expected_spdx = contract["spdx_expression"]
+        _require(
+            _spdx_from_text(canonical_text) == {expected_spdx},
+            "first-party frozen source %s must declare exactly SPDX %s"
+            % (destination, expected_spdx),
+        )
+        try:
+            generated_relative = generated.relative_to(root).as_posix()
+        except ValueError as exc:
+            raise ReleaseError(
+                "%s generated first-party source %s escapes the repository"
+                % (target, destination)
+            ) from exc
+        generated_source = _audit_repo_file(
+            root,
+            generated_relative,
+            "%s generated first-party source %s" % (target, destination),
+        )
+        canonical_bytes = canonical.read_bytes()
+        _require(
+            generated_source.read_bytes() == canonical_bytes,
+            "%s generated first-party source %s differs from canonical source"
+            % (target, destination),
+        )
+        records.append(
+            {
+                "destination": destination,
+                "canonical_path": canonical_relative,
+                "generated_path": generated_relative,
+                "sha256": _sha256_bytes(canonical_bytes),
+                "spdx_expression": expected_spdx,
+            }
+        )
+    return records
+
+
 def _audit_frozen_payload_proof(
     *,
     repo_root: Path,
@@ -8413,6 +8755,10 @@ def _audit_frozen_payload_proof(
     settings = FROZEN_TARGET_SETTINGS.get(target)
     _require(settings is not None, "frozen payload target is unsupported")
     root = Path(repo_root).absolute()
+    firmware_version = _read_lock(root)["pyble"]["agent_version"]
+    includes_first_party_field = bool(
+        _audit_first_party_frozen_sources_for_version(firmware_version)
+    )
     resolved_root = root.resolve()
     micropython = root / "firmware" / "upstream" / "micropython"
     port_dir = micropython / "ports" / "esp32"
@@ -8444,6 +8790,14 @@ def _audit_frozen_payload_proof(
     _require(
         copied_manifest.read_bytes() == reviewed_manifest.read_bytes(),
         "%s generated board manifest differs from its reviewed overlay" % target,
+    )
+
+    first_party_frozen_sources = _audit_first_party_frozen_source_evidence(
+        repo_root=root,
+        target=target,
+        board_dir=board_dir,
+        selections=selections,
+        firmware_version=firmware_version,
     )
 
     overlay_root = (
@@ -8726,7 +9080,7 @@ def _audit_frozen_payload_proof(
             "%s frozen_content.c differs from clean reconstruction" % target,
         )
 
-    return {
+    proof = {
         "architecture": settings["architecture"],
         "qstrdefs_sha256": _sha256_path(qstr_path),
         "mpy_cross": mpy_cross_record,
@@ -8740,6 +9094,9 @@ def _audit_frozen_payload_proof(
         ],
         "generated_board_manifest": copied_manifest_relative,
     }
+    if includes_first_party_field:
+        proof["first_party_frozen_sources"] = first_party_frozen_sources
+    return proof
 
 
 def _audit_manifest_evidence_record(
@@ -10679,7 +11036,7 @@ def _audit_write_evidence(
     _require(
         len(evidence_hashes)
         == 2 * len(LICENSE_AUDIT_PROFILES) * len(LICENSE_AUDIT_ROLES),
-        "license audit must retain exactly six raw and six normalized documents",
+        "license audit must retain the exact raw and normalized profile/role documents",
     )
     receipt = {
         "schema_version": 1,
@@ -10902,8 +11259,12 @@ def _audit_v2_release_notice_records(
     """Scope the reviewed notice graph without narrowing its audit evidence."""
 
     _require(
-        tuple(release_profile_ids) == tuple(RELEASE_PROFILE_ORDER),
-        "license notice profile scope differs from the exact release profiles",
+        tuple(release_profile_ids)
+        in (
+            tuple(HISTORICAL_V042_RELEASE_PROFILE_ORDER),
+            tuple(RELEASE_PROFILE_ORDER),
+        ),
+        "license notice profile scope differs from a supported release era",
     )
     released = set(release_profile_ids)
     audit_profiles = {
@@ -11071,8 +11432,12 @@ def _audit_v2_release_frozen_names(
     release_profile_ids: tuple[str, ...],
 ) -> set[str]:
     _require(
-        tuple(release_profile_ids) == tuple(RELEASE_PROFILE_ORDER),
-        "frozen notice profile scope differs from the exact release profiles",
+        tuple(release_profile_ids)
+        in (
+            tuple(HISTORICAL_V042_RELEASE_PROFILE_ORDER),
+            tuple(RELEASE_PROFILE_ORDER),
+        ),
+        "frozen notice profile scope differs from a supported release era",
     )
     targets = {
         profile_id: target
@@ -11279,7 +11644,7 @@ def _audit_release_licenses_v2(
                 else:
                     _require(
                         execution_identity == current_identity,
-                        "SBOM execution identity changed during the six-role audit",
+                        "SBOM execution identity changed during the profile/role audit",
                     )
                 raw_value = output.read_bytes()
                 document, source_format = _audit_read_spdx_output(
@@ -11305,7 +11670,7 @@ def _audit_release_licenses_v2(
         execution_identity is not None
         and len(observed_documents)
         == len(LICENSE_AUDIT_PROFILES) * len(LICENSE_AUDIT_ROLES),
-        "license audit did not retain all six execution results",
+        "license audit did not retain every profile/role execution result",
     )
     final_observed_context = _audit_observe_policy_v2_context_once(
         policy,
@@ -11314,7 +11679,7 @@ def _audit_release_licenses_v2(
     )
     _require(
         final_observed_context == observed_context,
-        "license audit generated context changed during the six-role audit",
+        "license audit generated context changed during the profile/role audit",
     )
     validated = _audit_validate_policy_v2(
         policy,
@@ -11376,15 +11741,15 @@ def _audit_release_licenses_v2(
     _require(
         final_fixed_hashes == initial_fixed_hashes
         and final_observed_hashes == initial_observed_hashes,
-        "license audit inputs changed during the six-role audit",
+        "license audit inputs changed during the profile/role audit",
     )
     _require(
         final_manifest_evidence == initial_manifest_evidence,
-        "license audit inputs changed during the six-role audit",
+        "license audit inputs changed during the profile/role audit",
     )
     _require(
         final_retained_sources == initial_retained_sources,
-        "retained target source identity changed during the six-role audit",
+        "retained target source identity changed during the profile/role audit",
     )
     input_hashes = {
         **initial_fixed_hashes,
@@ -11424,7 +11789,7 @@ def audit_release_licenses(
     evidence_dir: Path,
     runner: Any,
 ) -> dict[str, Any]:
-    """Audit all six linked inventories and retain normalized review evidence."""
+    """Audit every linked profile/role inventory and retain review evidence."""
 
     root = Path(repo_root)
     builds = Path(build_root)
@@ -11597,7 +11962,7 @@ def audit_release_licenses(
                 else:
                     _require(
                         current_identity == execution_identity,
-                        "SBOM execution identity changed during the six-role audit",
+                        "SBOM execution identity changed during the profile/role audit",
                     )
                 try:
                     output_mode = output.lstat().st_mode
@@ -11647,7 +12012,7 @@ def audit_release_licenses(
 
     _require(
         len(documents) == len(LICENSE_AUDIT_PROFILES) * len(LICENSE_AUDIT_ROLES),
-        "license audit did not produce all six SPDX inventories",
+        "license audit did not produce every profile/role SPDX inventory",
     )
     _require(
         execution_identity is not None,
@@ -11663,7 +12028,7 @@ def audit_release_licenses(
     )
     _require(
         final_input_hashes == initial_input_hashes,
-        "license audit inputs changed during the six-role audit",
+        "license audit inputs changed during the profile/role audit",
     )
     _audit_write_evidence(
         evidence,
@@ -11789,15 +12154,18 @@ def _audit_verify_packaged_build(
     release: dict[str, Any],
     build_root: Path,
 ) -> None:
+    version = release.get("identity", {}).get("version")
+    _require(isinstance(version, str), "packaged release version is missing")
+    release_profile_order = _release_profile_order_for_version(version)
     profile_records = {
         profile["id"]: profile for profile in release.get("profiles", [])
     }
     _require(
-        set(profile_records) == set(RELEASE_PROFILE_ORDER),
+        set(profile_records) == set(release_profile_order),
         "packaged release profile inventory is incomplete",
     )
     build_provenance: list[dict[str, Any]] = []
-    for profile_id in RELEASE_PROFILE_ORDER:
+    for profile_id in release_profile_order:
         target = PROFILE_SPECS[profile_id]["target"]
         target_build = build_root / target
         pairs = (
@@ -11871,6 +12239,11 @@ def _audit_verify_release_evidence(
     evidence = Path(evidence_dir)
     builds = Path(build_root)
     root = Path(repo_root)
+    release_profile_order = (
+        _release_profile_order_for_version(release["identity"]["version"])
+        if release is not None
+        else RELEASE_PROFILE_ORDER
+    )
     _require(
         not evidence.is_symlink(),
         "license review evidence root must not be a symlink",
@@ -11945,8 +12318,8 @@ def _audit_verify_release_evidence(
             expected_raw_paths.update(selected)
     _require(
         actual_evidence_paths == expected_reviewed_paths | expected_raw_paths,
-        "license evidence must contain the exact six raw and six normalized "
-        "SPDX documents",
+        "license evidence must contain the exact raw and normalized "
+        "profile/role SPDX documents",
     )
     actual_relative = sorted(
         path.relative_to(evidence).as_posix()
@@ -12109,12 +12482,12 @@ def _audit_verify_release_evidence(
     frozen_union = _audit_v2_release_frozen_names(
         repo_root=root,
         build_root=builds,
-        release_profile_ids=RELEASE_PROFILE_ORDER,
+        release_profile_ids=release_profile_order,
     )
     notice_records = _audit_v2_release_notice_records(
         validated,
         policy=policy,
-        release_profile_ids=RELEASE_PROFILE_ORDER,
+        release_profile_ids=release_profile_order,
     )
     expected_notice = _audit_notice_v2(
         notice_records,
@@ -12229,7 +12602,10 @@ def _stage_profile_artifacts(
             destination.chmod(0o600)
 
 
-def _release_schema() -> dict[str, Any]:
+def _release_schema(firmware_version: str | None = None) -> dict[str, Any]:
+    source_version = firmware_version or "0.5.0"
+    profile_order = _release_profile_order_for_version(source_version)
+    schema_version = _release_metadata_schema_version_for_version(source_version)
     sha = {"type": "string", "pattern": "^[0-9a-f]{64}$"}
     commit = {"type": "string", "pattern": "^[0-9a-f]{40}$"}
     relative_path = {
@@ -12270,7 +12646,7 @@ def _release_schema() -> dict[str, Any]:
             "components",
         ],
         "properties": {
-            "id": {"enum": list(RELEASE_PROFILE_ORDER)},
+            "id": {"enum": list(profile_order)},
             "chip_family": {"enum": ["ESP32", "ESP32-S3"]},
             "silicon_revision": {
                 "type": "object",
@@ -12331,7 +12707,7 @@ def _release_schema() -> dict[str, Any]:
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$id": "https://pyble.dev/firmware/release.schema.json",
-        "title": "PyBLE firmware release metadata v2",
+        "title": "PyBLE firmware release metadata v%d" % schema_version,
         "type": "object",
         "additionalProperties": False,
         "required": [
@@ -12343,7 +12719,7 @@ def _release_schema() -> dict[str, Any]:
             "documents",
         ],
         "properties": {
-            "schema_version": {"const": 2},
+            "schema_version": {"const": schema_version},
             "identity": {
                 "type": "object",
                 "additionalProperties": False,
@@ -12425,8 +12801,8 @@ def _release_schema() -> dict[str, Any]:
             },
             "profiles": {
                 "type": "array",
-                "minItems": len(RELEASE_PROFILE_ORDER),
-                "maxItems": len(RELEASE_PROFILE_ORDER),
+                "minItems": len(profile_order),
+                "maxItems": len(profile_order),
                 "items": profile_schema,
             },
             "documents": {
@@ -12648,7 +13024,9 @@ def _validate_manifest(
     )
 
 
-def _expected_bundle_files() -> list[str]:
+def _expected_bundle_files(
+    profile_order: tuple[str, ...] = RELEASE_PROFILE_ORDER,
+) -> list[str]:
     root_files = [
         "release.json",
         "release.schema.json",
@@ -12660,7 +13038,7 @@ def _expected_bundle_files() -> list[str]:
     ]
     profile_files = [
         "%s/%s" % (profile_id, filename)
-        for profile_id in RELEASE_PROFILE_ORDER
+        for profile_id in profile_order
         for filename in (
             "manifest.json",
             "firmware.bin",
@@ -12712,10 +13090,50 @@ def _qualification_integer(
     return value
 
 
+def _qualification_baseline_match(
+    path: Any,
+    firmware_version: str | None,
+) -> re.Match[str] | None:
+    """Match the baseline location frozen by one retained source era."""
+
+    if not isinstance(path, str):
+        return None
+    if firmware_version is None:
+        patterns = (
+            QUALIFICATION_BASELINE_RE,
+            QUALIFICATION_V042_BASELINE_RE,
+        )
+    else:
+        _firmware_release_core(firmware_version, "firmware source version")
+        patterns = (
+            (QUALIFICATION_V042_BASELINE_RE,)
+            if firmware_version == "0.4.2"
+            else (QUALIFICATION_BASELINE_RE,)
+        )
+    for pattern in patterns:
+        matched = pattern.fullmatch(path)
+        if matched is not None:
+            return matched
+    return None
+
+
+def _qualification_derivation_for_version(
+    firmware_version: str,
+) -> dict[str, str]:
+    source_core = _firmware_release_core(
+        firmware_version,
+        "firmware source version",
+    )
+    if source_core >= (0, 5, 0):
+        return QUALIFICATION_DERIVATION_V3
+    return QUALIFICATION_DERIVATION_V1
+
+
 def _validate_qualification_policy(
     value: Any,
     *,
     repo_root: Path | None = None,
+    firmware_version: str | None = None,
 ) -> dict[str, Any]:
     policy = _exact_keys(
         value,
@@ -12731,18 +13149,35 @@ def _validate_qualification_policy(
         },
         "OI-1 qualification policy",
     )
+    if firmware_version is not None:
+        profile_order = _release_profile_order_for_version(firmware_version)
+        policy_schema_version = (
+            _qualification_policy_schema_version_for_version(firmware_version)
+        )
+    else:
+        policy_schema_version = policy["schema_version"]
+        _require(
+            type(policy_schema_version) is int
+            and policy_schema_version in (1, 2),
+            "OI-1 qualification policy schema_version is unsupported",
+        )
+        profile_order = (
+            HISTORICAL_V042_RELEASE_PROFILE_ORDER
+            if policy_schema_version == 1
+            else RELEASE_PROFILE_ORDER
+        )
     _require(
         type(policy["schema_version"]) is int
-        and policy["schema_version"] == 1,
-        "OI-1 qualification policy schema_version must be 1",
+        and policy["schema_version"] == policy_schema_version,
+        "OI-1 qualification policy schema_version does not match the source era",
     )
     _require(
         policy["qualification_scope"] == "pre-v1",
         "OI-1 qualification scope must be pre-v1",
     )
     _require(
-        policy["profile_order"] == list(RELEASE_PROFILE_ORDER),
-        "OI-1 policy profile order must be the exact two-profile release order",
+        policy["profile_order"] == list(profile_order),
+        "OI-1 policy profile order must match the exact source-era release order",
     )
     _require(
         policy["deferred_profiles"] == ["esp32-c3-4mb"],
@@ -12772,13 +13207,19 @@ def _validate_qualification_policy(
         set(QUALIFICATION_DERIVATION),
         "OI-1 qualification derivation",
     )
+    allowed_derivations = (
+        (_qualification_derivation_for_version(firmware_version),)
+        if firmware_version is not None
+        else (
+            QUALIFICATION_DERIVATION_V1,
+            QUALIFICATION_DERIVATION_V2,
+            QUALIFICATION_DERIVATION_V3,
+        )
+    )
     _require(
-        all(
-            type(derivation[key]) is str
-            and derivation[key] == expected
-            for key, expected in QUALIFICATION_DERIVATION.items()
-        ),
-        "OI-1 qualification derivation changed",
+        all(type(value) is str for value in derivation.values())
+        and any(derivation == expected for expected in allowed_derivations),
+        "OI-1 qualification derivation does not match the firmware source era",
     )
 
     baseline = _exact_keys(
@@ -12787,9 +13228,12 @@ def _validate_qualification_policy(
         "OI-1 baseline evidence",
     )
     baseline_path = baseline["path"]
+    baseline_match = _qualification_baseline_match(
+        baseline_path,
+        firmware_version,
+    )
     _require(
-        isinstance(baseline_path, str)
-        and QUALIFICATION_BASELINE_RE.fullmatch(baseline_path) is not None,
+        baseline_match is not None,
         "OI-1 baseline evidence path is not source-commit scoped",
     )
     _require(
@@ -12801,8 +13245,8 @@ def _validate_qualification_policy(
     profiles = policy["profiles"]
     _require(
         isinstance(profiles, list)
-        and len(profiles) == len(RELEASE_PROFILE_ORDER),
-        "OI-1 policy must contain exactly two threshold profiles",
+        and len(profiles) == len(profile_order),
+        "OI-1 policy threshold profile count must match the release order",
     )
     _require(
         all(isinstance(item, dict) for item in profiles),
@@ -12810,10 +13254,10 @@ def _validate_qualification_policy(
     )
     _require(
         [item.get("profile_id") for item in profiles]
-        == list(RELEASE_PROFILE_ORDER),
+        == list(profile_order),
         "OI-1 policy threshold profile order/parity is invalid",
     )
-    for profile_id, item in zip(RELEASE_PROFILE_ORDER, profiles):
+    for profile_id, item in zip(profile_order, profiles):
         entry = _exact_keys(
             item,
             {"profile_id", "target", "thresholds"},
@@ -12871,7 +13315,6 @@ def _validate_qualification_policy(
             ).encode("utf-8"),
             "OI-1 baseline evidence is not canonical JSON",
         )
-        baseline_match = QUALIFICATION_BASELINE_RE.fullmatch(baseline_path)
         _require(
             baseline_match is not None,
             "OI-1 baseline evidence path changed during validation",
@@ -12880,6 +13323,7 @@ def _validate_qualification_policy(
             evidence_json,
             baseline_match.group(1),
             policy,
+            firmware_version=firmware_version,
         )
     return policy
 
@@ -12888,6 +13332,7 @@ def _load_qualification_policy(
     repo_root: Path,
 ) -> tuple[dict[str, Any], str]:
     root = Path(repo_root)
+    firmware_version = _read_lock(root)["pyble"]["agent_version"]
     path = _audit_repo_file(
         root,
         QUALIFICATION_POLICY_RELATIVE,
@@ -12901,7 +13346,11 @@ def _load_qualification_policy(
             "OI-1 qualification policy is missing or invalid"
         ) from exc
     return (
-        _validate_qualification_policy(document, repo_root=root),
+        _validate_qualification_policy(
+            document,
+            repo_root=root,
+            firmware_version=firmware_version,
+        ),
         _sha256_bytes(source),
     )
 
@@ -13035,42 +13484,224 @@ def _validate_heap_snapshot(value: Any, label: str) -> dict[str, int]:
     return snapshot
 
 
+def _validate_transfer_link_facts(
+    value: Any,
+    profile_id: str,
+) -> dict[str, Any]:
+    """Validate the exact, redacted ADR-0027 settlement record."""
+
+    facts = _exact_keys(
+        value,
+        {"dle", "phy", "connection_parameters", "tx_mbuf_starve_count"},
+        "OI-1 transfer link facts for %s" % profile_id,
+    )
+
+    dle = _exact_keys(
+        facts["dle"],
+        {"request_attempts", "max_tx_octets", "max_tx_time_us"},
+        "OI-1 DLE facts for %s" % profile_id,
+    )
+    dle_attempts = _qualification_integer(
+        dle["request_attempts"],
+        "OI-1 DLE request attempts for %s" % profile_id,
+        positive=True,
+    )
+    _require(
+        dle_attempts <= 4,
+        "OI-1 DLE request attempts exceed the bound for %s" % profile_id,
+    )
+    max_tx_octets = _qualification_integer(
+        dle["max_tx_octets"],
+        "OI-1 DLE max_tx_octets for %s" % profile_id,
+        positive=True,
+    )
+    _require(
+        max_tx_octets >= 244,
+        "OI-1 DLE did not settle for %s" % profile_id,
+    )
+    _qualification_integer(
+        dle["max_tx_time_us"],
+        "OI-1 DLE max_tx_time_us for %s" % profile_id,
+        positive=True,
+    )
+
+    phy = _exact_keys(
+        facts["phy"],
+        {
+            "required_2m",
+            "request_attempts",
+            "updates",
+            "settled_tx",
+            "settled_rx",
+        },
+        "OI-1 PHY facts for %s" % profile_id,
+    )
+    required_2m = profile_id in (
+        "esp32-s3-n16r8",
+        "waveshare-esp32-s3-lcd-147b",
+    )
+    _require(
+        profile_id in RELEASE_PROFILE_ORDER
+        and type(phy["required_2m"]) is bool
+        and phy["required_2m"] is required_2m,
+        "OI-1 PHY requirement does not match profile %s" % profile_id,
+    )
+    phy_attempts = _qualification_integer(
+        phy["request_attempts"],
+        "OI-1 PHY request attempts for %s" % profile_id,
+    )
+    phy_updates = phy["updates"]
+    _require(
+        isinstance(phy_updates, list),
+        "OI-1 PHY updates must be an array for %s" % profile_id,
+    )
+    for index, raw_update in enumerate(phy_updates):
+        update = _exact_keys(
+            raw_update,
+            {"status", "tx", "rx"},
+            "OI-1 PHY update %d for %s" % (index, profile_id),
+        )
+        for key in update:
+            _qualification_integer(
+                update[key],
+                "OI-1 PHY update %d %s for %s"
+                % (index, key, profile_id),
+            )
+    settled_tx = _qualification_integer(
+        phy["settled_tx"],
+        "OI-1 settled PHY TX for %s" % profile_id,
+    )
+    settled_rx = _qualification_integer(
+        phy["settled_rx"],
+        "OI-1 settled PHY RX for %s" % profile_id,
+    )
+    if required_2m:
+        _require(
+            1 <= phy_attempts <= 4 and bool(phy_updates),
+            "OI-1 2M PHY attempts/updates are incomplete for %s" % profile_id,
+        )
+        final_phy = phy_updates[-1]
+        _require(
+            final_phy["status"] == 0
+            and final_phy["tx"] == 2
+            and final_phy["rx"] == 2
+            and settled_tx == 2
+            and settled_rx == 2,
+            "OI-1 2M PHY did not settle for %s" % profile_id,
+        )
+    else:
+        _require(
+            phy_attempts == 0
+            and phy_updates == []
+            and settled_tx == 0
+            and settled_rx == 0,
+            "OI-1 classic PHY must retain the compiled-out shape",
+        )
+
+    conn = _exact_keys(
+        facts["connection_parameters"],
+        {"request_return_codes", "updates", "settled_interval_units"},
+        "OI-1 connection-parameter facts for %s" % profile_id,
+    )
+    return_codes = conn["request_return_codes"]
+    _require(
+        isinstance(return_codes, list) and 1 <= len(return_codes) <= 3,
+        "OI-1 connection-parameter requests must contain 1..3 entries for %s"
+        % profile_id,
+    )
+    for index, item in enumerate(return_codes):
+        _qualification_integer(
+            item,
+            "OI-1 connection-parameter return code %d for %s"
+            % (index, profile_id),
+        )
+    updates = conn["updates"]
+    _require(
+        isinstance(updates, list) and bool(updates),
+        "OI-1 connection-parameter updates are missing for %s" % profile_id,
+    )
+    for index, raw_update in enumerate(updates):
+        update = _exact_keys(
+            raw_update,
+            {"status", "interval_units"},
+            "OI-1 connection-parameter update %d for %s"
+            % (index, profile_id),
+        )
+        for key in update:
+            _qualification_integer(
+                update[key],
+                "OI-1 connection-parameter update %d %s for %s"
+                % (index, key, profile_id),
+            )
+    settled_interval = _qualification_integer(
+        conn["settled_interval_units"],
+        "OI-1 settled connection interval for %s" % profile_id,
+        positive=True,
+    )
+    final_update = updates[-1]
+    _require(
+        final_update["status"] == 0
+        and 12 <= final_update["interval_units"] <= 24
+        and settled_interval == final_update["interval_units"],
+        "OI-1 connection parameters did not settle for %s" % profile_id,
+    )
+    _qualification_integer(
+        facts["tx_mbuf_starve_count"],
+        "OI-1 TX-mbuf starvation count for %s" % profile_id,
+    )
+    return facts
+
+
 def _validate_qualification_observation(
     value: Any,
     thresholds: dict[str, int] | None,
     profile_id: str,
+    *,
+    firmware_version: str,
 ) -> dict[str, Any]:
+    observation_keys = {
+        "observed_att_mtu",
+        "observed_window",
+        "observed_chunk_bytes",
+        "reset_to_service_advertisement_ms",
+        "heap_default_free_post_hello_bytes",
+        "heap_post_hello",
+        "put_unique_committed_bytes",
+        "put_duration_ns",
+        "put_committed_goodput_bytes_per_second",
+        "get_unique_verified_bytes",
+        "get_duration_ns",
+        "get_verified_goodput_bytes_per_second",
+        "put_retransmitted_chunks",
+        "put_retransmitted_bytes",
+        "get_retransmitted_chunks",
+        "get_retransmitted_bytes",
+        "roundtrip_integrity_verified",
+        "get_offset_sequences_validated",
+        "roundtrip_unexpected_disconnects",
+        "roundtrip_integrity_failures",
+        "heap_post_roundtrip",
+        "reliability",
+        "heap_post_reliability",
+        "physical_power_cycle_advertising",
+        "raw_log_sha256",
+    }
+    requires_link_facts = (
+        _firmware_release_core(firmware_version, "firmware source version")
+        >= (0, 5, 0)
+    )
+    if requires_link_facts:
+        observation_keys.add("transfer_link_facts")
     observation = _exact_keys(
         value,
-        {
-            "observed_att_mtu",
-            "observed_window",
-            "observed_chunk_bytes",
-            "reset_to_service_advertisement_ms",
-            "heap_default_free_post_hello_bytes",
-            "heap_post_hello",
-            "put_unique_committed_bytes",
-            "put_duration_ns",
-            "put_committed_goodput_bytes_per_second",
-            "get_unique_verified_bytes",
-            "get_duration_ns",
-            "get_verified_goodput_bytes_per_second",
-            "put_retransmitted_chunks",
-            "put_retransmitted_bytes",
-            "get_retransmitted_chunks",
-            "get_retransmitted_bytes",
-            "roundtrip_integrity_verified",
-            "get_offset_sequences_validated",
-            "roundtrip_unexpected_disconnects",
-            "roundtrip_integrity_failures",
-            "heap_post_roundtrip",
-            "reliability",
-            "heap_post_reliability",
-            "physical_power_cycle_advertising",
-            "raw_log_sha256",
-        },
+        observation_keys,
         "OI-1 observation for %s" % profile_id,
     )
+    if requires_link_facts:
+        _validate_transfer_link_facts(
+            observation["transfer_link_facts"],
+            profile_id,
+        )
     transport = {
         "observed_att_mtu": QUALIFICATION_WORKLOAD["required_att_mtu"],
         "observed_window": QUALIFICATION_WORKLOAD["required_put_window"],
@@ -13311,6 +13942,8 @@ def _validate_baseline_build(
 def _derived_qualification_thresholds(
     build: dict[str, int],
     observation: dict[str, Any],
+    *,
+    firmware_version: str,
 ) -> dict[str, int]:
     heap_samples = (
         observation["heap_post_hello"]
@@ -13322,6 +13955,28 @@ def _derived_qualification_thresholds(
         return (
             min(sample[metric] for sample in heap_samples) // quantum
         ) * quantum
+
+    derivation = _qualification_derivation_for_version(firmware_version)
+    reset_max = max(observation["reset_to_service_advertisement_ms"])
+    put_min = min(
+        observation["put_committed_goodput_bytes_per_second"]
+    )
+    get_min = min(
+        observation["get_verified_goodput_bytes_per_second"]
+    )
+    if derivation == QUALIFICATION_DERIVATION_V2:
+        reset_max += 300
+    if derivation in (
+        QUALIFICATION_DERIVATION_V2,
+        QUALIFICATION_DERIVATION_V3,
+    ):
+        put_min = (put_min * 95) // 100
+        get_min = (get_min * 95) // 100
+    reset_threshold = (
+        3000
+        if derivation == QUALIFICATION_DERIVATION_V3
+        else ((reset_max + 9) // 10) * 10
+    )
 
     derived = {
         "application_image_max_bytes": build["application_image_bytes"],
@@ -13341,30 +13996,13 @@ def _derived_qualification_thresholds(
             "idf_internal_minimum_free_bytes",
             1024,
         ),
-        "reset_to_service_advertisement_max_ms": (
-            (
-                max(observation["reset_to_service_advertisement_ms"])
-                + 9
-            )
-            // 10
-        )
-        * 10,
+        "reset_to_service_advertisement_max_ms": reset_threshold,
         "put_committed_goodput_min_bytes_per_second": (
-            min(
-                observation[
-                    "put_committed_goodput_bytes_per_second"
-                ]
-            )
-            // 100
+            put_min // 100
         )
         * 100,
         "get_verified_goodput_min_bytes_per_second": (
-            min(
-                observation[
-                    "get_verified_goodput_bytes_per_second"
-                ]
-            )
-            // 100
+            get_min // 100
         )
         * 100,
     }
@@ -13381,6 +14019,8 @@ def _validate_qualification_baseline(
     value: Any,
     path_source_commit: str,
     policy: dict[str, Any],
+    *,
+    firmware_version: str | None = None,
 ) -> dict[str, Any]:
     baseline = _exact_keys(
         value,
@@ -13415,31 +14055,54 @@ def _validate_qualification_baseline(
         and SEMVER_RE.fullmatch(baseline["firmware_version"]) is not None,
         "OI-1 baseline firmware version must be canonical SemVer",
     )
+    if firmware_version is not None:
+        source_core = _firmware_release_core(
+            firmware_version,
+            "firmware source version",
+        )
+        baseline_core = _firmware_release_core(
+            baseline["firmware_version"],
+            "OI-1 baseline firmware version",
+        )
+        _require(
+            baseline_core <= source_core,
+            "OI-1 baseline firmware version is newer than the source release",
+        )
+        if source_core >= (0, 5, 0):
+            _require(
+                baseline_core >= (0, 5, 0),
+                "OI-1 baseline predates the v0.5.0 source-era floor",
+            )
     _require(
         isinstance(baseline["created_at"], str)
         and UTC_RE.fullmatch(baseline["created_at"]) is not None,
         "OI-1 baseline created_at must be UTC RFC3339",
     )
+    profile_order = (
+        _release_profile_order_for_version(firmware_version)
+        if firmware_version is not None
+        else tuple(policy["profile_order"])
+    )
     _require(
-        baseline["profile_order"] == list(RELEASE_PROFILE_ORDER),
-        "OI-1 baseline profile order must be the exact two-profile order",
+        baseline["profile_order"] == list(profile_order),
+        "OI-1 baseline profile order must match the source-era release order",
     )
     profiles = baseline["profiles"]
     _require(
         isinstance(profiles, list)
-        and len(profiles) == len(RELEASE_PROFILE_ORDER)
+        and len(profiles) == len(profile_order)
         and all(isinstance(item, dict) for item in profiles),
-        "OI-1 baseline must contain exactly two profile objects",
+        "OI-1 baseline profile count must match the release order",
     )
     _require(
         [item.get("profile_id") for item in profiles]
-        == list(RELEASE_PROFILE_ORDER),
+        == list(profile_order),
         "OI-1 baseline profile order/parity is invalid",
     )
     policy_by_id = {
         entry["profile_id"]: entry for entry in policy["profiles"]
     }
-    for profile_id, raw_profile in zip(RELEASE_PROFILE_ORDER, profiles):
+    for profile_id, raw_profile in zip(profile_order, profiles):
         profile = _exact_keys(
             raw_profile,
             {
@@ -13513,10 +14176,17 @@ def _validate_qualification_baseline(
             profile["oi1_observation"],
             None,
             profile_id,
+            firmware_version=baseline["firmware_version"],
         )
         _require(
             policy_by_id[profile_id]["thresholds"]
-            == _derived_qualification_thresholds(build, observation),
+            == _derived_qualification_thresholds(
+                build,
+                observation,
+                firmware_version=(
+                    firmware_version or baseline["firmware_version"]
+                ),
+            ),
             "OI-1 policy thresholds were not derived from baseline %s"
             % profile_id,
         )
@@ -13524,31 +14194,43 @@ def _validate_qualification_baseline(
 
 
 def _parse_hil_report(text: str) -> dict[str, Any]:
+    match_objects = list(HIL_MARKER_RE.finditer(text))
     matches = HIL_MARKER_RE.findall(text)
     all_markers = HIL_ANY_MARKER_RE.findall(text)
     _require(
         len(matches) == 1 and len(all_markers) == 1,
-        "HIL_REPORT.md must contain exactly one PYBLE_HIL_RECORDS_V2 marker",
+        "HIL_REPORT.md must contain exactly one supported PYBLE_HIL_RECORDS marker",
     )
+    marker_version, encoded_payload = matches[0]
+    marker_match = match_objects[0]
+    if marker_version in ("3", "4"):
+        _require(
+            text[: marker_match.start()] == HIL_REPORT_SHELL_PREFIX
+            and text[marker_match.end() :] == HIL_REPORT_SHELL_SUFFIX,
+            "current HIL_REPORT.md surrounding shell changed",
+        )
     try:
-        payload = json.loads(matches[0])
+        payload = json.loads(encoded_payload)
     except ValueError as exc:
         raise ReleaseError("HIL_REPORT.md embedded records are invalid JSON") from exc
+    schema_version = payload.get("schema_version") if isinstance(payload, dict) else None
+    expected_keys = {
+        "schema_version",
+        "candidate_release_json_sha256",
+        "qualification_policy_sha256",
+        "qualification_policy",
+        "records",
+    }
+    if marker_version in ("3", "4"):
+        expected_keys.add("waveshare_lcd147b_qualification")
     payload = _exact_keys(
         payload,
-        {
-            "schema_version",
-            "candidate_release_json_sha256",
-            "qualification_policy_sha256",
-            "qualification_policy",
-            "records",
-        },
+        expected_keys,
         "HIL records",
     )
     _require(
-        type(payload.get("schema_version")) is int
-        and payload.get("schema_version") == 2,
-        "HIL record schema version changed",
+        type(schema_version) is int and schema_version == int(marker_version),
+        "HIL record schema version disagrees with its marker",
     )
     candidate_digest = payload["candidate_release_json_sha256"]
     _require(
@@ -13565,6 +14247,70 @@ def _parse_hil_report(text: str) -> dict[str, Any]:
     return payload
 
 
+def _validate_hil_source_era(
+    payload: dict[str, Any],
+    firmware_version: str,
+) -> dict[str, Any]:
+    """Keep retained V2 releases exact and admit V4 only from v0.5.0."""
+
+    base_keys = {
+        "schema_version",
+        "candidate_release_json_sha256",
+        "qualification_policy_sha256",
+        "qualification_policy",
+        "records",
+    }
+    capable = _waveshare_lcd147b_capable_version(firmware_version)
+    expected_keys = set(base_keys)
+    if capable:
+        expected_keys.add("waveshare_lcd147b_qualification")
+    _exact_keys(payload, expected_keys, "source-era HIL records")
+    _require(
+        type(payload["schema_version"]) is int
+        and payload["schema_version"]
+        == _hil_schema_version_for_version(firmware_version),
+        "HIL schema does not match the firmware source era",
+    )
+    return payload
+
+
+def _bind_waveshare_lcd147b_hil_summary(
+    payload: dict[str, Any],
+    summary: dict[str, Any],
+    *,
+    firmware_version: str,
+) -> dict[str, Any]:
+    """Perform the sole V4 null-to-derived-summary transition."""
+
+    _validate_hil_source_era(payload, firmware_version)
+    _require(
+        _waveshare_lcd147b_capable_version(firmware_version)
+        and payload["waveshare_lcd147b_qualification"] is None,
+        "LCD qualification summary can only replace the V4 candidate null",
+    )
+    completed = copy.deepcopy(payload)
+    completed["waveshare_lcd147b_qualification"] = copy.deepcopy(summary)
+    return completed
+
+
+def _render_hil_report_payload(text: str, payload: dict[str, Any]) -> bytes:
+    _parse_hil_report(text)
+    matches = list(HIL_MARKER_RE.finditer(text))
+    _require(len(matches) == 1, "HIL report marker cannot be rewritten exactly")
+    schema_version = payload.get("schema_version")
+    _require(schema_version in (2, 4), "HIL report schema cannot be rendered")
+    marker = (
+        "<!-- PYBLE_HIL_RECORDS_V%d\n" % schema_version
+        + json.dumps(payload, indent=2, sort_keys=False)
+        + "\n-->"
+    )
+    rendered = (HIL_REPORT_SHELL_PREFIX + marker + HIL_REPORT_SHELL_SUFFIX).encode(
+        "utf-8"
+    )
+    _parse_hil_report(rendered.decode("utf-8"))
+    return rendered
+
+
 def _validate_hil(
     bundle: Path,
     report_path: Path,
@@ -13577,8 +14323,10 @@ def _validate_hil(
     payload = _parse_hil_report(
         report_path.read_text(encoding="utf-8", errors="strict")
     )
+    _validate_hil_source_era(payload, identity["version"])
     policy = _validate_qualification_policy(
         payload["qualification_policy"],
+        firmware_version=identity["version"],
     )
     source_policy, source_digest = _load_qualification_policy(Path(repo_root))
     _require(
@@ -13601,9 +14349,10 @@ def _validate_hil(
             "candidate HIL release digest must remain empty before HIL",
         )
     records = payload["records"]
+    profile_order = _release_profile_order_for_version(identity["version"])
     _require(
-        len(records) == len(RELEASE_PROFILE_ORDER),
-        "HIL report must contain exactly two records",
+        len(records) == len(profile_order),
+        "HIL report record count must match the source-era release order",
     )
     _require(
         all(isinstance(record, dict) for record in records),
@@ -13611,7 +14360,7 @@ def _validate_hil(
     )
     _require(
         [record.get("profile_id") for record in records]
-        == list(RELEASE_PROFILE_ORDER),
+        == list(profile_order),
         "HIL report profile order/parity is invalid",
     )
     profile_by_id = {profile["id"]: profile for profile in profiles}
@@ -13735,6 +14484,7 @@ def _validate_hil(
                 record["oi1_observation"],
                 thresholds,
                 profile_id,
+                firmware_version=identity["version"],
             )
         else:
             _require(
@@ -13773,6 +14523,29 @@ def _validate_hil(
             _require(
                 record["oi1_observation"] is None,
                 "candidate HIL OI-1 observation must remain null",
+            )
+    if _waveshare_lcd147b_capable_version(identity["version"]):
+        summary = payload["waveshare_lcd147b_qualification"]
+        if public:
+            try:
+                _WAVESHARE_LCD147B_GATE.validate_public_summary(
+                    summary,
+                    firmware_path=(
+                        Path(bundle)
+                        / "waveshare-esp32-s3-lcd-147b"
+                        / "firmware.bin"
+                    ),
+                    expected_version=identity["version"],
+                    candidate_release_json_sha256=candidate_digest,
+                )
+            except _WAVESHARE_LCD147B_GATE.QualificationError as exc:
+                raise ReleaseError(
+                    "public LCD qualification summary is invalid: %s" % exc
+                ) from exc
+        else:
+            _require(
+                summary is None,
+                "candidate LCD qualification summary must remain null",
             )
     return payload
 
@@ -13872,20 +14645,7 @@ def validate_bundle(
             )
     actual_files.sort()
     actual_directories.sort()
-    _require(
-        actual_files == _expected_bundle_files(), "release bundle layout is not exact"
-    )
-    _require(
-        actual_directories == sorted(RELEASE_PROFILE_ORDER),
-        "release bundle directory layout is not exact",
-    )
 
-    schema = _read_json(bundle / "release.schema.json", "release.schema.json")
-    _validate_schema_document(schema)
-    _require(
-        schema == _release_schema(),
-        "release schema does not exactly match the canonical generator",
-    )
     release = _read_json(bundle / "release.json", "release.json")
     release = _exact_keys(
         release,
@@ -13899,10 +14659,37 @@ def validate_bundle(
         },
         "release.json",
     )
+    raw_identity = release["identity"]
+    _require(isinstance(raw_identity, dict), "release identity must be an object")
+    source_version = raw_identity.get("version")
+    _require(
+        isinstance(source_version, str)
+        and bool(SEMVER_RE.fullmatch(source_version)),
+        "release version must be canonical SemVer without v",
+    )
+    profile_order = _release_profile_order_for_version(source_version)
+    metadata_schema_version = (
+        _release_metadata_schema_version_for_version(source_version)
+    )
+    _require(
+        actual_files == _expected_bundle_files(profile_order),
+        "release bundle layout is not exact",
+    )
+    _require(
+        actual_directories == sorted(profile_order),
+        "release bundle directory layout is not exact",
+    )
+
+    schema = _read_json(bundle / "release.schema.json", "release.schema.json")
+    _validate_schema_document(schema)
+    _require(
+        schema == _release_schema(source_version),
+        "release schema does not exactly match the canonical generator",
+    )
     _require(
         type(release["schema_version"]) is int
-        and release["schema_version"] == 2,
-        "release schema_version must be 2",
+        and release["schema_version"] == metadata_schema_version,
+        "release schema_version does not match the source era",
     )
     identity = _exact_keys(
         release["identity"],
@@ -13941,15 +14728,15 @@ def validate_bundle(
 
     profiles = release["profiles"]
     _require(
-        isinstance(profiles, list) and len(profiles) == len(RELEASE_PROFILE_ORDER),
-        "release needs exactly two profiles",
+        isinstance(profiles, list) and len(profiles) == len(profile_order),
+        "release profile count does not match the source era",
     )
     _require(
         [profile.get("id") for profile in profiles]
-        == list(RELEASE_PROFILE_ORDER),
+        == list(profile_order),
         "release profile order/parity changed",
     )
-    for profile_id, profile in zip(RELEASE_PROFILE_ORDER, profiles):
+    for profile_id, profile in zip(profile_order, profiles):
         spec = PROFILE_SPECS[profile_id]
         item = _exact_keys(
             profile,
@@ -14173,19 +14960,23 @@ def _candidate_hil_report(
                 "redacted_console_log": "",
             }
         )
+    capable = _waveshare_lcd147b_capable_version(version)
+    hil_schema_version = _hil_schema_version_for_version(version)
     payload = {
-        "schema_version": 2,
+        "schema_version": hil_schema_version,
         "candidate_release_json_sha256": "",
         "qualification_policy_sha256": qualification_policy_sha256,
         "qualification_policy": copy.deepcopy(qualification_policy),
         "records": records,
     }
+    if capable:
+        payload["waveshare_lcd147b_qualification"] = None
     return (
-        "# PyBLE firmware HIL report\n\n"
-        "This access-controlled candidate is pending real-board browser install "
-        "and interrupted-flash recovery on every exact profile. Fill every "
-        "record without changing firmware or manifest bytes.\n\n"
-        "<!-- PYBLE_HIL_RECORDS_V2\n" + json.dumps(payload, indent=2) + "\n-->\n"
+        HIL_REPORT_SHELL_PREFIX
+        + "<!-- PYBLE_HIL_RECORDS_V%d\n" % payload["schema_version"]
+        + json.dumps(payload, indent=2)
+        + "\n-->"
+        + HIL_REPORT_SHELL_SUFFIX
     )
 
 
@@ -14199,7 +14990,11 @@ def _release_notes(
         "Supported browser profiles:\n\n"
         "- `esp32-4mb`: classic ESP32 with exactly 4 MiB flash.\n"
         "- `esp32-s3-n16r8`: ESP32-S3 N16R8-class only — exactly 16 MiB "
-        "flash plus 8 MiB Octal PSRAM; this is not a generic S3 image.\n\n"
+        "flash plus 8 MiB Octal PSRAM; lean common runtime, with no bundled "
+        "board-specific display drivers.\n"
+        "- `waveshare-esp32-s3-lcd-147b`: exact Waveshare "
+        "ESP32-S3-LCD-1.47B B-version only; includes its ST7789 runtime and "
+        "fresh-install PyBLE splash with persistent disable.\n\n"
         "Agent `%s`; protocol `PBLE/1`; MicroPython `%s` @ `%s`; ESP-IDF "
         "`%s` @ `%s`; PyBLE source `%s`; tag `firmware-v%s`.\n\n"
         "Installation is destructive and erases the existing firmware and "
@@ -14241,6 +15036,8 @@ def _recovery_guide(version: str) -> str:
         "```sh\n"
         "python -m esptool --chip esp32 write_flash 0x1000 esp32-4mb/firmware.bin\n"
         "python -m esptool --chip esp32s3 write_flash 0x0 esp32-s3-n16r8/firmware.bin\n"
+        "python -m esptool --chip esp32s3 write_flash 0x0 "
+        "waveshare-esp32-s3-lcd-147b/firmware.bin\n"
         "```\n\n"
         "Component diagnostics use the bundled bootloader at `0x1000` for "
         "classic ESP32 and `0x0` for S3, partition table at `0x8000`, and "
@@ -14496,7 +15293,8 @@ def _validate_staged_baseline_inputs(
     source_snapshot: dict[str, tuple[int, str] | str],
 ) -> None:
     expected: dict[str, tuple[str, int, str] | tuple[str]] = {}
-    for profile_id in RELEASE_PROFILE_ORDER:
+    profile_order = _release_profile_order_for_version(version)
+    for profile_id in profile_order:
         target = PROFILE_SPECS[profile_id]["target"]
         expected[profile_id] = ("directory",)
         manifest_bytes = (
@@ -14630,6 +15428,7 @@ def create_baseline_inputs(
 
     lock = _read_lock(root)
     version = lock["pyble"]["agent_version"]
+    profile_order = _release_profile_order_for_version(version)
     compare_build_roots(
         builds_root,
         reproducibility_root,
@@ -14651,7 +15450,7 @@ def create_baseline_inputs(
         tempfile.mkdtemp(prefix=".%s." % output.name, dir=str(output.parent))
     )
     try:
-        for profile_id in RELEASE_PROFILE_ORDER:
+        for profile_id in profile_order:
             target = PROFILE_SPECS[profile_id]["target"]
             _stage_profile_artifacts(
                 profile_dir=staging / profile_id,
@@ -14957,7 +15756,7 @@ def create_bundle(
 
     Public finalization is intentionally refused here: HIL must run against the
     immutable candidate first.  The production CLI binds the exact reviewed
-    SBOM notice and fresh six-role audit evidence before HIL, so promotion never
+    SBOM notice and fresh profile/role audit evidence before HIL, so promotion never
     swaps license bytes after hardware qualification.  ``validate_bundle(...,
     public=True)`` remains the final release gate.
     """
@@ -14997,6 +15796,7 @@ def create_bundle(
     _require_frozen_release_lock(root)
     lock = _read_lock(root)
     version = lock["pyble"]["agent_version"]
+    profile_order = _release_profile_order_for_version(version)
     checked_provenance = _validate_create_provenance(root, provenance, lock)
     validated = {
         target: validate_build(
@@ -15068,7 +15868,7 @@ def create_bundle(
         tempfile.mkdtemp(prefix=".%s." % output.name, dir=str(output.parent))
     )
     try:
-        for profile_id in RELEASE_PROFILE_ORDER:
+        for profile_id in profile_order:
             target = PROFILE_SPECS[profile_id]["target"]
             _stage_profile_artifacts(
                 profile_dir=staging / profile_id,
@@ -15079,7 +15879,10 @@ def create_bundle(
                 private=False,
             )
 
-        _write_json(staging / "release.schema.json", _release_schema())
+        _write_json(
+            staging / "release.schema.json",
+            _release_schema(version),
+        )
         (staging / "THIRD_PARTY_LICENSES.txt").write_text(notices, encoding="utf-8")
         (staging / "RELEASE_NOTES.md").write_text(
             _release_notes(version, built_at, checked_provenance),
@@ -15088,7 +15891,7 @@ def create_bundle(
         (staging / "RECOVERY.md").write_text(_recovery_guide(version), encoding="utf-8")
 
         profiles = []
-        for profile_id in RELEASE_PROFILE_ORDER:
+        for profile_id in profile_order:
             spec = PROFILE_SPECS[profile_id]
             profile_dir = staging / profile_id
             profiles.append(
@@ -15146,7 +15949,9 @@ def create_bundle(
             encoding="utf-8",
         )
         metadata = {
-            "schema_version": 2,
+            "schema_version": _release_metadata_schema_version_for_version(
+                version
+            ),
             "identity": {
                 "version": version,
                 "tag": "firmware-v%s" % version,
@@ -15201,6 +16006,30 @@ def create_bundle(
         raise
 
 
+def _lcd_qualification_snapshot(path: Path) -> tuple[Any, ...]:
+    try:
+        return _WAVESHARE_LCD147B_GATE.private_result_snapshot(path)
+    except _WAVESHARE_LCD147B_GATE.QualificationError as exc:
+        raise ReleaseError("private LCD qualification result is invalid: %s" % exc) from exc
+
+
+def _validate_lcd_report_privacy(report_bytes: bytes, result_path: Path) -> None:
+    try:
+        _WAVESHARE_LCD147B_GATE.validate_public_report_privacy(
+            report_bytes,
+            result_path=result_path,
+        )
+    except _WAVESHARE_LCD147B_GATE.QualificationError as exc:
+        raise ReleaseError("public HIL report leaks private LCD evidence: %s" % exc) from exc
+
+
+def _validate_lcd_gate_source(repo_root: Path) -> None:
+    try:
+        _WAVESHARE_LCD147B_GATE.validate_loaded_source(repo_root)
+    except _WAVESHARE_LCD147B_GATE.QualificationError as exc:
+        raise ReleaseError("LCD qualification validator source changed: %s" % exc) from exc
+
+
 def _validate_hil_promotion_envelope(
     candidate_payload: dict[str, Any],
     completed_payload: dict[str, Any],
@@ -15213,6 +16042,12 @@ def _validate_hil_promotion_envelope(
         _require(
             completed_payload[key] == candidate_payload[key],
             "completed HIL changed candidate-frozen field %s" % key,
+        )
+    if candidate_payload["schema_version"] == 4:
+        _require(
+            candidate_payload["waveshare_lcd147b_qualification"] is None
+            and completed_payload["waveshare_lcd147b_qualification"] is None,
+            "completed V4 HIL must retain the candidate LCD qualification null",
         )
     candidate_records = candidate_payload["records"]
     completed_records = completed_payload["records"]
@@ -15456,6 +16291,7 @@ def finalize_public_bundle(
     license_evidence_dir: Path,
     license_build_root: Path,
     repo_root: Path,
+    waveshare_lcd147b_qualification_result: Path | None = None,
 ) -> Path:
     """Promote one audited, HIL-qualified candidate without mutating it."""
 
@@ -15465,6 +16301,11 @@ def finalize_public_bundle(
     evidence = Path(license_evidence_dir)
     builds = Path(license_build_root)
     root = Path(repo_root)
+    qualification_result = (
+        Path(waveshare_lcd147b_qualification_result)
+        if waveshare_lcd147b_qualification_result is not None
+        else None
+    )
 
     _require(
         isinstance(candidate_release_json_sha256, str)
@@ -15548,7 +16389,57 @@ def finalize_public_bundle(
             errors="strict",
         )
     )
+    firmware_version = candidate_release["identity"]["version"]
+    profile_order = _release_profile_order_for_version(firmware_version)
+    _validate_hil_source_era(completed_hil, firmware_version)
     _validate_hil_promotion_envelope(candidate_hil, completed_hil)
+
+    lcd_capable = _waveshare_lcd147b_capable_version(firmware_version)
+    _require(
+        lcd_capable == (qualification_result is not None),
+        (
+            "v0.5.0-or-newer finalization requires the private Waveshare LCD "
+            "qualification result"
+            if lcd_capable
+            else "pre-v0.5.0 finalization rejects unexpected Waveshare LCD evidence"
+        ),
+    )
+    qualification_snapshot: tuple[Any, ...] | None = None
+    qualification_summary: dict[str, Any] | None = None
+    promoted_report_bytes = completed_report_bytes
+    if qualification_result is not None:
+        qualification_snapshot = _lcd_qualification_snapshot(qualification_result)
+        try:
+            qualification_summary = _WAVESHARE_LCD147B_GATE.validate_result_file(
+                qualification_result,
+                firmware_path=(
+                    candidate / "waveshare-esp32-s3-lcd-147b" / "firmware.bin"
+                ),
+                expected_version=firmware_version,
+                candidate_release_json_sha256=candidate_release_json_sha256,
+                repo_root=root,
+            )
+        except _WAVESHARE_LCD147B_GATE.QualificationError as exc:
+            raise ReleaseError(
+                "private LCD qualification result is invalid: %s" % exc
+            ) from exc
+        _validate_lcd_report_privacy(
+            completed_report_bytes,
+            qualification_result,
+        )
+        promoted_hil = _bind_waveshare_lcd147b_hil_summary(
+            completed_hil,
+            qualification_summary,
+            firmware_version=firmware_version,
+        )
+        promoted_report_bytes = _render_hil_report_payload(
+            completed_report_text,
+            promoted_hil,
+        )
+        _validate_lcd_report_privacy(
+            promoted_report_bytes,
+            qualification_result,
+        )
 
     staging: Path | None = None
     try:
@@ -15558,9 +16449,9 @@ def finalize_public_bundle(
                 dir=str(output.parent),
             )
         )
-        for profile_id in RELEASE_PROFILE_ORDER:
+        for profile_id in profile_order:
             (staging / profile_id).mkdir()
-        for relative in _expected_bundle_files():
+        for relative in _expected_bundle_files(profile_order):
             source = candidate / relative
             destination = staging / relative
             shutil.copyfile(source, destination)
@@ -15581,7 +16472,7 @@ def finalize_public_bundle(
             "completed HIL report changed during finalization",
         )
 
-        (staging / "HIL_REPORT.md").write_bytes(completed_report_bytes)
+        (staging / "HIL_REPORT.md").write_bytes(promoted_report_bytes)
         promoted_release = copy.deepcopy(candidate_release)
         for profile in promoted_release["profiles"]:
             _require(
@@ -15670,6 +16561,17 @@ def finalize_public_bundle(
             == completed_report_bytes,
             "completed HIL report changed during public validation",
         )
+        if qualification_result is not None:
+            _validate_lcd_gate_source(root)
+            _validate_lcd_report_privacy(
+                (staging / "HIL_REPORT.md").read_bytes(),
+                qualification_result,
+            )
+            _require(
+                _lcd_qualification_snapshot(qualification_result)
+                == qualification_snapshot,
+                "private LCD qualification result changed during finalization",
+            )
         _atomic_publish_no_replace(staging, output, "public release")
         staging = None
         return output
@@ -15827,6 +16729,10 @@ def _main(argv: list[str] | None = None) -> int:
         type=Path,
     )
     finalize_parser.add_argument("--repo-root", required=True, type=Path)
+    finalize_parser.add_argument(
+        "--waveshare-lcd147b-qualification-result",
+        type=Path,
+    )
 
     hil_assembly_parser = subparsers.add_parser("assemble-hil-report")
     hil_assembly_parser.add_argument("candidate_dir", type=Path)
@@ -15961,6 +16867,9 @@ def _main(argv: list[str] | None = None) -> int:
             license_evidence_dir=args.license_evidence_dir,
             license_build_root=args.license_build_root,
             repo_root=args.repo_root,
+            waveshare_lcd147b_qualification_result=(
+                args.waveshare_lcd147b_qualification_result
+            ),
         )
         print(output)
     elif args.command == "assemble-hil-report":

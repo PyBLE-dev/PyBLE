@@ -10,6 +10,7 @@ import { verifyFirmwareProfile } from "@/lib/firmware-integrity";
 import {
   hasExactFirmwareProfileDescriptors,
   isExactPublicBetaFirmwareRelease,
+  releaseIncludesWaveshareLcd147b,
   type FirmwareProfileDescriptor,
   type FirmwareProfileId,
   type FirmwareReleaseDescriptor,
@@ -60,7 +61,14 @@ const consentItems = [
   },
 ] as const;
 
-type ConsentId = (typeof consentItems)[number]["id"];
+const exactBoardConsentItem = {
+  id: "exactBoard",
+  label:
+    "My board is the exact ESP32-S3-LCD-1.47B B-version with 16 MiB flash and 8 MiB Octal PSRAM.",
+} as const;
+
+type ConsentId =
+  (typeof consentItems)[number]["id"] | typeof exactBoardConsentItem.id;
 type InstallerPhase = "idle" | "verifying" | "verified" | "failed";
 
 function browserCapabilities(): BrowserCapabilities {
@@ -114,7 +122,10 @@ async function loadEspWebTools() {
 
 function profileDescription(profile: FirmwareProfileDescriptor) {
   if (profile.id === "esp32-s3-n16r8") {
-    return "ESP32-S3 · N16R8 · 16 MiB flash · 8 MiB Octal PSRAM";
+    return "ESP32-S3 · N16R8 · 16 MiB flash · 8 MiB Octal PSRAM · lean generic · no TFT and no splash";
+  }
+  if (profile.id === "waveshare-esp32-s3-lcd-147b") {
+    return "Exact B-version board · 16 MiB flash · 8 MiB Octal PSRAM · bundled ST7789 display runtime and fresh-install splash";
   }
   return "ESP32 · 4 MiB flash · no PSRAM required";
 }
@@ -123,7 +134,7 @@ function policyFailure(release: FirmwareReleaseDescriptor | null | undefined) {
   if (!release) {
     return {
       heading: "Installer unavailable",
-      body: "Hardware validation is still required on both exact current release profiles before the public installer can be enabled.",
+      body: "Hardware validation is still required on all three prospective v0.5.1 profiles before the public installer can be enabled.",
     };
   }
   if (release.deployment !== "public" && release.deployment !== "candidate") {
@@ -146,7 +157,10 @@ function policyFailure(release: FirmwareReleaseDescriptor | null | undefined) {
       body: "The public beta does not match the exact audited v0.4.2 firmware, so installation remains unavailable.",
     };
   }
-  if (!hasExactFirmwareProfileDescriptors(release.version, release.profiles)) {
+  if (
+    release.deployment !== "public-beta" &&
+    !hasExactFirmwareProfileDescriptors(release.version, release.profiles)
+  ) {
     return {
       heading: "Installer unavailable",
       body: "The selected firmware profile set is invalid, so installation remains unavailable.",
@@ -156,6 +170,15 @@ function policyFailure(release: FirmwareReleaseDescriptor | null | undefined) {
     return {
       heading: "Public installer unavailable",
       body: "Hardware validation is pending, so this public build remains fail-closed.",
+    };
+  }
+  if (
+    release.deployment === "public" &&
+    !releaseIncludesWaveshareLcd147b(release)
+  ) {
+    return {
+      heading: "Public installer unavailable",
+      body: "The selected public descriptor is not an unrestricted qualified v0.5.1-or-newer release, so installation remains unavailable.",
     };
   }
   if (release.deployment === "candidate" && !release.accessControlled) {
@@ -221,6 +244,7 @@ function FlashStatusForRelease({
     erase: false,
     power: false,
     port: false,
+    exactBoard: false,
   });
   const [phase, setPhase] = useState<InstallerPhase>("idle");
   const [verified, setVerified] = useState<VerifiedFirmwareProfile | null>(
@@ -298,7 +322,11 @@ function FlashStatusForRelease({
   const selectedProfile = activeRelease.profiles.find(
     ({ id }) => id === selectedId,
   );
-  const everyConsent = consentItems.every(({ id }) => consents[id]);
+  const requiredConsentItems =
+    selectedProfile?.id === "waveshare-esp32-s3-lcd-147b"
+      ? [...consentItems, exactBoardConsentItem]
+      : consentItems;
+  const everyConsent = requiredConsentItems.every(({ id }) => consents[id]);
   const candidate = activeRelease.deployment === "candidate";
   const publicBeta = activeRelease.deployment === "public-beta";
 
@@ -313,6 +341,7 @@ function FlashStatusForRelease({
       erase: false,
       power: false,
       port: false,
+      exactBoard: false,
     });
     setPhase("idle");
     setVerified(null);
@@ -381,6 +410,8 @@ function FlashStatusForRelease({
     timeZone: "UTC",
     year: "numeric",
   }).format(new Date(activeRelease.builtAt));
+  const includesWaveshareLcd147b =
+    releaseIncludesWaveshareLcd147b(activeRelease);
 
   return (
     <section className="flash-status" aria-labelledby="installer-status-title">
@@ -432,15 +463,24 @@ function FlashStatusForRelease({
 
       <p className="flash-warning">
         The <strong>esp32-s3-n16r8</strong> image is not for every ESP32-S3
-        board. It requires 16 MiB flash and 8 MiB Octal PSRAM.
+        board. It requires 16 MiB flash and 8 MiB Octal PSRAM and is the lean,
+        board-neutral image: it bundles no Waveshare TFT runtime or boot splash.
       </p>
+
+      {includesWaveshareLcd147b ? (
+        <p className="flash-warning">
+          The <strong>waveshare-esp32-s3-lcd-147b</strong> image is only for the
+          exact ESP32-S3-LCD-1.47B B-version. ESP32-S3 family detection and
+          matching N16R8 memory do not identify the board or its display wiring.
+        </p>
+      ) : null}
 
       {selectedProfile ? (
         <div
           className="consent-list"
           aria-label="Installation acknowledgements"
         >
-          {consentItems.map(({ id, label }) => (
+          {requiredConsentItems.map(({ id, label }) => (
             <label key={id}>
               <input
                 type="checkbox"

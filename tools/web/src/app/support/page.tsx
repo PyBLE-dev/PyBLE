@@ -3,6 +3,7 @@
 
 import { ExternalIcon, MailIcon } from "@/components/icons";
 import { PageIntro } from "@/components/page-intro";
+import { releaseIncludesWaveshareLcd147b } from "@/lib/firmware-release";
 import { firmwareReleaseSelectedAtBuild } from "@/lib/firmware-release-selection";
 import { pageMetadata, siteConfig } from "@/lib/site";
 
@@ -29,8 +30,8 @@ export default function SupportPage() {
   const firmwareRelease = firmwareReleaseSelectedAtBuild();
   const publicBeta = firmwareRelease?.deployment === "public-beta";
   const qualifiedPublic =
-    firmwareRelease?.deployment === "public" &&
-    firmwareRelease.hilStatus === "passed";
+    firmwareRelease !== null &&
+    releaseIncludesWaveshareLcd147b(firmwareRelease);
 
   return (
     <main id="main-content">
@@ -62,8 +63,10 @@ export default function SupportPage() {
                     ) : qualifiedPublic ? (
                       <>
                         Qualified v{firmwareRelease.version} firmware is
-                        available for the exact esp32-4mb and esp32-s3-n16r8
-                        profiles.
+                        available for three exact profiles: esp32-4mb, lean
+                        generic esp32-s3-n16r8, and separate
+                        waveshare-esp32-s3-lcd-147b. The Waveshare image alone
+                        includes its TFT runtime and fresh-install splash.
                       </>
                     ) : (
                       <>

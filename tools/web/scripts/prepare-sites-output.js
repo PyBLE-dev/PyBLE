@@ -42,6 +42,7 @@ async function requireFile(path, missingMessage) {
 
 const requiredPrerenderedRoutes = [
   "/",
+  "/app",
   "/flash",
   "/privacy",
   "/support",
@@ -62,6 +63,8 @@ import vinextHandler from "./vinext-handler.js";
 
 const delegatedPaths = new Set([
   "/",
+  "/app",
+  "/app/",
   "/privacy",
   "/privacy/",
   "/support",
@@ -80,7 +83,9 @@ function delegatesToVinext(pathname) {
     pathname.startsWith("/_next/") ||
     pathname.startsWith("/app/") ||
     pathname.startsWith("/brand/") ||
-    pathname.startsWith("/firmware/")
+    pathname.startsWith("/firmware/") ||
+    pathname.startsWith("/google-play/") ||
+    pathname.startsWith("/testflight/")
   );
 }
 

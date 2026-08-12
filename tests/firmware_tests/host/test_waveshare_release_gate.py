@@ -62,6 +62,8 @@ FINAL_TEST, FINAL_TEST_ERROR = load_module(
     HERE / "test_release_finalization.py",
 )
 
+PROSPECTIVE_VERSION = "0.5.1"
+
 
 def canonical_bytes(value):
     return (
@@ -125,49 +127,44 @@ def write_hil_report(path, payload, marker_version):
     )
 
 
-def upgrade_finalization_fixture_to_v050(fixture):
-    """Move the synthetic finalization bundle to the exact V4 source era."""
+def install_prospective_qualification_policy(original, repo, build_root=None):
+    """Keep source-era fixture evidence public-path scoped and temporary."""
 
-    candidate = fixture.candidate
-    for profile_id in RELEASE.RELEASE_PROFILE_ORDER:
-        manifest_path = candidate / profile_id / "manifest.json"
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        manifest["version"] = "0.5.0"
-        manifest_path.write_text(
-            json.dumps(manifest, indent=2, sort_keys=False) + "\n",
+    repo = Path(repo)
+    if repo.resolve() == REPO_ROOT.resolve():
+        raise AssertionError("prospective qualification fixtures must be isolated")
+    policy_path = Path(original(repo, build_root))
+    policy = json.loads(policy_path.read_text(encoding="utf-8"))
+    baseline = policy["baseline_evidence"]
+    old_path = repo / baseline["path"]
+    source_commit = old_path.stem
+    new_relative = "docs/validation/firmware/oi1/%s.json" % source_commit
+    new_path = repo / new_relative
+    if old_path != new_path:
+        new_path.parent.mkdir(parents=True, exist_ok=True)
+        old_path.replace(new_path)
+        baseline["path"] = new_relative
+        baseline["sha256"] = hashlib.sha256(new_path.read_bytes()).hexdigest()
+        policy_path.write_text(
+            json.dumps(policy, indent=2, sort_keys=False) + "\n",
             encoding="utf-8",
         )
+    return policy_path
 
-    release_path = candidate / "release.json"
-    release = json.loads(release_path.read_text(encoding="utf-8"))
-    release["identity"].update(
-        version="0.5.0",
-        tag="firmware-v0.5.0",
-        agent_version="0.5.0",
-    )
-    release_path.write_text(
-        json.dumps(release, indent=2, sort_keys=False) + "\n",
+
+def install_prospective_source_version(original, fixture):
+    """Select v0.5.1 before a temporary release-license graph is frozen."""
+
+    original(fixture)
+    lock_path = fixture.firmware / "versions.lock"
+    lock_text = lock_path.read_text(encoding="utf-8")
+    old = 'agent_version = "0.5.0"'
+    if lock_text.count(old) != 1:
+        raise AssertionError("license fixture version seed changed")
+    lock_path.write_text(
+        lock_text.replace(old, 'agent_version = "%s"' % PROSPECTIVE_VERSION),
         encoding="utf-8",
     )
-
-    pending = FINAL_TEST.read_hil_payload(candidate / "HIL_REPORT.md")
-    pending["schema_version"] = 4
-    pending["waveshare_lcd147b_qualification"] = None
-    for record in pending["records"]:
-        record["firmware_version"] = "0.5.0"
-        record["tag"] = "firmware-v0.5.0"
-    write_hil_report(candidate / "HIL_REPORT.md", pending, 4)
-    FINAL_TEST.refresh_candidate_hashes(candidate)
-
-    fixture.candidate_release_sha256 = hashlib.sha256(
-        release_path.read_bytes()
-    ).hexdigest()
-    completed = BUNDLE_TEST.complete_hil_payload(
-        pending,
-        fixture.candidate_release_sha256,
-    )
-    write_hil_report(fixture.completed_hil, completed, 4)
-    return completed
 
 
 def firmware_measurement(firmware):
@@ -318,7 +315,7 @@ class ResultValidationTests(unittest.TestCase):
         return GATE.validate_result_file(
             self.result_path,
             firmware_path=self.firmware,
-            expected_version="0.5.0",
+            expected_version=PROSPECTIVE_VERSION,
             candidate_release_json_sha256=self.candidate_release_digest,
             repo_root=REPO_ROOT,
         )
@@ -365,7 +362,7 @@ class ResultValidationTests(unittest.TestCase):
             "status": lambda value: value.__setitem__("status", "pending"),
             "profile": lambda value: value.__setitem__("profile_id", "esp32-4mb"),
             "model": lambda value: value.__setitem__("board_model", "generic"),
-            "version": lambda value: value.__setitem__("firmware_version", "0.5.1"),
+            "version": lambda value: value.__setitem__("firmware_version", "0.5.2"),
             "full-hash": lambda value: value.__setitem__(
                 "candidate_firmware_sha256", "0" * 64
             ),
@@ -433,7 +430,7 @@ class ResultValidationTests(unittest.TestCase):
         validated = GATE.validate_public_summary(
             summary,
             firmware_path=self.firmware,
-            expected_version="0.5.0",
+            expected_version=PROSPECTIVE_VERSION,
             candidate_release_json_sha256=self.candidate_release_digest,
         )
         self.assertEqual(validated, summary)
@@ -443,7 +440,7 @@ class ResultValidationTests(unittest.TestCase):
             GATE.validate_public_summary(
                 changed,
                 firmware_path=self.firmware,
-                expected_version="0.5.0",
+                expected_version=PROSPECTIVE_VERSION,
                 candidate_release_json_sha256=self.candidate_release_digest,
             )
 
@@ -515,8 +512,47 @@ class ResultValidationTests(unittest.TestCase):
 class FinalizationIntegrationTests(unittest.TestCase):
     def setUp(self):
         FINAL_TEST.RELEASE = RELEASE
-        self.fixture = FINAL_TEST.FinalizationFixture()
-        upgrade_finalization_fixture_to_v050(self.fixture)
+        fixture_bundle_module = FINAL_TEST.BUNDLE_TEST
+        fixture_license_module = FINAL_TEST.LICENSE_TEST
+        release_fixture_class = fixture_bundle_module.ReleaseFixture
+        license_fixture_class = fixture_license_module.ReleaseLicenseFixture
+        original_policy_installer = (
+            fixture_bundle_module.install_fixture_qualification_policy
+        )
+        original_source_installer = (
+            license_fixture_class._install_retained_source_checkouts
+        )
+
+        def prospective_release_fixture():
+            return release_fixture_class(firmware_version=PROSPECTIVE_VERSION)
+
+        def prospective_policy(repo, build_root=None):
+            return install_prospective_qualification_policy(
+                original_policy_installer,
+                repo,
+                build_root,
+            )
+
+        def prospective_sources(fixture):
+            return install_prospective_source_version(
+                original_source_installer,
+                fixture,
+            )
+
+        with mock.patch.object(
+            fixture_bundle_module,
+            "ReleaseFixture",
+            new=prospective_release_fixture,
+        ), mock.patch.object(
+            fixture_bundle_module,
+            "install_fixture_qualification_policy",
+            new=prospective_policy,
+        ), mock.patch.object(
+            license_fixture_class,
+            "_install_retained_source_checkouts",
+            new=prospective_sources,
+        ):
+            self.fixture = FINAL_TEST.FinalizationFixture()
         self.result_path = self.fixture.license_fixture.root / "lcd147-result.json"
         self.result = asyncio.run(
             make_result(
@@ -545,7 +581,7 @@ class FinalizationIntegrationTests(unittest.TestCase):
             ),
         )
 
-    def test_v050_finalization_requires_and_consumes_exact_private_result(self):
+    def test_v051_finalization_requires_and_consumes_exact_private_result(self):
         missing_output = self.fixture.license_fixture.root / "missing-result"
         with mock.patch.object(
             RELEASE,
@@ -555,7 +591,7 @@ class FinalizationIntegrationTests(unittest.TestCase):
             self.finalize(missing_output, result_path=False)
         self.assertFalse(missing_output.exists())
 
-        output = self.fixture.license_fixture.root / "public-v0.5.0"
+        output = self.fixture.license_fixture.root / "public-v0.5.1"
         candidate_before = FINAL_TEST.tree_bytes(self.fixture.candidate)
         original_gate = GATE.validate_result_file
         with mock.patch.object(
@@ -578,7 +614,7 @@ class FinalizationIntegrationTests(unittest.TestCase):
             / "waveshare-esp32-s3-lcd-147b"
             / "firmware.bin",
         )
-        self.assertEqual(call.kwargs["expected_version"], "0.5.0")
+        self.assertEqual(call.kwargs["expected_version"], PROSPECTIVE_VERSION)
         self.assertEqual(
             call.kwargs["candidate_release_json_sha256"],
             self.fixture.candidate_release_sha256,
@@ -755,7 +791,7 @@ class FinalizationIntegrationTests(unittest.TestCase):
 
 @unittest.skipUnless(RELEASE is not None, "release script is unavailable")
 class SourceEraTests(unittest.TestCase):
-    def test_v042_remains_outside_the_new_gate_and_v050_is_inside(self):
+    def test_v042_remains_outside_the_gate_and_v050_is_the_floor(self):
         capable = getattr(RELEASE, "_waveshare_lcd147b_capable_version", None)
         self.assertTrue(callable(capable))
         self.assertFalse(capable("0.4.2"))
@@ -763,37 +799,69 @@ class SourceEraTests(unittest.TestCase):
         self.assertTrue(capable("0.5.0-rc.1"))
         self.assertTrue(capable("1.0.0"))
 
-    def test_historical_v2_and_capable_v4_are_exact_separate_eras(self):
+    def test_historical_v2_and_v051_v4_are_exact_separate_eras(self):
         self.assertIsNotNone(BUNDLE_TEST, BUNDLE_TEST_ERROR)
-        fixture = BUNDLE_TEST.ReleaseFixture()
-        try:
-            bundle = fixture.make_bundle(public=False)
-            release = json.loads((bundle / "release.json").read_text(encoding="utf-8"))
-            policy = json.loads(
-                fixture.qualification_policy_path.read_text(encoding="utf-8")
+        historical = BUNDLE_TEST.ReleaseFixture(firmware_version="0.4.2")
+        original_policy_installer = (
+            BUNDLE_TEST.install_fixture_qualification_policy
+        )
+
+        def prospective_policy(repo, build_root=None):
+            return install_prospective_qualification_policy(
+                original_policy_installer,
+                repo,
+                build_root,
             )
-            policy_sha256 = hashlib.sha256(
-                fixture.qualification_policy_path.read_bytes()
+
+        with mock.patch.object(
+            BUNDLE_TEST,
+            "install_fixture_qualification_policy",
+            new=prospective_policy,
+        ):
+            prospective = BUNDLE_TEST.ReleaseFixture(
+                firmware_version=PROSPECTIVE_VERSION
+            )
+        try:
+            historical_bundle = historical.make_bundle(public=False)
+            historical_release = json.loads(
+                (historical_bundle / "release.json").read_text(encoding="utf-8")
+            )
+            historical_policy = json.loads(
+                historical.qualification_policy_path.read_text(encoding="utf-8")
+            )
+            historical_policy_sha256 = hashlib.sha256(
+                historical.qualification_policy_path.read_bytes()
+            ).hexdigest()
+            prospective_bundle = prospective.make_bundle(public=False)
+            prospective_release = json.loads(
+                (prospective_bundle / "release.json").read_text(encoding="utf-8")
+            )
+            prospective_policy = json.loads(
+                prospective.qualification_policy_path.read_text(encoding="utf-8")
+            )
+            prospective_policy_sha256 = hashlib.sha256(
+                prospective.qualification_policy_path.read_bytes()
             ).hexdigest()
             provenance = {"pyble": {"commit": "1" * 40}}
             old_report = RELEASE._candidate_hil_report(
                 "0.4.2",
                 provenance,
-                release["profiles"],
-                policy,
-                policy_sha256,
-                bundle,
+                historical_release["profiles"],
+                historical_policy,
+                historical_policy_sha256,
+                historical_bundle,
             )
             new_report = RELEASE._candidate_hil_report(
-                "0.5.0",
+                PROSPECTIVE_VERSION,
                 provenance,
-                release["profiles"],
-                policy,
-                policy_sha256,
-                bundle,
+                prospective_release["profiles"],
+                prospective_policy,
+                prospective_policy_sha256,
+                prospective_bundle,
             )
         finally:
-            fixture.cleanup()
+            historical.cleanup()
+            prospective.cleanup()
 
         self.assertIn("PYBLE_HIL_RECORDS_V2", old_report)
         self.assertNotIn("waveshare_lcd147b_qualification", old_report)
@@ -804,7 +872,7 @@ class SourceEraTests(unittest.TestCase):
         with self.assertRaises(RELEASE.ReleaseError):
             RELEASE._validate_hil_source_era(
                 RELEASE._parse_hil_report(old_report),
-                "0.5.0",
+                PROSPECTIVE_VERSION,
             )
         self.assertEqual(
             RELEASE._validate_hil_source_era(
@@ -841,11 +909,19 @@ class SourceEraTests(unittest.TestCase):
             "status": "passed",
             "qualification_result_sha256": "ef" * 32,
         }
-        completed = capable(pending, summary, firmware_version="0.5.0")
+        completed = capable(
+            pending,
+            summary,
+            firmware_version=PROSPECTIVE_VERSION,
+        )
         self.assertIsNone(pending["waveshare_lcd147b_qualification"])
         self.assertEqual(completed["waveshare_lcd147b_qualification"], summary)
         with self.assertRaises(RELEASE.ReleaseError):
-            capable(completed, summary, firmware_version="0.5.0")
+            capable(
+                completed,
+                summary,
+                firmware_version=PROSPECTIVE_VERSION,
+            )
 
 
 if __name__ == "__main__":

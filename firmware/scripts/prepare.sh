@@ -12,7 +12,7 @@
 #      The (empty at S1) frozen-Python agent package firmware/pyble/ is copied
 #      alongside so the overlay manifest.py can freeze it.
 #
-#   Usage:  prepare.sh <esp32|esp32-s3|esp32-c3>
+#   Usage:  prepare.sh <esp32|esp32-s3|waveshare-esp32-s3-lcd-147b|esp32-c3>
 #
 # This never edits upstream tracked files in place (CON-1). It is idempotent.
 
@@ -29,8 +29,8 @@ PATCHES_POLICY="$REPO_ROOT/tools/ci/patches_policy.sh"
 
 TARGET="${1:-}"
 case "$TARGET" in
-  esp32|esp32-s3|esp32-c3) : ;;
-  *) echo "prepare.sh: unknown/missing target '$TARGET' — valid: esp32 esp32-s3 esp32-c3" >&2; exit 2 ;;
+  esp32|esp32-s3|waveshare-esp32-s3-lcd-147b|esp32-c3) : ;;
+  *) echo "prepare.sh: unknown/missing target '$TARGET' — valid: esp32 esp32-s3 waveshare-esp32-s3-lcd-147b esp32-c3" >&2; exit 2 ;;
 esac
 
 OVERLAY="$FW/board_overlays/$TARGET"
@@ -54,10 +54,12 @@ while IFS= read -r -d '' generated; do
   case "$generated" in
     ports/esp32/boards/PYBLE_ESP32/*|\
     ports/esp32/boards/PYBLE_ESP32_S3/*|\
+    ports/esp32/boards/PYBLE_WAVESHARE_ESP32_S3_LCD_147B/*|\
     ports/esp32/boards/PYBLE_ESP32_C3/*|\
     ports/esp32/partitions.csv|\
     ports/esp32/build-PYBLE_ESP32/*|\
     ports/esp32/build-PYBLE_ESP32_S3/*|\
+    ports/esp32/build-PYBLE_WAVESHARE_ESP32_S3_LCD_147B/*|\
     ports/esp32/build-PYBLE_ESP32_C3/*|\
     mpy-cross/build/*) : ;;
     *)
@@ -81,6 +83,12 @@ mkdir -p "$BOARD_DST"
 cp -R "$OVERLAY"/. "$BOARD_DST"/
 # Copy the frozen-Python agent package so manifest.py can freeze it.
 cp -R "$FW/pyble" "$BOARD_DST/pyble"
+# The optional clean-room display runtime is exact-board-only Layer-4 content.
+# Keep the canonical source outside the overlay, then materialize it only for
+# the dedicated Waveshare build. Every family/generic target must stay lean.
+if [ "$TARGET" = "waveshare-esp32-s3-lcd-147b" ]; then
+  cp "$FW/python_modules/pyble_st7789.py" "$BOARD_DST/pyble_st7789.py"
+fi
 # ESP-IDF resolves CONFIG_PARTITION_TABLE_CUSTOM_FILENAME relative to the esp32
 # PORT project dir, not the board dir — so place the overlay's partition table
 # there too (per-target, overwritten each build). The submodule's TRACKED files

@@ -951,6 +951,87 @@ h3 {
   line-height: 1.65;
 }
 
+.waveshare-board-photo {
+  margin: 32px 0;
+  overflow: hidden;
+  border: 1px solid #cbd9e8;
+  border-radius: 22px;
+  background: var(--white);
+  box-shadow: 0 20px 50px rgb(8 27 53 / 14%);
+}
+
+.waveshare-board-photo__media {
+  position: relative;
+  overflow: hidden;
+  background: var(--navy-900);
+}
+
+.waveshare-board-photo__image {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.waveshare-board-photo__badge {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: inline-flex;
+  min-height: 32px;
+  padding: 0 12px;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid rgb(255 255 255 / 24%);
+  border-radius: 999px;
+  background: rgb(8 27 53 / 88%);
+  box-shadow: 0 8px 22px rgb(0 0 0 / 22%);
+  color: var(--white);
+  font-size: 0.69rem;
+  font-weight: 780;
+  letter-spacing: 0.04em;
+  backdrop-filter: blur(10px);
+}
+
+.waveshare-board-photo__badge i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--success);
+  box-shadow: 0 0 0 4px rgb(55 210 145 / 16%);
+}
+
+.waveshare-board-photo figcaption {
+  display: flex;
+  padding: 18px 20px 20px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 22px;
+  border-top: 1px solid #dce6f0;
+  background: #f7faff;
+}
+
+.waveshare-board-photo__copy {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.waveshare-board-photo__copy strong {
+  color: var(--navy-900);
+  font-size: 0.86rem;
+}
+
+.waveshare-board-photo__copy > span {
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.55;
+}
+
+.waveshare-board-photo .text-link {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
 .compatibility {
   overflow: hidden;
   background:
@@ -978,6 +1059,13 @@ h3 {
 
 .compatibility__targets {
   min-width: 0;
+}
+
+.compatibility__grid > .waveshare-board-photo {
+  width: min(100%, 920px);
+  margin: 2px 0 0;
+  justify-self: center;
+  grid-column: 1 / -1;
 }
 
 .compatibility .compatibility__target-label {
@@ -1288,6 +1376,189 @@ h3 {
   color: var(--signal-600);
   font-size: 0.65rem;
   overflow-wrap: anywhere;
+}
+
+.android-invite {
+  border-top: 1px solid var(--line);
+  background: #edf3fc;
+}
+
+.app-install {
+  background: var(--white);
+}
+
+.app-install__heading {
+  max-width: 760px;
+}
+
+.app-install__channels {
+  display: grid;
+  gap: 24px;
+}
+
+.app-install__card {
+  display: grid;
+  padding: clamp(34px, 5vw, 58px);
+  align-items: center;
+  grid-template-columns: minmax(0, 1fr) minmax(250px, 310px);
+  gap: clamp(40px, 6vw, 70px);
+  border: 1px solid #cedceb;
+  border-radius: var(--radius-lg);
+  background:
+    radial-gradient(circle at 88% 8%, rgb(47 140 255 / 14%), transparent 28%),
+    linear-gradient(120deg, rgb(45 91 255 / 7%), transparent 50%), var(--paper);
+  box-shadow: var(--shadow-sm);
+}
+
+.app-install__card--android {
+  background:
+    radial-gradient(circle at 88% 8%, rgb(37 177 113 / 12%), transparent 28%),
+    linear-gradient(120deg, rgb(45 91 255 / 7%), transparent 50%), var(--paper);
+}
+
+.app-install__copy {
+  max-width: 660px;
+}
+
+.status-badge--light {
+  margin-bottom: 32px;
+  border-color: rgb(45 91 255 / 16%);
+  background: rgb(45 91 255 / 7%);
+  color: var(--signal-600);
+}
+
+.app-install__copy h3 {
+  margin-bottom: 18px;
+  font-size: clamp(2rem, 4vw, 3.45rem);
+}
+
+.app-install__lede {
+  max-width: 590px;
+  margin-bottom: 28px;
+  color: var(--muted);
+  font-size: 1.02rem;
+}
+
+.app-install__primary {
+  width: fit-content;
+}
+
+.app-install__direct {
+  display: grid;
+  margin: 24px 0 0;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.app-install__direct span {
+  color: var(--signal-600);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.78rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.app-install__secondary-actions {
+  margin-top: 28px;
+}
+
+.app-install__qr {
+  margin: 0;
+  padding: 18px;
+  border: 1px solid #d5e1ef;
+  border-radius: 24px;
+  background: var(--white);
+  box-shadow: var(--shadow-md);
+}
+
+.app-install__qr-link {
+  display: block;
+}
+
+.app-install__qr img {
+  width: 100%;
+  height: auto;
+  border-radius: 13px;
+}
+
+.app-install__qr figcaption {
+  display: grid;
+  margin-top: 15px;
+  gap: 3px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.app-install__qr figcaption strong {
+  color: var(--ink);
+  font-size: 0.82rem;
+}
+
+.app-install__support-actions {
+  justify-content: center;
+}
+
+.app-getting-started {
+  border-top: 1px solid var(--line);
+  background: #edf3fc;
+}
+
+.app-getting-started__steps {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+  list-style: none;
+}
+
+.app-getting-started__steps li {
+  position: relative;
+  min-height: 220px;
+  padding: 28px;
+  border: 1px solid #cedceb;
+  border-radius: var(--radius-md);
+  background: var(--white);
+  box-shadow: var(--shadow-sm);
+}
+
+.app-getting-started__steps li > span {
+  display: inline-flex;
+  margin-bottom: 30px;
+  color: var(--signal-600);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.app-getting-started__steps h3 {
+  margin-bottom: 10px;
+}
+
+.app-getting-started__steps p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.app-getting-started__steps svg {
+  position: absolute;
+  top: 27px;
+  right: 27px;
+  width: 20px;
+  color: var(--success);
+}
+
+.app-getting-started__note {
+  max-width: 760px;
+  margin: 30px auto 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  text-align: center;
 }
 
 .page-intro {
@@ -2094,6 +2365,24 @@ h3 {
     max-width: 560px;
   }
 
+  .beta-invite__card {
+    align-items: stretch;
+    grid-template-columns: 1fr;
+  }
+
+  .app-install__card {
+    grid-template-columns: minmax(0, 1fr) minmax(220px, 270px);
+    gap: 40px;
+  }
+
+  .app-getting-started__steps {
+    grid-template-columns: 1fr;
+  }
+
+  .app-getting-started__steps li {
+    min-height: 0;
+  }
+
   .policy-contact,
   .report-card {
     position: static;
@@ -2233,6 +2522,30 @@ h3 {
     min-height: 150px;
   }
 
+  .waveshare-board-photo {
+    margin-block: 26px;
+    border-radius: 16px;
+  }
+
+  .waveshare-board-photo__badge {
+    top: 10px;
+    right: 10px;
+    min-height: 28px;
+    padding-inline: 10px;
+    font-size: 0.63rem;
+  }
+
+  .waveshare-board-photo figcaption {
+    padding: 16px;
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 13px;
+  }
+
+  .waveshare-board-photo .text-link {
+    white-space: normal;
+  }
+
   .source-section__card {
     padding: 30px 24px;
     gap: 38px;
@@ -2264,6 +2577,29 @@ h3 {
   .beta-invite__card .button-row {
     width: 100%;
     flex-direction: column;
+  }
+
+  .app-install__card {
+    padding: 30px 24px;
+    align-items: stretch;
+    grid-template-columns: 1fr;
+  }
+
+  .app-install__qr {
+    width: min(270px, 100%);
+    margin-inline: auto;
+  }
+
+  .app-install__primary {
+    width: 100%;
+  }
+
+  .app-install__secondary-actions {
+    width: 100%;
+  }
+
+  .app-getting-started__steps li {
+    padding: 24px;
   }
 
   .page-intro__inner {

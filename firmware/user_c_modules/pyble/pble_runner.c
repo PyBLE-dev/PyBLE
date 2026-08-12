@@ -34,6 +34,8 @@
 #include "freertos/task.h"
 #include "freertos/semphr.h"
 
+#include "esp_timer.h"
+
 #include "py/runtime.h"      // nlr, mp_call_function_0, mp_handle_pending, mp_sched_exception
 #include "py/obj.h"          // mp_obj_new_exception, mp_type_SystemExit, mp_obj_print_exception
 #include "py/mpstate.h"      // MP_STATE_VM / MP_STATE_THREAD, mp_state_thread_t
@@ -64,6 +66,11 @@ extern void mp_hal_wake_main_task(void);
 #define PBLE_RUN_PATH_MAX   128
 #define PBLE_RUN_BUF_MAX    2048
 
+// A successful NimBLE Notify submission can still be queued below ATT. Keep
+// the VM alive for several negotiated connection intervals after RSP{OK} so
+// the central can actually receive it before MicroPython tears its heap down.
+#define PBLE_SOFT_REBOOT_GRACE_US 250000ULL
+
 // --- Module state ------------------------------------------------------------
 static pble_rsm_t g_rsm;                 // the run-state machine (single owner)
 static portMUX_TYPE g_mux = portMUX_INITIALIZER_UNLOCKED;  // guards g_rsm
@@ -79,6 +86,12 @@ static volatile bool g_stop_requested;
 static uint8_t g_run_mode;
 static size_t  g_run_len;
 static char    g_run_buf[PBLE_RUN_BUF_MAX];
+
+// Created once from pble_runner_register(). The IDF timer task is independent
+// of the NimBLE host task, so the host never sleeps while honoring the delivery
+// grace. The pending flag is guarded by g_mux across the two tasks.
+static esp_timer_handle_t g_soft_reboot_timer;
+static volatile bool g_soft_reboot_pending;
 
 // Pre-created SystemExit for SOFT_REBOOT's main-task VM reset (rooted below).
 MP_REGISTER_ROOT_POINTER(mp_obj_t pble_runner_sysexit);
@@ -303,26 +316,74 @@ uint8_t pble_runner_stop(const pble_frame_t *req, uint8_t *rsp, size_t *rlen, ui
     return PBLE_OK;   // returns immediately from the host task (FR-BLE-11)
 }
 
+static void soft_reboot_timer_cb(void *arg) {
+    (void)arg;
+    bool reset;
+    taskENTER_CRITICAL(&g_mux);
+    reset = g_soft_reboot_pending;
+    g_soft_reboot_pending = false;
+    taskEXIT_CRITICAL(&g_mux);
+    if (!reset) {
+        return;
+    }
+
+    // The SystemExit object is pre-created and rooted while the current VM is
+    // valid. Schedule it only after the delivery grace; the main task remains
+    // the sole mp_deinit/mp_init site.
+    mp_obj_t se = MP_STATE_VM(pble_runner_sysexit);
+    if (se != MP_OBJ_NULL) {
+        mp_sched_exception(se);
+        mp_hal_wake_main_task();
+    }
+}
+
 uint8_t pble_runner_soft_reboot(const pble_frame_t *req, uint8_t *rsp, size_t *rlen, uint16_t conn) {
-    (void)req;
     (void)rsp;
     (void)conn;
     if (rlen) {
         *rlen = 0;
     }
-    // Stop the worker first (per-worker KBI), then marshal a VM soft-reset to the
-    // MAIN task — the only VM-safe mp_deinit/mp_init site. Raise the pre-created
-    // SystemExit in the REPL so the esp32 main loop soft-resets and re-runs
-    // _boot.py; init_agent() is idempotent, so the BLE link is kept where
-    // possible (FR-RUN-8). Terminal RUN_STATE(idle) comes from the worker unwind.
+    if (MP_STATE_VM(pble_runner_sysexit) == MP_OBJ_NULL ||
+        g_soft_reboot_timer == NULL) {
+        return PBLE_EINTERNAL;
+    }
+
+    taskENTER_CRITICAL(&g_mux);
+    if (g_soft_reboot_pending) {
+        taskEXIT_CRITICAL(&g_mux);
+        return PBLE_EBUSY;
+    }
+    g_soft_reboot_pending = true;
+    taskEXIT_CRITICAL(&g_mux);
+
+    // Submit the one-packet RSP{OK} before arming teardown, then return the
+    // internal no-RSP sentinel so dispatch cannot duplicate it. Local Notify
+    // acceptance is not delivery, hence the bounded one-shot below.
+    uint8_t status = PBLE_OK;
+    if (pble_proto_emit_id(PBLE_TYPE_RSP, req->opcode, req->id, &status, 1) != 0) {
+        taskENTER_CRITICAL(&g_mux);
+        g_soft_reboot_pending = false;
+        taskEXIT_CRITICAL(&g_mux);
+        return PBLE_EBUSY;
+    }
+
+    // A valid, inactive, pre-created one-shot is an invariant while pending was
+    // false. If IDF nevertheless refuses it, suppress the dispatcher's second
+    // response (OK is already submitted), clear the reservation, and leave the
+    // VM intact rather than perform an ambiguous immediate reset.
+    if (esp_timer_start_once(g_soft_reboot_timer, PBLE_SOFT_REBOOT_GRACE_US) != ESP_OK) {
+        taskENTER_CRITICAL(&g_mux);
+        g_soft_reboot_pending = false;
+        taskEXIT_CRITICAL(&g_mux);
+        return PBLE_NO_RSP;
+    }
+
+    // Stop the worker while the response drains. The one-shot later marshals a
+    // VM soft-reset to the MAIN task; init_agent() is idempotent, so the BLE
+    // link is kept where possible (FR-RUN-8).
     g_stop_requested = true;
     inject_worker_kbd_interrupt();
-    mp_obj_t se = MP_STATE_VM(pble_runner_sysexit);
-    if (se != MP_OBJ_NULL) {
-        mp_sched_exception(se);   // -> MAIN thread's pending exception
-    }
-    mp_hal_wake_main_task();
-    return PBLE_OK;
+    return PBLE_NO_RSP;
 }
 
 // Auto-run entry (F-12): hand a file path to the WORKER exactly as pble_runner_run
@@ -367,6 +428,18 @@ int pble_runner_state(void) {
 void pble_runner_register(void) {
     if (g_run_sem == NULL) {
         g_run_sem = xSemaphoreCreateBinary();
+    }
+    if (g_soft_reboot_timer == NULL) {
+        const esp_timer_create_args_t timer_args = {
+            .callback = soft_reboot_timer_cb,
+            .arg = NULL,
+            .dispatch_method = ESP_TIMER_TASK,
+            .name = "pble-soft-reboot",
+        };
+        if (esp_timer_create(&timer_args, &g_soft_reboot_timer) != ESP_OK) {
+            mp_raise_msg(&mp_type_RuntimeError,
+                         MP_ERROR_TEXT("soft reboot timer alloc failed"));
+        }
     }
     pble_rsm_init(&g_rsm);
     // Pre-create the SOFT_REBOOT SystemExit while on a valid VM thread (register

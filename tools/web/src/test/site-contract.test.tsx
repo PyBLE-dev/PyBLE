@@ -688,15 +688,15 @@ describe("public-site contract", () => {
         screen.queryByText("Initial beta firmware targets"),
       ).not.toBeInTheDocument();
       const boardPhoto = screen.getByRole("img", {
-        name: "Actual Waveshare ESP32-S3-LCD-1.47B displaying the PyBLE v0.5.1 boot splash and app QR",
+        name: "Actual Waveshare ESP32-S3-LCD-1.47B displaying the PyBLE v0.5.0 boot splash and app QR",
       });
       expect(boardPhoto).toHaveAttribute(
         "src",
-        "/boards/esp32-s3-lcd-1.47b-pyble-v0.5.1.jpg",
+        "/boards/esp32-s3-lcd-1.47b-pyble-v0.5.0.jpg",
       );
       const boardFigure = boardPhoto.closest("figure");
       expect(boardFigure).toHaveTextContent(
-        /Actual board.*PyBLE firmware v0\.5\.1/i,
+        /Actual board.*PyBLE firmware v0\.5\.0/i,
       );
       expect(
         within(boardFigure!).getByRole("link", {
@@ -709,7 +709,7 @@ describe("public-site contract", () => {
           process.cwd(),
           "public",
           "boards",
-          "esp32-s3-lcd-1.47b-pyble-v0.5.1.jpg",
+          "esp32-s3-lcd-1.47b-pyble-v0.5.0.jpg",
         ),
       );
       expect(photoBytes.length).toBe(195079);

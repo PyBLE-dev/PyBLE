@@ -69,6 +69,7 @@ HIL_MARKER = re.compile(
 )
 
 HISTORICAL_V042_PROFILE_ORDER = ("esp32-4mb", "esp32-s3-n16r8")
+PROSPECTIVE_FIRMWARE_VERSION = "0.5.1"
 RELEASE_PROFILE_ORDER = (
     "esp32-4mb",
     "esp32-s3-n16r8",
@@ -262,7 +263,7 @@ def fixture_oi1_build(build_root: Path, profile_id: str) -> dict[str, int]:
 def fixture_oi1_thresholds(
     build: dict[str, int],
     observation: dict,
-    firmware_version: str = "0.5.0",
+    firmware_version: str = PROSPECTIVE_FIRMWARE_VERSION,
 ) -> dict[str, int]:
     heap_samples = (
         observation["heap_post_hello"]
@@ -347,12 +348,11 @@ def install_fixture_qualification_policy(
         if source_core == (0, 4, 2)
         else RELEASE_PROFILE_ORDER
     )
-    baseline_prefix = (
-        "docs/validation/firmware/oi1"
-        if source_core == (0, 4, 2)
-        else "docs/developments/firmware/measurements/oi1"
-    )
-    baseline_relative = "%s/%s.json" % (baseline_prefix, "1" * 40)
+    # Qualification evidence is a public, source-commit-scoped validation
+    # input in every retained source era.  Keep these synthetic measurements
+    # inside the temporary repository instead of modeling the old private
+    # development-notes location that production rejects fail closed.
+    baseline_relative = "docs/validation/firmware/oi1/%s.json" % ("1" * 40)
     baseline_profiles = []
     policy_profiles = []
     for profile_id in profile_order:
@@ -842,7 +842,7 @@ def exact_manifest(version: str, profile_id: str) -> dict:
     }
 
 
-def exact_release_schema(version: str = "0.5.0") -> dict:
+def exact_release_schema(version: str = PROSPECTIVE_FIRMWARE_VERSION) -> dict:
     profile_order = (
         HISTORICAL_V042_PROFILE_ORDER
         if version == "0.4.2"
@@ -1092,7 +1092,7 @@ def hil_report_text(
     *,
     bundle: Path,
     policy_path: Path,
-    version: str = "0.5.0",
+    version: str = PROSPECTIVE_FIRMWARE_VERSION,
 ) -> str:
     profile_order = (
         HISTORICAL_V042_PROFILE_ORDER
@@ -1175,7 +1175,7 @@ def hil_report_text(
 
 
 class ReleaseFixture:
-    def __init__(self, firmware_version: str = "0.5.0"):
+    def __init__(self, firmware_version: str = PROSPECTIVE_FIRMWARE_VERSION):
         self.firmware_version = firmware_version
         self.profile_order = (
             HISTORICAL_V042_PROFILE_ORDER
@@ -1673,7 +1673,7 @@ class QualificationDerivationContractTests(unittest.TestCase):
         current = RELEASE._derived_qualification_thresholds(
             build,
             observation,
-            firmware_version="0.5.0",
+            firmware_version=PROSPECTIVE_FIRMWARE_VERSION,
         )
 
         self.assertEqual(
@@ -2033,7 +2033,11 @@ class BundleCreationTests(FixtureCase):
             "reproducibility_build_root": (
                 self.fixture.reproducibility_build_root
             ),
-            "output_dir": self.fixture.root / "created" / "v0.5.0",
+            "output_dir": (
+                self.fixture.root
+                / "created"
+                / ("v" + PROSPECTIVE_FIRMWARE_VERSION)
+            ),
             "repo_root": self.fixture.repo,
             "installer_version": "10.4.0",
             "built_at": "2026-07-30T12:00:00Z",
@@ -2104,7 +2108,10 @@ class BundleCreationTests(FixtureCase):
                 manifest = json.loads(
                     (bundle / profile_id / "manifest.json").read_text(encoding="utf-8")
                 )
-                self.assertEqual(manifest, exact_manifest("0.5.0", profile_id))
+                self.assertEqual(
+                    manifest,
+                    exact_manifest(PROSPECTIVE_FIRMWARE_VERSION, profile_id),
+                )
                 self.assertEqual(manifest["new_install_improv_wait_time"], 0)
                 for unsupported in (
                     "improv",
@@ -2866,7 +2873,10 @@ class BundleValidationTests(FixtureCase):
             previously_activated_public=True,
             qualification_repo_root=self.fixture.repo,
         )
-        self.assertEqual(result["identity"]["version"], "0.5.0")
+        self.assertEqual(
+            result["identity"]["version"],
+            PROSPECTIVE_FIRMWARE_VERSION,
+        )
 
         with self.assertRaises(RELEASE.ReleaseError):
             RELEASE.validate_bundle(

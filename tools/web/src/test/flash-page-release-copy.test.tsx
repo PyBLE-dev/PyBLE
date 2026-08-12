@@ -162,15 +162,15 @@ describe("firmware installer release copy", () => {
         /select.*waveshare-esp32-s3-lcd-147b/i,
       );
       const boardPhoto = screen.getByRole("img", {
-        name: "Actual Waveshare ESP32-S3-LCD-1.47B displaying the PyBLE v0.5.1 boot splash and app QR",
+        name: "Actual Waveshare ESP32-S3-LCD-1.47B displaying the PyBLE v0.5.0 boot splash and app QR",
       });
       expect(boardSection).toContainElement(boardPhoto);
       expect(boardPhoto).toHaveAttribute(
         "src",
-        "/boards/esp32-s3-lcd-1.47b-pyble-v0.5.1.jpg",
+        "/boards/esp32-s3-lcd-1.47b-pyble-v0.5.0.jpg",
       );
       expect(boardPhoto.closest("figure")).toHaveTextContent(
-        /Actual board.*PyBLE firmware v0\.5\.1/i,
+        /Actual board.*PyBLE firmware v0\.5\.0/i,
       );
       expect(
         screen.getAllByText(/ESP32-S3-LCD-1\.47B/i).length,

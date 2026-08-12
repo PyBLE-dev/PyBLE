@@ -2,9 +2,9 @@
 # SPDX-License-Identifier: MIT
 # Part of PyBLE (https://pyble.dev) — see /LICENSE.
 #
-# X-03 — Per-target firmware build (BLD-3/4/5, CON-4/11). Builds exactly one of
-# esp32 / esp32-s3 / esp32-c3 from the single pin in versions.lock. One
-# MicroPython + ESP-IDF pin drives all three chips; per-chip differences live
+# X-03 — Per-target firmware build (BLD-3/4/5, CON-4/11). Builds exactly one
+# logical variant from the single pin in versions.lock. One MicroPython +
+# ESP-IDF pin drives four variants over three chips; build differences live
 # ONLY in firmware/board_overlays/<target>/ (copied in at prep, submodule stays
 # pristine).
 #
@@ -40,7 +40,7 @@ SHA_DRIFT="$REPO_ROOT/tools/ci/sha_drift.sh"
 PREPARE="$HERE/prepare.sh"
 
 usage() {
-  echo "usage: build.sh [--plan] <esp32|esp32-s3|esp32-c3>" >&2
+  echo "usage: build.sh [--plan] <esp32|esp32-s3|waveshare-esp32-s3-lcd-147b|esp32-c3>" >&2
 }
 
 # idf_target_for <pyble-target> -> the IDF target from versions.lock [targets].
@@ -67,7 +67,7 @@ fi
 
 IDF_TARGET="$(idf_target_for "$TARGET")"
 if [ -z "$IDF_TARGET" ]; then
-  echo "build.sh: unknown target '$TARGET' — valid: esp32 esp32-s3 esp32-c3" >&2
+  echo "build.sh: unknown target '$TARGET' — valid: esp32 esp32-s3 waveshare-esp32-s3-lcd-147b esp32-c3" >&2
   usage
   exit 2
 fi
@@ -163,7 +163,7 @@ export PYBLE_UPSTREAM_DIR="$UPSTREAM_DIR"
 if [ ! -f "$IDF_DIR/export.sh" ]; then
   echo "build.sh: ESP-IDF toolchain not installed at $IDF_DIR." >&2
   echo "  run: firmware/scripts/install_esp_idf.sh   (installs the pinned ESP-IDF)" >&2
-  echo "  this environment has no ESP-IDF; the real 3-chip cross-compile runs in CI / on a toolchain machine." >&2
+  echo "  this environment has no ESP-IDF; the real four-variant/three-chip cross-compile runs in CI / on a toolchain machine." >&2
   exit 1
 fi
 

@@ -29,11 +29,11 @@ function releaseAtVersion(version: string): FirmwareReleaseDescriptor {
   release.recoveryPath = `/firmware/v${version}/RECOVERY.md`;
   for (const profile of release.profiles) {
     profile.manifestPath = profile.manifestPath.replace(
-      "/firmware/v0.5.0/",
+      "/firmware/v0.5.1/",
       `/firmware/v${version}/`,
     );
     profile.firmwarePath = profile.firmwarePath.replace(
-      "/firmware/v0.5.0/",
+      "/firmware/v0.5.1/",
       `/firmware/v${version}/`,
     );
   }
@@ -52,7 +52,7 @@ describe("qualified exact-board presentation", () => {
     ).toBe(false);
   });
 
-  it.each(["0.5.0", "0.5.0-rc.1", "0.5.0+build.1", "0.6.0", "1.0.0"])(
+  it.each(["0.5.1", "0.5.1-rc.1", "0.5.1+build.1", "0.6.0", "1.0.0"])(
     "admits qualified public firmware %s",
     (version) => {
       expect(releaseIncludesWaveshareLcd147b(releaseAtVersion(version))).toBe(
@@ -61,7 +61,7 @@ describe("qualified exact-board presentation", () => {
     },
   );
 
-  it.each(["0.4.2", "0.4.9", "0.5", "00.5.0", "0.5.0-01", "latest"])(
+  it.each(["0.4.2", "0.4.9", "0.5.0", "0.5", "00.5.1", "0.5.1-01", "latest"])(
     "rejects older or non-canonical firmware %s",
     (version) => {
       expect(releaseIncludesWaveshareLcd147b(releaseAtVersion(version))).toBe(
@@ -73,7 +73,7 @@ describe("qualified exact-board presentation", () => {
   it("rejects null, protected, pending, access-controlled, and malformed profile states", () => {
     expect(releaseIncludesWaveshareLcd147b(null)).toBe(false);
 
-    const candidate = structuredClone(releaseAtVersion("0.5.0")) as unknown as {
+    const candidate = structuredClone(releaseAtVersion("0.5.1")) as unknown as {
       deployment: string;
       accessControlled: boolean;
       hilStatus: string;
@@ -87,7 +87,7 @@ describe("qualified exact-board presentation", () => {
       ),
     ).toBe(false);
 
-    const pending = structuredClone(releaseAtVersion("0.5.0")) as unknown as {
+    const pending = structuredClone(releaseAtVersion("0.5.1")) as unknown as {
       hilStatus: string;
     };
     pending.hilStatus = "pending";
@@ -98,7 +98,7 @@ describe("qualified exact-board presentation", () => {
     ).toBe(false);
 
     const protectedPublic = structuredClone(
-      releaseAtVersion("0.5.0"),
+      releaseAtVersion("0.5.1"),
     ) as unknown as { accessControlled: boolean };
     protectedPublic.accessControlled = true;
     expect(
@@ -108,7 +108,7 @@ describe("qualified exact-board presentation", () => {
     ).toBe(false);
 
     const missingProfile = structuredClone(
-      releaseAtVersion("0.5.0"),
+      releaseAtVersion("0.5.1"),
     ) as unknown as { profiles: unknown[] };
     missingProfile.profiles.pop();
     expect(
@@ -119,7 +119,7 @@ describe("qualified exact-board presentation", () => {
   });
 
   it("rejects aliasing, omission, and reordering of the exact third profile", () => {
-    const exact = releaseAtVersion("0.5.0") as unknown as {
+    const exact = releaseAtVersion("0.5.1") as unknown as {
       profiles: Array<{
         id: string;
         manifestPath: string;

@@ -4,13 +4,40 @@
 import {
   firmwareProfileDescriptors,
   firmwareProfileTable,
+  historicalFirmwareProfileDescriptors,
+  historicalFirmwareProfileTable,
   isExactPublicBetaFirmwareRelease,
+  publicBetaFirmwareVersion,
   type FirmwareProfileDescriptor,
   type FirmwareProfileId,
   type FirmwareReleaseDescriptor,
   type VerifiedFirmwareProfile,
 } from "@/lib/firmware-release";
 import canonicalReleaseSchema from "@/lib/firmware-release-schema.json";
+
+interface MutableReleaseSchema {
+  title: string;
+  properties: {
+    schema_version: { const: number };
+    profiles: {
+      minItems: number;
+      maxItems: number;
+      items: { properties: { id: { enum: string[] } } };
+    };
+  };
+}
+
+const historicalReleaseSchema = structuredClone(
+  canonicalReleaseSchema,
+) as unknown as MutableReleaseSchema;
+historicalReleaseSchema.title = "PyBLE firmware release metadata v2";
+historicalReleaseSchema.properties.schema_version.const = 2;
+historicalReleaseSchema.properties.profiles.minItems = 2;
+historicalReleaseSchema.properties.profiles.maxItems = 2;
+historicalReleaseSchema.properties.profiles.items.properties.id.enum = [
+  "esp32-4mb",
+  "esp32-s3-n16r8",
+];
 
 type JsonObject = Record<string, unknown>;
 type Fetcher = (
@@ -47,6 +74,23 @@ interface ValidatedRelease {
   builtAt: string;
   profiles: Map<FirmwareProfileId, ValidatedProfile>;
   version: string;
+}
+
+interface FirmwareProfileContract {
+  readonly id: FirmwareProfileId;
+  readonly chipFamily: string;
+  readonly offset: number;
+  readonly flashSizeBytes: number;
+  readonly flashFrequencyHz: number;
+  readonly siliconRevision: {
+    readonly minimumFull: number;
+    readonly maximumFull: number;
+  };
+  readonly psram: {
+    readonly required: boolean;
+    readonly sizeBytes: number;
+    readonly type: string;
+  };
 }
 
 export class FirmwareIntegrityError extends Error {
@@ -112,8 +156,11 @@ function sameJsonValue(left: unknown, right: unknown): boolean {
   );
 }
 
-function validateReleaseSchema(value: unknown) {
-  if (!sameJsonValue(value, canonicalReleaseSchema)) {
+function validateReleaseSchema(value: unknown, historical: boolean) {
+  const expected = historical
+    ? historicalReleaseSchema
+    : canonicalReleaseSchema;
+  if (!sameJsonValue(value, expected)) {
     fail("Release schema does not match the canonical PyBLE release schema");
   }
 }
@@ -270,6 +317,12 @@ function validateDescriptorProfile(
   );
 }
 
+function usesHistoricalReleaseContract(
+  descriptor: FirmwareReleaseDescriptor,
+): boolean {
+  return descriptor.version === publicBetaFirmwareVersion;
+}
+
 function validateDescriptor(
   descriptor: FirmwareReleaseDescriptor,
   origin: string,
@@ -319,10 +372,14 @@ function validateDescriptor(
     fail("Release metadata must use the selected same-origin version path");
   }
 
-  const expectedProfiles = firmwareProfileDescriptors(descriptor.version);
+  const expectedProfiles = usesHistoricalReleaseContract(descriptor)
+    ? historicalFirmwareProfileDescriptors(descriptor.version)
+    : firmwareProfileDescriptors(descriptor.version);
   if (descriptor.profiles.length !== expectedProfiles.length) {
     fail(
-      "Selected release descriptor must contain exactly the two current release profiles",
+      usesHistoricalReleaseContract(descriptor)
+        ? "Historical v0.4.2 descriptor must contain exactly two profiles"
+        : "Selected release descriptor must contain exactly the three current release profiles",
     );
   }
   descriptor.profiles.forEach((profile, index) => {
@@ -437,8 +494,9 @@ function validateComponents(
 function validateProfile(
   value: unknown,
   index: number,
+  profileTable: readonly FirmwareProfileContract[],
 ): [FirmwareProfileId, ValidatedProfile] {
-  const expected = firmwareProfileTable[index];
+  const expected = profileTable[index];
   if (!expected) {
     fail("Release contains an unexpected profile");
   }
@@ -586,7 +644,11 @@ function validateRelease(
     ],
     "release",
   );
-  equal(release.schema_version, 2, "Release schema version");
+  equal(
+    release.schema_version,
+    usesHistoricalReleaseContract(descriptor) ? 2 : 3,
+    "Release schema version",
+  );
 
   const identity = object(release.identity, "release.identity");
   exactKeys(
@@ -615,11 +677,21 @@ function validateRelease(
   equal(installer.version, "10.4.0", "Installer package version");
 
   const profileValues = array(release.profiles, "release.profiles");
-  if (profileValues.length !== firmwareProfileTable.length) {
-    fail("Release must contain exactly the two current release profiles");
+  const historical = usesHistoricalReleaseContract(descriptor);
+  const profileTable: readonly FirmwareProfileContract[] = historical
+    ? historicalFirmwareProfileTable
+    : firmwareProfileTable;
+  if (profileValues.length !== profileTable.length) {
+    fail(
+      historical
+        ? "Historical v0.4.2 release must contain exactly two profiles"
+        : "Release must contain exactly the three current release profiles",
+    );
   }
   const profiles = new Map(
-    profileValues.map((profile, index) => validateProfile(profile, index)),
+    profileValues.map((profile, index) =>
+      validateProfile(profile, index, profileTable),
+    ),
   );
   const statuses = [...profiles.values()].map(({ hilStatus }) => hilStatus);
   if (
@@ -821,7 +893,10 @@ export async function verifyFirmwareProfile({
     "Release schema",
     descriptor.releaseJson.sha256,
   );
-  validateReleaseSchema(parseJson(schemaBytes, "Release schema"));
+  validateReleaseSchema(
+    parseJson(schemaBytes, "Release schema"),
+    usesHistoricalReleaseContract(descriptor),
+  );
   const release = validateRelease(
     parseJson(releaseBytes, "Release metadata"),
     descriptor,

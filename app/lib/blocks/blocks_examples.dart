@@ -11,7 +11,7 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 const String kBlocksExamplesAssetPath = 'assets/blockly/examples/catalog.json';
-const int kBlocksExamplesCatalogVersion = 2;
+const int kBlocksExamplesCatalogVersion = 3;
 const int _maxJavaScriptSafeInteger = 9007199254740991;
 
 const List<String> kBlocksExampleIds = <String>[
@@ -22,6 +22,7 @@ const List<String> kBlocksExampleIds = <String>[
   'read-button',
   'button-controls-led',
   'reusable-function',
+  'waveshare-esp32-s3-lcd-147b',
 ];
 
 const Set<String> _blocksExampleTitleKeys = <String>{
@@ -32,6 +33,7 @@ const Set<String> _blocksExampleTitleKeys = <String>{
   'blocksExampleReadButtonTitle',
   'blocksExampleButtonLedTitle',
   'blocksExampleFunctionTitle',
+  'blocksExampleTftTitle',
 };
 
 const Set<String> _blocksExampleSummaryKeys = <String>{
@@ -42,6 +44,7 @@ const Set<String> _blocksExampleSummaryKeys = <String>{
   'blocksExampleReadButtonSummary',
   'blocksExampleButtonLedSummary',
   'blocksExampleFunctionSummary',
+  'blocksExampleTftSummary',
 };
 
 const Set<String> _blocksExampleConceptKeys = <String>{
@@ -56,6 +59,7 @@ const Set<String> _blocksExampleConceptKeys = <String>{
   'blocksExampleConceptConditions',
   'blocksExampleConceptFunctions',
   'blocksExampleConceptParameters',
+  'blocksExampleConceptTft',
 };
 
 const Set<String> _blocksExampleWiringKeys = <String>{
@@ -64,12 +68,19 @@ const Set<String> _blocksExampleWiringKeys = <String>{
   'blocksExampleNeoPixelWiring',
   'blocksExampleButtonWiring',
   'blocksExampleButtonLedWiring',
+  'blocksExampleTftWiring',
 };
 
 const Set<String> _blocksExampleGpioLabelKeys = <String>{
   'blocksExampleLedGpio',
   'blocksExampleButtonGpio',
   'blocksExampleNeoPixelGpio',
+  'blocksExampleTftSckGpio',
+  'blocksExampleTftMosiGpio',
+  'blocksExampleTftCsGpio',
+  'blocksExampleTftDcGpio',
+  'blocksExampleTftResetGpio',
+  'blocksExampleTftBacklightGpio',
 };
 
 /// A malformed bundled catalog or unsafe materialization request.

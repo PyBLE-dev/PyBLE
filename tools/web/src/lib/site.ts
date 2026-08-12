@@ -3,7 +3,11 @@
 
 import type { Metadata } from "next";
 
-import type { FirmwareReleaseDescriptor } from "@/lib/firmware-release";
+import {
+  type FirmwareReleaseDescriptor,
+  hasExactFirmwareProfileDescriptors,
+  releaseIncludesWaveshareLcd147b,
+} from "@/lib/firmware-release";
 
 export const siteConfig = {
   name: "PyBLE",
@@ -14,6 +18,8 @@ export const siteConfig = {
     "A free, open-source, tablet-first IDE for MicroPython boards with compatible Bluetooth Low Energy agent firmware.",
   supportEmail: "viwat.v@chula.ac.th",
   testFlightUrl: "https://testflight.apple.com/join/yU4e8s6d",
+  googlePlayInternalTestUrl:
+    "https://play.google.com/store/apps/details?id=dev.pyble.pyble",
   repositoryUrl: "https://github.com/PyBLE-dev/PyBLE",
   bugReportUrl:
     "https://github.com/PyBLE-dev/PyBLE/issues/new?template=bug.yml",
@@ -40,6 +46,12 @@ const firmwareTargetDefinitions = [
     planned: false,
   },
   {
+    id: "waveshare-esp32-s3-lcd-147b",
+    target: "Waveshare ESP32-S3-LCD-1.47B",
+    constraint: "Exact B version · 16 MiB flash · 8 MiB Octal PSRAM",
+    planned: false,
+  },
+  {
     id: "esp32-c3-4mb",
     target: "ESP32-C3",
     constraint: "4 MiB external SPI flash · no PSRAM assumed",
@@ -50,22 +62,37 @@ const firmwareTargetDefinitions = [
 export function firmwareTargetsForRelease(
   release: FirmwareReleaseDescriptor | null,
 ) {
-  return firmwareTargetDefinitions.map((target) => {
-    let status = "Installer unavailable";
-    if (target.planned) {
-      status = "Planned · installer unavailable pending exact-profile HIL";
-    } else if (release?.deployment === "public-beta") {
-      status = `v${release.version} hardware-tested beta · browser install/recovery passed · release qualification pending`;
-    } else if (
-      release?.deployment === "public" &&
-      release.hilStatus === "passed"
-    ) {
-      status = `v${release.version} qualified public release`;
-    } else if (release?.deployment === "candidate") {
-      status = `v${release.version} protected candidate · HIL pending`;
-    }
-    return { ...target, status };
-  });
+  const includesWaveshareLcd147b = releaseIncludesWaveshareLcd147b(release);
+  const hasProspectiveProfileSet = Boolean(
+    release &&
+    release.deployment === "candidate" &&
+    hasExactFirmwareProfileDescriptors(release.version, release.profiles),
+  );
+
+  return firmwareTargetDefinitions
+    .filter(
+      (target) =>
+        target.id !== "waveshare-esp32-s3-lcd-147b" ||
+        includesWaveshareLcd147b ||
+        hasProspectiveProfileSet,
+    )
+    .map((target) => {
+      let status = "Installer unavailable";
+      if (target.planned) {
+        status = "Planned · installer unavailable pending exact-profile HIL";
+      } else if (release?.deployment === "public-beta") {
+        status = `v${release.version} hardware-tested beta · browser install/recovery passed · release qualification pending`;
+      } else if (release && includesWaveshareLcd147b) {
+        status = `v${release.version} qualified public release`;
+      } else if (release?.deployment === "candidate") {
+        status = `v${release.version} protected candidate · HIL pending`;
+      }
+      const targetName =
+        includesWaveshareLcd147b && target.id === "esp32-s3-n16r8"
+          ? `${target.target} · lean generic`
+          : target.target;
+      return { ...target, target: targetName, status };
+    });
 }
 
 export const initialFirmwareTargets = firmwareTargetsForRelease(null);

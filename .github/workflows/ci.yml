@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Part of PyBLE (https://pyble.dev) — see /LICENSE.
 #
-# PyBLE CI — G0/G1 gate suite + 3-chip build matrix. Runs on every push and PR.
+# PyBLE CI — G0/G1 gate suite + 4-variant/3-chip build matrix. Runs on every push and PR.
 #   - no-leak         : reject forbidden proprietary tokens in shippable code (CON-6).
 #   - spdx            : every source file carries SPDX-License-Identifier: MIT (NFR-MAINT-4).
 #   - dco             : every commit in the PR is Signed-off-by (CON-6).
@@ -19,8 +19,8 @@
 #   - firmware-host   : shell gates plus the complete Python host/release suite.
 #   - android-webview : real Blockly platform-WebView integration on a clean,
 #                       pinned Android 14 / API 34 AOSP x86_64 AVD.
-#   - build           : cross-compile the empty agent for esp32 / esp32-s3 / esp32-c3
-#                       (BLD-3/4/5) — the REAL toolchain job (installs ESP-IDF + submodule).
+#   - build           : cross-compile esp32 / lean esp32-s3 / exact Waveshare
+#                       esp32-s3 / esp32-c3 (BLD-3/4/5) — the REAL toolchain job.
 name: ci
 
 on:
@@ -686,15 +686,16 @@ jobs:
           exit 0
 
   build:
-    # The REAL 3-chip cross-compile. Installs the pinned ESP-IDF + initializes
-    # the pinned MicroPython submodule, then builds the agent per target.
+    # The REAL four-variant/three-chip cross-compile. Installs the pinned
+    # ESP-IDF + initializes the pinned MicroPython submodule, then builds each
+    # logical variant independently.
     # This is the toolchain job that the host gate environment cannot run.
     needs: [no-leak, spdx, sha-drift, patches, firmware-host]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        target: [esp32, esp32-s3, esp32-c3]
+        target: [esp32, esp32-s3, waveshare-esp32-s3-lcd-147b, esp32-c3]
     steps:
       - uses: actions/checkout@v4
         with:

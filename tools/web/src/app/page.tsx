@@ -18,6 +18,8 @@ import {
   RadioIcon,
   ShieldIcon,
 } from "@/components/icons";
+import { WaveshareBoardPhoto } from "@/components/waveshare-board-photo";
+import { releaseIncludesWaveshareLcd147b } from "@/lib/firmware-release";
 import { firmwareReleaseSelectedAtBuild } from "@/lib/firmware-release-selection";
 import { firmwareTargetsForRelease, siteConfig } from "@/lib/site";
 
@@ -70,9 +72,11 @@ const workflowStepsAfterProvision = [
 export default function HomePage() {
   const firmwareRelease = firmwareReleaseSelectedAtBuild();
   const publicBeta = firmwareRelease?.deployment === "public-beta";
-  const qualifiedPublic =
-    firmwareRelease?.deployment === "public" &&
-    firmwareRelease.hilStatus === "passed";
+  const waveshareLcd147b = releaseIncludesWaveshareLcd147b(firmwareRelease);
+  const qualifiedPublic = firmwareRelease !== null && waveshareLcd147b;
+  const firmwareTargetGroupLabel = qualifiedPublic
+    ? "Qualified public firmware targets"
+    : "Initial beta firmware targets";
   const firmwareTargets = firmwareTargetsForRelease(firmwareRelease);
   const steps = [
     {
@@ -116,12 +120,14 @@ export default function HomePage() {
               ) : qualifiedPublic ? (
                 <>
                   Qualified public v{firmwareRelease.version} firmware is
-                  available for the exact esp32-4mb and esp32-s3-n16r8 profiles.
+                  available for esp32-4mb, lean generic esp32-s3-n16r8, and the
+                  separate waveshare-esp32-s3-lcd-147b exact-board profile.
                 </>
               ) : firmwareRelease ? (
                 <>
                   Protected candidate v{firmwareRelease.version} is staged for
-                  the exact esp32-4mb and esp32-s3-n16r8 profiles.
+                  access-controlled qualification. It is not a public support
+                  claim.
                 </>
               ) : (
                 <>
@@ -132,7 +138,7 @@ export default function HomePage() {
               ESP32-C3 and more microcontroller families remain planned.
             </p>
             <div className="button-row">
-              <Link className="button button--primary" href="#testflight">
+              <Link className="button button--primary" href="/app">
                 Join the iPad beta
                 <ArrowIcon />
               </Link>
@@ -244,9 +250,10 @@ export default function HomePage() {
             <p className="eyebrow">From Blocks to Python</p>
             <h2>Start visually. See the real code.</h2>
             <p>
-              Build offline with seven editable beginner examples, explicit
-              numeric-GPIO blocks, and the standard MicroPython NeoPixel API.
-              Generated Python is always visible and editable.
+              Build offline with eight editable beginner examples, including an
+              explicit TFT display example, numeric-GPIO blocks, and the
+              standard MicroPython NeoPixel API. Generated Python is always
+              visible and editable.
             </p>
             <ul className="check-list">
               <li>
@@ -284,12 +291,9 @@ export default function HomePage() {
           </div>
           <div className="compatibility__targets">
             <p className="compatibility__target-label">
-              Initial beta firmware targets
+              {firmwareTargetGroupLabel}
             </p>
-            <div
-              className="target-grid"
-              aria-label="Initial beta firmware targets"
-            >
+            <div className="target-grid" aria-label={firmwareTargetGroupLabel}>
               {firmwareTargets.map((target) => (
                 <div
                   className={
@@ -317,6 +321,7 @@ export default function HomePage() {
               ))}
             </div>
           </div>
+          {waveshareLcd147b ? <WaveshareBoardPhoto showInstallerLink /> : null}
         </div>
       </section>
 
@@ -401,7 +406,8 @@ export default function HomePage() {
               ) : qualifiedPublic ? (
                 <>
                   Qualified v{firmwareRelease.version} firmware is available for
-                  esp32-4mb and esp32-s3-n16r8.
+                  all three exact profiles: esp32-4mb, lean generic
+                  esp32-s3-n16r8, and separate waveshare-esp32-s3-lcd-147b.
                 </>
               ) : (
                 <>
@@ -446,6 +452,63 @@ export default function HomePage() {
               <span>Or open this address on the device:</span>
               <span className="beta-invite__url">
                 testflight.apple.com/join/yU4e8s6d
+              </span>
+            </figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section
+        className="section beta-invite android-invite"
+        id="android-internal-test"
+        aria-labelledby="android-internal-test-title"
+      >
+        <div className="container beta-invite__card">
+          <div className="beta-invite__copy">
+            <p className="eyebrow">Android internal testing</p>
+            <h2 id="android-internal-test-title">
+              Join the PyBLE Android internal test.
+            </h2>
+            <p className="beta-invite__lede">
+              The Android build is available only to approved internal testers
+              signed in with an invited Google account. An unapproved or
+              signed-out visitor may find the listing unavailable. This is not a
+              public Google Play release.
+            </p>
+            <div className="button-row beta-invite__actions">
+              <a
+                className="button button--primary"
+                href={siteConfig.googlePlayInternalTestUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Open Android internal test
+                <ArrowIcon />
+              </a>
+              <Link className="button button--secondary" href="/support">
+                Get support
+              </Link>
+            </div>
+          </div>
+          <figure className="beta-invite__qr">
+            <a
+              className="beta-invite__qr-link"
+              href={siteConfig.googlePlayInternalTestUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <Image
+                src="/google-play/pyble-google-play-internal-test-qr.svg"
+                width={360}
+                height={360}
+                alt="QR code for the PyBLE Android internal test on Google Play"
+              />
+            </a>
+            <figcaption>
+              <strong>Scan with your Android camera</strong>
+              <span>Sign in with the Google account that was invited:</span>
+              <span className="beta-invite__url">
+                {siteConfig.googlePlayInternalTestUrl}
               </span>
             </figcaption>
           </figure>

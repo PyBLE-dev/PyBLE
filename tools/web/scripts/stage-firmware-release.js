@@ -43,7 +43,7 @@ function packageDirectory() {
   }
 }
 
-const profileTable = [
+const historicalProfileTable = [
   {
     id: "esp32-4mb",
     label: "ESP32 · 4 MiB flash",
@@ -65,6 +65,38 @@ const profileTable = [
     psram: { required: true, sizeBytes: 8 * 1024 * 1024, type: "octal" },
   },
 ];
+
+const profileTable = [
+  historicalProfileTable[0],
+  {
+    ...historicalProfileTable[1],
+    label: "ESP32-S3 · N16R8 · lean generic",
+  },
+  {
+    id: "waveshare-esp32-s3-lcd-147b",
+    label: "Waveshare ESP32-S3-LCD-1.47B · N16R8",
+    chipFamily: "ESP32-S3",
+    offset: 0,
+    flashSizeBytes: 16 * 1024 * 1024,
+    flashFrequencyHz: 80_000_000,
+    siliconRevision: { minimumFull: 0, maximumFull: 99 },
+    psram: { required: true, sizeBytes: 8 * 1024 * 1024, type: "octal" },
+  },
+];
+
+/** @param {string} version */
+function releaseContract(version) {
+  if (version === publicBetaVersion) {
+    return {
+      schemaVersion: 2,
+      profiles: historicalProfileTable,
+    };
+  }
+  return {
+    schemaVersion: 3,
+    profiles: profileTable,
+  };
+}
 
 /**
  * @param {string} message
@@ -405,8 +437,34 @@ function validateProvenance(value) {
   });
 }
 
-/** @param {string} bundleDirectory */
-async function validateCanonicalSchema(bundleDirectory) {
+/**
+ * @param {Record<string, any>} canonicalSchema
+ * @param {number} schemaVersion
+ */
+function canonicalSchemaForVersion(canonicalSchema, schemaVersion) {
+  if (schemaVersion === 3) {
+    return canonicalSchema;
+  }
+  if (schemaVersion !== 2) {
+    failure("release schema version is unsupported");
+  }
+  const historicalSchema = structuredClone(canonicalSchema);
+  historicalSchema.title = "PyBLE firmware release metadata v2";
+  historicalSchema.properties.schema_version.const = 2;
+  historicalSchema.properties.profiles.minItems = 2;
+  historicalSchema.properties.profiles.maxItems = 2;
+  historicalSchema.properties.profiles.items.properties.id.enum = [
+    "esp32-4mb",
+    "esp32-s3-n16r8",
+  ];
+  return historicalSchema;
+}
+
+/**
+ * @param {string} bundleDirectory
+ * @param {number} schemaVersion
+ */
+async function validateCanonicalSchema(bundleDirectory, schemaVersion) {
   const canonicalSchemaPath = join(
     packageDirectory(),
     "src",
@@ -420,7 +478,9 @@ async function validateCanonicalSchema(bundleDirectory) {
       readFile(join(bundleDirectory, "release.schema.json"), "utf8").then(
         JSON.parse,
       ),
-      readFile(canonicalSchemaPath, "utf8").then(JSON.parse),
+      readFile(canonicalSchemaPath, "utf8")
+        .then(JSON.parse)
+        .then((schema) => canonicalSchemaForVersion(schema, schemaVersion)),
     ]);
   } catch (error) {
     throw new Error("Firmware staging failed: release schema is invalid", {
@@ -624,7 +684,6 @@ async function validateReleaseBundle(
   }
   await releaseValidator(bundleDirectory, deployment);
   await verifySums(bundleDirectory);
-  await validateCanonicalSchema(bundleDirectory);
   const releaseBytes = await readFile(join(bundleDirectory, "release.json"));
   const release = asObject(
     JSON.parse(releaseBytes.toString("utf8")),
@@ -643,7 +702,6 @@ async function validateReleaseBundle(
     ],
     "release",
   );
-  equal(release.schema_version, 2, "schema version");
 
   const identity = asObject(release.identity, "release identity");
   exactKeys(
@@ -655,6 +713,9 @@ async function validateReleaseBundle(
   if (!canonicalSemverPattern.test(version)) {
     failure("release version is not canonical SemVer");
   }
+  const contract = releaseContract(version);
+  await validateCanonicalSchema(bundleDirectory, contract.schemaVersion);
+  equal(release.schema_version, contract.schemaVersion, "schema version");
   equal(identity.tag, `firmware-v${version}`, "release tag");
   equal(identity.agent_version, version, "agent version");
   equal(identity.protocol_version, "PBLE/1", "protocol version");
@@ -671,12 +732,16 @@ async function validateReleaseBundle(
 
   if (
     !Array.isArray(release.profiles) ||
-    release.profiles.length !== profileTable.length
+    release.profiles.length !== contract.profiles.length
   ) {
-    failure("release must contain exactly the two current release profiles");
+    failure(
+      version === publicBetaVersion
+        ? "historical v0.4.2 release must contain exactly two profiles"
+        : "release must contain exactly the three current release profiles",
+    );
   }
   const statuses = [];
-  for (const [index, profile] of profileTable.entries()) {
+  for (const [index, profile] of contract.profiles.entries()) {
     const value = asObject(release.profiles[index], `${profile.id} profile`);
     exactKeys(
       value,
@@ -861,7 +926,7 @@ async function validateReleaseBundle(
     },
     schemaPath: `/firmware/v${version}/release.schema.json`,
     recoveryPath: `/firmware/v${version}/RECOVERY.md`,
-    profiles: profileTable.map((profile) => {
+    profiles: contract.profiles.map((profile) => {
       const root = `/firmware/v${version}/${profile.id}`;
       return {
         id: profile.id,

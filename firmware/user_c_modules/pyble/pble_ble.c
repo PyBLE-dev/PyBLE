@@ -30,6 +30,12 @@
 
 #include "py/runtime.h"
 #include "py/obj.h"
+#ifndef PBLE_ENABLE_SPLASH_READINESS
+#define PBLE_ENABLE_SPLASH_READINESS 0
+#endif
+#if PBLE_ENABLE_SPLASH_READINESS
+#include "py/mpthread.h"   // bounded wait_ready releases the MicroPython GIL
+#endif
 
 #include "esp_log.h"
 // FreeRTOS: the TX path is the sole exit for PBLE/1 bytes and is now called from
@@ -37,6 +43,9 @@
 // CONSOLE_DATA/RUN_STATE). A recursive mutex serializes whole-message
 // fragmentation so §3.2 fragments from concurrent senders never interleave.
 #include "freertos/FreeRTOS.h"
+#if PBLE_ENABLE_SPLASH_READINESS
+#include "freertos/event_groups.h"
+#endif
 #include "freertos/semphr.h"
 // The ESP-IDF NimBLE MYNEWT_VAL_* config maps CONFIG_BT_NIMBLE_* -> the values
 // syscfg.h uses; the bt component force-includes it for its own sources, so we
@@ -67,6 +76,11 @@
 #define PBLE_FRAG_LAST      0x40
 #define PBLE_FRAG_IDX_MASK  0x3F
 #define PBLE_FRAG_IDX_MOD   64
+
+#if PBLE_ENABLE_SPLASH_READINESS
+// Boot-internal readiness snapshot (ADR-0024 / FR-SPLASH-4), exact image only.
+#define PBLE_READY_BIT      BIT0
+#endif
 
 // --- Transport sizing (module-local design, not wire) ------------------------
 // Bounded static reassembly buffer for a whole §3.1 message (D3: no per-message
@@ -119,6 +133,8 @@
 #define PBLE_CONN_CE_LEN         24    // max_ce_len hint, 0.625 ms units = 15 ms:
                                        // let the controller extend the connection
                                        // event instead of closing after one PDU.
+#define PBLE_DLE_ATTEMPT_MAX     4     // bounded timer-progressed DLE submissions.
+#define PBLE_PHY_ATTEMPT_MAX     4     // bounded timer-progressed 2M submissions.
 #define PBLE_CP_ATTEMPT_MAX      3     // bounded re-fires after a CONN_UPDATE
                                        // collision (HCI 0x2A, seen as status=554
                                        // ~50% of the time on macOS).
@@ -172,13 +188,42 @@ static uint16_t pble_conn_handle = BLE_HS_CONN_HANDLE_NONE;
 static uint16_t pble_mtu_val = PBLE_MTU_DEFAULT;    // negotiated ATT MTU
 static uint16_t pble_tx_val_handle;                 // cached for Notifications
 
-// G5-impl deferred link-tune (Phase B): a one-shot NimBLE callout, armed per
-// CONNECT, fires rungs 2+3 (2M PHY + conn-param) PBLE_LINK_TUNE_DELAY_MS later on
-// the host-task context. conn_param_sent records whether the current request
-// was accepted so completion-event recovery does not duplicate a live update.
+#if PBLE_ENABLE_SPLASH_READINESS
+// Native-static so the object and observed state survive a MicroPython soft
+// reset. Allocation is best-effort: BLE remains fully functional if this stays
+// NULL, while the boot-only wait_ready API deterministically returns false.
+static EventGroupHandle_t pble_ready_events;
+
+static void pble_ready_set(void) {
+    if (pble_ready_events != NULL) {
+        xEventGroupSetBits(pble_ready_events, PBLE_READY_BIT);
+    }
+}
+
+static void pble_ready_clear(void) {
+    if (pble_ready_events != NULL) {
+        xEventGroupClearBits(pble_ready_events, PBLE_READY_BIT);
+    }
+}
+
+static void pble_ready_refresh(void) {
+    if (pble_conn_handle != BLE_HS_CONN_HANDLE_NONE || ble_gap_adv_active()) {
+        pble_ready_set();
+    } else {
+        pble_ready_clear();
+    }
+}
+#else
+// Generic images compile every splash-only transition and allocation to zero.
+#define pble_ready_set()     ((void)0)
+#define pble_ready_clear()   ((void)0)
+#define pble_ready_refresh() ((void)0)
+#endif
+
+// ADR-0027 deferred link settlement: one NimBLE callout advances exactly one
+// submitted phase at a time. Completion events can re-arm it, but the timer is
+// the progress guarantee when a controller omits an event.
 static struct ble_npl_callout pble_link_tune_co;
-static bool     pble_conn_param_sent = false;
-static uint8_t  pble_cp_attempts = 0;   // bounded CONN_UPDATE-collision re-fires
 
 // Rung-1 (DLE) confirmation latch. NimBLE serializes LL control procedures: a
 // set_data_len issued while the central runs its OWN early procedure (a BLE-5
@@ -190,18 +235,26 @@ static uint8_t  pble_cp_attempts = 0;   // bounded CONN_UPDATE-collision re-fire
 // right after a completed CONN_UPDATE procedure).
 static bool    pble_dle_confirmed = false;
 static uint8_t pble_dle_attempts = 0;
-#define PBLE_DLE_ATTEMPT_MAX 4
+static bool    pble_phy_confirmed_2m = false;
+static uint8_t pble_phy_attempts = 0;
+static bool    pble_cp_confirmed = false;
+static uint8_t pble_cp_attempts = 0;
+#if !PBLE_HAS_2M_PHY
+static bool    pble_phy_classic_skip_logged = false;
+#endif
 
-static void pble_request_dle(uint16_t conn, const char *ctx) {
+static int pble_request_dle(uint16_t conn, const char *ctx) {
     if (pble_dle_confirmed || pble_dle_attempts >= PBLE_DLE_ATTEMPT_MAX) {
-        return;
+        return 0;
     }
     pble_dle_attempts++;
     int rc = ble_gap_set_data_len(conn, 251, 2120);
     // ERROR level: this build strips everything below ERROR
     // (CONFIG_LOG_DEFAULT_LEVEL=1), and the link-fact lines ARE the no-sniffer
     // bench evidence (§G5-impl G5i.4) — invisible evidence is none.
-    ESP_LOGE(PBLE_TAG, "dle req(%s) #%u rc=%d", ctx, pble_dle_attempts, rc);
+    ESP_LOGE(PBLE_TAG, "link tune req phase=dle attempt=%u context=%s rc=%d",
+             pble_dle_attempts, ctx, rc);
+    return rc;
 }
 
 // GAP-2 instrumentation (gates the G5i.2 host/controller pool bumps, applied by
@@ -614,10 +667,28 @@ static int pble_gatt_register(void) {
 
 // --- G5-impl deferred link-tune (Phase B) ------------------------------------
 
+// Rung 2 — request the 2M-capable preference on BLE-5 chips. The helper is
+// compiled out on classic ESP32 so that controller can never see the command.
+#if PBLE_HAS_2M_PHY
+static int pble_request_phy(uint16_t conn, const char *ctx) {
+    if (pble_phy_confirmed_2m || pble_phy_attempts >= PBLE_PHY_ATTEMPT_MAX) {
+        return 0;
+    }
+    pble_phy_attempts++;
+    int rc = ble_gap_set_prefered_le_phy(conn,
+                                         BLE_GAP_LE_PHY_1M_MASK | BLE_GAP_LE_PHY_2M_MASK,
+                                         BLE_GAP_LE_PHY_1M_MASK | BLE_GAP_LE_PHY_2M_MASK,
+                                         BLE_GAP_LE_PHY_CODED_ANY);
+    ESP_LOGE(PBLE_TAG, "link tune req phase=phy attempt=%u context=%s rc=%d",
+             pble_phy_attempts, ctx, rc);
+    return rc;
+}
+#endif
+
 // Rung 3 — request the Apple-fast connection-parameter range. update_params is
 // a 4.x procedure issued on ALL chips; a non-zero rc is non-fatal (the link keeps
 // whatever interval the central granted). Returns the NimBLE rc.
-static int pble_request_conn_param(uint16_t conn) {
+static int pble_request_conn_param(uint16_t conn, const char *ctx) {
     struct ble_gap_upd_params params = {
         .itvl_min = PBLE_CONN_ITVL_MIN,
         .itvl_max = PBLE_CONN_ITVL_MAX, // min+15ms span per the Apple accept rule
@@ -626,53 +697,59 @@ static int pble_request_conn_param(uint16_t conn) {
         .min_ce_len = 0,
         .max_ce_len = PBLE_CONN_CE_LEN, // hint: pack the event, don't close early
     };
-    return ble_gap_update_params(conn, &params);
+    if (pble_cp_confirmed || pble_cp_attempts >= PBLE_CP_ATTEMPT_MAX) {
+        return 0;
+    }
+    pble_cp_attempts++;
+    int rc = ble_gap_update_params(conn, &params);
+    ESP_LOGE(PBLE_TAG, "link tune req phase=conn-param attempt=%u context=%s rc=%d",
+             pble_cp_attempts, ctx, rc);
+    return rc;
 }
 
-// One-shot callout body: fires PBLE_LINK_TUNE_DELAY_MS after CONNECT on the host
-// task (default eventq — GAP APIs take the ble_hs lock, so calling them here is
-// safe). Rung 2 (2M PHY, S3/C3 only — compiled out on classic) then rung 3
-// (conn-param). Idempotent: a no-op if the link already dropped, so a stale
-// callout never touches a gone handle. transport-lessons §G5-impl.
+// One-shot callout body: each invocation submits at most one LL/GAP procedure,
+// then re-arms itself. That keeps DLE, PHY, and connection parameters in
+// separate settle windows and guarantees bounded progress even when an IDF /
+// controller pair omits a completion event. Idempotent after link teardown.
 static void pble_link_tune(struct ble_npl_event *ev) {
     (void)ev;
     uint16_t conn = pble_conn_handle;
     if (conn == BLE_HS_CONN_HANDLE_NONE) {
         return;                          // link already dropped — do nothing.
     }
-    // Rung 1 gate: DLE must be confirmed (or capped out) before the PHY/param
-    // rungs are attempted — a re-issued DLE needs the LL slot to itself, and
-    // throughput cannot move past ~1 chunk/event without it anyway. Re-arm this
-    // callout to give the retry its own settle window.
+    // Rung 1 gate: a re-issued DLE needs the LL slot to itself. Even the final
+    // submission re-arms the timer: with no completion event, the next callout
+    // observes the exhausted budget and advances to the following phase.
     if (!pble_dle_confirmed && pble_dle_attempts < PBLE_DLE_ATTEMPT_MAX) {
-        pble_request_dle(conn, "tune");
+        pble_request_dle(conn, "timer");
         ble_npl_callout_reset(&pble_link_tune_co,
             ble_npl_time_ms_to_ticks32(PBLE_LINK_TUNE_DELAY_MS));
         return;
     }
 #if PBLE_HAS_2M_PHY
-    // Rung 2 — 2M PHY: doubles the symbol rate -> halves per-PDU air time -> ~2x
-    // the ceiling. Best-effort; on 2M silicon a non-zero rc is unexpected, so log
-    // once at ERROR (classic never reaches here — the call is compiled out).
-    // 1M|2M (never 2M-only): the controller keeps a clean downshift path if the
-    // central or the RF environment cannot hold 2M — a failed 2M-only request
-    // otherwise leaves the LL procedure state sticky (G5 synthesis H5).
-    int rc_phy = ble_gap_set_prefered_le_phy(conn,
-                                             BLE_GAP_LE_PHY_1M_MASK | BLE_GAP_LE_PHY_2M_MASK,
-                                             BLE_GAP_LE_PHY_1M_MASK | BLE_GAP_LE_PHY_2M_MASK,
-                                             BLE_GAP_LE_PHY_CODED_ANY);
-    if (rc_phy != 0) {
-        ESP_LOGE(PBLE_TAG, "2M PHY request failed rc=%d", rc_phy);
+    if (!pble_phy_confirmed_2m && pble_phy_attempts < PBLE_PHY_ATTEMPT_MAX) {
+        const char *ctx = pble_phy_attempts == 0 ? "timer" : "retry";
+        pble_request_phy(conn, ctx);
+        ble_npl_callout_reset(&pble_link_tune_co,
+            ble_npl_time_ms_to_ticks32(PBLE_LINK_TUNE_DELAY_MS));
+        return;
+    }
+#else
+    if (!pble_phy_classic_skip_logged) {
+        ESP_LOGE(PBLE_TAG, "link tune skip phase=phy context=classic-compiled-out");
+        pble_phy_classic_skip_logged = true;
     }
 #endif
-    // Rung 3 — request 15..30 ms; HIL shows iOS grants the 15 ms floor. Deferred
-    // past MTU + CCCD subscribe so iOS does not silently ignore it. A non-zero rc is usually
-    // BLE_HS_EALREADY behind rung 2 (recovered from PHY_UPDATE_COMPLETE), so this
-    // is a WARN bench line, not an error.
-    int rc_up = pble_request_conn_param(conn);
-    pble_conn_param_sent = (rc_up == 0);
-    ESP_LOGE(PBLE_TAG, "conn-param req rc=%d itvl=%d..%d(x1.25ms)", rc_up,
-             PBLE_CONN_ITVL_MIN, PBLE_CONN_ITVL_MAX);
+    // Rung 3 — request 15..30 ms only after the preceding rung has had its own
+    // callout. Re-arm after every accepted or rejected submission so a missing
+    // CONN_UPDATE event cannot strand this terminal phase.
+    if (!pble_cp_confirmed && pble_cp_attempts < PBLE_CP_ATTEMPT_MAX) {
+        const char *ctx = pble_cp_attempts == 0 ? "timer" : "retry";
+        pble_request_conn_param(conn, ctx);
+        ble_npl_callout_reset(&pble_link_tune_co,
+            ble_npl_time_ms_to_ticks32(PBLE_LINK_TUNE_DELAY_MS));
+        return;
+    }
 }
 
 // --- GAP / advertising -------------------------------------------------------
@@ -683,10 +760,19 @@ static int pble_gap_event(struct ble_gap_event *event, void *arg) {
         case BLE_GAP_EVENT_CONNECT:
             if (event->connect.status == 0) {
                 pble_conn_handle = event->connect.conn_handle;
+                pble_ready_refresh();
                 pble_reset_reassembly();
-                pble_conn_param_sent = false;   // no accepted rung-3 request yet
-                pble_cp_attempts = 0;           // fresh collision-re-fire budget
                 pble_tx_mbuf_starve = 0;        // fresh per-session GAP-2 count
+                ble_npl_callout_stop(&pble_link_tune_co);
+                pble_dle_confirmed = false;
+                pble_dle_attempts = 0;
+                pble_phy_confirmed_2m = false;
+                pble_phy_attempts = 0;
+                pble_cp_confirmed = false;
+                pble_cp_attempts = 0;
+#if !PBLE_HAS_2M_PHY
+                pble_phy_classic_skip_logged = false;
+#endif
                 // Rung 1 — LE Data Length Extension, first attempt, ALL chips
                 // (classic 4.2 supports DLE). Without it a 229 B chunk shreds into
                 // ~9×27 B LL PDUs and streaming collapses to ~1 chunk per
@@ -694,37 +780,40 @@ static int pble_gap_event(struct ble_gap_event *event, void *arg) {
                 // tune callout / post-CONN_UPDATE until confirmed or capped
                 // (the EALREADY collision with a BLE-5 central's own early LL
                 // procedures is the S3-only DLE-loss mode). §G5-impl rung 1.
-                pble_dle_confirmed = false;
-                pble_dle_attempts = 0;
                 pble_request_dle(pble_conn_handle, "connect");
-                // Rungs 2+3 (PHY + conn-param) are deferred to a one-shot
-                // callout, never chained off a completion event edge that a given
-                // NimBLE/IDF build may never deliver. DLE-first also sidesteps the
-                // NimBLE BLE_HS_EALREADY serialization race. transport-lessons
-                // §G5-impl G5i.1.
+                // The callout advances all remaining bounded submissions even
+                // when the controller emits no completion event.
                 ble_npl_callout_reset(&pble_link_tune_co,
                     ble_npl_time_ms_to_ticks32(PBLE_LINK_TUNE_DELAY_MS));
             } else {
+                pble_ready_clear();
                 pble_advertise();       // connection failed — keep advertising
             }
             break;
         case BLE_GAP_EVENT_DISCONNECT:
-            // G5-impl: disarm any pending link-tune so no stale rung fires into
-            // the next session, and clear the conn-param latch.
+            // Disarm any pending link-tune so no stale rung fires into the next
+            // session, then clear every phase latch and submission budget.
             ble_npl_callout_stop(&pble_link_tune_co);
-            pble_conn_param_sent = false;
-            pble_cp_attempts = 0;
             pble_dle_confirmed = false;
             pble_dle_attempts = 0;
+            pble_phy_confirmed_2m = false;
+            pble_phy_attempts = 0;
+            pble_cp_confirmed = false;
+            pble_cp_attempts = 0;
+#if !PBLE_HAS_2M_PHY
+            pble_phy_classic_skip_logged = false;
+#endif
             // Link-fact evidence (ERROR level — this build strips below it): the
             // HCI disconnect REASON names the killer (0x08 supervision timeout,
             // 0x13 remote terminated, 0x16 local host), and the GAP-2 NULL-mbuf
             // starvation count gates the G5i.2 pool bumps. HIL 2026-07-04: iPad
             // GET sessions died undiagnosed because the reason was not logged.
-            ESP_LOGE(PBLE_TAG, "disconnect reason=%d (0x%02x); session tx mbuf-starve=%lu",
-                     event->disconnect.reason, (unsigned)event->disconnect.reason,
+            ESP_LOGE(PBLE_TAG, "disconnect reason=%d (0x%02x)",
+                     event->disconnect.reason, (unsigned)event->disconnect.reason);
+            ESP_LOGE(PBLE_TAG, "link tune session end tx_mbuf_starve_count=%lu",
                      (unsigned long)pble_tx_mbuf_starve);
             pble_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+            pble_ready_clear();
             pble_mtu_val = PBLE_MTU_DEFAULT;
             pble_reset_reassembly();
             // F-18/SEC-3: release the single-writer token(s) and finalize any
@@ -744,38 +833,47 @@ static int pble_gap_event(struct ble_gap_event *event, void *arg) {
                      event->enc_change.status, event->enc_change.conn_handle);
             break;
         case BLE_GAP_EVENT_ADV_COMPLETE:
-            pble_advertise();
+            if (pble_conn_handle == BLE_HS_CONN_HANDLE_NONE) {
+                pble_ready_clear();
+                pble_advertise();
+            }
             break;
         case BLE_GAP_EVENT_MTU:
             pble_mtu_val = event->mtu.value;   // FR-BLE-7: accept up to 247
             break;
         case BLE_GAP_EVENT_PHY_UPDATE_COMPLETE:
-            // Bench confirmation (ERROR level — the build strips below it):
-            // expect tx == 2 && rx == 2 on S3/C3. Never a ladder trigger — the
-            // 200 ms timer is the sole trigger (G5i.4).
-            ESP_LOGE(PBLE_TAG, "phy update status=%d tx=%u rx=%u",
+            ESP_LOGE(PBLE_TAG, "link tune complete phase=phy status=%d tx=%u rx=%u",
                      event->phy_updated.status,
                      event->phy_updated.tx_phy, event->phy_updated.rx_phy);
-            // Rung-3 recovery: if the conn-param update EALREADY'd behind the PHY
-            // procedure in the callout, re-fire it EXACTLY ONCE now the PHY
-            // procedure has completed (guarded by conn_param_sent; subsequent
-            // CONN_UPDATE collision recovery is separately bounded).
-            // transport-lessons §G5-impl G5i.1 step 5.
-            if (!pble_conn_param_sent &&
-                pble_conn_handle != BLE_HS_CONN_HANDLE_NONE) {
-                int rc_up = pble_request_conn_param(pble_conn_handle);
-                pble_conn_param_sent = (rc_up == 0);
-                ESP_LOGE(PBLE_TAG, "conn-param re-fire rc=%d", rc_up);
+#if PBLE_HAS_2M_PHY
+            if (pble_phy_attempts > 0 &&
+                event->phy_updated.status == 0 &&
+                event->phy_updated.tx_phy == 2 &&
+                event->phy_updated.rx_phy == 2) {
+                pble_phy_confirmed_2m = true;
             }
+            // Completion can move the next timer window forward, but is never
+            // required: every submission already left a callout armed.
+            if (pble_conn_handle != BLE_HS_CONN_HANDLE_NONE) {
+                ble_npl_callout_reset(&pble_link_tune_co,
+                    ble_npl_time_ms_to_ticks32(PBLE_LINK_TUNE_DELAY_MS));
+            }
+#endif
             break;
         case BLE_GAP_EVENT_DATA_LEN_CHG:
             // Rung-1 confirmation (ERROR level, G5i.4): DLE landed when
             // max_tx_octets >= 244; stuck near 27 = refused/lost — the retry
             // latch keeps re-issuing until confirmed or capped.
-            pble_dle_confirmed = (event->data_len_chg.max_tx_octets >= 244);
-            ESP_LOGE(PBLE_TAG, "data len chg max_tx_octets=%u max_tx_time=%u",
+            if (event->data_len_chg.max_tx_octets >= 244) {
+                pble_dle_confirmed = true;
+            }
+            ESP_LOGE(PBLE_TAG, "link tune complete phase=dle max_tx_octets=%u max_tx_time_us=%u",
                      event->data_len_chg.max_tx_octets,
                      event->data_len_chg.max_tx_time);
+            if (pble_conn_handle != BLE_HS_CONN_HANDLE_NONE) {
+                ble_npl_callout_reset(&pble_link_tune_co,
+                    ble_npl_time_ms_to_ticks32(PBLE_LINK_TUNE_DELAY_MS));
+            }
             break;
         case BLE_GAP_EVENT_CONN_UPDATE: {
             // Bench confirmation (ERROR level): expect the 15 ms interval
@@ -786,24 +884,16 @@ static int pble_gap_event(struct ble_gap_event *event, void *arg) {
             if (ble_gap_conn_find(event->conn_update.conn_handle, &desc) == 0) {
                 itvl = desc.conn_itvl;
             }
-            ESP_LOGE(PBLE_TAG, "conn update status=%d itvl=%u(x1.25ms)",
+            ESP_LOGE(PBLE_TAG, "link tune complete phase=conn-param status=%d interval_units=%u",
                      event->conn_update.status, itvl);
-            // A completed LL procedure frees the serialization slot — the safest
-            // moment to re-issue an unconfirmed DLE request (bounded by the
-            // attempt cap; a no-op once DATA_LEN_CHG confirmed).
-            if (pble_conn_handle != BLE_HS_CONN_HANDLE_NONE) {
-                pble_request_dle(pble_conn_handle, "conn-update");
-            }
-            // Collision recovery (HCI 0x2A -> status=554, ~50% on macOS): our own
-            // update lost the LL slot to a central-initiated procedure and the link
-            // stays on the slow granted interval — HALVING throughput. Re-arm the
-            // tune callout (bounded) so rung 3 re-fires after a settle window; a
-            // successful update (status=0) or an exhausted budget ends the retries.
-            if (event->conn_update.status != 0 &&
-                pble_conn_handle != BLE_HS_CONN_HANDLE_NONE &&
-                pble_cp_attempts < PBLE_CP_ATTEMPT_MAX) {
-                pble_cp_attempts++;
-                pble_conn_param_sent = false;
+            if (pble_cp_attempts > 0 &&
+                event->conn_update.status == 0 &&
+                itvl >= PBLE_CONN_ITVL_MIN &&
+                itvl <= PBLE_CONN_ITVL_MAX) {
+                pble_cp_confirmed = true;
+                ble_npl_callout_stop(&pble_link_tune_co);
+            } else if (pble_conn_handle != BLE_HS_CONN_HANDLE_NONE &&
+                       pble_cp_attempts < PBLE_CP_ATTEMPT_MAX) {
                 ble_npl_callout_reset(&pble_link_tune_co,
                     ble_npl_time_ms_to_ticks32(PBLE_LINK_TUNE_DELAY_MS));
             }
@@ -839,6 +929,7 @@ static void pble_advertise(void) {
     fields.num_uuids128 = 1;
     fields.uuids128_is_complete = 1;
     if (ble_gap_adv_set_fields(&fields) != 0) {
+        pble_ready_refresh();
         return;
     }
 
@@ -847,13 +938,21 @@ static void pble_advertise(void) {
     rsp.name = (uint8_t *)pble_name;
     rsp.name_len = strlen(pble_name);
     rsp.name_is_complete = 1;
-    ble_gap_adv_rsp_set_fields(&rsp);
+    if (ble_gap_adv_rsp_set_fields(&rsp) != 0) {
+        pble_ready_refresh();
+        return;
+    }
 
     memset(&advp, 0, sizeof(advp));
     advp.conn_mode = BLE_GAP_CONN_MODE_UND;   // connectable
     advp.disc_mode = BLE_GAP_DISC_MODE_GEN;   // general discoverable
-    ble_gap_adv_start(pble_addr_type, NULL, BLE_HS_FOREVER, &advp,
-                      pble_gap_event, NULL);
+    int rc = ble_gap_adv_start(pble_addr_type, NULL, BLE_HS_FOREVER, &advp,
+                               pble_gap_event, NULL);
+    if (rc == 0 || (rc == BLE_HS_EALREADY && ble_gap_adv_active())) {
+        pble_ready_set();
+    } else {
+        pble_ready_refresh();
+    }
 }
 
 // Resolve the advertised name: the persisted label (via pble_device_config, once
@@ -887,6 +986,9 @@ static void pble_on_sync(void) {
 }
 
 static void pble_on_reset(int reason) {
+    pble_synced = false;
+    pble_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+    pble_ready_clear();
     ESP_LOGW(PBLE_TAG, "nimble reset; reason=%d", reason);
 }
 
@@ -924,7 +1026,16 @@ static void pble_host_task(void *param) {
 // Bring up NimBLE + the GATT service + advertising. Idempotent; non-blocking
 // (the host task + on_sync run asynchronously). See pble_ble.h.
 void pble_ble_init(void) {
+#if PBLE_ENABLE_SPLASH_READINESS
+    // Retry a previous best-effort allocation before the idempotent fast path.
+    // If NimBLE already runs, refresh gives a newly recovered event truthful
+    // advertising/connection state instead of leaving its initial bit clear.
+    if (pble_ready_events == NULL) {
+        pble_ready_events = xEventGroupCreate();
+    }
+#endif
     if (pble_started) {
+        pble_ready_refresh();
         return;
     }
     // Create the TX serialization mutex before any task can call the notify
@@ -983,9 +1094,40 @@ static mp_obj_t pble_ble_init_agent(void) {
 }
 static MP_DEFINE_CONST_FUN_OBJ_0(pble_ble_init_agent_obj, pble_ble_init_agent);
 
+#if PBLE_ENABLE_SPLASH_READINESS
+static mp_obj_t pble_ble_wait_ready(mp_obj_t timeout_in) {
+    if (!mp_obj_is_int(timeout_in)) {
+        mp_raise_TypeError(MP_ERROR_TEXT("timeout_ms must be an integer"));
+    }
+    mp_int_t timeout_ms = mp_obj_get_int(timeout_in);
+    if (timeout_ms < 0 || timeout_ms > 1500) {
+        mp_raise_ValueError(MP_ERROR_TEXT("timeout_ms must be 0..1500"));
+    }
+    if (pble_ready_events == NULL) {
+        return mp_const_false;
+    }
+
+    TickType_t ticks = pdMS_TO_TICKS((uint32_t)timeout_ms);
+    if (timeout_ms > 0 && ticks == 0) {
+        ticks = 1;
+    }
+
+    EventBits_t observed;
+    MP_THREAD_GIL_EXIT();
+    observed = xEventGroupWaitBits(pble_ready_events, PBLE_READY_BIT,
+                                   pdFALSE, pdFALSE, ticks);
+    MP_THREAD_GIL_ENTER();
+    return mp_obj_new_bool((observed & PBLE_READY_BIT) != 0);
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(pble_ble_wait_ready_obj, pble_ble_wait_ready);
+#endif
+
 static const mp_rom_map_elem_t pble_ble_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR___name__), MP_ROM_QSTR(MP_QSTR_pble_ble) },
     { MP_ROM_QSTR(MP_QSTR_init_agent), MP_ROM_PTR(&pble_ble_init_agent_obj) },
+#if PBLE_ENABLE_SPLASH_READINESS
+    { MP_ROM_QSTR(MP_QSTR_wait_ready), MP_ROM_PTR(&pble_ble_wait_ready_obj) },
+#endif
 };
 static MP_DEFINE_CONST_DICT(pble_ble_globals, pble_ble_globals_table);
 

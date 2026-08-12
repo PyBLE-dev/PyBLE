@@ -60,9 +60,9 @@ BASE = _load_base_module()
 RELEASE = BASE.RELEASE
 RELEASE_LOAD_ERROR = BASE.RELEASE_LOAD_ERROR
 
-CURRENT_BASELINE_PREFIX = "docs/developments/firmware/measurements/oi1"
-LEGACY_BASELINE_PREFIX = "docs/validation/firmware/oi1"
-SOURCE_COMMIT = "2f38c43838b0f8cfbd10fab8e6561ae523927968"
+PUBLIC_BASELINE_PREFIX = "docs/validation/firmware/oi1"
+HISTORICAL_SOURCE_COMMIT = "2f38c43838b0f8cfbd10fab8e6561ae523927968"
+CURRENT_SOURCE_COMMIT = "4444444444444444444444444444444444444444"
 LEGACY_DERIVATION = {
     "application_image": "exact-byte-identical-two-root-v1",
     "application_headroom": "factory-minus-application-v1",
@@ -127,7 +127,7 @@ protocol_version = "PBLE/1"
 def _install_policy(
     repo: Path,
     version: str,
-    baseline_prefix: str,
+    source_commit: str,
     *,
     derivation_version: str | None = None,
 ) -> dict:
@@ -144,11 +144,14 @@ def _install_policy(
     )
     policy = json.loads(source_policy_path.read_text(encoding="utf-8"))
     source_baseline = REPO_ROOT / policy["baseline_evidence"]["path"]
-    baseline_relative = "%s/%s.json" % (baseline_prefix, SOURCE_COMMIT)
+    baseline_relative = "%s/%s.json" % (
+        PUBLIC_BASELINE_PREFIX,
+        source_commit,
+    )
     baseline = repo / baseline_relative
     baseline.parent.mkdir(parents=True, exist_ok=True)
     baseline_document = json.loads(source_baseline.read_text(encoding="utf-8"))
-    baseline_document["source_commit"] = SOURCE_COMMIT
+    baseline_document["source_commit"] = source_commit
     baseline_document["firmware_version"] = (
         "0.5.0" if current_era
         else "0.4.1"
@@ -409,7 +412,7 @@ class QualificationPolicySourceEraTests(unittest.TestCase):
     def _load(
         self,
         version: str,
-        prefix: str,
+        source_commit: str,
         *,
         derivation_version: str | None = None,
     ):
@@ -420,13 +423,13 @@ class QualificationPolicySourceEraTests(unittest.TestCase):
             _install_policy(
                 repo,
                 version,
-                prefix,
+                source_commit,
                 derivation_version=derivation_version,
             )
             return RELEASE._load_qualification_policy(repo)[0]
 
-    def test_v042_accepts_only_its_legacy_source_scoped_baseline_path(self):
-        policy = self._load("0.4.2", LEGACY_BASELINE_PREFIX)
+    def test_v042_uses_its_historical_source_scoped_public_baseline_path(self):
+        policy = self._load("0.4.2", HISTORICAL_SOURCE_COMMIT)
         self.assertEqual(policy["schema_version"], 1)
         self.assertEqual(
             policy["profile_order"],
@@ -438,13 +441,12 @@ class QualificationPolicySourceEraTests(unittest.TestCase):
         )
         self.assertEqual(
             policy["baseline_evidence"]["path"],
-            "%s/%s.json" % (LEGACY_BASELINE_PREFIX, SOURCE_COMMIT),
+            "%s/%s.json"
+            % (PUBLIC_BASELINE_PREFIX, HISTORICAL_SOURCE_COMMIT),
         )
-        with self.assertRaises(RELEASE.ReleaseError):
-            self._load("0.4.2", CURRENT_BASELINE_PREFIX)
 
-    def test_v050_accepts_only_the_current_source_scoped_baseline_path(self):
-        policy = self._load("0.5.0", CURRENT_BASELINE_PREFIX)
+    def test_v050_uses_its_current_source_scoped_public_baseline_path(self):
+        policy = self._load("0.5.0", CURRENT_SOURCE_COMMIT)
         self.assertEqual(policy["schema_version"], 2)
         self.assertEqual(policy["profile_order"], list(CURRENT_PROFILE_ORDER))
         self.assertEqual(
@@ -453,22 +455,25 @@ class QualificationPolicySourceEraTests(unittest.TestCase):
         )
         self.assertEqual(
             policy["baseline_evidence"]["path"],
-            "%s/%s.json" % (CURRENT_BASELINE_PREFIX, SOURCE_COMMIT),
+            "%s/%s.json" % (PUBLIC_BASELINE_PREFIX, CURRENT_SOURCE_COMMIT),
         )
-        with self.assertRaises(RELEASE.ReleaseError):
-            self._load("0.5.0", LEGACY_BASELINE_PREFIX)
+        self.assertNotEqual(
+            policy["baseline_evidence"]["path"],
+            "%s/%s.json"
+            % (PUBLIC_BASELINE_PREFIX, HISTORICAL_SOURCE_COMMIT),
+        )
 
     def test_each_source_era_rejects_the_other_derivation_revision(self):
         with self.assertRaises(RELEASE.ReleaseError):
             self._load(
                 "0.4.2",
-                LEGACY_BASELINE_PREFIX,
+                HISTORICAL_SOURCE_COMMIT,
                 derivation_version="0.5.0",
             )
         with self.assertRaises(RELEASE.ReleaseError):
             self._load(
                 "0.5.0",
-                CURRENT_BASELINE_PREFIX,
+                CURRENT_SOURCE_COMMIT,
                 derivation_version="0.4.2",
             )
 
@@ -480,7 +485,7 @@ class QualificationPolicySourceEraTests(unittest.TestCase):
             policy = _install_policy(
                 repo,
                 "0.5.0",
-                CURRENT_BASELINE_PREFIX,
+                CURRENT_SOURCE_COMMIT,
             )
             policy["derivation"] = copy.deepcopy(
                 RELEASE.QUALIFICATION_DERIVATION_V2

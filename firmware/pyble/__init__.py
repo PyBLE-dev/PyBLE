@@ -10,4 +10,4 @@
 # S2 onward by their owning engineers — see TDD §10.5. Do NOT add agent logic
 # here (that is out of scope for build-smith).
 
-__version__ = "0.4.2"  # mirrors versions.lock [pyble] agent_version (SemVer, BLD-12)
+__version__ = "0.5.1"  # mirrors versions.lock [pyble] agent_version (SemVer, BLD-12)

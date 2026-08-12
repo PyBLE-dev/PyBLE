@@ -4,6 +4,8 @@
 import { ExternalIcon } from "@/components/icons";
 import { FlashStatus } from "@/components/flash-status";
 import { PageIntro } from "@/components/page-intro";
+import { WaveshareBoardPhoto } from "@/components/waveshare-board-photo";
+import { releaseIncludesWaveshareLcd147b } from "@/lib/firmware-release";
 import { firmwareReleaseSelectedAtBuild } from "@/lib/firmware-release-selection";
 import { pageMetadata } from "@/lib/site";
 
@@ -17,8 +19,8 @@ export const metadata = pageMetadata({
 export default function FlashPage() {
   const release = firmwareReleaseSelectedAtBuild();
   const publicBeta = release?.deployment === "public-beta";
-  const qualifiedPublic =
-    release?.deployment === "public" && release.hilStatus === "passed";
+  const waveshareLcd147b = releaseIncludesWaveshareLcd147b(release);
+  const qualifiedPublic = release !== null && waveshareLcd147b;
 
   return (
     <main id="main-content">
@@ -29,8 +31,8 @@ export default function FlashPage() {
           {publicBeta
             ? " The current v0.4.2 installer is a hardware-tested firmware beta. Production Chrome erase/install and deliberately interrupted-flash recovery passed on both exact profiles. Complete release qualification is still pending; this is not a qualified release."
             : qualifiedPublic
-              ? ` Qualified v${release.version} firmware is available for both exact current release profiles.`
-              : " The public install action remains unavailable until the final bytes pass hardware validation on both exact current release profiles."}
+              ? ` Qualified v${release.version} firmware is available for all three exact release profiles.`
+              : " The public install action remains unavailable until the final bytes pass hardware validation on all three prospective v0.5.1 profiles."}
         </p>
       </PageIntro>
 
@@ -63,11 +65,82 @@ export default function FlashPage() {
                   <strong>esp32-s3-n16r8</strong>
                   <span>
                     ESP32-S3 module with 16 MiB flash and 8 MiB Octal PSRAM.
-                    This image is not for every ESP32-S3 board.
+                    This lean, board-neutral image is not for every ESP32-S3
+                    board. It does not bundle <code>pyble_st7789</code>,{" "}
+                    <code>pyble_waveshare_lcd147b</code>, exact-board pins, or
+                    the display boot splash.
                   </span>
                 </li>
+                {waveshareLcd147b ? (
+                  <li>
+                    <strong>waveshare-esp32-s3-lcd-147b</strong>
+                    <span>
+                      Exact ESP32-S3-LCD-1.47B B version with 16 MiB flash and 8
+                      MiB Octal PSRAM. This separate image bundles its display
+                      runtime and fresh-install splash support.
+                    </span>
+                  </li>
+                ) : null}
               </ul>
             </section>
+
+            {waveshareLcd147b ? (
+              <section aria-labelledby="waveshare-lcd147b">
+                <p className="eyebrow">Validated display board</p>
+                <h2 id="waveshare-lcd147b">Waveshare ESP32-S3-LCD-1.47B</h2>
+                <p>
+                  This board uses the separate{" "}
+                  <strong>waveshare-esp32-s3-lcd-147b</strong> image. Its own
+                  manifest and immutable firmware bytes are never aliased to the
+                  lean generic S3 image. It requires the exact B-version board
+                  with 16 MiB flash and 8 MiB Octal PSRAM.
+                </p>
+                <p>
+                  The lean <strong>esp32-s3-n16r8</strong> image does not bundle
+                  this board&apos;s display driver, companion module, pin
+                  constants, boot hook, or splash machinery.
+                </p>
+                <p>
+                  Use the <strong>B version</strong> shown here. Non-B display
+                  wiring differs and is not covered by this installer claim.
+                </p>
+                <WaveshareBoardPhoto />
+                <ul className="requirement-list">
+                  <li>
+                    <strong>Integrated display</strong>
+                    <span>
+                      172 × 320 ST7789V3 TFT with the board&apos;s published SPI
+                      wiring.
+                    </span>
+                  </li>
+                  <li>
+                    <strong>Explicit MicroPython runtime</strong>
+                    <span>
+                      Firmware includes the inert <code>pyble_st7789</code> user
+                      library and <code>pyble_waveshare_lcd147b</code> companion
+                      for ordinary Python and Blocky TFT programs.
+                    </span>
+                  </li>
+                  <li>
+                    <strong>Fresh-install boot splash</strong>
+                    <span>
+                      After a fresh erased installation, the PyBLE/app-QR boot
+                      splash is shown by default. You can persistently disable
+                      or re-enable it; it never detects or selects the board
+                      automatically.
+                    </span>
+                  </li>
+                </ul>
+                <p>
+                  In the installer, select{" "}
+                  <strong>waveshare-esp32-s3-lcd-147b</strong>, confirm the
+                  exact B-version board and N16R8 memory topology, and verify
+                  that profile&apos;s own release bytes. Use the same BOOT/RESET
+                  recovery sequence documented below if automatic reset does not
+                  enter the ROM loader.
+                </p>
+              </section>
+            ) : null}
 
             <section aria-labelledby="planned-profile">
               <h2 id="planned-profile">Planned profile</h2>
@@ -184,6 +257,15 @@ export default function FlashPage() {
                   <span>n16r8/firmware.bin</span>
                 </code>
               </li>
+              {waveshareLcd147b ? (
+                <li>
+                  <code>
+                    python -m esptool --chip esp32s3 write_flash 0x0{" "}
+                    <span>waveshare-esp32-s3-lcd-147b/</span>
+                    <span>firmware.bin</span>
+                  </code>
+                </li>
+              ) : null}
             </ul>
             <p>
               As an advanced diagnostic or recovery alternative, the component
