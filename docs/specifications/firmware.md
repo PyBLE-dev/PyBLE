@@ -317,6 +317,25 @@ component-wide compilation's consolidated year ranges do not replace an exact
 binary-redistribution notice. Libgloss MUST analogously retain the exact
 `COPYING.LIBGLOSS` bytes.
 
+The normal pinned RP2350 link has one and only one admitted GCC specs control
+input: the exact token `--specs=nosys.specs`. Under the same scrubbed driver
+environment as the build, the pinned `bin/arm-none-eabi-g++` MUST resolve that
+token uniquely with `-print-file-name=nosys.specs` to the regular installed
+file `arm-none-eabi/lib/nosys.specs`, whose 203 bytes have SHA-256
+`24f0304a9ef660646fcb468d0ecf308b6e82ee5648e9b10b568e19ed4726d8d8`.
+Those bytes MUST equal source-snapshot path
+`newlib-cygwin/libgloss/libnosys/nosys.specs` at newlib-cygwin commit
+`7923059bff6c120c6fb74b63c7553ea345c0a8f3`, with the same byte length and
+SHA-256. The row belongs to `arm-gnu-libgloss-runtime`, uses the
+`libgloss-default-compilation` license basis, and is retained as a
+noncontributing link/control input with `contributes: false`; it does not by
+itself add Libgloss to the public firmware notice. The attribution document,
+Eligible Compilation receipt, binary-archive parity proof, and public replay
+MUST bind the token, installed path and bytes, unique scrubbed resolution,
+source path and bytes, owner, basis, and noncontribution decision. Every other
+`-specs`, `--specs`, `-B`, `-wrapper`, `-fuse-ld`, `--sysroot`, or `-isysroot`
+form remains fatal.
+
 The per-file notice set is a separate canonical, hash-bound document derived
 only from the exact source paths already selected by the runtime attribution:
 the 62 byte-identical compiler-dependency header sources, the six content
