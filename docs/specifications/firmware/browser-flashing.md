@@ -753,15 +753,53 @@ inventory would collapse. In particular:
 
 The CYW43 directory is not one license owner. The ordinary driver sources are
 one exact owner selected under the Raspberry-Pi-device grant, while each of
-the three payload paths above is a separate, most-specific owner. The Wi-Fi/
-CLM payload, signed Bluetooth firmware, and Broadcom-attributed NVRAM remain
-`review-required` until authoritative evidence maps those exact selected
-bytes to redistribution terms for an RP2350/Pico 2 W UF2. A repository-level
-grant, a grant for an older byte-different Wi-Fi image, or the fact that a
-payload was committed by an authorized contributor is not that mapping. While
-unresolved, each payload retains its complete source choice as both the source
-and selected expression; only `review-required` may preserve that unresolved
-choice. An `allow` or `project-owned` record MUST select one reviewed arm.
+the three payload paths above is a separate, most-specific owner. For the
+exact `rpi-pico2-w` closure, the Wi-Fi/CLM payload, signed Bluetooth firmware,
+and Broadcom-attributed NVRAM are each selected under
+`LicenseRef-PyBLE-CYW43-Raspberry-Pi`. Each owner MUST remain `allow`, retain
+the complete non-commercial/Raspberry-Pi source choice and both exact license
+texts, and select only the Raspberry Pi arm. The Broadcom NVRAM attribution
+MUST also remain present.
+
+That selection is an engineering compliance decision for one deliberately
+narrow use, backed by the following frozen primary evidence:
+
+- MicroPython pins cyw43-driver tag `v1.1.1`, commit
+  `055d64274b014dd7b1c2fc94d26e8a18face7124`. Its 1,789-byte
+  `LICENSE.RP` has SHA-256
+  `67aca4f10d9edf489871f64cd8f0dcd6c5df3e4ce75bd39e1914fc54f99e40b3`
+  and is byte-identical to the file introduced by cyw43-driver commit
+  `195dfcc10bb6f379e3dea45147590db2203d3c7b`;
+- commit `195dfcc10bb6f379e3dea45147590db2203d3c7b` is the immediate child of
+  `92397a4b5954f02e17550d0b6a1d9597b4475adc`, which added the repository's
+  Wi-Fi/CLM and NVRAM payload directory. The same maintainer committed the
+  repository-wide Raspberry Pi grant nine seconds later, and the top-level
+  README applies its license choices to "this cyw43-driver" without excluding
+  `firmware/`;
+- Raspberry Pi's official documentation at commit
+  `41e21a979c608b2dcaaa38bc28cc994f1bcf6774` states that Raspberry Pi
+  negotiated the special commercial rights for `libcyw43`, expressly includes
+  the RP2350 + CYW43439 combination, and links cyw43-driver's `LICENSE.RP` as
+  the full commercial license. The exact 32,478-byte source
+  `documentation/asciidoc/microcontrollers/pico-series/about_pico.adoc` has
+  SHA-256
+  `34b7606e69e69a3786b81387f1cdf32a24319b02c9bbaf3185eab7b9ae1713ec`;
+  and
+- those official scope statements post-date the last selected payload-header
+  changes and the selected `v1.1.1` tree retains the same grant without a
+  file-specific conflicting license on any of the three selected paths.
+
+The decision applies only when the exact three hash-bound payloads are bundled
+with the pinned official cyw43-driver through the retained MicroPython/pico-sdk
+integration, built for `PICO_BOARD=pico2_w` and RP2350, and used with the
+board's CYW43439. The release MUST identify that hardware/profile restriction
+and reproduce the complete grant notice, conditions, and disclaimer in its
+third-party materials. It does not decide whether any blob may be redistributed
+standalone, with a third-party Wi-Fi stack, for another radio, or for a
+non-Raspberry-Pi semiconductor. cyw43-driver issue 1 asks that distinct
+standalone/third-party-stack question and supplies no contrary answer for this
+official-driver use. A target, driver, payload, or packaging-scope change
+returns the affected owner to `review-required` pending a new review.
 
 That no-gap ownership covers every linked or frozen input and, at minimum,
 the selected MicroPython core and `ports/rp2` sources, lwIP, Mbed TLS,
@@ -813,11 +851,12 @@ The RP2-specific grants are selected literally rather than approximated by a
 nearby license. In particular, BTstack retains both its stock non-commercial
 license and pico-sdk's complete supplemental `pico_btstack/LICENSE.RP` grant,
 and selects only that supplemental grant for use with Pico 2 W. The ordinary
-CYW43 driver sources retain the complete Raspberry-Pi-device grant used for
-Pico 2 W; that grant MUST NOT be silently extended to the three separately
-owned payload records without the exact authoritative mapping required above.
-Neither dependency's generic non-commercial file, nor BTstack's supplemental
-grant, is relabelled as BSD.
+CYW43 driver sources and each of its three separately owned, exact selected
+payloads retain the complete Raspberry-Pi-device grant used for Pico 2 W and
+select that grant under the evidence and scope restriction above. Sharing that
+selection does not merge their owners or weaken their independent header and
+embedded-byte bindings. Neither dependency's generic non-commercial file, nor
+either Raspberry Pi grant, is relabelled as BSD or MIT.
 Mbed TLS retains its source choice while recording the reviewed Apache-2.0
 redistribution selection;
 littlefs, lwIP, pico-sdk, oofatfs, TinyUSB, MicroPython, fdlibm-derived libm,
