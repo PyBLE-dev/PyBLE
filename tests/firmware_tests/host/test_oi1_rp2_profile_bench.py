@@ -498,6 +498,49 @@ class Rp2ExecutorTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(reset.actions, [])
         self.assertIn(("transfer_link_facts", {"facts": RP2_LINK_FACTS}), log.records)
 
+    async def test_btstack_facts_require_and_bind_the_observed_hello_values(self):
+        executor, _reset, _log = self._executor()
+
+        await executor.begin_transfer_link_capture(PICO_PROFILE)
+        with self.assertRaisesRegex(
+            bench.BenchError,
+            "HELLO transport observation",
+        ):
+            await executor.seal_transfer_link_facts(2000)
+
+        connection = mock.AsyncMock()
+        connection.backend_mtu = 247
+        caps = {
+            "chip": PICO_PROFILE,
+            "mtu": "247",
+            "window": "4",
+            "chunk": "229",
+            "free_mem": "8192",
+        }
+        with (
+            mock.patch.object(
+                profile_bench,
+                "measure_reset_to_advertisement",
+                new=mock.AsyncMock(return_value=123),
+            ),
+            mock.patch.object(
+                profile_bench.PbleCentral,
+                "connect",
+                new=mock.AsyncMock(return_value=connection),
+            ),
+            mock.patch.object(
+                profile_bench,
+                "hello",
+                new=mock.AsyncMock(return_value=(caps, (247, 4, 229, 8192))),
+            ),
+        ):
+            await executor.reset_connect_hello(9)
+
+        self.assertEqual(
+            await executor.seal_transfer_link_facts(2000),
+            RP2_LINK_FACTS,
+        )
+
     async def test_rp2_physical_cycle_uses_the_injected_operator_seam(self):
         executor, reset, _log = self._executor()
 
