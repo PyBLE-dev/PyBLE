@@ -2,38 +2,29 @@
 # SPDX-License-Identifier: MIT
 # Part of PyBLE (https://pyble.dev) — see /LICENSE.
 #
-# [red] Host tests for F-03 `pyble_info` (HELLO / DEVICE_INFO / caps) + the
-# HELLO-side of F-16 (version negotiation, FR-INFO-5). M1/G1, Sprint S3.
-# Sole [red] author: firmware-test-author. Production module owner (HAND-OFF for
-# [green]): identity-engineer -> firmware/pyble/pyble_info.py (native twin
-# pble_info.c). The C dispatch VER guard half of F-16 lives in
-# test_pyble_proto_version_guard.py (owner: protocol-engineer).
+# Host tests for F-03 `pyble_info` (HELLO / DEVICE_INFO / caps) + the
+# HELLO-side of F-16 (version negotiation, FR-INFO-5). Originally authored
+# [red] M1/G1 Sprint S3 against the pre-freeze scaffold's long-key mapping
+# API (caps()/device_info_payload() with mpy_version/chunk_size/...,
+# put_window=8).
 #
-# =====================================================================
-# DoR STATUS — BLOCKED (do NOT commit this file [red] before the freeze):
-#   protocol.md §7 (HELLO & capabilities) and §9 (Versioning) are DRAFT
-#   (freeze ledger, 2026-07-01). Per the architect DoR, F-03/F-16 are
-#   ready:false until §7/§9 freeze as [docs] commits AND are mirrored into
-#   firmware specs.md FR-INFO-* / FR-PROTO-7/9/10. Until then this suite is
-#   authored-but-gated: it asserts ONLY the FROZEN SEMANTICS (the FR-INFO-3
-#   caps FIELD SET + typing, INFO==DEVICE_INFO equivalence, version
-#   negotiation LOGIC) via the scaffold's own API — it NEVER hardcodes a
-#   DRAFT payload byte. Byte-exact caps/HELLO wire vectors stay in
-#   conformance/s3_pending.json until §6/§7/§9 freeze.
-# =====================================================================
-#
-# Frozen references used here:
-#   protocol.md §2/§4/§8 (FROZEN); specs.md FR-INFO-1..6 (requirement text
-#   frozen), FR-PROTO-10; architect native contract: caps single-source,
-#   put_window W=4, proto_version=1, chunk_size=MTU-4.
+# ALIGNED 2026-08-11 (EPIC-PORT-RP2, plan C7): protocol.md §7's caps
+# serialization froze (2026-07-02) on the SHORT key tokens, and
+# firmware/pyble/pyble_info.py is now the rpi-pico2-w port's frozen-Python
+# module (ADR-0030), governed by ports/rpi-pico2-w.md P1 — so this suite
+# asserts the SAME FR-INFO-1/3/4/5 + FR-PROTO-10 criteria through the frozen
+# §7 payload interface. The long-key twin behaviour this file used to pin is
+# the defect test_pyble_info_rp2.py names; port-frozen values (window=4)
+# come from P1, not the ESP32 reference agent (window=8 lives in pble_info.c,
+# exercised by its own native-twin path).
 #
 # ---------------------------------------------------------------------------
-# INTERFACE PINNED BY THIS [red] TEST (identity-engineer implements to it):
+# INTERFACE (pinned jointly with test_pyble_info_rp2.py):
 #   pyble_info.PROTO_VERSION : int == 1        # supported PBLE/1 version
-#   pyble_info.caps() -> Mapping               # HELLO-reply caps, single source
-#   pyble_info.device_info() -> Mapping        # DEVICE_INFO fields (FR-INFO-1)
-#   pyble_info.info_read_value() -> bytes      # INFO-char read == DEVICE_INFO
-#   pyble_info.device_info_payload() -> bytes  # DEVICE_INFO-equivalent bytes
+#   pyble_info.caps_payload(mtu, free_mem, device_id, label, auto_run) -> bytes
+#         # THE single §7 caps source (`key=value\n` ASCII, short tokens)
+#   pyble_info.device_info_rsp_payload(...) -> bytes   # [status] + caps
+#   pyble_info.info_char_payload(...) -> bytes         # caps verbatim
 #   pyble_info.negotiate(offered: list[int]) -> int | None
 #         # chosen supported version, or None when the offer is unsatisfiable
 # ---------------------------------------------------------------------------
@@ -47,71 +38,80 @@ import _support  # noqa: E402
 
 INFO = _support.RedReason("pyble_info", owner="identity-engineer")
 
-# FR-INFO-3: the FROZEN caps field set the HELLO reply MUST carry, with the
-# frozen type of each field. (Field NAMES + presence are frozen by §7 text +
-# FR-INFO-3; the byte SERIALIZATION is §7-DRAFT and is NOT asserted here.)
-CAPS_FIELDS = {
-    "chip": str,
-    "mpy_version": str,
-    "fs_root": str,
-    "max_file_size": int,
-    "put_window": int,
-    "chunk_size": int,
-    "has_sd": bool,
-    "free_mem": int,
-    "device_id": str,
-    "label": str,
-    "has_identify": bool,
-    # identify_led is int (GPIO) or None -> checked specially
-}
-# FR-INFO-1: the minimum DEVICE_INFO field set.
-DEVICE_INFO_FIELDS = ("chip", "mpy_version", "free_mem", "fs_root", "mtu",
+# FR-INFO-3: the frozen caps field set the HELLO reply MUST carry, as the
+# frozen §7 short tokens (serialization frozen 2026-07-02).
+CAPS_TOKENS = (
+    "proto", "agent", "chip", "mpy", "fs_root", "mtu", "window", "chunk",
+    "free_mem", "has_sd", "has_identify", "identify_led", "auto_run",
+    "device_id", "label",
+)
+# FR-INFO-1: the minimum DEVICE_INFO field set, in §7 token spelling.
+DEVICE_INFO_TOKENS = ("chip", "mpy", "free_mem", "fs_root", "mtu",
                       "device_id", "label")
+
+# Deterministic injected values (host tests never read hardware).
+CAPS_KWARGS = dict(
+    mtu=247, free_mem=131072, device_id="0000", label="", auto_run=0)
+
+
+def caps_dict(testcase, criterion, **overrides):
+    """Decode the §7 `key=value\n` text into a dict for assertions."""
+    fn = INFO.attr(testcase, "caps_payload", criterion)
+    kwargs = dict(CAPS_KWARGS)
+    kwargs.update(overrides)
+    payload = fn(**kwargs)
+    pairs = []
+    for line in payload.decode("ascii").splitlines():
+        key, _, value = line.partition("=")
+        pairs.append((key, value))
+    return dict(pairs)
 
 
 class CapsCompletenessTest(unittest.TestCase):
-    """FR-INFO-3: the HELLO caps MUST include every frozen field, correctly
-    typed; the identity/identify caps are additive within PBLE/1."""
+    """FR-INFO-3: the HELLO caps MUST include every frozen field; the
+    identity/identify caps are additive within PBLE/1."""
 
-    def test_caps_contains_every_frozen_field(self):
-        caps = INFO.attr(self, "caps", "F-03/FR-INFO-3 caps field set complete")()
-        for field in list(CAPS_FIELDS) + ["identify_led"]:
-            self.assertIn(field, caps, "caps missing frozen field '%s'" % field)
+    def test_caps_contains_every_frozen_token(self):
+        caps = caps_dict(self, "F-03/FR-INFO-3 caps field set complete")
+        for token in CAPS_TOKENS:
+            self.assertIn(token, caps,
+                          "caps missing frozen §7 token '%s'" % token)
 
-    def test_caps_fields_are_correctly_typed(self):
-        caps = INFO.attr(self, "caps", "F-03/FR-INFO-3 caps field typing")()
-        for field, typ in CAPS_FIELDS.items():
-            self.assertIsInstance(caps[field], typ,
-                                  "caps['%s'] must be %s" % (field, typ.__name__))
-        self.assertTrue(caps["identify_led"] is None or isinstance(caps["identify_led"], int),
-                        "identify_led must be a GPIO int or None")
-
-    def test_put_window_default_is_8(self):
-        # §5 + FR-FS-4/NFR-PERF-2 (frozen 2026-07-04): reference-agent default
-        # sliding window W=8 (raised 4->8, no wire change; W lives in caps).
-        caps = INFO.attr(self, "caps", "F-03/FR-INFO-3 put_window W default 8")()
-        self.assertEqual(caps["put_window"], 8, "default put_window W MUST be 8")
+    def test_put_window_is_port_governed(self):
+        # §5 + FR-FS-4: the sliding window W lives in caps. The value is
+        # PORT-governed: ports/rpi-pico2-w.md P1 freezes W=4 for this module
+        # (initial; raised only on HIL evidence — NOT the ESP32 native
+        # agent's 8).
+        caps = caps_dict(self, "F-03/P1 put_window W port value 4")
+        self.assertEqual(caps["window"], "4",
+                         "window MUST be the port-frozen P1 value (4)")
 
 
 class DeviceInfoTest(unittest.TestCase):
     """FR-INFO-1: DEVICE_INFO reports the minimum field set."""
 
     def test_device_info_has_minimum_fields(self):
-        di = INFO.attr(self, "device_info", "F-03/FR-INFO-1 DEVICE_INFO minimum fields")()
-        for field in DEVICE_INFO_FIELDS:
-            self.assertIn(field, di, "DEVICE_INFO missing '%s'" % field)
+        caps = caps_dict(self, "F-03/FR-INFO-1 DEVICE_INFO minimum fields")
+        for token in DEVICE_INFO_TOKENS:
+            self.assertIn(token, caps, "DEVICE_INFO missing '%s'" % token)
 
 
 class InfoReadEqualsDeviceInfoTest(unittest.TestCase):
     """FR-INFO-4: an INFO-characteristic read returns a DEVICE_INFO-equivalent
     payload so a client can identify a board BEFORE subscribing. Single source
-    of caps (F-03 refactor) => the two payloads are byte-identical."""
+    of caps => the INFO value equals the DEVICE_INFO caps bytes (the RSP adds
+    only the leading [status:u8], §7 frozen)."""
 
-    def test_info_read_value_equals_device_info_payload(self):
-        read_val = INFO.attr(self, "info_read_value", "F-03/FR-INFO-4 INFO read == DEVICE_INFO")()
-        di_payload = INFO.attr(self, "device_info_payload", "F-03/FR-INFO-4 DEVICE_INFO payload")()
-        self.assertEqual(bytes(read_val), bytes(di_payload),
-                         "INFO-char read MUST be byte-identical to the DEVICE_INFO payload")
+    def test_info_read_value_equals_device_info_caps(self):
+        info_char = INFO.attr(self, "info_char_payload",
+                              "F-03/FR-INFO-4 INFO read == DEVICE_INFO")
+        device_info = INFO.attr(self, "device_info_rsp_payload",
+                                "F-03/FR-INFO-4 DEVICE_INFO payload")
+        self.assertEqual(
+            bytes(info_char(**CAPS_KWARGS)),
+            bytes(device_info(**CAPS_KWARGS))[1:],
+            "INFO-char read MUST be byte-identical to the DEVICE_INFO caps "
+            "(the RSP payload minus its [status:u8] prefix)")
 
 
 class VersionNegotiationTest(unittest.TestCase):
@@ -120,38 +120,47 @@ class VersionNegotiationTest(unittest.TestCase):
     Architect freeze: PROTO_VERSION = 1 (single supported version)."""
 
     def test_proto_version_constant_is_1(self):
-        self.assertEqual(INFO.attr(self, "PROTO_VERSION", "F-16/FR-PROTO-7 PROTO_VERSION=1"), 1)
+        self.assertEqual(INFO.attr(self, "PROTO_VERSION",
+                                   "F-16/FR-PROTO-7 PROTO_VERSION=1"), 1)
 
     def test_negotiate_picks_supported_version(self):
-        negotiate = INFO.attr(self, "negotiate", "F-03/FR-INFO-5 negotiate supported version")
+        negotiate = INFO.attr(self, "negotiate",
+                              "F-03/FR-INFO-5 negotiate supported version")
         self.assertEqual(negotiate([1]), 1, "offering v1 MUST negotiate to v1")
         self.assertEqual(negotiate([1, 2, 3]), 1,
-                         "MUST choose a version the agent supports (v1) from the offer")
+                         "MUST choose a version the agent supports (v1) "
+                         "from the offer")
 
     def test_negotiate_refuses_unsatisfiable_offer(self):
-        negotiate = INFO.attr(self, "negotiate", "F-03/FR-INFO-5 refuse unsatisfiable version")
+        negotiate = INFO.attr(self, "negotiate",
+                              "F-03/FR-INFO-5 refuse unsatisfiable version")
         self.assertIsNone(negotiate([2, 3]),
-                          "an offer without v1 MUST be REFUSED (None), never silently mis-spoken")
+                          "an offer without v1 MUST be REFUSED (None), "
+                          "never silently mis-spoken")
         self.assertIsNone(negotiate([]), "an empty offer MUST be refused")
 
 
 class NeverExceedAdvertisedCapsTest(unittest.TestCase):
     """FR-PROTO-10: the agent MUST NOT require/assume a capability it did not
-    advertise. Structural guard: caps() is the SINGLE source, so what HELLO
-    advertises is exactly what DEVICE_INFO/INFO expose (no hidden features)."""
+    advertise. Structural guard: caps_payload() is the SINGLE source, so what
+    HELLO advertises is exactly what DEVICE_INFO/INFO expose."""
 
     def test_caps_is_single_source_stable(self):
-        caps_fn = INFO.attr(self, "caps", "F-03/FR-PROTO-10 caps single source")
-        self.assertEqual(dict(caps_fn()), dict(caps_fn()),
-                         "caps() MUST be a stable single source (advertised == exposed)")
+        fn = INFO.attr(self, "caps_payload",
+                       "F-03/FR-PROTO-10 caps single source")
+        self.assertEqual(fn(**CAPS_KWARGS), fn(**CAPS_KWARGS),
+                         "caps_payload() MUST be a stable single source "
+                         "(advertised == exposed)")
 
     def test_has_identify_gates_identify_led(self):
-        # FR-INFO-3: an Identify action is offered ONLY when has_identify is set;
-        # when unset, identify_led MUST be null (S3 ships no identify LED — F-23).
-        caps = INFO.attr(self, "caps", "F-03/FR-PROTO-10 has_identify gates identify_led")()
-        if not caps["has_identify"]:
-            self.assertIsNone(caps["identify_led"],
-                              "identify_led MUST be null when has_identify is false")
+        # FR-INFO-3: an Identify action is offered ONLY when has_identify is
+        # set; when unset, identify_led MUST be 255 (= none, §7 frozen byte).
+        caps = caps_dict(
+            self, "F-03/FR-PROTO-10 has_identify gates identify_led")
+        if caps["has_identify"] == "0":
+            self.assertEqual(caps["identify_led"], "255",
+                             "identify_led MUST be 255 (none) when "
+                             "has_identify is 0")
 
 
 if __name__ == "__main__":

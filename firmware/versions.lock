@@ -7,7 +7,7 @@
 # pins. See docs/specifications/firmware.md §6 (Build & distribution) and the
 # sibling note in firmware/upstream/README.md.
 #
-# SOURCE-SELECTED for agent v0.5.1. These exact bytes pin the MicroPython and
+# SOURCE-SELECTED for agent v0.6.0. These exact bytes pin the MicroPython and
 # ESP-IDF source inputs, but do not freeze or qualify a release candidate.
 # Candidate status requires fresh reproducible builds, license audit, OI-1
 # measurement, and HIL; retained v0.4.2 binaries or evidence cannot substitute.
@@ -45,5 +45,25 @@ mpy_cross = "rebuilt-from-pinned-micropython"
 [pyble]
 # Board identity remains in [targets] and board overlays rather than protocol
 # routing fields; generic and exact-board variants share the PBLE/1 contract.
-agent_version    = "0.5.1"
+agent_version    = "0.6.0"
 protocol_version = "PBLE/1"
+
+# --- rpi-pico2-w port (ADR-0030) --------------------------------------------
+# Additive sections consumed only by firmware/scripts/build_rp2.sh and
+# prepare.sh's rp2 branch. The already-integrated four-variant ESP source
+# inputs remain independently selected; this combined source identity requires
+# fresh version-bound build and qualification evidence before publication.
+# pico-sdk / BTstack / cyw43-driver are pinned transitively as lib/ submodules
+# of the [micropython] commit; the SHA-drift gate already covers them.
+
+# Maps the PyBLE target name to its upstream MicroPython rp2 board.
+[targets_rp2]
+"rpi-pico2-w" = "RPI_PICO2_W"
+
+[arm_gnu_toolchain]
+# Pinned ARM GNU release for the bare-metal rp2 build (BLD-4 equivalent:
+# build_rp2.sh verifies `arm-none-eabi-gcc --version` and fails cleanly).
+release     = "14.2.Rel1"
+gcc_version = "14.2.1 20241119"
+sha256      = "c7c78ffab9bebfce91d99d3c24da6bf4b81c01e16cf551eb2ff9f25b9e0a3818"
+url         = "https://developer.arm.com/-/media/Files/downloads/gnu/14.2.rel1/binrel/arm-gnu-toolchain-14.2.rel1-darwin-arm64-arm-none-eabi.tar.xz"

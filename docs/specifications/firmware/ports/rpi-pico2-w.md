@@ -11,6 +11,7 @@ Status: **P1–P9 FROZEN for the F-25/F-26/F-27/X-13 stories (`[docs]` 2026-08-1
 ## P2. Execution model (FROZEN — the port's central design)
 
 - **Single-threaded agent on core0.** A supervisor loop frozen in the overlay `_boot.py` owns the main thread and replaces the local REPL; core1 is left to user `_thread` code.
+- **The supervisor activates the builtin USB device itself** (`machine.USBDevice().active(True)`, best-effort) before entering its loop: rp2's `main.c` calls `mp_usbd_init()` only *after* `_boot.py` returns, which the supervisor never does — without this the board runs BLE-only with no USB CDC console (hardware-observed 2026-08-11 on the first flashed image).
 - BLE events are **BTstack SYNC events**: the whole BTstack run loop executes inside a scheduler node; the Python irq handler runs synchronously inside it and MUST return quickly; the entire irq dispatch is wrapped in `try/except` (an uncaught raise permanently disables the handler — `extmod/modbluetooth.c`).
 - **Fast ops answered inline** in scheduled context: HELLO, DEVICE_INFO, RUN (validate → reserve → RSP only), STOP, SOFT_REBOOT, CONSOLE_INPUT, SET_LABEL, SET_AUTORUN, SET_IDENTIFY_LED, IDENTIFY, FILE_LIST/STAT/DELETE/MKDIR/RENAME. **Mailboxed to the supervisor:** RUN execution, FILE_GET streaming, FILE_PUT windows.
 - Transfers during an active RUN return `EBUSY` (legal §8; the ESP32 port's concurrent fs-worker behavior is restored only by a future core1 increment — OI-P5).

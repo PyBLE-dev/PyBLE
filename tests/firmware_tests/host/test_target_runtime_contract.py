@@ -900,8 +900,8 @@ class BoardConfigurationSourceContractTests(unittest.TestCase):
             expected = tomllib.load(handle)["pyble"]["agent_version"]
         self.assertEqual(
             expected,
-            "0.5.1",
-            "the fresh-install splash fix must advance the agent patch version",
+            "0.6.0",
+            "the combined Pico 2 W source must advance the agent minor version",
         )
         source_path = FIRMWARE_DIR / "pyble" / "__init__.py"
         tree = ast.parse(

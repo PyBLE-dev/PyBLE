@@ -429,5 +429,60 @@ class StopWhileIdleTest(AgentTestBase):
                          "an idle STOP MUST NOT emit any RUN_STATE EVT")
 
 
+class UsbActivationTest(unittest.TestCase):
+    """P2: the supervisor must activate the builtin USB device itself.
+
+    rp2's main.c calls mp_usbd_init() only AFTER _boot.py returns; the
+    supervisor never returns, so without this the board runs BLE-only with no
+    USB CDC console (hardware-observed 2026-08-11 on the first flashed image).
+    """
+
+    def test_activate_usb_selects_builtin_cdc_then_activates(self):
+        calls = []
+
+        class FakeUSBDevice:
+            BUILTIN_DEFAULT = object()   # sentinel, as on a real build
+
+            def __init__(self):
+                # machine_usb_device.c:69 — the singleton starts BUILTIN_NONE;
+                # activating without selecting the builtin driver enumerates a
+                # device with NO interfaces (hardware-observed: no CDC at all).
+                self._builtin = None
+
+            @property
+            def builtin_driver(self):
+                return self._builtin
+
+            @builtin_driver.setter
+            def builtin_driver(self, v):
+                calls.append(("builtin", v))
+                self._builtin = v
+
+            def active(self, on):
+                calls.append(("active", on))
+
+        class FakeMachine:
+            USBDevice = FakeUSBDevice
+
+        fn = AGENT.attr(self, "_activate_usb",
+                        "P2: supervisor-side USB activation (rp2 usbd init "
+                        "runs only after _boot.py returns)")
+        fn(FakeMachine())
+        self.assertEqual(
+            calls,
+            [("builtin", FakeUSBDevice.BUILTIN_DEFAULT), ("active", True)],
+            "supervisor must select BUILTIN_DEFAULT (CDC) BEFORE active(True) "
+            "— the singleton defaults to BUILTIN_NONE")
+
+    def test_activate_usb_is_best_effort_when_absent(self):
+        class BareMachine:
+            pass
+
+        # CPython / a build without runtime USB: must not raise.
+        fn = AGENT.attr(self, "_activate_usb",
+                        "P2: USB activation is best-effort")
+        fn(BareMachine())
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

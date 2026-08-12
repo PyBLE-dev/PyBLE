@@ -173,6 +173,10 @@ firmware/user_c_modules/pyble/pble_version.h
 # submodule (BLD-11). Default install location for firmware/scripts/*.
 firmware/.esp-idf/
 .esp-idf/
+# Pinned ARM GNU toolchain for the rp2 port, installed from versions.lock
+# [arm_gnu_toolchain] by firmware/scripts/install_arm_toolchain.sh (X-13).
+firmware/.arm-gnu/
+.arm-gnu/
 # firmware/upstream/micropython/ is now a tracked git submodule (see .gitmodules);
 # its working tree is managed by git-submodule, not ignored here.
 
