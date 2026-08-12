@@ -73,6 +73,28 @@ class RP2LicenseDispositionTests(unittest.TestCase):
             },
         )
 
+    def test_toolchain_owners_cover_frontends_and_compiler_headers(self) -> None:
+        gcc = {
+            item["path"]
+            for item in self.owners["arm-gnu-gcc-runtime"]["source_roots"]
+            if item["namespace"] == "arm-gnu-toolchain"
+        }
+        newlib = {
+            item["path"]
+            for item in self.owners["arm-gnu-newlib-runtime"]["source_roots"]
+            if item["namespace"] == "arm-gnu-toolchain"
+        }
+        self.assertTrue(
+            {
+                "bin/arm-none-eabi-gcc",
+                "bin/arm-none-eabi-g++",
+                "lib/gcc/arm-none-eabi/14.2.1/include",
+                "arm-none-eabi/include/c++/14.2.1",
+            }
+            <= gcc
+        )
+        self.assertIn("arm-none-eabi/include", newlib)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
