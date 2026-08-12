@@ -1,7 +1,8 @@
-Exact license header retained from
-src/rp2_common/cmsis/stub/CMSIS/Device/RP2350/Source/system_RP2350.c at
-pico-sdk commit a1438dff1d38bd9c65dbd693f0e5db4b9ae91779.
-The two sequential SPDX markers require independent review before release.
+Exact shared license header retained from
+src/rp2_common/cmsis/stub/CMSIS/Device/RP2350/{Include/system_RP2350.h,
+Source/system_RP2350.c} at pico-sdk commit
+a1438dff1d38bd9c65dbd693f0e5db4b9ae91779. The conservative reviewed
+redistribution expression preserves both sequential SPDX terms.
 
 /*
  * Copyright (c) 2009-2021 Arm Limited. All rights reserved.

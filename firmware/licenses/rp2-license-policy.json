@@ -671,13 +671,13 @@
     },
     {
       "copyright": "Copyright (c) 2009-2021 Arm Limited; Copyright (c) 2020 Raspberry Pi (Trading) Ltd.",
-      "disposition": "review-required",
+      "disposition": "allow",
       "id": "pico-sdk-cmsis",
       "license_texts": [
         {
           "identifier": "Apache-2.0",
-          "path": "firmware/licenses/texts/Apache-2.0.txt",
-          "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+          "path": "firmware/upstream/micropython/lib/pico-sdk/src/rp2_common/cmsis/stub/CMSIS/LICENSE.txt",
+          "sha256": "b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1"
         },
         {
           "identifier": "BSD-3-Clause",
@@ -688,7 +688,7 @@
       "notice_files": [
         {
           "path": "firmware/licenses/notices/rp2/pico-sdk-cmsis.txt",
-          "sha256": "c8bdaa1e6d17040762a0dc31d4f01f5d0b0e2076948c0141c9b66aba8cf8f202"
+          "sha256": "aa75834c3b76535c4b92d171f67c467f36c2caf712a15762e732c41086a34dd9"
         }
       ],
       "selected_spdx_expression": "Apache-2.0 AND BSD-3-Clause",
@@ -696,10 +696,60 @@
       "source_roots": [
         {
           "namespace": "micropython",
+          "path": "lib/pico-sdk/src/rp2_common/cmsis/stub/CMSIS/Device/RP2350/Include/system_RP2350.h"
+        },
+        {
+          "namespace": "micropython",
           "path": "lib/pico-sdk/src/rp2_common/cmsis/stub/CMSIS/Device/RP2350/Source/system_RP2350.c"
         }
       ],
       "source_spdx_expression": "Apache-2.0 AND BSD-3-Clause",
+      "source_url": "https://github.com/raspberrypi/pico-sdk.git"
+    },
+    {
+      "copyright": "Copyright (c) 2009-2024 Arm Limited",
+      "disposition": "allow",
+      "id": "pico-sdk-cmsis-core",
+      "license_texts": [
+        {
+          "identifier": "Apache-2.0",
+          "path": "firmware/upstream/micropython/lib/pico-sdk/src/rp2_common/cmsis/stub/CMSIS/LICENSE.txt",
+          "sha256": "b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1"
+        }
+      ],
+      "notice_files": [],
+      "selected_spdx_expression": "Apache-2.0",
+      "source_ref": "a1438dff1d38bd9c65dbd693f0e5db4b9ae91779",
+      "source_roots": [
+        {
+          "namespace": "micropython",
+          "path": "lib/pico-sdk/src/rp2_common/cmsis/stub/CMSIS/Core/Include"
+        }
+      ],
+      "source_spdx_expression": "Apache-2.0",
+      "source_url": "https://github.com/raspberrypi/pico-sdk.git"
+    },
+    {
+      "copyright": "Copyright (c) 2024 Raspberry Pi Ltd.",
+      "disposition": "allow",
+      "id": "pico-sdk-cmsis-rp2350",
+      "license_texts": [
+        {
+          "identifier": "BSD-3-Clause",
+          "path": "firmware/licenses/texts/BSD-3-Clause.txt",
+          "sha256": "5a93d5831e1297ab10fe643e1a631e83be392896da14ee2951285a79012df69d"
+        }
+      ],
+      "notice_files": [],
+      "selected_spdx_expression": "BSD-3-Clause",
+      "source_ref": "a1438dff1d38bd9c65dbd693f0e5db4b9ae91779",
+      "source_roots": [
+        {
+          "namespace": "micropython",
+          "path": "lib/pico-sdk/src/rp2_common/cmsis/stub/CMSIS/Device/RP2350/Include/RP2350.h"
+        }
+      ],
+      "source_spdx_expression": "BSD-3-Clause",
       "source_url": "https://github.com/raspberrypi/pico-sdk.git"
     },
     {

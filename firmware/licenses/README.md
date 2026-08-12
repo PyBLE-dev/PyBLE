@@ -88,9 +88,10 @@ The locked Darwin Arm64 binary distribution remains independently pinned in
 `firmware/versions.lock` by SHA-256
 `c7c78ffab9bebfce91d99d3c24da6bf4b81c01e16cf551eb2ff9f25b9e0a3818`.
 
-The current fail-closed review queue is: the CYW43 Raspberry Pi grant as
-applied to the selected embedded firmware arrays, the complete pico-sdk CMSIS
-source/header closure, and the exact GCC/newlib runtime closure. Their
-evidence is retained, but none is represented as an approved release
-conclusion. The target-scoped BTstack grant and the exact fdlibm/adapted-musl
-classes are approved only for the hash-bound owner records above.
+The current fail-closed review queue is the CYW43 Raspberry Pi grant as
+applied to the selected embedded firmware arrays and the exact GCC/newlib
+runtime closure. Their evidence is retained, but neither is represented as an
+approved release conclusion. The target-scoped BTstack grant, the exact
+fdlibm/adapted-musl classes, and the split pico-sdk CMSIS Core, RP2350 system,
+and device-header classes are approved only for the hash-bound owner records
+above.
