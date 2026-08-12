@@ -13336,58 +13336,83 @@ def _audit_verify_packaged_build(
     )
     build_provenance: list[dict[str, Any]] = []
     for profile_id in release_profile_order:
-        target = PROFILE_SPECS[profile_id]["target"]
+        spec = PROFILE_SPECS[profile_id]
+        target = spec["target"]
         target_build = build_root / target
-        pairs = (
-            (
-                bundle / profile_id / "firmware.bin",
-                target_build / "firmware.bin",
-                "merged firmware",
-            ),
-            (
-                bundle / profile_id / "application.bin",
-                target_build / "micropython.bin",
-                "application",
-            ),
-            (
-                bundle / profile_id / "bootloader.bin",
-                target_build / "bootloader" / "bootloader.bin",
-                "bootloader",
-            ),
-            (
-                bundle / profile_id / "partition-table.bin",
-                target_build / "partition_table" / "partition-table.bin",
-                "partition table",
-            ),
+        validated = (
+            validate_rp2_build(target, target_build)
+            if spec["port"] == "rp2"
+            else validate_build(target, target_build)
         )
+        if spec["port"] == "rp2":
+            pairs = (
+                (
+                    bundle / profile_id / "firmware.uf2",
+                    validated["paths"]["install"],
+                    "UF2 install",
+                ),
+                (
+                    bundle / profile_id / "firmware.bin",
+                    validated["paths"]["resource-image"],
+                    "resource image",
+                ),
+            )
+        else:
+            pairs = (
+                (
+                    bundle / profile_id / "firmware.bin",
+                    validated["paths"]["install"],
+                    "merged firmware",
+                ),
+                (
+                    bundle / profile_id / "application.bin",
+                    validated["paths"]["application"],
+                    "application",
+                ),
+                (
+                    bundle / profile_id / "bootloader.bin",
+                    validated["paths"]["bootloader"],
+                    "bootloader",
+                ),
+                (
+                    bundle / profile_id / "partition-table.bin",
+                    validated["paths"]["partition-table"],
+                    "partition table",
+                ),
+            )
         for packaged, audited, label in pairs:
+            packaged_bytes = _read_regular_file_bytes(
+                packaged,
+                "%s packaged %s" % (profile_id, label),
+            )
+            audited_bytes = _read_regular_file_bytes(
+                audited,
+                "%s audited %s" % (profile_id, label),
+            )
             _require(
-                _sha256_path(packaged) == _sha256_path(audited)
-                and packaged.stat().st_size == audited.stat().st_size,
+                packaged_bytes == audited_bytes,
                 "%s %s differs from the audited packaged build" % (profile_id, label),
             )
-        build_provenance.append(
-            {
-                "provenance": _validate_build_provenance(
-                    _read_json(
-                        target_build / "pyble-build-provenance.json",
-                        "%s audited build provenance" % target,
-                    ),
-                    target,
-                )
-            }
-        )
+        build_provenance.append(validated)
 
     _require_one_build_source_identity(build_provenance)
     packaged_provenance = release["provenance"]
     for item in build_provenance:
         provenance = item["provenance"]
-        _require(
-            provenance["pyble"]["commit"] == packaged_provenance["pyble"]["commit"]
+        same_source = (
+            provenance["pyble"]["commit"]
+            == packaged_provenance["pyble"]["commit"]
             and provenance["micropython"]["commit"]
             == packaged_provenance["micropython"]["commit"]
-            and provenance["esp_idf"]["commit"]
-            == packaged_provenance["esp_idf"]["commit"],
+        )
+        if "esp_idf" in provenance:
+            same_source = (
+                same_source
+                and provenance["esp_idf"]["commit"]
+                == packaged_provenance["esp_idf"]["commit"]
+            )
+        _require(
+            same_source,
             "packaged release provenance differs from the audited build",
         )
 
