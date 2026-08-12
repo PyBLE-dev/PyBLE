@@ -8,9 +8,10 @@
 #  - firmware/board_overlays/rpi-pico2-w/ holds EXACTLY the five frozen files:
 #    _boot.py, manifest.py, mpconfigboard.cmake, mpconfigboard.h,
 #    mpconfigvariant.cmake — nothing else, no partitions.csv (rp2 has none).
-#  - manifest.py never freezes $(PORT_DIR)/modules wholesale; it DOES freeze
-#    the overlay _boot.py from $(BOARD_DIR) and the copied-in pyble package
-#    (the agent is image-embedded, never a user-deletable vfs file).
+#  - manifest.py never freezes a directory recursively. It DOES freeze the
+#    overlay _boot.py from $(BOARD_DIR) and an exact literal list of every
+#    copied-in pyble source (the agent is image-embedded, auditable, and never
+#    a user-deletable vfs file).
 #  - mpconfigvariant.cmake pins PICO_PLATFORM to rp2350 (mandatory: it is only
 #    loaded from the board dir by the upstream rp2 CMake).
 #  - _boot.py has NO vfs main.py start path (autorun is the agent's
@@ -54,6 +55,46 @@ check_overlay_files() {
     '_boot\.py.*BOARD_DIR|BOARD_DIR.*_boot\.py' "$OVERLAY/manifest.py"
   check_grep "manifest.py freezes the pyble agent package (image-embedded agent)" \
     'pyble' "$OVERLAY/manifest.py"
+  if python3 - "$OVERLAY/manifest.py" <<'PY'
+import ast
+import sys
+
+expected = (
+    "__init__.py",
+    "_version.py",
+    "pyble_agent.py",
+    "pyble_ble.py",
+    "pyble_boot.py",
+    "pyble_console.py",
+    "pyble_device_config.py",
+    "pyble_fs.py",
+    "pyble_info.py",
+    "pyble_proto.py",
+    "pyble_runner.py",
+)
+tree = ast.parse(open(sys.argv[1], encoding="utf-8").read())
+matches = []
+for node in ast.walk(tree):
+    if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name):
+        continue
+    if node.func.id != "freeze" or not node.args:
+        continue
+    if ast.literal_eval(node.args[0]) != "$(BOARD_DIR)/pyble":
+        continue
+    script = node.args[1] if len(node.args) > 1 else next(
+        (item.value for item in node.keywords if item.arg == "script"), None
+    )
+    if script is None:
+        raise SystemExit("recursive directory freeze is forbidden")
+    matches.append(tuple(ast.literal_eval(script)))
+if matches != [expected]:
+    raise SystemExit("pyble frozen input list is not exact and literal")
+PY
+  then
+    pass "manifest.py freezes the exact literal pyble source list"
+  else
+    fail "manifest.py must freeze the exact literal pyble source list (no recursion)"
+  fi
 
   # variant: PICO_PLATFORM must be pinned to rp2350 from the board dir.
   check_grep "mpconfigvariant.cmake sets PICO_PLATFORM to rp2350" \
