@@ -16,6 +16,7 @@ telemetry.
 - Website and browser-installer status: [pyble.dev](https://pyble.dev)
 - iPad external beta:
   [join with TestFlight](https://testflight.apple.com/join/yU4e8s6d)
+- Android invited testing: [see the app page](https://pyble.dev/app)
 - License: [MIT](LICENSE)
 
 <p align="center">
@@ -40,14 +41,16 @@ The Flutter app currently provides:
 - a MicroPython editor with save, run, stop, soft reboot, and live console;
 - wireless file browsing and transfer with integrity checks;
 - an offline Blockly workspace with GPIO and standard MicroPython NeoPixel
-  blocks;
+  blocks, including explicit numeric GPIOs and bounded named `machine.Pin`
+  identities;
 - editable beginner examples;
 - exact Blockly sidecar reopening and a bounded Python-to-blocks importer;
 - an adaptive tablet interface for portrait and landscape use; and
 - local operation without an account, analytics, or cloud dependency.
 
-The iPad build is available through public TestFlight. Android source and CI
-support are present; a public store channel has not been announced.
+The iPad build is available through public TestFlight. An invited Android
+internal test is available through Google Play; this is not a public Play
+release. Both platforms share the same Flutter source and app test gates.
 
 ### Firmware
 
@@ -160,8 +163,15 @@ Firmware build preparation and target builds:
 firmware/scripts/install_esp_idf.sh
 firmware/scripts/build.sh esp32
 firmware/scripts/build.sh esp32-s3
+firmware/scripts/build.sh waveshare-esp32-s3-lcd-147b
 firmware/scripts/build.sh esp32-c3
+firmware/scripts/install_arm_toolchain.sh
+firmware/scripts/build_rp2.sh rpi-pico2-w
 ```
+
+The Pico 2 W command builds the in-progress `0.6.0` source port. It has
+successful pre-GP2 hardware evidence but no public installer image or support
+claim until the complete GP2 matrix passes.
 
 Website:
 

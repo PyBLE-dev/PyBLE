@@ -9,6 +9,19 @@ are released independently from this monorepo.
 - Added public contributor, security, architecture, protocol, and validation
   documentation.
 
+### App and website source
+
+- Added fail-closed Android upload signing and signed App Bundle CI contracts,
+  plus the invited Google Play internal-test link and QR alongside TestFlight
+  on `pyble.dev`.
+- Added an independent `/privacy` policy and stable `/app` landing page.
+- Extended every Blocks GPIO surface to accept explicit bounded MicroPython
+  pin names such as `LED` while preserving numeric GPIOs, offline operation,
+  and the app's board-neutral architecture.
+- Patched the remediable website PostCSS/Nanoid dependency chain and bounded
+  the remaining build-only `image-size` advisory behind a static-deploy and
+  no-metadata-image-route contract until an upstream fix exists.
+
 ### Firmware 0.6.0 source integration
 
 - Added the `rpi-pico2-w` portable frozen-Python agent port, its isolated RP2
