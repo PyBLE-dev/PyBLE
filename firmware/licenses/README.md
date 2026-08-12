@@ -88,12 +88,11 @@ The locked Darwin Arm64 binary distribution remains independently pinned in
 `firmware/versions.lock` by SHA-256
 `c7c78ffab9bebfce91d99d3c24da6bf4b81c01e16cf551eb2ff9f25b9e0a3818`.
 
-The current fail-closed review queue is the exact GCC/newlib runtime closure
-and the three separately owned CYW43 Wi-Fi/CLM, Bluetooth, and NVRAM payloads.
-The ordinary CYW43 driver code is approved under the Raspberry-Pi-device
-grant, but that directory-level conclusion does not silently authorize opaque
-payload bytes with distinct or unresolved copyright provenance. Their exact
-headers, embedded bytes, and known notices remain evidence, not an approved
-release conclusion. The target-scoped BTstack grant, exact fdlibm/adapted-musl
-classes, and split pico-sdk CMSIS Core, RP2350 system, and device-header
-classes are approved only for the hash-bound owner records above.
+The current fail-closed review queue is the exact GCC/newlib runtime closure.
+The ordinary CYW43 driver code and the three separately hash-bound Wi-Fi/CLM,
+Bluetooth, and NVRAM payloads select the Raspberry-Pi-device grant only for the
+frozen Pico 2 W RP2350 + CYW43439 use described by the release specification.
+That conclusion does not authorize standalone payload use or another Wi-Fi
+stack. The target-scoped BTstack grant, exact fdlibm/adapted-musl classes, and
+split pico-sdk CMSIS Core, RP2350 system, and device-header classes are likewise
+approved only for the hash-bound owner records above.

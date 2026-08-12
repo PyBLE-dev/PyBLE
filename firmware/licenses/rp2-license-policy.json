@@ -165,7 +165,7 @@
     },
     {
       "copyright": "Exact selected Bluetooth firmware copyright/licensor unresolved",
-      "disposition": "review-required",
+      "disposition": "allow",
       "id": "cyw43-bt-firmware-payload",
       "license_texts": [
         {
@@ -180,7 +180,7 @@
         }
       ],
       "notice_files": [],
-      "selected_spdx_expression": "(LicenseRef-PyBLE-CYW43-Noncommercial OR LicenseRef-PyBLE-CYW43-Raspberry-Pi)",
+      "selected_spdx_expression": "LicenseRef-PyBLE-CYW43-Raspberry-Pi",
       "source_ref": "055d64274b014dd7b1c2fc94d26e8a18face7124",
       "source_roots": [
         {
@@ -221,7 +221,7 @@
     },
     {
       "copyright": "Copyright Broadcom Corporation",
-      "disposition": "review-required",
+      "disposition": "allow",
       "id": "cyw43-nvram-payload",
       "license_texts": [
         {
@@ -238,10 +238,10 @@
       "notice_files": [
         {
           "path": "firmware/licenses/notices/rp2/cyw43-nvram.txt",
-          "sha256": "512fa4108d243f1ee2f32f679d3997dab67002df7cf02f2aca806bd2f3d208df"
+          "sha256": "82beaf1060fc1f2ea334f42e0902453507b8073bda8dc82df3f05301b66eb715"
         }
       ],
-      "selected_spdx_expression": "(LicenseRef-PyBLE-CYW43-Noncommercial OR LicenseRef-PyBLE-CYW43-Raspberry-Pi)",
+      "selected_spdx_expression": "LicenseRef-PyBLE-CYW43-Raspberry-Pi",
       "source_ref": "055d64274b014dd7b1c2fc94d26e8a18face7124",
       "source_roots": [
         {
@@ -254,7 +254,7 @@
     },
     {
       "copyright": "Exact selected Wi-Fi/CLM firmware copyright/licensor unresolved",
-      "disposition": "review-required",
+      "disposition": "allow",
       "id": "cyw43-wifi-clm-payload",
       "license_texts": [
         {
@@ -269,7 +269,7 @@
         }
       ],
       "notice_files": [],
-      "selected_spdx_expression": "(LicenseRef-PyBLE-CYW43-Noncommercial OR LicenseRef-PyBLE-CYW43-Raspberry-Pi)",
+      "selected_spdx_expression": "LicenseRef-PyBLE-CYW43-Raspberry-Pi",
       "source_ref": "055d64274b014dd7b1c2fc94d26e8a18face7124",
       "source_roots": [
         {
@@ -382,7 +382,7 @@
       "source_url": "https://github.com/micropython/micropython"
     },
     {
-      "copyright": "Copyright © 2005-2014 Rich Felker, et al.; Copyright (c) 2013-2026 Damien P. George",
+      "copyright": "Copyright \u00a9 2005-2014 Rich Felker, et al.; Copyright (c) 2013-2026 Damien P. George",
       "disposition": "allow",
       "id": "libm-musl",
       "license_texts": [
@@ -434,7 +434,7 @@
       "source_url": "https://github.com/micropython/micropython"
     },
     {
-      "copyright": "Copyright © musl contributors; Copyright (C) 1993 by Sun Microsystems, Inc.; Copyright (c) 2013-2026 Damien P. George",
+      "copyright": "Copyright \u00a9 musl contributors; Copyright (C) 1993 by Sun Microsystems, Inc.; Copyright (c) 2013-2026 Damien P. George",
       "disposition": "allow",
       "id": "libm-musl-sun",
       "license_texts": [

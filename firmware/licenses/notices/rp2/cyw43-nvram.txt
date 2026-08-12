@@ -3,5 +3,5 @@ The selected Pico 2 W NVRAM input retains this source notice:
 Copyright Broadcom Corporation
 
 Source: lib/cyw43-driver/firmware/wifi_nvram_43439.h at the exact pinned
-cyw43-driver commit. This notice records attribution only; it does not resolve
-the payload's redistribution terms or change its review-required disposition.
+cyw43-driver commit. This notice records attribution for distribution under
+the target-scoped Raspberry Pi semiconductor-device grant in LICENSE.RP.
