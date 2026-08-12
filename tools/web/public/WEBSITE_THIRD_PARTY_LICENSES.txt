@@ -3954,10 +3954,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
 ================================================================================
-nanoid 3.3.16
+nanoid 3.3.18
 Installed path: node_modules/nanoid
 SPDX license: MIT
-Source: https://registry.npmjs.org/nanoid/-/nanoid-3.3.16.tgz
+Source: https://registry.npmjs.org/nanoid/-/nanoid-3.3.18.tgz
 License file: LICENSE
 
 The MIT License (MIT)
@@ -4272,10 +4272,10 @@ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 OTHER DEALINGS IN THE SOFTWARE.
 
 ================================================================================
-postcss 8.5.24
+postcss 8.5.26
 Installed path: node_modules/postcss
 SPDX license: MIT
-Source: https://registry.npmjs.org/postcss/-/postcss-8.5.24.tgz
+Source: https://registry.npmjs.org/postcss/-/postcss-8.5.26.tgz
 License file: LICENSE
 
 The MIT License (MIT)
