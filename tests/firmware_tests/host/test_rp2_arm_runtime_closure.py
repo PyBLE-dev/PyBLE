@@ -19,6 +19,7 @@ SPEC = ROOT / "docs/specifications/firmware.md"
 POLICY = ROOT / "firmware/licenses/rp2-license-policy.json"
 LOCK = ROOT / "firmware/versions.lock"
 RELEASE_BUNDLE = ROOT / "firmware/scripts/release_bundle.py"
+BUILD_RP2 = ROOT / "firmware/scripts/build_rp2.sh"
 ATTRIBUTION = (
     ROOT
     / "firmware/licenses/evidence/rp2/arm-gnu-toolchain/14.2.rel1"
@@ -485,6 +486,14 @@ class RP2ArmRuntimeClosureTests(unittest.TestCase):
         missing["eligible_compilation_receipt"]["bound_kinds"].remove("depfile")
         cases["missing-receipt-kind"] = missing
 
+        substituted_helper = self.expected_observation()
+        substituted_helper["build_tools"][0][1] = "bin/substituted-as"
+        cases["substituted-helper"] = substituted_helper
+
+        unused_helper = self.expected_observation()
+        unused_helper["build_tools"].pop(0)
+        cases["unused-helper"] = unused_helper
+
         for label, observed in cases.items():
             with self.subTest(case=label), self.assertRaises(RELEASE.ReleaseError):
                 self.validate(observed)
@@ -496,6 +505,110 @@ class RP2ArmRuntimeClosureTests(unittest.TestCase):
         result = self.validate(observed)
         self.assertIn("arm-gnu-libgloss-runtime", result["contributing_owner_ids"])
         self.assertIn("arm-gnu-libgloss-runtime", result["public_notice_owner_ids"])
+
+    def test_real_rp2_observer_calls_the_arm_closure_validator(self) -> None:
+        source = RELEASE_BUNDLE.read_text(encoding="utf-8")
+        observer_start = source.index("def _audit_observe_rp2_license_inputs(")
+        observer_end = source.index("\ndef _audit_merge_release_notices(", observer_start)
+        observer = source[observer_start:observer_end]
+        self.assertIn("_audit_observe_rp2_arm_runtime_closure(", observer)
+        self.assertIn('"arm_runtime_closure": arm_runtime_result', observer)
+        self.assertIn('"arm_runtime_observation": arm_runtime_observation', observer)
+        self.assertIn('owner.get("component_kind") == "build-tool"', observer)
+        self.assertIn("*arm_runtime_evidence_paths", observer)
+
+    def test_real_arm_observer_derives_instead_of_copying_frozen_rows(self) -> None:
+        source = RELEASE_BUNDLE.read_text(encoding="utf-8")
+        start = source.index("def _audit_observe_rp2_arm_runtime_closure(")
+        end = source.index("\ndef _audit_rp2_owner_for_path(", start)
+        observer = source[start:end]
+        self.assertNotIn("copy.deepcopy(attribution[key])", observer)
+        for required in (
+            "map_loads",
+            "direct_contributors",
+            "archive_members",
+            "compiler_dependency_closure",
+            "-print-prog-name",
+            "compile_rule_outputs",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, observer)
+
+    def test_rp2_builder_scrubs_gcc_resolution_and_launcher_environment(
+        self,
+    ) -> None:
+        source = BUILD_RP2.read_text(encoding="utf-8")
+        start = source.index("# Never allow ambient compiler/make flags")
+        end = source.index("\nmake -C \"$RETAINED_UPSTREAM/mpy-cross\"", start)
+        scrub = source[start:end]
+        scrubbed_variables = {
+            line.strip().removesuffix("\\").strip()
+            for line in scrub.splitlines()
+            if line.startswith("  ")
+        }
+        for variable in (
+            "GCC_EXEC_PREFIX",
+            "COMPILER_PATH",
+            "LIBRARY_PATH",
+            "CPATH",
+            "C_INCLUDE_PATH",
+            "CPLUS_INCLUDE_PATH",
+            "OBJC_INCLUDE_PATH",
+            "DEPENDENCIES_OUTPUT",
+            "SUNPRO_DEPENDENCIES",
+            "GCC_COMPARE_DEBUG",
+            "CMAKE_C_COMPILER_LAUNCHER",
+            "CMAKE_CXX_COMPILER_LAUNCHER",
+            "CMAKE_ASM_COMPILER_LAUNCHER",
+            "RULE_LAUNCH_COMPILE",
+            "RULE_LAUNCH_LINK",
+        ):
+            with self.subTest(variable=variable):
+                self.assertIn(variable, scrubbed_variables)
+
+    def test_driver_override_guard_rejects_every_search_or_helper_escape(
+        self,
+    ) -> None:
+        guard = getattr(RELEASE, "_audit_rp2_reject_driver_overrides", None)
+        self.assertTrue(callable(guard), "missing GCC driver override guard")
+        guard(["-Os", "-ffile-prefix-map=/tmp=/BUILD"], label="ordinary")
+        for label, arguments in (
+            ("joined-B", ["-B/tmp/substitute"]),
+            ("separate-B", ["-B", "/tmp/substitute"]),
+            ("specs", ["-specs=/tmp/substitute.specs"]),
+            ("long-specs", ["--specs=/tmp/substitute.specs"]),
+            ("wrapper", ["-wrapper", "/tmp/substitute"]),
+            ("linker", ["-fuse-ld=/tmp/substitute"]),
+            ("sysroot", ["--sysroot=/tmp/substitute"]),
+            ("include-sysroot", ["-isysroot", "/tmp/substitute"]),
+        ):
+            with self.subTest(case=label), self.assertRaises(RELEASE.ReleaseError):
+                guard(arguments, label=label)
+
+    def test_eligible_receipt_binds_empty_driver_environment(self) -> None:
+        observed = self.expected_observation()
+        receipt = observed["eligible_compilation_receipt"]
+        receipt["driver_environment_overrides"] = []
+        self.assertTrue(self.validate(observed)["eligible_compilation"])
+
+        polluted = copy.deepcopy(observed)
+        polluted["eligible_compilation_receipt"][
+            "driver_environment_overrides"
+        ] = ["GCC_EXEC_PREFIX"]
+        with self.assertRaises(RELEASE.ReleaseError):
+            self.validate(polluted)
+
+    def test_real_observer_binds_builder_scrub_and_checks_every_recipe(self) -> None:
+        source = RELEASE_BUNDLE.read_text(encoding="utf-8")
+        start = source.index("def _audit_observe_rp2_arm_runtime_closure(")
+        end = source.index("\ndef _audit_rp2_owner_for_path(", start)
+        observer = source[start:end]
+        self.assertIn('"driver_environment_overrides": []', observer)
+        self.assertIn('"firmware/scripts/build_rp2.sh"', observer)
+        self.assertGreaterEqual(
+            observer.count("_audit_rp2_reject_driver_overrides("),
+            3,
+        )
 
 
 if __name__ == "__main__":
