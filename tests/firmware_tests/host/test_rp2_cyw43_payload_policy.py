@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
 # Part of PyBLE (https://pyble.dev) — see /LICENSE.
-"""RED contract for exact CYW43 driver and opaque-payload ownership."""
+"""RED contract for RP-scoped exact CYW43 payload ownership."""
 
 from __future__ import annotations
 
@@ -18,6 +18,24 @@ ROOT = Path(__file__).resolve().parents[3]
 POLICY = ROOT / "firmware/licenses/rp2-license-policy.json"
 RELEASE_BUNDLE = ROOT / "firmware/scripts/release_bundle.py"
 CYW43 = ROOT / "firmware/upstream/micropython/lib/cyw43-driver"
+
+CYW43_SOURCE_EXPRESSION = (
+    "(LicenseRef-PyBLE-CYW43-Noncommercial OR "
+    "LicenseRef-PyBLE-CYW43-Raspberry-Pi)"
+)
+CYW43_SELECTED_EXPRESSION = "LicenseRef-PyBLE-CYW43-Raspberry-Pi"
+CYW43_LICENSE_TEXTS = [
+    {
+        "identifier": "LicenseRef-PyBLE-CYW43-Noncommercial",
+        "path": "firmware/licenses/evidence/rp2/micropython/lib/cyw43-driver/LICENSE",
+        "sha256": "0ce42360898b7c3f168317b559d4783b55c892751580c2a12c76b548aa5858fb",
+    },
+    {
+        "identifier": "LicenseRef-PyBLE-CYW43-Raspberry-Pi",
+        "path": "firmware/upstream/micropython/lib/cyw43-driver/LICENSE.RP",
+        "sha256": "67aca4f10d9edf489871f64cd8f0dcd6c5df3e4ce75bd39e1914fc54f99e40b3",
+    },
+]
 
 spec = importlib.util.spec_from_file_location("release_bundle", RELEASE_BUNDLE)
 assert spec is not None and spec.loader is not None
@@ -63,7 +81,7 @@ class RP2Cyw43PayloadPolicyTests(unittest.TestCase):
         self.assertEqual(driver["disposition"], "allow")
         self.assertEqual(
             driver["selected_spdx_expression"],
-            "LicenseRef-PyBLE-CYW43-Raspberry-Pi",
+            CYW43_SELECTED_EXPRESSION,
         )
         self.assertEqual(
             driver["source_roots"],
@@ -73,15 +91,34 @@ class RP2Cyw43PayloadPolicyTests(unittest.TestCase):
         for owner_id, expected in PAYLOADS.items():
             with self.subTest(owner=owner_id):
                 owner = self.owners[owner_id]
-                self.assertEqual(owner["disposition"], "review-required")
                 self.assertEqual(
                     owner["source_roots"],
                     [{"namespace": "micropython", "path": expected["path"]}],
                 )
-                self.assertNotEqual(
+                self.assertEqual(
+                    owner["source_ref"],
+                    "055d64274b014dd7b1c2fc94d26e8a18face7124",
+                )
+
+    def test_each_payload_retains_source_choice_and_both_exact_texts(self) -> None:
+        for owner_id in PAYLOADS:
+            with self.subTest(owner=owner_id):
+                owner = self.owners[owner_id]
+                self.assertEqual(
+                    owner["source_spdx_expression"],
+                    CYW43_SOURCE_EXPRESSION,
+                )
+                self.assertEqual(owner["license_texts"], CYW43_LICENSE_TEXTS)
+
+    def test_each_payload_selects_the_rp_grant(self) -> None:
+        for owner_id in PAYLOADS:
+            owner = self.owners[owner_id]
+            with self.subTest(owner=owner_id, field="disposition"):
+                self.assertEqual(owner["disposition"], "allow")
+            with self.subTest(owner=owner_id, field="selected_spdx_expression"):
+                self.assertEqual(
                     owner["selected_spdx_expression"],
-                    "LicenseRef-PyBLE-CYW43-Raspberry-Pi",
-                    "the driver grant must not silently authorize opaque payloads",
+                    CYW43_SELECTED_EXPRESSION,
                 )
 
     def test_exact_headers_and_selected_c_array_bytes_are_bound(self) -> None:
@@ -150,30 +187,24 @@ class RP2Cyw43PayloadPolicyTests(unittest.TestCase):
                 with self.assertRaises(release_bundle.ReleaseError):
                     parser(path, "payload", expected_length)
 
-    def test_reviewed_owner_cannot_retain_an_unresolved_or_choice(self) -> None:
+    def test_admitted_payload_cannot_restore_an_unresolved_or_choice(self) -> None:
         policy = json.loads(POLICY.read_text(encoding="utf-8"))
-        owner = next(
-            item
-            for item in policy["source_owners"]
-            if item["id"] == "cyw43-bt-firmware-payload"
-        )
-        self.assertEqual(owner["disposition"], "review-required")
-        self.assertEqual(
-            owner["selected_spdx_expression"],
-            owner["source_spdx_expression"],
-        )
-        mutated = copy.deepcopy(policy)
-        next(
-            item
-            for item in mutated["source_owners"]
-            if item["id"] == owner["id"]
-        )["disposition"] = "allow"
-        with self.assertRaises(release_bundle.ReleaseError):
-            release_bundle._audit_validate_rp2_license_policy(
-                mutated,
-                repo_root=ROOT,
-                build_root=ROOT / "firmware/build",
-            )
+        for owner_id in PAYLOADS:
+            with self.subTest(owner=owner_id):
+                mutated = copy.deepcopy(policy)
+                owner = next(
+                    item
+                    for item in mutated["source_owners"]
+                    if item["id"] == owner_id
+                )
+                owner["disposition"] = "allow"
+                owner["selected_spdx_expression"] = CYW43_SOURCE_EXPRESSION
+                with self.assertRaises(release_bundle.ReleaseError):
+                    release_bundle._audit_validate_rp2_license_policy(
+                        mutated,
+                        repo_root=ROOT,
+                        build_root=ROOT / "firmware/build",
+                    )
 
 
 if __name__ == "__main__":
