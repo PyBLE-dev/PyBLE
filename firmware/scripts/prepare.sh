@@ -99,8 +99,24 @@ BOARD_DST="$UPSTREAM_DIR/ports/$PORT/boards/$BOARD"
 rm -rf "$BOARD_DST"
 mkdir -p "$BOARD_DST"
 cp -R "$OVERLAY"/. "$BOARD_DST"/
-# Copy the frozen-Python agent package so manifest.py can freeze it.
-cp -R "$FW/pyble" "$BOARD_DST/pyble"
+# Materialize only the literal Python inputs selected by each reviewed
+# manifest.  Never recursively copy the developer checkout: ignored bytecode,
+# scratch notes, or a future module that has not been admitted by the manifest
+# must not become a release input merely because it is beside these sources.
+if [ "$PORT" = "rp2" ]; then
+  PYBLE_FILES="__init__.py _version.py pyble_agent.py pyble_ble.py pyble_boot.py pyble_console.py pyble_device_config.py pyble_fs.py pyble_info.py pyble_proto.py pyble_runner.py"
+else
+  PYBLE_FILES="__init__.py _version.py pyble_ble.py pyble_proto.py"
+fi
+mkdir "$BOARD_DST/pyble"
+for pyble_file in $PYBLE_FILES; do
+  pyble_source="$FW/pyble/$pyble_file"
+  if [ -L "$pyble_source" ] || [ ! -f "$pyble_source" ]; then
+    echo "prepare.sh: reviewed Python input is missing or symlinked: $pyble_source" >&2
+    exit 1
+  fi
+  cp "$pyble_source" "$BOARD_DST/pyble/$pyble_file"
+done
 # The optional clean-room display runtime is exact-board-only Layer-4 content.
 # Keep the canonical source outside the overlay, then materialize it only for
 # the dedicated Waveshare build. Every family/generic target must stay lean.
