@@ -1,6 +1,6 @@
 # PyBLE — rpi-pico2-w port (Raspberry Pi Pico 2 W: RP2350 + CYW43439)
 
-Status: **P1–P9 FROZEN for the F-25/F-26/F-27/X-13 stories (`[docs]` 2026-08-11)**; P10 gates and P11 open items are living. Derived per [firmware/specs.md §1.1](../specs.md); the frozen ESP32 BLD/CON/NFR-FP sections are **not** amended. [ADR-0030](../../../decisions/0030-pico2w-portable-python-agent-first.md) records the portable-Python-first deviation. Cited upstream facts refer to the pinned MicroPython v1.28.0 submodule.
+Status: **P1–P9 FROZEN for the F-25/F-26/F-27/X-13 stories (`[docs]` 2026-08-11)**; P10 gates and P11 open items are living, and every result remains **PENDING**. Derived per [firmware/specs.md §1.1](../specs.md); [ADR-0030](../../../decisions/0030-pico2w-portable-python-agent-first.md) records the portable-Python-first deviation, while [ADR-0033](../../../decisions/0033-qualify-v060-as-five-profile-heterogeneous-release.md) defines the heterogeneous v0.6.0 release admission. Cited upstream facts refer to the pinned MicroPython v1.28.0 submodule.
 
 ## P1. Identity & caps (FROZEN)
 
@@ -59,15 +59,47 @@ evidence before publication.
 
 The first combined source identity is **agent version `0.6.0`**. The existing
 `0.5.1` source identity predates this port and MUST NOT be reused for different
-bytes. This version selection does not qualify Pico, add it to ESP release
-metadata, or expose it in the installer; those transitions remain gated by
-P10, including GP2.
+bytes. ADR-0033 selects Pico for the v0.6.0 candidate without qualifying it.
+Its profile may enter a finalized public selector only after P10 (including
+GP2), the schema-3 resource row, verified-UF2 install/recovery, and the common
+five-profile exact-byte gates pass.
 
 ## P10. Gates (per PRD §1B.7 sub-gate allowance; G0–G4 untouched)
 
 - **GP0 build/boot:** image builds under the pinned toolchain, passes the size gate, boots advertising. *Verify: build.*
 - **GP1 parity:** host unit + shared conformance corpus green for every grown module. *Verify: unit/conformance.*
-- **GP2 HIL:** the HIL matrix (port stories F-27) green on the physical Pico 2 W, resource baseline recorded. *Verify: HIL/size.* "Hardware-tested"/supported flips ONLY at GP2; until then the port appears in no installer, matrix, or public claim.
+- **GP2 HIL:** the complete matrix is green on one physical Pico 2 W against
+  the final hash-locked candidate. It includes the common PBLE/1 behavior,
+  STOP/console-flood, safe boot, reconnect, filesystem, resume, 20 × 16 KiB
+  reliability, and OI workload; the RP2-specific image-budget/GC/BTstack
+  observations; both physical iPad and physical Android app workflows; a
+  browser-verified exact UF2 download and manual BOOTSEL copy; and an
+  interrupted/failed-copy recovery using the same verified UF2. *Verify:
+  HIL/size/app/provisioning.* "Hardware-tested"/supported flips ONLY when GP2
+  and the common v0.6.0 release gates pass. Until then the profile remains a
+  visibly pending candidate, never an active qualified selector.
+
+### P10.1 v0.6.0 release evidence (FROZEN by ADR-0033)
+
+Pico's schema-3 resource row uses `resource_kind = "rp2"`. Its immutable
+build facts are raw `firmware.bin` byte length, the exact 1,572,864-byte image
+limit, and their non-negative headroom. Its 16 runtime heap snapshots contain
+exactly `gc_free_bytes` and `gc_allocated_bytes`; ESP-IDF heap keys are
+forbidden. Transport evidence records BTstack, negotiated ATT MTU, advertised
+window/chunk, and the frozen console pacing budget; ESP/NimBLE DLE/PHY/serial
+link-settlement keys are forbidden.
+
+The release artifact is `rpi-pico2-w/firmware.uf2`. Release metadata binds its
+exact byte size/SHA-256 and the raw `firmware.bin` size/SHA-256 used for static
+resource evidence. The browser must verify the UF2 bytes before offering a
+download and must create the download from those verified in-memory bytes.
+There is no ESP Web Tools manifest, chip family, offset, partition component
+map, or Web Serial fallback for this profile.
+
+The pending V5 Pico gate summary is JSON `null`. Finalization may replace it
+only with a validator-derived `passed` summary that binds GP0, GP1, complete
+GP2, the final candidate UF2/raw-image hashes, both app platforms, manual
+BOOTSEL install, and recovery. This section records no such pass.
 
 ## Bench evidence (2026-08-11, pre-GP2)
 

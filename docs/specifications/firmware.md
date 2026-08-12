@@ -92,25 +92,29 @@ exact v0.4.2 bundle is offered as a hardware-tested beta for `esp32-4mb`
 (classic ESP32, 4 MiB flash) and `esp32-s3-n16r8` (ESP32-S3, 16 MiB flash plus
 8 MiB Octal PSRAM). On both exact profiles, browser installation and
 interrupted-flash recovery passed; complete release qualification remains
-pending. The earlier v0.5.1 source candidate set was exactly `esp32-4mb`,
-`esp32-s3-n16r8` (lean ESP32-S3, 16 MiB flash plus 8 MiB Octal PSRAM), and
-`waveshare-esp32-s3-lcd-147b` (the exact B-version board with the same memory
-topology plus its display stack). The current source-selected version is
-v0.6.0 and retains those prospective public profiles while adding C3 and RP2
-engineering source. Neither source contract authorizes new public bytes or
-selector activation: fresh reproducible builds, license audit, and
-final-candidate HIL remain required independently for every profile included
-in a later release.
-`esp32-c3-4mb` remains a known initial v1 profile but is unavailable and has no
-public image until exact-profile real-hardware validation is complete. Its
-ESP32-C3-MINI-1-N4 v0.4/4 MiB/no-PSRAM engineering reference and still-pending
-identity, behavior, resource, dual-app, and reference-carrier peripheral gates
-are frozen separately in
-[firmware/ports/esp32-c3-4mb.md](firmware/ports/esp32-c3-4mb.md); this adds no
-public image or app-side board-routing profile. ESP Web
-Tools detects the chip family but cannot by that fact alone prove the required
-flash/PSRAM topology or distinguish the two S3 images. The full compatibility,
-artifact, historical public-beta, and candidate-gate contracts are frozen in
+pending. The unqualified v0.5.1 source candidate set was exactly `esp32-4mb`,
+`esp32-s3-n16r8`, and `waveshare-esp32-s3-lcd-147b`; its source identity and
+retained evidence remain immutable history.
+
+The v0.6.0 qualified-release contract now freezes one atomic five-profile
+order: `esp32-4mb`, `esp32-s3-n16r8`,
+`waveshare-esp32-s3-lcd-147b`, `esp32-c3-4mb`, and `rpi-pico2-w`
+([ADR-0033](../decisions/0033-qualify-v060-as-five-profile-heterogeneous-release.md)).
+The first four use profile-scoped ESP Web Serial merged images; Pico uses a
+browser-verified UF2 download followed by manual BOOTSEL copy. This is a
+qualification target, not a claim that any v0.6.0 gate has passed. Fresh
+two-clean-build reproducibility, license audit, resource policy, exact-byte
+HIL, both-platform app HIL, install/recovery, and copy-on-write finalization
+remain required for all five profiles before activation.
+
+The ESP32-C3-MINI-1-N4 v0.4/4 MiB/no-PSRAM reference and its still-pending
+C3-G0…C3-G6 gates remain frozen in
+[firmware/ports/esp32-c3-4mb.md](firmware/ports/esp32-c3-4mb.md). C3 enters
+release metadata and selection only after those gates and the common v0.6.0
+matrix pass. ESP Web Tools detects the chip family but cannot by that fact
+alone prove the required flash/PSRAM topology or distinguish the two S3
+images. The full compatibility, heterogeneous-artifact, historical
+public-beta, and candidate-gate contracts are frozen in
 [firmware/browser-flashing.md](firmware/browser-flashing.md).
 
 The Waveshare ESP32-S3-LCD-1.47B uses its own
@@ -197,10 +201,10 @@ contract, and HIL matrix live in
 - The first source identity that combines this RP2 port with the four existing
   ESP build variants is agent version **0.6.0**. Version `0.5.1` remains the
   earlier Waveshare/ESP source candidate and MUST NOT be retagged with different
-  bytes. Selecting `0.6.0` is source versioning only: Pico remains excluded
-  from public release metadata and the web installer until GP2, while every
-  publishable ESP or RP2 artifact still requires fresh version-bound build,
-  provenance, resource, recovery, and HIL evidence.
+  bytes. ADR-0033 selects all five v0.6.0 profiles for one successor candidate,
+  but selection is not qualification: Pico enters the finalized public bundle
+  only after GP2 and the common version-bound build, provenance, resource,
+  dual-app, recovery, and HIL gates pass.
 - `firmware/versions.lock` is the sole selected agent-version source for every
   maintained target. Release builds generate both native and frozen-Python
   identity from that value. Live/current-source HIL runners MUST derive their
@@ -215,9 +219,10 @@ The measurement method is frozen in
 the v0.4.2 two-profile policy and evidence remain immutable history. The
 exact-board split invalidates any pre-split v0.5 baseline for current-source
 qualification. The unfinished v0.5.1 candidate evidence cannot qualify the
-source-selected v0.6.0 tree, which requires a fresh controlled profile refresh
-defined there. No current-source numeric qualification is
-claimed until the retained baseline, policy, and final-candidate records exist.
+source-selected v0.6.0 tree, which requires a fresh controlled five-profile
+refresh defined there. No current-source numeric qualification is claimed
+until the retained baseline, schema-3 policy, and final-candidate records
+exist.
 The scope is profile-specific:
 
 | Profile | Current numeric status | Release effect |
@@ -225,14 +230,17 @@ The scope is profile-specific:
 | `esp32-4mb` | v0.4.2 browser install/recovery passed; refresh the current-source baseline and verify the final candidate | Required before any v0.6.0-derived candidate qualification and installer activation |
 | `esp32-s3-n16r8` | v0.4.2 browser install/recovery passed; measure the lean N16R8 bytes/runtime independently, derive thresholds, then verify the final candidate | Required before any v0.6.0-derived candidate qualification and installer activation |
 | `waveshare-esp32-s3-lcd-147b` | No public exact-byte qualification; measure the exact-board bytes/runtime independently, derive thresholds, then verify the final candidate and display gate | Required before any v0.6.0-derived candidate qualification and installer activation |
-| `esp32-c3-4mb` | Engineering contract frozen; all observations, threshold, and HIL rows pending ([derived contract](firmware/ports/esp32-c3-4mb.md)) | Blocks C3 enablement and v1.0, but not qualification of the three-profile candidate |
+| `esp32-c3-4mb` | Engineering contract frozen; all observations, threshold, and HIL rows pending ([derived contract](firmware/ports/esp32-c3-4mb.md)) | Blocks the atomic v0.6.0 qualified release until C3-G0…C3-G6 and the common final-candidate row pass |
+| `rpi-pico2-w` | GP2, the RP2 resource row, both-platform app HIL, verified-UF2 install, and BOOTSEL recovery all pending ([derived contract](firmware/ports/rpi-pico2-w.md)) | Blocks the atomic v0.6.0 qualified release until GP2 and the common final-candidate row pass |
 
 The enforced metrics are:
 
-- exact shipped `application.bin` bytes and derived factory-partition headroom
-  (static build/candidate ceiling and floor);
-- Python `gc.mem_free()` after collection plus internal 8-bit ESP-IDF current,
-  largest-block, and minimum-free heap (runtime HIL floors);
+- exact shipped ESP `application.bin` bytes and derived factory-partition
+  headroom, or RP2 raw `firmware.bin` bytes and headroom under its frozen
+  1,572,864-byte image limit (static build/candidate ceiling and floor);
+- Python `gc.mem_free()` after collection on every profile, plus internal
+  8-bit ESP-IDF current, largest-block, and minimum-free heap on ESP profiles
+  only (runtime HIL floors);
 - controlled reset release to the first fresh PyBLE service advertisement
   (runtime HIL ceiling), with a separate physical power-cycle check;
 - committed PUT and verified GET goodput at observed ATT MTU 247 (runtime HIL
@@ -255,12 +263,13 @@ user-visible discovery SLO rather than a tight firmware boot-regression
 statistic. Static image/headroom quantities remain exact, and
 integrity/reliability assertions receive no allowance. The engineering
 baseline derives the remaining committed policy values; only hash-locked
-final-candidate HIL qualifies a release. C3 continues to build and participate
-in reproducibility and license audits while its real-board qualification is
-deferred.
+final-candidate HIL qualifies a release. The v0.6.0 policy derives five
+independent rows; C3 and Pico remain pending rather than deferred or inferred
+from another target.
 
 Published v0.4.2 metadata and HIL evidence retain their historical exact
-two-profile contract. They are validated by their own source-era schema and
-are never expanded or reinterpreted as this v0.5.0 matrix.
+two-profile contract. The unqualified v0.5.1 source candidate retains its
+three-profile source-era contract. Neither is expanded or reinterpreted as the
+v0.6.0 five-profile matrix.
 
 <!-- SPDX-License-Identifier: MIT -->

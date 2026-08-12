@@ -7,11 +7,11 @@ Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-08-12
 > **Frozen pre-v1 resource-qualification design (2026-07-30, `[docs]`):**
 > [§8.5](#85-meeting-the-nfr-fp-gates) and
 > [§14.3](#143-build-size-and-hil-gates) freeze the historical two-profile
-> measurement contract and the current three-profile amendment before the
-> dependent `[red]` tests. The split `0.5.0` source era requires OI-1 policy
-> schema 2, release schema 3, and HIL V4; immutable `v0.4.2` replay retains its
-> exact two-profile release/HIL V2 contract. C3 thresholds remain pending
-> matching hardware evidence.
+> measurement contract and its source-era amendments before dependent `[red]`
+> tests. Historical split v0.5 uses OI-1 policy schema 2, release schema 3, and
+> HIL V4. ADR-0033 adds the v0.6.0 five-profile successor: policy schema 3,
+> release schema 4, and HIL V5. Immutable v0.4.2 replay retains its exact
+> two-profile release/HIL V2 contract. Every v0.6.0 result remains pending.
 >
 > **Frozen optional ST7789 user-runtime design (2026-08-01, `[docs]`,
 > [ADR-0023](../../decisions/0023-explicit-st7789-user-runtime.md)):**
@@ -27,15 +27,21 @@ Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-08-12
 > the build matrix has four variants over three IDF targets. Generic S3 is
 > lean; only `waveshare-esp32-s3-lcd-147b` contains the display modules,
 > splash boot wrapper, and native readiness seam. The earlier v0.5.1
-> three-profile candidate did not complete qualification. Current v0.6.0
-> source retains those prospective public profiles; C3 remains unqualified.
+> three-profile candidate did not complete qualification and remains history.
 >
 > **Frozen ESP32-C3 engineering-qualification design (2026-08-12, `[docs]`,
 > [ADR-0032](../../decisions/0032-qualify-generic-esp32-c3-4mb-on-reference-hardware.md)):**
 > [§5.4](#54-console-backpressure) freezes whole-message control priority under
 > console flood and [§11](#11-per-chip-design-notes) binds it to the
 > ESP32-C3-MINI-1-N4 reference contract. All observations remain pending; this
-> design does not add C3 to the current release policy or public artifacts.
+> design records no passing C3 result.
+>
+> **Frozen heterogeneous v0.6.0 release design (2026-08-12, `[docs]`,
+> [ADR-0033](../../decisions/0033-qualify-v060-as-five-profile-heterogeneous-release.md)):**
+> one atomic candidate orders four ESP Web Serial profiles followed by
+> `rpi-pico2-w` with verified UF2/manual BOOTSEL. C3-G0…C3-G6 and Pico GP2
+> remain gates. Two clean builds, policy schema 3, release schema 4, V5 exact-
+> byte HIL, and both-platform app HIL are required before activation.
 
 ## 0. Naming note (acronym clash)
 
@@ -1033,12 +1039,13 @@ negotiated `mtu` is authoritative, a backend-reported value must agree, and a
 fallback must never certify MTU 247.
 
 The bench accepts an explicit profile ID, expected PBLE chip value, BLE
-address, and reset serial device. It refuses any profile outside the current
-policy order, including `esp32-c3-4mb`. It records the central OS, BLE backend
+address, and target-appropriate reset adapter. For v0.6.0 it accepts only the
+five schema-3 policy rows in exact order. It records the central OS, BLE backend
 and adapter, Python/bench identity, board/module description, candidate
 identity and hashes, every integer sample, retransmit/rewind counts,
-disconnects, integrity results, the strict `transfer_link_facts` object from
-specs.md §5.3.1, and a SHA-256 of the retained redacted raw log. After each of
+disconnects, integrity results, the target-specific transport-facts object
+from specs.md §5.3.1/§5.3.5, and a SHA-256 of the retained redacted raw log.
+For ESP, after each of
 the first nine disconnects it waits at most 2,000 ms for exactly one complete
 parser-owned session-end record for the just-ended session, discards every
 private serial-input byte and the terminal count, then clears residual serial
@@ -1052,28 +1059,30 @@ starts before settlement. Only parsed numeric facts enter evidence; arbitrary
 serial text is discarded. The raw log is exclusively created mode `0600`
 before its first write,
 independent of ambient umask, and a pre-existing path is rejected. The result
-writes atomically and never silently drops a successful sample.
+writes atomically and never silently drops a successful sample. RP2 instead
+uses its frozen BTstack observation and reset adapter and forbids ESP-only
+session/DLE/PHY fields.
 
 #### 8.5.2 Threshold policy lifecycle
 
-The exact machine policy is
-`firmware/qualification/oi1-gates.json`, schema 2. Its shape and nine threshold
-keys are frozen in specs.md §5.3.3. Initially the measurement tooling and
+The exact v0.6.0 machine policy is
+`firmware/qualification/oi1-gates.json`, schema 3. Its five rows and target-
+specific threshold shapes are frozen in specs.md §5.3.5. Historical schema-2
+evidence retains specs.md §5.3.3 semantics. Initially the measurement tooling and
 negative tests land while release qualification remains pending. The same
 sequence governs a controlled refresh:
 
-1. runs one engineering baseline on all three exact owned profiles from the
+1. runs one engineering baseline on all five exact profiles from the
    same pre-policy source and immutable inputs;
 2. runs `assemble-oi1-baseline` against the immutable staged inputs and the
-   three bench fragments so the tool creates the canonical, redacted evidence
+   five bench fragments so the tool creates the canonical, redacted evidence
    under `docs/validation/firmware/oi1/`, derives every threshold with the
    frozen source-era formulas (including the fixed reset product SLO and
    metric-specific goodput allowance), and atomically updates the policy with
    its evidence SHA-256;
 3. reviews and commits those mechanically assembled files; and
-4. builds the final tagged candidate and reruns verify-mode HIL on all three
-   exact
-   profiles.
+4. builds the final tagged candidate and reruns verify-mode HIL on all five
+   exact profiles.
 
 Profiles or successful samples from different baselines MUST NOT be mixed. For
 a firmware source release core at or after `0.5.0`, the active baseline
@@ -1094,12 +1103,11 @@ Historical pre-`0.5.0` policies retain their v1 derivation identifiers and
 arithmetic; the superseded private v2 reset policy cannot qualify public
 `0.5.0` bytes.
 
-A schema-2 policy has exactly three threshold-bearing profile entries, ordered
-`esp32-4mb`, `esp32-s3-n16r8`, and
-`waveshare-esp32-s3-lcd-147b`, plus one deferred C3 profile ID. C3 continues
-through source build, two-root reproducibility,
-structural application-partition fit, and the six-role license audit; those
-checks do not manufacture a C3 resource threshold or public support claim.
+A schema-3 policy has exactly the five ordered threshold-bearing rows in
+specs.md §5.3.5. Four ESP rows use the existing application/partition,
+five-field heap, and NimBLE link facts. Pico uses raw-image limit/headroom,
+two-field GC snapshots, and BTstack facts. No row may borrow values from
+another target. All thresholds and final-candidate observations remain pending.
 
 #### 8.5.3 Release evidence and failure semantics
 
@@ -1107,9 +1115,9 @@ Candidate generation embeds the parsed policy, its exact-byte SHA-256, the
 matching baseline-evidence digest, and immutable build measurements in
 the source-era record selected by browser-flashing.md §9: immutable `v0.4.2`
 replay retains `PYBLE_HIL_RECORDS_V2` schema 2; the rejected pre-split v0.5
-engineering shape is V3 and cannot publish split bytes; split candidates from
-v0.5.1 onward use `PYBLE_HIL_RECORDS_V4` schema 4. Current v0.6.0 runtime
-observations remain pending.
+engineering shape is V3 and cannot publish split bytes; v0.5.1 retains
+`PYBLE_HIL_RECORDS_V4` schema 4; v0.6.0 uses
+`PYBLE_HIL_RECORDS_V5` schema 5. Current v0.6.0 observations remain pending.
 Finalization may fill observations, operator fields, and derived
 checks only; it must prove the policy and build portions remain
 byte/semantically equal to the candidate.
@@ -1123,8 +1131,8 @@ minima, latency maximum, goodput from recorded durations, threshold
 comparisons, reliability totals, and the profile-exact transfer-link facts. It
 rejects an unsettled or exhausted link, a missing final disconnect fact,
 missing/extra fields, booleans as integers, wrong units/order/profile/hash, an
-unknown-MTU fallback, a C3 row
-or C3 numeric policy entry, or a value crossing its bound. Any firmware,
+unknown-MTU fallback, a target-inappropriate resource/transport field, or a
+value crossing its bound. Any firmware,
 manifest, policy, or candidate-identity change invalidates the evidence.
 
 ### 8.6 ESP32-C3 mitigation
@@ -1177,35 +1185,33 @@ pipeline while retaining the shared PBLE/1 conformance gates.
 2. SHA-drift gate: verify checked-out submodule SHA == versions.lock;
    refuse to proceed on mismatch                                             BLD-2
 3. install ESP-IDF from the pin into a GITIGNORED dir (not an outer submodule) BLD-11
-4. create one retained .sources/<variant>/micropython checkout per build variant;
+4. create one retained .sources/<profile>/micropython checkout per release profile;
    verify its locked commit, canonical origin, and clean tracked tree;
    COPY board_overlays/<variant>/ into only that variant's checkout
    ports/esp32/boards/  (canonical submodule stays pristine)                CON-4, D5,
                                                                              BLD-14
    apply firmware/patches/micropython-<tag>/* if any (default: zero)        CON-12, BLD-15
 5. rebuild mpy-cross from the pinned MicroPython                            BLD-10
-6. invoke the esp32 port build with USER_C_MODULES (native) + frozen
-   manifest (agent .py), mapping PyBLE target -> IDF target                 BLD-3/4
-7. emit merged firmware.bin + application + bootloader + partition table
-   + flasher_args.json                                                       BLD-5
-8. validate the merged image, flasher args, component roles/placements, and
-   partitions against the frozen current release profiles; normalize only
-   component names                                                           BLD-17
-9. generate the exact current-release-profile ESP Web Tools manifests plus
-   release.json/schema, SHA256SUMS, provenance, release/recovery/HIL documents
+6. invoke each ESP port build with USER_C_MODULES + frozen manifest, and the
+   RP2 build with its portable frozen agent and pinned ARM GNU toolchain      BLD-3/4
+7. emit each ESP merged/component/flasher-args set and Pico ELF/raw BIN/UF2  BLD-5
+8. validate ESP merged images/flasher args/components/partitions and validate
+   Pico UF2/raw-image identity and image budget; normalize only allowed names BLD-17
+9. generate four profile-scoped ESP Web Tools manifests, Pico verified-UF2
+   metadata, release schema 4, SHA256SUMS, provenance, recovery, and V5 HIL
                                                                               BLD-6/18/19/20
-10. retain all four variant checkouts; bind each application project description
+10. retain all five profile checkouts; bind each build description/provenance
     to its exact checkout, then reconcile all eight application/bootloader linked
     inventories, exact frozen Python inputs, prebuilt blobs, and compiler
     runtimes against the pinned SBOM toolchain and fail-closed license policy;
-    generate THIRD_PARTY_LICENSES.txt mechanically                           BLD-8/14
+    add the RP2 linked/frozen/toolchain inventory, and generate
+    THIRD_PARTY_LICENSES.txt mechanically                                    BLD-8/14
 11. run no-leak, SPDX, manifest/integrity/license/reproducibility gates       CON-6,
                                                                              BLD-14/18
 12. publish identical immutable bytes to the versioned same-origin path
     and matching GitHub Release only after every included profile passes HIL;
-    the current source-candidate gate covers esp32-4mb, esp32-s3-n16r8, and
-    waveshare-esp32-s3-lcd-147b, while C3 is unavailable until a later
-    candidate; the immutable digest-bound v0.4.2 historical exception remains
+    the v0.6.0 gate covers all five ordered profiles; the immutable digest-
+    bound v0.4.2 historical exception remains
     only a two-profile hardware-tested beta/GitHub pre-release after its scoped
     production-browser install/recovery run                                  BLD-7/21/22
 ```
@@ -1545,7 +1551,7 @@ clean temporary `mpy-cross` build from the pinned MicroPython source must be
 byte-identical to the admitted executable. The production builder must first
 create that admitted executable from scratch in a fresh output directory and
 atomically replace any retained executable; build-system freshness shortcuts
-or retained objects cannot satisfy BLD-10. After the three-profile build
+or retained objects cannot satisfy BLD-10. After the five-profile build
 completes, the matrix driver requires all retained compiler copies to be
 regular, non-symlink executables with identical bytes before it atomically
 updates the canonical audit path. Missing, divergent, or incomplete matrices
@@ -1650,14 +1656,16 @@ Chip facts are owned by [hardware.md §1](../hardware.md#1-supported-chip-famili
   [§8.6](#86-esp32-c3-mitigation)). The known `esp32-c3-4mb` provisioning
   profile is defined only for C3 silicon revision v0.3 or newer but remains
   unavailable in the current v0.4.2 public beta pending exact-profile HIL. Its
-  exact image revision window appears in release metadata only after a later
-  candidate qualifies it.
+  exact image revision window appears in pending v0.6.0 schema-4 metadata, but
+  its action remains inactive until C3-G0…C3-G6 and common HIL pass.
 
-- **rpi-pico2-w (port in progress):** single-core-agent model on RP2350 —
+- **rpi-pico2-w (selected, qualification pending):** single-core-agent model on RP2350 —
   BTstack SYNC events on the main thread, supervisor-owned execution, STOP via
   the dupterm interrupt-char channel. Design is owned by the derived port spec
   ([ports/rpi-pico2-w.md](ports/rpi-pico2-w.md)); nothing in §5 (ESP32 task
-  model) applies to it.
+  model) applies to it. Its v0.6.0 row uses verified UF2/manual BOOTSEL,
+  RP2-specific resource/BTstack evidence, and remains inactive until GP2 and
+  common V5 HIL pass.
 
 ## 12. Error handling & status mapping
 
@@ -1749,28 +1757,25 @@ PBLE/1 **conformance** tests run against an **in-memory fake transport** shared 
   cache artifacts while the audit rejects any such artifacts in the retained
   checkout; release builds force bytecode generation off so checkout-local
   absolute paths cannot contaminate otherwise identical source evidence.
-- **size:** enforce the total application-image ceiling and derived
-  factory-partition headroom floor during build/candidate validation. Continue
-  structural application-fit checks on all three source targets, including
-  deferred C3. Heap, boot, goodput, and reliability are not mislabeled as
+- **size:** enforce each ESP application-image ceiling and factory-partition
+  headroom floor plus Pico raw-image ceiling/headroom during build/candidate
+  validation. Heap, boot, goodput, and reliability are not mislabeled as
   static size gates.
 - **HIL:** the release-blocking bench runs on every exact profile included in
-  the release. For the current pre-v1 candidate that is exactly
-  `esp32-4mb`, `esp32-s3-n16r8`, and
-  `waveshare-esp32-s3-lcd-147b`; each independently covers the frozen §8.5 resource
+  the release. For v0.6.0 that is exactly the five profiles in ADR-0033 order;
+  each independently covers the frozen §8.5 resource
   workload, multi-file integrity (NFR-REL-5), STOP authority (NFR-SAFE-1),
   cold-boot safety (NFR-SAFE-3), candidate-browser install, and
-  interrupted-flash recovery from an access-controlled,
-  production-equivalent HTTPS deployment (BLD-20/21). C3 HIL and
-  footprint/goodput gates remain open, block C3 enablement, and block v1.0;
-  their now-frozen engineering matrix is
-  [C3-G0…C3-G7](ports/esp32-c3-4mb.md) and records no passed observation.
+  target-specific interrupted-install recovery and both-platform app HIL from
+  an access-controlled, production-equivalent HTTPS deployment (BLD-20/21).
+  C3-G0…C3-G6 and Pico GP2 remain open and block the atomic release; no passed
+  observation is recorded.
   The historical v0.4.2 matrix remains exactly `esp32-4mb` plus
   `esp32-s3-n16r8`. Its supplemental production-browser run completed only the
   browser-install and interrupted-recovery rows for both profiles; the other
   formal rows remain open. Its exact public-beta activation follows the bounded
   exception in browser-flashing §10 rather than claiming BLD-21 completion, and
-  that evidence MUST NOT qualify the current three-profile candidate.
+  that evidence MUST NOT qualify the v0.6.0 five-profile candidate.
 
 The ADR-0023/0024 feature HIL is the additional exclusive gate for the separate
 `waveshare-esp32-s3-lcd-147b` release-profile row. On the connected
@@ -1931,8 +1936,11 @@ in the staged report. Fresh and replay public validation recompute its
 candidate firmware/attestation bindings. A source-era marker mismatch,
 non-null candidate input, missing private result, extra key, wrong summary,
 or private-result TOCTOU is terminal and leaves no output. Split v0.5 also
-requires release schema 3 and OI-1 policy schema 2; v0.4.2 replay retains
-release schema 2 and its historical two-profile evidence. The existing
+requires release schema 3 and OI-1 policy schema 2. v0.6.0 instead uses five
+ordered `PYBLE_HIL_RECORDS_V5` rows, release schema 4, policy schema 3, and the
+Waveshare/C3/Pico derived summaries; all start null/pending and finalization is
+atomic. v0.4.2 replay retains release schema 2 and its historical two-profile
+evidence. The existing
 three-file administrative promotion envelope is unchanged (FR-SPLASH-9,
 BLD-19…21).
 
@@ -1944,15 +1952,15 @@ The first implementation commit after this freeze is `[red]` and covers:
   reset transport; exact workload/sample counts; stale-advertisement
   rejection; HELLO MTU/window/chunk enforcement; deterministic payload bytes;
   strict GET offset validation; timer boundaries; retransmit accounting;
-  heap-marker parsing; canonical evidence; baseline versus verify mode; and
-  explicit C3 refusal;
-- `tests/firmware_tests/host/test_footprint_gates.py`: exact schema-2
-  three-profile policy order, exact C3 deferral, all nine threshold keys/types, evidence hash,
-  application bytes/headroom arithmetic, derivation algorithms, threshold
-  boundary pass, one-unit crossing failure, and continued structural C3 build
-  validation without C3 qualification numbers;
+  heap-marker parsing; canonical evidence; baseline versus verify mode; exact
+  five-profile order; and ESP/RP2 adapter discrimination;
+- `tests/firmware_tests/host/test_footprint_gates.py`: exact schema-3
+  five-profile policy order, ESP/RP2 threshold keys/types, evidence hash,
+  application/raw-image headroom arithmetic, derivation algorithms, threshold
+  boundary pass, one-unit crossing failure, and rejection of cross-target fields;
 - `tests/firmware_tests/host/test_release_bundle.py` and
-  `test_release_finalization.py`: the exact HIL V2 marker and keys, V1
+  `test_release_finalization.py`: historical HIL V2/V4 plus exact V5 marker
+  and keys, older/wrong-era rejection,
   rejection, candidate null observations, policy/build immutability, public
   observation recomputation, candidate-release binding, missing/extra/wrong-
   type/wrong-unit/wrong-count/wrong-profile/wrong-order/wrong-hash fixtures,
@@ -2080,11 +2088,11 @@ Design element → satisfied requirement IDs. Each `FR-*` block has at least one
 ## 16. Risks & open questions
 
 - **R1 — Footprint on ESP32-C3 (binding).** C3 real-hardware resource numbers
-  remain deferred, so C3 cannot appear in the current pre-v1 bundle and v1.0
-  cannot close. Mitigation once matching hardware is available: run the same
+  remain pending, so the selected v0.6.0 row cannot pass and the atomic release
+  cannot activate. Mitigation: run the same
   frozen method, and use native `USER_C_MODULE` hot paths if needed
-  ([§8.6](#86-esp32-c3-mitigation)). The three-profile pre-v1 qualification does
-  not waive or predict the C3 result (OI-1, NFR-FP-CLOSE).
+  ([§8.6](#86-esp32-c3-mitigation)). Other profile results do not waive or
+  predict the C3 result (OI-1, NFR-FP-CLOSE).
 - **R2 — Frozen→native trigger point.** Which paths move to C, and on which chip the budget forces it, is undecided until HIL measurement (OI-3). The module boundaries ([§4](#4-module-design)) are drawn to make the move contract-neutral (NFR-MAINT-3).
 - **R3 — iOS/Android BLE MTU quirks.** Central platforms negotiate MTU differently and may not grant 247; the firmware must operate correctly across the negotiated MTU down to the default (FR-BLE-8). Fragmentation/reassembly is tested across an MTU matrix ([§14.1](#141-per-module-verification-approach)).
 - **R4 — Single-core C3 STOP latency.** With one core the runner and BLE/agent task time-share; STOP must still land promptly against a tight loop ([§5.2](#52-stop-delivery)). Validate on C3 HIL first ([§11](#11-per-chip-design-notes)).

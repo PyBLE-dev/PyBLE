@@ -58,12 +58,12 @@ The home page MAY make these verified claims:
 - It is a free, MIT-licensed, tablet-first MicroPython IDE designed for
   microcontroller boards that can run MicroPython and host a compatible
   Bluetooth Low Energy PyBLE agent.
-- The source-selected `v0.6.0` engineering matrix has five exact targets:
+- The selected, still-pending `v0.6.0` qualified-release candidate has five
+  exact profiles in release order:
   `esp32-4mb`, `esp32-s3-n16r8`, `waveshare-esp32-s3-lcd-147b`,
   `esp32-c3-4mb`, and `rpi-pico2-w`. This source/build posture is not five
-  public support claims: C3 and Pico 2 W remain behind their frozen production
-  qualification and publication gates, and every public installer claim stays
-  bound to its active release selector.
+  public support claims: every row remains behind exact-byte qualification and
+  activation, including C3-G0…C3-G6 and Pico GP2.
 - After one-time wired firmware provisioning, its normal workflow is BLE-first.
 - The app can scan/connect, edit, save, run, stop, soft reboot, exchange board
   files, and provide a live console over PBLE/1.
@@ -87,13 +87,10 @@ Compatibility copy MUST distinguish platform scope from current support:
   narrower than complete release qualification;
 - the current public-beta list remains the exact `v0.4.2` `esp32-4mb` and
   `esp32-s3-n16r8` profiles; that frozen two-profile exception MUST NOT be
-  interpreted as the qualified `v0.5.1` release shape;
-- the qualified `v0.5.1` release contract requires exactly `esp32-4mb`, the
-  lean generic `esp32-s3-n16r8`, and the separate exact-board
-  `waveshare-esp32-s3-lcd-147b` profile; this is an activation contract, not a
-  claim that those release bytes are currently public; ESP32-C3 remains an
-  initial firmware target but is planned/unavailable until its exact profile
-  passes real-hardware HIL;
+  interpreted as the unqualified `v0.5.1` or selected `v0.6.0` shape;
+- the selected `v0.6.0` qualified-release contract requires the exact five
+  ordered profiles in §7; this is an activation contract, not a claim that
+  those release bytes are qualified or public, and every gate remains pending;
 - the generic `esp32-s3-n16r8` image MUST NOT bundle `pyble_st7789`,
   `pyble_waveshare_lcd147b`, exact-board pin data, or the boot splash; the
   Waveshare profile MUST use its own manifest and different immutable firmware
@@ -228,9 +225,9 @@ cards MUST identify the constraints as
 `esp32-s3-n16r8` (ESP32-S3, 16 MiB flash, 8 MiB **Octal** PSRAM), and give each
 the truthful hardware-tested-beta/release-qualification-pending state while
 that selector is active.
-`esp32-c3-4mb` remains a separate planned, unavailable profile and MUST NOT be
-present in the beta selector, release metadata, public firmware tree, or
-recovery commands.
+`esp32-c3-4mb` remains absent from this historical beta selector, release
+metadata, public firmware tree, and recovery commands. That historical absence
+does not change its separate selected-pending status in v0.6.0.
 
 The repository README, home-page hero, provisioning workflow, exact-profile
 cards, TestFlight callout, support getting-started guide, and public roadmap
@@ -517,28 +514,30 @@ The exact `v0.4.2` public-beta selector remains limited to `esp32-4mb` and
 `esp32-s3-n16r8` and is governed only by the narrow exception below. It MUST
 NOT be treated as a qualified release or broadened with a Waveshare profile.
 
-For a qualified `v0.5.1` activation, the required public profiles are exactly,
-and in this order: `esp32-4mb`, `esp32-s3-n16r8`, and
-`waveshare-esp32-s3-lcd-147b`. The generic S3 and exact-board Waveshare images
+The unqualified `v0.5.1` source candidate retains exactly three historical
+profiles and MUST NOT be reinterpreted or activated as v0.6.0. For qualified
+`v0.6.0` activation, the required public profiles are exactly, and in this
+order: `esp32-4mb`, `esp32-s3-n16r8`,
+`waveshare-esp32-s3-lcd-147b`, `esp32-c3-4mb`, and `rpi-pico2-w`. The generic
+S3 and exact-board Waveshare images
 both require 16 MiB flash plus 8 MiB Octal PSRAM, use ESP Web Tools family
 `ESP32-S3`, and install a merged image at offset `0`, but they MUST have
 separate single-build manifests and different immutable firmware bytes. The
 generic image is intentionally lean: it contains the common PyBLE agent and
 standard runtime but no `pyble_st7789`, `pyble_waveshare_lcd147b`, exact-board
 pin constants, display boot hook, or splash. The exact-board image alone owns
-those bounded display additions.
-
-The known `esp32-c3-4mb` profile remains an initial v1 target but is explicitly
-unavailable until exact-profile real-hardware validation is complete. It MUST
-be shown separately as planned/unavailable and MUST NOT appear in the active
-selector, release metadata, public firmware paths, or recovery commands. ESP
-Web Tools' family detection is necessary but not sufficient to establish
-memory topology, silicon revision, or board peripherals; in particular, it
-cannot distinguish the two S3 profiles.
+those bounded display additions. C3 uses its own `ESP32-C3` manifest and merged
+image. Pico uses no ESP manifest or Web Serial action: the browser verifies
+the exact `firmware.uf2` size/SHA-256, downloads those already verified bytes,
+and presents manual BOOTSEL-copy instructions. ESP Web Tools' family detection
+is necessary but not sufficient to establish memory topology, silicon
+revision, or board peripherals; in particular, it cannot distinguish the two
+S3 profiles. C3 and Pico remain pending/inactive until their target gates and
+the complete five-profile candidate pass.
 
 The `/flash` page MUST make the exact Waveshare ESP32-S3-LCD-1.47B discoverable
 without weakening that profile boundary. When—and only when—the build-selected
-qualified release is `v0.5.1` or newer, the page MUST:
+qualified release is `v0.6.0`, the page MUST:
 
 - identify the board as the separate
   `waveshare-esp32-s3-lcd-147b` provisioning profile and direct its install
@@ -614,15 +613,17 @@ and remain explicitly unavailable until all of the following are true for one
 exact immutable version:
 
 1. two clean, provenance-recorded, reproducible builds produced
-   byte-identical artifact sets for all three required release profiles from
+   byte-identical artifact sets for all five required release profiles from
    the frozen source/toolchain pins, while the maintained chip-target
    source/toolchain audit remained green;
-2. the versioned, same-origin profile-scoped ESP Web Tools manifests and separate
-   `release.json` size/SHA-256 metadata pass the automated artifact, image,
-   partition, path, schema, license, and integrity gates;
-3. the final hash-locked bytes passed the complete browser-install and
-   interrupted-flash recovery HIL matrix independently on real hardware for all
-   three exact required release profiles from an access-controlled,
+2. release schema 4, policy schema 3, V5 HIL shape, the four versioned
+   same-origin profile-scoped ESP Web Tools manifests, and Pico UF2/raw-image
+   metadata pass the automated artifact, image, partition/budget, path,
+   license, and integrity gates;
+3. the final hash-locked bytes passed the complete target-specific install and
+   interrupted-install recovery HIL matrix independently on real hardware for
+   all five exact profiles, both physical iPad and physical Android app HIL,
+   C3-G0…C3-G6, and Pico GP2 from an access-controlled,
    production-equivalent HTTPS candidate
    deployment, while the public action remained disabled;
 4. the exact bytes, release notes, licenses, recovery guide, and HIL report are
@@ -641,14 +642,14 @@ exact immutable version:
 For either the exact public beta above or a release whose gate is green,
 `/flash` MUST render an active action only after:
 
-- secure-context, `navigator.serial`, and Web Crypto capability detection;
+- secure-context and Web Crypto capability detection, plus `navigator.serial`
+  for ESP actions only;
 - exact profile selection and the compatibility/backup/erase/cable/power
   acknowledgements;
 - for `waveshare-esp32-s3-lcd-147b`, separate explicit confirmation of the
   exact B-version board and its 16 MiB flash / 8 MiB Octal-PSRAM topology;
-- verification of the selected profile's single-build manifest and binary
-  bytes against the embedded
-  metadata root; and
+- verification of the selected ESP profile's single-build manifest and binary
+  bytes, or Pico's exact UF2 bytes, against the embedded metadata root; and
 - a visible version, profile, integrity result, destructive-install warning,
   and version-matched recovery link.
 
@@ -660,18 +661,20 @@ redirect, schema check, digest, size, path, offset, chip-family, or cross-file
 check returns to an unavailable state; a mismatched connected family is
 rejected instead of selecting another image.
 
-Future non-ESP32 ports MAY require another reviewed provisioning backend and
-artifact format. Adding one requires a specification and test change; it MUST
-NOT weaken PyBLE's BLE-first runtime contract.
+Pico's reviewed UF2/BOOTSEL backend MUST create its download from the verified
+in-memory bytes and MUST NOT invoke ESP Web Tools, require Web Serial, refetch
+a mutable pathname, or claim direct browser-to-board flashing. Any later
+backend requires a specification and test change and MUST NOT weaken PyBLE's
+BLE-first runtime contract.
 
 ### 7.1 Loopback-only five-target approval preview
 
-A maintainer MAY run a local engineering preview of the future board-selection
-experience before any new profile is qualified or deployed. This is an
-approval harness, not a release selector, public installer, support claim, or
-substitute for the release and port gates. It MUST NOT change the immutable
-`v0.4.2` exception, the prospective three-profile ESP release contract, or the
-production no-release state.
+A maintainer MAY run a local engineering preview of the selected, pending
+five-profile v0.6.0 candidate before it is qualified or deployed. This is an
+approval harness, not a public selector, support claim, or substitute for the
+release and port gates. It MUST NOT change the immutable `v0.4.2` public-beta
+or unqualified `v0.5.1` source-era contracts, and it MUST NOT activate the
+pending production selector.
 
 The preview MUST use one labelled native HTML `select`, with an inert prompt
 followed by these five choices in this order:
@@ -758,14 +761,14 @@ or omit that staging directory; preview bytes MUST never enter `out/`, `dist/`,
 the canonical `/firmware/v<version>/` tree, a candidate/public selector, or a
 deployment carry-forward marker.
 
-The production `/flash` contract remains unchanged. `esp32-c3-4mb` stays
-planned/unavailable until its existing exact-profile qualification and release
-gates pass. `rpi-pico2-w` stays absent from every production installer,
-release matrix, and supported-hardware claim until its port gate GP2 and a new
-reviewed RP2 publication contract pass. When no audited beta or qualified
-release is selected, production continues to fail closed with no install or
-download action. Local preview success is engineering evidence only and MUST
-NOT alter any of those states.
+The production `/flash` contract now selects the same five ordered v0.6.0
+profiles under release schema 4, policy schema 3, and HIL V5. C3 and Pico may
+appear only as pending/inactive candidate rows until C3-G0…C3-G6, Pico GP2,
+and the complete common exact-byte matrix pass; no install/download action or
+support claim is active for either before then. When no audited beta or fully
+qualified release is selected, production continues to fail closed with no
+public action. Local preview success is engineering evidence only and MUST NOT
+alter any of those states.
 
 The installer is a browser-only component and MUST explain that this is
 one-time wired provisioning, not PyBLE's runtime transport. Capability is
@@ -823,14 +826,15 @@ The v1 site is releasable when:
   exposes no firmware action or artifact metadata; and contains neither stale
   release copy nor the historical Waveshare photograph;
 - production builds reject or exclude every preview descriptor and staged
-  artifact, keep C3 and Pico 2 W out of active release selection, and retain
-  the fail-closed no-release state;
-- a qualified `v0.5.1`-or-newer active selector names
+  artifact, keep pending C3 and Pico 2 W rows inactive, and retain the
+  fail-closed no-release state until all five v0.6.0 rows pass;
+- a qualified `v0.6.0` active selector names
   `waveshare-esp32-s3-lcd-147b` separately from the lean
   `esp32-s3-n16r8`, gives each its own manifest and firmware bytes, and requires
   exact-board consent for the Waveshare action; the exact `v0.4.2` beta, pending,
   candidate, failed, and unavailable states make no active exact-board claim;
-- three-profile release tests prove that the generic S3 image omits the
+- five-profile release tests prove schema-4/V5/policy-3 order and action
+  discrimination, and prove that the generic S3 image omits the
   Waveshare display runtime and splash while the exact-board image contains
   them, without treating either provisioning profile as an app connection gate;
 - that same qualified selector renders the exact reviewed local board photo on

@@ -1,15 +1,10 @@
-# PyBLE ESP32-Family Browser Flashing and Release Bundle
+# PyBLE Firmware Browser Provisioning and Release Bundle
 
-Status: **FROZEN v1.30** · Owner: project maintainer · Frozen:
-2026-08-12 (`[docs]`; adds a loopback-only, unqualified five-target approval
-preview with a verified UF2/BOOTSEL path for Pico 2 W; reconciles the immutable v0.4.2 two-profile,
-unqualified hardware-tested public-beta exception and preserved-public
-hardening with the v0.5.1 three-profile exact-board source/qualification
-contract under ADR-0028 and ADR-0029; retains release schema 3, HIL V4, OI
-policy schema 2, explicit C3 deferral, mechanical evidence assembly,
-license/provenance/reproducibility hardening, exact-profile manifests and
-silicon windows, canonical same-origin publication, and optional
-byte-identical mirror requirements)
+Status: **FROZEN v1.31** · Owner: project maintainer · Frozen:
+2026-08-12 (`[docs]`; ADR-0033 adds the exact five-profile v0.6.0 successor
+with release schema 4, HIL V5, OI policy schema 3, four ESP Web Serial images,
+and one verified-UF2/manual-BOOTSEL path; every new gate remains pending;
+immutable v0.4.2 and v0.5.1 source-era contracts are preserved)
 
 This document is the source of truth for the initial browser-provisioning
 release bundle. It refines
@@ -27,39 +22,35 @@ BLE and PBLE/1.
 ## 1. Release image profiles
 
 The immutable v0.4.2 public-beta bundle contains exactly `esp32-4mb` and
-`esp32-s3-n16r8`; its narrow validation does not make either a qualified-release
-profile and it MUST NOT acquire another profile. The earlier v0.5.1 source
-candidate targeted exactly these three **provisioning image profiles** but did
-not complete qualification. The source-selected v0.6.0 tree retains them as
-the prospective public set. This contract does not assert that candidate
-binaries exist or qualify them for publication; each requires fresh
-reproducibility, license, exact-byte HIL, and activation gates:
+`esp32-s3-n16r8`; it MUST NOT acquire another profile. The unqualified v0.5.1
+source candidate targeted those two plus `waveshare-esp32-s3-lcd-147b`; its
+identity and evidence remain historical. ADR-0033 freezes the following four
+ESP profiles as the first four rows of the atomic v0.6.0 successor. This does
+not assert that candidate binaries exist or qualify them for publication:
 
 | Profile ID | ESP Web Tools `chipFamily` | Required target configuration | ESP image silicon window (`min_chip_rev_full`…`max_chip_rev_full`) | Merge settings | Browser image and component map |
 |---|---|---|---|---|---|
 | `esp32-4mb` | `ESP32` | Classic ESP32 with 4 MiB external SPI flash; no PSRAM assumption | `0`…`399` | DIO, 40 MHz, 4 MiB | merged `firmware.bin` at `0x1000`; bootloader `0x1000`; partition table `0x8000`; application `0x10000` |
 | `esp32-s3-n16r8` | `ESP32-S3` | Lean ESP32-S3 with 16 MiB flash and 8 MiB **Octal** PSRAM (N16R8-class); no bundled TFT driver, exact-board companion, splash hook, QR, or splash-only native readiness seam | `0`…`99` | DIO, 80 MHz, 16 MiB | merged `firmware.bin` at `0x0000`; bootloader `0x0000`; partition table `0x8000`; application `0x10000` |
 | `waveshare-esp32-s3-lcd-147b` | `ESP32-S3` | Exact Waveshare ESP32-S3-LCD-1.47B **B version** with 16 MiB flash and 8 MiB **Octal** PSRAM; includes the ST7789 runtime, companion, factory-enabled-after-erase splash hook/QR, persistent disable, and bounded native readiness seam | `0`…`99` | DIO, 80 MHz, 16 MiB | merged `firmware.bin` at `0x0000`; bootloader `0x0000`; partition table `0x8000`; application `0x10000` |
+| `esp32-c3-4mb` | `ESP32-C3` | ESP32-C3 revision v0.3 or newer with 4 MiB external flash; no PSRAM assumption | `3`…`199` | DIO, 80 MHz, 4 MiB | merged `firmware.bin` at `0x0000`; bootloader `0x0000`; partition table `0x8000`; application `0x10000` |
 
-`esp32-c3-4mb` remains a known provisioning profile and an initial v1
-firmware target, with this frozen future qualification:
+The fifth row is deliberately heterogeneous:
 
-| Deferred profile ID | ESP Web Tools `chipFamily` | Required target configuration                                                  | ESP image silicon window (`min_chip_rev_full`…`max_chip_rev_full`) | Merge settings     | Browser image and component map                                                                         |
-| ------------------- | -------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------ | ------------------ | ------------------------------------------------------------------------------------------------------- |
-| `esp32-c3-4mb`      | `ESP32-C3`                 | ESP32-C3 revision v0.3 or newer with 4 MiB external flash; no PSRAM assumption | `3`…`199`                                                          | DIO, 80 MHz, 4 MiB | merged `firmware.bin` at `0x0000`; bootloader `0x0000`; partition table `0x8000`; application `0x10000` |
+| Profile ID | Upstream target | Required hardware | Public install artifact and action |
+| --- | --- | --- | --- |
+| `rpi-pico2-w` | `rp2` / `RPI_PICO2_W` | Raspberry Pi Pico 2 W (RP2350 + CYW43439) | verified `firmware.uf2` download followed by manual copy to the BOOTSEL mass-storage volume |
 
-That deferred profile is **not** part of the current public release: it MUST
-NOT have an entry in `release.json`, a public manifest or binary directory, or
-an installer selection. The website MUST show it separately as unavailable
-pending exact-profile real-hardware validation. Re-enabling it requires a new
-SemVer candidate, the complete automated gates, its own HIL row, and a new
-immutable public bundle; it MUST NOT be added to an existing version.
+The exact profile order is `esp32-4mb`, `esp32-s3-n16r8`,
+`waveshare-esp32-s3-lcd-147b`, `esp32-c3-4mb`, `rpi-pico2-w`. All five are
+release-blocking. C3-G0…C3-G6 and Pico GP2 remain pending prerequisites; no
+profile becomes active until the complete exact-byte v0.6.0 matrix passes.
 
 ### 1.1 Loopback-only five-target approval preview
 
-The website MAY provide a maintainer-only engineering harness for approving the
-future five-target selection experience and exercising exact local clean-build
-artifacts. This harness is not part of the release bundle described by this
+The website MAY provide a maintainer-only engineering harness for approving
+the pending five-target v0.6.0 selection experience and exercising exact local
+clean-build artifacts. This harness is not part of the release bundle described by this
 document. It does not add a profile to `release.json`, establish HIL, qualify a
 port, make firmware public, or relax any candidate, public-beta, qualified-
 release, activation, or rollback requirement.
@@ -128,9 +119,9 @@ The page and every selected-target detail panel MUST visibly say **LOCAL
 ENGINEERING PREVIEW — UNQUALIFIED**. A successful local ESP flash or Pico UF2
 copy is approval evidence only. In particular, C3 remains unavailable in
 production until its existing exact-profile qualification and new-release
-gates pass, and Pico 2 W remains absent from every production installer,
-release matrix, and support claim until GP2 plus a separately frozen RP2
-publication contract pass. A production build with no audited beta or
+gates pass, and Pico 2 W remains absent from every active production selector
+and support claim until GP2 plus the ADR-0033 RP2 publication contract pass. A
+production build with no audited beta or
 qualified selected release remains fail-closed.
 
 The offsets and flash settings above are frozen from the matching ESP-IDF
@@ -146,7 +137,7 @@ lean image MUST be presented only as `esp32-s3-n16r8`; neither the website nor
 release notes may call it generic for every ESP32-S3 board or claim its TFT
 runtime. The exact image MUST be presented only as
 `waveshare-esp32-s3-lcd-147b` for the documented B-version board; matching
-N16R8 memory alone is insufficient. Any future C3 image MUST be presented as
+N16R8 memory alone is insufficient. The C3 image MUST be presented as
 requiring ESP32-C3 revision v0.3 or newer.
 
 Before the install action appears, the user MUST explicitly select a profile
@@ -194,14 +185,15 @@ relative source layout until the license audit, candidate validation, and
 two-root byte comparison have completed:
 
 ```text
-.sources/esp32/micropython/
-.sources/esp32-s3/micropython/
+.sources/esp32-4mb/micropython/
+.sources/esp32-s3-n16r8/micropython/
 .sources/waveshare-esp32-s3-lcd-147b/micropython/
-.sources/esp32-c3/micropython/
+.sources/esp32-c3-4mb/micropython/
+.sources/rpi-pico2-w/micropython/
 ```
 
-Each path is an independent MicroPython checkout for exactly the named build
-variant. The generic and Waveshare S3 variants both compile IDF target
+Each path is an independent MicroPython checkout for exactly the named release
+profile. The generic and Waveshare S3 variants both compile IDF target
 `esp32s3`, but MUST NOT share mutable source/build state or collapse to one
 artifact.
 Its `HEAD` MUST equal the full `versions.lock [micropython].commit`, its
@@ -210,8 +202,9 @@ its tracked tree MUST be clean when admitted and validated. Each target's
 authoritative application `project_description.json` `project_path` MUST
 resolve to that target's retained checkout at `ports/esp32`, and the audit
 receipt MUST bind the project-description bytes and checkout commit/origin
-identity. A missing, escaped, symlinked, dirty, wrong-origin, wrong-commit, or
-cross-target checkout is fatal.
+identity. The RP2 row instead binds its CMake cache, ELF, board, and pinned ARM
+GNU provenance to its retained checkout at `ports/rp2`. A missing, escaped,
+symlinked, dirty, wrong-origin, wrong-commit, or cross-target checkout is fatal.
 
 Build preparation and ESP-IDF dependency materialization MUST be target-local.
 In particular, no target may share, overwrite, or delete another target's
@@ -248,9 +241,8 @@ as immutable inputs to one release candidate. Candidate-freezing MUST happen
 before the two clean release builds, license audit, candidate packaging,
 protected-site staging, or HIL. It is an input-selection state only: it does
 **not** assert that the pins work on hardware and does not approve them for a
-public release. Exact-profile HIL on all three current candidate profiles,
-`esp32-4mb`, `esp32-s3-n16r8`, and
-`waveshare-esp32-s3-lcd-147b`, remains the pre-v1 public-release approval gate.
+public release. Exact-profile HIL on all five v0.6.0 profiles in §1 remains the
+successor public-release approval gate.
 The v0.4.2 two-profile browser attestation remains historical evidence only and
 MUST NOT satisfy this new candidate gate.
 
@@ -260,7 +252,8 @@ audit, protected deployment, and complete current-release-profile HIL matrix
 MUST then start again; evidence from the abandoned candidate MUST NOT be
 carried forward.
 
-Before the first OI-1 policy can be committed, the release tool MUST provide a
+For the historical v0.5.1 schema-2 OI contract, before the first OI-1 policy
+can be committed, the release tool MUST provide a
 `create-baseline-inputs` operation that breaks the policy/evidence dependency
 cycle without weakening candidate validation. It MUST bind two distinct,
 non-nested clean build roots to the clean PyBLE proof checkout, validate all
@@ -296,6 +289,16 @@ staged. This operation runs before, and therefore MUST NOT require, an OI-1
 policy, baseline-evidence file, release tag, license evidence, or HIL approval.
 Its output is measurement input only: it is not a release candidate and MUST
 NOT be accepted by the website or public release validator.
+
+For v0.6.0, the same no-replace operation instead validates and stages exactly
+five ordered inputs: the three ESP directories above, an equivalent
+`esp32-c3-4mb/` directory, and
+`rpi-pico2-w/{firmware.uf2,firmware.bin}`. It accepts exactly five bench
+fragments, derives the target-discriminated schema-3 policy in
+[specs.md §5.3.5](specs.md#535-v060-five-profile-successor-policy-and-evidence),
+and never mixes a historical fragment or source commit into the set. The two
+clean roots must compare every released ESP part plus Pico `firmware.uf2`,
+`firmware.bin`, and `firmware.elf` byte-for-byte before staging.
 
 After both exact-profile baseline runs succeed, the release tool MUST provide
 an `assemble-oi1-baseline` operation. It accepts the immutable staged baseline
@@ -364,10 +367,19 @@ https://pyble.dev/firmware/v<version>/
     bootloader.bin
     partition-table.bin
     application.bin
+  esp32-c3-4mb/
+    manifest.json
+    firmware.bin
+    bootloader.bin
+    partition-table.bin
+    application.bin
+  rpi-pico2-w/
+    firmware.uf2
+    firmware.bin
 ```
 
-No `esp32-c3-4mb/` path exists in this release. Absence is intentional and is
-part of the immutable release contract, not a missing upload.
+This is the v0.6.0 schema-4 layout. Historical v0.4.2 and v0.5.1 source-era
+layouts remain unchanged and MUST NOT acquire either new directory.
 
 The two S3 directories are intentionally distinct. Their manifests use the
 same `ESP32-S3` family and offset but their component and merged-image bytes
@@ -390,6 +402,11 @@ advanced recovery, but the browser manifest MUST NOT flash them separately.
 The release builder copies component bytes without transforming them and proves
 that `firmware.bin` is the deterministic merge of those authoritative
 components at the frozen settings and offsets.
+
+The Pico `firmware.bin` is the raw RP2 image used for provenance and resource
+measurement, not an ESP merged image or browser install fallback. The sole
+Pico install artifact is `firmware.uf2`; it has no manifest, flash offset,
+partition table, or component map.
 
 Every manifest part path MUST be relative to its profile directory, remain in
 that directory, and resolve on `https://pyble.dev`; absolute URLs, `..`,
@@ -446,7 +463,8 @@ offset, but it resides in the exact-board directory and references that
 profile's different local `firmware.bin`; the two manifests and firmware paths
 MUST never be substituted for one another.
 The `esp32-4mb` manifest has the same shape and exactly one `ESP32` build with
-offset `4096`. There is no C3 manifest in the current release. The website MUST
+offset `4096`; `esp32-c3-4mb` has exactly one `ESP32-C3` build at offset zero.
+Pico has no manifest. The website MUST
 set the custom element's manifest URL to the verified manifest for the selected
 profile only. It MUST NOT pass an all-family catalog to ESP Web Tools or change
 manifests after the browser has selected a serial device.
@@ -487,7 +505,7 @@ numerically-equal fractional value. This applies equally to build provenance,
 the release-tool lock, license policy and shipment ledger, audit receipts, HIL
 records, and `release.json`.
 
-For split pre-v1 candidates from v0.5.0 onward, `release.json` schema version 3
+For historical split v0.5.x candidates, `release.json` schema version 3
 MUST contain the following (the
 version is the exact JSON integer `3`; booleans and numerically-equal
 fractional values are invalid). Version 3 is an intentional incompatible
@@ -517,12 +535,34 @@ retain their own schema beside their metadata:
   `RELEASE_NOTES.md`, `RECOVERY.md`, and `HIL_REPORT.md`; and
 - the exact locally bundled `esp-web-tools` version used by the site.
 
+The v0.6.0 successor MUST instead use release schema version `4` and exactly
+the five-profile order in §1. It retains all schema-3 release identity,
+provenance, document, and ESP profile fields and adds the required common
+profile keys `target`, `provisioning_kind`, and `hil_status`. The four ESP
+records use `provisioning_kind: "esp-web-serial"` and retain exact
+`chip_family`, silicon/memory requirements, `manifest`, merged-image `install`
+with offset, and three components. The Pico record uses
+`provisioning_kind: "verified-uf2-bootsel"`, has exact target
+`"rpi-pico2-w"`, and contains exactly:
+
+- `board: "RPI_PICO2_W"`;
+- `install: {path, size, sha256, format: "uf2"}` for
+  `rpi-pico2-w/firmware.uf2`; and
+- `resource_image: {path, size, sha256, image_limit_bytes: 1572864}` for
+  `rpi-pico2-w/firmware.bin`.
+
+The Pico record MUST reject `chip_family`, `silicon_revision`, `manifest`,
+`offset`, `components`, or ESP flash/PSRAM fields. ESP records MUST reject
+Pico `board`, `format`, `resource_image`, or BOOTSEL action fields. Schema 4
+MUST reject a missing, extra, duplicated, or reordered profile.
+
 The immutable public v0.4.2 bundle is the sole retained pre-split exception:
 it keeps release schema version 2, exactly the historical ordered profiles
 `esp32-4mb` and `esp32-s3-n16r8`, and its original files and hashes. Validation
 MUST select that contract from exact release identity `0.4.2`, MUST reject a
-third profile or schema 3 there, and MUST reject schema 2, a two-profile order,
-or v0.4.2 artifacts for current v0.6.0 source. No validator, carry-forward
+third profile or schema 3 there, and MUST reject schema 2 or schema 3, any
+two-/three-profile order, or historical artifacts for v0.6.0 source. No
+validator, carry-forward
 deployment, or website descriptor may reinterpret or expand the immutable
 v0.4.2 tree.
 
@@ -578,11 +618,11 @@ public notice.
 
 The conservative build audit runs against all eight authoritative ESP-IDF
 descriptions: application and bootloader `project_description.json` for each
-of the four build variants. This preserves the three-chip/C3 build and license
-gate while independently auditing both S3 payloads. The released notice MUST
-classify as redistributed only the dependency union of the three packaged
-profiles; C3-only observations remain retained review
-evidence and MUST NOT be represented as a shipped C3 image or shipped profile.
+of the four ESP build variants. The v0.6.0 released notice classifies the
+dependency union of all four packaged ESP profiles. A separate RP2 inventory
+MUST reconcile the exact linked ELF inputs, frozen manifest, MicroPython/rp2,
+pico-sdk, BTstack, CYW43, TinyUSB, and pinned ARM GNU runtime/license inputs;
+it joins the released union without inventing ESP-IDF SBOM evidence for RP2.
 The immutable v0.4.2 replay instead retains its historical six descriptions
 over three build targets and the redistributed dependency union of its two
 packaged profiles. Validation MUST select the complete audit contract from
@@ -1135,26 +1175,25 @@ Waveshare B version.
 
 ## 7. Installer capability and consent
 
-The `/flash` document remains complete without JavaScript. The install control
-is a client-only enhancement and MUST be activated by feature detection:
-
-- a secure context;
-- `navigator.serial`;
-- Web Crypto `subtle.digest`; and
-- successful verification under §5.
+The `/flash` document remains complete without JavaScript. Every enhanced
+action requires a secure context, Web Crypto `subtle.digest`, and successful
+verification under §5. An ESP action additionally requires
+`navigator.serial`; a Pico verified download MUST NOT require it.
 
 The implementation MUST NOT infer support from the browser user-agent. Its
 unsupported state names a current desktop Chromium browser as the supported
 path and explicitly states that iPadOS cannot perform the wired provisioning
 step. The exact ESP Web Tools package is bundled locally; its activation button
 is exposed only after profile selection, verification, and consent.
+The Pico action offers only a download created from already verified in-memory
+UF2 bytes, followed by visible manual BOOTSEL-copy instructions.
 
 Before activation the user MUST affirm all of the following:
 
-1. the exact chip/flash/PSRAM profile matches the connected module and, for
+1. the exact selected hardware profile matches the connected board and, for
    `waveshare-esp32-s3-lcd-147b`, the board is the exact B-version model;
 2. board files and any previous firmware have been backed up;
-3. installation erases the device;
+3. installation overwrites the board firmware and may erase user files;
 4. a data-capable USB cable and stable power are in use; and
 5. other serial monitors and applications using the port are closed.
 
@@ -1187,9 +1226,9 @@ cover, in plain language:
   model/module marking, browser/OS versions, stage and error text, while
   excluding secrets and personal device labels.
 
-A recovery instruction that has not itself been exercised on all three current
-release profiles does not satisfy the release gate. The page MUST NOT offer a
-C3 recovery command or binary while that profile is deferred.
+A recovery instruction that has not itself been exercised on all five v0.6.0
+profiles does not satisfy the release gate. C3 remains inactive until C3-G0…G6
+pass; Pico remains inactive until GP2 passes.
 
 For the pinned ESP-IDF 5.5 tool environment (`esptool.py` v4.12.dev3), every
 generated and visible merged-image command MUST use the executable module form
@@ -1204,11 +1243,19 @@ the two S3 commands both use `--chip esp32s3` and offset `0x0` but MUST name
 their distinct profile-local `firmware.bin` paths. A generic S3 path is never a
 recovery alias for the exact-board image or vice versa.
 
+The v0.6.0 recovery document adds the C3 command at offset `0x0` and a separate
+Pico procedure. Pico recovery re-enters BOOTSEL, re-verifies the same
+versioned UF2 size/SHA-256, recopies those verified bytes, waits for automatic
+reboot, and confirms the expected BLE advertisement. It MUST NOT show an
+`esptool`, offset, Web Serial, or random-image fallback for Pico. Physical HIL
+must exercise a deliberately interrupted/failed UF2 copy followed by this
+successful recovery using the final candidate bytes.
+
 ## 9. Automated and HIL acceptance
 
 Automated release tests MUST cover:
 
-- clean four-variant/three-chip build from one candidate-frozen pin set and commit;
+- clean five-profile/four-chip build from one candidate-frozen pin set and commit;
 - byte-for-byte second clean build;
 - `flasher_args.json` → profile component-offset and merge-setting agreement;
 - merged-image reproduction, ESP image target/role parsing, component placement,
@@ -1216,10 +1263,11 @@ Automated release tests MUST cover:
   flash-capacity checks;
 - exact manifest schema, paths, profile parity, and forbidden redirect/origin
   cases;
-- exact three-profile resource-policy schema 2 and HIL V4 schema,
+- exact v0.6.0 five-profile resource-policy schema 3 and HIL V5 schema, plus
+  historical schema-2/V4 replay,
   baseline/policy/candidate
   hash binding, derivation arithmetic, threshold-boundary and one-unit-crossing
-  fixtures, and rejection of any current C3 policy entry or HIL row;
+  fixtures, and rejection of cross-target resource/transport fields;
 - release-schema validation, SHA-256/size verification, corrupt/truncated/
   missing/swapped-part fixtures, and metadata/manifest disagreement;
 - mechanically complete third-party license output;
@@ -1230,14 +1278,14 @@ Automated release tests MUST cover:
   verified-byte UF2 download, unqualified labelling, and rejection of dirty,
   mixed-source, escaped, symlinked, or corrupt local inputs;
 - production rejection or exclusion of the preview flag and staging tree,
-  continued absence of C3 and Pico 2 W from active release selection, and the
-  unchanged fail-closed no-release state; and
+  C3/Pico pending-state exclusion until their gates pass, and the unchanged
+  fail-closed no-release state; and
 - static-export and candidate/production-origin retrieval of every versioned
   byte.
 
-For a split-source release core at or after `0.5.0`, one HIL record MUST be
-completed for each of the three exact source-candidate profiles using the
-final, hash-locked candidate. The immutable v0.4.2 history retains exactly one
+For a split-source v0.5.x release core, one HIL record MUST be completed for
+each of the three exact source-candidate profiles using the final, hash-locked
+candidate. The immutable v0.4.2 history retains exactly one
 embedded `PYBLE_HIL_RECORDS_V2` schema-2 object. Beginning with the `0.5.0`
 release core, including v0.5.1 and prereleases, the report MUST contain exactly
 one `PYBLE_HIL_RECORDS_V4` schema-4 object because the Waveshare functionality
@@ -1247,12 +1295,21 @@ wrong source-era marker, an additional marker, or keys not defined below are
 invalid. These are admission requirements; they do not assert that a v0.5.1
 HIL report or qualified public bundle exists.
 
+The v0.6.0 report instead contains exactly one
+`PYBLE_HIL_RECORDS_V5` schema-5 object with five records in §1 order and the
+target-discriminated contract in §9.5. V5 is required only for v0.6.0 and MUST
+NOT reclassify V2/V4 history.
+
 ```text
 <!-- PYBLE_HIL_RECORDS_V2
 { ...one JSON object... }
 -->
 
 <!-- PYBLE_HIL_RECORDS_V4
+{ ...one JSON object... }
+-->
+
+<!-- PYBLE_HIL_RECORDS_V5
 { ...one JSON object... }
 -->
 ```
@@ -1313,8 +1370,8 @@ checked-in policy has been regenerated or that qualification has passed.
 }
 ```
 
-This exact derivation object and policy schema 2 apply to split source releases
-at or after `0.5.0`. The retained `0.4.2` source era instead requires policy
+This exact derivation object and policy schema 2 apply to v0.5.x split source
+releases. The retained `0.4.2` source era instead requires policy
 schema 1, its historical exact two-profile order, `ceil-max-10-v1`, and
 `floor-min-100-v1` values; validation selects the complete policy contract by
 firmware source era and never silently reinterprets published evidence.
@@ -1326,13 +1383,13 @@ canonical, redacted file. Retained baseline files are immutable history: a
 controlled refresh MUST add a new source-commit-scoped file, retain every
 earlier file, and replace the active evidence pointer and all three profile
 threshold objects together. It MUST NOT mix profiles or successful samples
-from different baselines. For a firmware source release core at or after
-`0.5.0`, the active baseline firmware release core MUST be at least `0.5.0`
-and MUST NOT be newer than the source release core; the retained pre-`0.5.0`
-contract keeps its historical baseline semantics. A refreshed engineering
-baseline does not approve a release: after the policy or source changes, the
-final candidate MUST be rebuilt and verify-mode HIL MUST pass on all three exact
-profiles.
+from different baselines. For a v0.5.x source release, the active baseline
+firmware release core MUST be at least `0.5.0` and MUST NOT be newer than the
+source release core; the retained pre-`0.5.0` contract keeps its historical
+baseline semantics. A refreshed engineering baseline does not approve a
+release: after the policy or source changes, the v0.5.x final candidate MUST
+be rebuilt and verify-mode HIL MUST pass on all three exact profiles. The
+successor v0.6.0 rules are in §9.5 and firmware specs §5.3.5.
 
 A profile policy entry has exactly
 `profile_id`, `target`, and `thresholds`. Targets are `esp32`, `esp32-s3`, then
@@ -1702,6 +1759,85 @@ failure. A
 different byte or semantic field outside this envelope is a new candidate and
 requires the complete three-profile HIL matrix again.
 
+### 9.5 `PYBLE_HIL_RECORDS_V5` five-profile heterogeneous release
+
+V5 binds OI policy schema 3 and contains exactly five records in §1 order. Its
+top-level object has exactly:
+
+```text
+schema_version
+candidate_release_json_sha256
+qualification_policy_sha256
+qualification_policy
+records
+waveshare_lcd147b_qualification
+esp32_c3_qualification
+rpi_pico2_w_qualification
+```
+
+`schema_version` is integer `5`. The three qualification summaries are JSON
+`null` in both the protected candidate and operator-completed input. Only
+copy-on-write finalization may replace each with a strict validator-derived
+`passed` summary. Waveshare retains the §9.3 private-result contract. C3 binds
+C3-G0…C3-G6; Pico binds GP0, GP1, and complete GP2. A missing private result,
+non-null input summary, failed sub-gate, changed input, or identity/hash
+mismatch leaves no public output.
+
+Every V5 record has exactly the V2 identity/operator/environment keys, with
+`manifest_sha256` replaced by common `install_sha256`, plus these required
+keys:
+
+```text
+target
+resource_kind
+provisioning_kind
+app_hil
+profile_gate_summary
+```
+
+`checks` has exactly `provisioning_install`, `provisioning_recovery`,
+`advertising_info_hello`, `pble_workflow`, `safe_boot_reconnect`,
+`filesystem_resume_reliability`, and `footprint_reliability`. Every value is
+`pending` in a candidate and `passed` after validation. `app_hil` has exactly
+`ipad` and `android`; pending entries are JSON `null`, while each completed
+entry has exactly non-empty `app_version`, `app_build`, `os_major`, and
+`status: "passed"`. One platform cannot substitute for the other.
+
+The four ESP records use `resource_kind: "esp-idf"` and
+`provisioning_kind: "esp-web-serial"`. Each additionally has exact
+`manifest_sha256`; the V4 ESP `oi1_build`, heap observations, and
+`transfer_link_facts` shapes remain unchanged. The C3 record's
+`profile_gate_summary` has exactly keys `C3-G0` through `C3-G6`, all `passed`.
+Other ESP records use JSON `null` except Waveshare, whose separate top-level
+summary remains authoritative.
+
+The Pico record uses `resource_kind: "rp2"` and
+`provisioning_kind: "verified-uf2-bootsel"`; `manifest_sha256` and all
+ESP-only keys are forbidden. Its install digest binds `firmware.uf2`; its
+`oi1_build`, heap snapshots, transport facts, and policy row use the exact
+[specs.md §5.3.5](specs.md#535-v060-five-profile-successor-policy-and-evidence)
+RP2 shapes. Its `profile_gate_summary` has exactly `GP0`, `GP1`, and `GP2`, all
+`passed`. Provisioning checks prove browser size/SHA verification, download
+from the verified in-memory bytes, manual BOOTSEL copy, automatic reboot, and
+recovery from a deliberately interrupted/failed copy using the same UF2.
+
+The C3 derived top-level summary has exactly `schema_version`, `status`,
+`profile_id`, `firmware_version`, `candidate_release_json_sha256`,
+`candidate_firmware_sha256`, `gates`, and `qualification_result_sha256`; Pico
+uses the same keys with `candidate_uf2_sha256`. Each schema version is `1`,
+status is `passed`, profile ID is exact, `gates` equals the record's exact gate
+summary, and every digest is lowercase 64-hex recomputed by the finalizer.
+Neither summary contains device serials, BLE addresses, labels, operator
+input, raw INFO, or console bytes.
+
+Candidate-to-public promotion retains the §9.4 three-file administrative
+envelope: only `HIL_REPORT.md`, the corresponding HIL statuses/report digest
+in `release.json`, and their `SHA256SUMS` entries may change. Every install,
+resource, component, manifest, schema, license, release-note, and recovery byte
+must equal the protected candidate. V5 finalization is atomic across all five
+records and three summaries; partial promotion is forbidden. This section
+freezes a contract and records no passed gate.
+
 ## 10. Activation and rollback
 
 The qualified public action progresses through `candidate` → `verified` →
@@ -1718,12 +1854,13 @@ selector or staged-root environment variables MUST NOT reclassify public-page
 or no-firmware Sites fixtures. The test runner MUST exercise this isolation
 even when the surrounding release build exports candidate variables. The
 public action may become `active` only when every automated gate is green,
-all three current-release HIL rows say `passed`, the exact-board derived
-summary is present and passed, the maintainer approves the exact
-hashes, and the canonical same-origin bytes pass publication verification. If a
+all five v0.6.0 HIL rows say `passed`, the Waveshare, C3, and Pico derived
+summaries are present and passed, the maintainer approves the exact hashes,
+and the canonical same-origin bytes pass publication verification. If a
 pre-v1 mirror exists, its files and bytes MUST agree before activation; v1.0 and
-later require that mirror to be the matching GitHub Release. A C3 row MUST be
-absent, not marked passed without evidence. The activation deployment then
+later require that mirror to be the matching GitHub Release. A missing,
+pending, failed, extra, or substituted profile or summary blocks activation.
+The activation deployment then
 performs a non-destructive production-origin retrieval, redirect, size,
 SHA-256, CSP, and render smoke test; it does not require another physical flash
 after the public button is enabled.

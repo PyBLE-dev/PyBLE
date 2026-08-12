@@ -39,14 +39,15 @@ matching image and flash layout. ESP32-C6/H2 and
 non-Espressif MicroPython targets are candidates for later conforming ports
 under the same PBLE/1 protocol.
 
-### 1.1 Browser-installer image profiles
+### 1.1 Browser-provisioning release profiles
 
-| Image profile | Required memory configuration | Installer family check | Release status | Public compatibility claim |
+| Image profile | Required memory configuration | Provisioning check/action | Release status | Public compatibility claim |
 |---|---|---|---|---|
 | `esp32-4mb` | Classic ESP32; 4 MiB external SPI flash; no PSRAM assumed | `ESP32` | v0.4.2 hardware-tested beta; browser install/recovery passed; qualification pending. Current v0.6.0 source requires fresh exact-byte qualification. | Only boards whose module documentation confirms this flash layout |
 | `esp32-s3-n16r8` | ESP32-S3; 16 MiB flash; 8 MiB Octal PSRAM; lean board-neutral payload | `ESP32-S3` | v0.4.2 hardware-tested beta; browser install/recovery passed; qualification pending. Current v0.6.0 source requires independent exact-byte qualification. | N16R8-class modules only; no bundled TFT driver or splash |
-| `waveshare-esp32-s3-lcd-147b` | Exact Waveshare ESP32-S3-LCD-1.47B; 16 MiB flash; 8 MiB Octal PSRAM | `ESP32-S3` | Current v0.6.0 source only; independent exact-board qualification required before publication | B-version board only, if qualified; exact-image contract bundles the ST7789 runtime and fresh-install QR splash |
-| `esp32-c3-4mb` | ESP32-C3 revision v0.3 or newer; 4 MiB addressable flash; no PSRAM assumed | `ESP32-C3` | Engineering contract frozen; every result pending | No public installer compatibility claim yet |
+| `waveshare-esp32-s3-lcd-147b` | Exact Waveshare ESP32-S3-LCD-1.47B; 16 MiB flash; 8 MiB Octal PSRAM | ESP Web Serial · `ESP32-S3` | Selected for v0.6.0; exact-board qualification pending | B-version board only after the full candidate passes; exact image bundles the ST7789 runtime and fresh-install QR splash |
+| `esp32-c3-4mb` | ESP32-C3 revision v0.3 or newer; 4 MiB addressable flash; no PSRAM assumed | ESP Web Serial · `ESP32-C3` | Selected for v0.6.0; C3-G0…C3-G6 and common qualification pending | Exact generic profile after the full candidate passes |
+| `rpi-pico2-w` | Raspberry Pi Pico 2 W; RP2350 + CYW43439 | Browser-verified `firmware.uf2`; manual BOOTSEL copy | Selected for v0.6.0; GP2 and common qualification pending | Exact Pico 2 W profile after the full candidate passes |
 
 The installer family check cannot establish flash capacity, PSRAM type, USB
 wiring, or power integrity. The user therefore selects and confirms the exact
@@ -57,8 +58,8 @@ different flash size or Quad/no PSRAM, are not covered by
 Matching the N16R8 memory tuple also does not imply that an onboard display or
 other peripheral exists. The Waveshare row is separate even though ESP Web
 Tools reports the same family for both S3 images and cannot distinguish them.
-The C3 profile is neither selectable nor published while its status is
-unavailable; owning or building the target is not a substitute for HIL. The
+The C3 and Pico profiles remain inactive while their status is pending; owning
+or building either target is not a substitute for HIL. The
 ESP32-C3-MINI-1-N4 v0.4/4 MiB/no-PSRAM module is the selected physical
 engineering reference for that generic profile, with all gates still pending
 under [its derived qualification contract](firmware/ports/esp32-c3-4mb.md).
@@ -69,11 +70,11 @@ exactly the first two profile IDs and no C3 thresholds or record. The
 [supplemental production-browser attestation](../validation/browser-flashing/v0.4.2-production.md)
 records the two completed browser rows; the ledger's other formal rows remain
 pending. The unfinished v0.5.1 candidate policy/HIL work is historical and
-cannot qualify the source-selected v0.6.0 tree. A future release candidate MUST
-generate one fresh profile set for every profile it includes; pre-split or
-earlier-candidate evidence cannot qualify it. C3 continues to build and
-participate in source/reproducibility/license audits, but its real-board
-resource qualification remains required before C3 enablement and before v1.0.
+cannot qualify the source-selected v0.6.0 tree. ADR-0033 selects one atomic
+five-profile v0.6.0 candidate; it MUST generate fresh schema-3 resource policy
+and V5 HIL evidence for every row. Pre-split or earlier-candidate evidence
+cannot qualify it. C3-G0…C3-G6 and Pico GP2 remain mandatory, and either
+pending/failed profile blocks the whole qualified release.
 
 These are **provisioning image profiles**, not board-routing profiles. They
 exist solely to keep destructive flash layouts honest. They do not define GPIO
@@ -119,14 +120,15 @@ the documented pins. Constructing `machine.SPI(2)` reset the pinned ESP32-S3
 runtime, so the named-board Blocky example and TFT HIL workload MUST use bus 1.
 Other boards still supply their own explicit bus identifier.
 
-### 1.3 Ports in progress (not validated targets)
+### 1.3 Selected ports pending qualification
 
 | Board / family | Upstream port · board | BLE stack | Status |
 |---|---|---|---|
-| Raspberry Pi **Pico 2 W** (RP2350 + CYW43439 radio) | `rp2` · `RPI_PICO2_W` | BTstack via MicroPython `bluetooth` | **Agent port in progress** ([ADR-0030](../decisions/0030-pico2w-portable-python-agent-first.md)). NOT a supported target until its protocol-conformance, resource, recovery, and HIL gates pass ([firmware/ports/rpi-pico2-w.md](firmware/ports/rpi-pico2-w.md)); **no public compatibility claim**. |
+| Raspberry Pi **Pico 2 W** (RP2350 + CYW43439 radio) | `rp2` · `RPI_PICO2_W` | BTstack via MicroPython `bluetooth` | Selected for the v0.6.0 candidate by ADR-0033; GP2, schema-3 resource evidence, verified-UF2/BOOTSEL recovery, and V5 HIL all remain pending ([firmware/ports/rpi-pico2-w.md](firmware/ports/rpi-pico2-w.md)). It is not an active qualified target until all pass. |
 
-A port-in-progress row never widens the browser installer, the beta message
-matrix, or any published support statement. The port's PBLE/1 `chip` token is
+A selected-pending row may appear in candidate metadata and a visibly
+unqualified loopback preview, but never widens an active qualified selector or
+support claim before its gates pass. The port's PBLE/1 `chip` token is
 `rpi-pico2-w`; per §3, absent pin guidance MUST NOT block connection.
 
 ## 2. Requirements for a board to work with PyBLE
@@ -208,8 +210,9 @@ it likes; PyBLE just warns.
 
 The pin reference is purely a convenience layer; the source of truth for what a pin does is the chip datasheet, linked from the in-app reference.
 
-Historical v0.4.2 release metadata retains its two-profile shape. This current
-three-profile v0.5 contract never adds a third directory to that immutable
-published bundle.
+Historical v0.4.2 release metadata retains its two-profile shape. The
+unqualified v0.5.1 source candidate retains its three-profile identity. The
+v0.6.0 schema-4 five-profile bundle does not add directories to or reinterpret
+either historical contract.
 
 <!-- SPDX-License-Identifier: MIT -->

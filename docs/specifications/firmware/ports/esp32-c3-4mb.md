@@ -6,7 +6,10 @@ agent on one matching physical reference. It implements
 [ADR-0032](../../../decisions/0032-qualify-generic-esp32-c3-4mb-on-reference-hardware.md)
 under the authoritative ESP32-family
 [firmware requirements](../specs.md). It neither creates a new port/image nor
-admits C3 to a public release.
+claims that C3 is qualified. [ADR-0033](../../../decisions/0033-qualify-v060-as-five-profile-heterogeneous-release.md)
+now selects this existing profile for the atomic v0.6.0 candidate, but its row
+is admitted to a qualified public bundle only after every gate below passes on
+the final hash-locked bytes.
 
 ## C3.1 Scope and exact reference
 
@@ -186,11 +189,12 @@ unsettled rung produces no baseline result.
 
 The output is a redacted, canonical **C3 engineering profile fragment** bound
 to the source and exact firmware/manifest bytes, plus mechanically derived C3
-thresholds. It is not inserted into the current schema-2 three-profile policy,
-does not mutate historical evidence, and is not final-candidate verification.
-A future release-scope `[docs]` amendment MUST define the successor policy and
-report schema, atomically admit the C3 threshold row, rebuild the later
-candidate, and run verify-mode HIL against those different candidate bytes.
+thresholds. It is not inserted into the historical schema-2 three-profile
+policy, does not mutate historical evidence, and is not final-candidate
+verification. ADR-0033 supplies the successor contract: one controlled
+five-profile baseline atomically creates the schema-3 policy, after which the
+final v0.6.0 candidate is rebuilt and this C3 profile reruns verify-mode HIL on
+those different, hash-locked bytes.
 
 ## C3-G5 — Real app HIL on both platforms (FROZEN)
 
@@ -246,21 +250,18 @@ Only one candidate with C3-G0 through C3-G6 all passing may be described as
 mixed-candidate, or partly manual results retain `pending`/`failed`; a source
 build is never promoted to HIL evidence.
 
-Even a complete engineering result MUST NOT:
+ADR-0033 is the separate spec-first public-admission decision anticipated by
+ADR-0032. It does not waive or pre-pass this matrix. C3 may enter the v0.6.0
+qualified public selector only when all of the following bind the same final
+candidate: C3-G0…C3-G6; the schema-3 resource row; both iPad and Android app
+HIL; erased Web Serial install and interrupted-flash recovery; full build,
+license, and two-root reproducibility gates; `PYBLE_HIL_RECORDS_V5`
+finalization; and explicit release approval. Its V5 C3 summary is `null` in
+the candidate and may become `passed` only when the finalizer derives it from
+validated private evidence.
 
-- alter the current `esp32-4mb`, `esp32-s3-n16r8`, and
-  `waveshare-esp32-s3-lcd-147b` pre-v1 policy/report set;
-- add `esp32-c3-4mb` bytes, a selector, manifest, compatibility statement, or
-  recovery record to the public website/installer;
-- change README, CHANGELOG, store copy, announcements, or the supported-target
-  matrix; or
-- create/tag a firmware release.
-
-Public admission remains a later, separate spec-first change requiring a new
-SemVer candidate, an atomically extended resource policy and HIL schema,
-candidate-bound verification of every admitted profile, full build/license/
-reproducibility checks, destructive browser install and interrupted-recovery
-evidence, release finalization, and explicit approval. Until that completes,
-the authoritative status remains **unavailable; no public C3 image**.
+Until that completes, the authoritative status remains **pending; no
+qualified public C3 image**. The historical v0.4.2 and v0.5.1 contracts remain
+unchanged, and no partial C3 result may mutate or reinterpret them.
 
 <!-- SPDX-License-Identifier: MIT -->
