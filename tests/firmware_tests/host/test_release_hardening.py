@@ -39,7 +39,17 @@ OVERLAYS = REPO_ROOT / "firmware" / "board_overlays"
 RELEASE = bundle_fixture.RELEASE
 HAVE_RELEASE = RELEASE is not None
 RELEASE_LOAD_ERROR = bundle_fixture.RELEASE_LOAD_ERROR
-TARGETS = ("esp32", "esp32-s3", "esp32-c3")
+TARGETS = (
+    "esp32",
+    "esp32-s3",
+    "waveshare-esp32-s3-lcd-147b",
+    "esp32-c3",
+)
+FORTY_MHZ_TARGETS = (
+    "esp32-s3",
+    "waveshare-esp32-s3-lcd-147b",
+    "esp32-c3",
+)
 MICROPYTHON_ORIGIN = "https://github.com/micropython/micropython"
 BUILD_PROVENANCE_KEYS = {
     "schema_version",
@@ -364,7 +374,7 @@ class BuildAllSourceFreezeTests(unittest.TestCase):
         finally:
             fixture.cleanup()
 
-    def test_one_head_and_epoch_are_frozen_for_all_three_targets(self):
+    def test_one_head_and_epoch_are_frozen_for_all_four_build_variants(self):
         fixture = BuildAllFixture()
         try:
             completed = fixture.execute()
@@ -1893,8 +1903,8 @@ class CandidateSourceStateTests(unittest.TestCase):
 
 
 class CrystalConfigurationGateTests(unittest.TestCase):
-    def test_s3_and_c3_select_exact_crystal_without_auto_detection(self):
-        for target in ("esp32-s3", "esp32-c3"):
+    def test_s3_variants_and_c3_select_exact_crystal_without_auto_detection(self):
+        for target in FORTY_MHZ_TARGETS:
             with self.subTest(target=target):
                 text = (OVERLAYS / target / "sdkconfig.board").read_text(
                     encoding="utf-8"
@@ -1904,7 +1914,7 @@ class CrystalConfigurationGateTests(unittest.TestCase):
 
     @unittest.skipUnless(HAVE_RELEASE, RELEASE_LOAD_ERROR)
     def test_resolved_auto_xtal_configuration_is_release_blocking(self):
-        for target in ("esp32-s3", "esp32-c3"):
+        for target in FORTY_MHZ_TARGETS:
             with self.subTest(target=target):
                 fixture = bundle_fixture.ReleaseFixture()
                 try:
@@ -1924,13 +1934,13 @@ class CrystalConfigurationGateTests(unittest.TestCase):
                     fixture.cleanup()
 
     @unittest.skipUnless(HAVE_RELEASE, RELEASE_LOAD_ERROR)
-    def test_resolved_s3_and_c3_crystal_is_exactly_40_mhz(self):
+    def test_resolved_s3_variants_and_c3_crystal_is_exactly_40_mhz(self):
         wrong_configs = (
             "CONFIG_XTAL_FREQ_40=y\nCONFIG_XTAL_FREQ=26\n",
             "CONFIG_XTAL_FREQ_26=y\nCONFIG_XTAL_FREQ=26\n",
             "",
         )
-        for target in ("esp32-s3", "esp32-c3"):
+        for target in FORTY_MHZ_TARGETS:
             for config in wrong_configs:
                 with self.subTest(target=target, config=config):
                     fixture = bundle_fixture.ReleaseFixture()

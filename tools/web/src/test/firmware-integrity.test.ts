@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { verifyFirmwareProfile } from "@/lib/firmware-integrity";
 import {
+  createCurrentFirmwareReleaseFixture,
   createFirmwareReleaseFixture,
   firmwareOrigin,
   jsonBytes,
@@ -20,8 +21,8 @@ interface FetchOverrides {
   responseUrls?: ReadonlyMap<string, string>;
 }
 
-function relativeArtifactPath(pathname: string) {
-  const prefix = "/firmware/v0.4.2/";
+function relativeArtifactPath(pathname: string, version: string) {
+  const prefix = `/firmware/v${version}/`;
   return pathname.startsWith(prefix)
     ? pathname.slice(prefix.length)
     : undefined;
@@ -44,7 +45,10 @@ function mockFetch(
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     void init;
     const requestedUrl = new URL(inputUrl(input), firmwareOrigin);
-    const relativePath = relativeArtifactPath(requestedUrl.pathname);
+    const relativePath = relativeArtifactPath(
+      requestedUrl.pathname,
+      fixture.descriptor.version,
+    );
     const bytes = relativePath ? fixture.files.get(relativePath) : undefined;
     const response = new Response(bytes?.slice().buffer ?? "not found", {
       status: bytes ? 200 : 404,
@@ -97,6 +101,44 @@ function selectedBuild(manifest: TestManifest) {
 }
 
 describe("firmware integrity verifier", () => {
+  it("verifies the separate prospective v0.5.1 profile without aliasing generic S3 bytes", async () => {
+    const current = createCurrentFirmwareReleaseFixture({
+      deployment: "candidate",
+      accessControlled: true,
+      hilStatus: "pending",
+    });
+    const fixture = current as unknown as FirmwareReleaseFixture;
+    const fetcher = mockFetch(fixture);
+
+    await expect(
+      verifyFirmwareProfile({
+        descriptor: current.descriptor as unknown as Parameters<
+          typeof verifyFirmwareProfile
+        >[0]["descriptor"],
+        fetcher,
+        origin: firmwareOrigin,
+        profileId: "waveshare-esp32-s3-lcd-147b" as Parameters<
+          typeof verifyFirmwareProfile
+        >[0]["profileId"],
+        subtle: webcrypto.subtle as unknown as SubtleCrypto,
+      }),
+    ).resolves.toEqual({
+      chipFamily: "ESP32-S3",
+      firmwarePath: "/firmware/v0.5.1/waveshare-esp32-s3-lcd-147b/firmware.bin",
+      manifestBuildCount: 1,
+      manifestPath:
+        "/firmware/v0.5.1/waveshare-esp32-s3-lcd-147b/manifest.json",
+      profileId: "waveshare-esp32-s3-lcd-147b",
+      version: "0.5.1",
+    });
+    expect(current.descriptor.profiles[2].firmwarePath).not.toBe(
+      current.descriptor.profiles[1].firmwarePath,
+    );
+    expect(current.firmwareBytes).not.toEqual(
+      current.files.get("esp32-s3-n16r8/firmware.bin"),
+    );
+  });
+
   it("verifies the exact public release root, schema, selected manifest, and merged image only", async () => {
     const fixture = createFirmwareReleaseFixture();
     const fetcher = mockFetch(fixture);

@@ -15,7 +15,7 @@ code (PRD §1B.7). These drivers are that demo, made repeatable.
 | `_pble_wire.py` | Pure-Python PBLE/1 codec (§3.1 frame + §3.2 fragmentation + IEEE CRC-32) + the frozen §4 opcode / §8 status numbers. **No dependencies.** Cross-checked byte-for-byte against the shared corpus by `host/conformance/test_hil_wire.py` (host-runnable, no hardware) — the harness can never drift from the firmware↔Dart wire. |
 | `_pble_central.py` | Minimal PBLE/1 BLE central over `bleak`: filtered scan/connect, conservative pre-HELLO fragmentation, optional real backend-MTU evidence, TX-notify reassembly, RSP correlation, and transfer-scoped ACK/event cursors. An unknown backend MTU remains unknown; it is never replaced with 247 as evidence. |
 | `_pble_bench.py` | Shared frozen OI-1 operations: strict caps, SHA-256-counter payloads, ESP partition/build arithmetic, reset timing, RUN heap probe, exact PUT/GET timers, offset/byte/CRC verification, retransmit accounting, reliability workload, threshold derivation, and canonical JSON. |
-| `oi1_profile_bench.py` | Single-profile OI-1 orchestrator. `baseline` emits one canonical redacted profile fragment; `verify` loads the committed policy, evaluates all nine thresholds, and emits the exact completed `oi1_observation`. It accepts only `esp32-4mb` or `esp32-s3-n16r8`. |
+| `oi1_profile_bench.py` | Single-profile OI-1 orchestrator. `baseline` emits one canonical redacted profile fragment; `verify` loads the committed policy, evaluates all nine thresholds, and emits the exact completed `oi1_observation`. It accepts the three public profiles: `esp32-4mb`, lean `esp32-s3-n16r8`, and exact-board `waveshare-esp32-s3-lcd-147b`. |
 | `f11_reliability_bench.py` | **F-11** multi-file reliability bench: performs mandatory HELLO, uses the board-advertised `window` and `chunk` (current reference `W=8`), uploads N files back-to-back, asserts every file's whole-file CRC (`FILE_PUT_END`) **and** an independent `FILE_STAT` re-verify, and reports a throughput baseline. |
 | `file_roundtrip_bench.py` | Upload/download regression bench for the reported 11.9 KiB stall: consumes HELLO caps, supports an exact canonical `--expect-chip`, and now requires contiguous unique GET offsets plus exact bytes/size/CRC. |
 
@@ -26,8 +26,9 @@ python3 -m pip install bleak pyserial
 ```
 
 Plus a board flashed with the exact firmware candidate under test. The current
-pre-v1 public release requires the complete operator HIL matrix for both
-included exact profiles (`esp32-4mb` and `esp32-s3-n16r8`).
+pre-v1 public release requires the complete operator HIL matrix for all three
+included exact profiles (`esp32-4mb`, `esp32-s3-n16r8`, and
+`waveshare-esp32-s3-lcd-147b`).
 `esp32-c3-4mb` remains unavailable and is not part of this matrix until a later
 candidate is exercised on matching real hardware. Neither a serial-port name
 nor a chip family alone proves the required flash/PSRAM profile.
@@ -47,16 +48,26 @@ The orchestrator always runs the frozen workload:
   discovery timeout, then HELLO and one GC/internal-IDF heap probe each;
 - HELLO `mtu=247`, `window=8`, `chunk=229`, with a real backend MTU required to
   agree when the backend exposes one;
+- after each of the first nine disconnects, wait at most 2,000 ms for exactly
+  one parser-owned session-end line, discard every private UART byte and the
+  terminal count, and clear residual state; missing or duplicate termination
+  fails closed; before the tenth reset, clear the private UART input buffer;
+  after that connection's HELLO, wait at most 5,000 ms for strict DLE,
+  profile-specific PHY, and connection-interval settlement facts before any
+  timed transfer;
 - five deterministic 65,536-byte PUT/GET round trips with exact nanosecond
   timer boundaries, strict offsets/bytes/size/CRC, then one heap probe each;
 - a separate 20 × 16,384-byte byte-verified reliability run and final heap
-  probe; and
+  probe, followed by BLE disconnect and at most 2,000 ms for the same session's
+  report-only TX-mbuf starvation count; and
 - one interactive physical power-cycle advertising check.
 
 It creates the raw log with exclusive-create semantics. Use a new,
 access-controlled path for every attempt; the log deliberately excludes the
 BLE address, serial path, device ID, and personal label. The output is written
 atomically as sorted, two-space-indented UTF-8 JSON with one final LF.
+Only parser-owned structured link facts are retained from UART; arbitrary
+console lines are discarded rather than copied into evidence.
 
 Before the first policy exists, stage the exact measurement inputs from two
 fresh clean build roots:
@@ -68,11 +79,13 @@ python3 ../../../firmware/scripts/release_bundle.py \
   --repo-root ../../..
 ```
 
-This validates all three maintained ESP32 build targets and both retained
-source trees, but emits only `esp32-4mb` and `esp32-s3-n16r8`. Use each
-profile's staged `firmware.bin`, `manifest.json`, `application.bin`, and
-`partition-table.bin` as the one immutable input set for the baseline run.
-The output is deliberately not a candidate or website artifact.
+This validates all four maintained build variants over the three ESP-IDF chip
+targets and both retained source trees. It emits `esp32-4mb`, lean
+`esp32-s3-n16r8`, and exact-board `waveshare-esp32-s3-lcd-147b`; the deferred
+C3 image remains a mandatory build/audit input but is not emitted. Use each
+public profile's staged `firmware.bin`, `manifest.json`, `application.bin`, and
+`partition-table.bin` as the one immutable input set for the baseline run. The
+output is deliberately not a candidate or website artifact.
 
 Example baseline for the classic 4 MB profile:
 
@@ -107,10 +120,27 @@ For the owned N16R8 S3, change the identity arguments to:
 --device-psram-capacity-bytes 8388608
 ```
 
+For the owned Waveshare board, select its distinct image and identity; its
+PBLE/1 chip identity remains the underlying `esp32-s3`:
+
+```text
+--profile waveshare-esp32-s3-lcd-147b
+--expect-chip esp32-s3
+--device-flash-capacity-bytes 16777216
+--device-psram-capacity-bytes 8388608
+```
+
+Never substitute the exact-board image for generic S3 qualification. Only the
+Waveshare image contains the TFT driver, board companion, boot splash, QR code,
+and exact pin map; the generic S3 image must remain free of all of them.
+
 Baseline output is deliberately one **profile fragment**, not a release
-approval and not a malformed one-profile substitute for the frozen
-two-profile baseline envelope. Retain both successful fragments, then assemble
-the envelope and policy without hand-editing JSON:
+approval. The immutable `v0.4.2` evidence remains frozen as its historical
+two-profile envelope and must not be broadened or reinterpreted. For the
+prospective `v0.5.1` source candidate, one fragment is not a substitute for the
+required fresh three-profile envelope. Retain all three successful
+current-source fragments, then assemble the envelope and policy without
+hand-editing JSON:
 
 ```sh
 python3 ../../../firmware/scripts/release_bundle.py \
@@ -118,17 +148,19 @@ python3 ../../../firmware/scripts/release_bundle.py \
   <private>/oi1-inputs \
   <private>/esp32-4mb-baseline-profile.json \
   <private>/esp32-s3-n16r8-baseline-profile.json \
+  <private>/waveshare-esp32-s3-lcd-147b-baseline-profile.json \
   --repo-root ../../.. \
   --created-at 2026-08-01T00:00:00Z
 ```
 
 The helper obtains the common source commit and firmware version from the
-clean proof checkout, binds both fragments to the staged bytes, creates the
+clean proof checkout, binds all three fragments to the staged bytes, creates the
 canonical commit-scoped evidence file, and atomically updates
 `firmware/qualification/oi1-gates.json` with mechanically derived thresholds.
 Review and commit both generated files together. The individual bench command
 also prints its derived thresholds for review; neither fragment nor assembled
-baseline is release approval.
+baseline is release approval, and neither claims that `v0.5.1` has completed
+exact-byte HIL qualification or is ready for publication.
 
 After that policy exists, run the exact final candidate in verify mode:
 

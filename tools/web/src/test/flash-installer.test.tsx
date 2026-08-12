@@ -17,16 +17,19 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { FlashStatus } from "@/components/flash-status";
+import type {
+  FirmwareProfileId,
+  FirmwareReleaseDescriptor,
+} from "@/lib/firmware-release";
 import {
-  type FirmwareReleaseDescriptor,
+  currentPendingCandidateFirmwareRelease,
+  currentPendingPublicFirmwareRelease,
+  currentUncontrolledCandidateFirmwareRelease,
   firmwareProfiles,
+  hypotheticalPassedPublicFirmwareRelease,
   installerConsents,
-  passedPublicFirmwareRelease,
-  pendingCandidateFirmwareRelease,
   pendingPublicFirmwareRelease,
   publicBetaFirmwareRelease,
-  type FirmwareProfileId,
-  uncontrolledCandidateFirmwareRelease,
   verifiedProfile,
 } from "@/test/fixtures/firmware-release";
 
@@ -71,7 +74,7 @@ const supportedCapabilities: BrowserCapabilities = {
 function renderInstaller(overrides: Partial<FlashStatusContractProps> = {}) {
   const verifyProfile = vi.fn(
     async (_release: FirmwareReleaseDescriptor, profileId: FirmwareProfileId) =>
-      verifiedProfile(profileId),
+      verifiedProfileForRelease(_release, profileId),
   );
   const loadInstaller = vi.fn(async () => undefined);
   const installArtifactFetch = vi.fn(() => () => undefined);
@@ -81,7 +84,7 @@ function renderInstaller(overrides: Partial<FlashStatusContractProps> = {}) {
       capabilities={supportedCapabilities}
       installArtifactFetch={installArtifactFetch}
       loadInstaller={loadInstaller}
-      release={passedPublicFirmwareRelease}
+      release={hypotheticalPassedPublicFirmwareRelease}
       verifyProfile={verifyProfile}
       {...overrides}
     />,
@@ -95,11 +98,31 @@ function renderInstaller(overrides: Partial<FlashStatusContractProps> = {}) {
   };
 }
 
+function verifiedProfileForRelease(
+  release: FirmwareReleaseDescriptor,
+  profileId: FirmwareProfileId,
+): VerifiedProfile {
+  const profile = release.profiles.find(({ id }) => id === profileId);
+  if (!profile) {
+    throw new Error(`Unknown test profile: ${profileId}`);
+  }
+  return {
+    profileId,
+    chipFamily: profile.chipFamily,
+    manifestPath: profile.manifestPath,
+    manifestBuildCount: 1,
+    firmwarePath: profile.firmwarePath,
+    version: release.version,
+  };
+}
+
 function releaseAtVersion(
   version: string,
   builtAt: string,
 ): FirmwareReleaseDescriptor {
-  const release = structuredClone(passedPublicFirmwareRelease) as unknown as {
+  const release = structuredClone(
+    hypotheticalPassedPublicFirmwareRelease,
+  ) as unknown as {
     version: string;
     builtAt: string;
     releaseJson: { path: string; sha256: string };
@@ -114,11 +137,11 @@ function releaseAtVersion(
   release.recoveryPath = `/firmware/v${version}/RECOVERY.md`;
   for (const profile of release.profiles) {
     profile.manifestPath = profile.manifestPath.replace(
-      "/firmware/v0.4.2/",
+      "/firmware/v0.5.1/",
       `/firmware/v${version}/`,
     );
     profile.firmwarePath = profile.firmwarePath.replace(
-      "/firmware/v0.4.2/",
+      "/firmware/v0.5.1/",
       `/firmware/v${version}/`,
     );
   }
@@ -158,8 +181,8 @@ function withDeferredC3(
     id: "esp32-c3-4mb",
     label: "ESP32-C3 revision v0.3+ · 4 MiB flash",
     chipFamily: "ESP32-C3",
-    manifestPath: "/firmware/v0.4.2/esp32-c3-4mb/manifest.json",
-    firmwarePath: "/firmware/v0.4.2/esp32-c3-4mb/firmware.bin",
+    manifestPath: `/firmware/v${release.version}/esp32-c3-4mb/manifest.json`,
+    firmwarePath: `/firmware/v${release.version}/esp32-c3-4mb/firmware.bin`,
     offset: 0,
   });
   malformed.profiles.push(deferred);
@@ -192,7 +215,7 @@ describe("browser firmware installer states", () => {
     vi.stubGlobal("navigator", undefined);
 
     const html = renderToStaticMarkup(
-      <InstallerUnderTest release={passedPublicFirmwareRelease} />,
+      <InstallerUnderTest release={hypotheticalPassedPublicFirmwareRelease} />,
     );
 
     expect(html).toMatch(/checking browser support/i);
@@ -205,7 +228,7 @@ describe("browser firmware installer states", () => {
     render(<InstallerUnderTest capabilities={supportedCapabilities} />);
 
     expect(screen.getByRole("status")).toHaveTextContent(
-      /installer unavailable.*hardware validation.*both exact current release profiles/i,
+      /installer unavailable.*hardware validation.*all three prospective v0\.5\.1 profiles/i,
     );
     expect(
       screen.getByRole("button", { name: /installer coming soon/i }),
@@ -220,7 +243,7 @@ describe("browser firmware installer states", () => {
 
   it("rejects pending HIL metadata in a public release selection", () => {
     const { verifyProfile } = renderInstaller({
-      release: pendingPublicFirmwareRelease,
+      release: currentPendingPublicFirmwareRelease,
     });
 
     expect(screen.getByRole("status")).toHaveTextContent(
@@ -237,7 +260,7 @@ describe("browser firmware installer states", () => {
 
   it("rejects candidate mode unless its build is explicitly access-controlled", () => {
     const { verifyProfile } = renderInstaller({
-      release: uncontrolledCandidateFirmwareRelease,
+      release: currentUncontrolledCandidateFirmwareRelease,
     });
 
     expect(screen.getByRole("status")).toHaveTextContent(
@@ -276,11 +299,11 @@ describe("browser firmware installer states", () => {
   it.each([
     {
       name: "public",
-      release: withDeferredC3(passedPublicFirmwareRelease),
+      release: withDeferredC3(hypotheticalPassedPublicFirmwareRelease),
     },
     {
       name: "candidate",
-      release: withDeferredC3(pendingCandidateFirmwareRelease),
+      release: withDeferredC3(currentPendingCandidateFirmwareRelease),
     },
   ])(
     "fails closed when a $name descriptor includes the deferred C3 profile",
@@ -301,7 +324,7 @@ describe("browser firmware installer states", () => {
   );
 
   it("permits pending HIL only in an explicitly selected access-controlled candidate build", () => {
-    renderInstaller({ release: pendingCandidateFirmwareRelease });
+    renderInstaller({ release: currentPendingCandidateFirmwareRelease });
 
     expect(screen.getByRole("status")).toHaveTextContent(
       /protected release candidate.*hardware validation is pending/i,
@@ -351,13 +374,13 @@ describe("browser firmware installer states", () => {
     ).toBeInTheDocument();
   });
 
-  it("starts disabled with exactly both qualified profiles and keeps deferred C3 out of the selector", () => {
+  it("models a future qualified v0.5.1 selector with exactly three profiles and no deferred C3", () => {
     renderInstaller();
 
     const profileGroup = screen.getByRole("radiogroup", {
       name: /select the exact module profile/i,
     });
-    expect(within(profileGroup).getAllByRole("radio")).toHaveLength(2);
+    expect(within(profileGroup).getAllByRole("radio")).toHaveLength(3);
     expect(
       within(profileGroup).getByRole("radio", {
         name: /^esp32-4mb.*4 mib flash.*no psram required$/i,
@@ -365,7 +388,12 @@ describe("browser firmware installer states", () => {
     ).toBeInTheDocument();
     expect(
       within(profileGroup).getByRole("radio", {
-        name: /esp32-s3.*n16r8.*16 mib flash.*8 mib octal psram/i,
+        name: /esp32-s3-n16r8.*16 mib flash.*8 mib octal psram.*lean generic.*no tft.*no splash/i,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(profileGroup).getByRole("radio", {
+        name: /waveshare-esp32-s3-lcd-147b.*exact b-version board.*16 mib flash.*8 mib octal psram/i,
       }),
     ).toBeInTheDocument();
     expect(
@@ -376,7 +404,57 @@ describe("browser firmware installer states", () => {
     expect(
       screen.getByText(/not for every esp32-s3 board/i),
     ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /exact ESP32-S3-LCD-1\.47B B-version.*family detection.*do not identify/i,
+      ),
+    ).toBeInTheDocument();
     expect(document.querySelector("esp-web-install-button")).toBeNull();
+  });
+
+  it("keeps the lean generic S3 and future-qualified Waveshare actions separate", async () => {
+    const release = releaseAtVersion("0.5.1", "2026-08-02T00:00:00Z");
+    const verifyProfile = vi.fn(
+      async (
+        selectedRelease: FirmwareReleaseDescriptor,
+        profileId: FirmwareProfileId,
+      ) => verifiedProfileForRelease(selectedRelease, profileId),
+    );
+    renderInstaller({ release, verifyProfile });
+
+    const profileGroup = screen.getByRole("radiogroup", {
+      name: /select the exact module profile/i,
+    });
+    expect(within(profileGroup).getAllByRole("radio")).toHaveLength(3);
+    const generic = within(profileGroup).getByRole("radio", {
+      name: /esp32-s3-n16r8.*lean generic.*no tft.*no splash/i,
+    });
+    expect(generic).toHaveAttribute("value", "esp32-s3-n16r8");
+    const waveshare = within(profileGroup).getByRole("radio", {
+      name: /waveshare-esp32-s3-lcd-147b.*exact b-version board.*16 mib flash.*8 mib octal psram.*st7789.*fresh-install splash/i,
+    });
+    expect(waveshare).toHaveAttribute("value", "waveshare-esp32-s3-lcd-147b");
+    fireEvent.click(waveshare);
+    acceptEveryConsent();
+    const verifyButton = screen.getByRole("button", {
+      name: /verify firmware for waveshare esp32-s3-lcd-1\.47b/i,
+    });
+    expect(verifyButton).toBeDisabled();
+    fireEvent.click(
+      screen.getByRole("checkbox", {
+        name: /exact esp32-s3-lcd-1\.47b b-version.*16 mib flash.*8 mib octal psram/i,
+      }),
+    );
+    expect(verifyButton).toBeEnabled();
+    fireEvent.click(verifyButton);
+
+    await waitFor(() => {
+      expect(verifyProfile).toHaveBeenCalledWith(
+        release,
+        "waveshare-esp32-s3-lcd-147b",
+      );
+    });
+    expect(generic).not.toBeChecked();
   });
 
   it.each([
@@ -455,7 +533,7 @@ describe("browser firmware installer states", () => {
       /verifying firmware/i,
     );
     expect(verifyProfile).toHaveBeenCalledWith(
-      passedPublicFirmwareRelease,
+      hypotheticalPassedPublicFirmwareRelease,
       "esp32-s3-n16r8",
     );
     expect(loadInstaller).not.toHaveBeenCalled();
@@ -512,36 +590,39 @@ describe("browser firmware installer states", () => {
       "esp-web-install-button",
     ) as HTMLElement;
     expect(verifyProfile).toHaveBeenCalledWith(
-      passedPublicFirmwareRelease,
+      hypotheticalPassedPublicFirmwareRelease,
       "esp32-s3-n16r8",
     );
     expect(loadInstaller).toHaveBeenCalledOnce();
     expect(installArtifactFetch).toHaveBeenCalledWith(
-      verifiedProfile("esp32-s3-n16r8"),
-      passedPublicFirmwareRelease.releaseJson.sha256,
+      verifiedProfileForRelease(
+        hypotheticalPassedPublicFirmwareRelease,
+        "esp32-s3-n16r8",
+      ),
+      hypotheticalPassedPublicFirmwareRelease.releaseJson.sha256,
     );
     expect(installElement).toHaveAttribute(
       "manifest",
-      "/firmware/v0.4.2/esp32-s3-n16r8/manifest.json",
+      "/firmware/v0.5.1/esp32-s3-n16r8/manifest.json",
     );
     expect(installElement).not.toHaveAttribute(
       "manifest",
-      "/firmware/v0.4.2/manifest.json",
+      "/firmware/v0.5.1/manifest.json",
     );
     expect(
       within(installElement).getByRole("button", {
-        name: /install pyble 0\.4\.2/i,
+        name: /install pyble 0\.5\.1/i,
       }),
     ).toHaveAttribute("slot", "activate");
     expect(screen.getByText(/artifacts verified/i)).toBeInTheDocument();
     expect(screen.getAllByText(/esp32-s3-n16r8/i).length).toBeGreaterThan(0);
-    expect(screen.getByText(/july 30, 2026/i)).toBeInTheDocument();
+    expect(screen.getByText(/august 3, 2026/i)).toBeInTheDocument();
     expect(
       screen.getAllByText(/installation erases the device/i).length,
     ).toBeGreaterThan(0);
     expect(
-      screen.getByRole("link", { name: /version 0\.4\.2 recovery/i }),
-    ).toHaveAttribute("href", "/firmware/v0.4.2/RECOVERY.md");
+      screen.getByRole("link", { name: /version 0\.5\.1 recovery/i }),
+    ).toHaveAttribute("href", "/firmware/v0.5.1/RECOVERY.md");
   });
 
   it("removes prior qualification when the selected profile changes", async () => {
@@ -574,7 +655,7 @@ describe("browser firmware installer states", () => {
       expect(document.querySelector("esp-web-install-button")).not.toBeNull();
     });
 
-    const replacement = releaseAtVersion("0.5.0", "2026-07-30T12:00:00Z");
+    const replacement = releaseAtVersion("0.5.1", "2026-07-30T12:00:00Z");
     rendered.rerender(
       <InstallerUnderTest
         capabilities={supportedCapabilities}
@@ -614,7 +695,7 @@ describe("browser firmware installer states", () => {
       <InstallerUnderTest
         capabilities={supportedCapabilities}
         loadInstaller={loadInstaller}
-        release={releaseAtVersion("0.5.0", "2026-07-30T12:00:00Z")}
+        release={releaseAtVersion("0.5.1", "2026-07-30T12:00:00Z")}
         verifyProfile={verifyProfile}
       />,
     );
@@ -681,13 +762,13 @@ describe("browser firmware installer states", () => {
         manifestPath: "/firmware/v0.4.2/esp32-s3-n16r8/manifest.json",
       },
     ]);
-    expect(passedPublicFirmwareRelease.releaseJson.path).toBe(
+    expect(publicBetaFirmwareRelease.releaseJson.path).toBe(
       "/firmware/v0.4.2/release.json",
     );
-    expect(JSON.stringify(passedPublicFirmwareRelease)).not.toContain(
+    expect(JSON.stringify(publicBetaFirmwareRelease)).not.toContain(
       "esp32-c3-4mb",
     );
-    expect(passedPublicFirmwareRelease.releaseJson.sha256).toMatch(
+    expect(publicBetaFirmwareRelease.releaseJson.sha256).toMatch(
       /^[0-9a-f]{64}$/,
     );
   });

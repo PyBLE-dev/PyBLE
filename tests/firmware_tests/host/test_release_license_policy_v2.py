@@ -145,6 +145,21 @@ class PolicyV2Fixture:
         self.notices = self.licenses / "notices"
         self.texts.mkdir(parents=True)
         self.notices.mkdir(parents=True)
+        (self.repo / "firmware" / "versions.lock").write_text(
+            """[micropython]
+repo = "https://github.com/micropython/micropython"
+ref = "v1.28.0"
+commit = "2222222222222222222222222222222222222222"
+[esp_idf]
+repo = "https://github.com/espressif/esp-idf"
+ref = "v5.5.1"
+commit = "3333333333333333333333333333333333333333"
+[pyble]
+agent_version = "0.5.0"
+protocol_version = "PBLE/1"
+""",
+            encoding="utf-8",
+        )
         self._write_reviewed_texts()
         self.neopixel_tree = (
             self.repo
@@ -202,6 +217,28 @@ class PolicyV2Fixture:
         core_source = self.repo / "firmware" / "components" / "core" / "core.c"
         core_source.parent.mkdir(parents=True)
         core_source.write_bytes(b"synthetic core source\n")
+        canonical_tft = (
+            self.repo / "firmware" / "python_modules" / "pyble_st7789.py"
+        )
+        canonical_tft.parent.mkdir(parents=True)
+        canonical_tft.write_text(
+            "# SPDX-License-Identifier: MIT\n"
+            "# Synthetic first-party PyBLE ST7789 fixture.\n",
+            encoding="utf-8",
+        )
+        canonical_companion = (
+            self.repo
+            / "firmware"
+            / "board_overlays"
+            / "waveshare-esp32-s3-lcd-147b"
+            / "pyble_waveshare_lcd147b.py"
+        )
+        canonical_companion.parent.mkdir(parents=True)
+        canonical_companion.write_text(
+            "# SPDX-License-Identifier: MIT\n"
+            "# Synthetic first-party PyBLE Waveshare LCD fixture.\n",
+            encoding="utf-8",
+        )
         self.neopixel_tree.mkdir(parents=True)
         (self.neopixel_tree / "manifest.py").write_text(
             'metadata(version="0.1.0")\nmodule("neopixel.py")\n',
@@ -254,6 +291,18 @@ class PolicyV2Fixture:
             }
             for relative in generator_relatives
         ]
+        canonical_tft = (
+            self.repo / "firmware" / "python_modules" / "pyble_st7789.py"
+        )
+        canonical_companion = (
+            self.repo
+            / "firmware"
+            / "board_overlays"
+            / "waveshare-esp32-s3-lcd-147b"
+            / "pyble_waveshare_lcd147b.py"
+        )
+        generated_tft = None
+        generated_companion = None
         for target, settings in RELEASE.FROZEN_TARGET_SETTINGS.items():
             copied_manifest = (
                 self.repo
@@ -268,65 +317,157 @@ class PolicyV2Fixture:
             )
             copied_manifest.parent.mkdir(parents=True, exist_ok=True)
             copied_manifest.write_bytes(manifest.read_bytes())
-        return [
-            {
-                "target": target,
-                "architecture": RELEASE.FROZEN_TARGET_SETTINGS[target][
-                    "architecture"
-                ],
-                "frozen_content_sha256": sha256_bytes(
-                    ("synthetic frozen content/%s" % target).encode()
-                ),
-                "qstrdefs_sha256": sha256_bytes(
-                    ("synthetic qstr/%s" % target).encode()
-                ),
-                "mpy_cross": {
-                    "path": mpy_cross_relative,
-                    "sha256": BASE.sha256_path(mpy_cross),
-                },
-                "generator_tools": copy.deepcopy(generators),
-                "frozen_mpy": [
-                    {
-                        "destination": "neopixel.mpy",
-                        "sha256": sha256_bytes(
-                            ("synthetic neopixel mpy/%s" % target).encode()
-                        ),
-                    }
-                ],
-                "linked_frozen_object": {
-                    "component": "main",
-                    "archive_path": "%s/esp-idf/main/libmain.a" % target,
-                    "member": "frozen_content.c.obj",
+            if target == "waveshare-esp32-s3-lcd-147b":
+                generated_tft = copied_manifest.parent / "pyble_st7789.py"
+                generated_tft.write_bytes(canonical_tft.read_bytes())
+                generated_companion = (
+                    copied_manifest.parent / "pyble_waveshare_lcd147b.py"
+                )
+                generated_companion.write_bytes(
+                    canonical_companion.read_bytes()
+                )
+
+        records = []
+        for target in sorted(
+            target
+            for _profile_id, target, _idf_target in RELEASE.LICENSE_AUDIT_PROFILES
+        ):
+            selections = [
+                {
+                    "destination": "neopixel.py",
+                    "source_path": source.relative_to(self.repo).as_posix(),
+                    "sha256": BASE.sha256_path(source),
+                    "optimization": 3,
+                    "metadata_version": "0.1.0",
+                }
+            ]
+            frozen_mpy = [
+                {
+                    "destination": "neopixel.mpy",
                     "sha256": sha256_bytes(
-                        ("synthetic frozen object/%s" % target).encode()
+                        ("synthetic neopixel mpy/%s" % target).encode()
                     ),
-                },
-                "generated_board_manifest": (
-                    "firmware/upstream/micropython/ports/esp32/boards/%s/"
-                    "manifest.py"
-                    % RELEASE.FROZEN_TARGET_SETTINGS[target]["board"]
-                ),
-                "manifests": [
-                    {
-                        "path": manifest.relative_to(self.repo).as_posix(),
-                        "sha256": BASE.sha256_path(manifest),
-                    }
-                ],
-                "selections": [
-                    {
-                        "destination": "neopixel.py",
-                        "source_path": source.relative_to(self.repo).as_posix(),
-                        "sha256": BASE.sha256_path(source),
-                        "optimization": 3,
-                        "metadata_version": "0.1.0",
-                    }
-                ],
-            }
-            for target in sorted(
-                target
-                for _profile_id, target, _idf_target in RELEASE.LICENSE_AUDIT_PROFILES
+                }
+            ]
+            first_party = []
+            if target == "waveshare-esp32-s3-lcd-147b":
+                selections.extend(
+                    [
+                        {
+                            "destination": "pyble_st7789.py",
+                            "source_path": canonical_tft.relative_to(
+                                self.repo
+                            ).as_posix(),
+                            "sha256": BASE.sha256_path(canonical_tft),
+                            "optimization": 3,
+                            "metadata_version": None,
+                        },
+                        {
+                            "destination": "pyble_waveshare_lcd147b.py",
+                            "source_path": canonical_companion.relative_to(
+                                self.repo
+                            ).as_posix(),
+                            "sha256": BASE.sha256_path(
+                                canonical_companion
+                            ),
+                            "optimization": 3,
+                            "metadata_version": None,
+                        },
+                    ]
+                )
+                frozen_mpy.extend(
+                    [
+                        {
+                            "destination": "pyble_st7789.mpy",
+                            "sha256": sha256_bytes(
+                                b"synthetic pyble_st7789 mpy/"
+                                b"waveshare-esp32-s3-lcd-147b"
+                            ),
+                        },
+                        {
+                            "destination": "pyble_waveshare_lcd147b.mpy",
+                            "sha256": sha256_bytes(
+                                b"synthetic pyble_waveshare_lcd147b mpy/"
+                                b"waveshare-esp32-s3-lcd-147b"
+                            ),
+                        },
+                    ]
+                )
+                first_party.extend(
+                    [
+                        {
+                            "destination": "pyble_st7789.py",
+                            "canonical_path": canonical_tft.relative_to(
+                                self.repo
+                            ).as_posix(),
+                            "generated_path": generated_tft.relative_to(
+                                self.repo
+                            ).as_posix(),
+                            "sha256": BASE.sha256_path(canonical_tft),
+                            "spdx_expression": "MIT",
+                        },
+                        {
+                            "destination": "pyble_waveshare_lcd147b.py",
+                            "canonical_path": canonical_companion.relative_to(
+                                self.repo
+                            ).as_posix(),
+                            "generated_path": (
+                                generated_companion.relative_to(
+                                    self.repo
+                                ).as_posix()
+                            ),
+                            "sha256": BASE.sha256_path(
+                                canonical_companion
+                            ),
+                            "spdx_expression": "MIT",
+                        },
+                    ]
+                )
+            records.append(
+                {
+                    "target": target,
+                    "architecture": RELEASE.FROZEN_TARGET_SETTINGS[target][
+                        "architecture"
+                    ],
+                    "frozen_content_sha256": sha256_bytes(
+                        ("synthetic frozen content/%s" % target).encode()
+                    ),
+                    "qstrdefs_sha256": sha256_bytes(
+                        ("synthetic qstr/%s" % target).encode()
+                    ),
+                    "mpy_cross": {
+                        "path": mpy_cross_relative,
+                        "sha256": BASE.sha256_path(mpy_cross),
+                    },
+                    "generator_tools": copy.deepcopy(generators),
+                    "frozen_mpy": frozen_mpy,
+                    "linked_frozen_object": {
+                        "component": "main",
+                        "archive_path": "%s/esp-idf/main/libmain.a" % target,
+                        "member": "frozen_content.c.obj",
+                        "sha256": sha256_bytes(
+                            ("synthetic frozen object/%s" % target).encode()
+                        ),
+                    },
+                    "generated_board_manifest": (
+                        "firmware/upstream/micropython/ports/esp32/boards/%s/"
+                        "manifest.py"
+                        % RELEASE.FROZEN_TARGET_SETTINGS[target]["board"]
+                    ),
+                    "first_party_frozen_sources": first_party,
+                    "manifests": [
+                        {
+                            "path": manifest.relative_to(self.repo).as_posix(),
+                            "sha256": BASE.sha256_path(manifest),
+                        }
+                    ],
+                    "selections": sorted(
+                        selections,
+                        key=lambda item: item["destination"],
+                    ),
+                }
             )
-        ]
+        return records
 
     def _make_toolchain(self) -> dict:
         root_name = "xtensa-esp-elf-14.2.0_20241119-aarch64-apple-darwin"
@@ -1287,8 +1428,8 @@ class PolicyV2FailClosedTests(unittest.TestCase):
             for item in self.fixture.policy["resolutions"]
             if item["id"] == "resolve-core"
         )
-        self.assertEqual(len(core["package_refs"]), 6)
-        self.assertEqual(len(core["input_refs"]), 6)
+        self.assertEqual(len(core["package_refs"]), len(PROFILE_ROLES))
+        self.assertEqual(len(core["input_refs"]), len(PROFILE_ROLES))
 
         def core_resolution(policy):
             return next(
@@ -1430,11 +1571,11 @@ class PolicyV2FailClosedTests(unittest.TestCase):
         }
         self.assertEqual(
             len(supplementals["supplemental-neopixel"]["input_refs"]),
-            3,
+            len(BASE.PROFILE_TARGETS),
         )
         self.assertEqual(
             len(supplementals["supplemental-mbedtls"]["input_refs"]),
-            9,
+            3 * len(BASE.PROFILE_TARGETS),
         )
 
         for identifier in ("supplemental-neopixel", "supplemental-mbedtls"):

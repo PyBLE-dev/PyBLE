@@ -52,6 +52,7 @@ import shutil
 import struct
 import subprocess
 import tempfile
+import tomllib
 import unittest
 
 
@@ -63,11 +64,16 @@ WEB_RELEASE_SCHEMA = (
     REPO_ROOT / "tools" / "web" / "src" / "lib" / "firmware-release-schema.json"
 )
 HIL_MARKER = re.compile(
-    r"<!--\s*PYBLE_HIL_RECORDS_V2\s*(\{.*?\})\s*-->",
+    r"<!--\s*PYBLE_HIL_RECORDS_V([24])\s*(\{.*?\})\s*-->",
     re.DOTALL,
 )
 
-RELEASE_PROFILE_ORDER = ("esp32-4mb", "esp32-s3-n16r8")
+HISTORICAL_V042_PROFILE_ORDER = ("esp32-4mb", "esp32-s3-n16r8")
+RELEASE_PROFILE_ORDER = (
+    "esp32-4mb",
+    "esp32-s3-n16r8",
+    "waveshare-esp32-s3-lcd-147b",
+)
 QUALIFICATION_POLICY_RELATIVE = "firmware/qualification/oi1-gates.json"
 QUALIFICATION_WORKLOAD = {
     "reset_samples": 10,
@@ -85,12 +91,19 @@ QUALIFICATION_WORKLOAD = {
     "required_put_window": 8,
     "required_chunk_bytes": 229,
 }
-QUALIFICATION_DERIVATION = {
+QUALIFICATION_DERIVATION_V1 = {
     "application_image": "exact-byte-identical-two-root-v1",
     "application_headroom": "factory-minus-application-v1",
     "heap_floor": "floor-min-1024-v1",
     "boot_ceiling": "ceil-max-10-v1",
     "goodput_floor": "floor-min-100-v1",
+}
+QUALIFICATION_DERIVATION = {
+    "application_image": "exact-byte-identical-two-root-v1",
+    "application_headroom": "factory-minus-application-v1",
+    "heap_floor": "floor-min-1024-v1",
+    "boot_ceiling": "fixed-product-slo-3000-v3",
+    "goodput_floor": "floor-95pct-min-100-v2",
 }
 QUALIFICATION_THRESHOLDS = {
     "application_image_max_bytes": 4096,
@@ -107,6 +120,7 @@ ROLE_ORDER = ("bootloader", "partition-table", "application")
 PROFILE_SPECS = {
     "esp32-4mb": {
         "target": "esp32",
+        "idf_target": "esp32",
         "chip_family": "ESP32",
         "chip_id": 0,
         "flash_size": "4MB",
@@ -121,6 +135,26 @@ PROFILE_SPECS = {
     },
     "esp32-s3-n16r8": {
         "target": "esp32-s3",
+        "idf_target": "esp32s3",
+        "chip_family": "ESP32-S3",
+        "chip_id": 9,
+        "flash_size": "16MB",
+        "flash_size_bytes": 16 * 1024 * 1024,
+        "flash_freq": "80m",
+        "frequency_hz": 80_000_000,
+        "header_size_freq": 0x4F,
+        "base_offset": 0,
+        "component_offsets": (0, 0x8000, 0x10000),
+        "psram": {
+            "required": True,
+            "size_bytes": 8 * 1024 * 1024,
+            "type": "octal",
+        },
+        "silicon_revision": {"minimum_full": 0, "maximum_full": 99},
+    },
+    "waveshare-esp32-s3-lcd-147b": {
+        "target": "waveshare-esp32-s3-lcd-147b",
+        "idf_target": "esp32s3",
         "chip_family": "ESP32-S3",
         "chip_id": 9,
         "flash_size": "16MB",
@@ -139,6 +173,7 @@ PROFILE_SPECS = {
     },
     "esp32-c3-4mb": {
         "target": "esp32-c3",
+        "idf_target": "esp32c3",
         "chip_family": "ESP32-C3",
         "chip_id": 5,
         "flash_size": "4MB",
@@ -216,7 +251,7 @@ def fixture_oi1_build(build_root: Path, profile_id: str) -> dict[str, int]:
     application_bytes = (
         build_root / spec["target"] / "micropython.bin"
     ).stat().st_size
-    factory_bytes = 0x200000 if spec["target"] == "esp32-s3" else 0x1F0000
+    factory_bytes = 0x200000 if spec["chip_family"] == "ESP32-S3" else 0x1F0000
     return {
         "application_image_bytes": application_bytes,
         "factory_partition_bytes": factory_bytes,
@@ -227,12 +262,30 @@ def fixture_oi1_build(build_root: Path, profile_id: str) -> dict[str, int]:
 def fixture_oi1_thresholds(
     build: dict[str, int],
     observation: dict,
+    firmware_version: str = "0.5.0",
 ) -> dict[str, int]:
     heap_samples = (
         observation["heap_post_hello"]
         + observation["heap_post_roundtrip"]
         + [observation["heap_post_reliability"]]
     )
+    source_core = RELEASE._firmware_release_core(
+        firmware_version,
+        "fixture firmware version",
+    )
+    reset_max = max(observation["reset_to_service_advertisement_ms"])
+    put_min = min(
+        observation["put_committed_goodput_bytes_per_second"]
+    )
+    get_min = min(
+        observation["get_verified_goodput_bytes_per_second"]
+    )
+    if source_core >= (0, 5, 0):
+        reset_threshold = 3000
+        put_min = (put_min * 95) // 100
+        get_min = (get_min * 95) // 100
+    else:
+        reset_threshold = ((reset_max + 9) // 10) * 10
     return {
         "application_image_max_bytes": build["application_image_bytes"],
         "application_headroom_min_bytes": build["application_headroom_bytes"],
@@ -264,30 +317,13 @@ def fixture_oi1_thresholds(
             // 1024
         )
         * 1024,
-        "reset_to_service_advertisement_max_ms": (
-            (
-                max(observation["reset_to_service_advertisement_ms"])
-                + 9
-            )
-            // 10
-        )
-        * 10,
+        "reset_to_service_advertisement_max_ms": reset_threshold,
         "put_committed_goodput_min_bytes_per_second": (
-            min(
-                observation[
-                    "put_committed_goodput_bytes_per_second"
-                ]
-            )
-            // 100
+            put_min // 100
         )
         * 100,
         "get_verified_goodput_min_bytes_per_second": (
-            min(
-                observation[
-                    "get_verified_goodput_bytes_per_second"
-                ]
-            )
-            // 100
+            get_min // 100
         )
         * 100,
     }
@@ -298,18 +334,41 @@ def install_fixture_qualification_policy(
     build_root: Path | None = None,
 ) -> Path:
     builds = build_root if build_root is not None else repo.parent / "build"
-    baseline_relative = (
-        "docs/validation/firmware/oi1/%s.json" % ("1" * 40)
+    versions = tomllib.loads(
+        (repo / "firmware" / "versions.lock").read_text(encoding="utf-8")
     )
+    fixture_firmware_version = versions["pyble"]["agent_version"]
+    source_core = RELEASE._firmware_release_core(
+        fixture_firmware_version,
+        "fixture firmware version",
+    )
+    profile_order = (
+        HISTORICAL_V042_PROFILE_ORDER
+        if source_core == (0, 4, 2)
+        else RELEASE_PROFILE_ORDER
+    )
+    baseline_prefix = (
+        "docs/validation/firmware/oi1"
+        if source_core == (0, 4, 2)
+        else "docs/developments/firmware/measurements/oi1"
+    )
+    baseline_relative = "%s/%s.json" % (baseline_prefix, "1" * 40)
     baseline_profiles = []
     policy_profiles = []
-    for profile_id in RELEASE_PROFILE_ORDER:
+    for profile_id in profile_order:
         spec = PROFILE_SPECS[profile_id]
         build = fixture_oi1_build(builds, profile_id)
         observation = fixture_oi1_observation()
+        if RELEASE._firmware_release_core(
+            fixture_firmware_version,
+            "fixture firmware version",
+        ) >= (0, 5, 0):
+            observation["transfer_link_facts"] = (
+                fixture_transfer_link_facts(profile_id)
+            )
         manifest_bytes = (
             json.dumps(
-                exact_manifest("0.4.1", profile_id),
+                exact_manifest(fixture_firmware_version, profile_id),
                 indent=2,
                 sort_keys=False,
             )
@@ -347,6 +406,7 @@ def install_fixture_qualification_policy(
                 "thresholds": fixture_oi1_thresholds(
                     build,
                     observation,
+                    fixture_firmware_version,
                 ),
             }
         )
@@ -354,21 +414,29 @@ def install_fixture_qualification_policy(
         "schema_version": 1,
         "measurement_contract": "oi1-pre-v1-v1",
         "source_commit": "1" * 40,
-        "firmware_version": "0.4.1",
+        "firmware_version": fixture_firmware_version,
         "created_at": "2026-07-30T11:00:00Z",
-        "profile_order": list(RELEASE_PROFILE_ORDER),
+        "profile_order": list(profile_order),
         "profiles": baseline_profiles,
     }
     baseline_path = repo / baseline_relative
     baseline_path.parent.mkdir(parents=True, exist_ok=True)
     baseline_path.write_bytes(canonical_json_bytes(baseline))
     policy = {
-        "schema_version": 1,
+        "schema_version": 1 if source_core == (0, 4, 2) else 2,
         "qualification_scope": "pre-v1",
-        "profile_order": list(RELEASE_PROFILE_ORDER),
+        "profile_order": list(profile_order),
         "deferred_profiles": ["esp32-c3-4mb"],
         "workload": copy.deepcopy(QUALIFICATION_WORKLOAD),
-        "derivation": copy.deepcopy(QUALIFICATION_DERIVATION),
+        "derivation": copy.deepcopy(
+            QUALIFICATION_DERIVATION
+            if RELEASE._firmware_release_core(
+                fixture_firmware_version,
+                "fixture firmware version",
+            )
+            >= (0, 5, 0)
+            else QUALIFICATION_DERIVATION_V1
+        ),
         "baseline_evidence": {
             "path": baseline_relative,
             "sha256": sha256_path(baseline_path),
@@ -388,8 +456,10 @@ def fixture_oi1_observation() -> dict:
         "idf_internal_largest_block_bytes": 8192,
         "idf_internal_minimum_free_bytes": 8192,
     }
-    durations = [1_000_000_000] * 5
-    goodput = [65_536] * 5
+    put_durations = [1_000_000_000] * 5
+    get_durations = [1_000_000_000] * 5
+    put_goodput = [65_536] * 5
+    get_goodput = [65_536] * 5
     return {
         "observed_att_mtu": 247,
         "observed_window": 8,
@@ -398,11 +468,11 @@ def fixture_oi1_observation() -> dict:
         "heap_default_free_post_hello_bytes": [16_384] * 10,
         "heap_post_hello": [copy.deepcopy(heap) for _ in range(10)],
         "put_unique_committed_bytes": [65_536] * 5,
-        "put_duration_ns": durations,
-        "put_committed_goodput_bytes_per_second": goodput,
+        "put_duration_ns": put_durations,
+        "put_committed_goodput_bytes_per_second": put_goodput,
         "get_unique_verified_bytes": [65_536] * 5,
-        "get_duration_ns": durations,
-        "get_verified_goodput_bytes_per_second": goodput,
+        "get_duration_ns": get_durations,
+        "get_verified_goodput_bytes_per_second": get_goodput,
         "put_retransmitted_chunks": [0] * 5,
         "put_retransmitted_bytes": [0] * 5,
         "get_retransmitted_chunks": [0] * 5,
@@ -431,12 +501,69 @@ def fixture_oi1_observation() -> dict:
     }
 
 
-def complete_hil_payload(payload: dict, candidate_release_sha256: str) -> dict:
+def fixture_transfer_link_facts(profile_id: str) -> dict:
+    if profile_id == "esp32-4mb":
+        phy = {
+            "required_2m": False,
+            "request_attempts": 0,
+            "updates": [],
+            "settled_tx": 0,
+            "settled_rx": 0,
+        }
+    elif profile_id in (
+        "esp32-s3-n16r8",
+        "waveshare-esp32-s3-lcd-147b",
+    ):
+        phy = {
+            "required_2m": True,
+            "request_attempts": 2,
+            "updates": [
+                {"status": 26, "tx": 1, "rx": 1},
+                {"status": 0, "tx": 2, "rx": 2},
+            ],
+            "settled_tx": 2,
+            "settled_rx": 2,
+        }
+    else:
+        raise AssertionError("unsupported transfer-link fixture profile")
+    return {
+        "dle": {
+            "request_attempts": 2,
+            "max_tx_octets": 251,
+            "max_tx_time_us": 2120,
+        },
+        "phy": phy,
+        "connection_parameters": {
+            "request_return_codes": [530, 0],
+            "updates": [
+                {"status": 554, "interval_units": 40},
+                {"status": 0, "interval_units": 12},
+            ],
+            "settled_interval_units": 12,
+        },
+        "tx_mbuf_starve_count": 3,
+    }
+
+
+def complete_hil_payload(
+    payload: dict,
+    candidate_release_sha256: str,
+    *,
+    bundle: Path | None = None,
+) -> dict:
     completed = copy.deepcopy(payload)
     completed["candidate_release_json_sha256"] = candidate_release_sha256
     for record in completed["records"]:
         profile_id = record["profile_id"]
         spec = PROFILE_SPECS[profile_id]
+        observation = fixture_oi1_observation()
+        if RELEASE._firmware_release_core(
+            record["firmware_version"],
+            "fixture HIL firmware version",
+        ) >= (0, 5, 0):
+            observation["transfer_link_facts"] = (
+                fixture_transfer_link_facts(profile_id)
+            )
         record.update(
             {
                 "status": "passed",
@@ -462,12 +589,36 @@ def complete_hil_payload(payload: dict, candidate_release_sha256: str) -> dict:
                     "footprint_reliability": "passed",
                     "interrupted_flash_recovery": "passed",
                 },
-                "oi1_observation": fixture_oi1_observation(),
+                "oi1_observation": observation,
                 "redacted_console_log": (
                     "fixture: secrets and device labels removed"
                 ),
             }
         )
+    if completed["schema_version"] == 4 and bundle is not None:
+        firmware = (
+            Path(bundle)
+            / "waveshare-esp32-s3-lcd-147b"
+            / "firmware.bin"
+        ).read_bytes()
+        immutable = firmware[:0x9000] + firmware[0x10000:]
+        completed["waveshare_lcd147b_qualification"] = {
+            "schema_version": 1,
+            "status": "passed",
+            "profile_id": "waveshare-esp32-s3-lcd-147b",
+            "board_model": "ESP32-S3-LCD-1.47B",
+            "firmware_version": completed["records"][0]["firmware_version"],
+            "candidate_release_json_sha256": candidate_release_sha256,
+            "candidate_firmware_sha256": hashlib.sha256(firmware).hexdigest(),
+            "candidate_firmware_size_bytes": len(firmware),
+            "candidate_attestation_sha256": hashlib.sha256(immutable).hexdigest(),
+            "candidate_attestation_size_bytes": len(immutable),
+            "production_app_evidence_sha256": "5" * 64,
+            "production_app_active_release_path": "/firmware/v%s/release.json"
+            % completed["records"][0]["firmware_version"],
+            "terminal_record_sha256": "6" * 64,
+            "qualification_result_sha256": "7" * 64,
+        }
     return completed
 
 
@@ -475,17 +626,20 @@ def read_hil_payload(path: Path) -> dict:
     match = HIL_MARKER.search(path.read_text(encoding="utf-8"))
     if match is None:
         raise AssertionError("fixture HIL report lacks its embedded records")
-    return json.loads(match.group(1))
+    payload = json.loads(match.group(2))
+    if payload.get("schema_version") != int(match.group(1)):
+        raise AssertionError("fixture HIL marker/schema version disagrees")
+    return payload
 
 
 def write_hil_payload(path: Path, payload: dict) -> None:
+    schema_version = payload["schema_version"]
     path.write_text(
-        "# PyBLE firmware HIL report\n\n"
-        "Machine-readable records are embedded below; the surrounding Markdown "
-        "is the reviewed human-readable report.\n\n"
-        "<!-- PYBLE_HIL_RECORDS_V2\n"
+        RELEASE.HIL_REPORT_SHELL_PREFIX
+        + "<!-- PYBLE_HIL_RECORDS_V%d\n" % schema_version
         + json.dumps(payload, indent=2, sort_keys=False)
-        + "\n-->\n",
+        + "\n-->"
+        + RELEASE.HIL_REPORT_SHELL_SUFFIX,
         encoding="utf-8",
     )
 
@@ -662,11 +816,7 @@ def flasher_args_for(spec: dict) -> dict:
             "after": "hard_reset",
             "before": "default_reset",
             "stub": True,
-            "chip": {
-                "esp32": "esp32",
-                "esp32-s3": "esp32s3",
-                "esp32-c3": "esp32c3",
-            }[spec["target"]],
+            "chip": spec["idf_target"],
         },
     }
 
@@ -692,7 +842,13 @@ def exact_manifest(version: str, profile_id: str) -> dict:
     }
 
 
-def exact_release_schema() -> dict:
+def exact_release_schema(version: str = "0.5.0") -> dict:
+    profile_order = (
+        HISTORICAL_V042_PROFILE_ORDER
+        if version == "0.4.2"
+        else RELEASE_PROFILE_ORDER
+    )
+    schema_version = 2 if version == "0.4.2" else 3
     sha = {"type": "string", "pattern": "^[0-9a-f]{64}$"}
     commit = {"type": "string", "pattern": "^[0-9a-f]{40}$"}
     relative_path = {
@@ -734,7 +890,7 @@ def exact_release_schema() -> dict:
             "components",
         ],
         "properties": {
-            "id": {"enum": list(RELEASE_PROFILE_ORDER)},
+            "id": {"enum": list(profile_order)},
             "chip_family": {"enum": ["ESP32", "ESP32-S3"]},
             "requirements": {
                 "type": "object",
@@ -801,7 +957,7 @@ def exact_release_schema() -> dict:
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$id": "https://pyble.dev/firmware/release.schema.json",
-        "title": "PyBLE firmware release metadata v2",
+        "title": "PyBLE firmware release metadata v%d" % schema_version,
         "type": "object",
         "additionalProperties": False,
         "required": [
@@ -813,7 +969,7 @@ def exact_release_schema() -> dict:
             "documents",
         ],
         "properties": {
-            "schema_version": {"const": 2},
+            "schema_version": {"const": schema_version},
             "identity": {
                 "type": "object",
                 "additionalProperties": False,
@@ -905,8 +1061,8 @@ def exact_release_schema() -> dict:
             },
             "profiles": {
                 "type": "array",
-                "minItems": len(RELEASE_PROFILE_ORDER),
-                "maxItems": len(RELEASE_PROFILE_ORDER),
+                "minItems": len(profile_order),
+                "maxItems": len(profile_order),
                 "items": profile,
             },
             "documents": {
@@ -936,16 +1092,25 @@ def hil_report_text(
     *,
     bundle: Path,
     policy_path: Path,
+    version: str = "0.5.0",
 ) -> str:
+    profile_order = (
+        HISTORICAL_V042_PROFILE_ORDER
+        if version == "0.4.2"
+        else RELEASE_PROFILE_ORDER
+    )
+    schema_version = 2 if version == "0.4.2" else 4
     policy = json.loads(policy_path.read_text(encoding="utf-8"))
     policy_by_profile = {
         item["profile_id"]: item for item in policy["profiles"]
     }
     records = []
-    for profile_id in RELEASE_PROFILE_ORDER:
+    for profile_id in profile_order:
         spec = PROFILE_SPECS[profile_id]
         application_bytes = (bundle / profile_id / "application.bin").stat().st_size
-        factory_bytes = 0x200000 if spec["target"] == "esp32-s3" else 0x1F0000
+        factory_bytes = (
+            0x200000 if spec["chip_family"] == "ESP32-S3" else 0x1F0000
+        )
         records.append(
             {
                 "profile_id": profile_id,
@@ -955,8 +1120,8 @@ def hil_report_text(
                 "module_marking": "",
                 "device_flash_capacity_bytes": 0,
                 "device_psram_capacity_bytes": 0,
-                "firmware_version": "0.4.1",
-                "tag": "firmware-v0.4.1",
+                "firmware_version": version,
+                "tag": "firmware-v%s" % version,
                 "source_commit": "1" * 40,
                 "manifest_sha256": manifest_hashes[profile_id],
                 "firmware_sha256": install_hashes[profile_id],
@@ -990,24 +1155,33 @@ def hil_report_text(
             }
         )
     payload = {
-        "schema_version": 2,
+        "schema_version": schema_version,
         "candidate_release_json_sha256": "",
         "qualification_policy_sha256": sha256_path(policy_path),
         "qualification_policy": policy,
         "records": records,
     }
+    if schema_version == 4:
+        payload["waveshare_lcd147b_qualification"] = None
     if status == "passed":
-        payload = complete_hil_payload(payload, "0" * 64)
+        payload = complete_hil_payload(payload, "0" * 64, bundle=bundle)
     return (
-        "# PyBLE firmware HIL report\n\n"
-        "Machine-readable records are embedded below; the surrounding Markdown "
-        "is the reviewed human-readable report.\n\n"
-        "<!-- PYBLE_HIL_RECORDS_V2\n" + json.dumps(payload, indent=2) + "\n-->\n"
+        RELEASE.HIL_REPORT_SHELL_PREFIX
+        + "<!-- PYBLE_HIL_RECORDS_V%d\n" % schema_version
+        + json.dumps(payload, indent=2)
+        + "\n-->"
+        + RELEASE.HIL_REPORT_SHELL_SUFFIX
     )
 
 
 class ReleaseFixture:
-    def __init__(self):
+    def __init__(self, firmware_version: str = "0.5.0"):
+        self.firmware_version = firmware_version
+        self.profile_order = (
+            HISTORICAL_V042_PROFILE_ORDER
+            if firmware_version == "0.4.2"
+            else RELEASE_PROFILE_ORDER
+        )
         self._temporary = tempfile.TemporaryDirectory(prefix="pyble-release-tests-")
         self.root = Path(self._temporary.name)
         self.repo = self.root / "repo"
@@ -1056,9 +1230,9 @@ repo = "https://github.com/espressif/esp-idf"
 ref = "v5.5.1"
 commit = "3333333333333333333333333333333333333333"
 [pyble]
-agent_version = "0.4.1"
+agent_version = "%s"
 protocol_version = "PBLE/1"
-""",
+""" % self.firmware_version,
             encoding="utf-8",
         )
         mit = (
@@ -1124,7 +1298,9 @@ protocol_version = "PBLE/1"
             table = make_partition_table(
                 spec["flash_size_bytes"],
                 application_size=(
-                    0x200000 if spec["target"] == "esp32-s3" else 0x1F0000
+                    0x200000
+                    if spec["chip_family"] == "ESP32-S3"
+                    else 0x1F0000
                 ),
             )
             offsets = spec["component_offsets"]
@@ -1139,7 +1315,7 @@ protocol_version = "PBLE/1"
             (build / "firmware.bin").write_bytes(merged)
             write_json(build / "flasher_args.json", flasher_args_for(spec))
             sdkconfig = "CONFIG_APP_REPRODUCIBLE_BUILD=y\n"
-            if spec["target"] in ("esp32-s3", "esp32-c3"):
+            if spec["idf_target"] in ("esp32s3", "esp32c3"):
                 sdkconfig += "CONFIG_XTAL_FREQ_40=y\n" "CONFIG_XTAL_FREQ=40\n"
             (build / "sdkconfig").write_text(sdkconfig, encoding="utf-8")
             write_json(
@@ -1160,11 +1336,7 @@ protocol_version = "PBLE/1"
                     "project_version": "v1.28.0",
                     "build_dir": str(build),
                     "idf_path": str(self.repo / "firmware" / ".esp-idf"),
-                    "target": {
-                        "esp32": "esp32",
-                        "esp32-s3": "esp32s3",
-                        "esp32-c3": "esp32c3",
-                    }[spec["target"]],
+                    "target": spec["idf_target"],
                     "c_compiler": "/fixture/bin/%s-gcc" % spec["target"],
                     "build_components": ["esp_system"],
                     "build_component_info": {
@@ -1183,8 +1355,8 @@ protocol_version = "PBLE/1"
         if self.bundle.exists():
             shutil.rmtree(self.bundle)
         self.bundle.mkdir()
-        version = "0.4.1"
-        for profile_id in RELEASE_PROFILE_ORDER:
+        version = self.firmware_version
+        for profile_id in self.profile_order:
             spec = PROFILE_SPECS[profile_id]
             src = self.build_root / spec["target"]
             dst = self.bundle / profile_id
@@ -1201,7 +1373,10 @@ protocol_version = "PBLE/1"
             )
             shutil.copyfile(src / "micropython.bin", dst / "application.bin")
 
-        write_json(self.bundle / "release.schema.json", exact_release_schema())
+        write_json(
+            self.bundle / "release.schema.json",
+            exact_release_schema(version),
+        )
         (self.bundle / "THIRD_PARTY_LICENSES.txt").write_text(
             "PyBLE mechanically generated notices\n\n"
             "Name: MicroPython\nVersion/ref: v1.28.0\n"
@@ -1225,16 +1400,36 @@ protocol_version = "PBLE/1"
             encoding="utf-8",
         )
         (self.bundle / "RELEASE_NOTES.md").write_text(
-            "# PyBLE firmware 0.4.1 — 2026-07-30\n\n"
+            "# PyBLE firmware %s — 2026-07-30\n\n"
             "Profiles: esp32-4mb (4 MiB), esp32-s3-n16r8 "
-            "(16 MiB flash, 8 MiB Octal PSRAM; N16R8-class only).\n\n"
-            "Agent 0.4.1; PBLE/1; MicroPython v1.28.0 @ %s; "
-            "ESP-IDF v5.5.1 @ %s; source %s; tag firmware-v0.4.1.\n\n"
+            "(16 MiB flash, 8 MiB Octal PSRAM; lean N16R8-class only)%s.\n\n"
+            "Agent %s; PBLE/1; MicroPython v1.28.0 @ %s; "
+            "ESP-IDF v5.5.1 @ %s; source %s; tag firmware-v%s.\n\n"
             "Installation erases the board. Back up files. Known limitation: "
             "wired provisioning needs desktop Chromium; iPadOS cannot flash. "
             "See RECOVERY.md. Upgrade uses the same exact profile. "
-            "Support: https://pyble.dev/support/.\n" % ("2" * 40, "3" * 40, "1" * 40),
+            "Support: https://pyble.dev/support/.\n"
+            % (
+                version,
+                (
+                    ", waveshare-esp32-s3-lcd-147b "
+                    "(exact B-version board with bundled display stack)"
+                    if "waveshare-esp32-s3-lcd-147b" in self.profile_order
+                    else ""
+                ),
+                version,
+                "2" * 40,
+                "3" * 40,
+                "1" * 40,
+                version,
+            ),
             encoding="utf-8",
+        )
+        waveshare_recovery = (
+            "`python -m esptool --chip esp32s3 write_flash 0x0 "
+            "waveshare-esp32-s3-lcd-147b/firmware.bin`\n"
+            if "waveshare-esp32-s3-lcd-147b" in self.profile_order
+            else ""
         )
         (self.bundle / "RECOVERY.md").write_text(
             "# Recovery\n\nBack up user files; install erases the board. Use a "
@@ -1248,7 +1443,9 @@ protocol_version = "PBLE/1"
             "`python -m esptool --chip esp32 write_flash 0x1000 "
             "esp32-4mb/firmware.bin`\n"
             "`python -m esptool --chip esp32s3 write_flash 0x0 "
-            "esp32-s3-n16r8/firmware.bin`\n\n"
+            "esp32-s3-n16r8/firmware.bin`\n"
+            + waveshare_recovery
+            + "\n"
             "The component diagnostic bootloader offsets are 0x1000/0, "
             "partition table 0x8000, and application 0x10000. Power cycle after "
             "flashing and expect `PyBLE-XXXX`, then connect from the app. Stop "
@@ -1260,11 +1457,11 @@ protocol_version = "PBLE/1"
 
         manifest_hashes = {
             profile_id: sha256_path(self.bundle / profile_id / "manifest.json")
-            for profile_id in RELEASE_PROFILE_ORDER
+            for profile_id in self.profile_order
         }
         install_hashes = {
             profile_id: sha256_path(self.bundle / profile_id / "firmware.bin")
-            for profile_id in RELEASE_PROFILE_ORDER
+            for profile_id in self.profile_order
         }
         hil_status = "passed" if public else "pending"
         (self.bundle / "HIL_REPORT.md").write_text(
@@ -1274,12 +1471,13 @@ protocol_version = "PBLE/1"
                 install_hashes,
                 bundle=self.bundle,
                 policy_path=self.qualification_policy_path,
+                version=version,
             ),
             encoding="utf-8",
         )
 
         profiles = []
-        for profile_id in RELEASE_PROFILE_ORDER:
+        for profile_id in self.profile_order:
             spec = PROFILE_SPECS[profile_id]
             directory = self.bundle / profile_id
             profiles.append(
@@ -1326,10 +1524,10 @@ protocol_version = "PBLE/1"
             )
 
         metadata = {
-            "schema_version": 2,
+            "schema_version": 2 if version == "0.4.2" else 3,
             "identity": {
                 "version": version,
-                "tag": "firmware-v0.4.1",
+                "tag": "firmware-v%s" % version,
                 "agent_version": version,
                 "protocol_version": "PBLE/1",
                 "built_at": "2026-07-30T12:00:00Z",
@@ -1439,8 +1637,62 @@ class ReleaseProductionGatePresenceTest(unittest.TestCase):
         )
         self.assertEqual(
             set(RELEASE.TARGET_TO_PROFILE),
-            {"esp32", "esp32-s3", "esp32-c3"},
-            "all three initial targets remain mandatory build/audit inputs",
+            {
+                "esp32",
+                "esp32-s3",
+                "waveshare-esp32-s3-lcd-147b",
+                "esp32-c3",
+            },
+            "all four build variants remain mandatory build/audit inputs",
+        )
+
+
+@unittest.skipUnless(HAVE_RELEASE, RELEASE_LOAD_ERROR)
+class QualificationDerivationContractTests(unittest.TestCase):
+    def test_source_era_selects_exact_runtime_derivation(self):
+        build = {
+            "application_image_bytes": 4096,
+            "factory_partition_bytes": 8192,
+            "application_headroom_bytes": 4096,
+        }
+        observation = fixture_oi1_observation()
+        expected_static_and_heap = {
+            "application_image_max_bytes": 4096,
+            "application_headroom_min_bytes": 4096,
+            "gc_free_min_bytes": 8192,
+            "idf_internal_free_min_bytes": 8192,
+            "idf_internal_largest_block_min_bytes": 8192,
+            "idf_internal_minimum_free_min_bytes": 8192,
+        }
+
+        historical = RELEASE._derived_qualification_thresholds(
+            build,
+            observation,
+            firmware_version="0.4.2",
+        )
+        current = RELEASE._derived_qualification_thresholds(
+            build,
+            observation,
+            firmware_version="0.5.0",
+        )
+
+        self.assertEqual(
+            historical,
+            {
+                **expected_static_and_heap,
+                "reset_to_service_advertisement_max_ms": 100,
+                "put_committed_goodput_min_bytes_per_second": 65500,
+                "get_verified_goodput_min_bytes_per_second": 65500,
+            },
+        )
+        self.assertEqual(
+            current,
+            {
+                **expected_static_and_heap,
+                "reset_to_service_advertisement_max_ms": 3000,
+                "put_committed_goodput_min_bytes_per_second": 62200,
+                "get_verified_goodput_min_bytes_per_second": 62200,
+            },
         )
 
 
@@ -1781,7 +2033,7 @@ class BundleCreationTests(FixtureCase):
             "reproducibility_build_root": (
                 self.fixture.reproducibility_build_root
             ),
-            "output_dir": self.fixture.root / "created" / "v0.4.1",
+            "output_dir": self.fixture.root / "created" / "v0.5.0",
             "repo_root": self.fixture.repo,
             "installer_version": "10.4.0",
             "built_at": "2026-07-30T12:00:00Z",
@@ -1852,7 +2104,7 @@ class BundleCreationTests(FixtureCase):
                 manifest = json.loads(
                     (bundle / profile_id / "manifest.json").read_text(encoding="utf-8")
                 )
-                self.assertEqual(manifest, exact_manifest("0.4.1", profile_id))
+                self.assertEqual(manifest, exact_manifest("0.5.0", profile_id))
                 self.assertEqual(manifest["new_install_improv_wait_time"], 0)
                 for unsupported in (
                     "improv",
@@ -1896,7 +2148,7 @@ class BundleCreationTests(FixtureCase):
         bundle = self.create()
         release = json.loads((bundle / "release.json").read_text(encoding="utf-8"))
         self.assertEqual(set(release), set(exact_release_schema()["required"]))
-        self.assertEqual(release["schema_version"], 2)
+        self.assertEqual(release["schema_version"], 3)
         self.assertEqual(
             release["installer"],
             {
@@ -1923,7 +2175,7 @@ class BundleCreationTests(FixtureCase):
             sorted(tool["name"] for tool in tools),
         )
         hil = read_hil_payload(bundle / "HIL_REPORT.md")
-        self.assertEqual(hil["schema_version"], 2)
+        self.assertEqual(hil["schema_version"], 4)
         self.assertEqual(
             hil["qualification_policy_sha256"],
             sha256_path(self.fixture.qualification_policy_path),
@@ -1941,6 +2193,7 @@ class BundleCreationTests(FixtureCase):
         self.assertTrue(
             all(record["oi1_observation"] is None for record in hil["records"])
         )
+        self.assertIsNone(hil["waveshare_lcd147b_qualification"])
         self.assertNotIn(
             "esp32-c3-4mb",
             [record["profile_id"] for record in hil["records"]],
@@ -1957,7 +2210,7 @@ class BundleCreationTests(FixtureCase):
             ["esp32-c3-4mb"],
         )
 
-    def test_create_requires_exact_policy_workload_units_and_two_profile_scope(self):
+    def test_create_requires_exact_policy_workload_units_and_three_profile_scope(self):
         mutations = {
             "workload": lambda policy: policy["workload"].__setitem__(
                 "required_att_mtu", 246
@@ -2089,6 +2342,84 @@ class BundleCreationTests(FixtureCase):
         baseline_path.write_bytes(canonical_json_bytes(original_baseline))
         write_json(self.fixture.qualification_policy_path, original_policy)
 
+    def test_baseline_firmware_version_obeys_source_era_bounds(self):
+        policy = json.loads(
+            self.fixture.qualification_policy_path.read_text(encoding="utf-8")
+        )
+        baseline_path = self.fixture.repo / policy["baseline_evidence"]["path"]
+        original = json.loads(baseline_path.read_text(encoding="utf-8"))
+        cases = (
+            ("historical-v042-v041", "0.4.2", "0.4.1", True),
+            ("historical-future", "0.4.2", "0.5.0", False),
+            ("v050-stale", "0.5.0", "0.4.1", False),
+            ("v050-current", "0.5.0", "0.5.0", True),
+            ("v050-future", "0.5.0", "0.6.0", False),
+            ("v051-reuses-v050", "0.5.1", "0.5.0", True),
+        )
+        for name, source_version, baseline_version, accepted in cases:
+            with self.subTest(case=name):
+                baseline = copy.deepcopy(original)
+                baseline["firmware_version"] = baseline_version
+                source_policy = copy.deepcopy(policy)
+                source_core = RELEASE._firmware_release_core(
+                    source_version,
+                    "fixture source version",
+                )
+                profile_order = (
+                    HISTORICAL_V042_PROFILE_ORDER
+                    if source_core == (0, 4, 2)
+                    else RELEASE_PROFILE_ORDER
+                )
+                baseline["profile_order"] = list(profile_order)
+                baseline["profiles"] = [
+                    profile
+                    for profile in baseline["profiles"]
+                    if profile["profile_id"] in profile_order
+                ]
+                source_policy["schema_version"] = (
+                    1 if source_core == (0, 4, 2) else 2
+                )
+                source_policy["profile_order"] = list(profile_order)
+                source_policy["profiles"] = [
+                    profile
+                    for profile in source_policy["profiles"]
+                    if profile["profile_id"] in profile_order
+                ]
+                source_policy["derivation"] = copy.deepcopy(
+                    QUALIFICATION_DERIVATION
+                    if source_core >= (0, 5, 0)
+                    else QUALIFICATION_DERIVATION_V1
+                )
+                for profile, baseline_profile in zip(
+                    source_policy["profiles"],
+                    baseline["profiles"],
+                ):
+                    observation = baseline_profile["oi1_observation"]
+                    if source_core >= (0, 5, 0):
+                        observation["transfer_link_facts"] = (
+                            fixture_transfer_link_facts(
+                                baseline_profile["profile_id"]
+                            )
+                        )
+                    else:
+                        observation.pop("transfer_link_facts", None)
+                    profile["thresholds"] = fixture_oi1_thresholds(
+                        baseline_profile["oi1_build"],
+                        observation,
+                        source_version,
+                    )
+                invocation = lambda: RELEASE._validate_qualification_baseline(
+                    baseline,
+                    baseline["source_commit"],
+                    source_policy,
+                    firmware_version=source_version,
+                )
+                if accepted:
+                    invocation()
+                else:
+                    with self.assertRaises(RELEASE.ReleaseError):
+                        invocation()
+
     def test_schema_is_draft_2020_12_and_closes_every_object(self):
         bundle = self.create()
         schema = json.loads(
@@ -2138,6 +2469,8 @@ class BundleCreationTests(FixtureCase):
             "esp32-4mb/firmware.bin",
             "python -m esptool --chip esp32s3 write_flash 0x0 "
             "esp32-s3-n16r8/firmware.bin",
+            "python -m esptool --chip esp32s3 write_flash 0x0 "
+            "waveshare-esp32-s3-lcd-147b/firmware.bin",
         )
         for command in expected:
             with self.subTest(command=command):
@@ -2146,12 +2479,16 @@ class BundleCreationTests(FixtureCase):
         self.assertNotIn("esp32c3", recovery)
         self.assertNotIn("write-flash", recovery)
 
-    def test_release_notes_name_only_the_two_packaged_profiles(self):
+    def test_release_notes_name_only_the_three_packaged_profiles(self):
         bundle = self.create()
         notes = (bundle / "RELEASE_NOTES.md").read_text(encoding="utf-8")
         for profile_id in RELEASE_PROFILE_ORDER:
             with self.subTest(profile_id=profile_id):
                 self.assertIn(profile_id, notes)
+        self.assertIn("lean common runtime", notes)
+        self.assertIn("no bundled board-specific display drivers", notes)
+        self.assertIn("exact Waveshare ESP32-S3-LCD-1.47B B-version", notes)
+        self.assertIn("ST7789 runtime", notes)
         self.assertNotIn("esp32-c3", notes)
 
     def test_create_rejects_wrong_installer_version_and_public_without_hil(self):
@@ -2262,6 +2599,22 @@ class AuditedCandidateCreationRedTests(unittest.TestCase):
             evidence_dir=self.license_fixture.evidence,
             runner=self.license_module.FakeOfflineSbomRunner(self.license_fixture),
         )
+        receipt = json.loads(
+            (self.license_fixture.evidence / "audit-receipt.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        expected_identities = {
+            (profile_id, role)
+            for profile_id, _target, _idf_target in RELEASE.LICENSE_AUDIT_PROFILES
+            for role in RELEASE.LICENSE_AUDIT_ROLES
+        }
+        observed_identities = {
+            (entry["profile_id"], entry["role"])
+            for entry in receipt["identities"]
+        }
+        self.assertEqual(len(observed_identities), 8)
+        self.assertEqual(observed_identities, expected_identities)
         notice = self.license_module.extract_notice(result)
         notice_path = self.license_fixture.root / "audited-notice.txt"
         notice_path.write_text(notice, encoding="utf-8")
@@ -2417,8 +2770,10 @@ class BundleValidationTests(FixtureCase):
                 qualification_repo_root=self.fixture.repo,
             )
 
-    def test_complete_passed_hil_bundle_passes_public_validation(self):
-        bundle = self.fixture.make_bundle(public=True)
+    def test_historical_public_bundle_rejects_current_qualification_root(self):
+        historical = ReleaseFixture(firmware_version="0.4.2")
+        self.addCleanup(historical.cleanup)
+        bundle = historical.make_bundle(public=True)
         with self.assertRaises(RELEASE.ReleaseError):
             RELEASE.validate_bundle(bundle, public=True)
 
@@ -2454,7 +2809,7 @@ class BundleValidationTests(FixtureCase):
             )
             for target in TARGET_TO_PROFILE:
                 for relative in release_inputs:
-                    source = self.fixture.build_root / target / relative
+                    source = historical.build_root / target / relative
                     destination = license_fixture.build_root / target / relative
                     destination.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copyfile(source, destination)
@@ -2483,8 +2838,15 @@ class BundleValidationTests(FixtureCase):
                 "commit"
             ] = license_fixture.esp_idf_commit
             write_json(release_path, release)
-            self.fixture.refresh_declared_hashes()
-            self.assertIsNotNone(
+            historical.refresh_declared_hashes()
+            # This fixture is the intentionally retained V2/v0.4.2 bundle,
+            # while the audited repository is the current V3/v0.5.0 source
+            # era. They must not be combined. Current public success is covered
+            # by test_waveshare_release_gate's v0.5 finalization integration.
+            with self.assertRaisesRegex(
+                RELEASE.ReleaseError,
+                "HIL qualification policy differs",
+            ):
                 RELEASE.validate_bundle(
                     bundle,
                     public=True,
@@ -2492,7 +2854,6 @@ class BundleValidationTests(FixtureCase):
                     license_build_root=license_fixture.build_root,
                     repo_root=license_fixture.repo,
                 )
-            )
         finally:
             license_fixture.close()
 
@@ -2505,7 +2866,7 @@ class BundleValidationTests(FixtureCase):
             previously_activated_public=True,
             qualification_repo_root=self.fixture.repo,
         )
-        self.assertEqual(result["identity"]["version"], "0.4.1")
+        self.assertEqual(result["identity"]["version"], "0.5.0")
 
         with self.assertRaises(RELEASE.ReleaseError):
             RELEASE.validate_bundle(
@@ -2647,8 +3008,8 @@ class BundleValidationTests(FixtureCase):
                 with self.assertRaises(RELEASE.ReleaseError):
                     self.validate_candidate(bundle)
 
-    def test_release_schema_version_requires_the_exact_integer_two(self):
-        for invalid in (True, 2.0, 1):
+    def test_release_schema_version_requires_the_exact_integer_three(self):
+        for invalid in (True, 3.0, 2):
             with self.subTest(schema_version=repr(invalid)):
                 bundle = self.fixture.make_bundle(public=False)
                 path = bundle / "release.json"
@@ -2662,7 +3023,7 @@ class BundleValidationTests(FixtureCase):
                 ):
                     self.validate_candidate(bundle)
 
-    def test_deferred_c3_profile_cannot_be_added_to_schema_v2_metadata(self):
+    def test_deferred_c3_profile_cannot_be_added_to_schema_v3_metadata(self):
         bundle = self.fixture.make_bundle(public=False)
         path = bundle / "release.json"
         release = json.loads(path.read_text(encoding="utf-8"))
@@ -2742,14 +3103,14 @@ class BundleValidationTests(FixtureCase):
                 with self.assertRaises(RELEASE.ReleaseError):
                     RELEASE.validate_bundle(bundle, public=True)
 
-    def test_hil_requires_one_v2_marker_and_exact_integer_schema_two(self):
-        for invalid in (True, 2.0, 1):
+    def test_hil_requires_one_v4_marker_and_exact_integer_schema_four(self):
+        for invalid in (True, 4.0, 3):
             with self.subTest(schema_version=repr(invalid)):
                 bundle = self.fixture.make_bundle(public=False)
                 report = bundle / "HIL_REPORT.md"
                 text = report.read_text(encoding="utf-8")
                 text = text.replace(
-                    '"schema_version": 2',
+                    '"schema_version": 4',
                     '"schema_version": %s' % json.dumps(invalid),
                     1,
                 )
@@ -2763,15 +3124,15 @@ class BundleValidationTests(FixtureCase):
 
         for marker_text in (
             "PYBLE_HIL_RECORDS_V1",
-            "PYBLE_HIL_RECORDS_V2\n{}\n-->\n"
-            "<!-- PYBLE_HIL_RECORDS_V2",
+            "PYBLE_HIL_RECORDS_V4\n{}\n-->\n"
+            "<!-- PYBLE_HIL_RECORDS_V4",
         ):
             with self.subTest(marker=marker_text):
                 bundle = self.fixture.make_bundle(public=False)
                 report = bundle / "HIL_REPORT.md"
                 report.write_text(
                     report.read_text(encoding="utf-8").replace(
-                        "PYBLE_HIL_RECORDS_V2",
+                        "PYBLE_HIL_RECORDS_V4",
                         marker_text,
                         1,
                     ),

@@ -34,6 +34,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import copy
 import hashlib
 import importlib.util
@@ -56,10 +57,18 @@ BUNDLE_TEST_PATH = Path(__file__).with_name("test_release_bundle.py")
 LICENSE_TEST_PATH = Path(__file__).with_name(
     "test_release_license_policy_v2_integration.py"
 )
-RELEASE_PROFILE_ORDER = ("esp32-4mb", "esp32-s3-n16r8")
+COMBINED_TEST_PATH = Path(__file__).with_name(
+    "test_waveshare_boot_splash_bench.py"
+)
+WAVESHARE_PROFILE_ID = "waveshare-esp32-s3-lcd-147b"
+RELEASE_PROFILE_ORDER = (
+    "esp32-4mb",
+    "esp32-s3-n16r8",
+    WAVESHARE_PROFILE_ID,
+)
 PROMOTION_ENVELOPE = {"HIL_REPORT.md", "release.json", "SHA256SUMS"}
 HIL_MARKER = re.compile(
-    r"<!--\s*PYBLE_HIL_RECORDS_V2\s*(\{.*?\})\s*-->",
+    r"<!--\s*PYBLE_HIL_RECORDS_V([24])\s*(\{.*?\})\s*-->",
     re.DOTALL,
 )
 
@@ -87,11 +96,16 @@ try:
         "pyble_release_finalization_license_fixture",
         LICENSE_TEST_PATH,
     )
+    COMBINED_TEST = load_module(
+        "pyble_release_finalization_combined_fixture",
+        COMBINED_TEST_PATH,
+    )
     RELEASE = BUNDLE_TEST.RELEASE
     LOAD_ERROR = BUNDLE_TEST.RELEASE_LOAD_ERROR
 except Exception as exc:  # pragma: no cover - rendered by the seam tests.
     BUNDLE_TEST = None
     LICENSE_TEST = None
+    COMBINED_TEST = None
     RELEASE = None
     LOAD_ERROR = str(exc)
 
@@ -128,18 +142,124 @@ def read_hil_payload(path: Path) -> dict:
     match = HIL_MARKER.search(path.read_text(encoding="utf-8"))
     if match is None:
         raise AssertionError("fixture HIL report lacks its embedded records")
-    return json.loads(match.group(1))
+    payload = json.loads(match.group(2))
+    if payload.get("schema_version") != int(match.group(1)):
+        raise AssertionError("fixture HIL marker/schema version disagrees")
+    return payload
 
 
 def write_hil_report(path: Path, payload: dict) -> None:
+    schema_version = payload["schema_version"]
     path.write_text(
-        "# PyBLE firmware HIL report\n\n"
-        "Machine-readable records are embedded below; the surrounding Markdown "
-        "is the reviewed human-readable report.\n\n"
-        "<!-- PYBLE_HIL_RECORDS_V2\n"
+        RELEASE.HIL_REPORT_SHELL_PREFIX
+        + "<!-- PYBLE_HIL_RECORDS_V%d\n" % schema_version
         + json.dumps(payload, indent=2, sort_keys=False)
-        + "\n-->\n",
+        + "\n-->"
+        + RELEASE.HIL_REPORT_SHELL_SUFFIX,
         encoding="utf-8",
+    )
+
+
+def transfer_link_facts(profile_id: str) -> dict:
+    """Strict V4 ADR-0027 fixture; historical V2 fixtures remain unchanged."""
+    if profile_id == "esp32-4mb":
+        phy = {
+            "required_2m": False,
+            "request_attempts": 0,
+            "updates": [],
+            "settled_tx": 0,
+            "settled_rx": 0,
+        }
+    elif profile_id in (
+        "esp32-s3-n16r8",
+        WAVESHARE_PROFILE_ID,
+    ):
+        phy = {
+            "required_2m": True,
+            "request_attempts": 2,
+            "updates": [
+                {"status": 26, "tx": 1, "rx": 1},
+                {"status": 0, "tx": 2, "rx": 2},
+            ],
+            "settled_tx": 2,
+            "settled_rx": 2,
+        }
+    else:
+        raise AssertionError("unsupported finalization fixture profile")
+    return {
+        "dle": {
+            "request_attempts": 2,
+            "max_tx_octets": 251,
+            "max_tx_time_us": 2120,
+        },
+        "phy": phy,
+        "connection_parameters": {
+            "request_return_codes": [530, 0],
+            "updates": [
+                {"status": 554, "interval_units": 40},
+                {"status": 0, "interval_units": 12},
+            ],
+            "settled_interval_units": 12,
+        },
+        "tx_mbuf_starve_count": 3,
+    }
+
+
+async def combined_result_for_firmware(firmware: Path) -> dict:
+    """Generate private finalization evidence through the real HIL runner."""
+
+    payload = firmware.read_bytes()
+    size_bytes = len(payload)
+    spans = [
+        {"offset": 0, "size_bytes": 0x9000},
+        {"offset": 0x10000, "size_bytes": size_bytes - 0x10000},
+    ]
+    immutable = b"".join(
+        payload[item["offset"] : item["offset"] + item["size_bytes"]]
+        for item in spans
+    )
+    attestation = {
+        "sha256": hashlib.sha256(immutable).hexdigest(),
+        "size_bytes": len(immutable),
+        "spans": spans,
+    }
+    connections = [
+        COMBINED_TEST.CombinedFakeCentral(
+            "candidate/setup-disabled",
+            live_candidate_sha256=attestation["sha256"],
+        ),
+        COMBINED_TEST.CombinedFakeCentral("setup-disabled/setup-enabled"),
+        COMBINED_TEST.CombinedFakeCentral(
+            "setup-enabled/exercise/cycle-1-arm"
+        ),
+        COMBINED_TEST.CombinedFakeCentral(
+            "cycle-1/final-disable/cycle-2-arm"
+        ),
+        COMBINED_TEST.CombinedFakeCentral("cycle-2/cycle-3-arm"),
+        COMBINED_TEST.CombinedFakeCentral("cycle-3/final-proof"),
+    ]
+    connector = COMBINED_TEST.CombinedFakeConnector(connections)
+
+    async def confirm_splash(_phase, _pattern, qr_url):
+        return qr_url
+
+    async def confirm_tft(_pattern):
+        connector.last.visual_confirmed = True
+        return True
+
+    return await COMBINED_TEST.bench.run_combined_qualification(
+        connector,
+        "private-input-only",
+        COMBINED_TEST.preflight(),
+        hashlib.sha256(payload).hexdigest(),
+        size_bytes,
+        attestation,
+        timeout_s=2.0,
+        poll_interval_s=0,
+        production_app_probe=COMBINED_TEST.production_app_evidence,
+        confirm_splash=confirm_splash,
+        confirm_tft=confirm_tft,
+        session_id="34" * 16,
     )
 
 
@@ -207,7 +327,45 @@ class FinalizationFixture:
             license_build_root=self.license_fixture.build_root,
             public=False,
         )
+        exact_bundle = self.candidate / WAVESHARE_PROFILE_ID
+        for required in ("firmware.bin", "manifest.json"):
+            if not (exact_bundle / required).is_file():
+                raise AssertionError(
+                    "exact Waveshare candidate lacks %s" % required
+                )
         self.candidate_release_sha256 = sha256_path(self.candidate / "release.json")
+        gate_source = (
+            REPO_ROOT
+            / "firmware"
+            / "qualification"
+            / "waveshare_lcd147b_release_gate.py"
+        )
+        audited_gate = (
+            self.license_fixture.repo
+            / "firmware"
+            / "qualification"
+            / gate_source.name
+        )
+        audited_gate.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(gate_source, audited_gate)
+        self.qualification_result = (
+            self.license_fixture.root / "waveshare-lcd147b-result.json"
+        )
+        qualification = asyncio.run(
+            combined_result_for_firmware(
+                self.candidate
+                / WAVESHARE_PROFILE_ID
+                / "firmware.bin"
+            )
+        )
+        if qualification.get("profile_id") != WAVESHARE_PROFILE_ID:
+            raise AssertionError(
+                "LCD qualification used a non-Waveshare release identity"
+            )
+        self.qualification_result.write_bytes(
+            RELEASE._WAVESHARE_LCD147B_GATE.canonical_json_bytes(qualification)
+        )
+        self.qualification_result.chmod(0o600)
         self.completed_hil = self.license_fixture.root / "completed-HIL_REPORT.md"
         self.write_completed_hil(self.completed_hil)
 
@@ -218,6 +376,14 @@ class FinalizationFixture:
     def _add_release_inputs_to_audited_build(self) -> None:
         audited_firmware = self.license_fixture.repo / "firmware"
         (audited_firmware / "patches").mkdir(exist_ok=True)
+        waveshare_build = (
+            self.license_fixture.build_root / WAVESHARE_PROFILE_ID
+        )
+        if not (waveshare_build / "project_description.json").is_file():
+            raise AssertionError(
+                "license fixture lacks the exact Waveshare project description"
+            )
+
         release_inputs = (
             "firmware.bin",
             "micropython.bin",
@@ -234,8 +400,21 @@ class FinalizationFixture:
                 destination = self.license_fixture.build_root / target / relative
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(source, destination)
+        exact_provenance_path = (
+            waveshare_build / "pyble-build-provenance.json"
+        )
+        exact_provenance = read_json(exact_provenance_path)
+        exact_provenance["target"] = WAVESHARE_PROFILE_ID
+        exact_provenance["micropython"]["commit"] = (
+            self.license_fixture.micropython_commit
+        )
+        exact_provenance["esp_idf"]["commit"] = (
+            self.license_fixture.esp_idf_commit
+        )
+        write_json(exact_provenance_path, exact_provenance)
         BUNDLE_TEST.install_fixture_qualification_policy(
-            self.license_fixture.repo
+            self.license_fixture.repo,
+            self.license_fixture.build_root,
         )
         self.license_fixture.rebind_build_provenance()
         self.reproducibility_build_root = (
@@ -317,6 +496,7 @@ class FinalizationFixture:
                     else self.license_fixture.build_root
                 ),
                 repo_root=self.license_fixture.repo,
+                waveshare_lcd147b_qualification_result=self.qualification_result,
             )
         )
 
@@ -339,6 +519,7 @@ class FinalizationSeamRedTests(unittest.TestCase):
                 "license_evidence_dir",
                 "license_build_root",
                 "repo_root",
+                "waveshare_lcd147b_qualification_result",
             },
         )
 
@@ -372,10 +553,115 @@ class FinalizationLifecycleRedTests(unittest.TestCase):
             "failed finalization exposed an output path",
         )
 
+    def completed_hil_with_link_facts(self) -> dict:
+        payload = self.fixture.completed_hil_payload()
+        self.assertEqual(payload["schema_version"], 4)
+        for record in payload["records"]:
+            record["oi1_observation"]["transfer_link_facts"] = (
+                transfer_link_facts(record["profile_id"])
+            )
+        return payload
+
+    def test_v4_finalization_accepts_exact_transfer_link_facts(self):
+        valid = self.completed_hil_with_link_facts()
+        valid_report = self.fixture.write_completed_hil(
+            self.fixture.license_fixture.root / "link-facts-valid-HIL.md",
+            valid,
+        )
+        output = self.fixture.license_fixture.root / "link-facts-valid-output"
+        self.assertEqual(
+            self.fixture.finalize(output, completed_hil_report=valid_report),
+            output,
+        )
+
+    def test_v4_accepts_nonzero_request_returns_when_final_update_settles(self):
+        valid = self.completed_hil_with_link_facts()
+        for record in valid["records"]:
+            record["oi1_observation"]["transfer_link_facts"][
+                "connection_parameters"
+            ]["request_return_codes"] = [530, 531]
+        valid_report = self.fixture.write_completed_hil(
+            self.fixture.license_fixture.root / "link-facts-nonzero-returns-HIL.md",
+            valid,
+        )
+        output = self.fixture.license_fixture.root / "link-facts-nonzero-returns-output"
+        self.assertEqual(
+            self.fixture.finalize(output, completed_hil_report=valid_report),
+            output,
+        )
+
+    def test_v4_finalization_rejects_missing_transfer_link_facts(self):
+        missing = self.fixture.completed_hil_payload()
+        for record in missing["records"]:
+            record["oi1_observation"].pop("transfer_link_facts")
+        missing_report = self.fixture.write_completed_hil(
+            self.fixture.license_fixture.root / "link-facts-missing-HIL.md",
+            missing,
+        )
+        self.assert_rejected_without_output(
+            self.fixture.license_fixture.root / "link-facts-missing-output",
+            completed_hil_report=missing_report,
+        )
+
+    def test_v4_finalization_rejects_nested_extra_profile_bool_and_bounds(self):
+        def wrong_profile(record):
+            other = (
+                WAVESHARE_PROFILE_ID
+                if record["profile_id"] == "esp32-4mb"
+                else "esp32-4mb"
+            )
+            record["oi1_observation"]["transfer_link_facts"]["phy"] = (
+                transfer_link_facts(other)["phy"]
+            )
+
+        mutations = {
+            "extra": lambda record: record["oi1_observation"][
+                "transfer_link_facts"
+            ]["dle"].__setitem__("identifier", "private"),
+            "missing-nested": lambda record: record["oi1_observation"][
+                "transfer_link_facts"
+            ]["dle"].pop("max_tx_time_us"),
+            "wrong-profile": wrong_profile,
+            "bool": lambda record: record["oi1_observation"][
+                "transfer_link_facts"
+            ]["dle"].__setitem__("request_attempts", True),
+            "dle-bound": lambda record: record["oi1_observation"][
+                "transfer_link_facts"
+            ]["dle"].__setitem__("max_tx_octets", 243),
+            "interval-bound": lambda record: (
+                record["oi1_observation"]["transfer_link_facts"][
+                    "connection_parameters"
+                ]["updates"][-1].__setitem__("interval_units", 25),
+                record["oi1_observation"]["transfer_link_facts"][
+                    "connection_parameters"
+                ].__setitem__("settled_interval_units", 25),
+            ),
+            "starve-bool": lambda record: record["oi1_observation"][
+                "transfer_link_facts"
+            ].__setitem__("tx_mbuf_starve_count", False),
+            "starve-negative": lambda record: record["oi1_observation"][
+                "transfer_link_facts"
+            ].__setitem__("tx_mbuf_starve_count", -1),
+        }
+        for name, mutate in mutations.items():
+            with self.subTest(case=name):
+                payload = self.completed_hil_with_link_facts()
+                mutate(payload["records"][0])
+                report = self.fixture.write_completed_hil(
+                    self.fixture.license_fixture.root
+                    / ("link-facts-%s-HIL.md" % name),
+                    payload,
+                )
+                self.assert_rejected_without_output(
+                    self.fixture.license_fixture.root
+                    / ("link-facts-%s-output" % name),
+                    completed_hil_report=report,
+                )
+
     def test_happy_path_is_exact_copy_on_write_and_public_valid(self):
         candidate_before = tree_bytes(self.fixture.candidate)
         candidate_release = read_json(self.fixture.candidate / "release.json")
-        self.assertEqual(candidate_release["schema_version"], 2)
+        self.assertEqual(candidate_release["schema_version"], 3)
         self.assertEqual(
             [profile["id"] for profile in candidate_release["profiles"]],
             list(RELEASE_PROFILE_ORDER),
@@ -388,7 +674,10 @@ class FinalizationLifecycleRedTests(unittest.TestCase):
             "the deferred C3 profile must not enter candidate finalization",
         )
         pending_payload = read_hil_payload(self.fixture.candidate / "HIL_REPORT.md")
-        self.assertEqual(pending_payload["schema_version"], 2)
+        self.assertEqual(pending_payload["schema_version"], 4)
+        self.assertIsNone(
+            pending_payload["waveshare_lcd147b_qualification"]
+        )
         self.assertEqual(pending_payload["candidate_release_json_sha256"], "")
         self.assertEqual(
             [record["profile_id"] for record in pending_payload["records"]],
@@ -681,23 +970,44 @@ class FinalizationLifecycleRedTests(unittest.TestCase):
 
     def test_goodput_accepts_exact_floor_and_rejects_floor_minus_one(self):
         cases = {
-            "exact-floor": (1_000_549_615, 65_500, True),
-            "floor-minus-one": (1_000_564_891, 65_499, False),
+            "exact-floors": None,
+            "put-floor-minus-one": "put",
+            "get-floor-minus-one": "get",
         }
-        for name, (duration_ns, goodput, accepted) in cases.items():
+        metrics = {
+            "put": (
+                "put_committed_goodput_min_bytes_per_second",
+                "put_unique_committed_bytes",
+                "put_duration_ns",
+                "put_committed_goodput_bytes_per_second",
+            ),
+            "get": (
+                "get_verified_goodput_min_bytes_per_second",
+                "get_unique_verified_bytes",
+                "get_duration_ns",
+                "get_verified_goodput_bytes_per_second",
+            ),
+        }
+        for name, rejected_prefix in cases.items():
             with self.subTest(case=name):
                 payload = self.fixture.completed_hil_payload()
-                for prefix in ("put", "get"):
-                    payload["records"][0]["oi1_observation"][
-                        "%s_duration_ns" % prefix
-                    ][0] = duration_ns
-                    payload["records"][0]["oi1_observation"][
-                        (
-                            "put_committed_goodput_bytes_per_second"
-                            if prefix == "put"
-                            else "get_verified_goodput_bytes_per_second"
-                        )
-                    ][0] = goodput
+                record = payload["records"][0]
+                thresholds = record["oi1_policy"]["thresholds"]
+                observation = record["oi1_observation"]
+                for prefix, keys in metrics.items():
+                    threshold_key, bytes_key, duration_key, measured_key = keys
+                    floor = thresholds[threshold_key]
+                    goodput = floor - int(prefix == rejected_prefix)
+                    payload_bytes = observation[bytes_key][0]
+                    duration_ns = (
+                        payload_bytes * 1_000_000_000
+                    ) // goodput
+                    self.assertEqual(
+                        (payload_bytes * 1_000_000_000) // duration_ns,
+                        goodput,
+                    )
+                    observation[duration_key][0] = duration_ns
+                    observation[measured_key][0] = goodput
                 report = self.fixture.write_completed_hil(
                     self.fixture.license_fixture.root / ("%s-HIL.md" % name),
                     payload,
@@ -705,7 +1015,7 @@ class FinalizationLifecycleRedTests(unittest.TestCase):
                 output = self.fixture.license_fixture.root / (
                     "%s-output" % name
                 )
-                if accepted:
+                if rejected_prefix is None:
                     self.assertEqual(
                         self.fixture.finalize(
                             output,

@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
+import AppPage, { metadata as appMetadata } from "@/app/app/page";
 import FlashPage, { metadata as flashMetadata } from "@/app/flash/page";
 import { metadata as rootMetadata } from "@/app/layout";
 import HomePage, { metadata as homeMetadata } from "@/app/page";
@@ -22,11 +23,82 @@ import {
   navigation,
   siteConfig,
 } from "@/lib/site";
+import type { FirmwareReleaseDescriptor } from "@/lib/firmware-release";
 import {
-  passedPublicFirmwareRelease,
-  pendingCandidateFirmwareRelease,
+  currentPendingCandidateFirmwareRelease,
+  hypotheticalPassedPublicFirmwareRelease,
   publicBetaFirmwareRelease,
 } from "@/test/fixtures/firmware-release";
+
+function hypotheticalQualifiedReleaseAtVersion(
+  version: string,
+): FirmwareReleaseDescriptor {
+  const release = structuredClone(
+    hypotheticalPassedPublicFirmwareRelease,
+  ) as unknown as {
+    version: string;
+    builtAt: string;
+    releaseJson: { path: string };
+    schemaPath: string;
+    recoveryPath: string;
+    profiles: Array<{ manifestPath: string; firmwarePath: string }>;
+  };
+  release.version = version;
+  release.builtAt = "2026-08-02T00:00:00Z";
+  release.releaseJson.path = `/firmware/v${version}/release.json`;
+  release.schemaPath = `/firmware/v${version}/release.schema.json`;
+  release.recoveryPath = `/firmware/v${version}/RECOVERY.md`;
+  for (const profile of release.profiles) {
+    profile.manifestPath = profile.manifestPath.replace(
+      "/firmware/v0.5.1/",
+      `/firmware/v${version}/`,
+    );
+    profile.firmwarePath = profile.firmwarePath.replace(
+      "/firmware/v0.5.1/",
+      `/firmware/v${version}/`,
+    );
+  }
+  return release as unknown as FirmwareReleaseDescriptor;
+}
+
+function jpegDimensions(bytes: Buffer): { width: number; height: number } {
+  if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8) {
+    throw new Error("not a JPEG");
+  }
+  const startOfFrame = new Set([
+    0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce,
+    0xcf,
+  ]);
+  let offset = 2;
+  while (offset + 8 < bytes.length) {
+    if (bytes[offset] !== 0xff) {
+      throw new Error("invalid JPEG marker");
+    }
+    while (bytes[offset] === 0xff) {
+      offset += 1;
+    }
+    const marker = bytes[offset];
+    offset += 1;
+    if (marker === undefined || marker === 0xd9 || marker === 0xda) {
+      break;
+    }
+    if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) {
+      continue;
+    }
+    const length = bytes.readUInt16BE(offset);
+    if (length < 2 || offset + length > bytes.length) {
+      throw new Error("invalid JPEG segment");
+    }
+    if (startOfFrame.has(marker)) {
+      return {
+        height: bytes.readUInt16BE(offset + 3),
+        width: bytes.readUInt16BE(offset + 5),
+      };
+    }
+    offset += length;
+  }
+  throw new Error("JPEG dimensions are missing");
+}
 
 describe("public-site contract", () => {
   it("keeps pyble.dev canonical and presents the four launch routes", () => {
@@ -48,9 +120,17 @@ describe("public-site contract", () => {
       absolute: "PyBLE — Python over Bluetooth Low Energy",
     });
     expect(homeMetadata.alternates).toEqual({ canonical: "https://pyble.dev" });
+    expect(appMetadata.alternates).toEqual({
+      canonical: "https://pyble.dev/app",
+    });
+    expect(appMetadata.title).toBe("PyBLE for iPad and Android");
+    expect(appMetadata.description).toMatch(
+      /ipad external beta.*android internal test/i,
+    );
     expect(privacyMetadata.alternates).toEqual({
       canonical: "https://pyble.dev/privacy",
     });
+    expect(privacyMetadata.title).toBe("PyBLE Privacy Policy");
     expect(supportMetadata.alternates).toEqual({
       canonical: "https://pyble.dev/support",
     });
@@ -72,10 +152,20 @@ describe("public-site contract", () => {
       Array.from(sitemap.matchAll(/<loc>([^<]+)<\/loc>/g), (match) => match[1]),
     ).toEqual([
       "https://pyble.dev/",
+      "https://pyble.dev/app",
       "https://pyble.dev/privacy",
       "https://pyble.dev/support",
       "https://pyble.dev/flash",
     ]);
+    expect(sitemap).toMatch(
+      /<loc>https:\/\/pyble\.dev\/privacy<\/loc>\s*<lastmod>2026-08-07T00:00:00\.000Z<\/lastmod>/,
+    );
+    expect(sitemap).toMatch(
+      /<loc>https:\/\/pyble\.dev\/<\/loc>\s*<lastmod>2026-08-07T00:00:00\.000Z<\/lastmod>/,
+    );
+    expect(sitemap).toMatch(
+      /<loc>https:\/\/pyble\.dev\/app<\/loc>\s*<lastmod>2026-08-07T00:00:00\.000Z<\/lastmod>/,
+    );
     expect(robots).toContain("Host: https://pyble.dev");
     expect(robots).toContain("Sitemap: https://pyble.dev/sitemap.xml");
     expect(manifest).toMatchObject({
@@ -251,58 +341,200 @@ describe("public-site contract", () => {
     expect(footerLink).toHaveAttribute("rel", "noopener noreferrer");
   });
 
-  it("publishes the approved TestFlight invitation as a link and verified local QR code", async () => {
+  it("publishes the approved iPad and Android testing links with verified local QR codes", async () => {
     const testFlightUrl = "https://testflight.apple.com/join/yU4e8s6d";
+    const googlePlayUrl =
+      "https://play.google.com/store/apps/details?id=dev.pyble.pyble";
 
     render(<HomePage />);
 
-    const betaSection = screen.getByRole("region", {
+    const testFlightSection = screen.getByRole("region", {
       name: "Join the PyBLE beta on TestFlight.",
     });
     expect(
-      within(betaSection).getByText(/external testing is open/i),
+      within(testFlightSection).getByText(/external testing is open/i),
     ).toBeInTheDocument();
 
-    const directLink = within(betaSection).getByRole("link", {
+    const androidSection = screen.getByRole("region", {
+      name: "Join the PyBLE Android internal test.",
+    });
+    expect(testFlightSection.nextElementSibling).toBe(androidSection);
+    expect(
+      within(androidSection).getByText(/approved internal testers/i),
+    ).toBeInTheDocument();
+    expect(
+      within(androidSection).getByText(/not a public Google Play release/i),
+    ).toBeInTheDocument();
+    expect(
+      within(androidSection).getByText(/unapproved.*may.*unavailable/i),
+    ).toBeInTheDocument();
+
+    const testFlightLink = within(testFlightSection).getByRole("link", {
       name: "Open in TestFlight",
     });
-    expect(directLink).toHaveAttribute("href", testFlightUrl);
-    expect(directLink).toHaveAttribute("target", "_blank");
-    expect(directLink).toHaveAttribute("rel", "noopener noreferrer");
+    expect(testFlightLink).toHaveAttribute("href", testFlightUrl);
+    expect(testFlightLink).toHaveAttribute("target", "_blank");
+    expect(testFlightLink).toHaveAttribute("rel", "noopener noreferrer");
 
-    const qrDescription = "QR code for the PyBLE beta on Apple TestFlight";
-    const qrLink = within(betaSection).getByRole("link", {
-      name: qrDescription,
+    const googlePlayLink = within(androidSection).getByRole("link", {
+      name: "Open Android internal test",
     });
-    expect(qrLink).toHaveAttribute("href", testFlightUrl);
-    expect(qrLink).toHaveAttribute("target", "_blank");
-    expect(qrLink).toHaveAttribute("rel", "noopener noreferrer");
+    expect(googlePlayLink).toHaveAttribute("href", googlePlayUrl);
+    expect(googlePlayLink).toHaveAttribute("target", "_blank");
+    expect(googlePlayLink).toHaveAttribute("rel", "noopener noreferrer");
+
+    const testFlightQrDescription =
+      "QR code for the PyBLE beta on Apple TestFlight";
+    const testFlightQrLink = within(testFlightSection).getByRole("link", {
+      name: testFlightQrDescription,
+    });
+    expect(testFlightQrLink).toHaveAttribute("href", testFlightUrl);
+    expect(testFlightQrLink).toHaveAttribute("target", "_blank");
+    expect(testFlightQrLink).toHaveAttribute("rel", "noopener noreferrer");
     expect(
-      within(betaSection).getByRole("img", { name: qrDescription }),
+      within(testFlightSection).getByRole("img", {
+        name: testFlightQrDescription,
+      }),
     ).toHaveAttribute("src", "/testflight/pyble-testflight-qr.svg");
+
+    const googlePlayQrDescription =
+      "QR code for the PyBLE Android internal test on Google Play";
+    const googlePlayQrLink = within(androidSection).getByRole("link", {
+      name: googlePlayQrDescription,
+    });
+    expect(googlePlayQrLink).toHaveAttribute("href", googlePlayUrl);
+    expect(googlePlayQrLink).toHaveAttribute("target", "_blank");
+    expect(googlePlayQrLink).toHaveAttribute("rel", "noopener noreferrer");
     expect(
-      within(betaSection).getByText("testflight.apple.com/join/yU4e8s6d"),
+      within(androidSection).getByRole("img", {
+        name: googlePlayQrDescription,
+      }),
+    ).toHaveAttribute(
+      "src",
+      "/google-play/pyble-google-play-internal-test-qr.svg",
+    );
+
+    expect(
+      within(testFlightSection).getByText("testflight.apple.com/join/yU4e8s6d"),
     ).toBeInTheDocument();
+    expect(within(androidSection).getByText(googlePlayUrl)).toBeInTheDocument();
 
     expect(
       screen.getByRole("link", { name: "Join the iPad beta" }),
-    ).toHaveAttribute("href", "#testflight");
+    ).toHaveAttribute("href", "/app");
     expect(
       screen.queryByText(/preparing for public (?:beta|testing)/i),
     ).not.toBeInTheDocument();
     expect(
       screen.queryByText(/available on the app store/i),
     ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/^available on google play$/i),
+    ).not.toBeInTheDocument();
 
-    const qrAsset = await readFile(
-      join(process.cwd(), "public", "testflight", "pyble-testflight-qr.svg"),
+    const qrAssets = [
+      {
+        path: join(
+          process.cwd(),
+          "public",
+          "testflight",
+          "pyble-testflight-qr.svg",
+        ),
+        sha256:
+          "4ab6c814a8526c4d69a3b330dc563298edf5bf7eadbea4babd262fa75568e305",
+      },
+      {
+        path: join(
+          process.cwd(),
+          "public",
+          "google-play",
+          "pyble-google-play-internal-test-qr.svg",
+        ),
+        sha256:
+          "fbd84d11d773346d0a2cd23f0e3193d02ff02e6c9780298294431d95dd07f32d",
+      },
+    ];
+    for (const expected of qrAssets) {
+      const qrAsset = await readFile(expected.path);
+      expect(createHash("sha256").update(qrAsset).digest("hex")).toBe(
+        expected.sha256,
+      );
+      expect(qrAsset.toString("utf8")).not.toMatch(
+        /<(?:script|image)\b|(?:href|xlink:href)=/i,
+      );
+    }
+  });
+
+  it("publishes both testing channels and support paths on the canonical app route", () => {
+    render(<AppPage />);
+
+    expect(
+      screen.getByRole("heading", {
+        level: 1,
+        name: /install pyble.*ipad.*android/i,
+      }),
+    ).toBeInTheDocument();
+
+    expect(siteConfig.testFlightUrl).toBe(
+      "https://testflight.apple.com/join/yU4e8s6d",
     );
-    expect(createHash("sha256").update(qrAsset).digest("hex")).toBe(
-      "4ab6c814a8526c4d69a3b330dc563298edf5bf7eadbea4babd262fa75568e305",
+    expect(siteConfig.googlePlayInternalTestUrl).toBe(
+      "https://play.google.com/store/apps/details?id=dev.pyble.pyble",
     );
-    expect(qrAsset.toString("utf8")).not.toMatch(
-      /<(?:script|image)\b|(?:href|xlink:href)=/i,
+
+    const testFlightLink = screen.getByRole("link", {
+      name: "Open PyBLE in TestFlight",
+    });
+    expect(testFlightLink).toHaveAttribute("href", siteConfig.testFlightUrl);
+    expect(testFlightLink).toHaveAttribute("target", "_blank");
+    expect(testFlightLink).toHaveAttribute("rel", "noopener noreferrer");
+
+    const googlePlayLink = screen.getByRole("link", {
+      name: "Open Android internal test",
+    });
+    expect(googlePlayLink).toHaveAttribute(
+      "href",
+      siteConfig.googlePlayInternalTestUrl,
     );
+    expect(googlePlayLink).toHaveAttribute("target", "_blank");
+    expect(googlePlayLink).toHaveAttribute("rel", "noopener noreferrer");
+
+    expect(
+      screen.getByRole("img", {
+        name: "QR code for the PyBLE beta on Apple TestFlight",
+      }),
+    ).toHaveAttribute("src", "/testflight/pyble-testflight-qr.svg");
+    expect(
+      screen.getByText(siteConfig.testFlightUrl, {
+        selector: ".app-install__direct span",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("img", {
+        name: "QR code for the PyBLE Android internal test on Google Play",
+      }),
+    ).toHaveAttribute(
+      "src",
+      "/google-play/pyble-google-play-internal-test-qr.svg",
+    );
+    expect(
+      screen.getByText(siteConfig.googlePlayInternalTestUrl, {
+        selector: ".app-install__direct span",
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/approved internal testers/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/not a public Google Play release/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/unapproved.*may.*unavailable/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: /open firmware installer/i }),
+    ).toHaveAttribute("href", "/flash");
+    expect(
+      screen.getByRole("link", { name: /(?:get|contact|open) support/i }),
+    ).toHaveAttribute("href", "/support");
   });
 
   it("shows a reviewed capture of the actual app instead of a fabricated hero UI", async () => {
@@ -362,20 +594,30 @@ describe("public-site contract", () => {
       },
     ]);
     expect(
-      firmwareTargetsForRelease(passedPublicFirmwareRelease)
+      firmwareTargetsForRelease(publicBetaFirmwareRelease)
         .filter(({ planned }) => !planned)
         .map(({ status }) => status),
     ).toEqual([
-      "v0.4.2 qualified public release",
-      "v0.4.2 qualified public release",
+      "v0.4.2 hardware-tested beta · browser install/recovery passed · release qualification pending",
+      "v0.4.2 hardware-tested beta · browser install/recovery passed · release qualification pending",
     ]);
     expect(
-      firmwareTargetsForRelease(pendingCandidateFirmwareRelease)
+      firmwareTargetsForRelease(currentPendingCandidateFirmwareRelease)
         .filter(({ planned }) => !planned)
         .map(({ status }) => status),
     ).toEqual([
-      "v0.4.2 protected candidate · HIL pending",
-      "v0.4.2 protected candidate · HIL pending",
+      "v0.5.1 protected candidate · HIL pending",
+      "v0.5.1 protected candidate · HIL pending",
+      "v0.5.1 protected candidate · HIL pending",
+    ]);
+    expect(
+      firmwareTargetsForRelease(hypotheticalPassedPublicFirmwareRelease)
+        .filter(({ planned }) => !planned)
+        .map(({ status }) => status),
+    ).toEqual([
+      "v0.5.1 qualified public release",
+      "v0.5.1 qualified public release",
+      "v0.5.1 qualified public release",
     ]);
 
     render(<HomePage />);
@@ -392,6 +634,112 @@ describe("public-site contract", () => {
     expect(
       screen.getByRole("link", { name: /open firmware installer/i }),
     ).toHaveAttribute("href", "/flash");
+    expect(
+      screen.queryByRole("img", {
+        name: /actual waveshare esp32-s3-lcd-1\.47b/i,
+      }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("defines future-qualified v0.5.1 Waveshare copy without claiming it is current", async () => {
+    const selectionRoot = await mkdtemp(
+      join(tmpdir(), "pyble-site-waveshare-selection-"),
+    );
+    const selectionFile = join(selectionRoot, "selection.json");
+    const previousSelection = process.env.PYBLE_FLASH_SELECTION_FILE;
+    process.env.PYBLE_FLASH_SELECTION_FILE = selectionFile;
+
+    try {
+      await writeFile(
+        selectionFile,
+        JSON.stringify(hypotheticalQualifiedReleaseAtVersion("0.5.1")),
+        "utf8",
+      );
+      const home = render(<HomePage />);
+
+      const s3Target = screen.getByText("esp32-s3-n16r8").closest("div");
+      expect(s3Target).toHaveTextContent(/lean generic/i);
+      expect(s3Target).toHaveTextContent(/16 MiB flash.*8 MiB Octal PSRAM/i);
+      expect(s3Target).not.toHaveTextContent(/Waveshare ESP32-S3-LCD-1\.47B/i);
+      const exactTarget = screen
+        .getByText("waveshare-esp32-s3-lcd-147b")
+        .closest("div");
+      expect(exactTarget).toHaveTextContent(/Waveshare ESP32-S3-LCD-1\.47B/i);
+      expect(exactTarget).toHaveTextContent(
+        /exact B version.*16 MiB flash.*8 MiB Octal PSRAM/i,
+      );
+      expect(
+        screen.getByText(/qualified public v0\.5\.1 firmware/i),
+      ).toHaveTextContent(
+        /esp32-4mb.*lean generic esp32-s3-n16r8.*separate waveshare-esp32-s3-lcd-147b/i,
+      );
+      expect(
+        screen.getByText(
+          /build offline with eight editable beginner examples/i,
+        ),
+      ).toHaveTextContent(/explicit TFT display example/i);
+      expect(
+        screen.getByText("Qualified public firmware targets"),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByLabelText("Qualified public firmware targets"),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByText("Initial beta firmware targets"),
+      ).not.toBeInTheDocument();
+      const boardPhoto = screen.getByRole("img", {
+        name: "Actual Waveshare ESP32-S3-LCD-1.47B displaying the PyBLE v0.5.1 boot splash and app QR",
+      });
+      expect(boardPhoto).toHaveAttribute(
+        "src",
+        "/boards/esp32-s3-lcd-1.47b-pyble-v0.5.1.jpg",
+      );
+      const boardFigure = boardPhoto.closest("figure");
+      expect(boardFigure).toHaveTextContent(
+        /Actual board.*PyBLE firmware v0\.5\.1/i,
+      );
+      expect(
+        within(boardFigure!).getByRole("link", {
+          name: /open this board's installer/i,
+        }),
+      ).toHaveAttribute("href", "/flash");
+
+      const photoBytes = await readFile(
+        join(
+          process.cwd(),
+          "public",
+          "boards",
+          "esp32-s3-lcd-1.47b-pyble-v0.5.1.jpg",
+        ),
+      );
+      expect(photoBytes.length).toBe(195079);
+      expect(photoBytes.length).toBeLessThanOrEqual(250000);
+      expect(photoBytes.subarray(0, 3)).toEqual(
+        Buffer.from([0xff, 0xd8, 0xff]),
+      );
+      expect(jpegDimensions(photoBytes)).toEqual({ width: 1600, height: 1116 });
+      expect(createHash("sha256").update(photoBytes).digest("hex")).toBe(
+        "b939abb9b7ac19c7be8f429faaa61d08aadc7f027eac181582e036fd22949d12",
+      );
+      expect(photoBytes.includes(Buffer.from("Exif\0\0", "binary"))).toBe(
+        false,
+      );
+
+      home.unmount();
+      render(<SupportPage />);
+      expect(
+        screen.getByText(/qualified v0\.5\.1 firmware is available/i),
+      ).toHaveTextContent(
+        /three exact profiles.*lean generic esp32-s3-n16r8.*separate waveshare-esp32-s3-lcd-147b/i,
+      );
+    } finally {
+      if (previousSelection === undefined) {
+        delete process.env.PYBLE_FLASH_SELECTION_FILE;
+      } else {
+        process.env.PYBLE_FLASH_SELECTION_FILE = previousSelection;
+      }
+      await rm(selectionRoot, { recursive: true, force: true });
+    }
   });
 
   it("shows the scoped hardware-tested beta claims only when its build selector is active", async () => {
@@ -442,7 +790,7 @@ describe("public-site contract", () => {
     }
   });
 
-  it("keeps qualified and protected-candidate copy distinct", async () => {
+  it("keeps hypothetical future-qualified and prospective-candidate copy distinct", async () => {
     const selectionRoot = await mkdtemp(
       join(tmpdir(), "pyble-site-release-selection-"),
     );
@@ -453,30 +801,30 @@ describe("public-site contract", () => {
     try {
       await writeFile(
         selectionFile,
-        JSON.stringify(passedPublicFirmwareRelease),
+        JSON.stringify(hypotheticalPassedPublicFirmwareRelease),
         "utf8",
       );
       const qualifiedHome = render(<HomePage />);
       expect(
-        screen.getByText(/qualified public v0\.4\.2 firmware/i),
+        screen.getByText(/qualified public v0\.5\.1 firmware/i),
       ).toHaveTextContent(
-        /available for the exact esp32-4mb and esp32-s3-n16r8 profiles/i,
+        /esp32-4mb.*lean generic esp32-s3-n16r8.*separate waveshare-esp32-s3-lcd-147b/i,
       );
       qualifiedHome.unmount();
       const qualifiedSupport = render(<SupportPage />);
       expect(
-        screen.getByText(/qualified v0\.4\.2 firmware is available/i),
+        screen.getByText(/qualified v0\.5\.1 firmware is available/i),
       ).toBeInTheDocument();
       qualifiedSupport.unmount();
 
       await writeFile(
         selectionFile,
-        JSON.stringify(pendingCandidateFirmwareRelease),
+        JSON.stringify(currentPendingCandidateFirmwareRelease),
         "utf8",
       );
       const candidateHome = render(<HomePage />);
       expect(
-        screen.getByText(/protected candidate v0\.4\.2 is staged/i),
+        screen.getByText(/protected candidate v0\.5\.1 is staged/i),
       ).toBeInTheDocument();
       candidateHome.unmount();
       render(<SupportPage />);
@@ -507,7 +855,7 @@ describe("public-site contract", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        /public install action remains unavailable until the final bytes pass hardware validation on both exact current release profiles/i,
+        /public install action remains unavailable until the final bytes pass hardware validation on all three prospective v0\.5\.1 profiles/i,
       ),
     ).toBeInTheDocument();
     expect(screen.getByText(/esp32-s3-n16r8/i)).toBeInTheDocument();
@@ -627,9 +975,29 @@ describe("public-site contract", () => {
     expect(recovery).not.toHaveTextContent(/signed release metadata/i);
   });
 
-  it("publishes the app and website privacy promises separately", () => {
+  it("publishes a complete Play-ready privacy policy for the app and website", () => {
     render(<PrivacyPage />);
 
+    expect(
+      screen.getByRole("heading", {
+        level: 1,
+        name: "PyBLE Privacy Policy",
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("7 August 2026").closest("time")).toHaveAttribute(
+      "datetime",
+      "2026-08-07",
+    );
+    expect(
+      screen.getByText(
+        /independent open-source project maintained by Viwat Vchirawongkwin/i,
+      ),
+    ).toHaveTextContent(/under the SciLabPro project name/i);
+    expect(
+      screen.getByText(
+        /not an official Chulalongkorn University project or app/i,
+      ),
+    ).toBeInTheDocument();
     expect(
       screen.getByRole("heading", { name: "PyBLE app" }),
     ).toBeInTheDocument();
@@ -637,15 +1005,48 @@ describe("public-site contract", () => {
       screen.getByRole("heading", { name: "This website" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/no account, advertising, analytics, or telemetry/i),
+      screen.getByText(
+        /no account, advertising, analytics, telemetry, or crash reporting/i,
+      ),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/tablet or the connected board you choose/i),
+      screen.getByText(/Save, Run, a Files operation, or send console input/i),
+    ).toHaveTextContent(/directly over BLE to the board you selected/i);
+    expect(
+      screen.getByText(
+        /PBLE\/1 does not require Bluetooth pairing or BLE link encryption/i,
+      ),
+    ).toHaveTextContent(
+      /do not send passwords, API keys, tokens, private keys/i,
+    );
+    expect(
+      screen.getByText(/legacy Android location permission/i),
+    ).toHaveTextContent(
+      /does not derive, store, or transmit your physical location/i,
+    );
+    expect(
+      screen.getByText(/clear PyBLE's app storage or uninstall it/i),
+    ).toHaveTextContent(/does not delete files on a board or exported copies/i);
+    expect(
+      screen.getByText(/delete board files through Files.*Delete/i),
     ).toBeInTheDocument();
     expect(
-      screen.queryByText(/tablet or the ESP32 board/i),
-    ).not.toBeInTheDocument();
-    expect(screen.getByText(/ordinary request data/i)).toBeInTheDocument();
+      screen.getByText(
+        /no PyBLE server-side copy of your app project content/i,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /contains no advertising, analytics, crash-reporting, or account SDK/i,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/GitHub import/i)).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/Cloudflare and the VPS hosting infrastructure/i),
+    ).toHaveTextContent(/ordinary request data/i);
+    expect(
+      screen.getByRole("link", { name: siteConfig.supportEmail }),
+    ).toHaveAttribute("href", `mailto:${siteConfig.supportEmail}`);
   });
 
   it("gives beta users an exact installer intake and preferred bug template", () => {

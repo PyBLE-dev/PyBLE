@@ -3,12 +3,13 @@
 # Part of PyBLE (https://pyble.dev) — see /LICENSE.
 #
 # Frozen OI-1 single-profile HIL orchestrator.  Baseline mode emits one
-# canonical profile fragment for later two-profile assembly; verify mode emits
+# canonical profile fragment for later three-profile assembly; verify mode emits
 # the exact completed oi1_observation object after applying the committed
 # profile thresholds.
 
 import argparse
 import asyncio
+import errno
 import json
 import platform
 import re
@@ -21,6 +22,7 @@ from _pble_bench import (
     BenchError,
     CommandIds,
     DERIVATION,
+    PROFILE_CHIPS,
     PROFILE_ORDER,
     PROFILE_TARGETS,
     RedactedRawLog,
@@ -41,6 +43,7 @@ from _pble_bench import (
     validate_observation,
     validate_oi1_caps,
     validate_reliability,
+    validate_transfer_link_facts,
     deterministic_payload,
 )
 
@@ -48,7 +51,17 @@ from _pble_bench import (
 PROFILE_CAPACITIES = {
     "esp32-4mb": (4 * 1024 * 1024, 0),
     "esp32-s3-n16r8": (16 * 1024 * 1024, 8 * 1024 * 1024),
+    "waveshare-esp32-s3-lcd-147b": (
+        16 * 1024 * 1024,
+        8 * 1024 * 1024,
+    ),
 }
+
+SERIAL_ENDPOINT_GONE_ERRNOS = frozenset(
+    (errno.EIO, errno.ENXIO, errno.ENODEV, errno.EBADF)
+)
+PRE_CAPTURE_SESSION_END_TIMEOUT_MS = 2000
+SERIAL_POLL_INTERVAL_SECONDS = 0.01
 
 
 def _require_text(value, label):
@@ -172,11 +185,269 @@ def _checked_roundtrip_result(result, payload_size):
     return result
 
 
+class LinkFactParser:
+    """Parse only the fixed, identifier-free ADR-0027 serial grammar."""
+
+    _REQUEST = re.compile(
+        r"link tune req phase=(dle|phy|conn-param) "
+        r"attempt=(0|[1-9][0-9]*) "
+        r"context=(connect|timer|retry) rc=(0|[1-9][0-9]*)"
+    )
+    _DLE_COMPLETE = re.compile(
+        r"link tune complete phase=dle "
+        r"max_tx_octets=(0|[1-9][0-9]*) "
+        r"max_tx_time_us=(0|[1-9][0-9]*)"
+    )
+    _PHY_COMPLETE = re.compile(
+        r"link tune complete phase=phy status=(0|[1-9][0-9]*) "
+        r"tx=(0|[1-9][0-9]*) rx=(0|[1-9][0-9]*)"
+    )
+    _CP_COMPLETE = re.compile(
+        r"link tune complete phase=conn-param "
+        r"status=(0|[1-9][0-9]*) "
+        r"interval_units=(0|[1-9][0-9]*)"
+    )
+    _CLASSIC_PHY_SKIP = re.compile(
+        r"link tune skip phase=phy context=classic-compiled-out"
+    )
+    _SESSION_END = re.compile(
+        r"link tune session end tx_mbuf_starve_count=(0|[1-9][0-9]*)"
+    )
+
+    def __init__(self, profile_id):
+        if profile_id not in PROFILE_ORDER:
+            raise BenchError("profile is outside the current OI-1 order")
+        self.profile_id = profile_id
+        self._stage = "dle"
+        self._attempts = {"dle": 0, "phy": 0, "conn-param": 0}
+        self._dle = None
+        self._phy_updates = []
+        self._classic_phy_skipped = False
+        self._cp_return_codes = []
+        self._cp_updates = []
+        self._settled_phy = (0, 0)
+        self._settled_interval = None
+        self._session_end = None
+        self._sealed = False
+        self._new_records = []
+
+    @staticmethod
+    def _payload(line):
+        if isinstance(line, bytes):
+            if b"link tune" not in line:
+                return None
+            try:
+                line = line.decode("ascii", errors="strict")
+            except UnicodeDecodeError as exc:
+                raise BenchError("link-tune record is not strict ASCII") from exc
+        if not isinstance(line, str):
+            raise BenchError("serial line must be bytes or text")
+        if "link tune" not in line:
+            return None
+        line = line.rstrip("\r\n")
+        # ESP-IDF may wrap ERROR records in its fixed color transport framing;
+        # the reset code is not part of the parser-owned payload grammar.
+        if line.endswith("\x1b[0m"):
+            line = line[:-4]
+        start = line.find("link tune")
+        if line.find("link tune", start + 1) >= 0:
+            raise BenchError("serial line contains duplicate link-tune records")
+        return line[start:]
+
+    def _record(self, record_type, **fields):
+        self._new_records.append({"record_type": record_type, **fields})
+
+    def take_records(self):
+        records = self._new_records
+        self._new_records = []
+        return records
+
+    @property
+    def is_settled(self):
+        return self._stage == "settled"
+
+    @property
+    def has_session_end(self):
+        return self._session_end is not None
+
+    def feed_line(self, line):
+        payload = self._payload(line)
+        if payload is None:
+            return False
+        if self._sealed:
+            raise BenchError("link-fact parser is already sealed")
+
+        match = self._REQUEST.fullmatch(payload)
+        if match is not None:
+            phase, raw_attempt, context, raw_rc = match.groups()
+            if phase == "phy" and self.profile_id == "esp32-4mb":
+                raise BenchError("classic profile must not request PHY tuning")
+            if phase != self._stage:
+                raise BenchError(
+                    "link-tune request is out of order for phase %s" % phase
+                )
+            attempt = int(raw_attempt)
+            expected = self._attempts[phase] + 1
+            maximum = 3 if phase == "conn-param" else 4
+            if attempt != expected or not 1 <= attempt <= maximum:
+                raise BenchError(
+                    "%s request attempt must be sequential in 1..%d"
+                    % (phase, maximum)
+                )
+            return_code = int(raw_rc)
+            self._attempts[phase] = attempt
+            if phase == "conn-param":
+                self._cp_return_codes.append(return_code)
+            self._record(
+                "request",
+                phase=phase,
+                attempt=attempt,
+                context=context,
+                return_code=return_code,
+            )
+            return True
+
+        match = self._DLE_COMPLETE.fullmatch(payload)
+        if match is not None:
+            if self._attempts["dle"] == 0:
+                raise BenchError("DLE completion is out of order")
+            max_tx_octets, max_tx_time_us = (int(item) for item in match.groups())
+            self._dle = {
+                "request_attempts": self._attempts["dle"],
+                "max_tx_octets": max_tx_octets,
+                "max_tx_time_us": max_tx_time_us,
+            }
+            if (
+                self._stage == "dle"
+                and max_tx_octets >= 244
+                and max_tx_time_us > 0
+            ):
+                self._stage = (
+                    "phy"
+                    if PROFILE_CHIPS[self.profile_id] == "esp32-s3"
+                    else "phy-skip"
+                )
+            self._record(
+                "completion",
+                phase="dle",
+                max_tx_octets=max_tx_octets,
+                max_tx_time_us=max_tx_time_us,
+            )
+            return True
+
+        match = self._PHY_COMPLETE.fullmatch(payload)
+        if match is not None:
+            if PROFILE_CHIPS[self.profile_id] != "esp32-s3":
+                raise BenchError("classic profile must not report PHY updates")
+            status, tx, rx = (int(item) for item in match.groups())
+            update = {"status": status, "tx": tx, "rx": rx}
+            self._phy_updates.append(update)
+            self._record("completion", phase="phy", **update)
+            if (
+                self._stage == "phy"
+                and self._attempts["phy"] > 0
+                and (status, tx, rx) == (0, 2, 2)
+            ):
+                self._settled_phy = (tx, rx)
+                self._stage = "conn-param"
+            return True
+
+        if self._CLASSIC_PHY_SKIP.fullmatch(payload) is not None:
+            if self.profile_id != "esp32-4mb":
+                raise BenchError("S3 profile must not compile out PHY tuning")
+            if self._stage != "phy-skip" or self._classic_phy_skipped:
+                raise BenchError("classic PHY skip is out of order")
+            self._classic_phy_skipped = True
+            self._stage = "conn-param"
+            self._record("skip", phase="phy", context="classic-compiled-out")
+            return True
+
+        match = self._CP_COMPLETE.fullmatch(payload)
+        if match is not None:
+            status, interval_units = (int(item) for item in match.groups())
+            update = {"status": status, "interval_units": interval_units}
+            self._cp_updates.append(update)
+            self._record("completion", phase="conn-param", **update)
+            if (
+                self._stage == "conn-param"
+                and self._attempts["conn-param"] > 0
+                and status == 0
+                and 12 <= interval_units <= 24
+            ):
+                self._settled_interval = interval_units
+                self._stage = "settled"
+            return True
+
+        match = self._SESSION_END.fullmatch(payload)
+        if match is not None:
+            if not self.is_settled:
+                raise BenchError("link-tune session ended before settlement")
+            if self._session_end is not None:
+                raise BenchError("duplicate link-tune session end")
+            self._session_end = int(match.group(1))
+            self._record(
+                "session_end", tx_mbuf_starve_count=self._session_end
+            )
+            return True
+
+        raise BenchError("malformed or unsupported link-tune record")
+
+    def _facts(self, tx_mbuf_starve_count):
+        if PROFILE_CHIPS[self.profile_id] == "esp32-s3":
+            phy = {
+                "required_2m": True,
+                "request_attempts": self._attempts["phy"],
+                "updates": [dict(item) for item in self._phy_updates],
+                "settled_tx": self._settled_phy[0],
+                "settled_rx": self._settled_phy[1],
+            }
+        else:
+            phy = {
+                "required_2m": False,
+                "request_attempts": 0,
+                "updates": [],
+                "settled_tx": 0,
+                "settled_rx": 0,
+            }
+        return {
+            "dle": dict(self._dle or {}),
+            "phy": phy,
+            "connection_parameters": {
+                "request_return_codes": list(self._cp_return_codes),
+                "updates": [dict(item) for item in self._cp_updates],
+                "settled_interval_units": self._settled_interval,
+            },
+            "tx_mbuf_starve_count": tx_mbuf_starve_count,
+        }
+
+    def require_settled(self):
+        if not self.is_settled:
+            phase = self._stage
+            attempts = self._attempts.get(phase, 0)
+            maximum = 3 if phase == "conn-param" else 4
+            suffix = " after exhausted attempts" if attempts >= maximum else ""
+            raise BenchError("link-tune session is unsettled in %s%s" % (phase, suffix))
+        validate_transfer_link_facts(
+            self._facts(0), profile_id=self.profile_id
+        )
+
+    def seal(self):
+        self.require_settled()
+        if self._session_end is None:
+            raise BenchError(
+                "link-tune session end/starve fact is required before seal"
+            )
+        facts = self._facts(self._session_end)
+        validate_transfer_link_facts(facts, profile_id=self.profile_id)
+        self._sealed = True
+        return facts
+
+
 async def collect_observation(profile_id, executor):
     """Run the frozen workload through an injected profile executor."""
     if profile_id not in PROFILE_ORDER:
         raise BenchError("profile is outside the current OI-1 order")
-    expected_chip = PROFILE_TARGETS[profile_id]
+    expected_chip = PROFILE_CHIPS[profile_id]
     reset_samples = []
     default_heap = []
     post_hello_heap = []
@@ -185,6 +456,8 @@ async def collect_observation(profile_id, executor):
 
     try:
         for sample_index in range(WORKLOAD["reset_samples"]):
+            if sample_index + 1 == WORKLOAD["reset_samples"]:
+                await executor.begin_transfer_link_capture(profile_id)
             latency, caps, backend_mtu, connection = (
                 await executor.reset_connect_hello(sample_index)
             )
@@ -212,6 +485,8 @@ async def collect_observation(profile_id, executor):
                 await executor.disconnect(connection)
             else:
                 current_connection = connection
+
+        await executor.await_transfer_link_settlement(5000)
 
         put_unique = []
         put_duration = []
@@ -273,6 +548,7 @@ async def collect_observation(profile_id, executor):
         post_reliability_heap = await executor.heap_snapshot(current_connection)
         await executor.disconnect(current_connection)
         current_connection = None
+        transfer_link_facts = await executor.seal_transfer_link_facts(2000)
 
         physical = await executor.physical_power_cycle()
         raw_log_sha256 = executor.raw_log_sha256()
@@ -300,10 +576,11 @@ async def collect_observation(profile_id, executor):
             "heap_post_roundtrip": post_roundtrip_heap,
             "reliability": reliability,
             "heap_post_reliability": post_reliability_heap,
+            "transfer_link_facts": transfer_link_facts,
             "physical_power_cycle_advertising": physical,
             "raw_log_sha256": raw_log_sha256,
         }
-        return validate_observation(observation)
+        return validate_observation(observation, profile_id=profile_id)
     finally:
         if current_connection is not None:
             await executor.disconnect(current_connection)
@@ -339,16 +616,57 @@ class SerialResetController:
     def assert_reset(self):
         self._device.dtr = False
         self._device.rts = True
+        # Drop any bytes that raced with the pre-reset clear only after EN is
+        # held low. The following release therefore starts an isolated UART
+        # session without losing that session's boot/link facts.
+        self._device.reset_input_buffer()
 
     def release_reset(self):
         self._device.rts = False
 
-    def close(self):
-        try:
-            self._device.rts = False
-            self._device.dtr = False
-        finally:
-            self._device.close()
+    def clear_input_buffer(self):
+        if self._device is None:
+            raise BenchError("reset serial device is closed")
+        self._device.reset_input_buffer()
+
+    def read_available(self):
+        """Return only bytes already buffered by the private serial handle."""
+        if self._device is None:
+            raise BenchError("reset serial device is closed")
+        waiting = self._device.in_waiting
+        if isinstance(waiting, bool) or not isinstance(waiting, int) or waiting < 0:
+            raise BenchError("reset serial device reported invalid buffered length")
+        if waiting == 0:
+            return b""
+        payload = self._device.read(waiting)
+        if not isinstance(payload, bytes):
+            raise BenchError("reset serial device returned non-byte data")
+        return payload
+
+    def close(self, *, allow_endpoint_gone=False):
+        device = self._device
+        if device is None:
+            return
+        self._device = None
+        first_error = None
+        actions = (
+            lambda: setattr(device, "rts", False),
+            lambda: setattr(device, "dtr", False),
+            device.close,
+        )
+        for action in actions:
+            try:
+                action()
+            except Exception as exc:
+                endpoint_gone = (
+                    allow_endpoint_gone
+                    and isinstance(exc, OSError)
+                    and exc.errno in SERIAL_ENDPOINT_GONE_ERRNOS
+                )
+                if not endpoint_gone and first_error is None:
+                    first_error = exc
+        if first_error is not None:
+            raise first_error
 
 
 class AdvertisementWatcher:
@@ -411,6 +729,94 @@ class HardwareExecutor:
         self.log = raw_log
         self.ids = CommandIds()
         self._workspace_ready = False
+        self._link_parser = None
+        self._serial_pending = bytearray()
+
+    async def begin_transfer_link_capture(self, profile_id):
+        if self._link_parser is not None:
+            raise BenchError("transfer link capture has already started")
+        self.reset.clear_input_buffer()
+        self._serial_pending.clear()
+        self._link_parser = LinkFactParser(profile_id)
+        self.log.write("transfer_link_capture_started", profile_id=profile_id)
+
+    async def _pump_transfer_link_serial(self):
+        if self._link_parser is None:
+            raise BenchError("transfer link capture has not started")
+        chunk = self.reset.read_available()
+        if chunk:
+            self._serial_pending.extend(chunk)
+        while b"\n" in self._serial_pending:
+            raw_line, _, remainder = self._serial_pending.partition(b"\n")
+            self._serial_pending = bytearray(remainder)
+            # bytearray.partition() preserves the mutable container type, but
+            # the strict parser intentionally admits only immutable bytes or
+            # text.  Freeze each complete UART line at this boundary.
+            recognized = self._link_parser.feed_line(bytes(raw_line))
+            if recognized:
+                for record in self._link_parser.take_records():
+                    self.log.write("transfer_link_fact", **record)
+        if len(self._serial_pending) > 65536:
+            if b"link tune" in self._serial_pending:
+                raise BenchError("unterminated link-tune serial record")
+            self._serial_pending.clear()
+
+    async def _wait_for_link_fact(self, predicate, timeout_ms, label):
+        if (
+            isinstance(timeout_ms, bool)
+            or not isinstance(timeout_ms, int)
+            or timeout_ms <= 0
+        ):
+            raise BenchError("%s timeout must be a positive integer" % label)
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout_ms / 1000.0
+        while True:
+            await self._pump_transfer_link_serial()
+            if predicate():
+                return
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                raise BenchError("%s was not observed within %d ms" % (label, timeout_ms))
+            await asyncio.sleep(min(0.01, remaining))
+
+    async def await_transfer_link_settlement(self, timeout_ms):
+        if (
+            isinstance(timeout_ms, bool)
+            or not isinstance(timeout_ms, int)
+            or timeout_ms <= 0
+            or timeout_ms > 5000
+        ):
+            raise BenchError(
+                "transfer link settlement timeout must be 1..5000 ms"
+            )
+        await self._wait_for_link_fact(
+            lambda: self._link_parser is not None
+            and self._link_parser.is_settled,
+            timeout_ms,
+            "settled transfer link",
+        )
+        self._link_parser.require_settled()
+        self.log.write("transfer_link_settled")
+
+    async def seal_transfer_link_facts(self, timeout_ms):
+        if (
+            isinstance(timeout_ms, bool)
+            or not isinstance(timeout_ms, int)
+            or timeout_ms <= 0
+            or timeout_ms > 2000
+        ):
+            raise BenchError("transfer link seal timeout must be 1..2000 ms")
+        if self._link_parser is None:
+            raise BenchError("transfer link capture has not started")
+        self._link_parser.require_settled()
+        await self._wait_for_link_fact(
+            lambda: self._link_parser.has_session_end,
+            timeout_ms,
+            "transfer link session end/starve fact",
+        )
+        facts = self._link_parser.seal()
+        self.log.write("transfer_link_facts", facts=facts)
+        return facts
 
     async def reset_connect_hello(self, sample_index):
         watcher = AdvertisementWatcher(self.args.address)
@@ -449,9 +855,73 @@ class HardwareExecutor:
         self.log.write("heap_snapshot", **snapshot)
         return snapshot
 
+    async def _drain_pre_capture_session_end(self, timeout_ms):
+        if (
+            isinstance(timeout_ms, bool)
+            or not isinstance(timeout_ms, int)
+            or timeout_ms <= 0
+            or timeout_ms > PRE_CAPTURE_SESSION_END_TIMEOUT_MS
+        ):
+            raise BenchError(
+                "pre-capture session-end timeout must be 1..%d ms"
+                % PRE_CAPTURE_SESSION_END_TIMEOUT_MS
+            )
+
+        pending = bytearray()
+        terminal_count = 0
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout_ms / 1000.0
+
+        while True:
+            chunk = self.reset.read_available()
+            if chunk:
+                pending.extend(chunk)
+
+            while b"\n" in pending:
+                raw_line, _, remainder = pending.partition(b"\n")
+                pending = bytearray(remainder)
+                payload = LinkFactParser._payload(bytes(raw_line))
+                if (
+                    payload is not None
+                    and LinkFactParser._SESSION_END.fullmatch(payload)
+                    is not None
+                ):
+                    terminal_count += 1
+
+            if terminal_count > 1:
+                raise BenchError("duplicate pre-capture session end")
+            if terminal_count == 1:
+                pending.clear()
+                self._serial_pending.clear()
+                self.reset.clear_input_buffer()
+                return
+
+            # Non-parser UART output is private and is never retained. Bound a
+            # malformed stream without copying any of its contents into an
+            # error or the qualification log.
+            if len(pending) > 65536:
+                pending.clear()
+
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                raise BenchError(
+                    "pre-capture session end was not observed within %d ms"
+                    % timeout_ms
+                )
+            await asyncio.sleep(
+                min(SERIAL_POLL_INTERVAL_SECONDS, remaining)
+            )
+
     async def disconnect(self, connection):
         await connection.disconnect()
         self.log.write("disconnect")
+        if self._link_parser is None:
+            # The first nine sessions are not link-fact evidence. Consume one
+            # exact terminal boundary without retaining its private count or
+            # any other UART bytes, then isolate the next controlled reset.
+            await self._drain_pre_capture_session_end(
+                PRE_CAPTURE_SESSION_END_TIMEOUT_MS
+            )
 
     async def _ensure_workspace(self, connection):
         if not self._workspace_ready:
@@ -488,6 +958,9 @@ class HardwareExecutor:
         return result
 
     async def physical_power_cycle(self):
+        # No controlled resets occur after this point. Release the tty while it
+        # still exists, before the operator intentionally removes board power.
+        self.reset.close()
         await asyncio.to_thread(
             input,
             "\nDisconnect all power from the board, wait until it is off, "
@@ -541,8 +1014,8 @@ def _load_policy_thresholds(path, profile_id):
     }
     if set(policy) != expected_keys:
         raise BenchError("qualification policy has the wrong top-level keys")
-    if policy.get("schema_version") != 1:
-        raise BenchError("qualification policy schema_version must be 1")
+    if policy.get("schema_version") != 2:
+        raise BenchError("qualification policy schema_version must be 2")
     if policy.get("qualification_scope") != "pre-v1":
         raise BenchError("qualification policy scope must be pre-v1")
     if policy.get("profile_order") != list(PROFILE_ORDER):
@@ -613,7 +1086,7 @@ def _parse_args(argv=None):
     parser.add_argument("--ble-backend")
     parser.add_argument("--ble-adapter")
     args = parser.parse_args(argv)
-    expected = PROFILE_TARGETS[args.profile]
+    expected = PROFILE_CHIPS[args.profile]
     if args.expect_chip != expected:
         parser.error(
             "--expect-chip must be %s for profile %s" % (expected, args.profile)
@@ -657,6 +1130,14 @@ def _validate_run_metadata(args):
         raise BenchError("raw log, output, and build inputs must be distinct paths")
 
 
+def _close_run_resources(reset, raw_log):
+    try:
+        if reset is not None:
+            reset.close()
+    finally:
+        raw_log.close()
+
+
 async def _run(args):
     _validate_run_metadata(args)
     oi1_build = oi1_build_from_paths(
@@ -682,9 +1163,7 @@ async def _run(args):
             raw_log.write("measurement_failed", failure_type=type(exc).__name__)
             raise
     finally:
-        if reset is not None:
-            reset.close()
-        raw_log.close()
+        _close_run_resources(reset, raw_log)
 
     if args.mode == "verify":
         thresholds = _load_policy_thresholds(args.policy, args.profile)

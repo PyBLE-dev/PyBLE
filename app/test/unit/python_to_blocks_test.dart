@@ -914,6 +914,99 @@ for iteration in range(2):
     });
   });
 
+  group('ADR-0023 bounded ST7789 imports and bindings', () {
+    const String imports = '''
+from machine import Pin
+from pyble_st7789 import ST7789
+from pyble_st7789 import rgb565
+''';
+
+    test('maps the complete generated TFT subset to ordinary blocks', () {
+      final Map<String, dynamic> workspace = _workspaceOf('''
+$imports
+display = ST7789(2, 40000000, 0, 0, Pin(40, Pin.OUT), Pin(45, Pin.OUT), Pin(42, Pin.OUT), Pin(41, Pin.OUT), Pin(39, Pin.OUT), Pin(46, Pin.OUT), 172, 320, 34, 0, True, True)
+display.fill(rgb565(8, 18, 40))
+display.pixel(0, 0, rgb565(255, 0, 0))
+display.rect(8, 8, 156, 304, rgb565(0, 180, 216))
+display.fill_rect(12, 12, 8, 8, rgb565(0, 255, 0))
+display.text("Hello PyBLE", 24, 150, rgb565(255, 255, 255))
+display.show()
+display.backlight(True)
+''');
+
+      for (final String type in <String>[
+        'pyble_tft_create',
+        'pyble_tft_fill',
+        'pyble_tft_pixel',
+        'pyble_tft_text',
+        'pyble_tft_show',
+        'pyble_tft_backlight',
+      ]) {
+        expect(_onlyType(workspace, type), isNotEmpty, reason: type);
+      }
+      final List<Map<String, dynamic>> rectangles = _objects(workspace)
+          .where(
+            (Map<String, dynamic> value) => value['type'] == 'pyble_tft_rect',
+          )
+          .toList(growable: false);
+      expect(rectangles, hasLength(2));
+      expect(
+        rectangles.map(
+          (Map<String, dynamic> value) =>
+              (value['fields']! as Map<String, dynamic>)['STYLE'],
+        ),
+        containsAll(<String>['OUTLINE', 'FILLED']),
+      );
+      expect(
+        _objects(workspace)
+            .where(
+              (Map<String, dynamic> value) =>
+                  value['type'] == 'pyble_tft_rgb565',
+            )
+            .length,
+        5,
+      );
+      expect(
+        _objects(workspace)
+            .where(
+              (Map<String, dynamic> value) => value['type'] == 'pyble_gpio_pin',
+            )
+            .length,
+        6,
+      );
+    });
+
+    test('accepts a display definitely constructed on every branch', () {
+      final PythonBlocksConversion result = const PythonToBlocksConverter()
+          .convert('''
+from machine import Pin
+from pyble_st7789 import ST7789
+
+if True:
+    display = ST7789(2, 40000000, 0, 0, Pin(40, Pin.OUT), Pin(45, Pin.OUT), Pin(42, Pin.OUT), Pin(41, Pin.OUT), Pin(39, Pin.OUT), Pin(46, Pin.OUT), 172, 320, 34, 0, True, True)
+else:
+    display = ST7789(2, 20000000, 0, 0, Pin(1, Pin.OUT), Pin(2, Pin.OUT), Pin(3, Pin.OUT), Pin(4, Pin.OUT), Pin(5, Pin.OUT), Pin(6, Pin.OUT), 128, 128, 0, 0, False, False)
+display.show()
+''');
+      expect(result.diagnostics, isEmpty);
+      expect(result.workspaceJson, isNotNull);
+    });
+
+    test('rejects malformed constructors and uncertain display receivers', () {
+      for (final String source in <String>[
+        '$imports\ndisplay = ST7789(2, 40000000)\n',
+        '$imports\ndisplay = ST7789(spi_id=2)\n',
+        '$imports\ndisplay.show()\n',
+        '$imports\nif True:\n    display = ST7789(2, 40000000, 0, 0, Pin(40, Pin.OUT), Pin(45, Pin.OUT), Pin(42, Pin.OUT), Pin(41, Pin.OUT), Pin(39, Pin.OUT), Pin(46, Pin.OUT), 172, 320, 34, 0, True, True)\ndisplay.show()\n',
+      ]) {
+        final PythonBlocksConversion result = const PythonToBlocksConverter()
+            .convert(source);
+        expect(result.workspaceJson, isNull, reason: source);
+        expect(result.hasErrors, isTrue, reason: source);
+      }
+    });
+  });
+
   group('ADR-0017 normalized statements and control flow', () {
     test('accepts the pinned generator two-space suite indentation', () {
       final PythonBlocksConversion result = const PythonToBlocksConverter()

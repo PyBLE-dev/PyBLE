@@ -26,6 +26,7 @@ import {
 } from "../../scripts/stage-firmware-release";
 import {
   bundleFiles,
+  createCurrentFirmwareReleaseFixture,
   createFirmwareReleaseFixture,
   jsonBytes,
   sha256,
@@ -61,7 +62,7 @@ async function temporaryDirectory(label: string) {
 
 async function writeExternalBundle(
   directory: string,
-  fixture: FirmwareReleaseFixture,
+  fixture: Pick<FirmwareReleaseFixture, "files">,
 ) {
   for (const [relativePath, bytes] of bundleFiles(fixture)) {
     const path = join(directory, relativePath);
@@ -70,10 +71,9 @@ async function writeExternalBundle(
   }
 }
 
-function rewriteFixtureVersion(
-  fixture: FirmwareReleaseFixture,
-  version: string,
-) {
+function rewriteFixtureVersion<
+  T extends Pick<FirmwareReleaseFixture, "files" | "release">,
+>(fixture: T, version: string): T {
   fixture.release.identity.version = version;
   fixture.release.identity.tag = `firmware-v${version}`;
   fixture.release.identity.agent_version = version;
@@ -98,8 +98,12 @@ function rewriteFixtureVersion(
 }
 
 describe("external firmware bundle staging", () => {
-  it("validates and stages an explicit all-HIL-passed public bundle outside the source tree", async () => {
-    const fixture = createFirmwareReleaseFixture();
+  it("validates a hypothetical all-HIL-passed v0.5.1 bundle without treating it as published", async () => {
+    const fixture = createCurrentFirmwareReleaseFixture({
+      deployment: "public",
+      accessControlled: false,
+      hilStatus: "passed",
+    });
     const bundleDirectory = await temporaryDirectory("release-bundle");
     const outputDirectory = await temporaryDirectory("staged-public");
     await writeExternalBundle(bundleDirectory, fixture);
@@ -117,8 +121,8 @@ describe("external firmware bundle staging", () => {
         join(
           outputDirectory,
           "firmware",
-          "v0.4.2",
-          "esp32-s3-n16r8",
+          "v0.5.1",
+          "waveshare-esp32-s3-lcd-147b",
           "manifest.json",
         ),
       ).then((value) => Array.from(value)),
@@ -128,24 +132,25 @@ describe("external firmware bundle staging", () => {
         join(
           outputDirectory,
           "firmware",
-          "v0.4.2",
-          "esp32-s3-n16r8",
+          "v0.5.1",
+          "waveshare-esp32-s3-lcd-147b",
           "firmware.bin",
         ),
       ).then((value) => Array.from(value)),
     ).resolves.toEqual(Array.from(fixture.firmwareBytes));
     await expect(
-      readdir(join(outputDirectory, "firmware", "v0.4.2")),
+      readdir(join(outputDirectory, "firmware", "v0.5.1")),
     ).resolves.not.toContain("esp32-c3-4mb");
     expect(fixture.descriptor.profiles.map(({ id }) => id)).toEqual([
       "esp32-4mb",
       "esp32-s3-n16r8",
+      "waveshare-esp32-s3-lcd-147b",
     ]);
     expect(outputDirectory).not.toBe(join(process.cwd(), "public"));
   });
 
   it("allows pending HIL only when candidate mode and access control are both explicit", async () => {
-    const fixture = createFirmwareReleaseFixture({
+    const fixture = createCurrentFirmwareReleaseFixture({
       deployment: "candidate",
       accessControlled: true,
       hilStatus: "pending",
@@ -164,7 +169,7 @@ describe("external firmware bundle staging", () => {
       accessControlled: true,
       deployment: "candidate",
       hilStatus: "pending",
-      version: "0.4.2",
+      version: "0.5.1",
     });
     await expect(
       stageFixture({
@@ -246,12 +251,12 @@ describe("external firmware bundle staging", () => {
   });
 
   it("rejects external bytes that no longer match the generated bundle checksums", async () => {
-    const fixture = createFirmwareReleaseFixture();
+    const fixture = createCurrentFirmwareReleaseFixture();
     const bundleDirectory = await temporaryDirectory("corrupt-bundle");
     const outputDirectory = await temporaryDirectory("corrupt-output");
     await writeExternalBundle(bundleDirectory, fixture);
     await writeFile(
-      join(bundleDirectory, "esp32-s3-n16r8", "firmware.bin"),
+      join(bundleDirectory, "waveshare-esp32-s3-lcd-147b", "firmware.bin"),
       new Uint8Array([0xe9]),
     );
 
@@ -265,10 +270,12 @@ describe("external firmware bundle staging", () => {
     ).rejects.toThrow();
   });
 
-  it("rejects an external public bundle if either current profile is still pending", async () => {
-    const fixture = createFirmwareReleaseFixture({
+  it("rejects a hypothetical public bundle if any prospective exact profile is still pending", async () => {
+    const fixture = createCurrentFirmwareReleaseFixture({
       hilStatus: "passed",
-      profileHilStatus: { "esp32-4mb": "pending" },
+      profileHilStatus: {
+        "waveshare-esp32-s3-lcd-147b": "pending",
+      },
     });
     const bundleDirectory = await temporaryDirectory("stale-hil-bundle");
     await writeExternalBundle(bundleDirectory, fixture);
@@ -284,7 +291,7 @@ describe("external firmware bundle staging", () => {
   });
 
   it("rejects a release that does not validate against its versioned JSON Schema", async () => {
-    const fixture = createFirmwareReleaseFixture();
+    const fixture = createCurrentFirmwareReleaseFixture();
     fixture.files.set(
       "release.schema.json",
       jsonBytes({
@@ -306,7 +313,7 @@ describe("external firmware bundle staging", () => {
   });
 
   it("rejects missing release-license and HIL evidence even when SHA256SUMS exactly covers the remaining files", async () => {
-    const fixture = createFirmwareReleaseFixture();
+    const fixture = createCurrentFirmwareReleaseFixture();
     fixture.files.delete("THIRD_PARTY_LICENSES.txt");
     fixture.files.delete("HIL_REPORT.md");
     const bundleDirectory = await temporaryDirectory("missing-evidence-bundle");
@@ -323,7 +330,7 @@ describe("external firmware bundle staging", () => {
   });
 
   it("rejects invalid provenance and component evidence instead of trusting self-consistent checksums", async () => {
-    const fixture = createFirmwareReleaseFixture({
+    const fixture = createCurrentFirmwareReleaseFixture({
       mutateRelease: (release) => {
         release.provenance.micropython.commit = "unknown";
         release.profiles[0]!.components[0]!.sha256 = "0".repeat(64);
@@ -346,7 +353,7 @@ describe("external firmware bundle staging", () => {
     "rejects non-canonical SemVer %s before staging",
     async (version) => {
       const fixture = rewriteFixtureVersion(
-        createFirmwareReleaseFixture(),
+        createCurrentFirmwareReleaseFixture(),
         version,
       );
       const bundleDirectory = await temporaryDirectory(
@@ -368,7 +375,7 @@ describe("external firmware bundle staging", () => {
   it("accepts canonical prerelease and build SemVer during staging", async () => {
     const version = "1.2.3-alpha.1+build.01";
     const fixture = rewriteFixtureVersion(
-      createFirmwareReleaseFixture(),
+      createCurrentFirmwareReleaseFixture(),
       version,
     );
     const bundleDirectory = await temporaryDirectory(
@@ -428,7 +435,7 @@ describe("external firmware bundle staging", () => {
     }
   });
 
-  it("freezes release schema version 2 to exactly the two currently qualified profiles", async () => {
+  it("freezes release schema version 3 to exactly the three prospective profiles", async () => {
     const schema = JSON.parse(
       await readFile(
         join(process.cwd(), "src", "lib", "firmware-release-schema.json"),
@@ -449,14 +456,15 @@ describe("external firmware bundle staging", () => {
       };
     };
 
-    expect(schema.properties?.schema_version?.const).toBe(2);
+    expect(schema.properties?.schema_version?.const).toBe(3);
     expect(schema.properties?.profiles).toMatchObject({
-      minItems: 2,
-      maxItems: 2,
+      minItems: 3,
+      maxItems: 3,
     });
     expect(schema.properties?.profiles?.items?.properties?.id?.enum).toEqual([
       "esp32-4mb",
       "esp32-s3-n16r8",
+      "waveshare-esp32-s3-lcd-147b",
     ]);
     expect(JSON.stringify(schema)).not.toContain("esp32-c3-4mb");
   });
@@ -479,7 +487,7 @@ describe("external firmware bundle staging", () => {
     expect.soft(stagingSource).toContain("--repo-root");
 
     for (const deployment of ["public", "candidate"] as const) {
-      const fixture = createFirmwareReleaseFixture({
+      const fixture = createCurrentFirmwareReleaseFixture({
         deployment,
         accessControlled: deployment === "candidate",
         hilStatus: deployment === "candidate" ? "pending" : "passed",
@@ -726,7 +734,7 @@ describe("external firmware bundle staging", () => {
   });
 
   it("leaves no finalized version or selector when final staged-root validation fails", async () => {
-    const fixture = createFirmwareReleaseFixture();
+    const fixture = createCurrentFirmwareReleaseFixture();
     const realBundleDirectory = await temporaryDirectory("real-release-bundle");
     const symlinkParent = await temporaryDirectory("linked-release-parent");
     const linkedBundleDirectory = join(symlinkParent, "release-bundle");
@@ -746,7 +754,7 @@ describe("external firmware bundle staging", () => {
   });
 
   it("revalidates the complete staged root before any deployment packages it", async () => {
-    const fixture = createFirmwareReleaseFixture({
+    const fixture = createCurrentFirmwareReleaseFixture({
       deployment: "candidate",
       accessControlled: true,
       hilStatus: "pending",
@@ -785,7 +793,7 @@ describe("external firmware bundle staging", () => {
     ).resolves.toEqual(descriptor);
 
     await writeFile(
-      join(stagedRoot, "firmware", "v0.4.2", "release.json"),
+      join(stagedRoot, "firmware", "v0.5.1", "release.json"),
       new Uint8Array([0x7b, 0x7d, 0x0a]),
     );
     await expect(
@@ -796,7 +804,7 @@ describe("external firmware bundle staging", () => {
   });
 
   it("revalidates only an exact previously activated public staged release", async () => {
-    const fixture = createFirmwareReleaseFixture({
+    const fixture = createCurrentFirmwareReleaseFixture({
       deployment: "public",
       accessControlled: false,
       hilStatus: "passed",
@@ -854,7 +862,7 @@ describe("external firmware bundle staging", () => {
   });
 
   it("requires explicit published-GitHub evidence with byte equality before public activation", async () => {
-    const fixture = createFirmwareReleaseFixture();
+    const fixture = createCurrentFirmwareReleaseFixture();
     const bundleDirectory = await temporaryDirectory(
       "published-evidence-source",
     );
@@ -900,7 +908,11 @@ describe("external firmware bundle staging", () => {
     ).resolves.toEqual(descriptor);
 
     await writeFile(
-      join(publishedBundleDirectory, "esp32-s3-n16r8", "firmware.bin"),
+      join(
+        publishedBundleDirectory,
+        "waveshare-esp32-s3-lcd-147b",
+        "firmware.bin",
+      ),
       new Uint8Array([0xe9, 0xff]),
     );
     await expect(

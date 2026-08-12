@@ -14,7 +14,7 @@ import { prepareSitesOutput } from "../../scripts/prepare-sites-output";
 import { stageFirmwareRelease } from "../../scripts/stage-firmware-release";
 import {
   bundleFiles,
-  createFirmwareReleaseFixture,
+  createCurrentFirmwareReleaseFixture,
 } from "@/test/fixtures/firmware-release";
 
 const temporaryDirectories: string[] = [];
@@ -36,10 +36,12 @@ async function writeSitesSkeleton(root: string) {
     "  return new Response(`vinext:${new URL(request.url).pathname}:${context.marker}`);\n" +
     "}\n";
   const prerenderManifest = JSON.stringify({
-    routes: ["/", "/flash", "/privacy", "/support", "/404"].map((route) => ({
-      route,
-      status: "rendered",
-    })),
+    routes: ["/", "/app", "/flash", "/privacy", "/support", "/404"].map(
+      (route) => ({
+        route,
+        status: "rendered",
+      }),
+    ),
   });
 
   await mkdir(join(root, ".openai"), { recursive: true });
@@ -79,10 +81,12 @@ describe("Sites vinext-output adapter", () => {
     const clientEntry = "<h1>PyBLE</h1>\n";
     const notFoundEntry = "<h1>That path wandered off.</h1>\n";
     const prerenderManifest = JSON.stringify({
-      routes: ["/", "/flash", "/privacy", "/support", "/404"].map((route) => ({
-        route,
-        status: "rendered",
-      })),
+      routes: ["/", "/app", "/flash", "/privacy", "/support", "/404"].map(
+        (route) => ({
+          route,
+          status: "rendered",
+        }),
+      ),
     });
 
     await mkdir(join(root, ".openai"), { recursive: true });
@@ -139,6 +143,11 @@ describe("Sites vinext-output adapter", () => {
         { marker: "environment-must-not-reach-vinext" },
         context,
       );
+      const app = await worker.fetch(
+        new Request("https://pyble.dev/app"),
+        {},
+        context,
+      );
       const brand = await worker.fetch(
         new Request("https://pyble.dev/brand/pyble-prompt-chip.svg"),
         {},
@@ -147,6 +156,20 @@ describe("Sites vinext-output adapter", () => {
       const appCapture = await worker.fetch(
         new Request(
           "https://pyble.dev/app/pyble-neopixel-gpio48-ipad-raw.png",
+        ),
+        {},
+        context,
+      );
+      const testFlightQr = await worker.fetch(
+        new Request(
+          "https://pyble.dev/testflight/pyble-testflight-qr.svg",
+        ),
+        {},
+        context,
+      );
+      const googlePlayQr = await worker.fetch(
+        new Request(
+          "https://pyble.dev/google-play/pyble-google-play-internal-test-qr.svg",
         ),
         {},
         context,
@@ -172,10 +195,19 @@ describe("Sites vinext-output adapter", () => {
       );
       console.log(JSON.stringify({
         privacy: { status: privacy.status, body: await privacy.text() },
+        app: { status: app.status, body: await app.text() },
         brand: { status: brand.status, body: await brand.text() },
         appCapture: {
           status: appCapture.status,
           body: await appCapture.text(),
+        },
+        testFlightQr: {
+          status: testFlightQr.status,
+          body: await testFlightQr.text(),
+        },
+        googlePlayQr: {
+          status: googlePlayQr.status,
+          body: await googlePlayQr.text(),
         },
         firmwareManifest: {
           status: firmwareManifest.status,
@@ -199,6 +231,10 @@ describe("Sites vinext-output adapter", () => {
         status: 200,
         body: "vinext:/privacy:execution-context",
       },
+      app: {
+        status: 200,
+        body: "vinext:/app:execution-context",
+      },
       brand: {
         status: 200,
         body: "vinext:/brand/pyble-prompt-chip.svg:execution-context",
@@ -206,6 +242,14 @@ describe("Sites vinext-output adapter", () => {
       appCapture: {
         status: 200,
         body: "vinext:/app/pyble-neopixel-gpio48-ipad-raw.png:execution-context",
+      },
+      testFlightQr: {
+        status: 200,
+        body: "vinext:/testflight/pyble-testflight-qr.svg:execution-context",
+      },
+      googlePlayQr: {
+        status: 200,
+        body: "vinext:/google-play/pyble-google-play-internal-test-qr.svg:execution-context",
       },
       firmwareManifest: {
         status: 200,
@@ -262,7 +306,8 @@ describe("Sites vinext-output adapter", () => {
       JSON.stringify({
         routes: [
           { route: "/", status: "rendered" },
-          { route: "/flash", status: "skipped" },
+          { route: "/app", status: "skipped" },
+          { route: "/flash", status: "rendered" },
           { route: "/privacy", status: "rendered" },
           { route: "/support", status: "rendered" },
           { route: "/404", status: "rendered" },
@@ -271,12 +316,12 @@ describe("Sites vinext-output adapter", () => {
     );
 
     await expect(prepareSitesOutput(root)).rejects.toThrow(
-      /launch route was not prerendered: \/flash/i,
+      /launch route was not prerendered: \/app/i,
     );
   });
 
-  it("copies only a freshly revalidated external candidate into the Sites artifact", async () => {
-    const fixture = createFirmwareReleaseFixture({
+  it("copies only the freshly revalidated prospective v0.5.1 three-profile candidate into the Sites artifact", async () => {
+    const fixture = createCurrentFirmwareReleaseFixture({
       deployment: "candidate",
       accessControlled: true,
       hilStatus: "pending",
@@ -327,8 +372,8 @@ describe("Sites vinext-output adapter", () => {
           "dist",
           "client",
           "firmware",
-          "v0.4.2",
-          "esp32-s3-n16r8",
+          "v0.5.1",
+          "waveshare-esp32-s3-lcd-147b",
           "firmware.bin",
         ),
       ).then((value) => Array.from(value)),
@@ -340,10 +385,15 @@ describe("Sites vinext-output adapter", () => {
           "dist",
           "client",
           "firmware",
-          "v0.4.2",
+          "v0.5.1",
           "esp32-c3-4mb",
           "manifest.json",
         ),
+      ),
+    ).rejects.toThrow();
+    await expect(
+      readFile(
+        join(sitesRoot, "dist", "client", "firmware", "v0.4.2", "release.json"),
       ),
     ).rejects.toThrow();
     await expect(
@@ -352,7 +402,7 @@ describe("Sites vinext-output adapter", () => {
   });
 
   it("requires the Sites selector and staged firmware root to be one exact pair", async () => {
-    const fixture = createFirmwareReleaseFixture({
+    const fixture = createCurrentFirmwareReleaseFixture({
       deployment: "candidate",
       accessControlled: true,
       hilStatus: "pending",

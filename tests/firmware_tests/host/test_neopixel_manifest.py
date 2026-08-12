@@ -24,12 +24,14 @@ NEOPIXEL_PACKAGE_DIR = (
 )
 PINNED_NEOPIXEL_SOURCE = (NEOPIXEL_PACKAGE_DIR / "neopixel.py").resolve()
 PINNED_NEOPIXEL_MANIFEST = (NEOPIXEL_PACKAGE_DIR / "manifest.py").resolve()
+CANONICAL_ST7789_SOURCE = FIRMWARE_DIR / "python_modules" / "pyble_st7789.py"
 UPSTREAM_ESP32_MANIFEST = (
     UPSTREAM_DIR / "ports" / "esp32" / "boards" / "manifest.py"
 )
 TARGETS = {
     "esp32": "PYBLE_ESP32",
     "esp32-s3": "PYBLE_ESP32_S3",
+    "waveshare-esp32-s3-lcd-147b": "PYBLE_WAVESHARE_ESP32_S3_LCD_147B",
     "esp32-c3": "PYBLE_ESP32_C3",
 }
 
@@ -141,6 +143,11 @@ class NeoPixelManifestContractTest(unittest.TestCase):
                     board_dir,
                 )
                 shutil.copytree(FIRMWARE_DIR / "pyble", board_dir / "pyble")
+                if target == "waveshare-esp32-s3-lcd-147b":
+                    shutil.copy2(
+                        CANONICAL_ST7789_SOURCE,
+                        board_dir / "pyble_st7789.py",
+                    )
 
                 resolver = manifestfile.ManifestFile(
                     manifestfile.MODE_FREEZE,

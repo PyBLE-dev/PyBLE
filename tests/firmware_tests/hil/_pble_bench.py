@@ -20,10 +20,20 @@ import _pble_wire as wire
 from _pble_central import rsp_status, status_name
 
 
-PROFILE_ORDER = ("esp32-4mb", "esp32-s3-n16r8")
+PROFILE_ORDER = (
+    "esp32-4mb",
+    "esp32-s3-n16r8",
+    "waveshare-esp32-s3-lcd-147b",
+)
 PROFILE_TARGETS = {
     "esp32-4mb": "esp32",
     "esp32-s3-n16r8": "esp32-s3",
+    "waveshare-esp32-s3-lcd-147b": "waveshare-esp32-s3-lcd-147b",
+}
+PROFILE_CHIPS = {
+    "esp32-4mb": "esp32",
+    "esp32-s3-n16r8": "esp32-s3",
+    "waveshare-esp32-s3-lcd-147b": "esp32-s3",
 }
 
 WORKLOAD = {
@@ -47,8 +57,8 @@ DERIVATION = {
     "application_image": "exact-byte-identical-two-root-v1",
     "application_headroom": "factory-minus-application-v1",
     "heap_floor": "floor-min-1024-v1",
-    "boot_ceiling": "ceil-max-10-v1",
-    "goodput_floor": "floor-min-100-v1",
+    "boot_ceiling": "fixed-product-slo-3000-v3",
+    "goodput_floor": "floor-95pct-min-100-v2",
 }
 
 HEAP_KEYS = (
@@ -95,6 +105,7 @@ OBSERVATION_KEYS = (
     "heap_post_roundtrip",
     "reliability",
     "heap_post_reliability",
+    "transfer_link_facts",
     "physical_power_cycle_advertising",
     "raw_log_sha256",
 )
@@ -461,14 +472,12 @@ def derive_thresholds(oi1_build, observation):
             min(item["idf_internal_minimum_free_bytes"] for item in snapshots),
             1024,
         ),
-        "reset_to_service_advertisement_max_ms": ceil_quantum(
-            max(reset_samples), 10
-        ),
+        "reset_to_service_advertisement_max_ms": 3000,
         "put_committed_goodput_min_bytes_per_second": floor_quantum(
-            min(put_goodput), 100
+            (min(put_goodput) * 95) // 100, 100
         ),
         "get_verified_goodput_min_bytes_per_second": floor_quantum(
-            min(get_goodput), 100
+            (min(get_goodput) * 95) // 100, 100
         ),
     }
 
@@ -1239,7 +1248,150 @@ def validate_reliability(value):
     return normalized
 
 
-def validate_observation(value):
+def _validated_link_update(value, keys, label):
+    _require_exact_keys(value, keys, label)
+    return {
+        key: _require_nonnegative_int(value[key], "%s.%s" % (label, key))
+        for key in keys
+    }
+
+
+def validate_transfer_link_facts(value, *, profile_id):
+    """Validate the strict, identifier-free ADR-0027 transfer-session facts."""
+    if profile_id not in PROFILE_ORDER:
+        raise BenchError("profile is outside the current OI-1 order")
+    _require_exact_keys(
+        value,
+        ("dle", "phy", "connection_parameters", "tx_mbuf_starve_count"),
+        "transfer_link_facts",
+    )
+
+    dle = value["dle"]
+    _require_exact_keys(
+        dle,
+        ("request_attempts", "max_tx_octets", "max_tx_time_us"),
+        "transfer_link_facts.dle",
+    )
+    dle_attempts = _require_nonnegative_int(
+        dle["request_attempts"],
+        "transfer_link_facts.dle.request_attempts",
+    )
+    if not 1 <= dle_attempts <= 4:
+        raise BenchError("DLE request attempts must be in 1..4")
+    if _require_nonnegative_int(
+        dle["max_tx_octets"],
+        "transfer_link_facts.dle.max_tx_octets",
+    ) < 244:
+        raise BenchError("settled DLE max_tx_octets must be at least 244")
+    _require_positive_int(
+        dle["max_tx_time_us"],
+        "transfer_link_facts.dle.max_tx_time_us",
+    )
+
+    phy = value["phy"]
+    _require_exact_keys(
+        phy,
+        (
+            "required_2m",
+            "request_attempts",
+            "updates",
+            "settled_tx",
+            "settled_rx",
+        ),
+        "transfer_link_facts.phy",
+    )
+    if not isinstance(phy["required_2m"], bool):
+        raise BenchError("transfer_link_facts.phy.required_2m must be a boolean")
+    phy_attempts = _require_nonnegative_int(
+        phy["request_attempts"],
+        "transfer_link_facts.phy.request_attempts",
+    )
+    if not isinstance(phy["updates"], list):
+        raise BenchError("transfer_link_facts.phy.updates must be a list")
+    phy_updates = [
+        _validated_link_update(
+            update,
+            ("status", "tx", "rx"),
+            "transfer_link_facts.phy.updates[%d]" % index,
+        )
+        for index, update in enumerate(phy["updates"])
+    ]
+    settled_tx = _require_nonnegative_int(
+        phy["settled_tx"], "transfer_link_facts.phy.settled_tx"
+    )
+    settled_rx = _require_nonnegative_int(
+        phy["settled_rx"], "transfer_link_facts.phy.settled_rx"
+    )
+    if PROFILE_CHIPS[profile_id] == "esp32-s3":
+        if phy["required_2m"] is not True:
+            raise BenchError("S3 transfer facts must require 2M PHY")
+        if not 1 <= phy_attempts <= 4:
+            raise BenchError("S3 PHY request attempts must be in 1..4")
+        if not phy_updates:
+            raise BenchError("S3 PHY updates must not be empty")
+        if (settled_tx, settled_rx) != (2, 2):
+            raise BenchError("S3 PHY must settle at 2M/2M")
+        final_phy = phy_updates[-1]
+        if (final_phy["status"], final_phy["tx"], final_phy["rx"]) != (
+            0,
+            settled_tx,
+            settled_rx,
+        ):
+            raise BenchError("final S3 PHY update does not confirm settled 2M/2M")
+    else:
+        if phy["required_2m"] is not False:
+            raise BenchError("classic transfer facts must compile out 2M PHY")
+        if phy_attempts != 0 or phy_updates:
+            raise BenchError("classic PHY request attempts and updates must be empty")
+        if (settled_tx, settled_rx) != (0, 0):
+            raise BenchError("classic settled PHY values must both be zero")
+
+    connection = value["connection_parameters"]
+    _require_exact_keys(
+        connection,
+        ("request_return_codes", "updates", "settled_interval_units"),
+        "transfer_link_facts.connection_parameters",
+    )
+    return_codes = connection["request_return_codes"]
+    if not isinstance(return_codes, list) or not 1 <= len(return_codes) <= 3:
+        raise BenchError("connection-parameter requests must contain 1..3 entries")
+    for index, return_code in enumerate(return_codes):
+        _require_nonnegative_int(
+            return_code,
+            "transfer_link_facts.connection_parameters."
+            "request_return_codes[%d]" % index,
+        )
+    updates = connection["updates"]
+    if not isinstance(updates, list) or not updates:
+        raise BenchError("connection-parameter updates must not be empty")
+    normalized_updates = [
+        _validated_link_update(
+            update,
+            ("status", "interval_units"),
+            "transfer_link_facts.connection_parameters.updates[%d]" % index,
+        )
+        for index, update in enumerate(updates)
+    ]
+    settled_interval = _require_nonnegative_int(
+        connection["settled_interval_units"],
+        "transfer_link_facts.connection_parameters.settled_interval_units",
+    )
+    final_update = normalized_updates[-1]
+    if final_update["status"] != 0:
+        raise BenchError("final connection-parameter update status must be zero")
+    if settled_interval != final_update["interval_units"]:
+        raise BenchError("settled connection interval must match the final update")
+    if not 12 <= settled_interval <= 24:
+        raise BenchError("settled connection interval must be in 12..24 units")
+
+    _require_nonnegative_int(
+        value["tx_mbuf_starve_count"],
+        "transfer_link_facts.tx_mbuf_starve_count",
+    )
+    return value
+
+
+def validate_observation(value, *, profile_id):
     _require_exact_keys(value, OBSERVATION_KEYS, "oi1_observation")
     for key, required in (
         ("observed_att_mtu", 247),
@@ -1308,6 +1460,9 @@ def validate_observation(value):
         _validated_heap(snapshot, "heap_post_roundtrip[%d]" % index)
     _validated_heap(value["heap_post_reliability"], "heap_post_reliability")
     validate_reliability(value["reliability"])
+    validate_transfer_link_facts(
+        value["transfer_link_facts"], profile_id=profile_id
+    )
     if value["physical_power_cycle_advertising"] != "passed":
         raise BenchError("physical power-cycle advertising must be passed")
     if not isinstance(value["raw_log_sha256"], str) or not re.fullmatch(
@@ -1323,12 +1478,27 @@ class RedactedRawLog:
     def __init__(self, path):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        descriptor = None
         try:
-            self._stream = open(self.path, "x", encoding="utf-8", newline="\n")
+            flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+            if hasattr(os, "O_NOFOLLOW"):
+                flags |= os.O_NOFOLLOW
+            descriptor = os.open(self.path, flags, 0o600)
+            os.fchmod(descriptor, 0o600)
+            self._stream = os.fdopen(
+                descriptor,
+                "w",
+                encoding="utf-8",
+                newline="\n",
+            )
+            descriptor = None
         except FileExistsError as exc:
             raise BenchError(
                 "raw log already exists; choose a new retained path"
             ) from exc
+        finally:
+            if descriptor is not None:
+                os.close(descriptor)
         self._closed = False
         self._sequence = 0
 
