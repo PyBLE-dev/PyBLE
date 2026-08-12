@@ -34,6 +34,19 @@ run() {
   check "spdx_lint PASSES a tree where every source file carries the header" \
     "$SPDX_LINT" "$tmp"
 
+  mkdir -p "$tmp/firmware/.arm-gnu/include"
+  printf '/* pinned third-party compiler header */\n' \
+    > "$tmp/firmware/.arm-gnu/include/compiler.h"
+  check "spdx_lint PRUNES the exact pinned ARM toolchain root" \
+    "$SPDX_LINT" "$tmp"
+
+  mkdir -p "$tmp/firmware/ports/.arm-gnu"
+  printf '/* authored source without an SPDX header */\n' \
+    > "$tmp/firmware/ports/.arm-gnu/missing_header.h"
+  check_fail "spdx_lint still SCANS similarly named authored directories" \
+    "$SPDX_LINT" "$tmp"
+  rm "$tmp/firmware/ports/.arm-gnu/missing_header.h"
+
   # A non-compliant source file: no header.
   printf 'print("no header here")\n' \
     > "$tmp/firmware/pyble/missing_header.py"

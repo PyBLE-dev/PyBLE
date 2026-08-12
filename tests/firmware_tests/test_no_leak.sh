@@ -49,6 +49,19 @@ run() {
   printf '// SPDX-License-Identifier: MIT\nvoid main() {}\n'       > "$clean/app/lib/pble/x.dart"
   check "no_leak PASSES a clean tree" "$NOLEAK" "$clean"
 
+  # Exact third-party toolchain roots are ignored, but similarly named
+  # authored directories remain source and must still be scanned.
+  mkdir -p "$clean/firmware/.arm-gnu/include"
+  printf '/* %s third-party compiler symbol */\n' "$(tok_proto)" \
+    > "$clean/firmware/.arm-gnu/include/compiler.h"
+  check "no_leak PRUNES the exact pinned ARM toolchain root" "$NOLEAK" "$clean"
+  mkdir -p "$clean/firmware/ports/.arm-gnu"
+  printf '/* %s authored leak */\n' "$(tok_product)" \
+    > "$clean/firmware/ports/.arm-gnu/leak.h"
+  check_fail "no_leak still SCANS similarly named authored directories" \
+    "$NOLEAK" "$clean"
+  rm "$clean/firmware/ports/.arm-gnu/leak.h"
+
   # ---- Red fixture: a forbidden token in shippable source fails ------------
   # Token assembled at runtime; written only into a temp tree.
   local dirty; dirty="$(mk_tmp)"
