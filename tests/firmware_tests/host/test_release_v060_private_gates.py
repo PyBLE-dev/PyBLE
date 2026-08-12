@@ -463,10 +463,13 @@ class V5SummaryBindingTests(unittest.TestCase):
         )
         return binder
 
-    def test_binder_sets_both_profile_rows_and_all_top_summaries_atomically(self) -> None:
+    def test_binder_cross_checks_profile_rows_and_sets_top_summaries_atomically(self) -> None:
         payload = self.payload()
-        original = copy.deepcopy(payload)
         waveshare, c3, pico = self.summaries()
+        by_id = {record["profile_id"]: record for record in payload["records"]}
+        by_id[C3_PROFILE]["profile_gate_summary"] = copy.deepcopy(c3["gates"])
+        by_id[PICO_PROFILE]["profile_gate_summary"] = copy.deepcopy(pico["gates"])
+        original = copy.deepcopy(payload)
         bound = self.binder()(
             payload,
             waveshare_lcd147b_summary=waveshare,
@@ -493,6 +496,26 @@ class V5SummaryBindingTests(unittest.TestCase):
         cases["missing-c3"] = (self.payload(), waveshare, None, pico, VERSION)
         cases["missing-pico"] = (self.payload(), waveshare, c3, None, VERSION)
         cases["missing-waveshare"] = (self.payload(), None, c3, pico, VERSION)
+        mismatched_gates = self.payload()
+        mismatched_by_id = {
+            record["profile_id"]: record
+            for record in mismatched_gates["records"]
+        }
+        mismatched_by_id[C3_PROFILE]["profile_gate_summary"] = copy.deepcopy(
+            c3["gates"]
+        )
+        mismatched_by_id[PICO_PROFILE]["profile_gate_summary"] = {
+            "GP0": "passed",
+            "GP1": "passed",
+            "GP2": "failed",
+        }
+        cases["mismatched-record-gates"] = (
+            mismatched_gates,
+            waveshare,
+            c3,
+            pico,
+            VERSION,
+        )
         already_bound = self.payload()
         already_bound["esp32_c3_qualification"] = copy.deepcopy(c3)
         cases["already-bound"] = (already_bound, waveshare, c3, pico, VERSION)
