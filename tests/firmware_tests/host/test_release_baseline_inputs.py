@@ -287,9 +287,9 @@ class BaselineInputsCreationTests(unittest.TestCase):
                 if len(call.args) == 2
             ]
             for expected in (
-                ("0.5.0", "esp32-4mb"),
-                ("0.5.0", "esp32-s3-n16r8"),
-                ("0.5.0", "waveshare-esp32-s3-lcd-147b"),
+                ("0.5.1", "esp32-4mb"),
+                ("0.5.1", "esp32-s3-n16r8"),
+                ("0.5.1", "waveshare-esp32-s3-lcd-147b"),
             ):
                 self.assertIn(
                     expected,
@@ -306,7 +306,7 @@ class BaselineInputsCreationTests(unittest.TestCase):
                     expected_manifest = (
                         json.dumps(
                             bundle_fixture.exact_manifest(
-                                "0.5.0",
+                                "0.5.1",
                                 profile_id,
                             ),
                             indent=2,
