@@ -1,27 +1,14 @@
 # PyBLE ESP32-Family Browser Flashing and Release Bundle
 
-Status: **FROZEN v1.28** · Owner: project maintainer · Frozen:
-2026-07-31 (`[docs]`; pre-v1 two-profile release eligibility and explicit
-C3 deferral; evidence-derived resource policy and exact HIL V2 records;
-pre-policy two-root baseline-input staging and mechanical baseline/policy
-assembly;
-exact-profile manifest, C3 silicon-revision,
-license-audit safety, candidate-finalization, and candidate pin-state
-amendments, plus the real-tool license-evidence and exact license-catalog
-models, trusted ESP-IDF tool-download-cache evidence, exact reviewed-source
-evidence catalog, stable generated-input matchers, exact license-choice
-semantics, relationship-bound aggregate-package evidence, an independent
-shipment-review ledger, exact multi-frontend toolchain identity, canonical
-literal-manifest evidence, byte-exact frozen-source reconstruction, and
-retained per-target source-checkout isolation, deterministic retained-root
-compiler path mapping, and fail-closed ESP-IDF described-source directory
-markers, generated-header inputs, and direct-object reconciliation, plus
-component-owned linked outputs, lexical exact-path validation, nested-build
-logical paths, shell-free compiler/linker command receipts, executable
-version-matched recovery-command syntax, and the canonical pre-v1 same-origin
-publication channel with an optional byte-identical mirror, plus bounded
-completed-HIL report assembly, plus the exact one-version unqualified public
-beta exception, on the same date)
+Status: **FROZEN v1.29** · Owner: project maintainer · Frozen:
+2026-08-12 (`[docs]`; reconciles the immutable v0.4.2 two-profile,
+unqualified hardware-tested public-beta exception and preserved-public
+hardening with the v0.5.1 three-profile exact-board source/qualification
+contract under ADR-0028 and ADR-0029; retains release schema 3, HIL V4, OI
+policy schema 2, explicit C3 deferral, mechanical evidence assembly,
+license/provenance/reproducibility hardening, exact-profile manifests and
+silicon windows, canonical same-origin publication, and optional
+byte-identical mirror requirements)
 
 This document is the source of truth for the initial browser-provisioning
 release bundle. It refines
@@ -38,16 +25,18 @@ BLE and PBLE/1.
 
 ## 1. Release image profiles
 
-The current pre-v1 browser bundle contains exactly these two
-**provisioning image profiles**. The exact audited `v0.4.2` bytes may be offered
-only as the hardware-tested public beta defined in §10; that narrow validation
-does not make them qualified-release profiles.
-A later qualified public bundle uses the same exact profile definitions:
+The immutable v0.4.2 public-beta bundle contains exactly `esp32-4mb` and
+`esp32-s3-n16r8`; its narrow validation does not make either a qualified-release
+profile and it MUST NOT acquire another profile. The v0.5.1 source candidate
+targets exactly these three **provisioning image profiles**. This contract does
+not assert that candidate binaries exist or qualify them for publication; each
+requires fresh reproducibility, license, exact-byte HIL, and activation gates:
 
-| Profile ID       | ESP Web Tools `chipFamily` | Required target configuration                                      | ESP image silicon window (`min_chip_rev_full`…`max_chip_rev_full`) | Merge settings      | Browser image and component map                                                                         |
-| ---------------- | -------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------ | ------------------- | ------------------------------------------------------------------------------------------------------- |
-| `esp32-4mb`      | `ESP32`                    | Classic ESP32 with 4 MiB external SPI flash; no PSRAM assumption   | `0`…`399`                                                          | DIO, 40 MHz, 4 MiB  | merged `firmware.bin` at `0x1000`; bootloader `0x1000`; partition table `0x8000`; application `0x10000` |
-| `esp32-s3-n16r8` | `ESP32-S3`                 | ESP32-S3 with 16 MiB flash and 8 MiB **Octal** PSRAM (N16R8-class) | `0`…`99`                                                           | DIO, 80 MHz, 16 MiB | merged `firmware.bin` at `0x0000`; bootloader `0x0000`; partition table `0x8000`; application `0x10000` |
+| Profile ID | ESP Web Tools `chipFamily` | Required target configuration | ESP image silicon window (`min_chip_rev_full`…`max_chip_rev_full`) | Merge settings | Browser image and component map |
+|---|---|---|---|---|---|
+| `esp32-4mb` | `ESP32` | Classic ESP32 with 4 MiB external SPI flash; no PSRAM assumption | `0`…`399` | DIO, 40 MHz, 4 MiB | merged `firmware.bin` at `0x1000`; bootloader `0x1000`; partition table `0x8000`; application `0x10000` |
+| `esp32-s3-n16r8` | `ESP32-S3` | Lean ESP32-S3 with 16 MiB flash and 8 MiB **Octal** PSRAM (N16R8-class); no bundled TFT driver, exact-board companion, splash hook, QR, or splash-only native readiness seam | `0`…`99` | DIO, 80 MHz, 16 MiB | merged `firmware.bin` at `0x0000`; bootloader `0x0000`; partition table `0x8000`; application `0x10000` |
+| `waveshare-esp32-s3-lcd-147b` | `ESP32-S3` | Exact Waveshare ESP32-S3-LCD-1.47B **B version** with 16 MiB flash and 8 MiB **Octal** PSRAM; includes the ST7789 runtime, companion, factory-enabled-after-erase splash hook/QR, persistent disable, and bounded native readiness seam | `0`…`99` | DIO, 80 MHz, 16 MiB | merged `firmware.bin` at `0x0000`; bootloader `0x0000`; partition table `0x8000`; application `0x10000` |
 
 `esp32-c3-4mb` remains a known provisioning profile and an initial v1
 firmware target, with this frozen future qualification:
@@ -71,10 +60,13 @@ silently preserve stale or hand-copied offsets.
 These are image-layout profiles, not GPIO-routing profiles and not an
 app-runtime chip allowlist. ESP Web Tools detects the chip family, but that
 detection does **not** prove flash capacity, PSRAM type, board wiring, power
-quality, or silicon revision. In particular, the initial S3 image MUST be
-presented only as `esp32-s3-n16r8`; neither the website nor release notes may
-call it a generic image for every ESP32-S3 board. Any future C3 image MUST be
-presented as requiring ESP32-C3 revision v0.3 or newer.
+quality, silicon revision, or which of the two S3 images is appropriate. The
+lean image MUST be presented only as `esp32-s3-n16r8`; neither the website nor
+release notes may call it generic for every ESP32-S3 board or claim its TFT
+runtime. The exact image MUST be presented only as
+`waveshare-esp32-s3-lcd-147b` for the documented B-version board; matching
+N16R8 memory alone is insufficient. Any future C3 image MUST be presented as
+requiring ESP32-C3 revision v0.3 or newer.
 
 Before the install action appears, the user MUST explicitly select a profile
 and affirm that the connected module meets its stated flash/PSRAM
@@ -82,11 +74,15 @@ configuration. The installer MUST then give ESP Web Tools only that profile's
 single-build manifest. A family mismatch MUST therefore be rejected by ESP Web
 Tools after connection; a shared multi-family manifest is forbidden because it
 could silently select a different image than the profile the user affirmed. A
+family match between the two S3 profiles is not proof of board identity, so the
+exact-board action additionally requires an explicit B-version affirmation and
+MUST NOT alias or redirect to the lean S3 manifest. A
 USB VID/PID, serial-port name, browser user-agent, or previously saved BLE
 board identity MUST NOT be treated as proof of a profile.
 
-Adding or re-enabling a flash size, PSRAM topology, or chip family requires a
-new release candidate with the applicable profile ID, artifact set,
+Adding or re-enabling a flash size, PSRAM topology, chip family, or board-
+specific dependency set requires a new release candidate with the applicable
+profile ID, artifact set,
 compatibility copy, automated cases, and real-board HIL record. It MUST NOT
 broaden an existing profile or mutate a published bundle by implication.
 
@@ -119,10 +115,14 @@ two-root byte comparison have completed:
 ```text
 .sources/esp32/micropython/
 .sources/esp32-s3/micropython/
+.sources/waveshare-esp32-s3-lcd-147b/micropython/
 .sources/esp32-c3/micropython/
 ```
 
-Each path is an independent MicroPython checkout for exactly the named target.
+Each path is an independent MicroPython checkout for exactly the named build
+variant. The generic and Waveshare S3 variants both compile IDF target
+`esp32s3`, but MUST NOT share mutable source/build state or collapse to one
+artifact.
 Its `HEAD` MUST equal the full `versions.lock [micropython].commit`, its
 `origin` URL MUST equal the canonical `versions.lock [micropython].repo`, and
 its tracked tree MUST be clean when admitted and validated. Each target's
@@ -167,9 +167,11 @@ as immutable inputs to one release candidate. Candidate-freezing MUST happen
 before the two clean release builds, license audit, candidate packaging,
 protected-site staging, or HIL. It is an input-selection state only: it does
 **not** assert that the pins work on hardware and does not approve them for a
-public release. Exact-profile HIL on both current release profiles,
-`esp32-4mb` and `esp32-s3-n16r8`, remains the pre-v1 public-release approval
-gate.
+public release. Exact-profile HIL on all three current candidate profiles,
+`esp32-4mb`, `esp32-s3-n16r8`, and
+`waveshare-esp32-s3-lcd-147b`, remains the pre-v1 public-release approval gate.
+The v0.4.2 two-profile browser attestation remains historical evidence only and
+MUST NOT satisfy this new candidate gate.
 
 Changing either upstream pin after candidate-freezing creates a new source
 state and a new candidate. The build, reproducibility comparison, license
@@ -181,7 +183,7 @@ Before the first OI-1 policy can be committed, the release tool MUST provide a
 `create-baseline-inputs` operation that breaks the policy/evidence dependency
 cycle without weakening candidate validation. It MUST bind two distinct,
 non-nested clean build roots to the clean PyBLE proof checkout, validate all
-three maintained ESP32 targets and their retained source checkouts, require
+four maintained build variants and their retained source checkouts, require
 the released inputs to compare byte-for-byte, and then atomically create one
 new no-replace, access-controlled output tree containing exactly:
 
@@ -196,11 +198,18 @@ esp32-s3-n16r8/
   firmware.bin
   application.bin
   partition-table.bin
+waveshare-esp32-s3-lcd-147b/
+  manifest.json
+  firmware.bin
+  application.bin
+  partition-table.bin
 ```
 
-The two manifest files MUST be generated by the same production manifest
+The three manifest files MUST be generated by the same production manifest
 function used by candidate packaging. The three binary files per profile MUST
-be copied from the validated primary build root. The deferred C3 build MUST
+be copied from the matching validated primary build variant. The generic and
+exact S3 application and merged-image hashes MUST differ and each manifest
+MUST bind only its owning bytes. The deferred C3 build MUST
 participate in validation and reproducibility comparison but MUST NOT be
 staged. This operation runs before, and therefore MUST NOT require, an OI-1
 policy, baseline-evidence file, release tag, license evidence, or HIL approval.
@@ -268,10 +277,23 @@ https://pyble.dev/firmware/v<version>/
     bootloader.bin
     partition-table.bin
     application.bin
+  waveshare-esp32-s3-lcd-147b/
+    manifest.json
+    firmware.bin
+    bootloader.bin
+    partition-table.bin
+    application.bin
 ```
 
 No `esp32-c3-4mb/` path exists in this release. Absence is intentional and is
 part of the immutable release contract, not a missing upload.
+
+The two S3 directories are intentionally distinct. Their manifests use the
+same `ESP32-S3` family and offset but their component and merged-image bytes
+MUST differ: the lean directory excludes every display addition, while the
+exact-board directory alone contains the frozen ST7789 runtime, companion,
+splash-aware boot/QR, and native readiness seam. A symlink, hard link, copied
+generic image, redirect, or shared manifest between them is invalid.
 
 The profile's `firmware.bin` is the MicroPython/ESP-IDF-generated **merged**
 image and is the only binary its profile-scoped ESP Web Tools manifest
@@ -338,6 +360,10 @@ one build for its owning profile. For example,
 ```
 
 `<version>` above is a template substitution, not literal released JSON.
+`waveshare-esp32-s3-lcd-147b/manifest.json` has the same schema, family, and
+offset, but it resides in the exact-board directory and references that
+profile's different local `firmware.bin`; the two manifests and firmware paths
+MUST never be substituted for one another.
 The `esp32-4mb` manifest has the same shape and exactly one `ESP32` build with
 offset `4096`. There is no C3 manifest in the current release. The website MUST
 set the custom element's manifest URL to the verified manifest for the selected
@@ -380,14 +406,14 @@ numerically-equal fractional value. This applies equally to build provenance,
 the release-tool lock, license policy and shipment ledger, audit receipts, HIL
 records, and `release.json`.
 
-`release.json` schema version 2 MUST contain (the version is the exact JSON
-integer `2`; booleans and numerically-equal fractional values are invalid).
-Version 2 is an intentional incompatible metadata revision: it freezes the
-two-profile pre-v1 release cardinality and MUST NOT validate the former
-three-profile candidate shape. Older immutable bundles retain their own schema
-beside their metadata:
+Current v0.5 `release.json` schema version 3 MUST contain the following (the
+version is the exact JSON integer `3`; booleans and numerically-equal
+fractional values are invalid). Version 3 is an intentional incompatible
+metadata revision: it freezes the exact three-profile order in §1 and MUST NOT
+validate a shared/two-profile v0.5 candidate shape. Older immutable bundles
+retain their own schema beside their metadata:
 
-- `schema_version` = `2`;
+- `schema_version` = `3`;
 - release identity: `version`, `tag`, `agent_version`, `protocol_version`, and
   UTC `built_at`;
 - provenance: full PyBLE commit and clean state; MicroPython ref/commit;
@@ -408,6 +434,15 @@ beside their metadata:
 - relative paths plus size/SHA-256 for `THIRD_PARTY_LICENSES.txt`,
   `RELEASE_NOTES.md`, `RECOVERY.md`, and `HIL_REPORT.md`; and
 - the exact locally bundled `esp-web-tools` version used by the site.
+
+The immutable public v0.4.2 bundle is the sole retained pre-split exception:
+it keeps release schema version 2, exactly the historical ordered profiles
+`esp32-4mb` and `esp32-s3-n16r8`, and its original files and hashes. Validation
+MUST select that contract from exact release identity `0.4.2`, MUST reject a
+third profile or schema 3 there, and MUST reject schema 2, a two-profile order,
+or v0.4.2 artifacts for current v0.5 source. No validator, carry-forward
+deployment, or website descriptor may reinterpret or expand the immutable
+v0.4.2 tree.
 
 All values are required; placeholders, `unknown`, and abbreviated commits fail
 any bundle. `pending` is accepted only on an access-controlled candidate used
@@ -459,13 +494,17 @@ The reviewed top-level wheel is
 requires review and a new lock; an unpinned environment MUST NOT generate a
 public notice.
 
-The conservative build audit runs against all six authoritative ESP-IDF
+The conservative build audit runs against all eight authoritative ESP-IDF
 descriptions: application and bootloader `project_description.json` for each
-of the three initial build targets. This preserves the v1 three-target build
-and license gate even while the pre-v1 public bundle contains two profiles.
-The released notice MUST classify as redistributed only the dependency union
-of the two packaged profiles; C3-only observations remain retained review
+of the four build variants. This preserves the three-chip/C3 build and license
+gate while independently auditing both S3 payloads. The released notice MUST
+classify as redistributed only the dependency union of the three packaged
+profiles; C3-only observations remain retained review
 evidence and MUST NOT be represented as a shipped C3 image or shipped profile.
+The immutable v0.4.2 replay instead retains its historical six descriptions
+over three build targets and the redistributed dependency union of its two
+packaged profiles. Validation MUST select the complete audit contract from
+source identity and MUST NOT invent a Waveshare audit for v0.4.2.
 The audit uses linked-only output (`--rem-unused --rem-config`) plus file tags,
 runs with network access disabled, an isolated temporary home, and a committed
 hash-pinned empty `SBOM_EXCLUDED_CVES_FILE`. UUIDs, timestamps, and absolute
@@ -1008,7 +1047,9 @@ firmware image.
 memory requirements, agent/PBLE/1/MicroPython/ESP-IDF versions and commits,
 source/tag links, known limitations, destructive-install warning, upgrade
 notes, recovery link, and support contact. It MUST explicitly state that the
-S3 image is N16R8-class only.
+two S3 images are separate, N16R8-class only, and byte-distinct; the lean image
+has no bundled TFT/splash support and the exact-board image supports only the
+Waveshare B version.
 
 ## 7. Installer capability and consent
 
@@ -1028,7 +1069,8 @@ is exposed only after profile selection, verification, and consent.
 
 Before activation the user MUST affirm all of the following:
 
-1. the exact chip/flash/PSRAM profile matches the connected module;
+1. the exact chip/flash/PSRAM profile matches the connected module and, for
+   `waveshare-esp32-s3-lcd-147b`, the board is the exact B-version model;
 2. board files and any previous firmware have been backed up;
 3. installation erases the device;
 4. a data-capable USB cable and stable power are in use; and
@@ -1063,7 +1105,7 @@ cover, in plain language:
   model/module marking, browser/OS versions, stage and error text, while
   excluding secrets and personal device labels.
 
-A recovery instruction that has not itself been exercised on both current
+A recovery instruction that has not itself been exercised on all three current
 release profiles does not satisfy the release gate. The page MUST NOT offer a
 C3 recovery command or binary while that profile is deferred.
 
@@ -1075,12 +1117,16 @@ underscore subcommand `write_flash`. The unsupported hyphenated spelling
 installer recovery section. An automated gate MUST exercise the selected
 subcommand against the pinned tool's command-line parser; rendering command-like
 text without proving that the pinned parser accepts it is insufficient.
+The v0.5 recovery document MUST emit separate commands for all three profiles;
+the two S3 commands both use `--chip esp32s3` and offset `0x0` but MUST name
+their distinct profile-local `firmware.bin` paths. A generic S3 path is never a
+recovery alias for the exact-board image or vice versa.
 
 ## 9. Automated and HIL acceptance
 
 Automated release tests MUST cover:
 
-- clean three-target build from one candidate-frozen pin set and commit;
+- clean four-variant/three-chip build from one candidate-frozen pin set and commit;
 - byte-for-byte second clean build;
 - `flasher_args.json` → profile component-offset and merge-setting agreement;
 - merged-image reproduction, ESP image target/role parsing, component placement,
@@ -1088,7 +1134,8 @@ Automated release tests MUST cover:
   flash-capacity checks;
 - exact manifest schema, paths, profile parity, and forbidden redirect/origin
   cases;
-- exact two-profile resource-policy and HIL V2 schema, baseline/policy/candidate
+- exact three-profile resource-policy schema 2 and HIL V4 schema,
+  baseline/policy/candidate
   hash binding, derivation arithmetic, threshold-boundary and one-unit-crossing
   fixtures, and rejection of any current C3 policy entry or HIL row;
 - release-schema validation, SHA-256/size verification, corrupt/truncated/
@@ -1100,13 +1147,24 @@ Automated release tests MUST cover:
 - static-export and candidate/production-origin retrieval of every versioned
   byte.
 
-One HIL record MUST be completed for each of the two exact current release
-profiles using the final, hash-locked release candidate. The report contains
-exactly one embedded JSON object marked `PYBLE_HIL_RECORDS_V2`; a V1 marker,
-an additional marker, or keys not defined below are invalid.
+For a split-source release core at or after `0.5.0`, one HIL record MUST be
+completed for each of the three exact source-candidate profiles using the
+final, hash-locked candidate. The immutable v0.4.2 history retains exactly one
+embedded `PYBLE_HIL_RECORDS_V2` schema-2 object. Beginning with the `0.5.0`
+release core, including v0.5.1 and prereleases, the report MUST contain exactly
+one `PYBLE_HIL_RECORDS_V4` schema-4 object because the Waveshare functionality
+is an independent third profile. The abandoned shared-image V3 engineering
+shape MUST NOT qualify or publish a split-source release. A V1 marker, the
+wrong source-era marker, an additional marker, or keys not defined below are
+invalid. These are admission requirements; they do not assert that a v0.5.1
+HIL report or qualified public bundle exists.
 
 ```text
 <!-- PYBLE_HIL_RECORDS_V2
+{ ...one JSON object... }
+-->
+
+<!-- PYBLE_HIL_RECORDS_V4
 { ...one JSON object... }
 -->
 ```
@@ -1117,18 +1175,22 @@ Candidate generation MUST read
 `firmware/qualification/oi1-gates.json`, verify it against the frozen
 [firmware requirements §5.3](specs.md#53-footprint-gates-nfr-fp), and embed
 both its parsed JSON object and the lowercase SHA-256 of its exact source
-bytes. The policy object has exactly these keys:
+bytes. For split-source release cores at or after `0.5.0`, the required policy
+object has exactly these keys:
 
-| Key                   | Exact value/type                                     |
-| --------------------- | ---------------------------------------------------- |
-| `schema_version`      | integer `1`                                          |
-| `qualification_scope` | string `"pre-v1"`                                    |
-| `profile_order`       | exact string array `["esp32-4mb", "esp32-s3-n16r8"]` |
-| `deferred_profiles`   | exact string array `["esp32-c3-4mb"]`                |
-| `workload`            | exact object defined below                           |
-| `derivation`          | exact object defined below                           |
-| `baseline_evidence`   | exact object `{path, sha256}`                        |
-| `profiles`            | two policy-entry objects, in `profile_order`         |
+| Key | Exact value/type |
+|---|---|
+| `schema_version` | integer `2` |
+| `qualification_scope` | string `"pre-v1"` |
+| `profile_order` | exact string array `["esp32-4mb", "esp32-s3-n16r8", "waveshare-esp32-s3-lcd-147b"]` |
+| `deferred_profiles` | exact string array `["esp32-c3-4mb"]` |
+| `workload` | exact object defined below |
+| `derivation` | exact object defined below |
+| `baseline_evidence` | exact object `{path, sha256}` |
+| `profiles` | three policy-entry objects, in `profile_order` |
+
+This is a qualification requirement for v0.5.1; it does not assert that the
+checked-in policy has been regenerated or that qualification has passed.
 
 `workload` has exactly these integer/string keys and values:
 
@@ -1158,16 +1220,38 @@ bytes. The policy object has exactly these keys:
   "application_image": "exact-byte-identical-two-root-v1",
   "application_headroom": "factory-minus-application-v1",
   "heap_floor": "floor-min-1024-v1",
-  "boot_ceiling": "ceil-max-10-v1",
-  "goodput_floor": "floor-min-100-v1"
+  "boot_ceiling": "fixed-product-slo-3000-v3",
+  "goodput_floor": "floor-95pct-min-100-v2"
 }
 ```
+
+This exact derivation object and policy schema 2 apply to split source releases
+at or after `0.5.0`. The retained `0.4.2` source era instead requires policy
+schema 1, its historical exact two-profile order, `ceil-max-10-v1`, and
+`floor-min-100-v1` values; validation selects the complete policy contract by
+firmware source era and never silently reinterprets published evidence.
 
 `baseline_evidence.path` MUST match
 `docs/validation/firmware/oi1/<40-lowercase-hex-source-commit>.json`;
 `baseline_evidence.sha256` MUST be the lowercase 64-hex SHA-256 of that exact
-canonical, redacted file. A profile policy entry has exactly
-`profile_id`, `target`, and `thresholds`. Targets are `esp32` then `esp32-s3`.
+canonical, redacted file. Retained baseline files are immutable history: a
+controlled refresh MUST add a new source-commit-scoped file, retain every
+earlier file, and replace the active evidence pointer and all three profile
+threshold objects together. It MUST NOT mix profiles or successful samples
+from different baselines. For a firmware source release core at or after
+`0.5.0`, the active baseline firmware release core MUST be at least `0.5.0`
+and MUST NOT be newer than the source release core; the retained pre-`0.5.0`
+contract keeps its historical baseline semantics. A refreshed engineering
+baseline does not approve a release: after the policy or source changes, the
+final candidate MUST be rebuilt and verify-mode HIL MUST pass on all three exact
+profiles.
+
+A profile policy entry has exactly
+`profile_id`, `target`, and `thresholds`. Targets are `esp32`, `esp32-s3`, then
+`waveshare-esp32-s3-lcd-147b`. The latter two logical builds share the
+underlying ESP-IDF `esp32s3` target, but their release targets and evidence
+MUST remain distinct so generic-S3 measurements can never qualify the
+exact-board image (or vice versa).
 `thresholds` has exactly these positive integer keys:
 
 ```text
@@ -1186,7 +1270,7 @@ Booleans MUST be rejected anywhere an integer is required. The policy MUST
 have no C3 policy entry, and neither the baseline nor a source/build/license
 result may be interpreted as C3 HIL qualification.
 
-### 9.2 Embedded `PYBLE_HIL_RECORDS_V2` shape
+### 9.2 Embedded `PYBLE_HIL_RECORDS_V2` historical shape
 
 The top-level object has exactly:
 
@@ -1342,7 +1426,20 @@ goodput integer MUST equal `floor(65536 * 10^9 / duration_ns)`.
 `5`; both round-trip failure counts are integer `0`.
 `physical_power_cycle_advertising` is string `passed`.
 `raw_log_sha256` is the lowercase 64-hex digest of the access-controlled,
-retained, redacted raw HIL log.
+retained, redacted raw HIL log. Before its first byte is written, that log MUST
+be created exclusively as a regular file with mode `0600`, independent of the
+caller's umask. A pre-existing path MUST be rejected.
+
+The physical power-cycle check MAY remove the same USB serial endpoint used
+for controlled resets. After the completed off-interval and fresh-advertising
+observations have been recorded, an operating-system "device disappeared"
+error while deasserting or closing that stale serial handle is expected
+cleanup, not a failed measurement. The harness MUST still close the handle,
+MUST independently attempt to deassert both control lines and close the
+underlying handle, MUST preserve and report the first non-disappearance cleanup
+error, and MUST retain the complete redacted raw log. Terminal cleanup is
+idempotent. This exception applies only to final cleanup after the physical
+power-cycle observation; controlled-reset failures remain fatal.
 
 Every heap snapshot object has exactly:
 
@@ -1381,7 +1478,68 @@ The first three values MUST all be 20, `bytes_per_file` MUST be 16,384,
 counts MUST be zero. Retransmit and rewind counts are reported but are not
 required to be zero.
 
-### 9.3 Required HIL demonstrations and evaluation
+### 9.3 `PYBLE_HIL_RECORDS_V4` three-profile exact-board release extension
+
+V4 preserves every V2 per-record field, type, and promotion rule except for
+the source-era-qualified `oi1_observation` addition below. It binds policy
+schema 2 and contains exactly three records in the §9.1 order. Its
+top-level object has exactly the five V2 keys plus
+`waveshare_lcd147b_qualification`, and `schema_version` is the exact integer
+`4`. A protected candidate and the completed three-profile operator report both
+carry JSON `null` in that field. Finalization MUST reject a non-null input;
+after admitting the private combined exact-board result, it alone replaces
+null in the staged public report with the validator-derived summary.
+
+For a split firmware source release core at or after `0.5.0`, each completed V4
+record's `oi1_observation` has the exact V2 keys from §9.2 plus the required
+`transfer_link_facts` object frozen in
+[firmware specs §5.3.1](specs.md#531-frozen-metric-definitions).
+The validator selects this shape from the report's bound firmware source era,
+not from the validator checkout. A historical V2 `0.4.2` observation retains
+the byte-exact §9.2 shape and MUST reject the extra field; a V4 `0.5.x`
+observation MUST reject its absence. Candidate observations remain JSON null.
+The abandoned two-profile V3 shared-image shape is retained only as rejected
+engineering history: it MUST NOT validate, finalize, or activate any release.
+
+The tenth reset owns the transfer session. After each of the preceding nine
+disconnects, the harness waits at most 2,000 ms for exactly one complete
+parser-owned session-end record, discards all bytes and the terminal count,
+and clears residual UART state; missing or duplicate termination fails closed.
+Before the tenth reset the private UART input buffer is cleared. After HELLO,
+the harness waits at most 5,000 ms for
+the same session's DLE/PHY/connection-parameter facts to settle and MUST NOT
+start PUT or GET timing first. After the workload it disconnects BLE, waits at
+most 2,000 ms for that session's TX-mbuf starvation fact, seals the strict
+structured object, and discards all arbitrary UART text. The final PHY update
+used to settle either S3 record MUST itself have status zero and `tx=2`, `rx=2`;
+the final connection-parameter update MUST itself have status zero and match
+the retained interval in the inclusive 12..24-unit range. Classic records
+MUST instead carry the explicit compiled-out PHY shape. No BLE identifier,
+serial path, device label, console text, or personal data enters the report.
+
+That summary has exactly the fourteen keys frozen in
+[TDD §14.3.1](TDD.md#1431-adr-0024-release-admission-boundary). It binds the
+pre-HIL candidate `release.json` digest; exact profile, board model, and
+firmware version; exact bundled
+`waveshare-esp32-s3-lcd-147b` merged-image size/SHA-256; recomputed
+immutable-span size/SHA-256; production-app evidence digest and canonical
+active release path; the terminal chain digest; and the complete canonical
+private-result digest. It contains no private result body, session, operator
+input, BLE address/identity, source, raw console, or detailed lifecycle
+record.
+
+`finalize-public` MUST accept the private-result path only as an input. For a
+V4-capable candidate it is mandatory. The finalizer MUST admit one bounded
+canonical strict-JSON file that is a stable one-link mode-`0600` regular
+non-symlink, validate it through the same pure schema implementation used by
+the exclusive HIL writer, compare it to the exact candidate
+`waveshare-esp32-s3-lcd-147b` install bytes,
+and prove the input remained unchanged through late public validation. It
+MUST NOT add the file to the release tree. V2 remains valid and byte-exact for
+historical `0.4.2` replay; V2 or V3 MUST NOT finalize a split candidate and V4
+MUST NOT reclassify an older release.
+
+### 9.4 Required HIL demonstrations and evaluation
 
 Besides the machine observations above, each completed record demonstrates:
 
@@ -1393,10 +1551,18 @@ Besides the machine observations above, each completed record demonstrates:
 4. app scan/connect plus edit, save, run, live console, STOP, soft reboot, and
    board-file round-trip;
 5. `from neopixel import NeoPixel` before and after soft reboot;
-6. every V2 application, heap, boot, transfer-reliability, and goodput gate for
+6. every applicable application, heap, boot, transfer-reliability, and goodput gate for
    the profile; and
 7. a deliberately interrupted browser flash followed by successful recovery
    using the published instructions and the same profile.
+
+The lean `esp32-s3-n16r8` record additionally MUST prove after install and
+soft reboot that `pyble_st7789` and `pyble_waveshare_lcd147b` are absent, no
+splash hook or splash-only native readiness API is exposed, and ordinary BLE,
+NeoPixel, and PBLE/1 workflows remain healthy. The
+`waveshare-esp32-s3-lcd-147b` record MUST prove both modules are present and
+MUST be accompanied by the exclusive TFT/splash/QR/driver-reuse qualification
+in §9.3. These observations and boards are not interchangeable.
 
 Simulation, a build-only result, a prior binary, or one ESP32-family board
 standing in for another does not count. The maintainer signs off each row; the
@@ -1436,14 +1602,17 @@ candidate unchanged. Exactly these changes are permitted:
 Every other byte MUST remain identical, including `THIRD_PARTY_LICENSES.txt`,
 `RELEASE_NOTES.md`, `RECOVERY.md`, `release.schema.json`, every manifest, and
 every firmware/component image. Finalization MUST revalidate the completed
-tree as public and compare every immutable path with the candidate. Within the
-V2 payload, only the candidate release digest, record status, physical-board
+tree as public and compare every immutable path with the candidate. Within
+either source-era payload, only the candidate release digest, record status,
+physical-board
 capacities and descriptions, time/operator/sign-off/environment strings,
 checks, `oi1_observation`, and redacted console log may change. The profile
 identity/hashes, `qualification_policy_sha256`, parsed policy, `oi1_policy`,
-and `oi1_build` MUST remain exactly equal. Publish nothing on any failure. A
+and `oi1_build` MUST remain exactly equal. V4 additionally permits only its
+null-to-derived-passed exact-board summary transition. Publish nothing on any
+failure. A
 different byte or semantic field outside this envelope is a new candidate and
-requires the complete two-profile HIL matrix again.
+requires the complete three-profile HIL matrix again.
 
 ## 10. Activation and rollback
 
@@ -1461,7 +1630,8 @@ selector or staged-root environment variables MUST NOT reclassify public-page
 or no-firmware Sites fixtures. The test runner MUST exercise this isolation
 even when the surrounding release build exports candidate variables. The
 public action may become `active` only when every automated gate is green,
-both current-release HIL rows say `passed`, the maintainer approves the exact
+all three current-release HIL rows say `passed`, the exact-board derived
+summary is present and passed, the maintainer approves the exact
 hashes, and the canonical same-origin bytes pass publication verification. If a
 pre-v1 mirror exists, its files and bytes MUST agree before activation; v1.0 and
 later require that mirror to be the matching GitHub Release. A C3 row MUST be
@@ -1497,6 +1667,11 @@ separate reviewed operation requiring an explicit truth-valued disable flag
 and a production smoke test of the disabled state; absence of staging input
 alone is never authorization to disable it.
 
+The pre-public `v0.4.1` candidate path was exposed without the required access
+control and is permanently burned. The origin MUST quarantine
+`/firmware/v0.4.1/` with a non-cacheable not-found response, MUST NOT select or
+promote those bytes, and MUST retain any forensic copy outside public routing.
+
 As a one-time transitional exception, the fresh audited `v0.4.2` candidate MAY
 be published as a **hardware-tested public beta**. The selector deployment
 mode MUST be `public-beta`, `accessControlled` MUST be `false`, both profile HIL
@@ -1526,4 +1701,6 @@ profile-confirmation, consent, recovery, and production-smoke checks. The
 exception changes only publication policy; it does not allow byte mutation,
 substitute evidence, a different version/digest, or a new profile. A later
 qualified public release therefore starts at a new immutable version and still
-requires the complete gate above.
+requires the complete current-source gate above.
+
+<!-- SPDX-License-Identifier: MIT -->

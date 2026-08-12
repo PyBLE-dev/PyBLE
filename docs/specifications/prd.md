@@ -1,6 +1,6 @@
 # PyBLE — Product Requirements Document
 
-Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-07-30
+Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-08-03
 
 Project phase: **Implementation**. This is the apex requirements document; where it overlaps a deeper spec (protocol.md, firmware.md, app.md, hardware.md, architecture.md), the more specific spec wins on its own topic.
 
@@ -93,7 +93,7 @@ The following are vetoed as core mechanisms. Each is stated as **Rejected: X —
 
 1. **Rejected: a USB-serial-first workflow — because** iPadOS cannot offer arbitrary USB serial to apps, so a cable-first path would make the first-class platform second-class. BLE is the primary and only v1 transport. (See [app.md §5](app.md#5-platform-notes).)
 2. **Rejected: a Wi-Fi-first workflow — because** network onboarding (SSID/password, captive portals, AP mode) is exactly the friction PyBLE removes for classrooms and walk-up use; Wi-Fi is not a v1 transport.
-3. **Rejected: board-specific product or routing/pin profiles — because** PyBLE targets compatible MicroPython + BLE platforms and exposes hardware to user code via standard MicroPython APIs, not via an agent-owned product profile; the in-app pin reference is informational only and **MUST NOT** become an enforced or stored profile (see [hardware.md §4](hardware.md#4-what-pyble-does-not-do-with-hardware)). An open target adapter needed to run PBLE/1 on a MicroPython port is implementation support, not a user hardware profile. Carve-out (does not weaken this): a persisted **device label** and a **single optional identify-LED GPIO** are permitted per-device agent configuration for screenless UX (naming and blink-to-locate) — they map no hardware for user code, are not a routing/pin profile or board-capability map, and never gate access by device identifier or label (see §11.3, §10.7).
+3. **Rejected: board-specific product or generalized routing/pin profiles — because** PyBLE targets compatible MicroPython + BLE platforms and exposes ordinary hardware to user code via standard MicroPython APIs, not via an agent-owned product profile; the in-app pin reference is informational only and **MUST NOT** become an enforced or stored profile (see [hardware.md §4](hardware.md#4-what-pyble-does-not-do-with-hardware)). An open target adapter needed to run PBLE/1 on a MicroPython port is implementation support, not a user hardware profile. Carve-outs (do not weaken this): a persisted **device label** and a **single optional identify-LED GPIO** are permitted per-device agent configuration for screenless UX; and ADR-0024/ADR-0029 permit one module named for the exact Waveshare ESP32-S3-LCD-1.47B to drive only its published display pins for a bounded, cosmetic, BLE-ready app-discovery frame. That frame is factory-enabled only after an erased installation of the explicitly chosen exact-board image and remains persistently disableable. Per [ADR-0028](../decisions/0028-separate-waveshare-lcd147b-firmware-profile.md), that driver and splash machinery **MUST** ship only in the explicit `waveshare-esp32-s3-lcd-147b` provisioning image and **MUST NOT** be accumulated in the lean `esp32-s3-n16r8` chip-family image. Neither exception routes hardware for user code, exposes a lookup/capability profile, detects or selects a board, or gates access by device identifier or label (see §11.3, §10.7, [ADR-0029](../decisions/0029-enable-waveshare-splash-after-erased-install.md)).
 4. **Rejected: forking MicroPython — because** a fork is unmaintainable and breaks the clean-submodule rule; PyBLE builds on upstream MicroPython as a pinned submodule and adds an agent around it (see [firmware/upstream/README.md](../../firmware/upstream/README.md)). Upstream **MUST NOT** be edited in place; any unavoidable patch is isolated under `firmware/patches/micropython-<tag>/` with a written reason, default **zero**.
 5. **Rejected: an editable control plane — because** the agent is the control plane and user code is just a program it runs; user code (including a frozen `while True: pass`) **MUST NOT** be able to wedge BLE or block `STOP`. The agent **MUST** keep servicing the link while user code runs, and **MUST NOT** depend on editable `boot.py`/`main.py` for its own operation (see [firmware.md §1](firmware.md#1-four-layer-rule), [firmware.md §5](firmware.md#5-runtime-rules)).
 6. **Rejected: `.mpy`/`.pyc` in the workspace or transfer — because** byte-compiled artifacts are mpy-cross-version-fragile and opaque to learners; examples and file transfer are `.py` only.
@@ -122,6 +122,15 @@ Requirements:
 - The agent **MAY** ship first as **frozen-Python** modules (fastest path to nail PBLE/1 and reliability) and **MAY** later move hot paths (BLE I/O, framing, file chunking) to a native `USER_C_MODULE` where the chip budget demands it — **without** changing the PBLE/1 wire contract (see [firmware.md §2](firmware.md#2-agent-base-native-vs-frozen)).
 - For the initial v1 ESP32 port, the single MicroPython + ESP-IDF pin in [`firmware/versions.lock`](../../firmware/versions.lock) **MUST** build all three ESP-IDF targets (`esp32`, `esp32s3`, `esp32c3`). The agent **MUST** fit the tightest target; **ESP32-C3** is the initial footprint constraint and **MUST** be validated early. Every future port owns an equivalent pinned, reproducible build and per-target resource gate.
 - Cold boot **MUST** be safe: on boot the board advertises and waits; it **MUST NOT** auto-run user `main.py` unless explicitly enabled via a capability flag, so a bad `main.py` cannot lock a user out of the board.
+- A separately built exact-board Layer-2 companion **MAY** render one
+  cosmetic boot frame only after actual BLE readiness. It **MUST** be
+  factory-enabled only after an erased exact-board installation, persistently
+  disableable, bounded, fail-open, independent of
+  user autorun and the PBLE/1 capability/trust model, and release its display
+  resources before ordinary startup continues. It **MUST** be absent from the
+  generic chip-family image and confined to its explicitly named provisioning
+  profile ([ADR-0024](../decisions/0024-opt-in-waveshare-boot-splash.md),
+  [ADR-0028](../decisions/0028-separate-waveshare-lcd147b-firmware-profile.md)).
 
 ---
 
@@ -148,7 +157,12 @@ Each story selects the applicable categories; the protocol and firmware stories 
 
 - **Native / unit tests** — host-side logic: PBLE/1 codec, CRC32, fragmentation/reassembly, file-transfer window/resume state machine, error→exception mapping; runs without hardware.
 - **PBLE/1 protocol conformance** — frame round-trips, fragmentation across `MTU − 4` boundaries, CRC failure handling (`EVT ERROR(ECRC)`), opcode/status coverage, HELLO capability negotiation — exercised on **both** ends (Dart client in `lib/pble/` and the firmware `pyble_proto`) against an in-memory fake transport, so the two implementations agree on the wire.
-- **Build sanity** — each of `esp32`, `esp32-s3`, `esp32-c3` builds from the pinned base; the build **MUST** verify the submodule SHA against [`firmware/versions.lock`](../../firmware/versions.lock) and emit `firmware.bin` + `manifest.json`.
+- **Build sanity** — each maintained logical build target builds from the pinned
+  base. The current matrix is `esp32`, `esp32-s3`,
+  `waveshare-esp32-s3-lcd-147b`, and `esp32-c3` over the three ESP-IDF chip
+  targets; the build **MUST** verify the submodule SHA against
+  [`firmware/versions.lock`](../../firmware/versions.lock) and emit
+  `firmware.bin` + `manifest.json`.
 - **Resource gates** — total shipped application-image size/headroom is a
   static build/candidate gate; Python GC and internal-IDF heap floors,
   reset-to-advertising latency, transfer goodput floors, and reliability are
@@ -162,8 +176,13 @@ Each story selects the applicable categories; the protocol and firmware stories 
   the resource measurements above. The current v0.4.2 public-beta profile set
   is exactly `esp32-4mb` plus `esp32-s3-n16r8`; production-browser installation
   and interrupted-flash recovery passed, but the other formal HIL rows remain
-  pending. v1.0 additionally requires `esp32-c3-4mb`. A milestone is gated by
-  a working HIL demo, not by merged code alone.
+  pending. The v0.5.1 source-candidate matrix is exactly
+  `esp32-4mb`, `esp32-s3-n16r8`, and
+  `waveshare-esp32-s3-lcd-147b`; v1.0 additionally requires
+  `esp32-c3-4mb`. The two S3 profiles require independent evidence because
+  their candidate contracts produce different immutable bytes. No v0.5.1
+  exact-byte qualification is asserted here. A milestone is gated by a working
+  HIL demo, not by merged code alone.
 
 ### §1B.4 SDD+TDD interlock
 
@@ -213,7 +232,7 @@ criteria as pass/fail conditions.
 | **G0** | **M0 — Foundations** | Public repo is contributable (MIT `LICENSE`, `CONTRIBUTING`, CI with the no-leak grep gate live); an **empty agent builds for all three chips** (`esp32`/`-s3`/`-c3`) from the pinned base; **PBLE/1 §2 (transport) and §3 (framing) are frozen**. |
 | **G1** | **M1 — Agent on classic ESP32** | From a test client on a classic **ESP32**: HELLO + `DEVICE_INFO`, `put`/`get`/`list`/`delete`, `RUN`, `STOP`, and live console are all green, including a **clean multi-file upload with CRC + resume and no link drop**. |
 | **G2** | **M2 — App spine** | On **iPad and Android**: open a `.py`, **Run** it on a classic ESP32, watch the console, **Stop** a loop, and save back — through the `Connection` API with passing `lib/pble/` conformance tests. |
-| **G3** | **M3 — Multi-chip + breadth** | The core edit-run-console loop passes on **esp32 / -s3 / -c3** with per-chip heap/MTU/**footprint validated (C3 first)**; file explorer, CSV plots, and Blockly—including the seven offline editable beginner examples with explicit GPIO roles and no autorun—are usable. |
+| **G3** | **M3 — Multi-chip + breadth** | The core edit-run-console loop passes on **esp32 / -s3 / -c3** with per-chip heap/MTU/**footprint validated (C3 first)**; file explorer, CSV plots, and Blockly—including the eight offline editable beginner examples with explicit GPIO roles and no autorun—are usable. |
 | **G4** | **M4 — Public release (v1.0)** | The **esp-web-tools** flasher at `pyble.dev/flash` flashes a per-chip manifest; firmware bins are on GitHub Releases with `THIRD_PARTY_LICENSES`; the free app is submitted to the App Store and Google Play; a donation / Sponsors link and docs site are live. Anyone can flash an agent and use the free app on the initial supported ESP32-family targets. |
 
 Gates are cumulative: a later gate **MUST NOT** be declared green if an earlier gate has regressed. Additional sub-gates (G3a per-chip, etc.) **MAY** be introduced per story without renumbering the milestone gates.
@@ -298,7 +317,11 @@ The following are **permanent product boundaries, not deferrals.** They define w
   runtime mechanics but does not describe or mediate the user's hardware. The
   in-app pin reference is informational, never an enforced or stored profile,
   and PyBLE never gates by MAC or board identity
-  ([hardware.md §4](hardware.md#4-what-pyble-does-not-do-with-hardware)).
+  ([hardware.md §4](hardware.md#4-what-pyble-does-not-do-with-hardware)). An
+  explicitly selected exact-board provisioning image is permitted only as a
+  bounded Layer-2 dependency set; it is not a runtime product profile and MUST
+  NOT cause its drivers to be bundled into a generic chip-family image
+  ([ADR-0028](../decisions/0028-separate-waveshare-lcd147b-firmware-profile.md)).
 - **No proprietary protocol.** PyBLE speaks only its clean-room [PBLE/1](protocol.md); it carries no closed-source wire format, opcodes, or UUIDs ([architecture.md §5](architecture.md#5-clean-room--ip-boundary)).
 - **No USB-serial-first or Wi-Fi-first workflow.** BLE is the primary and only v1 transport; a future desktop serial transport is a community add-on behind the same client, not a shift away from BLE-first.
 - **No custom MicroPython fork.** PyBLE uses upstream MicroPython plus an add-on agent; it does not fork the VM ([firmware/upstream/README.md](../../firmware/upstream/README.md)).
@@ -381,7 +404,15 @@ never a fork, never edited in place** (see
 [firmware.md §1](firmware.md#1-four-layer-rule) and
 [`firmware/upstream/README.md`](../../firmware/upstream/README.md)).
 
-- The firmware MUST follow the four-layer rule: Layer 1 upstream MicroPython (pinned), Layer 2 per-chip board overlay, Layer 3 the PyBLE agent, Layer 4 the user workspace. The agent is the control plane and MUST NOT be editable by user code; a frozen `while True: pass` in user code MUST NOT be able to wedge BLE or block `STOP` (see [firmware.md §1](firmware.md#1-four-layer-rule) and [firmware.md §5](firmware.md#5-runtime-rules)).
+- The firmware MUST follow the four-layer rule: Layer 1 upstream MicroPython
+  (pinned), Layer 2 per-build board overlay, Layer 3 the PyBLE agent, Layer 4
+  the user workspace. A chip-family overlay stays lean; an exact-board overlay
+  owns only the dependencies required by that named board image. The agent is
+  the control plane and MUST NOT be editable by user code; a frozen
+  `while True: pass` in user code MUST NOT be able to wedge BLE or block
+  `STOP` (see [firmware.md §1](firmware.md#1-four-layer-rule),
+  [firmware.md §5](firmware.md#5-runtime-rules), and
+  [ADR-0028](../decisions/0028-separate-waveshare-lcd147b-firmware-profile.md)).
 - The agent is the `pyble_*` module set: `pyble_ble` (NimBLE peripheral, advertising, GATT, MTU, fragmentation), `pyble_proto` (PBLE/1 codec, CRC32, dispatch), `pyble_runner` (run/stop/soft-reboot, `RUN_STATE`), `pyble_fs` (filesystem bridge with windowed upload + resume), `pyble_console` (tee `stdout`/`stderr` to BLE), and `pyble_info` (`DEVICE_INFO`/HELLO caps). See [firmware.md §3](firmware.md#3-modules).
 - The initial v1 port MUST build one shared agent core for three ESP-IDF
   targets — `esp32`, `esp32s3`, `esp32c3` — all using NimBLE, with per-chip
@@ -394,7 +425,16 @@ never a fork, never edited in place** (see
   MicroPython ports MAY use different platform adapters while preserving the
   same agent/PBLE contract. See [firmware.md §4](firmware.md#4-chip-targets-and-release-profiles).
 - The agent MUST start frozen-Python to nail PBLE/1 and reliability, then port hot paths to native C where the chip budget demands it (especially ESP32-C3); the wire contract MUST NOT change across that move. See [firmware.md §2](firmware.md#2-agent-base-native-vs-frozen).
-- The firmware MUST NOT contain any GPIO-routing, actuator-safety, display, calibration, or board-profile module. Board hardware is exposed to **user code** through standard MicroPython (`machine`), not through the agent (see [firmware.md §3](firmware.md#3-modules) and [hardware.md §4](hardware.md#4-what-pyble-does-not-do-with-hardware)).
+- The Layer-3 agent and generic chip-family images MUST NOT accumulate any
+  GPIO-routing, actuator-safety, display, calibration, or board-profile module.
+  The dedicated `waveshare-esp32-s3-lcd-147b` Layer-2 image is the sole current
+  exception: it owns its clean-room TFT runtime and factory-enabled-after-erase,
+  persistently disableable cosmetic splash;
+  the lean `esp32-s3-n16r8` image owns neither. Board hardware remains exposed
+  to **user code** through standard MicroPython (`machine`), not through the
+  agent (see [firmware.md §3](firmware.md#3-modules),
+  [hardware.md §4](hardware.md#4-what-pyble-does-not-do-with-hardware), and
+  [ADR-0028](../decisions/0028-separate-waveshare-lcd147b-firmware-profile.md)).
 - Footprint budget is provisional and MUST be measured and frozen per target on real hardware — ESP32-C3 flash overhead is the hard constraint and MUST be validated early. The numbers in [firmware.md §7](firmware.md#7-footprint-budget-provisional-per-target) are placeholders to be pinned after hardware-in-the-loop measurement, not asserted up front.
 
 The initial ESP32 builds emit `firmware.bin` plus a `manifest.json` for the
@@ -465,7 +505,12 @@ Longer-horizon directions, explicitly outside v1.x and subject to the same non-g
 - **An application-layer pairing token**, negotiated in HELLO, layered on top of the BLE link-layer baseline — intentionally out of v1 scope (see [protocol.md §10](protocol.md#10-security-note-v1)).
 - **A PBLE/2 protocol revision** if and only if a backward-incompatible change is justified, following the versioning policy (see [protocol.md §9](protocol.md#9-versioning-policy)).
 
-Out of scope across all tiers (restating §4.3): chemistry/lab/calibration features, board-specific routing profiles, any proprietary wire format, a USB- or Wi-Fi-first primary workflow, a MicroPython fork, `.mpy` in examples or transfer, accounts/cloud-sync/automatic-grading, and any paid tier, closed module, or telemetry-by-default.
+Out of scope across all tiers (restating §4.3): chemistry/lab/calibration
+features, generalized board-specific routing profiles (the narrow ADR-0024
+cosmetic companion is not one), any proprietary wire format, a USB- or
+Wi-Fi-first primary workflow, a MicroPython fork, `.mpy` in examples or
+transfer, accounts/cloud-sync/automatic-grading, and any paid tier, closed
+module, or telemetry-by-default.
 
 ---
 
@@ -489,7 +534,11 @@ These are the end-to-end flows v1.0 MUST support. Each maps to PBLE/1 opcodes an
    and MUST NOT contain personal data (see §14.2).
 6. **Reconnect.** On link loss the app MUST auto-reattempt and reconnect saved boards by remembered identifier; any in-flight file transfer MUST resume per [protocol.md §5](protocol.md#5-file-transfer-the-reliability-core).
 
-Pairing is **screenless**: there is no QR pairing, no TFT/on-screen code, no lease/heartbeat, and no board-identity gating — just scan, connect, use (see [app.md §3](app.md#3-the-connection-api-the-seam-every-widget-binds-to)).
+Pairing is **screenless**: there is no QR pairing, pairing code,
+lease/heartbeat, or board-identity gate — just scan, connect, use (see
+[app.md §3](app.md#3-the-connection-api-the-seam-every-widget-binds-to)).
+The optional exact-board QR in ADR-0024 is only an app-download URL displayed
+after BLE is ready; it carries no pairing or board-identity data.
 
 ### §8.2 Edit → Upload → Run → Console → Stop
 
@@ -600,11 +649,25 @@ These requirements specify app behavior and become story acceptance criteria. Th
   MicroPython `neopixel.NeoPixel` API. Pin and pixel count are explicit program
   values, generated imports are deterministic, buffer mutation MUST NOT imply a
   write, and neither app nor firmware may choose an onboard LED or GPIO.
+- A **TFT Display** category MUST expose exactly eight composable operations:
+  construct, RGB565 colour, fill, pixel, outline/filled rectangle, text,
+  explicit show, and explicit Boolean backlight. It MUST generate the frozen
+  `pyble_st7789` API with separate use-dependent `ST7789`/`rgb565` imports and
+  the exact positional constructor
+  `ST7789(spi_id, baudrate, polarity, phase, sck, mosi, cs, dc, reset,
+  backlight, width, height, x_offset, y_offset, bgr, inversion)`. All values and
+  six `Pin` objects are explicit, with no shadow/default, board detection, pin
+  map, implicit show, or implicit backlight-on.
 - The app MUST bundle an offline beginner library containing **Hello PyBLE,
   Count repeatedly, Blink an LED, Blink a NeoPixel, Read a button, Button
-  controls LED, and Reusable function** as editable ordinary Blockly
-  workspaces. It MUST generate the displayed Python with the production
-  generator rather than store a second source representation.
+  controls LED, Reusable function, and ESP32-S3-LCD-1.47B TFT display** as
+  editable ordinary Blockly workspaces. It MUST generate the displayed Python
+  with the production generator rather than store a second source
+  representation. The eighth example's six GPIO roles MUST be disconnected;
+  its explicit non-pin values MUST show SPI ID 1, 40 MHz, mode 0, 172 × 320,
+  offsets 34/0, BGR, and inversion. Localized guidance may state the exact
+  B-board wiring but MUST warn that the non-B board differs and MUST NOT
+  materialize those GPIOs or gate the example by the connected device.
 - Example Preview MUST be non-mutating; creating an editable copy over an empty
   workspace MUST be explicit; replacing any non-empty/incomplete workspace MUST
   require confirmation and preserve the prior workspace until the replacement
@@ -622,14 +685,24 @@ These requirements specify app behavior and become story acceptance criteria. Th
   MUST use the normal revision, restore, rotation, and persistence/recovery path.
   Hardware examples MUST include generic wiring notes and direct users to verify
   pins and voltage against their own board.
+- Convert Python to Blocks MUST remain offline and all-or-nothing. Its bounded
+  subset MUST additionally accept only the exact unaliased, use-dependent
+  `pyble_st7789` imports; exact positional 16-argument constructor; `rgb565`;
+  fill/pixel/rect/fill_rect/text/show/backlight calls on a definitely bound
+  display; and the same six explicit `Pin` values. Any alias, keyword argument,
+  wrong order/arity, unsupported display call, invalid configuration, or
+  uncertain receiver binding MUST reject the complete conversion with no
+  partial workspace or raw-code escape.
 - The app MUST provide live plots (`fl_chart`, `lib/plots/`) over CSV/streamed values printed by the running program to the console stream.
 - Plotting MUST be derived purely from program output (no special data-event opcode is required); the app SHOULD let the user configure how console output is parsed into series.
 - The block bridge and plots MUST bind to `Connection`/`ConsoleEvent` neutral
   types and carry no board-specific profile, copied catalog/curriculum,
-  domain-specific lesson flow, or proprietary/classroom pedagogy. The seven
-  bounded generic onboarding workspaces are fresh PyBLE content under
+  domain-specific lesson flow, or proprietary/classroom pedagogy. The eight
+  bounded onboarding workspaces are fresh PyBLE content under
   [ADR-0016](../decisions/0016-offline-beginner-blockly-examples.md) and
-  [ADR-0018](../decisions/0018-standard-micropython-neopixel.md) (see
+  [ADR-0018](../decisions/0018-standard-micropython-neopixel.md), with the
+  manually selected named-board fixture bounded by
+  [ADR-0023](../decisions/0023-explicit-st7789-user-runtime.md) (see
   [app.md §6](app.md#6-reuse-provenance-clean-room-note)).
 
 ### §9.9 Beginner-Friendly Error Explanation
@@ -694,7 +767,12 @@ Requirements:
 The firmware MUST follow the four-layer separation defined in [firmware.md §1](firmware.md#1-four-layer-rule):
 
 1. **Layer 1 — Upstream MicroPython** (ESP32 port): a pinned submodule that MUST NOT be edited in place (see §10.9, §10.10).
-2. **Layer 2 — Board overlay**: per-chip config (pins, flash size, USB) for `esp32` / `esp32-s3` / `esp32-c3`, copied into the upstream `ports/esp32/boards/` tree at build prep so the submodule stays pristine.
+2. **Layer 2 — Board overlay**: per-build config (pins, flash size, USB and only
+   explicitly required board dependencies), copied into the upstream
+   `ports/esp32/boards/` tree at build prep so the submodule stays pristine.
+   `esp32-s3-n16r8` is the lean generic S3 overlay;
+   `waveshare-esp32-s3-lcd-147b` is a distinct exact-board overlay on the same
+   `esp32s3` IDF target ([ADR-0028](../decisions/0028-separate-waveshare-lcd147b-firmware-profile.md)).
 3. **Layer 3 — PyBLE agent**: the protected modules (§10.3) that own BLE, the runner, and the filesystem bridge. This is the **control plane**.
 4. **Layer 4 — User workspace**: the user's own `.py` files (§10.4); never the control plane.
 
@@ -717,7 +795,14 @@ The agent MUST be organized as the six modules defined in [firmware.md §3](firm
 | `pyble_console` | Tee `stdout`/`stderr` to BLE as console events (and to USB-serial if present, for local debugging only). |
 | `pyble_info` | Assemble `DEVICE_INFO`/HELLO capabilities: chip, MicroPython version, free memory, fs root, MTU, SD presence. |
 
-Hard exclusions (restating the non-goals): the firmware MUST NOT contain any GPIO-routing, actuator-safety, display/branding, calibration, or board-profile module. PyBLE exposes the board's hardware to **user code** via standard MicroPython (`machine`), not via the agent (see §11.3).
+Hard exclusions (restating the non-goals): the Layer-3 agent MUST NOT contain
+GPIO-routing, actuator-safety, display/branding, calibration, or board-profile
+logic. A generic chip-family image MUST NOT collect board drivers. The only
+current display carve-out is the dedicated exact-board Layer-2 image in
+[ADR-0028](../decisions/0028-separate-waveshare-lcd147b-firmware-profile.md);
+it does not change PBLE/1 or mediate user hardware. PyBLE otherwise exposes the
+board's hardware to **user code** via standard MicroPython (`machine`), not via
+the agent (see §11.3).
 
 ### §10.4 User workspace jail (/main.py, /lib/*.py, /data/*, project.json; forbidden paths; NO .mpy/.pyc)
 
@@ -816,11 +901,21 @@ The default MUST be **zero** upstream patches.
 - Each patch MUST be re-reviewed for retirement at every upstream upgrade.
 - PyBLE-specific code MUST live outside the submodule tree: the agent in `pyble_*` modules (Layer 3) and per-chip config in the board overlays (Layer 2).
 
-### §10.11 Per-chip build targets
+### §10.11 Logical build targets
 
-- `firmware/scripts/build.sh <target>` MUST build exactly one chip (`esp32` | `esp32-s3` | `esp32-c3`); `build_all.sh` MUST build all three ([firmware.md §6](firmware.md#6-build--distribution)).
+- `firmware/scripts/build.sh <target>` MUST build exactly one maintained logical
+  target (`esp32` | `esp32-s3` | `waveshare-esp32-s3-lcd-147b` |
+  `esp32-c3`); `build_all.sh` MUST build all four logical targets
+  ([firmware.md §6](firmware.md#6-build--distribution)).
 - All targets MUST build from the **single** MicroPython + ESP-IDF pin in `versions.lock`; the build MUST NOT silently substitute a different toolchain version.
-- The build MUST map each PyBLE target name to its IDF target (`esp32`→`esp32`, `esp32-s3`→`esp32s3`, `esp32-c3`→`esp32c3`) and apply the matching board overlay before invoking the port build.
+- The build MUST map each PyBLE target name to its IDF target
+  (`esp32`→`esp32`, `esp32-s3`→`esp32s3`,
+  `waveshare-esp32-s3-lcd-147b`→`esp32s3`,
+  `esp32-c3`→`esp32c3`) and apply the matching independent board overlay before
+  invoking the port build. The generic S3 build MUST exclude the Waveshare
+  display driver, board companion, splash assets, and splash-only native seam;
+  only the exact-board target MAY include them
+  ([ADR-0028](../decisions/0028-separate-waveshare-lcd147b-firmware-profile.md)).
 - Builds MUST be reproducible from a clean checkout given the pinned versions (see §13.1).
 
 ### §10.12 Build artifacts & manifest
@@ -841,38 +936,51 @@ Each successful per-target build MUST emit a flashable artifact set ([firmware.m
   MAY instead expose its two exact images only as a hardware-tested beta after
   their supplemental production-browser installation and recovery run passes;
   it MUST say that complete qualification remains pending.
-- The current v0.4.2 public-beta set is exactly `esp32-4mb` and
-  `esp32-s3-n16r8`. `esp32-c3-4mb` remains unavailable and absent from release
-  metadata, artifacts, selection, and recovery commands pending exact-profile
+- An unqualified profile MUST be absent from release metadata, artifacts,
+  selection, and recovery commands and shown as unavailable, never silently
+  marked supported. The immutable v0.4.2 public-beta set remains exactly
+  `esp32-4mb` plus `esp32-s3-n16r8` and MUST NOT be expanded.
+- The v0.5.1 source-candidate set is exactly `esp32-4mb`,
+  `esp32-s3-n16r8`, and `waveshare-esp32-s3-lcd-147b`, in that order;
+  `esp32-c3-4mb` remains unavailable pending exact-profile
   real-hardware validation. Re-enabling it requires a new SemVer candidate and
   immutable bundle.
-- The flasher manifest MUST select the correct artifact per released profile;
-  v1.0 MUST cover all three targets at every published release (parity across
-  chips).
+- The flasher manifest MUST select the correct artifact per released profile.
+  The two S3 selections MUST reference different immutable bytes and require
+  separate explicit compatibility consent. v1.0 MUST retain the three v0.5
+  profiles and add `esp32-c3-4mb`, preserving parity across all three chips.
 
 ### §10.13 Resource and performance thresholds as REQUIREMENTS
 
-[firmware.md §7](firmware.md#7-footprint-budget-provisional-per-target) is
-provisional until measurements are retained and the resulting per-profile
-numbers are frozen. The detailed method, exact workload, metric meanings,
-rounding formulas, and evidence contract are normative in
+[firmware.md §7](firmware.md#7-footprint-budget-provisional-per-target) retains
+the immutable v0.4.2 two-profile history; C3 remains provisional. The split
+v0.5.1 source candidate requires a controlled three-profile refresh using the
+detailed method, exact workload, metric meanings, rounding formulas, and
+evidence contract in
 [firmware/specs.md §5.3](firmware/specs.md#53-footprint-gates-nfr-fp).
 
-| Gate | Metric and direction | Current pre-v1 profiles | ESP32-C3 / v1.0 |
+| Gate | Metric and direction | v0.5.1 source-candidate profiles | ESP32-C3 / v1.0 |
 |---|---|---|---|
-| **FP-FLASH** | Total shipped application-image ceiling plus factory-partition headroom floor | Freeze separately for `esp32-4mb` and `esp32-s3-n16r8` | Remains open for `esp32-c3-4mb`; C3 is the hard constraint |
-| **FP-HEAP** | Python GC and internal-IDF current/largest/minimum heap floors after HELLO and transfer workloads | Freeze separately for both included profiles; default-capability `free_mem` is diagnostic only | Must leave usable user-code and control-plane headroom |
-| **FP-BOOT** | Controlled reset-release → first fresh service-advertisement ceiling, plus physical power-cycle pass | Freeze separately for both included profiles | Required before C3 enablement and v1.0 |
-| **FP-TPUT** | Committed PUT and verified GET goodput floors at observed ATT MTU 247, plus exact reliability counts | Freeze separately for both included profiles | Must remain usable and reliable on the binding target |
+| **FP-FLASH** | Total shipped application-image ceiling plus factory-partition headroom floor | Derive and freeze independently for all three profiles | Remains open for `esp32-c3-4mb`; C3 is the hard constraint |
+| **FP-HEAP** | Python GC and internal-IDF current/largest/minimum heap floors after HELLO and transfer workloads | Derive and freeze all three profile floors; default-capability `free_mem` is diagnostic only | Must leave usable user-code and control-plane headroom |
+| **FP-BOOT** | Controlled reset-release → first fresh service-advertisement ceiling, plus physical power-cycle pass | Apply the fixed SLO and verify all three profiles | Required before C3 enablement and v1.0 |
+| **FP-TPUT** | Committed PUT and verified GET goodput floors at observed ATT MTU 247, plus exact reliability counts | Derive and freeze all three profile floors | Must remain usable and reliable on the binding target |
 
 Requirements:
 
-- The current v0.4.2 public-beta set is exactly the two profiles in §10.12.
-  Their numeric thresholds and hash-locked final-candidate HIL remain
-  release-blocking for qualification; the bounded beta exception does not
-  satisfy or waive those gates.
+- The immutable v0.4.2 public-beta set is exactly the two profiles in §10.12.
+  Its bounded exception does not satisfy or waive the remaining qualification
+  gates. The v0.5.1 source-candidate set is exactly the three profiles in
+  §10.12; fresh numeric policy and hash-locked final-candidate HIL are
+  release-blocking for every one of them.
   `esp32-c3-4mb` MUST remain absent from that release's policy, HIL rows,
   artifacts, recovery, and installer selection.
+- The split changes both S3 binaries. Pre-split v0.5 baseline, threshold,
+  candidate, and HIL evidence MUST NOT qualify either new S3 image. A fresh
+  source-bound baseline, independently derived threshold row, reproducible
+  candidate, browser-install/recovery pass, physical power-cycle pass, and full
+  HIL record are required for each of all three v0.5 profiles; one S3 board or
+  binary MUST NOT stand in for the other.
 - **ESP32-C3 remains the binding v1.0 constraint.** Its source target continues
   to build and participate in reproducibility and license audits. If its later
   exact-profile HIL does not meet flash/heap requirements with usable
@@ -881,10 +989,16 @@ Requirements:
 - The application-image ceiling/headroom floor MUST be enforced by automated
   build/candidate validation. Runtime heap, boot, goodput, and reliability
   thresholds MUST be evaluated from machine-readable final-candidate HIL.
-- Thresholds MUST be derived only by the predeclared outward-rounding formulas
-  in firmware/specs.md §5.3 from retained raw samples. A manually chosen
-  percentage or qualitative “comfortable/usable” value is forbidden.
-- A pre-v1 qualification of both current profiles closes only that release
+- Thresholds MUST follow only the predeclared, metric-specific contracts in
+  firmware/specs.md §5.3. Static build quantities remain exact; heap keeps its
+  baseline-derived outward quantum; reset detection uses the fixed 3,000 ms
+  end-to-end product SLO; and goodput receives the exact integer 5%
+  baseline-derived repeatability allowance before outward quantization. A
+  candidate result MUST NOT be used to fit, trim, or relax any threshold.
+- A controlled refresh MUST retain earlier evidence, replace all three current
+  profile threshold sets together, and rebuild and reverify the final
+  candidate. Engineering-baseline observations do not qualify that candidate.
+- A v0.5 qualification of all three current profiles closes only that release
   subset. The open C3 portion remains release-blocking for any C3 enablement
   and for v1.0; “to be measured on hardware” is not permission to claim C3.
 
@@ -943,12 +1057,26 @@ validated one-time provisioning method. USB is NOT a runtime transport: PyBLE
 remains BLE-first, so iPadOS — which cannot do arbitrary USB serial — is a
 first-class runtime platform (see §13.6). No specific GPIO wiring is required.
 
-### §11.3 Hardware exposed to user code only via standard MicroPython `machine` — no profiles/routing
+### §11.3 Ordinary hardware exposed through standard MicroPython `machine` — no generalized profiles/routing
 
 Restating the non-goal from [hardware.md §4](hardware.md#4-what-pyble-does-not-do-with-hardware):
 
-- The board's hardware MUST be exposed to user code **only** through standard MicroPython (`machine`, `os`, etc.). The agent MUST NOT mediate or abstract GPIO.
-- PyBLE MUST NOT impose, store, or transmit any board "routing profile" or pin profile. Carve-out (does not weaken this): the agent MAY persist a **device label** and a **single optional identify-LED GPIO** as its own per-device UX configuration (for naming and blink-to-locate); these are not a routing/pin profile or board-capability map, are never exposed to user code, and never gate access by MAC or label (see §10.7, §14.2).
+- The board's ordinary hardware MUST be exposed to user code **only** through
+  standard MicroPython (`machine`, `os`, etc.). The agent MUST NOT mediate or
+  abstract GPIO for user programs.
+- PyBLE MUST NOT impose, store, or transmit a generalized board routing/pin
+  profile. The agent MAY persist a **device label** and a **single optional
+  identify-LED GPIO** as its own per-device UX configuration. ADR-0024 also
+  permits the dedicated `waveshare-esp32-s3-lcd-147b` image alone to contain an
+  exact-board Layer-2 companion with the
+  Waveshare ESP32-S3-LCD-1.47B's published display wiring solely for a bounded
+  cosmetic boot frame after BLE readiness. The frame is factory-enabled after
+  erase only in this exact profile and remains persistently disableable. These
+  exceptions are not user-code routing/capability maps, never detect/select a
+  board, and never gate access by MAC or label. The generic
+  `esp32-s3-n16r8` image MUST contain none of that display/splash machinery
+  (see §10.7, §14.2 and
+  [ADR-0028](../decisions/0028-separate-waveshare-lcd147b-firmware-profile.md)).
 - PyBLE MUST NOT drive actuators, manage calibration, or contain any hardware safety guard; those belong to the user's own code and project (see §13.3 for the distinction from generic software safety).
 - The app MAY surface a **read-only, informational** per-target pin reference
   (keyed by the opaque `chip` identifier reported in `DEVICE_INFO`) to warn
@@ -1106,7 +1234,7 @@ Exact per-package licenses MUST be generated mechanically at build time (not han
 ### §15.3 Distribution
 
 - The app MUST be distributed **free** on the **Apple App Store** and **Google Play**, at feature parity across iPadOS and Android tablets (see §13.6 and §19). No account, no paywall, no in-app purchase.
-- A browser-based **web flasher** MUST be hosted at `pyble.dev/flash`, built on **esp-web-tools**, with one profile-scoped, single-build manifest per exact profile included in that release (see [firmware.md §6](firmware.md#6-build--distribution)). It MUST allow a user to flash the agent from a supported desktop browser over USB without installing a toolchain, and MUST NOT give ESP Web Tools a multi-family manifest that could override the user's selected profile. The current v0.4.2 hardware-tested beta contains the two exact profiles in §10.12; complete release qualification remains pending and C3 is unavailable.
+- A browser-based **web flasher** MUST be hosted at `pyble.dev/flash`, built on **esp-web-tools**, with one profile-scoped, single-build manifest per exact profile included in that release (see [firmware.md §6](firmware.md#6-build--distribution)). It MUST allow a user to flash the agent from a supported desktop browser over USB without installing a toolchain, and MUST NOT give ESP Web Tools a multi-family manifest that could override the user's selected profile. The immutable v0.4.2 hardware-tested beta contains the two exact profiles in §10.12; complete release qualification remains pending. The v0.5.1 source candidate defines three prospective profiles but authorizes no public bytes until all three qualify. C3 is unavailable until separately qualified.
 - Firmware binaries (`firmware.bin`, bootloader, partition table, profile-scoped
   `manifest.json` files, and `THIRD_PARTY_LICENSES`) MUST be published at the
   canonical immutable `pyble.dev/firmware/v<version>/` path, one set per exact
@@ -1134,9 +1262,10 @@ The app is a single Flutter package targeting iPad and Android tablets (see [app
 - **Code editor:** `flutter_code_editor` (Python mode). The widget's tablet-keyboard maturity is a tracked risk (§23); a WebView-hosted editor is the documented fallback.
 - **Blocks:** Blockly in a WebView, generating inspectable MicroPython
   (a board-neutral subset with no board-specific defaults or pin catalog).
-  The current numeric-`machine.Pin` and NeoPixel blocks are initially validated
-  on ESP32-family firmware; they are not a claim that all MicroPython ports use
-  the same pin identifier or ship the same library.
+  The current numeric-`machine.Pin`, NeoPixel, and explicit `pyble_st7789` TFT
+  blocks are initially validated on ESP32-family firmware; they are not a claim
+  that all MicroPython ports use the same pin identifier or ship either optional
+  library.
 - **Charts:** `fl_chart` over CSV/streamed values from the running program.
 - **Persistence:** **Drift** (SQLite) for projects, settings, and saved boards — offline-first (see [app.md §2](app.md#2-packages--directories), `lib/data/`).
 - **Localization:** `intl` + ARB. New user-facing strings MUST ship with at least `en` in the same commit; translation parity MUST be enforced in CI.
@@ -1149,13 +1278,14 @@ board, built on **upstream MicroPython — never a fork** (see
 the initial ESP32 v1 port, not a cross-vendor implementation mandate.
 
 - **Four-layer rule (strict separation):** Layer 1 upstream MicroPython (pinned
-  source, never edited in place) → Layer 2 target adapter / board overlay (v1
-  per-chip config for `esp32`/`esp32-s3`/`esp32-c3`) → Layer 3 PyBLE agent (the
+  source, never edited in place) → Layer 2 target adapter / board overlay
+  (per logical build, including separate lean generic-S3 and exact Waveshare
+  S3 overlays) → Layer 3 PyBLE agent (the
   control plane) → Layer 4 user workspace (`/main.py`, `/lib`, `/data`). User
   code MUST NOT be able to wedge BLE or block `STOP`.
 - **Build base:** ESP-IDF toolchain (xtensa-esp for `esp32`/`-s3`, riscv32-esp for `-c3`), `mpy-cross` rebuilt from the pinned MicroPython.
 - **BLE host:** **NimBLE** (Bluedroid not built), one host across all three chips.
-- **Agent modules (Layer 3):** `pyble_ble`, `pyble_proto`, `pyble_runner`, `pyble_fs`, `pyble_console`, `pyble_info` (see [firmware.md §3](firmware.md#3-modules)). There is no GPIO-routing, board-profile, calibration, actuator, or display module — hardware is exposed to user code via standard MicroPython `machine`, not via the agent.
+- **Agent modules (Layer 3):** `pyble_ble`, `pyble_proto`, `pyble_runner`, `pyble_fs`, `pyble_console`, `pyble_info` (see [firmware.md §3](firmware.md#3-modules)). There is no GPIO-routing, board-profile, calibration, actuator, or display module in the agent. The exact-board TFT runtime and cosmetic splash are Layer-2 dependencies of `waveshare-esp32-s3-lcd-147b` only; hardware is otherwise exposed to user code via standard MicroPython `machine`, not via the agent ([ADR-0028](../decisions/0028-separate-waveshare-lcd147b-firmware-profile.md)).
 - **Integration mechanism:** `USER_C_MODULES` for native hot paths. v1.0 starts as a **frozen-Python agent** to nail PBLE/1 and reliability, then ports hot paths (BLE I/O, framing, file chunking) to C where the chip budget demands it — most acutely on ESP32-C3. The wire contract is unchanged across that move.
 - **Filesystem:** MicroPython VFS / LittleFS-style workspace; uploads use temp-write-then-rename to avoid mid-transfer corruption.
 - **Protocol:** **[PBLE/1](protocol.md)** — framed messages with CRC-32, fragmentation over GATT, windowed file transfer with resume.
@@ -1196,9 +1326,11 @@ PyBLE depends on third-party code at two layers (firmware upstream and Flutter p
   **candidate-frozen**. This makes the selected input immutable; it does not
   approve the pins. Public-release approval still requires the same candidate
   to pass HIL on every exact profile included in that release. The current
-  v0.4.2 formal matrix is the two profiles in §10.12; all three, including the
-  binding ESP32-C3 footprint, are required for v1.0 (§10.13, §21.2). A pin
-  change abandons that candidate and all evidence bound to it.
+  v0.5.1 source-candidate set is the three profiles in §10.12; v1.0 retains them and adds the
+  binding ESP32-C3 footprint profile (§10.13, §21.2). A pin change
+  abandons that candidate and all evidence bound to it.
+  The immutable v0.4.2 formal history remains its two-profile matrix and MUST
+  NOT be reinterpreted as approval of the current candidate.
 - A **SHA gate** MUST run in the build: the build prep verifies the checked-out submodule SHA against `versions.lock` and **refuses to proceed on mismatch**. CI MUST run this gate on every PR.
 - ESP-IDF is **not** a submodule; it is installed from the pinned version into a gitignored directory by the build scripts. MicroPython's own `lib/` dependencies are fetched by the standard port build (`make … submodules`).
 - Upgrades MUST go only through the **controlled upgrade workflow** (`firmware/scripts/upgrade_micropython.sh`) — never edited by hand during a build. An upgrade MUST: bump `versions.lock` (ref + resolved SHA) in its own commit; rebuild `mpy-cross`; pass the full host + protocol-conformance suite; pass the applicable per-profile resource gates (§10.13); candidate-freeze the updated lock before release-candidate generation; and validate that exact candidate on every profile included in the release. All three profiles are mandatory for v1.0. The default patch count against upstream is **zero**; any patch is re-reviewed for retirement at every upgrade.
@@ -1217,7 +1349,8 @@ PyBLE depends on third-party code at two layers (firmware upstream and Flutter p
 - The project SHOULD track upstream MicroPython and ESP-IDF release lines and plan a controlled upgrade before its pinned line reaches end-of-life, so PyBLE is never stranded on an unsupported base.
 - An upgrade MUST NOT be approved for a public candidate on the strength of CI
   alone: it requires the §17.1 HIL pass on every exact profile included in that
-  release. All three profiles remain mandatory for v1.0.
+  release. The three v0.5 profiles plus `esp32-c3-4mb` remain mandatory for
+  v1.0.
 - When a dependency is abandoned upstream, the project MUST either vendor it under MIT/Apache/BSD terms (with the source pinned and recorded) or replace it; an unmaintained dependency MUST NOT be left as a silent liability.
 
 ---
@@ -1398,8 +1531,10 @@ The entry flow is scan → connect → use, with no QR pairing, no account, and 
 These are the production targets the project measures itself against. Numeric
 BLE/throughput targets are validated on hardware for every exact profile
 included in a release and MUST be frozen per profile after measurement. The
-  current v0.4.2 formal matrix has two profiles; the v1.0 matrix has all three.
-  Until a profile's values are frozen, they are stated as intent, not asserted.
+immutable v0.4.2 formal matrix has two profiles. The v0.5.1 source-candidate
+matrix has three prospective profiles, and the v1.0 matrix retains them and
+adds `esp32-c3-4mb`. Until a profile's values are frozen from retained evidence,
+they are stated as intent, not asserted.
 
 | Metric | Definition | v1.0 target | Status |
 |---|---|---|---|
@@ -1431,7 +1566,7 @@ v1.0 is accepted when **all** of the following pass. The first block folds in th
 
 **Breadth (v1.0 IDE surface):**
 
-6. File explorer (multi-select), Blockly → MicroPython (including the seven
+6. File explorer (multi-select), Blockly → MicroPython (including the eight
    offline editable examples with generated preview, explicit GPIO roles, and
    no autorun), `fl_chart` plots over streamed CSV, and public-GitHub `.py`
    folder import all work end-to-end against a real board.
@@ -1477,7 +1612,7 @@ code alone. Epics: **X** infra, **P** protocol/shared, **F** firmware,
 | **M0 — Foundations** | Project is contributable; an empty agent builds for all three chips. | X | Public repo with MIT license + DCO + **no-leak gate**; PBLE/1 §2 (transport) and §3 (framing) frozen; the 3 ESP-IDF targets build an empty agent. |
 | **M1 — Firmware agent on classic ESP32** (the hard part) | A board speaks PBLE/1 well enough to edit-and-run. | F, P | From a test client on a classic ESP32: connect, device_info, put/get/list/delete, run, stop, console — all green, with a clean multi-file upload. |
 | **M2 — App spine** | Edit, run, and watch the console wirelessly from a tablet. | A | Open a `.py` on iPad/Android, Run on a classic ESP32, watch the console, Stop a loop, save back; `lib/pble/` conformance tests green. |
-| **M3 — Multi-chip + breadth** | All three chips; fuller IDE. | F, A | Core loop passes on `esp32`/`-s3`/`-c3` (C3 footprint validated, §21.2); file explorer + Blockly (including seven offline editable beginner examples with explicit GPIO roles and no autorun) + plots usable. |
+| **M3 — Multi-chip + breadth** | All three chips; fuller IDE. | F, A | Core loop passes on `esp32`/`-s3`/`-c3` (C3 footprint validated, §21.2); file explorer + Blockly (including eight offline editable beginner examples with explicit GPIO roles and no autorun) + plots usable. |
 | **M4 — Polish & release** | First public release. | X, A | esp-web-tools flasher at `pyble.dev/flash`; free App Store + Play submission; GitHub Releases for firmware; `THIRD_PARTY_LICENSES`; donation/Sponsors link; docs site. |
 
 The agent is built **frozen-Python first** to nail PBLE/1 and reliability, then hot paths port to C where the chip budget demands it (most acutely on C3); the wire contract does not change across that move (see [firmware.md §2](firmware.md#2-agent-base-native-vs-frozen)).
@@ -1503,7 +1638,7 @@ The agent is built **frozen-Python first** to nail PBLE/1 and reliability, then 
 | **Maintaining clean-room / no-leak discipline** — accidental import of proprietary protocol, UUIDs, board profiles, or pedagogy. | High | The **no-leak CI gate** rejects forbidden tokens on every push (see [AGENTS.md](../../AGENTS.md)); PBLE/1 is authored fresh ([ADR-0002](../decisions/0002-fresh-protocol.md)); reused widgets are relicensed MIT and retyped onto neutral types; the boundary is public and documented ([architecture.md §5](architecture.md#5-clean-room--ip-boundary)). |
 | **File-transfer reliability is the fragile core** — drops, MTU bounds, partial writes. | High | Get it right first (M1); windowed upload with cumulative ACK, whole-file CRC, temp-write-then-rename, and resume-on-reconnect; reliability bench (story F-11) as a release gate. |
 | **STOP fails to land while user code runs** — a frozen `while True` wedges BLE. | High | Run user code on its own task; the BLE/agent task always services the link so `STOP` (KeyboardInterrupt) is authoritative (see [firmware.md §5](firmware.md#5-runtime-rules)); measured as the recovery metric (§20). |
-| **Upstream MicroPython/ESP-IDF upgrade breaks a build or footprint.** | Medium | Upgrade only via the controlled workflow with the SHA gate, conformance suite, per-profile resource gates, and hardware validation on every included profile; v1.0 requires all three (§17.1, §17.3). Default zero upstream patches. |
+| **Upstream MicroPython/ESP-IDF upgrade breaks a build or footprint.** | Medium | Upgrade only via the controlled workflow with the SHA gate, conformance suite, per-profile resource gates, and hardware validation on every included profile; v1.0 requires all four exact profiles (§17.1, §17.3). Default zero upstream patches. |
 | **Store-distribution friction** (BLE permission rejections, review). | Medium | Localized BLE permission rationale on both platforms; tablet-first responsive layout that does not break on a phone; parity submission so neither store lags. |
 
 ---
@@ -1520,7 +1655,11 @@ These are candidates for v1.x and post-v1, deferred from v1.0 and listed so they
 | **Additional locales** | Languages beyond `en`, community-contributed. | Translations are community-friendly from day one; parity is CI-enforced for any added locale (§16.1, story X-12). |
 | **Blocks / plots maturity** | Blocks beyond the v1.0 language + generic digital-GPIO set, and more capable plotting beyond the v1.0 CSV/streamed-value charts. | Post-v1 breadth; MUST stay board-neutral and capability-honest, with no board-specific defaults. |
 
-PyBLE deliberately does **not** plan accounts, cloud sync, grading, paid tiers, closed modules, board-specific routing profiles, or a MicroPython fork — these are permanent non-goals, not deferred features.
+PyBLE deliberately does **not** plan accounts, cloud sync, grading, paid tiers,
+closed modules, generalized board-specific routing profiles, or a MicroPython
+fork — these are permanent non-goals, not deferred features. The explicit,
+exact-profile cosmetic display companion frozen by ADR-0024/ADR-0029 does not create a
+user-code routing system or weaken that boundary.
 
 ---
 
@@ -1548,11 +1687,14 @@ The foundational product decisions are resolved and recorded as Architecture Dec
   MicroPython/ESP-IDF lock bytes are candidate-frozen for v0.4.2, but the
   per-target footprint budgets and formal approval (especially **ESP32-C3**)
   remain open under §10.13. Candidate-freezing is not approval. The same
-  candidate MUST pass the complete exact-profile HIL matrix before its pins and
-  resource gates are approved. The current v0.4.2 formal subset is exactly the
-  two profiles in §10.12; all three, including C3, are required for v1.0
-  (§10.9, §17.1, §21.2). A pin change creates a new candidate. New ADRs are
-  added if a pin or budget changes materially.
+  exact v0.5.1 lock file MUST be deliberately selected as the immutable
+  release-build/HIL input; historical selection does not automatically freeze
+  a new candidate. The same candidate MUST then pass the
+  complete exact-profile HIL matrix before its pins and resource gates are
+  approved. The v0.5.1 source-candidate subset is exactly the three profiles in
+  §10.12; v1.0 retains them and adds C3 (§10.9, §17.1, §21.2). A pin
+  change creates a new candidate. New ADRs are added if a pin or budget
+  changes materially.
 - **Agent base transition point** — frozen-Python first, then C `USER_C_MODULES` for hot paths; the exact point where the C port becomes necessary per chip is decided by HIL footprint/throughput data, not up front (see [firmware.md §2](firmware.md#2-agent-base-native-vs-frozen)).
 - **State-management library choice** for the Flutter app (§16.1) — to be fixed by an ADR before broad adoption.
 
@@ -1570,4 +1712,4 @@ New significant decisions MUST be captured as additional ADRs (`docs/decisions/N
 | **Control plane** | The agent's protected layer that owns BLE, the runner, and the filesystem bridge. It MUST NOT be editable by user code; a frozen `while True` in user code MUST NOT be able to wedge BLE or block `STOP`. |
 | **Workspace** | The user's own files on the board — `/main.py`, `/lib/*.py`, `/data/*` (Layer 4). Just programs the agent runs; never the control plane. |
 | **Platform port / target adapter** | Layer-2 integration for a MicroPython target: BLE host, scheduler/interrupt boundary, storage/config, identity, build, and provisioning. The initial ESP32 port uses per-chip board overlays for `esp32` / `esp32-s3` / `esp32-c3`, copied into the upstream tree at build prep so the submodule stays pristine. |
-| **HIL** | Hardware-in-the-loop — validation and measurement performed on a real board (as opposed to host-side or fake-transport tests). Resource and BLE/goodput numbers are frozen only after HIL measurement for every exact profile claimed by a release. The current v0.4.2 formal matrix is `esp32-4mb` plus `esp32-s3-n16r8`; its supplemental browser rows passed while other formal rows remain pending. v1.0 additionally requires `esp32-c3-4mb`. |
+| **HIL** | Hardware-in-the-loop — validation and measurement performed on a real board (as opposed to host-side or fake-transport tests). Resource and BLE/goodput numbers are frozen only after HIL measurement for every exact profile claimed by a release. The immutable v0.4.2 matrix is `esp32-4mb` plus `esp32-s3-n16r8`; its supplemental browser rows passed while other formal rows remain pending. The v0.5.1 source-candidate matrix adds `waveshare-esp32-s3-lcd-147b`, and the two prospective S3 binaries require independent evidence. v1.0 additionally requires `esp32-c3-4mb`. |

@@ -1,6 +1,6 @@
 # PyBLE Agent Firmware — Requirements Specification
 
-Status: **DRAFT (per-section freeze in effect)** · Owner: project maintainer · Last updated: 2026-07-30
+Status: **DRAFT (per-section freeze in effect)** · Owner: project maintainer · Last updated: 2026-08-03
 
 ### Freeze ledger (per-section, per PRD §1B.4)
 
@@ -13,12 +13,14 @@ any dependent code. Freezing is cumulative with the gates in the
 |---|---|---|---|---|
 | §5.1 Reliability | NFR-REL-1…5 | **FROZEN v1.0** | G0 · 2026-07-01 · `[docs]` | Wire-independent; unblocks X-03 (NFR-REL-4). |
 | §5.6 Maintainability | NFR-MAINT-1…4 | **FROZEN v1.0** | G0 · 2026-07-01 · `[docs]` | Unblocks X-01 (NFR-MAINT-4) + module/layout freeze (NFR-MAINT-2). |
-| §6 Constraints | CON-1…13 | **FROZEN v1.0** | G0 · 2026-07-01 · `[docs]` | Clean-room/build/carve-out; inherits no PBLE/1 opcode/UUID/status number. Unblocks X-01, X-02, F-15. |
-| §8 Build, versioning & distribution | BLD-1…22 | **FROZEN v1.0 (amended)** | G0 · 2026-07-01; browser-release amendment 2026-07-29 · `[docs]` | BLD-17…22 and the tightened BLD-5…8/13/14 freeze the X-10/X-11 public flasher contract before implementation without changing the v1.0 product contract. |
+| §6 Constraints | CON-1…13 | **FROZEN v1.0 (amended)** | G0 · 2026-07-01; display amendments 2026-08-01; image-split and erased-install-default amendments 2026-08-03 · `[docs]` | ADR-0023 admits the inert Layer-4 driver; ADR-0024 admits one exact-board companion and bounded boot hook; ADR-0028 confines both to a separate exact-board build; ADR-0029 enables the splash only in that exact image after erase. None adds Layer-3 display control, automatic detection, or a routing profile. |
+| §8 Build, versioning & distribution | BLD-1…22 | **FROZEN v1.0 (amended)** | G0 · 2026-07-01; browser-release amendment 2026-07-29; exact-board split 2026-08-03 · `[docs]` | BLD-17…22 and the tightened BLD-5…8/13/14 freeze the X-10/X-11 public flasher contract. ADR-0028 adds an independently built third v0.5 profile while preserving historical v0.4.2 replay. |
 | §4 Functional (FR-BLE/PROTO/RUN/FS/CON/INFO/BOOT/MODE/IDENT) | FR-* | DRAFT (FR-BLE/FR-PROTO numbers frozen) | — | Inherits PBLE/1 numbers; frozen per M1 story as protocol.md §§ freeze. **protocol.md §4 opcodes + §8 status are FROZEN (2026-07-01), closing OI-4** — FR-BLE-8/10 and FR-PROTO-1…10 opcode/status numbers are now stable (F-01/F-02 DoR met). **protocol.md §6 (RUN-file) / §7 (HELLO caps) / §9 (version) froze 2026-07-01 (S3)** — FR-INFO-1..6, FR-PROTO-7/10, FR-RUN (RUN-file) and the FR-IDENT-1 / FR-BLE-12 **label** bound (24 B) are now stable (F-03/F-16/F-22/F-04 DoR met). **protocol.md §6 fully froze 2026-07-01 (S4)** — RUN{source}, STOP, SOFT_REBOOT, CONSOLE_DATA/INPUT + the OI-6 identify remainder (SET_IDENTIFY_LED/IDENTIFY/caps) are now stable (F-05/F-06/F-07/F-23 DoR met), **closing OI-6**. **protocol.md §5 froze 2026-07-01 (S5)** — the file-transfer wire (read + windowed upload + workspace jail) is stable (FR-FS-1..16, F-08/F-09/F-17 DoR met); **§2–§9 are now all frozen**, only §10 (Security) remained DRAFT. The jail chokepoint (`pble_fs_resolve` + forbidden set: `fs_root` confinement, reserved `.pbltmp` suffix, reserved agent prefixes) is firmware-internal per ADR-0006 (the agent/overlay are embedded, not vfs paths). **protocol.md §10 (Security) + §5 resume behaviour + the OI-5 `auto_run` cap / `SET_AUTORUN` 0x23 froze 2026-07-01 (S6)** — SEC-1..11, FR-FS-7, FR-BOOT-1..6 / FR-MODE-1/4 / NFR-SAFE-3 are now stable (F-10/F-11/F-12/F-18 DoR met). **PBLE/1 §2–§10 are now ALL frozen — the wire is complete for v1.0.** |
-| §5.2–§5.3 PERF/FP measurement contract | NFR-PERF/FP | **METHOD FROZEN; profile thresholds pending** | Pre-v1 qualification amendment · 2026-07-30 · `[docs]` | Exact two-profile scope, metric definitions, workload, outward-rounding formulas, and evidence shape are frozen before measurement. Numeric thresholds remain OI-1 until derived from retained baseline evidence. |
+| §5.2–§5.3 PERF/FP measurement contract | NFR-PERF/FP | **FROZEN pre-v1 (amended)** | Pre-v1 qualification amendment · 2026-07-30; repeatability amendment 2026-08-02; profile-split amendment 2026-08-03 · `[docs]` | Exact three-profile v0.5 scope, metric definitions, workload, derivation formulas, evidence shape, and active numeric policy schema 2 are frozen. ADR-0025 preserves metric-specific allowances; ADR-0028 requires independent generic-S3 and exact-board baselines. |
 | §5.4–§5.5 SAFE/OFF | NFR-SAFE/OFF | DRAFT | — | Frozen per dependent story. |
 | §7 External interfaces, §9 Security | IF-*, SEC-* | §9 SEC-* **FROZEN** (2026-07-01, S6) | — | SEC-1..11 mirror the frozen [protocol.md §10](../protocol.md#10-security-note-v1): pairing/encryption baseline (non-gating), connected-client-trust, single active writer (SEC-3), no MAC/label gating (SEC-7/11), no PII in adv (SEC-10), no telemetry (SEC-5). IF-* frozen per story alongside their protocol.md §§. |
+| §4.11 Optional ST7789 user runtime | FR-TFT-1…7 | **FROZEN v0.5.0 (amended)** | ADR-0023 · 2026-08-01; ADR-0028 packaging amendment 2026-08-03 · `[docs]` | Additive exact-board Layer-4 library contract; only `waveshare-esp32-s3-lcd-147b` freezes it; no PBLE/1 or agent capability change. |
+| §4.12 Exact-board boot splash | FR-SPLASH-1…9 | **FROZEN v0.5.1 (amended)** | ADR-0024 · 2026-08-01; frozen-resolution amendment 2026-08-02; ADR-0028 image split and ADR-0029 erased-install default 2026-08-03 · `[docs]` | Factory-enabled after an erased exact-board install, persistently disableable, exact-board image only; frozen-only resolution; BLE-ready fail-open frame; stable app QR; exact private-HIL-to-public-release admission. |
 
 **PBLE/1 dependency:** [protocol.md §2 (transport)](../protocol.md#2-ble-transport-gatt), [§3 (framing)](../protocol.md#3-framing), [§4 (opcodes)](../protocol.md#4-opcodes), and [§8 (status)](../protocol.md#8-status--error-codes-1-byte-status-in-rsp) are **FROZEN for v1.0**; the GATT UUID base, the §3.1 frame + §3.2 fragmentation, the opcode set + numbers, and the status set + numbers are now stable inputs to FR-BLE-1/8/10 and FR-PROTO-1…10. The §4/§8 freeze (2026-07-01) **closes OI-4** and completes the DoR for F-01 and F-02. **protocol.md §6/§7/§9 froze 2026-07-01 (S3)** — HELLO/caps, the RUN-file path, the version policy, and the 24 B label bound are stable, meeting DoR for F-03/F-16/F-22/F-04. **protocol.md §6 fully froze 2026-07-01 (S4)** — STOP/SOFT_REBOOT/console/RUN-source + the identify encodings, **closing OI-6** (F-05/F-06/F-07/F-23 DoR met).
 
@@ -44,10 +46,20 @@ four-layer model defined in [firmware.md §1](../firmware.md#1-four-layer-rule)
 and [PRD §1A.4](../prd.md):
 
 - **Layer 1** — upstream MicroPython (ESP32 port), consumed as a pinned submodule.
-- **Layer 2** — the per-chip board overlay (`esp32` / `esp32-s3` / `esp32-c3`).
+- **Layer 2** — the per-chip board overlay (`esp32` / `esp32-s3` /
+  `esp32-c3`) plus an independently selected exact-board variant when its
+  dependency set differs (`waveshare-esp32-s3-lcd-147b`).
 - **Layer 3** — the PyBLE agent: the protected control plane (`pyble_ble`, `pyble_proto`, `pyble_runner`, `pyble_fs`, `pyble_console`, `pyble_info`).
 
-**Layer 4** (the user workspace) is **out of scope** as firmware — it is content the agent serves and runs, not part of the control plane. The agent's relationship to Layer 4 (the workspace jail) is in scope and specified in [§4.4](#44-filesystem-bridge--workspace-jail-fr-fs).
+**Layer 4** (the user workspace) is **out of scope** as agent firmware — it
+is content the agent serves and runs, not part of the control plane. The
+agent's relationship to Layer 4 (the workspace jail) is in scope and specified
+in [§4.4](#44-filesystem-bridge--workspace-jail-fr-fs). Two separately frozen
+display carve-outs are in scope: the inert optional Layer-4 runtime in
+[§4.11](#411-optional-st7789-user-runtime-fr-tft), and the exact-profile
+Layer-2/4 companion in
+[§4.12](#412-exact-board-boot-splash-fr-splash). Neither is a Layer-3
+agent module or PBLE/1 hardware capability.
 
 The Flutter app ([app.md](../app.md), [PRD §9](../prd.md)) is out of scope.
 
@@ -93,9 +105,21 @@ Where this document and [TDD.md](TDD.md) touch the same topic, this document win
   claimed by a release. The current v0.4.2 public-beta profile set is exactly
   `esp32-4mb` and `esp32-s3-n16r8`: its supplemental production-browser rows
   passed, while its formal qualification matrix remains pending. The v1.0
-  matrix additionally requires `esp32-c3-4mb` (PRD §1B.3, §10.12).
+  matrix additionally requires `esp32-c3-4mb`. The v0.5.1 source-candidate
+  matrix is exactly
+  `esp32-4mb`, `esp32-s3-n16r8`, and
+  `waveshare-esp32-s3-lcd-147b`; each needs independent final-candidate HIL
+  before qualification (PRD §1B.3, §10.12).
 - **Frozen-Python agent** — agent modules baked into the firmware image as `.py` (frozen at build); the recommended first implementation.
 - **Native agent** — hot paths moved to a `USER_C_MODULE` for throughput/RAM, behind the unchanged PBLE/1 contract.
+- **Frozen user runtime** — an importable helper selected into an image for
+  explicit use by Layer-4 programs. It is not an agent/control-plane module,
+  capability claim, pin profile, or boot-time hardware owner.
+- **Exact-board companion** — a factory-enabled-after-erase, persistently
+  disableable frozen helper named for one
+  physical board and usable only after an explicit choice. It is neither
+  automatic detection nor a stored/transmitted routing profile; its bounded
+  boot hook remains outside the PBLE/1 capability and trust surfaces.
 - **Verification categories** (PRD §1B.3, cited in each requirement's `verify:`): *unit* (host-side native/unit), *conformance* (PBLE/1 protocol conformance), *build* (build sanity / SHA gate), *size* (static application-image/partition gate), *HIL* (runtime hardware-in-the-loop resource and behaviour gates).
 
 ## 3. System context
@@ -109,7 +133,7 @@ The initial ESP32 firmware realizes Layers 1–3 of the
 Layer 1  Upstream MicroPython (ESP32 port)  — pinned submodule, never edited in place
 Layer 2  Board overlay                       — per-chip config: esp32 / esp32-s3 / esp32-c3
 Layer 3  PyBLE agent (pyble_*)               — the protected control plane (in scope)
-Layer 4  User workspace                      — /main.py, /lib/*.py, /data/*  (served, not part of the agent)
+Layer 4  User workspace + optional user libs — /main.py, /lib/*.py, /data/*; explicit program control
 ```
 
 The agent is the control plane and user code is just a program it runs; a frozen `while True: pass` MUST NOT wedge BLE or block `STOP` (PRD §1A.3 rejection 5, [firmware.md §5](../firmware.md#5-runtime-rules)).
@@ -124,8 +148,8 @@ One agent codebase MUST build for three ESP-IDF targets — `esp32`, `esp32s3`, 
 |---|---|
 | BLE peripheral + GATT (RX/TX/INFO), advertising, MTU, fragmentation | The app, `lib/pble/` Dart client ([app.md](../app.md)) |
 | PBLE/1 engine: framing, CRC32, dispatch (behaviour only) | The PBLE/1 *wire definition* ([protocol.md](../protocol.md) owns it) |
-| Runner: run/stop/soft-reboot, RUN_STATE | User code semantics; user hardware drivers |
-| Filesystem bridge + workspace jail | GPIO routing, actuator/lab/calibration/display logic |
+| Runner: run/stop/soft-reboot, RUN_STATE | User code semantics; board-specific hardware drivers |
+| Filesystem bridge + workspace jail; frozen-library selection contract in §4.10/§4.11 | GPIO routing, actuator/lab/calibration/display control in the agent |
 | Console tee; device info / capabilities | Chip datasheets ([hardware.md](../hardware.md) owns them) |
 | Boot/lifecycle; execution modes | Wi-Fi / USB-serial *runtime* transports |
 | Build, versioning, distribution, footprint gates | App store distribution of the app |
@@ -171,7 +195,14 @@ Requirement voice is MUST / SHOULD / MAY. Each line: **ID** — statement — *(
 - **FR-RUN-5** — `STOP` MUST interrupt the runner by raising `KeyboardInterrupt`, and MUST land promptly even against a tight loop (e.g. `while True: pass`). — *(source: PRD §8.3, §10.6, §13.3, [protocol.md §6](../protocol.md#6-run--stop--console), [firmware.md §5](../firmware.md#5-runtime-rules); verify: HIL; story: F-06)*
 - **FR-RUN-6** — On `STOP` or on an uncaught exception the runner MUST tear down cleanly and report the resulting `RUN_STATE`. — *(source: PRD §8.2, §13.3, [protocol.md §6](../protocol.md#6-run--stop--console); verify: HIL; story: F-06)*
 - **FR-RUN-7** — The agent MUST emit `RUN_STATE` events on every state transition (`idle` / `running` / `done` / `error`) so the app drives UI state without polling. — *(source: PRD §10.6, [protocol.md §6](../protocol.md#6-run--stop--console), [§4](../protocol.md#4-opcodes); verify: conformance, HIL; story: F-04)*
-- **FR-RUN-8** — `SOFT_REBOOT` MUST soft-reset the MicroPython VM (clearing interpreter state) and SHOULD keep the BLE link where possible. — *(source: PRD §8.3, §10.8, [protocol.md §4](../protocol.md#4-opcodes); verify: HIL; story: F-06)*
+- **FR-RUN-8** — `SOFT_REBOOT` MUST submit an observable `RSP{OK}` before it
+  soft-resets the MicroPython VM (clearing interpreter state), MUST defer VM
+  teardown for the bounded delivery grace defined by the reference design, and
+  SHOULD keep the BLE link where possible. A response-submission failure MUST
+  leave the VM running; a second request while reset is pending MUST return
+  `EBUSY`. — *(source: PRD §8.3, §10.8,
+  [protocol.md §6](../protocol.md#6-run--stop--console); verify: unit, HIL;
+  story: F-06)*
 - **FR-RUN-9** — Normal completion MUST yield `RUN_STATE(done)`; an uncaught exception MUST stream the traceback as `CONSOLE_DATA(stderr, …)` and then emit `RUN_STATE(error)`. — *(source: PRD §8.2, [protocol.md §6](../protocol.md#6-run--stop--console); verify: HIL, conformance; story: F-04, F-07)*
 - **FR-RUN-10** — After `STOP` the agent MUST return the board to `RUN_STATE(idle)`. — *(source: PRD §8.3, §10.6, [protocol.md §6](../protocol.md#6-run--stop--console); verify: HIL; story: F-06)*
 
@@ -252,11 +283,392 @@ are screenless.
 - **FR-LIB-1** — Every `esp32`, `esp32-s3`, and `esp32-c3` firmware image MUST make the pinned upstream MicroPython `neopixel.NeoPixel` API importable offline by user file/source runs and after a soft reboot. MUST (*source: PRD §9.8, §11.3; verify: resolved-manifest/build/HIL; story: F-24/A-31*)
 - **FR-LIB-2** — The module MUST be selected from the pristine pinned MicroPython/micropython-lib tree through each target's frozen manifest; PyBLE MUST NOT copy, fork, patch, or replace it with a custom WS2812 driver. MUST (*source: PRD §1A, §10.9, §10.10; verify: build/structure; story: F-24*)
 - **FR-LIB-3** — Bundling NeoPixel MUST NOT add an agent GPIO abstraction, PBLE/1 opcode/capability, board/onboard-LED name, pin/count/colour default, or target-specific user-code routing. GPIO, pixel count, index, colour, timing, and physical suitability remain explicit user-program/runtime concerns. MUST (*source: PRD §9.8, §11.3; verify: unit/no-leak/HIL; story: F-24/A-31*)
-- **FR-LIB-4** — Release validation MUST resolve exactly one `neopixel.py` for each of the three build targets, record the per-target firmware-size delta, and run a runtime import smoke on every exact profile included in that release. The current v0.4.2 formal runtime-qualification matrix is the two profiles in §2.2 and remains open beyond the supplemental browser run; `esp32-c3-4mb` runtime smoke remains required before that profile is enabled and before v1.0. Any visual LED smoke MUST take an operator-supplied GPIO, use a bounded dim sequence, and turn the pixel off on exit. MUST (*source: PRD §10.11, §10.13, §13.3; verify: build/size/HIL; story: F-24*)
+- **FR-LIB-4** — Release validation MUST resolve exactly one `neopixel.py`
+  for each of the four build variants, record the per-variant firmware-size
+  delta, and run a runtime import smoke on every exact profile included in
+  that release. The historical v0.4.2 runtime-qualification matrix is the two
+  published-beta profiles in §2.2 and remains open beyond the supplemental
+  browser run. The v0.5.1 source-candidate runtime matrix is the three profiles
+  in §2.2 and requires fresh independent evidence; `esp32-c3-4mb` runtime smoke
+  remains required before that profile is enabled and before v1.0. Any visual
+  LED smoke MUST take an operator-supplied GPIO, use a bounded dim sequence,
+  and turn the pixel off on exit. MUST (*source: PRD §10.11, §10.13, §13.3;
+  verify: build/size/HIL; story: F-24*)
 
 This NeoPixel contract applies to the three initial ESP32-family images.
 A future platform port MUST NOT claim equivalent support until it validates the
 upstream package and required runtime primitive for that target.
+
+### 4.11 Optional ST7789 user runtime (FR-TFT)
+
+> **FROZEN v0.5.0 · 2026-08-01; HIL operator-deadline amendment 2026-08-02;
+> packaging amendment 2026-08-03 (`[docs]`,
+> [ADR-0023](../../decisions/0023-explicit-st7789-user-runtime.md),
+> [ADR-0028](../../decisions/0028-separate-waveshare-lcd147b-firmware-profile.md)).** This is
+> an additive Layer-4 user-runtime/build contract. It changes no PBLE/1 byte,
+> agent module or capability, or initial chip target. The runtime is packaged
+> only in the separate `waveshare-esp32-s3-lcd-147b` provisioning image; the
+> lean `esp32-s3-n16r8` image omits it. That installer distinction is not a
+> PBLE/1 board-selection or connection gate.
+
+- **FR-TFT-1** — The `waveshare-esp32-s3-lcd-147b` image MUST freeze exactly
+  one PyBLE-authored
+  module named `pyble_st7789` from
+  `firmware/python_modules/pyble_st7789.py`. The lean `esp32-s3`, `esp32`, and
+  `esp32-c3` manifests MUST NOT select that optional module. The number of
+  initial chip targets remains exactly three, the build-variant count is four,
+  and all continue to use the single MicroPython/ESP-IDF pin. — *(source:
+  ADR-0023, ADR-0028; verify: resolved manifest, build, structure; story:
+  ADR-0023/0028 increment)*
+- **FR-TFT-2** — Importing `pyble_st7789` MUST be inert: it MUST NOT import or
+  configure `machine.SPI`/`machine.Pin`, allocate a framebuffer, change a GPIO,
+  send a display command, sleep, or start a task. Construction is the first
+  permitted hardware side effect, and the module MUST remain importable in a
+  user file/source run and after a soft reboot. — *(source: ADR-0023; verify:
+  unit, build, HIL; story: ADR-0023 increment)*
+- **FR-TFT-3** — The complete v0.5.0 public surface MUST be the callable
+  `rgb565(red, green, blue)` and class `ST7789` with the exact positional
+  constructor
+  `ST7789(spi_id, baudrate, polarity, phase, sck_pin, mosi_pin, cs_pin,
+  dc_pin, reset_pin, backlight_pin, width, height, x_offset, y_offset, bgr,
+  inversion)`. Each `*_pin` value is an explicit, already-constructed
+  `machine.Pin` object; the driver contains and converts no GPIO numbers. The
+  module contains no board pin, bus, geometry,
+  offset, colour-order, inversion, or clock default. The class MUST expose
+  `fill(colour)`, `pixel(x, y, colour)`,
+  `line(x0, y0, x1, y1, colour)`,
+  `rect(x, y, width, height, colour)`,
+  `fill_rect(x, y, width, height, colour)`,
+  `text(value, x, y, colour)`, `show()`, `backlight(enabled)`, and
+  `deinit()`. No rotation, PWM-brightness, touch, SD, IMU, or battery API is
+  claimed. Scalar arguments and all six pin arguments MUST be validated before
+  any GPIO is driven, SPI object is created, framebuffer is allocated, command
+  is sent, or sleep occurs. Every pin argument MUST be an instance of the
+  lazily imported `machine.Pin` type; merely callable objects MUST be rejected.
+  — *(source: ADR-0023; verify: unit, API-structure; story: ADR-0023 increment)*
+- **FR-TFT-4** — `rgb565` MUST accept integer red/green/blue channels in
+  `0..255`, reject an out-of-range channel, and return
+  `((red & 0xf8) << 8) | ((green & 0xfc) << 3) | (blue >> 3)`. Construction
+  MUST own one `width × height × 2` RGB565 framebuffer, initialize the
+  controller with the supplied colour order and inversion, and leave the
+  active-high backlight off. Drawing methods MUST update only the framebuffer,
+  clip to its visible geometry, and perform no SPI transfer until explicit
+  `show()`. — *(source: ADR-0023; verify: unit, HIL; story: ADR-0023 increment)*
+- **FR-TFT-5** — `show()` MUST program the inclusive ST7789 column/row window
+  from the explicit offsets, issue RAM write, transmit framebuffer RGB565 in
+  controller byte order using fixed internal chunks no larger than **4092
+  bytes**, and leave chip select inactive. Any temporary byte-order mutation
+  MUST be restored and chip select made inactive even when `SPI.write` raises.
+  The framebuffer MUST remain valid for a retry. — *(source: ADR-0023; verify:
+  unit, HIL; story: ADR-0023 increment)*
+- **FR-TFT-6** — `backlight(enabled)` MUST accept a Boolean and drive the
+  explicit backlight pin active-high. `deinit()` MUST be idempotent, turn the
+  backlight off, leave chip select inactive, release the driver-owned SPI
+  instance and framebuffer, and make subsequent drawing/transfer calls fail
+  closed. A partial-construction failure MUST perform that same best-effort
+  resource teardown. A `show()` failure MUST preserve the original exception,
+  restore any temporarily swapped framebuffer bytes, force the backlight low
+  and CS high on a best-effort basis, and retain the SPI instance, framebuffer,
+  and open object state so a caller can retry the complete frame. Transfer
+  failure MUST NOT deinitialize SPI or discard the framebuffer. — *(source:
+  ADR-0023; verify: unit, HIL; story: ADR-0023 increment)*
+- **FR-TFT-7** — The driver MUST be fresh clean-room MIT source carrying an
+  SPDX MIT header. Vendor demo source or initialization code MUST NOT be copied
+  or selected as a build input. Build tests MUST bind the canonical first-party
+  source, prove the per-target manifest cardinality in FR-TFT-1, include it in
+  source/license audit, and retain independent four-variant flash/headroom
+  gates.
+  Exact-board HIL on the connected ESP32-S3-LCD-1.47B MUST prove 16 MiB flash
+  and 8 MiB Octal PSRAM, import before/after reboot, a bounded 172 × 320
+  colour/text/corner pattern at offset `(34, 0)` using explicit
+  `machine.SPI(1)` at 40 MHz, polarity 0 and phase 0, backlight off/on/off,
+  cleanup, and PBLE/1 responsiveness during repeated refresh. The exact-board
+  workload MUST NOT substitute SPI bus 2. Final qualification MUST be one
+  exclusive private result bound to the exact candidate `firmware.bin` byte
+  length, full-file SHA-256, and a non-personal session identifier. Before
+  drawing, the runner MUST derive and record the exact ordered immutable span
+  map from that merged image: `[0x00000, 0x09000)` for bootloader/padding plus
+  partition table and `[0x10000, firmware.bin length)` for the factory
+  application. The length MUST be greater than `0x10000` and no greater than
+  the frozen factory-partition end `0x210000`; it MUST NOT extend into the VFS.
+  Local inspection MUST read one stable regular-file snapshot, detect an
+  in-place same-size metadata change, and reject unequal repeated reads. It
+  MUST reject a candidate whose intervening NVS/PHY-init image bytes are not
+  erased `0xff`. The board MUST hash the concatenation of those
+  same live raw-flash spans and match the locally derived immutable-span
+  SHA-256. Mutable NVS `[0x09000, 0x0f000)` and PHY-init
+  `[0x0f000, 0x10000)` bytes MUST be excluded from live equality; local-file
+  naming, mutable data, or the agent version is not candidate proof. The span
+  map, immutable byte count/digest, full-file byte length/digest, and session
+  MUST be admitted by the production validator and bound into the canonical
+  hash chain. It MUST then contain one display exercise with a
+  deliberate non-personal operator confirmation of the frozen visible pattern,
+  using a separate finite per-observation operator deadline greater than zero
+  and no greater than **900 seconds** (default **900 seconds**). Time spent
+  awaiting that cancellable callback MUST NOT consume the residual
+  BLE/RUN/device-operation budget. Before prompting, the runner MUST preserve
+  a cleanup reserve equal to the lesser of two seconds and one quarter of that
+  device budget for release or STOP cleanup. The
+  RUN MUST remain active, the backlight lit, and the central connected while
+  confirmation is pending; after the callback the runner MUST reject any
+  queued terminal/dark/malformed state or lost link before sending the visual
+  release. Operator timeout or refusal MUST send bounded STOP, drain the
+  remote dark/resource-cleanup evidence, fail qualification, and create no
+  result. Timeout-driven cancellation of the prompt MUST NOT be reported as an
+  operator-originated process-control exception. Operator deadline values and
+  elapsed durations are orchestration controls and MUST NOT alter the private
+  result schema, hash chain, or privacy allowlist. Qualification is then
+  followed by exactly three ordered acknowledged-reboot/fresh-VM import
+  cycles. Each cycle MUST carry its one-based index and the SHA-256 of the
+  preceding canonical stage record, beginning with the candidate-verified
+  exercise record, so results from different sessions or candidates cannot be
+  combined. After every acknowledged reboot the runner MUST prove the old link
+  closed, allow the delivery grace to elapse, and retry reconnect plus the
+  sentinel-absent import under one bounded deadline. Only a transactional BLE
+  connection-establishment failure with no retained partial link, the dedicated
+  stale-VM result, or a narrowly typed transport loss independently corroborated
+  by a disconnected central during that reset transition is retryable. A
+  connection setup whose cleanup returns while still connected is terminal.
+  Caps, protocol, import, stderr, RUN-state, cleanup, connected-link I/O, and
+  harness failures are terminal. Cancellation and process-control exceptions
+  MUST retain their original type after best-effort cleanup. Every connect,
+  setup cleanup, probe, disconnect, and retry delay MUST consume the same
+  residual deadline; connection setup MUST reserve its cleanup budget inside
+  the timeout supplied by that deadline, and there is no independent attempt
+  ceiling.
+  The complete result MUST pass a production validator that enforces exact
+  keys, candidate/session equality, three contiguous cycles, passed nested
+  stages, a positive stdout marker-byte count for every accepted RUN summary,
+  every predecessor/record digest, and the terminal digest before the exclusive
+  writer admits it. Evidence MUST omit the BLE address, device ID,
+  label, raw INFO, sentinel value, source, and raw console output. The
+  pre-reboot marker, stderr, or RUN-state failure MUST prevent transmission of
+  `SOFT_REBOOT`. — *(source: ADR-0023;
+  verify: structure, build, size, HIL; story: ADR-0023 increment)*
+
+### 4.12 Exact-board boot splash (FR-SPLASH)
+
+> **FROZEN v0.5.0 · 2026-08-01; HIL operator-deadline amendment 2026-08-02;
+> exact-image and erased-install-default amendments 2026-08-03 (`[docs]`,
+> [ADR-0024](../../decisions/0024-opt-in-waveshare-boot-splash.md),
+> [ADR-0028](../../decisions/0028-separate-waveshare-lcd147b-firmware-profile.md),
+> [ADR-0029](../../decisions/0029-enable-waveshare-splash-after-erased-install.md)).** This
+> section is a narrow exact-board exception to the otherwise inert display
+> boundary. It adds no PBLE/1 byte, app-side board gate, automatic hardware
+> detection, or runtime routing profile. Its separate provisioning profile is
+> an explicit build/install boundary. Missing configuration remains
+> electrically inert.
+
+- **FR-SPLASH-1** — The `waveshare-esp32-s3-lcd-147b` image MUST freeze exactly
+  one canonical,
+  first-party MIT module named `pyble_waveshare_lcd147b` from
+  its exact-board overlay. The lean `esp32-s3`, `esp32`, and `esp32-c3`
+  manifests MUST NOT select it. Import MUST NOT import/configure
+  `machine`, instantiate NVS, allocate a framebuffer, sleep, start a task,
+  change GPIO/SPI/display state, or perform network I/O. It MUST NOT infer the
+  board from chip, flash, PSRAM, MAC, device ID, label, advertising name, or
+  panel traffic. Automatic boot MUST resolve the companion and every import it
+  performs while rendering from frozen/built-in modules only; it MUST NOT load
+  a same-named module or dependency from the mutable VFS or `/lib`. A VFS
+  `pyble_waveshare_lcd147b.py` MUST be ignored on every target. — *(source:
+  ADR-0024, ADR-0028; verify: unit, resolved manifest,
+  build; story: ADR-0024/0028 increment)*
+- **FR-SPLASH-2** — The complete public API MUST be
+  `boot_splash_enabled()`, `enable_boot_splash()`,
+  `disable_boot_splash()`, and `show_boot_splash()`, all with no arguments.
+  `boot_splash_enabled()` MUST return true when NVS integer
+  `pyble/lcd147splash` is exactly `1` and when reading an absent key raises the
+  pinned ESP-IDF NVS-not-found code after an erased exact-board installation.
+  Exact integer `0`, every other readable integer, NVS-open failures, and all
+  other read failures MUST return false. Enable/disable MUST persist exact
+  integer `1`/`0`, call
+  `commit()`, and propagate a write/commit failure rather than report false
+  success. Enable MUST perform no display I/O. After committing disabled,
+  disable MUST make GPIO46 low on a best-effort basis. No PBLE/1 opcode,
+  capability, board catalog, or MAC/label gate is added.
+  `boot_splash_enabled()` MUST return Boolean; enable/disable MUST return
+  `None`; `show_boot_splash()` MUST return Boolean as defined by FR-SPLASH-7.
+  — *(source:
+  ADR-0024; verify: unit, conformance-absence, HIL; story: ADR-0024 increment)*
+- **FR-SPLASH-3** — The exact-board variant's frozen `_boot.py` MUST call
+  `pble_ble.init_agent()` first, then attempt the optional splash,
+  then start the existing runner/filesystem workers, console tee, and opt-in
+  `/main.py` autorun in their frozen order. Missing module, disabled state,
+  readiness timeout, NVS/display exception, or cleanup exception MUST be
+  contained without boot output and MUST NOT prevent that ordinary lifecycle.
+  The lean S3, classic, and C3 boot files MUST contain no companion import or
+  readiness wait and MUST NOT touch a display GPIO.
+
+  Before importing the optional companion, boot MUST copy the current
+  `sys.path` contents, replace that same path list's contents with exactly
+  `.frozen`, and keep the restriction in force through the complete guarded
+  companion call so its lazy imports cannot fall back to VFS. One `finally`
+  MUST restore the exact saved path contents before either worker starts, on
+  success and on every import/readiness/render/cleanup or process-control
+  failure. Lean ESP32-S3, classic ESP32, and ESP32-C3 MUST treat the absent
+  frozen module as absent even when a VFS lookalike exists. This transaction
+  runs before any
+  MicroPython worker is launched; no second splash task is permitted.
+
+  The companion MUST provide one boot-internal ordering seam named
+  `_boot_evidence()`, absent from `__all__`, that returns the immutable tuple
+  for the latest `_maybe_show_boot_splash(...)` invocation in the current VM.
+  Each invocation MUST reset that tuple before recording `("guard-enter",)`;
+  the evidence MUST remain RAM-local to that boot VM and MUST NOT be persisted,
+  transmitted, logged, or printed. The exact disabled sequence MUST be:
+
+  ```python
+  (
+      ("guard-enter",),
+      ("enabled", False),
+      ("return", False),
+  )
+  ```
+
+  The exact successful enabled sequence MUST be:
+
+  ```python
+  (
+      ("guard-enter",),
+      ("enabled", True),
+      ("wait-ready", 1500, True),
+      ("display-start",),
+      ("frame-show",),
+      ("resources-released",),
+      ("wait-ready", 0, True),
+      ("backlight-high",),
+      ("return", True),
+  )
+  ```
+
+  Other boot outcomes MAY end with `("fault",), ("return", False)` or a
+  false readiness observation followed by `("return", False)`, but no event
+  may contain exception text, display contents, BLE address, MAC/device ID,
+  label, raw INFO, or another identity/raw field. Calling the public
+  `show_boot_splash()` explicitly MUST neither reset nor append boot evidence.
+  — *(source: ADR-0024; verify: unit/structure, build, HIL; story: ADR-0024
+  increment)*
+- **FR-SPLASH-4** — In the exact-board build only, `pble_ble` MUST expose one
+  boot-internal bounded readiness helper. The lean S3, classic, and C3 builds
+  MUST compile out its Event Group, state, and Python API. In the exact build
+  its state MUST become ready only after `ble_gap_adv_start` returns
+  success or while a connection is active; synchronization alone is not
+  readiness. The state MUST be cleared when neither advertising nor a
+  connection is active and on NimBLE reset; an already-active advertisement
+  MUST remain ready across an `EALREADY` race. Connection/disconnection,
+  advertising restart, and soft-reset persistence MUST remain race-safe.
+  Event Group allocation failure MUST NOT fail agent initialization or BLE:
+  readiness MUST remain false and every wait MUST return false. NimBLE reset
+  MUST also clear any cached connection handle before readiness is recomputed.
+  The enabled boot hook MUST wait no more than **1,500 ms**, release the
+  MicroPython GIL while waiting,
+  and skip display I/O when readiness is not reached. — *(source: ADR-0024;
+  verify: native unit/structure, build, HIL; story: ADR-0024 increment)*
+- **FR-SPLASH-5** — `show_boot_splash()` MUST use only the documented
+  ESP32-S3-LCD-1.47B configuration: `machine.SPI(1)` at 40 MHz, polarity 0,
+  phase 0, SCLK GPIO40, MOSI GPIO45, CS GPIO42, D/C GPIO41, reset GPIO39,
+  active-high backlight GPIO46, visible geometry 172 × 320, offset `(34, 0)`,
+  BGR order, and inversion. It MUST render one deterministic frame containing
+  the PyBLE identity, exact visible text `BLE READY` and `pyble.dev/app`, and
+  `Firmware v` followed by the dynamic frozen `pyble.__version__`. It MUST
+  contain no BLE address, MAC/device ID, label, owner data, raw INFO, or
+  runtime-downloaded value. `BLE READY` MUST mean a boot snapshot observed on
+  a zero-wait readiness recheck immediately before the panel is lit, not a
+  promise that retained pixels track later link state. — *(source: ADR-0024; verify: unit/golden frame,
+  HIL; story: ADR-0024 increment)*
+- **FR-SPLASH-6** — The QR payload MUST be exactly
+  `https://pyble.dev/app`. The reviewed matrix MUST be QR Model 2, Version 2,
+  byte mode, error correction M, mask 2, 25 × 25 modules, rendered black on a
+  white four-module quiet zone at five pixels per module, producing a
+  165 × 165 square at `(3, 52)`. In every row, bit 24 MUST represent X=0,
+  bit 0 X=24, and the upper seven bits MUST be zero. The 25 unsigned 32-bit
+  big-endian row masks MUST
+  hash to SHA-256
+  `6b00240151e36ff2fdbb1d556d6f3b0dd75f8fcce13683ea21033e8149687875`
+  and decode independently to the exact HTTPS payload. Firmware MUST NOT ship
+  a runtime QR encoder, redirect lookup, URL shortener, tracker, or remote QR
+  dependency. — *(source: ADR-0024; verify: unit/independent decode, visual
+  HIL; story: ADR-0024 increment)*
+- **FR-SPLASH-7** — A successful splash MUST allocate only the existing
+  172 × 320 RGB565 driver framebuffer, perform exactly one complete
+  `show()` while the backlight remains low, then deinitialize the driver and
+  collect garbage immediately so SPI and framebuffer are released. It MUST
+  perform one zero-wait readiness recheck and assert GPIO46 high only when it
+  succeeds, so the controller's retained frame becomes visible without a sleep
+  or background task. `show_boot_splash()` MUST return true only after that
+  retained-light action and false on final readiness loss. On every failure
+  after pin construction it MUST
+  best-effort leave CS high and backlight low, deinitialize any SPI/framebuffer,
+  preserve the original explicit-call exception, and let the boot wrapper fail
+  open. A later ordinary `pyble_st7789.ST7789` construction MUST be able to
+  take over the display. — *(source: ADR-0024; verify: unit/fault injection,
+  HIL; story: ADR-0024 increment)*
+- **FR-SPLASH-8** — Exact-board qualification MUST bind to the same immutable
+  candidate identity required by FR-TFT-7 and exercise both persisted states.
+  Disabled reboot MUST prove normal BLE availability with no splash call;
+  enabled reboot MUST prove the readiness-before-display order, BLE
+  connection/HELLO while the retained frame is visible, a deliberate operator
+  confirmation of layout/version, a real scan resolving to the exact HTTPS QR
+  payload, safe disable, and subsequent ordinary TFT-driver construction and
+  cleanup. Each required splash observation MUST use the same separate finite
+  per-observation operator deadline defined by FR-TFT-7; its layout confirmation
+  and real QR scan share one aggregate budget across any retry. Only measured
+  callback-await time is excluded from the existing residual reset/reconnect/
+  HELLO/probe deadline. The callback MUST run on the connected post-reset
+  central before its first HELLO, and the runner MUST recheck that same link
+  before continuing. Operator timeout, refusal, a stale/dark observation, or
+  link loss MUST create no evidence. The current link MUST be closed using the
+  preserved device cleanup reserve, after which the existing best-effort
+  disable-and-darken transaction receives its own bounded device-operation
+  deadline. After enablement may have persisted, any failed qualification MUST
+  attempt the same disable-and-darken cleanup. If the initiating qualification
+  failure and the cleanup failure are both ordinary exceptions, the runner
+  MUST re-raise the exact initiating exception object; the cleanup failure MUST
+  NOT replace it. Evidence MUST be bounded, exclusive, hash-linked, and omit
+  the same personal/raw fields forbidden by FR-TFT-7. Host fakes MUST cover every
+  pre-arm/failure path but cannot substitute for that operator and hardware
+  record. The production website route MUST meet
+  [website.md §3.1](../website.md#31-app-beta-distribution) before the
+  QR-bearing firmware is publicly released. — *(source: ADR-0024; verify:
+  structure, build, HIL, production smoke; story: ADR-0024 increment)*
+- **FR-SPLASH-9** — Every fresh public finalization whose source-era frozen
+  manifest includes `pyble_waveshare_lcd147b` (introduced in `0.5.0`, including
+  a `0.5.0` prerelease) MUST consume exactly one exclusive private combined
+  qualification result. The file MUST be bounded, canonical strict UTF-8 JSON,
+  a stable regular non-symlink with one link and mode `0600`, and unchanged
+  across repeated reads and the complete copy-on-write promotion. The release
+  gate and the HIL writer MUST call the same pure, source-controlled strict
+  validator; a weaker release-only reconstruction or an import of executable
+  BLE orchestration is not an authority.
+
+  The strict result MUST be `passed` for exact profile
+  `waveshare-esp32-s3-lcd-147b`, model `ESP32-S3-LCD-1.47B`, and the release firmware
+  version. It MUST bind the candidate profile's exact merged `firmware.bin`
+  full length/SHA-256 and the recomputed immutable spans
+  `[0x00000,0x09000)` plus `[0x10000,firmware.bin length)`, including exact
+  immutable length/SHA-256. It MUST also validate the complete nested
+  ADR-0023/0024 stage semantics, sanitized positive RUN-marker summaries,
+  production `/app` evidence, all predecessor/record hashes, the terminal
+  record, and the top result digest. A rehashed semantic mutation MUST fail.
+
+  The pending `release.json` digest exists before real-board HIL and is the
+  non-circular candidate selector. Public finalization MUST bind that digest
+  to a derived, non-private HIL summary and MUST never copy the private result,
+  session identifier, detailed observations, operator input, BLE identity, or
+  raw data into the bundle. Source-era HIL is exact: releases before `0.5.0`
+  retain `PYBLE_HIL_RECORDS_V2`/schema `2` with its original five-key object;
+  the rejected shared-image engineering contract remains V3 and MUST NOT be
+  published under the split source; a capable split release MUST use
+  `PYBLE_HIL_RECORDS_V4`/schema `4`; its exact-board extension remains the
+  top-level key `waveshare_lcd147b_qualification`. It is JSON `null` in a
+  candidate and is replaced only by the validator-derived passed summary
+  during finalization. V2 or V3 for a split release, V4 for an older release,
+  missing/extra evidence, an already-filled candidate summary, a private-file
+  change, or any binding mismatch MUST publish nothing. The promotion envelope
+  remains exactly `HIL_REPORT.md`, `release.json`, and `SHA256SUMS`; the private
+  result is never a release-tree path. — *(source: ADR-0024; verify: shared
+  validator unit/parity, release finalization, retained-v0.4.2 validation,
+  exact-board HIL; story: ADR-0024 increment)*
 
 ## 5. Non-functional requirements
 
@@ -275,7 +687,15 @@ upstream package and required runtime primitive for that target.
 - **NFR-PERF-1** — At MTU 247, BLE throughput MUST meet the frozen per-profile PUT and GET goodput floors in [§5.3](#53-footprint-gates-nfr-fp) on every exact profile included in a release. The ESP32-C3 floors MUST be validated before that profile is enabled and before v1.0. — *(source: PRD §13.4, §10.13; verify: HIL; story: F-11, F-13/14)*
 - **NFR-PERF-2** — File transfer MUST use windowed chunks (`W` advertised in HELLO caps; reference-agent default window **`W=8`**, chunk sized to one MTU) with cumulative-offset ACKs. — *(source: PRD §13.4, [protocol.md §5](../protocol.md#5-file-transfer-the-reliability-core); verify: conformance, HIL; story: F-09; reference-agent W raised 4→8 2026-07-04 `[docs]`, no wire change)*
 - **NFR-PERF-3** — Interactive console latency (`CONSOLE_INPUT` → echo, and `stdout` → event) MUST stay low enough to feel live. — *(source: PRD §13.4; verify: HIL; story: F-07)*
-- **NFR-PERF-4** — The concrete boot-latency **ceiling** and PUT/GET goodput **floors** MUST be derived from retained HIL baseline samples by the frozen formulas in §5.3, then enforced against the final candidate. They are tracked requirements until frozen, not asserted up front. — *(source: PRD §13.4, §10.13; verify: HIL; story: F-13/14)*
+- **NFR-PERF-4** — The reset-to-advertisement **ceiling** MUST be the fixed product SLO in §5.3, while PUT/GET goodput **floors** MUST be derived from retained HIL baseline samples by the frozen formulas there; all three MUST then be enforced against the final candidate. — *(source: PRD §13.4, §10.13; ADR-0026; verify: HIL; story: F-13/14)*
+- **NFR-PERF-5** — Before final-candidate PUT/GET timing begins, the exact
+  transfer connection MUST complete the bounded link-tuning ladder and the HIL
+  runner MUST retain candidate-bound, redacted link facts proving DLE, the
+  profile-required PHY, and a successful connection-parameter update. A
+  missing completion event, an exhausted rung, or an unsettled link MUST fail
+  before throughput samples are collected; a favorable blind rerun MUST NOT
+  substitute for these facts. — *(source: PRD §13.4, §10.13; ADR-0027;
+  verify: unit, HIL; story: F-13/14)*
 
 ### 5.3 Footprint gates (NFR-FP)
 
@@ -290,10 +710,17 @@ recovery passed for both under the bounded exception in
 [browser-flashing §10](browser-flashing.md#10-activation-and-rollback).
 Each still MUST have a complete numeric policy and final-candidate HIL record
 before the release may be called qualified. `esp32-c3-4mb` MUST NOT have a
-threshold entry or HIL row in this pre-v1 policy. It remains a
-build/source/license-audit target, but its numeric qualification remains open
-and blocks enabling C3 and blocks v1.0. The v1.0 matrix remains all three
-profiles.
+threshold entry or HIL row in that historical policy.
+
+The v0.5.1 source-candidate qualification set is exactly, and in this order,
+`esp32-4mb`, `esp32-s3-n16r8`, and
+`waveshare-esp32-s3-lcd-147b`. Each MUST have a complete numeric policy and
+final-candidate HIL record before new public bytes or installer selection can
+be enabled. Pre-split/two-profile evidence MUST NOT qualify this candidate.
+`esp32-c3-4mb` MUST NOT have a threshold entry or HIL row in this pre-v1
+policy. It remains a build/source/license-audit target, but its numeric
+qualification remains open and blocks enabling C3 and blocks v1.0. The v1.0
+matrix is these three profiles plus `esp32-c3-4mb`.
 
 - **NFR-FP-FLASH** — The total shipped application image MUST not exceed its
   frozen per-profile ceiling and MUST leave at least the frozen headroom in the
@@ -307,15 +734,17 @@ profiles.
   `free_mem` cap is diagnostic only and MUST NOT substitute for these gates,
   especially on a PSRAM-equipped S3. — *(source: PRD §10.13 (FP-HEAP);
   verify: HIL; story: F-13/14)*
-- **NFR-FP-BOOT** — Controlled reset release → first fresh on-air
-  advertisement containing the PyBLE service UUID MUST not exceed the frozen
-  per-profile ceiling. A separate physical power-cycle advertising check MUST
-  pass once per final profile record. — *(source: PRD §10.13 (FP-BOOT);
+- **NFR-FP-BOOT** — Controlled reset release → first fresh host scanner event
+  containing the PyBLE service UUID MUST not exceed the fixed product ceiling.
+  That callback proves a matching advertisement occurred but is not an on-air
+  packet timestamp. A separate physical power-cycle advertising check MUST pass
+  once per final profile record. — *(source: PRD §10.13 (FP-BOOT); ADR-0026;
   verify: HIL; story: F-12, F-13/14)*
 - **NFR-FP-TPUT** — At an observed negotiated ATT MTU of exactly 247, committed
   PUT goodput and verified GET goodput MUST each meet the frozen per-profile
-  floor, while the frozen reliability workload remains byte/CRC clean with no
-  unexpected disconnect. — *(source: PRD §10.13 (FP-TPUT); verify: HIL;
+  floor on the same serial-attested, settled transfer connection, while the
+  frozen reliability workload remains byte/CRC clean with no unexpected
+  disconnect. — *(source: PRD §10.13 (FP-TPUT), ADR-0027; verify: HIL;
   story: F-11, F-13/14)*
 - **NFR-FP-C3** — If the agent does not fit the ESP32-C3 flash/heap budget with usable user-code headroom, the **design** MUST change (e.g. native `USER_C_MODULE` hot paths per [§6](#6-constraints-con)), **not** the constraint. — *(source: PRD §10.13, §10.2; verify: size, HIL; story: F-13/14)*
 - **NFR-FP-GATE** — Once frozen, the application-image ceiling/headroom floor
@@ -326,11 +755,12 @@ profiles.
   story: X-03, F-13/14)*
 - **NFR-FP-CLOSE** — Every exact profile included in a qualified release is
   **release-blocking** until all of its thresholds are frozen and its
-  hash-locked final-candidate evidence passes. For a qualified two-profile
-  pre-v1 release this means exactly the two profiles above. The exact v0.4.2
-  beta exception does not satisfy or waive this gate. The still-open C3 portion
-  blocks any C3 release and v1.0. — *(source: PRD §10.12, §10.13, §7.1;
-  verify: size, HIL; story: F-13/14)*
+  hash-locked final-candidate evidence passes. For the current pre-v1 candidate
+  this means exactly the three profiles above. The still-open C3 portion blocks
+  any C3 release and v1.0, but it does not block an otherwise-qualified
+  three-profile pre-v1 release. The exact v0.4.2 beta exception is historical
+  and does not satisfy or waive this gate for v0.4.2 or any later candidate. —
+  *(source: PRD §10.12, §10.13, §7.1; verify: size, HIL; story: F-13/14)*
 
 #### 5.3.1 Frozen metric definitions
 
@@ -353,6 +783,47 @@ goodput is integer bytes per second.
 | `put_committed_goodput_bytes_per_second` | `floor(65536 * 10^9 / duration_ns)`, with time from immediately before sending `FILE_PUT_BEGIN` through the successful `FILE_PUT_END` response; only unique committed payload bytes are the numerator and `FILE_STAT` verification is outside the timer. | `>= put_committed_goodput_min_bytes_per_second` |
 | `get_verified_goodput_bytes_per_second` | `floor(65536 * 10^9 / duration_ns)`, with time from immediately before sending `FILE_GET_BEGIN` through a valid `FILE_GET_END`; offsets MUST be contiguous and unique, and returned size, bytes, and whole-file CRC MUST match. | `>= get_verified_goodput_min_bytes_per_second` |
 
+`transfer_link_facts` is a required object for the tenth controlled-reset
+connection, which is also the connection used by all five round trips and the
+reliability workload. Its exact shape is:
+
+```text
+{
+  dle: {
+    request_attempts: int,
+    max_tx_octets: int,
+    max_tx_time_us: int
+  },
+  phy: {
+    required_2m: bool,
+    request_attempts: int,
+    updates: [{status: int, tx: int, rx: int}, ...],
+    settled_tx: int,
+    settled_rx: int
+  },
+  connection_parameters: {
+    request_return_codes: [int, ...],
+    updates: [{status: int, interval_units: int}, ...],
+    settled_interval_units: int
+  },
+  tx_mbuf_starve_count: int
+}
+```
+
+All integers are non-negative JSON integers and every list is ordered as
+observed. `dle.request_attempts` is `1..4`, `max_tx_octets >= 244`, and
+`max_tx_time_us > 0`. On both `esp32-s3-n16r8` and
+`waveshare-esp32-s3-lcd-147b`, `phy.required_2m` is true,
+`request_attempts` is `1..4`, at least one update is retained, and the settled
+TX/RX values are exactly `2`/`2`. On classic `esp32-4mb`, the 2M rung is
+compiled out: `required_2m` is false, `request_attempts` is zero, `updates` is
+empty, and both settled values are zero. The connection-parameter request list
+has `1..3` entries, the update list is non-empty, its final item has status
+zero, and `settled_interval_units` equals that final item's interval and lies
+in `12..24` (1.25 ms units). `tx_mbuf_starve_count` is captured from the same
+session's disconnect line and is report-only; it does not replace the
+goodput, integrity, or reliability gates.
+
 The heap probe MUST keep these measurements out of HELLO/INFO capabilities.
 It uses existing standard MicroPython APIs and therefore adds no dynamic PBLE/1
 capability and no INFO/HELLO equivalence ambiguity.
@@ -370,29 +841,44 @@ For each exact profile and one immutable firmware/manifest candidate:
 2. Record one `heap_default_free_bytes` diagnostic and one gated heap snapshot
    (`gc_free_bytes`, `gc_allocated_bytes`, and the three internal-heap
    quantities) after each of those 10 HELLO exchanges.
-3. On a connection that reports HELLO `mtu=247`, `window=8`, and `chunk=229`,
-   run **5** PUT+GET round trips of exactly **65,536 bytes** with no chunk or
-   window override. When the central backend exposes its negotiated ATT MTU,
-   it MUST agree with the HELLO value; an unknown backend value MUST NOT be
-   manufactured as evidence. Record one gated heap snapshot after each
-   round trip.
-4. The deterministic payload for zero-based sample `s` is the first 65,536
+3. After disconnecting each of the first nine sessions, poll the runner's
+   private serial input for at most **2,000 ms** until exactly one complete,
+   parser-owned `link tune session end` record for that just-ended session is
+   observed. Discard every byte, including the terminal count; none is
+   evidence. A missing or duplicate terminal record is a gate failure. Clear
+   all residual private serial state before the next controlled reset so a
+   delayed terminal record cannot enter the following session's parser. Before
+   releasing the tenth controlled reset, clear that same private serial-input
+   buffer and begin link-fact capture for the tenth session. After HELLO, wait
+   at most **5,000 ms** for the profile-exact
+   DLE/PHY/connection-parameter facts in §5.3.1 to settle. No PUT/GET timer may
+   start before that succeeds. Arbitrary or identifying serial text MUST be
+   discarded rather than retained.
+4. On that same settled connection, which reports HELLO `mtu=247`, `window=8`,
+   and `chunk=229`, run **5** PUT+GET round trips of exactly **65,536 bytes**
+   with no chunk or window override. When the central backend exposes its
+   negotiated ATT MTU, it MUST agree with the HELLO value; an unknown backend
+   value MUST NOT be manufactured as evidence. Record one gated heap snapshot
+   after each round trip.
+5. The deterministic payload for zero-based sample `s` is the first 65,536
    bytes of concatenated SHA-256 blocks
    `SHA256("PyBLE-OI1-v1\\0" || UTF8(profile_id) || "\\0" || u32le(s) ||
    u32le(block_index))`, with `block_index` starting at zero.
-5. Separately run the reliability workload once: **20 files × 16,384 bytes =
+6. Separately run the reliability workload once: **20 files × 16,384 bytes =
    327,680 bytes**. All 20 files MUST complete and match byte-for-byte, size,
    and CRC; unexpected disconnects, corruption, and failed statuses MUST all be
    zero. Retransmitted chunks/bytes and rewinds MAY be non-zero but MUST be
-   counted. Record one final gated heap snapshot after this workload.
-6. Perform one real physical power-cycle check and require a fresh PyBLE
+   counted. Record one final gated heap snapshot after this workload. Then
+   disconnect and wait at most **2,000 ms** for the same session's final
+   TX-mbuf-starvation fact before sealing `transfer_link_facts`.
+7. Perform one real physical power-cycle check and require a fresh PyBLE
    service advertisement. This is a pass/fail safety check; human timing is
    not used as a numeric latency sample.
 
 Thus each heap floor is derived from exactly **16** snapshots: 10 post-HELLO,
 5 post-round-trip, and 1 post-reliability. The numeric qualification is a
-controlled-hard-reset proxy for cold boot because it provides an external,
-repeatable release-to-on-air boundary; the physical power-cycle check prevents
+controlled-hard-reset proxy for cold boot because it provides an external
+release-to-host-discovery boundary; the physical power-cycle check prevents
 that proxy from replacing real power-on behaviour.
 
 #### 5.3.3 Baseline, threshold derivation, and policy
@@ -406,15 +892,24 @@ The derivation algorithm is frozen before measurement. Define
 - `application_headroom_min_bytes` is the exact corresponding
   `factory_partition_bytes - application_image_bytes`.
 - Each GC/internal-heap floor is `floor_1024(min(all 16 samples))`.
-- `reset_to_service_advertisement_max_ms` is
-  `ceil_10(max(the 10 successful samples))`.
-- Each PUT/GET goodput floor is `floor_100(min(the 5 samples))`.
+- `reset_to_service_advertisement_max_ms` is the fixed product SLO `3,000` for
+  every qualified profile. The clock ends at a host scanner callback, whose
+  acquisition and delivery tail cannot be separated from firmware boot by this
+  measurement. The ten baseline samples therefore characterize the system but
+  do not fit this user-visible ceiling.
+- Each PUT/GET goodput floor is
+  `floor_100(floor(95 * min(the 5 samples) / 100))`. The exact integer 5%
+  allowance is applied before outward quantization because each whole-transfer
+  duration includes host scheduling and many BLE acknowledgement windows.
 
-The outward quantization above is the only automatic tolerance: at most 1,023
-bytes below an observed heap minimum, 9 ms above an observed boot maximum, or
-99 bytes/s below an observed goodput minimum. No percentage, aspirational
-number, manually selected “comfortable/usable” value, discarded successful
-sample, or result from another profile may enter a threshold.
+Application image/headroom remain exact and heap retains only its 1,024-byte
+outward quantization. Reset detection uses exactly the ADR-0026 product SLO;
+there is no reset baseline arithmetic, per-profile fitting, discarded sample,
+or candidate-specific allowance. Goodput receives exactly the integer 5%
+allowance before at most 99 bytes/s of outward quantization. No result from
+another profile may enter a baseline-derived threshold. Integrity counts,
+retransmit/rewind counts, disconnect counts, sample counts, and the physical
+power-cycle check receive no allowance.
 
 Raw baseline samples and environment metadata MUST be retained as redacted,
 canonical JSON at
@@ -425,8 +920,8 @@ LF; arrays retain the normative order below.
 That baseline object has exactly `schema_version` (integer `1`),
 `measurement_contract` (string `"oi1-pre-v1-v1"`), `source_commit` (the same
 40 lowercase hex used in its filename), `firmware_version`, `created_at` (UTC
-RFC3339), `profile_order` (the exact two-profile order), and `profiles`. Each
-of its two profile objects has exactly:
+RFC3339), `profile_order` (the exact three-profile order), and `profiles`.
+Each of its three profile objects has exactly:
 
 ```text
 profile_id
@@ -451,11 +946,28 @@ The baseline is engineering derivation evidence, not a release HIL record: it
 has no candidate release digest, operator approval, installer/recovery check,
 or public-release status.
 
+Retained baseline files are immutable history. A controlled refresh MUST add
+a new source-commit-scoped file and MUST NOT edit or remove earlier evidence.
+The active policy pointer and all three profile threshold objects then change as
+one unit; profiles or successful samples from different baselines MUST NOT be
+mixed. For a firmware source release core at or after `0.5.0`, the active
+baseline firmware release core MUST be at least `0.5.0` and MUST NOT be newer
+than the source release core. The retained pre-`0.5.0` release contract keeps
+its historical baseline semantics. This is a source-era floor, not a rule to
+rebaseline every patch release.
+
+The baseline source commit identifies the pre-policy source and immutable
+measurement inputs. Evidence and policy commits necessarily produce a later
+final-candidate source identity. The final candidate MUST therefore be rebuilt
+after the refresh, and the same three profiles MUST pass verify-mode HIL; the
+engineering baseline observations MUST NOT be reused as release approval.
+
 `firmware/qualification/oi1-gates.json` MUST then contain exactly:
 
-- `schema_version: 1`;
+- `schema_version: 2`;
 - `qualification_scope: "pre-v1"`;
-- `profile_order: ["esp32-4mb", "esp32-s3-n16r8"]`;
+- `profile_order: ["esp32-4mb", "esp32-s3-n16r8",
+  "waveshare-esp32-s3-lcd-147b"]`;
 - `deferred_profiles: ["esp32-c3-4mb"]`;
 - `workload`, with the exact constants and payload generator from §5.3.2;
 - `derivation`, naming the exact algorithms and quantization units above;
@@ -471,10 +983,18 @@ MUST be positive integers. The policy MUST contain no C3 threshold object. A
 final candidate is evaluated against this committed policy; the engineering
 baseline derives the policy but does not itself approve a release.
 
+For source releases at or after `0.5.0`, the exact derivation identifiers are
+`floor-min-1024-v1`, `fixed-product-slo-3000-v3`, and
+`floor-95pct-min-100-v2` for heap, reset, and goodput respectively. The
+superseded private-candidate reset identifier
+`ceil-max-plus-300-10-v2` MUST NOT qualify a public `0.5.0` release. A retained
+source release before `0.5.0` MUST continue to validate against its historical
+`floor-min-1024-v1`, `ceil-max-10-v1`, and `floor-min-100-v1` identifiers and
+formulas; the amendment MUST NOT reinterpret an already-published release.
+
 #### 5.3.4 Candidate-bound evidence
 
-The release HIL document MUST use the exact
-`PYBLE_HIL_RECORDS_V2` contract in
+The release HIL document MUST use the exact source-era V2/V4 contract in
 [browser-flashing.md §9](browser-flashing.md#9-automated-and-hil-acceptance).
 The policy bytes, baseline-evidence digest, candidate identity, per-profile
 build measurements, raw sample arrays, environment, and raw-log digest MUST be
@@ -514,7 +1034,13 @@ This is software-level safety of the IDE/agent, **not** hardware/actuator safety
 
 ## 6. Constraints (CON)
 
-> **FROZEN for v1.0 (G0 · 2026-07-01 · `[docs]`).** All CON-1…13 are clean-room/build/carve-out constraints that inherit no PBLE/1 opcode/UUID/status number; amend only via a `[docs]` commit before dependent code.
+> **FROZEN for v1.0 (G0 · 2026-07-01; display amendments 2026-08-01 ·
+> `[docs]`).** All CON-1…13 are clean-room/build/carve-out constraints that
+> inherit no PBLE/1 opcode/UUID/status number. ADR-0023 admits the explicit
+> inert Layer-4 library in FR-TFT. ADR-0024/ADR-0029 admit only the named
+> companion and fail-open boot hook in FR-SPLASH; it does not permit Layer-3
+> display control, automatic board detection, or a stored/transmitted routing
+> profile. Amend only via a `[docs]` commit before dependent code.
 
 - **CON-1** — Upstream MicroPython MUST be consumed as a **pinned submodule** and MUST NEVER be edited in place. — *(source: PRD §1A.3 rejection 4, §10.9, §10.10, [`firmware/upstream/README.md`](../../../firmware/upstream/README.md); verify: build; story: X-03)*
 - **CON-2** — PyBLE MUST NOT fork MicroPython; it builds an agent **around** upstream. — *(source: PRD §1A.3 rejection 4, §4.3, §6.2; verify: build; story: X-03)*
@@ -524,10 +1050,42 @@ This is software-level safety of the IDE/agent, **not** hardware/actuator safety
   targets; Bluedroid MUST NOT be built in. A future platform port MAY use
   another conforming BLE peripheral stack. — *(source: PRD §10.1, §16.2;
   verify: build; story: F-01)*
-- **CON-6** — All firmware source MUST be **MIT / clean-room**: it MUST contain no closed-source wire protocol, opcodes, proprietary UUIDs/advertising prefixes, board/routing profiles, or lab-domain/calibration code; the no-leak gate MUST pass. — *(source: PRD §1A.1, §1A.2, §16.3; verify: build (no-leak gate); story: X-02)*
-- **CON-7** — The firmware MUST NOT impose, store, or transmit any board "routing profile" or pin profile, and MUST NOT gate by MAC or board identity. — *(source: PRD §1A.3 rejection 3, §11.1, §11.3, [hardware.md §4](../hardware.md#4-what-pyble-does-not-do-with-hardware); verify: unit (structure); story: F-01)*
-- **CON-8** — The firmware MUST NOT contain any GPIO-routing, hardware-output-safety, display/branding, calibration, or board-profile module. — *(source: PRD §10.3, §11.3, §4.3; verify: unit (structure); story: F-01)*
-- **CON-9** — The board's hardware MUST be exposed to user code **only** through standard MicroPython (`machine`, `os`, etc.); the agent MUST NOT mediate or abstract GPIO. — *(source: PRD §11.3, [hardware.md §4](../hardware.md#4-what-pyble-does-not-do-with-hardware); verify: unit (structure); story: F-01)*
+- **CON-6** — All firmware source, including an optional frozen user runtime,
+  MUST be **MIT / clean-room**: it MUST contain no closed-source wire protocol,
+  opcodes, proprietary UUIDs/advertising prefixes, copied vendor demo code,
+  board/routing profiles, or lab-domain/calibration code; the no-leak,
+  provenance, SPDX, and license gates MUST pass. — *(source: PRD §1A.1,
+  §1A.2, §16.3, ADR-0023, ADR-0024; verify: build (no-leak/license gate); story:
+  X-02)*
+- **CON-7** — The firmware MUST NOT impose, store, or transmit a generalized
+  board routing/pin profile and MUST NOT gate by MAC or board identity. The
+  module named for the exact board in FR-SPLASH MAY contain only
+  that board's published display wiring for its own cosmetic frame; it MUST
+  NOT expose a routing lookup, mediate user-code pins, detect/select hardware,
+  or change the app/agent capability model. — *(source: PRD §1A.3 rejection
+  3, §11.1, §11.3, [hardware.md §4](../hardware.md#4-what-pyble-does-not-do-with-hardware),
+  ADR-0024; verify: unit (structure); story: F-01/ADR-0024 increment)*
+- **CON-8** — Layer 3 MUST NOT contain any GPIO-routing,
+  hardware-output-safety, display-control/branding, calibration, or
+  board-profile module. An image MAY freeze a generic Layer-4 user library
+  only when a separately frozen `FR-*` contract (FR-TFT) keeps it
+  inert at import, free of board pin/default tables, explicitly constructed by
+  user code, and outside the agent/capability surface. One exact-board
+  companion MAY own named-board pins only under FR-SPLASH when it is inert at
+  import, factory-enabled only after erase in the exact profile, persistently
+  disableable, bounded after actual BLE
+  readiness, and fail-open; this remains Layer 2/4 glue, never a seventh agent
+  module. — *(source: PRD §10.3, §11.3, §4.3, ADR-0023, ADR-0024;
+  verify: unit (structure); story: F-01/ADR-0024 increment)*
+- **CON-9** — Hardware primitives MUST be exposed through standard
+  MicroPython (`machine`, `framebuf`, `os`, etc.), and the agent MUST NOT
+  mediate or abstract GPIO. A frozen Layer-4 helper MAY compose those
+  primitives only after explicit construction by user code; it MUST NOT add a
+  PBLE/1 hardware abstraction, hidden routing, automatic board selection, or
+  boot-time output, except the explicitly persisted, exact-board,
+  readiness-gated and fail-open frame frozen by FR-SPLASH. — *(source: PRD §11.3,
+  [hardware.md §4](../hardware.md#4-what-pyble-does-not-do-with-hardware),
+  ADR-0023, ADR-0024; verify: unit (structure); story: F-01/ADR-0024 increment)*
 - **CON-10** — The agent (Layer 3) MUST NOT be editable or replaceable by user code (Layer 4). — *(source: PRD §10.2, §10.4, §14.1; verify: conformance, unit; story: F-09)*
 - **CON-11** — A **single** MicroPython + ESP-IDF pin (from `versions.lock`) MUST drive all three chip targets. — *(source: PRD §1A.4, §10.9, §10.11; verify: build; story: X-03)*
 - **CON-12** — The default upstream patch count MUST be **zero**; any unavoidable patch MUST be isolated under `firmware/patches/micropython-<tag>/` with a written reason, applied only at build prep, and re-reviewed for retirement at every upgrade. — *(source: PRD §1A.3 rejection 4, §10.10, [firmware.md §6](../firmware.md#6-build--distribution); verify: build; story: X-03)*
@@ -543,17 +1101,27 @@ This is software-level safety of the IDE/agent, **not** hardware/actuator safety
   Future ports document their own one-time provisioning method. — *(source:
   PRD §11.2, §1A.3 rejection 1, §10.3; verify: HIL; story: F-07)*
 - **IF-FS** — The agent MUST present the user workspace over a MicroPython VFS / LittleFS-style filesystem rooted at `fs_root`. — *(source: PRD §16.2, §10.4, [firmware.md §3](../firmware.md#3-modules); verify: HIL; story: F-08)*
-- **IF-MACHINE** — The board's hardware is exposed to user code via standard MicroPython runtime APIs (`machine`, `neopixel`, etc.); this is the user-code interface, not an agent-mediated one (see CON-9 and FR-LIB). — *(source: PRD §11.3, [hardware.md §4](../hardware.md#4-what-pyble-does-not-do-with-hardware); verify: HIL; story: F-04/F-24)*
+- **IF-MACHINE** — The board's hardware is exposed to user code via standard
+  MicroPython runtime primitives (`machine`, `framebuf`, `neopixel`, etc.) and
+  optional explicitly constructed Layer-4 helpers such as `pyble_st7789`; it
+  is never an agent-mediated interface. The exact-board companion
+  in FR-SPLASH composes those same primitives but adds no PBLE/1 hardware
+  interface (see CON-9, FR-LIB, FR-TFT, and FR-SPLASH). —
+  *(source: PRD §11.3,
+  [hardware.md §4](../hardware.md#4-what-pyble-does-not-do-with-hardware),
+  ADR-0023, ADR-0024; verify: HIL; story: F-04/F-24/ADR-0024 increment)*
 
 ## 8. Build, versioning & distribution (BLD)
 
 > **FROZEN v1.0 (amended) for the initial ESP32 v1 port (G0 · 2026-07-01;
-> browser-release amendments 2026-07-29 through 2026-07-31 · `[docs]`).**
+> browser-release amendments 2026-07-29 through 2026-07-31; exact-board split
+> amendment 2026-08-03 · `[docs]`).**
 > BLD-1…22 are the build/versioning contract build-smith implements. The
 > 2026-07-29 amendments tighten BLD-5…8/13/14 and add BLD-17…22 before
-> X-10/X-11 code; the 2026-07-30 amendment freezes the two-profile pre-v1
+> X-10/X-11 code; the 2026-07-30 amendment froze the historical two-profile
+> subset and ADR-0028 replaces the current v0.5 set with three profiles. The
 > release subset and makes the immutable same-origin directory canonical for
-> v0.x, with an optional byte-identical mirror, without weakening three-target
+> v0.x, with an optional byte-identical mirror, without weakening three-chip
 > or GitHub Release v1.0 parity. The concrete
 > `versions.lock` values
 > remain proposed under OI-2 until selected as candidate-frozen inputs before
@@ -564,8 +1132,18 @@ This is software-level safety of the IDE/agent, **not** hardware/actuator safety
 
 - **BLD-1** — [`firmware/versions.lock`](../../../firmware/versions.lock) MUST be the single source of truth for the pinned MicroPython tag+commit and ESP-IDF version+commit. — *(source: PRD §10.9, §17.1; verify: build; story: X-03)*
 - **BLD-2** — The build prep MUST verify the checked-out upstream submodule SHA against `versions.lock` and **refuse to proceed on mismatch** (SHA-drift gate); CI MUST run this on every PR. — *(source: PRD §10.9, §17.1; verify: build; story: X-03)*
-- **BLD-3** — `firmware/scripts/build.sh <target>` MUST build exactly one chip (`esp32` | `esp32-s3` | `esp32-c3`); `build_all.sh` MUST build all three. — *(source: PRD §10.11, [firmware.md §6](../firmware.md#6-build--distribution); verify: build; story: X-03)*
-- **BLD-4** — The build MUST map each PyBLE target to its IDF target (`esp32`→`esp32`, `esp32-s3`→`esp32s3`, `esp32-c3`→`esp32c3`) and apply the matching board overlay before invoking the port build; it MUST NOT silently substitute a different toolchain version. — *(source: PRD §10.11, [`versions.lock`](../../../firmware/versions.lock); verify: build; story: X-03)*
+- **BLD-3** — `firmware/scripts/build.sh <variant>` MUST build exactly one of
+  `esp32`, `esp32-s3`, `waveshare-esp32-s3-lcd-147b`, or `esp32-c3`;
+  `build_all.sh` MUST build all four variants in independent retained roots. —
+  *(source: PRD §10.11, [firmware.md §6](../firmware.md#6-build--distribution),
+  ADR-0028; verify: build; story: X-03)*
+- **BLD-4** — The build MUST map each PyBLE variant to its IDF target
+  (`esp32`→`esp32`, both S3 variants→`esp32s3`, `esp32-c3`→`esp32c3`)
+  and apply the matching board overlay before invoking the port build; it MUST
+  NOT silently substitute a different toolchain version or collapse the two S3
+  artifacts. — *(source: PRD §10.11, ADR-0028,
+  [`versions.lock`](../../../firmware/versions.lock); verify: build; story:
+  X-03)*
 - **BLD-5** — Each successful per-target build MUST emit the merged
   `firmware.bin`, bootloader, partition table, application image, and
   authoritative ESP-IDF `flasher_args.json`. Release packaging MUST normalize
@@ -590,9 +1168,12 @@ This is software-level safety of the IDE/agent, **not** hardware/actuator safety
   bundle at the canonical versioned same-origin path. A v0.x mirror is optional
   and every corresponding file and byte MUST be identical when one is
   published. v1.0 and later MUST additionally publish the matching
-  byte-identical GitHub Release. The exact v0.4.2 public-beta bundle covers exactly the two enabled, not-yet-qualified profiles
-  and its GitHub publication MUST be marked as a pre-release; v1.0 MUST restore
-  three-target release parity. —
+  byte-identical GitHub Release. The current pre-v1 candidate bundle MUST target
+  exactly the three profiles in §5.3 and MUST NOT become public until all
+  three qualify. The immutable v0.4.2 public-beta bundle remains the historical
+  two-profile exception and its GitHub publication MUST remain marked as a
+  pre-release; it MUST NOT be expanded or reinterpreted. v1.0 additionally
+  requires the deferred C3 profile. —
   *(source: PRD §10.12, §18.2,
   [browser-flashing §3](browser-flashing.md#3-same-origin-versioned-layout);
   verify: build, release; story: X-11)*
@@ -617,6 +1198,14 @@ This is software-level safety of the IDE/agent, **not** hardware/actuator safety
   X-11)*
 - **BLD-9** — Upstream upgrades MUST go only through the controlled workflow (`firmware/scripts/upgrade_micropython.sh`): bump `versions.lock` in its own commit, rebuild `mpy-cross`, pass host + conformance + applicable footprint gates, candidate-freeze the exact updated lock before release-candidate generation, and validate that candidate on every exact profile included in the release — all three for v1.0 — before public-release approval. The workflow MUST never be replaced by hand-editing during a build. — *(source: PRD §10.9, §17.1, §17.3; verify: build, HIL; story: X-03)*
 - **BLD-10** — `mpy-cross` MUST be rebuilt from the pinned MicroPython. Every
+  release build MUST force a from-scratch compile into a fresh output
+  directory and atomically replace the admitted executable; a retained
+  executable or object graph MUST NOT satisfy the rebuild step. Every
+  all-profile build MUST then require the retained compiler from every target
+  to be a regular, non-symlink executable with identical bytes, and atomically
+  admit those bytes at the canonical audit path only after the complete matrix
+  succeeds. A missing, divergent, or incomplete matrix MUST preserve the
+  previously admitted compiler unchanged. Every
   admitted and audit-proof rebuild MUST use `SOURCE_DATE_EPOCH` equal to the
   exact candidate PyBLE source commit's decimal committer timestamp recorded
   in build provenance; wall-clock date and caller overrides MUST NOT affect its
@@ -669,20 +1258,27 @@ This is software-level safety of the IDE/agent, **not** hardware/actuator safety
   verification MUST inspect generated frozen content or the running image, not
   stale intermediate `.mpy` files. — *(source: FR-LIB, ADR-0018; verify:
   build/HIL; story: F-24)*
-- **BLD-17** — The v0.4.2 public-beta bundle MUST expose exactly
-  `esp32-4mb` and `esp32-s3-n16r8`, with the memory qualifications, merge
+- **BLD-17** — The current pre-v1 browser candidate MUST target exactly
+  `esp32-4mb`, `esp32-s3-n16r8`, and
+  `waveshare-esp32-s3-lcd-147b`, with the memory qualifications, merge
   settings, browser-image base offsets, and component offsets frozen in
   [browser-flashing §1](browser-flashing.md#1-release-image-profiles). Family
   detection MUST NOT be represented as proof of flash/PSRAM compatibility.
+  The immutable v0.4.2 public-beta bundle MUST remain exactly `esp32-4mb` plus
+  `esp32-s3-n16r8` under its historical contract and MUST NOT acquire the new
+  profile. —
   `esp32-c3-4mb` MUST remain absent from release metadata, public artifacts,
   selection, and recovery commands and visibly unavailable until a new
-  candidate passes its exact-profile HIL; v1.0 still requires all three. —
+  candidate passes its exact-profile HIL; v1.0 additionally requires C3. —
   *(source: website §7, hardware §1.1; verify: build, HIL, website; story:
   X-10)*
 - **BLD-18** — Release packaging MUST generate the exact versioned layout,
   schema-validated `release.json`, SHA-256/size metadata, and `SHA256SUMS`
   defined in
   [browser-flashing §§3–5](browser-flashing.md#3-same-origin-versioned-layout).
+  The split v0.5 bundle MUST use release schema 3 with exactly the three
+  current profiles; immutable v0.4.2 replay retains release schema 2 and its
+  historical two-profile order.
   Manifest paths MUST be relative, same-origin, version-confined, and free of
   redirects. — *(source: website §7; verify: build, website; story: X-10,
   X-11)*
@@ -751,14 +1347,16 @@ This is software-level safety of the IDE/agent, **not** hardware/actuator safety
 | FR-MODE-1…4 | §10.5, §10.6 | F-03, F-04, F-12 | HIL, conformance |
 | FR-IDENT-1…6 | §10.7, §11.1, §11.3, §14.2 | F-01, F-03, F-12 | conformance, HIL, unit |
 | FR-LIB-1…4, BLD-16 | §9.8, §10.9, §10.11, §11.3 | F-24, A-31 | resolved manifest, build, size, HIL |
+| FR-TFT-1…7 | §10.9, §10.11, §11.3, §13.3, §15.1 | ADR-0023 increment | unit, resolved manifest, build, size, HIL |
+| FR-SPLASH-1…9 | §10.5, §10.9, §10.11, §11.3, §13.3, §14.2 | ADR-0024 increment | unit, resolved manifest, build, HIL, production smoke, release finalization |
 | NFR-REL-1…5 | §13.1, §13.3, §10.11 | F-06, F-10, F-11, X-03 | HIL, build, unit |
-| NFR-PERF-1…4 | §13.4, §10.13 | F-07, F-11, F-13/14 | HIL, size |
+| NFR-PERF-1…5 | §13.4, §10.13 | F-07, F-11, F-13/14 | HIL, size, unit |
 | NFR-FP-FLASH/HEAP/BOOT/TPUT/C3/GATE/CLOSE | §10.13, §1B.3, §7.1 | F-12, F-13/14, X-03 | size, HIL, build |
 | NFR-SAFE-1…4 | §13.3, §10.5, §11.3 | F-06, F-12, F-01 | HIL, unit |
 | NFR-OFF-1…2 | §13.5, §14.2, §15.1 | F-01 | HIL, unit |
 | NFR-MAINT-1…4 | §10.1, §10.2, §10.3, §15.1 | F-13/14, F-01…F-09, X-01 | build, unit, conformance |
-| CON-1…13 | §1A.3, §10.9–§10.11, §10.14, §11.1, §11.3 | X-02, X-03, F-01, F-03, F-09, F-13/14 | build, unit, conformance |
-| IF-BLE/PROTO/USB/FS/MACHINE | §10.7, §11.2, §16.2 | F-01, F-02, F-07, F-08, F-04 | HIL, conformance |
+| CON-1…13 | §1A.3, §10.9–§10.11, §10.14, §11.1, §11.3 | X-02, X-03, F-01, F-03, F-09, F-13/14, ADR-0023/0024 increments | build, unit, conformance |
+| IF-BLE/PROTO/USB/FS/MACHINE | §10.7, §11.2, §11.3, §16.2 | F-01, F-02, F-07, F-08, F-04, F-24, ADR-0023/0024 increments | HIL, conformance |
 | BLD-1…22 | §10.9–§10.12, §15.2–§15.3, §17, §18 | X-03, X-10, X-11 | build, release, website, HIL |
 | SEC-1…11 | §14, §10.4, §10.6, §11.1 | F-01, F-03, F-04, F-09, F-12 | HIL, conformance, unit |
 
@@ -768,23 +1366,31 @@ These are tracked, release-blocking where noted; they MUST be closed before the 
 
 - **OI-1 — Per-profile resource numbers pending HIL.** The measurement method,
   exact current scope, evidence contract, and threshold derivation are frozen
-  in §5.3. Numeric thresholds remain open. The current pre-v1 portion closes
-  only when `esp32-4mb` and `esp32-s3-n16r8` each have committed
+  in §5.3. Numeric thresholds remain open. The current pre-v1 candidate portion
+  closes
+  only when `esp32-4mb`, `esp32-s3-n16r8`, and
+  `waveshare-esp32-s3-lcd-147b` each have committed
   evidence-derived policy values and passing final-candidate HIL. That state
-  MUST be described as **“qualified for the current two-profile pre-v1
+  MUST be described as **“qualified for the current three-profile pre-v1
   release”**, not as global OI-1 closure. `esp32-c3-4mb` remains open and
   release-blocking for C3 enablement and v1.0; it requires a later SemVer
   candidate and its own thresholds/evidence. — *(verify: size, build, HIL)*
-- **OI-2 — v0.4.2 version-pin selection is closed; full release approval remains open.**
-  The exact `versions.lock` bytes for MicroPython `v1.28.0` and ESP-IDF `v5.5.1`
-  were selected and candidate-frozen for v0.4.2 ([PRD §10.9](../prd.md),
-  [§17.1](../prd.md), [`versions.lock`](../../../firmware/versions.lock)). That
-  selection and the supplemental browser run are not complete hardware
-  approval: the exact two-profile candidate still requires every remaining
-  formal HIL and resource gate before qualification. C3 remains mandatory
-  before C3 enablement and before v1.0. A pin change creates a new candidate
-  and resets all candidate-bound evidence. — *(verify: build, HIL)*
+- **OI-2 — v0.4.2 pin selection is closed; current-candidate selection and
+  release approval remain open.** The exact historical `versions.lock` bytes
+  for MicroPython `v1.28.0` and ESP-IDF `v5.5.1` were selected and
+  candidate-frozen for v0.4.2 ([PRD §10.9](../prd.md),
+  [§17.1](../prd.md), [`versions.lock`](../../../firmware/versions.lock)).
+  That historical selection and the supplemental browser run were not complete
+  hardware approval. Before current release builds and HIL, the exact committed
+  lock bytes MUST be deliberately selected again as candidate-frozen immutable
+  inputs for the v0.5.1 source candidate. That selection is still not hardware
+  approval: the exact candidate MUST pass HIL on every one of the three profiles
+  in §5.3. C3 remains mandatory before C3 enablement and before v1.0. A pin
+  change creates a new candidate and resets all candidate-bound evidence. —
+  *(verify: build, HIL)*
 - **OI-3 — Frozen → native split point TBD.** The agent starts frozen-Python; the decision of which hot paths (BLE I/O, framing, file chunking) move to a native `USER_C_MODULE`, and on which chip the budget forces it, is open and determined by HIL footprint/throughput measurement ([firmware.md §2](../firmware.md#2-agent-base-native-vs-frozen), [PRD §10.2](../prd.md)). The PBLE/1 wire contract MUST NOT change across the move (NFR-MAINT-3). — *(verify: size, conformance, HIL)*
 - **OI-4 — PBLE/1 opcode/status freeze dependency. ✅ CLOSED 2026-07-01 (`[docs]`).** [protocol.md §2](../protocol.md#2-ble-transport-gatt)/[§3](../protocol.md#3-framing) froze at G0 and [§4 (opcodes)](../protocol.md#4-opcodes)/[§8 (status)](../protocol.md#8-status--error-codes-1-byte-status-in-rsp) froze here — status-only, no wire byte changed. The opcode set + numbers and the 1-byte status set + numbers are now stable for v1.0, so FR-BLE-1/8/10 and FR-PROTO-1…10 no longer inherit provisional numbers; F-01/F-02 DoR is met. Each dependent story still MUST cite its frozen spec section per [PRD §1B.4](../prd.md). Payload-level encodings for the identity/identify opcodes remain **OI-6**. — *(verify: conformance)*
 - **OI-5 — Auto-run capability flag naming. ✅ CLOSED 2026-07-01 (`[docs]`).** The opt-in `main.py` auto-run cap is **`auto_run`** (u8, 0=off default / 1=on), set via the additive **`SET_AUTORUN` (0x23)** opcode ([protocol.md §7](../protocol.md#7-hello--capabilities)/[§4](../protocol.md#4-opcodes)), persisted at NVS `pyble/autorun` (owned by `pble_boot`), entry `/main.py`. FR-BOOT-3 DoR met (F-12). — *(verify: conformance)*
 - **OI-6 — Label/identify wire encodings. ✅ FULLY CLOSED 2026-07-01 (`[docs]`).** Label half (S3): label max = **24 bytes UTF-8** (over-length → `ERANGE`), frozen in [protocol.md §7](../protocol.md#7-hello--capabilities). Identify remainder (S4): `SET_IDENTIFY_LED` = `[gpio:u8][active_level:u8]` (empty clears; `ERANGE`/`EBADREQ`), `IDENTIFY` = optional `[duration_ds:u8]` (1–50 ds, default 20, 5 Hz), and caps `has_identify`/`identify_led` (gpio byte or `0xFF`), frozen in [protocol.md §4](../protocol.md#4-opcodes)/[§7](../protocol.md#7-hello--capabilities). FR-IDENT-1..6 / FR-BLE-12 DoR met (F-22/F-23). — *(verify: conformance)*
+
+<!-- SPDX-License-Identifier: MIT -->

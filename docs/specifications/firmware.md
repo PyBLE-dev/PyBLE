@@ -1,6 +1,6 @@
 # PyBLE — Agent Firmware
 
-Status: **DRAFT** · Last updated: 2026-08-01
+Status: **DRAFT** · Last updated: 2026-08-03
 
 The PyBLE agent is small board-side firmware that turns a compatible
 MicroPython target into a PyBLE-speaking board: it advertises the BLE service,
@@ -43,14 +43,30 @@ Decision (revised 2026-07-01 — see [ADR-0006](../decisions/0006-native-c-agent
 | `pyble_console` | Tee `stdout`/`stderr` to BLE as `CONSOLE_DATA` events (and to USB-serial if present, for local debugging). |
 | `pyble_info` | Assemble `DEVICE_INFO`/HELLO caps: chip, MicroPython version, free memory, fs root, MTU, SD presence. |
 
-There is **no** GPIO-routing, actuator-safety, TFT, calibration, or board-profile
-module. PyBLE exposes the board's hardware to **user code** via standard
-MicroPython, not via the agent. Every initial ESP32-family target freezes the
-pinned upstream `neopixel` package so `from neopixel import NeoPixel` is
-available offline; the program still supplies its own `Pin`, pixel count,
-colours, and timing. A future port claims this API only after validating both
-the package and its required runtime primitive
-([ADR-0018](../decisions/0018-standard-micropython-neopixel.md)).
+There is **no** GPIO-routing, actuator-safety, display-control, calibration, or
+board-profile module in the agent. PyBLE exposes hardware to **user code**, not
+through PBLE/1. Every initial ESP32-family target freezes the pinned upstream
+`neopixel` package. The exact `waveshare-esp32-s3-lcd-147b` build additionally
+freezes the clean-room MIT `pyble_st7789` user library; importing it has no side
+effects, and the program must explicitly supply its SPI bus configuration,
+pins, geometry, offsets, colour order, and inversion. The generic
+`esp32-s3-n16r8` build intentionally omits it. This optional Layer-4 helper
+neither claims that another board has a display nor changes agent capabilities. See
+[ADR-0018](../decisions/0018-standard-micropython-neopixel.md) and
+[ADR-0023](../decisions/0023-explicit-st7789-user-runtime.md), as narrowed by
+[ADR-0028](../decisions/0028-separate-waveshare-lcd147b-firmware-profile.md).
+
+The exact-board overlay alone contains the separately bounded companion
+`pyble_waveshare_lcd147b`, its splash-aware boot hook, and the splash-only
+native readiness seam. A freshly erased exact-board installation enables its
+splash by default, while an explicit persisted disable remains authoritative;
+it cannot detect/select hardware. When enabled, boot waits boundedly for actual
+BLE availability, renders one private/offline app-discovery frame on the
+published Waveshare ESP32-S3-LCD-1.47B wiring, releases display resources, and
+continues. It adds no Layer-3 display module, PBLE/1 capability, or user-code
+GPIO abstraction. The generic S3, classic, and C3 images contain none of this
+board-specific path ([ADR-0024](../decisions/0024-opt-in-waveshare-boot-splash.md),
+[ADR-0028](../decisions/0028-separate-waveshare-lcd147b-firmware-profile.md)).
 
 ## 4. Chip targets and release profiles
 
@@ -62,21 +78,41 @@ The initial v1 agent codebase builds three ESP-IDF targets:
 | `esp32-s3` | `esp32s3` | More RAM (often PSRAM), native USB; most headroom. |
 | `esp32-c3` | `esp32c3` | Single-core RISC-V, least RAM — the **footprint constraint**; validate the agent fits here early. |
 
-All three use **NimBLE**. Within this initial ESP32 port, differences are
-confined to Layer 2 (board overlay: pins, flash size, USB), and the shared agent
-core contains no per-chip product logic.
+All three use **NimBLE**. The release build matrix distinguishes those three
+chip targets from four build variants: `esp32`, lean `esp32-s3`, exact-board
+`waveshare-esp32-s3-lcd-147b`, and `esp32-c3`. The two S3 variants both compile
+for `esp32s3` but have independent overlays, retained source/build roots, and
+artifacts. Differences remain confined to Layer 2, and the shared agent core
+contains no runtime board detector or per-chip product routing logic.
 
 The browser installer does not publish unqualified family-wide images. The
 exact v0.4.2 bundle is offered as a hardware-tested beta for `esp32-4mb`
 (classic ESP32, 4 MiB flash) and `esp32-s3-n16r8` (ESP32-S3, 16 MiB flash plus
-8 MiB Octal PSRAM). On both exact profiles, browser installation and interrupted-flash recovery passed;
-complete release qualification remains pending.
-`esp32-c3-4mb` remains a known initial v1 profile but is unavailable
-and has no public image until exact-profile real-hardware validation is
-complete. ESP Web Tools detects the chip family but cannot by that fact alone
-prove the required flash/PSRAM topology. The full compatibility, artifact, and
-bounded public-beta contracts are frozen in
+8 MiB Octal PSRAM). On both exact profiles, browser installation and
+interrupted-flash recovery passed; complete release qualification remains
+pending. The v0.5.1 source candidate set is exactly `esp32-4mb`,
+`esp32-s3-n16r8` (lean ESP32-S3, 16 MiB flash plus 8 MiB Octal PSRAM), and
+`waveshare-esp32-s3-lcd-147b` (the exact B-version board with the same memory
+topology plus its display stack). That source contract does not authorize new
+public bytes or selector activation: fresh reproducible builds, license audit,
+and final-candidate HIL remain required independently for all three profiles.
+`esp32-c3-4mb` remains a known initial v1 profile but is unavailable and has no
+public image until exact-profile real-hardware validation is complete. ESP Web
+Tools detects the chip family but cannot by that fact alone prove the required
+flash/PSRAM topology or distinguish the two S3 images. The full compatibility,
+artifact, historical public-beta, and candidate-gate contracts are frozen in
 [firmware/browser-flashing.md](firmware/browser-flashing.md).
+
+The Waveshare ESP32-S3-LCD-1.47B uses its own
+`waveshare-esp32-s3-lcd-147b` provisioning image. Its ESP32-S3R8 and external
+W25Q128 provide the same 8 MiB Octal-PSRAM / 16 MiB flash topology as the lean
+S3 profile, but matching memory does not identify onboard peripherals. The
+exact profile is a build/release/installer identity, not a PBLE/1 routing
+profile: both images continue to report target `esp32-s3`. Display pins remain
+explicit user-program values for ordinary programs; only the exact-board
+ADR-0024 companion contains the published values for its bounded cosmetic boot
+frame. ADR-0029 makes that frame factory-enabled only in the separately chosen
+exact-board image after an erased installation.
 
 These targets are the initial reference/build family, not the product boundary.
 A future port MAY use another upstream MicroPython port, CPU
@@ -93,12 +129,23 @@ MUST NOT require a known-chip allowlist.
 - **The agent owns the filesystem bridge**, but user code may also touch the FS normally; uploads use temp-write-then-rename to avoid corrupting a file mid-transfer.
 - **Console mirrors everywhere.** `stdout`/`stderr` go to BLE and (if connected) USB-serial, regardless of who started the run.
 - **Cold boot is safe.** On boot the board advertises and waits; it does not auto-run user `main.py` unless explicitly enabled (a HELLO/`DEVICE_INFO` capability flag), so a bad `main.py` can't lock you out of the board.
+- **Exact-board identity is independent and fail-open.** On an explicitly
+  configured Waveshare 1.47B running its exact-board image, one
+  BLE-readiness-gated splash may run before workers/autorun. Disabled state,
+  timeout, or display failure produces no user-code execution and cannot
+  prevent normal agent recovery. The lean S3 image has no splash path at all.
 
 ## 6. Build & distribution
 
-- For the current ESP32 reference family, `firmware/scripts/build.sh <target>`
-  builds one chip and `build_all.sh` builds all three.
+- For the current ESP32 reference family, `firmware/scripts/build.sh <variant>`
+  builds one of the four admitted variants and `build_all.sh` builds the
+  complete four-variant/three-chip matrix.
 - Every resolved target manifest contains the pinned upstream `neopixel` module exactly once; no PyBLE-authored WS2812 driver is built.
+- The exact Waveshare manifest contains `pyble_st7789` and the
+  factory-enabled-after-erase, persistently disableable
+  exact-board companion exactly once. Its NVS guard runs before every hardware
+  import or readiness wait. The lean S3, classic ESP32, and ESP32-C3 manifests
+  contain zero copies and compile out the splash-only native readiness seam.
 - Pinned versions live in `firmware/versions.lock` (MicroPython tag + ESP-IDF version); upstream MicroPython is a submodule under `firmware/upstream/`.
 - Each current ESP32 build emits a merged `firmware.bin`, application image,
   bootloader, partition table, and authoritative `flasher_args.json`. Release
@@ -118,14 +165,19 @@ MUST NOT require a known-chip allowlist.
 
 The measurement method is frozen in
 [firmware/specs.md §5.3](firmware/specs.md#53-footprint-gates-nfr-fp);
-numeric values remain provisional until derived from retained baseline samples.
-The current v0.4.2 qualification work remains profile-scoped:
+the v0.4.2 two-profile policy and evidence remain immutable history. The
+exact-board split invalidates any pre-split v0.5 baseline for current-source
+qualification, so the v0.5.1 source candidate requires the controlled
+three-profile refresh defined there. No current-source numeric qualification is
+claimed until the retained baseline, policy, and final-candidate records exist.
+The scope is profile-specific:
 
 | Profile | Current numeric status | Release effect |
 |---|---|---|
-| `esp32-4mb` | Browser install/recovery passed; numeric/resource qualification pending | Enabled only by the exact v0.4.2 public-beta exception; required for qualification |
-| `esp32-s3-n16r8` | Browser install/recovery passed; numeric/resource qualification pending | Enabled only by the exact v0.4.2 public-beta exception; required for qualification |
-| `esp32-c3-4mb` | Deferred; no current threshold or HIL row | Blocks C3 enablement and v1.0; absent from the v0.4.2 beta |
+| `esp32-4mb` | v0.4.2 browser install/recovery passed; refresh the current-source baseline and verify the final candidate | Required before v0.5.1 candidate qualification and installer activation |
+| `esp32-s3-n16r8` | v0.4.2 browser install/recovery passed; measure the lean N16R8 bytes/runtime independently, derive thresholds, then verify the final candidate | Required before v0.5.1 candidate qualification and installer activation |
+| `waveshare-esp32-s3-lcd-147b` | No public exact-byte qualification; measure the exact-board bytes/runtime independently, derive thresholds, then verify the final candidate and display gate | Required before v0.5.1 candidate qualification and installer activation |
+| `esp32-c3-4mb` | Deferred; no current threshold or HIL row | Blocks C3 enablement and v1.0, but not qualification of the three-profile candidate |
 
 The enforced metrics are:
 
@@ -146,9 +198,21 @@ internal-heap gate. Total application-image size is the normative flash
 quantity; an “agent-only overhead” requires a matched no-agent control build
 and is supplemental only.
 
-Thresholds are never guessed: heap floors round the minimum of the frozen
-sample set outward to 1 KiB, boot ceilings round the maximum outward to 10 ms,
-and goodput floors round the minimum outward to 100 bytes/s. The engineering
-baseline derives the committed policy; only hash-locked final-candidate HIL
-qualifies a release. C3 continues to build and participate in reproducibility
-and license audits while its real-board qualification is deferred.
+Thresholds are never fitted to a candidate run: heap floors round the minimum
+of the frozen sample set outward to 1 KiB; reset-to-advertisement uses the
+fixed 3,000 ms end-to-end product SLO; and goodput floors apply the exact
+integer 5% host/radio repeatability allowance before rounding outward to 100
+bytes/s. The reset metric ends at a host scanner callback, so it is a
+user-visible discovery SLO rather than a tight firmware boot-regression
+statistic. Static image/headroom quantities remain exact, and
+integrity/reliability assertions receive no allowance. The engineering
+baseline derives the remaining committed policy values; only hash-locked
+final-candidate HIL qualifies a release. C3 continues to build and participate
+in reproducibility and license audits while its real-board qualification is
+deferred.
+
+Published v0.4.2 metadata and HIL evidence retain their historical exact
+two-profile contract. They are validated by their own source-era schema and
+are never expanded or reinterpreted as this v0.5.0 matrix.
+
+<!-- SPDX-License-Identifier: MIT -->

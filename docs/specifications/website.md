@@ -1,7 +1,7 @@
 # PyBLE — Public Website Specification
 
 Status: **FROZEN (pre-v1 and v1 launch surface)** · Owner: project maintainer · Last updated:
-2026-07-31
+2026-08-07
 
 This document is the source of truth for the first public website at
 `pyble.dev`. It specifies only the public site; the Flutter app, PBLE/1, and
@@ -38,6 +38,7 @@ The launch surface is:
 | Route      | Contract                                                                                                                |
 | ---------- | ----------------------------------------------------------------------------------------------------------------------- |
 | `/`        | Product identity, BLE-first workflow, verified capabilities, compatibility, open-source posture, and beta status        |
+| `/app`     | Stable first-party app landing page, current approved distribution link/QR, firmware setup, and support                 |
 | `/privacy` | Separate, plain-language disclosures for the Flutter app and public website                                             |
 | `/support` | Getting-started guidance, troubleshooting, diagnostics checklist, and a direct support contact                          |
 | `/flash`   | Versioned browser provisioning, compatibility/erase consent, integrity status, recovery, and install action gated by §7 |
@@ -65,8 +66,10 @@ The home page MAY make these verified claims:
 - Blocks runs offline, includes editable beginner examples, supports the
   current explicit numeric-GPIO and standard MicroPython NeoPixel subset, and
   can reopen exact sidecars or import a deliberately bounded Python subset.
-  Those hardware APIs are initially validated on ESP32-family firmware and
-  MUST NOT be promised for every future port.
+  Numeric GPIO and NeoPixel are initially validated on ESP32-family firmware
+  and MUST NOT be promised for every future port. The bundled TFT authoring
+  surface requires the separate exact-board firmware or a user-installed
+  compatible runtime; it is not a generic-S3 firmware claim.
 - PBLE/1 is an open PyBLE-owned protocol.
 
 Compatibility copy MUST distinguish platform scope from current support:
@@ -76,9 +79,23 @@ Compatibility copy MUST distinguish platform scope from current support:
 - actual support requires a published firmware image for the exact target and a
   truthful release state; browser-installation validation for a beta is
   narrower than complete release qualification;
-- the current public-beta list is the exact `esp32-4mb` and
-  `esp32-s3-n16r8` profiles; ESP32-C3 remains an initial firmware target but
-  is planned/unavailable until its exact profile passes real-hardware HIL;
+- the current public-beta list remains the exact `v0.4.2` `esp32-4mb` and
+  `esp32-s3-n16r8` profiles; that frozen two-profile exception MUST NOT be
+  interpreted as the qualified `v0.5.1` release shape;
+- the qualified `v0.5.1` release contract requires exactly `esp32-4mb`, the
+  lean generic `esp32-s3-n16r8`, and the separate exact-board
+  `waveshare-esp32-s3-lcd-147b` profile; this is an activation contract, not a
+  claim that those release bytes are currently public; ESP32-C3 remains an
+  initial firmware target but is planned/unavailable until its exact profile
+  passes real-hardware HIL;
+- the generic `esp32-s3-n16r8` image MUST NOT bundle `pyble_st7789`,
+  `pyble_waveshare_lcd147b`, exact-board pin data, or the boot splash; the
+  Waveshare profile MUST use its own manifest and different immutable firmware
+  bytes containing those bounded display additions;
+- matching ESP32-S3 chip family, 16 MiB flash, and 8 MiB Octal PSRAM does not
+  identify onboard peripherals: the two S3 profiles MUST remain separate, and
+  the Waveshare profile MUST NOT be evidence that every ESP32-S3 board is
+  compatible;
 - browser provisioning is offered only for the exact memory profiles in §7,
   including N16R8-class hardware for the initial ESP32-S3 image, and MUST show
   whether those bytes are a hardware-tested beta or a qualified release;
@@ -87,25 +104,51 @@ Compatibility copy MUST distinguish platform scope from current support:
 It MUST NOT imply that Bluetooth hardware or stock MicroPython alone is enough,
 or promise that every eligible board has a firmware image today.
 
-### 3.1 External beta distribution
+### 3.1 App beta distribution
 
-The currently approved Apple external-testing channel is the public TestFlight
-invitation at `https://testflight.apple.com/join/yU4e8s6d`. While that channel
-is active, the home page MUST:
+The currently approved app-testing channels are:
 
-- describe the iPad app as open for external beta testing, without implying a
-  production App Store release or an Android distribution channel;
+- the public Apple external-testing invitation at
+  `https://testflight.apple.com/join/yU4e8s6d`; and
+- the restricted Android internal-testing listing at
+  `https://play.google.com/store/apps/details?id=dev.pyble.pyble`, available
+  only to approved testers signed in with the Google account that was invited.
+
+While either channel is active, the home page and `/app` MUST:
+
+- distinguish the iPad external beta from the Android internal test, without
+  implying a production App Store or public Google Play release;
+- explain that an unapproved or signed-out visitor may be unable to open the
+  restricted Google Play listing;
 - provide a normal HTTPS link that works on the device displaying the page;
-- provide a high-contrast QR code encoding that exact HTTPS invitation for a
-  user viewing the site on another screen; and
-- keep the invitation link and QR local to authored static content, with no URL
+- provide a high-contrast QR code encoding each channel's exact HTTPS
+  destination for a user viewing the site on another screen; and
+- keep the links and QR codes local to authored static content, with no URL
   shortener, tracking redirect, remote QR service, or third-party runtime
   request.
 
-The QR code MUST be accompanied by an accessible link and visible instructions;
-it is an additional path, never the only way to open the invitation. A changed
-or withdrawn invitation requires the specification, content contract, and QR
-asset to change together before deployment.
+Each QR code MUST be accompanied by an accessible link and visible
+instructions; it is an additional path, never the only way to open its testing
+channel. A changed or withdrawn destination requires the specification, content
+contract, and corresponding QR asset to change together before deployment.
+
+`https://pyble.dev/app` is the stable first-party app-discovery destination
+encoded by exact-board firmware. It MUST be a complete statically rendered
+document, not an external redirect. It MUST have its own canonical metadata,
+identify the iPad external beta and restricted Android internal test (not
+production store releases), reuse `siteConfig.testFlightUrl` and
+`siteConfig.googlePlayInternalTestUrl` as the approved destination sources,
+present both local authored QR codes plus visible direct-URL fallbacks, and link
+to `/flash` and `/support`. Its firmware wording MUST remain release-state-neutral
+or derive from the same build-selected state as the home page; it MUST NOT copy
+a version/profile claim that can become stale.
+
+`/app/` MUST permanently normalize to `/app` while preserving the query. Exact
+document routing MUST coexist with the existing `/app/*` real-app screenshot
+asset namespace: adding or redirecting the document MUST NOT capture, rename,
+or break those nested static paths. A website-only deployment that adds or
+changes `/app` MUST preserve and revalidate the active `/flash` selector and
+firmware bytes under §6.1.
 
 ### 3.2 Public source repository
 
@@ -140,8 +183,12 @@ instructions.
 
 ### 3.4 Transitional firmware beta claims and support intake
 
+This subsection is a frozen source-era exception for `v0.4.2` only. Its exact
+two-profile language and digest MUST NOT be generalized to, or used to validate,
+the three-profile `v0.5.1` release contract.
+
 Until the first firmware selector passes the complete qualified-release gate in
-§7, the repository README and home page MUST NOT describe either current profile
+§7, the repository README and home page MUST NOT describe either `v0.4.2` profile
 or its browser image as a qualified release. The exact audited `v0.4.2`
 public-beta selector MAY make the `esp32-4mb` and `esp32-s3-n16r8` images
 available under the exception in §7. Following the production browser-flashing
@@ -165,7 +212,7 @@ recovery commands.
 The repository README, home-page hero, provisioning workflow, exact-profile
 cards, TestFlight callout, support getting-started guide, and public roadmap
 MUST agree with the build-selected installer state. While the exact beta
-selector is active, each current-profile status MUST name `v0.4.2`,
+selector is active, each `v0.4.2` profile status MUST name `v0.4.2`,
 **hardware-tested beta**, and **release qualification pending**; installation
 instructions MUST direct users to the enabled `/flash` action while preserving
 the exact profile, backup, erase, cable/power, and port acknowledgements. They
@@ -173,10 +220,10 @@ MUST name the completed browser installation and interrupted-flash recovery
 scope rather than the stale blanket phrase **full HIL pending**. When no selector
 is active, including an explicit installer-disable deployment, the generated
 home and support pages MUST instead say that the installer is unavailable and
-MUST NOT claim that the beta is available. The roadmap MUST mark two-profile
-browser-flashing validation complete while retaining the broader app, PBLE/1,
-resource, and release-qualification work. Every one of those surfaces MUST keep
-C3 explicitly unavailable.
+MUST NOT claim that the beta is available. The roadmap MUST mark the exact
+`v0.4.2` two-profile browser-flashing validation complete while retaining the
+broader app, PBLE/1, resource, and release-qualification work. Every one of
+those surfaces MUST keep C3 explicitly unavailable.
 
 README getting-started instructions MUST gate destructive flashing on `/flash`
 showing an active version, exact profile, and enabled install action. While the
@@ -248,21 +295,56 @@ At launch the website has no account, advertising, analytics, tracking pixel,
 contact form, or non-essential cookie. It loads no runtime font, image, or script
 from a third-party marketing service.
 
-The privacy route MUST keep these systems distinct:
+The route MUST be titled **PyBLE Privacy Policy**, display its effective date,
+and identify PyBLE as an independent open-source project maintained by Viwat
+Vchirawongkwin under the SciLabPro project name. It MUST state that PyBLE is not
+an official Chulalongkorn University project or app; it MUST NOT claim that
+SciLabPro is a legal entity.
 
-- **PyBLE app:** no account, advertising, analytics, telemetry, or cloud workflow
-  by default. Source files and settings stay on the tablet or connected board.
-  BLE names, device identifiers/suffixes, and signal strength are processed
-  locally for discovery and connection. A user-assigned board label may be
-  broadcast by the board, so users must not put sensitive information in it.
-- **Public website:** the site itself does not profile visitors. Its hosting and
-  security providers may process ordinary request data such as IP address,
-  user-agent, requested URL, timestamp, and security signals to deliver and
-  protect the site.
+The privacy route MUST keep these systems and data flows distinct:
 
-The policy MUST provide a working contact method and display its effective date.
-Adding analytics, forms, accounts, embedded media, or other data collection
-requires a spec and policy change before deployment.
+- **PyBLE app:** no account, advertising, analytics, telemetry, crash-reporting,
+  payment, or cloud service. The current production app makes no HTTP request;
+  the placeholder GitHub-import package MUST NOT be described as a current
+  feature. The developer receives no app project content.
+- **User-selected board:** Save, Run, Files, and console actions transmit source
+  code, paths or filenames, file content, Blocks companion data, or console
+  input directly over BLE to the board the user selected. Board files remain on
+  that board until the user overwrites or deletes them or erases the board.
+  This expected device transfer MUST NOT be misrepresented as a transfer to a
+  PyBLE or SciLabPro server.
+- **Transport security:** PBLE/1 does not require pairing or BLE link encryption.
+  The policy MUST NOT promise that board traffic is encrypted and MUST advise
+  users not to send secrets without a separately verified secure environment or
+  transport.
+- **Nearby-board data and permissions:** BLE names or labels, platform device
+  identifiers or suffixes, capabilities, and signal strength are processed
+  locally for discovery and connection and are not sent to the developer.
+  Android's legacy location permission exists only to support BLE scanning on
+  older Android versions; PyBLE does not derive, store, or transmit physical
+  location. If a board has a custom label, that board may advertise it to other
+  nearby devices, so the label must contain no sensitive information.
+- **Retention and deletion:** the policy MUST distinguish volatile app working
+  data from content persisted on the selected board. It MUST explain how to
+  clear or uninstall local app data, how to delete board files, and that deleting
+  the app does not delete board or exported copies. Because the developer does
+  not receive app project content, there is no PyBLE server-side project copy to
+  retain or delete.
+- **Third-party components and platforms:** the app contains no advertising,
+  analytics, crash-reporting, or account SDK that receives app project content.
+  Operating-system and distribution-platform services remain governed by their
+  own policies.
+- **Public website:** the site itself does not profile visitors. Cloudflare and
+  the VPS hosting infrastructure may process ordinary request data such as IP
+  address, user-agent, requested URL, timestamp, and security signals to deliver
+  and protect the site. The policy MUST NOT invent a fixed log-retention period
+  unless the infrastructure owner has verified one.
+
+The policy MUST provide the current working contact method for privacy and
+deletion questions. A proposed project-domain mailbox MUST NOT replace it until
+the maintainer has verified that the mailbox exists and is monitored. Adding
+analytics, forms, accounts, embedded media, functional network import, or other
+data collection requires a spec and policy change before deployment.
 
 ## 6. Technical contract
 
@@ -321,7 +403,7 @@ VPS origin. The origin MUST:
   release and confirm it only after the public smoke suite succeeds; transient
   service-manager jobs MUST receive their embedded shell programs verbatim,
   with manager-side environment expansion disabled;
-- map `/privacy`, `/support`, and `/flash` to their exported HTML without
+- map `/app`, `/privacy`, `/support`, and `/flash` to their exported HTML without
   changing the canonical slashless URL;
 - normalize the corresponding trailing-slash URLs permanently, preserve query
   strings, and return the generated 404 document with status 404 for an unknown
@@ -336,7 +418,8 @@ VPS origin. The origin MUST:
 - serve `/firmware/v0.4.2/` only while the exact audited public-beta selector
   defined in §7 is active; its successful immutable responses use the ordinary
   versioned-firmware cache policy, while every missing/error response remains
-  `no-store`;
+  `no-store`; its frozen two-profile schema and digest are immutable and MUST
+  NOT be revalidated as a `v0.5.1` three-profile release;
 - use a valid origin certificate with Cloudflare **Full (strict)** TLS, never
   Flexible mode; and
 - expose only the required web and key-authenticated administration ports.
@@ -389,15 +472,68 @@ image profiles, offsets, same-origin layout, manifest, integrity/provenance
 metadata, recovery content, and HIL matrix. This section owns the website state
 and user experience.
 
-The current pre-v1 public profiles are exactly `esp32-4mb` and
-`esp32-s3-n16r8`. The S3 image requires 16 MiB flash plus 8 MiB Octal PSRAM
-and MUST NOT be described as suitable for every ESP32-S3 board. The known
-`esp32-c3-4mb` profile remains an initial v1 target but is explicitly
+The exact `v0.4.2` public-beta selector remains limited to `esp32-4mb` and
+`esp32-s3-n16r8` and is governed only by the narrow exception below. It MUST
+NOT be treated as a qualified release or broadened with a Waveshare profile.
+
+For a qualified `v0.5.1` activation, the required public profiles are exactly,
+and in this order: `esp32-4mb`, `esp32-s3-n16r8`, and
+`waveshare-esp32-s3-lcd-147b`. The generic S3 and exact-board Waveshare images
+both require 16 MiB flash plus 8 MiB Octal PSRAM, use ESP Web Tools family
+`ESP32-S3`, and install a merged image at offset `0`, but they MUST have
+separate single-build manifests and different immutable firmware bytes. The
+generic image is intentionally lean: it contains the common PyBLE agent and
+standard runtime but no `pyble_st7789`, `pyble_waveshare_lcd147b`, exact-board
+pin constants, display boot hook, or splash. The exact-board image alone owns
+those bounded display additions.
+
+The known `esp32-c3-4mb` profile remains an initial v1 target but is explicitly
 unavailable until exact-profile real-hardware validation is complete. It MUST
 be shown separately as planned/unavailable and MUST NOT appear in the active
-selector, release metadata, public firmware paths, or recovery commands.
-ESP Web Tools' family detection is necessary but not sufficient to establish
-memory-profile or silicon-revision compatibility.
+selector, release metadata, public firmware paths, or recovery commands. ESP
+Web Tools' family detection is necessary but not sufficient to establish
+memory topology, silicon revision, or board peripherals; in particular, it
+cannot distinguish the two S3 profiles.
+
+The `/flash` page MUST make the exact Waveshare ESP32-S3-LCD-1.47B discoverable
+without weakening that profile boundary. When—and only when—the build-selected
+qualified release is `v0.5.1` or newer, the page MUST:
+
+- identify the board as the separate
+  `waveshare-esp32-s3-lcd-147b` provisioning profile and direct its install
+  action only to that profile's own single-build manifest and merged firmware
+  image, never to the generic S3 manifest;
+- state the exact 16 MiB flash / 8 MiB Octal-PSRAM requirement, the integrated
+  172 × 320 ST7789V3 display, and its bundled `pyble_st7789` and
+  `pyble_waveshare_lcd147b` runtimes; state equally clearly that the lean
+  `esp32-s3-n16r8` image does not bundle them;
+- require an explicit acknowledgement that the connected board is the exact
+  ESP32-S3-LCD-1.47B **B-version** with the stated memory topology; matching
+  `ESP32-S3` family detection alone MUST NOT satisfy this consent;
+- explain that a fresh erased installation shows the cosmetic PyBLE/app-QR
+  boot splash by default, that users may persistently disable or re-enable it,
+  and that it does not detect or select the board; and
+- show the same local, project-owned real-hardware photograph on the home page
+  and in this `/flash` board section. The content-versioned public asset MUST
+  be a metadata-stripped, progressive `1600 × 1116` JPEG no larger than 250000
+  bytes at
+  `/boards/esp32-s3-lcd-1.47b-pyble-v0.5.0.jpg`, with SHA-256
+  `b939abb9b7ac19c7be8f429faaa61d08aadc7f027eac181582e036fd22949d12`.
+  Its useful alternative text and visible caption MUST identify an actual
+  ESP32-S3-LCD-1.47B displaying the PyBLE v0.5.0 splash and app QR; and
+- label the home-page target group **Qualified public firmware targets** in
+  both visible copy and its accessible name, with no stale beta wording; and
+- keep the generic S3 warning, destructive-flash acknowledgements, integrity
+  verification, recovery command, and all release gates unchanged.
+
+An unavailable selector, a candidate, or a failed/pending public release MUST
+NOT claim that the exact-board profile is active or expose its install action
+or qualified-board photograph. The exact `v0.4.2` beta has only its two frozen
+profiles and MUST NOT claim that either image contains the Waveshare display
+modules or boot splash. A provisioning profile identifies distinct release
+bytes for user-selected installation; it is not a PBLE/1 capability, app
+runtime routing profile, automatic board-detection request, or automatic
+splash enablement.
 
 One narrow pre-qualification exception exists for the fresh audited `v0.4.2`
 candidate. A build-time selector MAY use deployment mode `public-beta` only
@@ -435,15 +571,15 @@ and remain explicitly unavailable until all of the following are true for one
 exact immutable version:
 
 1. two clean, provenance-recorded, reproducible builds produced
-   byte-identical current release-profile artifact sets from the frozen
-   source/toolchain pins, while the three-target source/build audit remained
-   green;
+   byte-identical artifact sets for all three required release profiles from
+   the frozen source/toolchain pins, while the maintained chip-target
+   source/toolchain audit remained green;
 2. the versioned, same-origin profile-scoped ESP Web Tools manifests and separate
    `release.json` size/SHA-256 metadata pass the automated artifact, image,
    partition, path, schema, license, and integrity gates;
 3. the final hash-locked bytes passed the complete browser-install and
-   interrupted-flash recovery HIL matrix on real hardware for both exact
-   current release profiles from an access-controlled,
+   interrupted-flash recovery HIL matrix independently on real hardware for all
+   three exact required release profiles from an access-controlled,
    production-equivalent HTTPS candidate
    deployment, while the public action remained disabled;
 4. the exact bytes, release notes, licenses, recovery guide, and HIL report are
@@ -465,6 +601,8 @@ For either the exact public beta above or a release whose gate is green,
 - secure-context, `navigator.serial`, and Web Crypto capability detection;
 - exact profile selection and the compatibility/backup/erase/cable/power
   acknowledgements;
+- for `waveshare-esp32-s3-lcd-147b`, separate explicit confirmation of the
+  exact B-version board and its 16 MiB flash / 8 MiB Octal-PSRAM topology;
 - verification of the selected profile's single-build manifest and binary
   bytes against the embedded
   metadata root; and
@@ -494,7 +632,7 @@ content and recovery guidance remain available without client JavaScript.
 
 The v1 site is releasable when:
 
-- all four routes and the not-found state render without client JavaScript;
+- all five routes and the not-found state render without client JavaScript;
 - route metadata and canonical URLs are correct;
 - navigation is accessible by pointer and keyboard at phone, tablet, and desktop
   widths;
@@ -503,8 +641,12 @@ The v1 site is releasable when:
 - the hero uses a reviewed real-app capture with meaningful alternative text,
   a visible actual-app caption, and a responsive crop that never obscures the
   pictured Blocks workspace or generated Python;
-- the current external iPad beta invitation is exposed as an operable link and
-  a locally served, exact-URL QR code without claiming production availability;
+- the current external iPad beta and restricted Android internal test are each
+  exposed as an operable link and locally served, exact-URL QR code without
+  claiming production availability;
+- `/app` is canonical, statically rendered, uses both approved testing-channel
+  destination/link/QR contracts, links setup and support, and its slash
+  normalization does not break an existing nested `/app/*` screenshot asset;
 - the home page publishes a local `1200 × 630` real-app social card with useful
   alternative text and large-card metadata, plus a separate local square
   TestFlight invitation card;
@@ -523,6 +665,18 @@ The v1 site is releasable when:
   beta-or-qualified state; verifies the embedded release-metadata root plus
   every manifest part; requires compatibility/backup/erase consent; and links
   the matching recovery guide;
+- a qualified `v0.5.1`-or-newer active selector names
+  `waveshare-esp32-s3-lcd-147b` separately from the lean
+  `esp32-s3-n16r8`, gives each its own manifest and firmware bytes, and requires
+  exact-board consent for the Waveshare action; the exact `v0.4.2` beta, pending,
+  candidate, failed, and unavailable states make no active exact-board claim;
+- three-profile release tests prove that the generic S3 image omits the
+  Waveshare display runtime and splash while the exact-board image contains
+  them, without treating either provisioning profile as an app connection gate;
+- that same qualified selector renders the exact reviewed local board photo on
+  both home and `/flash`, while all older or unqualified states omit it; tests
+  bind its pathname, dimensions, byte ceiling, SHA-256, alternative text, and
+  caption, and the static export makes no remote image request;
 - all versioned firmware files are same-origin, immutable, byte-identical to
   the reviewed release, and retrievable from the public production origin;
 - browser verification and the subsequent ESP Web Tools fetches use the same

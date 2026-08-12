@@ -39,6 +39,9 @@ Review at least:
 - home at phone, portrait-tablet, landscape-tablet, and desktop widths;
 - home and metadata clearly separate the capability-defined MicroPython + BLE
   platform vision from the targets validated by the current release;
+- `/app`, including the current iPad external-beta and Android internal-test
+  destinations, scannable local QR images, visible fallback addresses,
+  invited-account restriction, and links to firmware and support;
 - `/privacy`, including the effective date and public contact address;
 - `/support`, including the public contact address;
 - `/flash`, confirming the install button is still disabled unless the
@@ -60,7 +63,7 @@ produced the checked `out/` export.
 The normal build and deploy path contains no firmware and keeps the installer
 unavailable. Do not put release bytes in `tools/web/public/`. Generate the
 firmware release bundle outside this package, including `release.json`,
-`release.schema.json`, both current exact profile directories, release and
+`release.schema.json`, all three current exact profile directories, release and
 recovery documents, and conventional full-coverage `SHA256SUMS`. The deferred
 `esp32-c3-4mb` directory must be absent from the current pre-v1 bundle.
 
@@ -171,8 +174,8 @@ one without the other is rejected.
 Deploy that artifact only behind enforced authentication. The boolean is an
 attestation to the fail-closed build policy, not access control itself. Never
 send a protected candidate through the public VPS helper; it accepts only
-qualified public releases whose two final-byte HIL statuses are both `passed`
-or the exact audited and digest-bound v0.4.2 public beta.
+qualified public releases whose final-byte HIL statuses are `passed` for every
+exact profile, or the exact audited and digest-bound v0.4.2 public beta.
 
 ## First-time VPS bootstrap
 

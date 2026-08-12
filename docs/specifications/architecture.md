@@ -1,6 +1,6 @@
 # PyBLE — System Architecture
 
-Status: **DRAFT** · Last updated: 2026-07-29
+Status: **DRAFT** · Last updated: 2026-08-03
 
 ## 1. The three pieces
 
@@ -44,10 +44,32 @@ Four layers, strict separation:
 
 1. **Upstream MicroPython** — pinned submodule, never edited in place.
 2. **Target adapter / board overlay** — isolates MicroPython-port, BLE-host,
-   build, storage, and board differences. The v1 reference overlays are
-   `esp32`, `esp32-s3`, and `esp32-c3`.
+   build, storage, and board differences. The v1 reference chip targets are
+   `esp32`, `esp32-s3`, and `esp32-c3`. A build variant may narrow one target
+   to an explicitly selected physical board without changing target identity;
+   the initial such variant is `waveshare-esp32-s3-lcd-147b`.
 3. **PyBLE agent** — the protected native/frozen modules that own BLE, the runner, and the filesystem bridge.
 4. **User workspace** — the student's own `.py` files; never the control plane.
+
+Optional frozen user libraries such as `pyble_st7789` belong at the Layer-4
+boundary: import is inert, construction is explicit user code, and no display
+state or pin routing enters PBLE/1 or the Layer-3 agent. ADR-0028 requires such
+a board-specific library to live only in the named board build that needs it;
+the generic `esp32-s3-n16r8` image contains neither the display runtime nor
+the exact-board companion or splash-only native seam.
+
+ADR-0024, as amended by ADR-0029, adds one narrow Layer-2 exception for the
+exact Waveshare ESP32-S3-LCD-1.47B: a named companion is factory-enabled after
+an erased exact-board install, remains persistently disableable, and may render
+one cosmetic app-discovery frame only after actual BLE
+readiness. It neither detects a board nor changes the generic driver,
+connection selection, PBLE/1 capabilities, user-code hardware access, or trust
+model. Its failure boundary returns to ordinary boot, and it releases SPI and
+framebuffer before making the retained panel visible. ADR-0028 confines that
+exception to the independently built and provisioned
+`waveshare-esp32-s3-lcd-147b` image. Its profile ID is release/install evidence,
+not an app-visible runtime connection profile; both S3 variants still report
+the target `esp32-s3` over PBLE/1.
 
 Full detail: [firmware.md](firmware.md).
 
@@ -86,8 +108,9 @@ PyBLE is an **independent, MIT, clean-room project.** It must contain **none** o
 - ❌ No proprietary board or routing profiles, and no proprietary BLE UUIDs / advertising prefixes. PyBLE uses its **own** UUID base.
 - ❌ No lab/chemistry/calibration content, copied catalog/curriculum,
   domain-specific lesson flow, or proprietary/classroom pedagogy. ADR-0016's
-  six small generic onboarding workspaces are authored fresh for PyBLE and are
-  not a curriculum or grading system.
+  eight small starter workspaces are authored fresh for PyBLE and are not a
+  curriculum or grading system. A named hardware example remains explicit
+  guidance with disconnected GPIO roles, never detection or routing state.
 
 Where a maintainer holds prior art they own, they may **re-implement** it under
 MIT — they do **not** copy proprietary code. A CI "no-leak" gate (see
@@ -111,3 +134,5 @@ This boundary is what makes PyBLE safe to open-source. It is also why the protoc
 | Persistence | local (sqlite/Drift or files) | Offline-first; project files & settings |
 
 All third-party components are MIT/Apache/BSD-compatible; notices ship in `THIRD_PARTY_LICENSES`.
+
+<!-- SPDX-License-Identifier: MIT -->

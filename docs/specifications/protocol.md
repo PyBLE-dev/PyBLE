@@ -156,7 +156,16 @@ A message larger than one packet is split across consecutive RX writes (or TX no
 
 - **`RUN` (0x20)** payload `[mode:u8][data]` — `mode` 0=file (`data` = UTF-8 path), 1=source (`data` = UTF-8 snippet). → `RSP{status}` (`OK` | `EBUSY` if one already running, FR-RUN-4 | `EBADREQ` bad mode | `ERANGE` over-length), then `RUN_STATE(running)`. Both modes share one lifecycle. Completion → `RUN_STATE(done)`; an uncaught exception → `CONSOLE_DATA(stderr, traceback)` then `RUN_STATE(error)`. A missing/inaccessible file surfaces asynchronously (`CONSOLE_DATA(stderr)` + `RUN_STATE(error)`), not as the `RSP`.
 - **`STOP` (0x21)** no payload. Idempotent — always `RSP{OK}` (STOP while idle is a no-op). If a program is running, a `KeyboardInterrupt` is raised **in the runner task only** (the link stays live, FR-BLE-11) → clean teardown → `RUN_STATE(idle)` (FR-RUN-5/6/10).
-- **`SOFT_REBOOT` (0x22)** no payload. `RSP{OK}` immediately; stops any run, then soft-resets the MicroPython VM and returns to `RUN_STATE(idle)` (FR-RUN-8).
+- **`SOFT_REBOOT` (0x22)** no payload. `RSP{OK}` immediately; stops any run,
+  then soft-resets the MicroPython VM and returns to `RUN_STATE(idle)`
+  (FR-RUN-8). VM teardown MUST NOT begin merely because the local BLE stack
+  accepted the notification: the implementation MUST allow a short bounded
+  delivery grace after submitting `RSP{OK}` so queued response bytes can reach
+  the central. The ESP32 reference agent uses a pre-created 250 ms one-shot and
+  refuses a second reboot with `EBUSY` while that reset is pending. If it cannot
+  submit the response, it MUST leave the VM running and report `EBUSY` rather
+  than perform an ambiguous reset. This is an execution-order clarification;
+  it changes no PBLE/1 bytes.
 - **`CONSOLE_DATA` (0x30, EVT, id 0)** payload `[stream:u8][bytes]` — `stream` 0=stdout, 1=stderr (FR-CON-1/2).
 - **`CONSOLE_INPUT` (0x31, CMD, no RSP)** payload `[bytes]` — appended to the running program's `stdin` (`input()`/`sys.stdin`); fire-and-forget, no reply frame (FR-CON-3).
 - **`RUN_STATE` (0x40, EVT, id 0)** payload `[state:u8]` — 0 idle / 1 running / 2 done / 3 error (FR-RUN-7).

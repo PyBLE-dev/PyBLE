@@ -9,6 +9,24 @@ are released independently from this monorepo.
 - Added public contributor, security, architecture, protocol, and validation
   documentation.
 
+### Firmware 0.5.1 source candidate — 2026-08-03
+
+- Defined the independently selected `waveshare-esp32-s3-lcd-147b`
+  provisioning profile for the exact ESP32-S3-LCD-1.47B B-version board with
+  16 MiB flash and 8 MiB Octal PSRAM.
+- Specified its exact-board-only ST7789 MicroPython runtime, bounded boot
+  companion, app QR, persistent splash opt-out, and dedicated display/HIL
+  qualification contract. An erased exact-board installation defaults the
+  splash on; stored `0` remains an explicit opt-out.
+- Kept `esp32-s3-n16r8` lean and board-neutral: its image contract contains no
+  Waveshare pin map, TFT driver, companion, QR, splash hook, or display-only
+  readiness seam.
+- Expanded the candidate source/build contract to four variants over the three
+  initial ESP32-family targets. No new exact bytes or public profile are
+  qualified by this documentation change; reproducible builds, license audit,
+  and independent final-candidate HIL remain required for all three candidate
+  release profiles, while ESP32-C3 remains deferred.
+
 ## Firmware 0.4.2 — 2026-07-31
 
 - Published the exact hardware-tested beta for `esp32-4mb` and

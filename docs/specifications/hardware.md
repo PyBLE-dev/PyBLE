@@ -1,22 +1,30 @@
 # PyBLE — Hardware Support & Pin Guidance
 
-Status: **DRAFT** · Last updated: 2026-08-01
+Status: **DRAFT** · Last updated: 2026-08-03
 
 PyBLE's platform scope is any microcontroller board that can run MicroPython
 and provide a Bluetooth Low Energy peripheral stack capable of hosting a
-conforming PBLE/1 agent. It makes no assumptions about wiring and carries no
-board-specific routing profile. Hardware eligibility is broader than current
-support. A qualified port must pass its complete protocol, resource, recovery,
-and hardware-in-the-loop gates; a narrower beta must name the exact evidence it
-has passed and the qualification that remains open.
+conforming PBLE/1 agent. Its general connection/user-code model makes no
+assumptions about wiring and carries no generalized board routing profile. The
+narrow ADR-0024 exact-board cosmetic companion, as amended by ADR-0029, is
+factory-enabled after an erased exact-board install and persistently
+disableable. Under ADR-0028 it exists only in its explicitly selected
+exact-board provisioning-image contract; it changes neither model and this
+documentation does not itself qualify public bytes. Hardware eligibility is
+broader than current support. A qualified port must pass its complete protocol,
+resource, recovery, and hardware-in-the-loop gates; a narrower beta must name
+the exact evidence it has passed and the qualification that remains open.
 
 Classic ESP32, ESP32-S3, and ESP32-C3 are the **initial v1 reference target
 families**, not the permanent product boundary. A public browser image is
 narrower than a target family and is supported only for an exact listed memory
 profile and its stated release status. Their firmware exposes hardware through
 standard runtime APIs, including `machine` and the frozen upstream `neopixel`
-package. The app may ship read-only target guidance to help users avoid common
-footguns.
+package. The exact Waveshare image alone carries the explicit
+`pyble_st7789` user-runtime and exact-board companion described below. The lean
+S3 image carries neither, so adding future S3 boards does not accumulate their
+drivers in a family image. The app may ship read-only target guidance and
+manually selected examples to help users avoid common footguns.
 
 ## 1. Supported chip families (v1)
 
@@ -35,8 +43,9 @@ under the same PBLE/1 protocol.
 
 | Image profile | Required memory configuration | Installer family check | Release status | Public compatibility claim |
 |---|---|---|---|---|
-| `esp32-4mb` | Classic ESP32; 4 MiB external SPI flash; no PSRAM assumed | `ESP32` | v0.4.2 hardware-tested beta; browser install/recovery passed; qualification pending | Only boards whose module documentation confirms this flash layout |
-| `esp32-s3-n16r8` | ESP32-S3; 16 MiB flash; 8 MiB Octal PSRAM | `ESP32-S3` | v0.4.2 hardware-tested beta; browser install/recovery passed; qualification pending | N16R8-class modules only; not generic ESP32-S3 |
+| `esp32-4mb` | Classic ESP32; 4 MiB external SPI flash; no PSRAM assumed | `ESP32` | v0.4.2 hardware-tested beta; browser install/recovery passed; qualification pending. The v0.5.1 source candidate requires fresh exact-byte qualification. | Only boards whose module documentation confirms this flash layout |
+| `esp32-s3-n16r8` | ESP32-S3; 16 MiB flash; 8 MiB Octal PSRAM; lean board-neutral payload | `ESP32-S3` | v0.4.2 hardware-tested beta; browser install/recovery passed; qualification pending. The v0.5.1 source candidate requires independent exact-byte qualification. | N16R8-class modules only; no bundled TFT driver or splash |
+| `waveshare-esp32-s3-lcd-147b` | Exact Waveshare ESP32-S3-LCD-1.47B; 16 MiB flash; 8 MiB Octal PSRAM | `ESP32-S3` | v0.5.1 source candidate only; independent exact-board qualification required before publication | B-version board only, if qualified; exact-image contract bundles the ST7789 runtime and fresh-install QR splash |
 | `esp32-c3-4mb` | ESP32-C3 revision v0.3 or newer; 4 MiB external flash; no PSRAM assumed | `ESP32-C3` | Unavailable pending exact-profile HIL | No public installer compatibility claim yet |
 
 The installer family check cannot establish flash capacity, PSRAM type, USB
@@ -45,15 +54,20 @@ profile before flashing, and each release names the physical reference board
 and module marking that passed HIL. Unknown ESP32-S3 variants, including a
 different flash size or Quad/no PSRAM, are not covered by
 `esp32-s3-n16r8`; they require another profile and its own HIL evidence.
+Matching the N16R8 memory tuple also does not imply that an onboard display or
+other peripheral exists. The Waveshare row is separate even though ESP Web
+Tools reports the same family for both S3 images and cannot distinguish them.
 The C3 profile is neither selectable nor published while its status is
 unavailable; owning or building the target is not a substitute for HIL. The
-current machine-readable resource policy and immutable HIL ledger therefore
-contain exactly the first two profile IDs and no C3 thresholds or record. The
+immutable v0.4.2 machine-readable resource policy and HIL ledger contain
+exactly the first two profile IDs and no C3 thresholds or record. The
 [supplemental production-browser attestation](../validation/browser-flashing/v0.4.2-production.md)
 records the two completed browser rows; the ledger's other formal rows remain
-pending. C3 continues to build and participate in
-source/reproducibility/license audits, but its real-board resource
-qualification remains required before C3 enablement and before v1.0.
+pending. A v0.5.1 candidate policy and HIL report MUST instead be generated as
+one fresh three-profile set containing the first three profile IDs; the
+pre-split/two-profile evidence cannot qualify it. C3 continues to build and
+participate in source/reproducibility/license audits, but its real-board
+resource qualification remains required before C3 enablement and before v1.0.
 
 These are **provisioning image profiles**, not board-routing profiles. They
 exist solely to keep destructive flash layouts honest. They do not define GPIO
@@ -61,6 +75,43 @@ roles, mediate user code, change PBLE/1 discovery, or make the app gate a
 runtime connection by chip. Exact offsets, integrity, recovery, and release
 qualification live in
 [firmware/browser-flashing.md](firmware/browser-flashing.md).
+
+### 1.2 Waveshare ESP32-S3-LCD-1.47B qualification contract
+
+The exact **B** board uses the separate
+`waveshare-esp32-s3-lcd-147b` provisioning image. It shares the generic
+profile's flash/PSRAM layout and ESP Web Tools family, but its firmware bytes,
+manifest, compatibility consent, release record, and HIL evidence are
+independent. The local schematic is byte-identical to Waveshare's official
+schematic (SHA-256
+`43738d1480ef9c983bca3e7f1f7ad852c288a1bd00f1621f9ac3e6974e7539fd`),
+and connected-hardware discovery must independently prove ESP32-S3, 16 MiB
+flash, and 8 MiB PSRAM before a destructive write.
+
+| Function | Exact B-board contract |
+|---|---|
+| Panel | ST7789V3, 172 × 320 visible pixels, write-only 4-line SPI, X offset 34, Y offset 0 |
+| LCD SPI | MicroPython `machine.SPI(1)` at 40 MHz mode 0; MOSI GPIO45, SCLK GPIO40, CS GPIO42 active-low, D/C GPIO41 |
+| Control | Reset GPIO39 active-low; backlight GPIO46 active-high through the onboard transistor |
+| Other onboard parts | WS2812 GPIO38; QMI8658 I2C SCL47/SDA48; these are not initialized by TFT support |
+
+GPIO45 and GPIO46 are ESP32-S3 strapping pins. Importing `pyble_st7789` never
+drives them. The exact-board image's sole automatic exception is the bounded
+ADR-0024/ADR-0029 splash: after a fresh erased installation, and only after BLE
+is actually ready, its `_boot.py` may invoke the named companion to
+render one bounded frame, release SPI/framebuffer, and assert the backlight.
+The lean `esp32-s3-n16r8` image contains no driver, companion, hook, QR matrix,
+or splash-only native readiness API, so even a stale NVS key cannot make it
+drive these pins. The similarly named non-B board uses a different backlight
+pin, so instructions, the module name, profile ID, and examples MUST retain the
+`B` suffix. Rotation, touch, SD, IMU, and battery support are not implied by
+the display increment.
+
+The bus identifier above is part of the exact-board HIL contract, not a hidden
+driver default. Connected-hardware qualification proved `machine.SPI(1)` with
+the documented pins. Constructing `machine.SPI(2)` reset the pinned ESP32-S3
+runtime, so the named-board Blocky example and TFT HIL workload MUST use bus 1.
+Other boards still supply their own explicit bus identifier.
 
 ## 2. Requirements for a board to work with PyBLE
 
@@ -103,7 +154,11 @@ it likes; PyBLE just warns.
 
 ## 4. What PyBLE does NOT do with hardware
 
-- It does **not** impose or store a board "routing profile."
+- It does **not** impose or store a generalized board routing profile. The
+  exact Waveshare 1.47B companion exists only in that board's
+  separately selected image and contains only its published display wiring for
+  its own cosmetic app-discovery frame; it is not a lookup, user-code routing
+  layer, capability map, detector, or connection gate.
 - It does **not** drive actuators, manage calibration, or contain a hardware safety guard. Those belong to user code and to whatever the user's project is.
 - It does **not** gate by MAC or board identity. Any matching chip running the agent is fine; the `device_id` (MAC-derived suffix) is for recognition/display only, never authorization.
 - The **device label** (`SET_LABEL`, `0x50`) and the **single optional identify-LED GPIO** (`SET_IDENTIFY_LED`, `0x51`) are **per-device configuration the agent owns for its own UX** — they are **not** a routing/pin profile and **not** a board-capability map. They map no hardware for user code (which reaches GPIO directly through the standard `machine` API), and they never gate access. The identify-LED config drives only the Identify blink; it is never exposed to user code.
@@ -118,6 +173,14 @@ it likes; PyBLE just warns.
   contains an addressable LED nor maps an ESP32-S3 GPIO such as 48. The current
   ESP32 firmware freezes this upstream module; another target port MUST document
   whether the standard module and its required runtime primitive are available.
+- Blockly's TFT blocks generate the PyBLE-owned `pyble_st7789` user API with
+  explicit SPI, Pin, dimensions, offsets, colour order, and inversion. The
+  generic constructor stores no board wiring. The named Waveshare 1.47B example
+  supplies only read-only wiring guidance and disconnected GPIO roles; it is
+  manually selected and never reads `DeviceInfo`, auto-runs, or gates another
+  board. The frozen module is bundled only in
+  `waveshare-esp32-s3-lcd-147b`; another image needs a separately installed
+  compatible module before generated TFT code can run.
 - The bundled Blink/Read-button/Button-controls-LED starter workspaces contain
   disconnected GPIO roles, not example pin numbers. Before PyBLE can generate a
   preview or editable copy, the user supplies each role explicitly. Generic
@@ -126,3 +189,9 @@ it likes; PyBLE just warns.
   documentation; they do not certify a pin, voltage, or circuit.
 
 The pin reference is purely a convenience layer; the source of truth for what a pin does is the chip datasheet, linked from the in-app reference.
+
+Historical v0.4.2 release metadata retains its two-profile shape. This current
+three-profile v0.5 contract never adds a third directory to that immutable
+published bundle.
+
+<!-- SPDX-License-Identifier: MIT -->
