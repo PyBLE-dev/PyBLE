@@ -13,6 +13,7 @@ import copy
 import hashlib
 import json
 from pathlib import Path
+import stat
 import tempfile
 import unittest
 from unittest import mock
@@ -175,6 +176,17 @@ def completion_fragment(profile_id: str) -> dict[str, object]:
     }
 
 
+def operator_input(profile_id: str) -> dict[str, object]:
+    fragment = completion_fragment(profile_id)
+    for key in (
+        "profile_id",
+        "profile_gate_summary",
+        "oi1_observation",
+    ):
+        fragment.pop(key)
+    return fragment
+
+
 def completed_v5_payload() -> dict[str, object]:
     payload = copy.deepcopy(pending_v5_payload())
     payload["candidate_release_json_sha256"] = "e" * 64
@@ -211,6 +223,133 @@ def provenance() -> dict[str, object]:
 
 @unittest.skipUnless(HAVE_RELEASE, RELEASE_LOAD_ERROR)
 class V5CompletionAndPromotionContractTests(unittest.TestCase):
+    def test_completion_writer_derives_profile_and_gate_fields(self) -> None:
+        pending = pending_v5_payload()
+        release = {
+            "identity": {"version": "0.6.0", "tag": "firmware-v0.6.0"},
+            "provenance": {"pyble": {"commit": "1" * 40}},
+            "profiles": lifecycle_fixture.pending_profiles(),
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            candidate = root / "candidate"
+            candidate.mkdir()
+            (candidate / "release.json").write_bytes(b"{}\n")
+            (candidate / "HIL_REPORT.md").write_text(
+                hil_report(pending), encoding="utf-8"
+            )
+            profile_id = "esp32-c3-4mb"
+            operator_path = root / "operator.json"
+            observation_path = root / "observation.json"
+            result_path = root / "private-result.json"
+            output = root / "completion.json"
+            write_json(operator_path, operator_input(profile_id))
+            write_json(observation_path, {"fixture": profile_id})
+            result_path.write_bytes(b"private\n")
+            result_path.chmod(0o600)
+            gates = profile_gates(profile_id)
+
+            with mock.patch.object(
+                RELEASE, "validate_bundle", return_value=release
+            ), mock.patch.object(
+                RELEASE,
+                "_validate_qualification_observation",
+                side_effect=lambda value, *_args, **_kwargs: value,
+            ), mock.patch.object(
+                RELEASE._V060_PROFILE_GATE,
+                "private_result_snapshot",
+                return_value=("fixture-private-snapshot",),
+            ), mock.patch.object(
+                RELEASE._V060_PROFILE_GATE,
+                "validate_result_file",
+                return_value={"gates": gates},
+            ) as validate_private:
+                created = RELEASE.create_hil_completion_fragment(
+                    candidate_dir=candidate,
+                    profile_id=profile_id,
+                    operator_input_path=operator_path,
+                    oi1_observation_path=observation_path,
+                    output_path=output,
+                    qualification_repo_root=root,
+                    profile_qualification_result=result_path,
+                )
+
+            self.assertEqual(Path(created), output)
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(output.read_bytes(), canonical_json_bytes(payload))
+            self.assertEqual(payload, completion_fragment(profile_id))
+            self.assertEqual(stat.S_IMODE(output.stat().st_mode), 0o600)
+            self.assertEqual(output.stat().st_nlink, 1)
+            self.assertEqual(
+                validate_private.call_args.kwargs["artifact_path"],
+                candidate / profile_id / "firmware.bin",
+            )
+            with self.assertRaises(RELEASE.ReleaseError):
+                RELEASE.create_hil_completion_fragment(
+                    candidate_dir=candidate,
+                    profile_id=profile_id,
+                    operator_input_path=operator_path,
+                    oi1_observation_path=observation_path,
+                    output_path=output,
+                    qualification_repo_root=root,
+                    profile_qualification_result=result_path,
+                )
+            self.assertEqual(payload, json.loads(output.read_text(encoding="utf-8")))
+
+    def test_completion_writer_rejects_operator_gate_fields_or_wrong_private_phase(
+        self,
+    ) -> None:
+        pending = pending_v5_payload()
+        release = {
+            "identity": {"version": "0.6.0", "tag": "firmware-v0.6.0"},
+            "provenance": {"pyble": {"commit": "1" * 40}},
+            "profiles": lifecycle_fixture.pending_profiles(),
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            candidate = root / "candidate"
+            candidate.mkdir()
+            (candidate / "release.json").write_bytes(b"{}\n")
+            (candidate / "HIL_REPORT.md").write_text(
+                hil_report(pending), encoding="utf-8"
+            )
+            observation_path = root / "observation.json"
+            write_json(observation_path, {"fixture": "esp32-4mb"})
+
+            cases = {
+                "operator-gates": ("esp32-4mb", None, "profile_gate_summary"),
+                "operator-footprint": ("esp32-4mb", None, "footprint_reliability"),
+                "private-for-ordinary": ("esp32-4mb", root / "private.json", None),
+                "missing-private-for-c3": ("esp32-c3-4mb", None, None),
+            }
+            for name, (profile_id, result_path, forbidden_key) in cases.items():
+                with self.subTest(name=name):
+                    value = operator_input(profile_id)
+                    if forbidden_key == "profile_gate_summary":
+                        value[forbidden_key] = {}
+                    elif forbidden_key == "footprint_reliability":
+                        value["checks"][forbidden_key] = "passed"
+                    operator_path = root / (name + "-operator.json")
+                    write_json(operator_path, value)
+                    output = root / (name + "-completion.json")
+                    with mock.patch.object(
+                        RELEASE, "validate_bundle", return_value=release
+                    ), mock.patch.object(
+                        RELEASE,
+                        "_validate_qualification_observation",
+                        side_effect=lambda value, *_args, **_kwargs: value,
+                    ), self.assertRaises(RELEASE.ReleaseError):
+                        RELEASE.create_hil_completion_fragment(
+                            candidate_dir=candidate,
+                            profile_id=profile_id,
+                            operator_input_path=operator_path,
+                            oi1_observation_path=observation_path,
+                            output_path=output,
+                            qualification_repo_root=root,
+                            profile_qualification_result=result_path,
+                        )
+                    self.assertFalse(output.exists())
+
     def test_promotion_envelope_uses_v5_discriminated_immutable_fields(self) -> None:
         pending = pending_v5_payload()
         completed = completed_v5_payload()
