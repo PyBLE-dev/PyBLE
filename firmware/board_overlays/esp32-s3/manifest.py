@@ -19,8 +19,9 @@ require("neopixel")
 # (pble_ble.init_agent). Overrides upstream ports/esp32/modules/_boot.py.
 module("_boot.py", base_path="$(BOARD_DIR)", opt=3)
 
-# Freeze only the three on-device scaffolds. Pure native-twin host seams live
+# Freeze only the four on-device scaffolds. Pure native-twin host seams live
 # beside them in firmware/pyble but are deliberately excluded from the image.
+module("_version.py", base_path="$(BOARD_DIR)/pyble", opt=3)
 module("pyble/__init__.py", base_path="$(BOARD_DIR)", opt=3)
 module("pyble/pyble_ble.py", base_path="$(BOARD_DIR)", opt=3)
 module("pyble/pyble_proto.py", base_path="$(BOARD_DIR)", opt=3)

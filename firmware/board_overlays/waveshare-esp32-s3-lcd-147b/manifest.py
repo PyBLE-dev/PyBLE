@@ -12,6 +12,7 @@ module("pyble_st7789.py", base_path="$(BOARD_DIR)", opt=3)
 module("pyble_waveshare_lcd147b.py", base_path="$(BOARD_DIR)", opt=3)
 
 module("_boot.py", base_path="$(BOARD_DIR)", opt=3)
+module("_version.py", base_path="$(BOARD_DIR)/pyble", opt=3)
 module("pyble/__init__.py", base_path="$(BOARD_DIR)", opt=3)
 module("pyble/pyble_ble.py", base_path="$(BOARD_DIR)", opt=3)
 module("pyble/pyble_proto.py", base_path="$(BOARD_DIR)", opt=3)

@@ -115,6 +115,7 @@ class TargetRunStopContractTests(unittest.TestCase):
         self.assertEqual(args.expect_agent, CURRENT_VERSION)
         self.assertEqual(bench.STOP_DEADLINE_S, 0.5)
         self.assertEqual(bench.PRINT_FLOOD_SOURCE, b"while True: print('x')")
+        self.assertEqual(bench.FIXTURE_PATH, "/target_hil_run.py")
 
         stop_id = 21
         good = [
@@ -202,7 +203,10 @@ class CurrentFirmwareIdentityMatrixTests(unittest.TestCase):
         firmware_spec = (ROOT / "docs/specifications/firmware.md").read_text(
             encoding="utf-8"
         )
-        self.assertRegex(firmware_spec, r"Version `0\.5\.1` remains the earlier")
+        self.assertRegex(
+            firmware_spec,
+            r"Version `0\.5\.1` remains the\s+earlier",
+        )
 
 
 if __name__ == "__main__":

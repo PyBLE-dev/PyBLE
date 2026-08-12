@@ -18,6 +18,8 @@ code (PRD §1B.7). These drivers are that demo, made repeatable.
 | `oi1_profile_bench.py` | Single-profile OI-1 orchestrator. `baseline` emits one canonical redacted profile fragment; `verify` loads the committed policy, evaluates all nine thresholds, and emits the exact completed `oi1_observation`. It accepts the three public profiles: `esp32-4mb`, lean `esp32-s3-n16r8`, and exact-board `waveshare-esp32-s3-lcd-147b`. |
 | `f11_reliability_bench.py` | **F-11** multi-file reliability bench: performs mandatory HELLO, uses the board-advertised `window` and `chunk` (current reference `W=8`), uploads N files back-to-back, asserts every file's whole-file CRC (`FILE_PUT_END`) **and** an independent `FILE_STAT` re-verify, and reports a throughput baseline. |
 | `file_roundtrip_bench.py` | Upload/download regression bench for the reported 11.9 KiB stall: consumes HELLO caps, supports an exact canonical `--expect-chip`, and now requires contiguous unique GET offsets plus exact bytes/size/CRC. |
+| `target_smoke.py` | Target-neutral service/HELLO/DEVICE_INFO/INFO identity smoke. It requires an explicit expected chip, defaults the expected agent to `versions.lock`, and excludes BLE address, device ID, and label from its result line. |
+| `target_run_stop.py` | Target-neutral busy-loop and print-flood RUN/STOP lifecycle bench. It proves one matching `RSP{OK}` before one idle event in less than 500 ms, then runs a bounded same-link console nonce before file-mode cleanup. |
 
 ## Prerequisites (HIL runner only)
 
@@ -234,6 +236,14 @@ python3 f11_reliability_bench.py \
 # exact upload/download byte round trip
 python3 file_roundtrip_bench.py \
   --address <UUID/MAC> --expect-chip esp32-s3 --size 12190
+
+# exact target identity and INFO agreement; expected agent comes from versions.lock
+python3 target_smoke.py \
+  --address <UUID/MAC> --expect-chip esp32-c3
+
+# busy-loop + print-flood STOP ordering/deadline and same-link recovery
+python3 target_run_stop.py \
+  --address <UUID/MAC> --expect-chip esp32-c3
 ```
 
 Exit `0` = reliability PASS. Non-zero = a file failed whole-file integrity, or a

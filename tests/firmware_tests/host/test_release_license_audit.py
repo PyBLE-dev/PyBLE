@@ -4874,6 +4874,7 @@ class RealFormatLicenseAuditRegressionTests(unittest.TestCase):
             "uasyncio.py",
             "neopixel.py",
             "_boot.py",
+            "_version.py",
             "pyble/__init__.py",
             "pyble/pyble_ble.py",
             "pyble/pyble_proto.py",

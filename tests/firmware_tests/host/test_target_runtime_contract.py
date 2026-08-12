@@ -64,6 +64,7 @@ EXPECTED_FROZEN_PATHS = Counter(
         "uasyncio.py": 1,
         "neopixel.py": 1,
         "_boot.py": 1,
+        "_version.py": 1,
         "pyble/__init__.py": 1,
         "pyble/pyble_ble.py": 1,
         "pyble/pyble_proto.py": 1,
@@ -82,6 +83,7 @@ EXPECTED_FROZEN_SYMBOLS = {
     "uasyncio",
     "neopixel",
     "_boot",
+    "_version",
     "pyble___init__",
     "pyble_pyble_ble",
     "pyble_pyble_proto",
@@ -895,7 +897,7 @@ class BootSplashFrozenResolutionExecutionContractTests(unittest.TestCase):
 
 
 class BoardConfigurationSourceContractTests(unittest.TestCase):
-    def test_frozen_package_version_matches_versions_lock(self):
+    def test_frozen_package_version_is_generated_from_versions_lock(self):
         with (FIRMWARE_DIR / "versions.lock").open("rb") as handle:
             expected = tomllib.load(handle)["pyble"]["agent_version"]
         self.assertEqual(
@@ -903,26 +905,19 @@ class BoardConfigurationSourceContractTests(unittest.TestCase):
             "0.6.0",
             "the combined Pico 2 W source must advance the agent minor version",
         )
-        source_path = FIRMWARE_DIR / "pyble" / "__init__.py"
-        tree = ast.parse(
-            source_path.read_text(encoding="utf-8"), filename=str(source_path)
+        package_source = (FIRMWARE_DIR / "pyble" / "__init__.py").read_text(
+            encoding="utf-8"
         )
-        versions = [
-            node.value.value
-            for node in tree.body
-            if isinstance(node, ast.Assign)
-            and any(
-                isinstance(target, ast.Name) and target.id == "__version__"
-                for target in node.targets
-            )
-            and isinstance(node.value, ast.Constant)
-            and isinstance(node.value.value, str)
-        ]
-        self.assertEqual(
-            versions,
-            [expected],
-            "the frozen pyble package must expose the versions.lock agent version",
-        )
+        self.assertIn("_version.AGENT_VERSION", package_source)
+        self.assertNotIn(expected, package_source)
+        for script_name in ("build.sh", "build_rp2.sh"):
+            with self.subTest(script=script_name):
+                build_source = (
+                    FIRMWARE_DIR / "scripts" / script_name
+                ).read_text(encoding="utf-8")
+                self.assertIn("versions.lock", build_source)
+                self.assertIn("agent_version", build_source)
+                self.assertIn("_version.py", build_source)
 
     def test_board_overlays_supply_canonical_pble_target_ids(self):
         expected = {
