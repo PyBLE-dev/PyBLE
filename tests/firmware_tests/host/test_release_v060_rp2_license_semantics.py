@@ -1099,7 +1099,7 @@ class RP2PolicyAndObserverContractTests(unittest.TestCase):
             {"schema_version", "profile_id", "target", "source_owners"},
         )
         self.assertIs(type(policy["schema_version"]), int)
-        self.assertEqual(policy["schema_version"], 1)
+        self.assertEqual(policy["schema_version"], 2)
         self.assertEqual(policy["profile_id"], "rpi-pico2-w")
         self.assertEqual(policy["target"], "rpi-pico2-w")
         owners = policy["source_owners"]

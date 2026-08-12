@@ -58,20 +58,14 @@ class RP2LicenseDispositionTests(unittest.TestCase):
             owner["source_roots"],
         )
 
-    def test_unresolved_owners_remain_release_blocking(self) -> None:
+    def test_review_queue_is_empty_after_exact_closures(self) -> None:
         self.assertEqual(
             {
                 owner_id
                 for owner_id, owner in self.owners.items()
                 if owner["disposition"] == "review-required"
             },
-            {
-                "arm-gnu-gcc-runtime",
-                "arm-gnu-newlib-runtime",
-                "cyw43-bt-firmware-payload",
-                "cyw43-nvram-payload",
-                "cyw43-wifi-clm-payload",
-            },
+            set(),
         )
 
     def test_cmsis_closure_is_split_by_exact_terms(self) -> None:
@@ -110,7 +104,12 @@ class RP2LicenseDispositionTests(unittest.TestCase):
                 )
 
     def test_toolchain_owners_cover_frontends_and_compiler_headers(self) -> None:
-        gcc = {
+        gcc_tools = {
+            item["path"]
+            for item in self.owners["arm-gnu-gcc-build-tools"]["source_roots"]
+            if item["namespace"] == "arm-gnu-toolchain"
+        }
+        gcc_runtime = {
             item["path"]
             for item in self.owners["arm-gnu-gcc-runtime"]["source_roots"]
             if item["namespace"] == "arm-gnu-toolchain"
@@ -120,14 +119,20 @@ class RP2LicenseDispositionTests(unittest.TestCase):
             for item in self.owners["arm-gnu-newlib-runtime"]["source_roots"]
             if item["namespace"] == "arm-gnu-toolchain"
         }
-        self.assertTrue(
+        self.assertEqual(
+            gcc_tools,
             {
                 "bin/arm-none-eabi-gcc",
                 "bin/arm-none-eabi-g++",
+                "libexec/gcc/arm-none-eabi/14.2.1/collect2",
+            },
+        )
+        self.assertTrue(
+            {
                 "lib/gcc/arm-none-eabi/14.2.1/include",
                 "arm-none-eabi/include/c++/14.2.1",
             }
-            <= gcc
+            <= gcc_runtime
         )
         self.assertIn("arm-none-eabi/include", newlib)
 
