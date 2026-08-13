@@ -137,6 +137,7 @@ def _uf2_block(
     block_number: int,
     total_blocks: int,
     family: int,
+    extension_word: int | None = None,
 ) -> bytes:
     block = bytearray(512)
     struct.pack_into(
@@ -153,6 +154,8 @@ def _uf2_block(
         family,
     )
     block[32 : 32 + len(payload)] = payload
+    if extension_word is not None:
+        struct.pack_into("<I", block, 32 + len(payload), extension_word)
     struct.pack_into("<I", block, 508, 0x0AB16F30)
     return bytes(block)
 
@@ -161,7 +164,16 @@ def _rp2350_uf2(raw_image: bytes) -> bytes:
     padded = bytes(raw_image)
     padded += b"\0" * ((-len(padded)) % 256)
     arm_count = len(padded) // 256
-    blocks = [
+    extension = _uf2_block(
+        flags=0x0000A000,
+        address=0x10FFFF00,
+        payload=b"\xef" * 256,
+        block_number=0,
+        total_blocks=2,
+        family=0xE48BFF57,
+        extension_word=0x9957E304,
+    )
+    arm = b"".join(
         _uf2_block(
             flags=0x00002000,
             address=0x10000000 + index * 256,
@@ -171,18 +183,8 @@ def _rp2350_uf2(raw_image: bytes) -> bytes:
             family=0xE48BFF59,
         )
         for index in range(arm_count)
-    ]
-    blocks.append(
-        _uf2_block(
-            flags=0x0000A000,
-            address=0x10FFFF00,
-            payload=b"\0" * 256,
-            block_number=0,
-            total_blocks=2,
-            family=0xE48BFF57,
-        )
     )
-    return b"".join(blocks)
+    return extension + arm
 
 
 class Rp2CliDiscriminationTests(unittest.TestCase):
@@ -252,7 +254,7 @@ class Rp2CliDiscriminationTests(unittest.TestCase):
 
 
 class Rp2BuildAndHeapTests(unittest.TestCase):
-    def test_rp2_build_facts_bind_matching_raw_bin_and_uf2(self):
+    def test_rp2_build_accepts_first_tagged_extension_and_matching_raw_bin(self):
         raw_image = bytes(range(256))
         with tempfile.TemporaryDirectory(prefix="pyble-rp2-oi1-build-") as tmp:
             root = Path(tmp)
@@ -298,6 +300,37 @@ class Rp2BuildAndHeapTests(unittest.TestCase):
                     firmware_bin,
                     firmware_uf2,
                 )
+
+    def test_rp2_build_rejects_invalid_ignore_block_extension(self):
+        raw_image = bytes(range(251)) * 2
+        valid = _rp2350_uf2(raw_image)
+        blocks = [
+            valid[offset : offset + 512]
+            for offset in range(0, len(valid), 512)
+        ]
+        corrupt_tag = bytearray(valid)
+        corrupt_tag[32 + 256] ^= 0x01
+        missing_tag = bytearray(valid)
+        missing_tag[32 + 256 : 32 + 256 + 4] = b"\0" * 4
+        invalid = {
+            "corrupt-tag": bytes(corrupt_tag),
+            "missing-tag": bytes(missing_tag),
+            "moved-extension": b"".join([*blocks[1:], blocks[0]]),
+        }
+
+        with tempfile.TemporaryDirectory(prefix="pyble-rp2-oi1-uf2-") as tmp:
+            root = Path(tmp)
+            firmware_bin = root / "firmware.bin"
+            firmware_uf2 = root / "firmware.uf2"
+            firmware_bin.write_bytes(raw_image)
+            for label, candidate in invalid.items():
+                with self.subTest(label=label):
+                    firmware_uf2.write_bytes(candidate)
+                    with self.assertRaises(bench.BenchError):
+                        profile_bench.rp2_oi1_build_from_paths(
+                            firmware_bin,
+                            firmware_uf2,
+                        )
 
     def test_rp2_heap_probe_is_gc_only_and_strict(self):
         source = profile_bench.rp2_heap_probe_source("nonce")
