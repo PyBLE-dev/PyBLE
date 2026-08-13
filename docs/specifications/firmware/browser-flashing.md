@@ -1916,16 +1916,29 @@ observation MUST reject its absence. Candidate observations remain JSON null.
 The abandoned two-profile V3 shared-image shape is retained only as rejected
 engineering history: it MUST NOT validate, finalize, or activate any release.
 
-The tenth reset owns the transfer session. After each of the preceding nine
-disconnects, the harness waits at most 2,000 ms for exactly one complete
-parser-owned session-end record, discards all bytes and the terminal count,
-and clears residual UART state; missing or duplicate termination fails closed.
-Before the tenth reset the private UART input buffer is cleared. After HELLO,
-the harness waits at most 5,000 ms for
-the same session's DLE/PHY/connection-parameter facts to settle and MUST NOT
-start PUT or GET timing first. After the workload it disconnects BLE, waits at
-most 2,000 ms for that session's TX-mbuf starvation fact, seals the strict
-structured object, and discards all arbitrary UART text. The final PHY update
+The tenth reset owns the transfer session. Classic ESP32, generic S3, and C3
+retain the ADR-0027 private-UART lifecycle: exact first-nine terminal drains,
+buffer isolation before reset ten, settlement before timing, and the final
+post-disconnect starvation record. Missing or duplicate termination fails
+closed.
+
+The exact Waveshare profile instead uses the ADR-0034 diagnostic compiled only
+into its image. Through ordinary PBLE/1 RUN, a nonce-bound strict marker reads
+one atomic `{active,last_ended}` snapshot from
+`pble_ble._oi1_link_facts()`. Each of the first nine measured disconnects is
+followed by a diagnostic reconnect that must show the ended epoch and its exact
+non-wrapping active successor; both records are discarded. On reset ten, the
+active epoch and settled facts are bound before timing and checked again after
+the workload but before disconnect. One final bounded diagnostic reconnect
+must then expose that exact epoch as immutable and final, plus its active
+successor. Only the ended record's `facts` is sealed. Strict parsing rejects
+null, stale, wrapped, non-successor, overflowed, unsettled, malformed,
+duplicate, stderr, RUN-error, and timeout results, and discards arbitrary
+console output. No serial endpoint, new opcode, public capability, BLE
+identifier, connection handle, path, label, user source, or console text enters
+the Waveshare report.
+
+For both transports, the final PHY update
 used to settle either S3 record MUST itself have status zero and `tx=2`, `rx=2`;
 the final connection-parameter update MUST itself have status zero and match
 the retained interval in the inclusive 12..24-unit range. Classic records

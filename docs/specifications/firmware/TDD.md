@@ -1047,18 +1047,35 @@ and adapter, Python/bench identity, board/module description, candidate
 identity and hashes, every integer sample, retransmit/rewind counts,
 disconnects, integrity results, the target-specific transport-facts object
 from specs.md §5.3.1/§5.3.5, and a SHA-256 of the retained redacted raw log.
-For ESP, after each of
-the first nine disconnects it waits at most 2,000 ms for exactly one complete
-parser-owned session-end record for the just-ended session, discards every
-private serial-input byte and the terminal count, then clears residual serial
-state. Missing or duplicate termination fails closed, preventing a delayed
-earlier session from crossing the next capture boundary. Before the tenth
-reset it clears that private serial-input buffer and starts capture; after
-HELLO it waits at most 5,000 ms for the profile-exact settled
-DLE/PHY/connection-parameter facts, and after disconnect it waits at most
-2,000 ms for the same session's TX-mbuf-starvation fact. No throughput timer
-starts before settlement. Only parsed numeric facts enter evidence; arbitrary
-serial text is discarded. The raw log is exclusively created mode `0600`
+For classic ESP32, generic S3, and C3, after each of the first nine disconnects
+the bench waits at most 2,000 ms for exactly one complete parser-owned UART
+session-end record, discards every private byte and terminal count, and clears
+residual state. The tenth session retains the ADR-0027 UART settlement and
+post-disconnect seal path unchanged.
+
+Waveshare uses `WaveshareHardwareExecutor` and an operator-only reset
+controller with no serial dependency. Its exact image alone exposes the hidden
+`pble_ble._oi1_link_facts()` native getter. `oi1_link_fact_probe_source(nonce)`
+invokes that getter through ordinary PBLE/1 RUN and emits one
+`__PYBLE_OI1_LINK_FACTS_<nonce>=<json>` stdout line.
+`parse_oi1_link_fact_probe_output` requires strict ASCII, exactly one matching
+line, exact keys/types, epochs in `1..2^64-1`, fixed list capacities, and a
+bounded total output; it discards all other stdout. `run_oi1_link_fact_probe`
+also requires RUN status OK, no stderr, one terminal RUN_STATE(done), and its
+bounded deadline. It never adds a wire constant or capability.
+
+After each of the first nine Waveshare measured disconnects, the executor
+makes a diagnostic reconnect, requires a final last-ended record and its exact
+non-wrapping active successor, disconnects, and discards both. On the tenth
+connection it polls the active record for no more than 5,000 ms until the
+record is settled, non-final, non-overflowed, and profile-valid, then retains
+its epoch before timing. It probes the same active epoch again after the final
+heap snapshot and before disconnect. A final diagnostic reconnect must expose
+that epoch as immutable `last_ended` and its exact active successor within
+2,000 ms. Only the ended record's `facts`, including its final starvation
+count, enters evidence. Missing/null, stale, non-successor, wrapped,
+overflowed, unsettled, malformed, duplicate-marker, stderr, RUN error, and
+timeout cases all fail closed. The raw log is exclusively created mode `0600`
 before its first write,
 independent of ambient umask, and a pre-existing path is rejected. The result
 writes atomically and never silently drops a successful sample. RP2 instead

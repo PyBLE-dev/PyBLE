@@ -705,7 +705,7 @@ upstream package and required runtime primitive for that target.
 ### 5.3 Footprint gates (NFR-FP)
 
 > **FROZEN measurement contract (2026-07-30 · `[docs]`); exact-Waveshare
-> operator-reset amendment (2026-08-13 · `[docs]`).** This contract freezes
+> operator-reset and BLE link-fact amendments (2026-08-13 · `[docs]`).** This contract freezes
 > the release scope, metric meanings, workload, derivation formulas, and
 > evidence schema before any threshold is selected. It does not invent or
 > claim a numeric threshold.
@@ -834,6 +834,49 @@ in `12..24` (1.25 ms units). `tx_mbuf_starve_count` is captured from the same
 session's disconnect line and is report-only; it does not replace the
 goodput, integrity, or reliability gates.
 
+For `esp32-4mb`, `esp32-s3-n16r8`, and `esp32-c3-4mb`, "captured from the
+same session's disconnect line" retains the strict ADR-0027 UART meaning. The
+exact Waveshare image instead compiles the qualification-only
+`pble_ble._oi1_link_facts()` getter specified below. The getter is absent from
+every other image and adds no opcode, characteristic, INFO/HELLO field, or
+dynamic capability.
+
+The Waveshare getter returns one atomic, non-consuming object with exactly the
+keys `active` and `last_ended`. Each value is either JSON null or a record with
+exactly these keys:
+
+```text
+{
+  epoch: int,
+  final: bool,
+  settled: bool,
+  overflow: bool,
+  facts: transfer_link_facts
+}
+```
+
+Every successful GAP connection in one boot receives an epoch in
+`1..18446744073709551615`; it is strictly monotonic and MUST NOT wrap. An
+epoch-exhausted or internally inconsistent getter call raises and therefore
+cannot produce evidence. The active record has `final: false`. On disconnect,
+firmware atomically copies it to `last_ended` with `final: true` before another
+successful connection may receive the exact successor epoch. That ended copy
+is immutable. `settled` means the same profile-exact DLE/PHY/connection-
+parameter conditions above have completed. `overflow` latches true if a
+bounded record cannot retain every observed item.
+
+Both record kinds always carry the exact `transfer_link_facts` shape. Until a
+fact exists, its scalar value is zero and its list is empty; such an incomplete
+record has `settled: false` and cannot authorize throughput. PHY updates and
+connection-parameter updates each have a hard capacity of eight ordered
+items, and connection-parameter request return codes have capacity three.
+Exceeding a capacity MUST retain only a bounded prefix and latch
+`overflow: true`; the host MUST reject the whole record. All fact integers are
+non-negative. Apart from the structural booleans and null record slots, the
+returned values are numeric facts only. Firmware MUST NOT retain or return a
+BLE address, connection handle, device identifier, label, filesystem path,
+user source, arbitrary console text, or other user data.
+
 The heap probe MUST keep these measurements out of HELLO/INFO capabilities.
 It uses existing standard MicroPython APIs and therefore adds no dynamic PBLE/1
 capability and no INFO/HELLO equivalence ambiguity.
@@ -894,30 +937,13 @@ For each exact profile and one immutable firmware/manifest candidate:
    at or before that start boundary is invalid rather than a latency sample.
    This is the profile's explicit operator-confirmed release proxy because the
    physical switch has no host-readable edge. It retains the same 15,000 ms
-   discovery timeout and fixed 3,000 ms gate. Its native USB serial endpoint
-   remains required for private link-fact capture, but the harness MUST NOT
-   toggle native USB RTS or DTR and call that a controlled reset.
-
-   Physical RESET also restarts the chip-native USB peripheral; a serial handle
-   opened before RESET is therefore stale and MUST NOT be used for the new BLE
-   session. After the first prompt returns, while RESET is still physically
-   held, the controller MUST close and discard that handle without reading it.
-   `EIO`, `ENXIO`, `ENODEV`, or `EBADF` while closing this deliberately removed
-   endpoint is expected cleanup. Any other close error is fatal. Closing the
-   stale handle MUST NOT set or clear RTS or DTR.
-
-   After the fresh matching advertisement has completed the numeric reset
-   measurement, and before initiating that sample's BLE connection, HELLO, or
-   link-fact session, the harness MUST call the reset controller's exact
-   `prepare_after_advertisement()` seam. For Waveshare that seam reopens the
-   same operator-selected native USB serial endpoint at the selected baud rate
-   and makes the fresh handle available to the existing private serial parser.
-   Opening or preparing the replacement handle MUST NOT set or clear RTS or
-   DTR. A missing replacement endpoint or an open failure is fatal; the harness
-   MUST NOT continue without link-fact capture. The reopen occurs after the
-   scanner callback and therefore cannot move, shorten, or otherwise enter the
-   reset-to-advertisement timer. The UART-reset ESP controllers expose the same
-   seam as a no-op so the executor has one fail-closed ordering boundary.
+   discovery timeout and fixed 3,000 ms gate. Its native USB serial endpoint is
+   neither reset evidence nor a link-fact transport. The Waveshare harness MUST
+   NOT open, reopen, read, or require a serial endpoint, and MUST NOT toggle
+   native USB RTS or DTR. Its private link-fact evidence travels over the
+   already connected PBLE/1 session under the qualification-only getter
+   contract above; this transport begins only after the measured advertisement
+   and therefore cannot enter the numeric reset timer.
 
    The operator seam is forbidden for `esp32-4mb`, `esp32-s3-n16r8`, and
    `esp32-c3-4mb`; those ESP profiles retain the explicit UART RTS-to-EN
@@ -927,19 +953,31 @@ For each exact profile and one immutable firmware/manifest candidate:
 2. Record one `heap_default_free_bytes` diagnostic and one gated heap snapshot
    (`gc_free_bytes`, `gc_allocated_bytes`, and the three internal-heap
    quantities) after each of those 10 HELLO exchanges.
-3. After disconnecting each of the first nine sessions, poll the runner's
-   private serial input for at most **2,000 ms** until exactly one complete,
-   parser-owned `link tune session end` record for that just-ended session is
-   observed. Discard every byte, including the terminal count; none is
-   evidence. A missing or duplicate terminal record is a gate failure. Clear
-   all residual private serial state before the next controlled reset so a
-   delayed terminal record cannot enter the following session's parser. Before
-   releasing the tenth controlled reset, clear that same private serial-input
-   buffer and begin link-fact capture for the tenth session. After HELLO, wait
-   at most **5,000 ms** for the profile-exact
-   DLE/PHY/connection-parameter facts in §5.3.1 to settle. No PUT/GET timer may
-   start before that succeeds. Arbitrary or identifying serial text MUST be
-   discarded rather than retained.
+3. For `esp32-4mb`, `esp32-s3-n16r8`, and `esp32-c3-4mb`, after disconnecting
+   each of the first nine sessions, poll the runner's private serial input for
+   at most **2,000 ms** until exactly one complete, parser-owned `link tune
+   session end` record for that just-ended session is observed. Discard every
+   byte, including the terminal count; none is evidence. A missing or duplicate
+   terminal record is a gate failure. Clear all residual private serial state
+   before the next controlled reset so a delayed terminal record cannot enter
+   the following session's parser. Before releasing the tenth controlled reset,
+   clear that same private serial-input buffer and begin link-fact capture.
+
+   Waveshare instead makes one bounded diagnostic reconnect after each of the
+   first nine measured disconnects and runs a nonce-bound getter probe. Its
+   `last_ended` record MUST be final with a positive epoch, and its active
+   record MUST be the exact non-wrapping successor. An absent, stale,
+   non-successor, malformed, or overflowed boundary fails. The runner then
+   disconnects the diagnostic session and discards both records. It retains no
+   numeric fact from those nine sessions.
+
+   On the tenth measured connection, after HELLO, every ESP path waits at most
+   **5,000 ms** for the profile-exact DLE/PHY/connection-parameter facts in
+   §5.3.1 to settle. No PUT/GET timer may start before that succeeds.
+   Waveshare polls the active getter record and retains its epoch only after
+   `final: false`, `settled: true`, `overflow: false`, and exact fact
+   validation; the UART profiles retain their existing parser. Arbitrary or
+   identifying serial or console text MUST be discarded rather than retained.
 4. On that same settled connection, which reports HELLO `mtu=247`, `window=8`,
    and `chunk=229`, run **5** PUT+GET round trips of exactly **65,536 bytes**
    with no chunk or window override. When the central backend exposes its
@@ -954,9 +992,22 @@ For each exact profile and one immutable firmware/manifest candidate:
    327,680 bytes**. All 20 files MUST complete and match byte-for-byte, size,
    and CRC; unexpected disconnects, corruption, and failed statuses MUST all be
    zero. Retransmitted chunks/bytes and rewinds MAY be non-zero but MUST be
-   counted. Record one final gated heap snapshot after this workload. Then
-   disconnect and wait at most **2,000 ms** for the same session's final
-   TX-mbuf-starvation fact before sealing `transfer_link_facts`.
+   counted. Record one final gated heap snapshot after this workload.
+
+   Before the Waveshare transfer connection disconnects, run one more bounded
+   getter probe and require the same active epoch, a settled non-final,
+   non-overflowed record, and the same validated ladder facts; its provisional
+   starvation count is not evidence. Then disconnect, make one diagnostic
+   reconnect, and query again. `last_ended` MUST be final and non-overflowed
+   with the retained transfer epoch, while the diagnostic active epoch MUST be
+   its exact non-wrapping successor. Derive the public `transfer_link_facts`
+   solely from that immutable ended record, including the final starvation
+   count, then disconnect the diagnostic session. Any query or reconnect is
+   independently bounded at **2,000 ms** after the transfer disconnect.
+
+   The other ESP profiles instead disconnect and wait at most **2,000 ms** for
+   the same UART session's final TX-mbuf-starvation fact before sealing
+   `transfer_link_facts`. Pico retains its §5.3.5 observation path.
 7. Perform one real physical power-cycle check and require a fresh PyBLE
    service advertisement. This is a pass/fail safety check; human timing is
    not used as a numeric latency sample.
