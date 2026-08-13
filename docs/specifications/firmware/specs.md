@@ -704,9 +704,10 @@ upstream package and required runtime primitive for that target.
 
 ### 5.3 Footprint gates (NFR-FP)
 
-> **FROZEN measurement contract (2026-07-30 · `[docs]`).** This amendment
-> freezes the release scope, metric meanings, workload, derivation formulas,
-> and evidence schema before any threshold is selected. It does not invent or
+> **FROZEN measurement contract (2026-07-30 · `[docs]`); exact-Waveshare
+> operator-reset amendment (2026-08-13 · `[docs]`).** This contract freezes
+> the release scope, metric meanings, workload, derivation formulas, and
+> evidence schema before any threshold is selected. It does not invent or
 > claim a numeric threshold.
 
 The current v0.4.2 public-beta set is exactly, and in this order, `esp32-4mb`
@@ -847,6 +848,37 @@ For each exact profile and one immutable firmware/manifest candidate:
    record the first fresh matching advertisement. The per-sample discovery
    timeout is **15,000 ms**; a timeout is a gate failure, not a latency sample.
    Connect and complete HELLO after each successful sample.
+
+   The exact `waveshare-esp32-s3-lcd-147b` profile has one bounded reset seam:
+   its native USB serial RTS is not evidence that EN/reset was asserted, so
+   every baseline and final-candidate sample MUST use the physical RESET button
+   and the operator-confirmed sequence below. The scanner MUST already be
+   active before the first prompt. In JSON string notation, the prompts,
+   including capitalization, punctuation, and their final ASCII spaces, are
+   exactly:
+
+   ```text
+   "Press and hold RESET on the Waveshare ESP32-S3-LCD-1.47B, keep holding it, then press Enter: "
+   "Release RESET now, then press Enter immediately: "
+   ```
+
+   After the first prompt returns, the harness MUST enforce the complete
+   1,000 ms quiet interval while RESET remains held. The operator MUST release
+   RESET before acknowledging the second prompt. The numeric sample begins at
+   the host monotonic timestamp taken immediately after that acknowledgement
+   returns and ends at the first later matching scanner callback; a callback
+   at or before that start boundary is invalid rather than a latency sample.
+   This is the profile's explicit operator-confirmed release proxy because the
+   physical switch has no host-readable edge. It retains the same 15,000 ms
+   discovery timeout and fixed 3,000 ms gate. Its native USB serial endpoint
+   remains required for private link-fact capture, but the harness MUST NOT
+   toggle native USB RTS or DTR and call that a controlled reset.
+
+   The operator seam is forbidden for `esp32-4mb`, `esp32-s3-n16r8`, and
+   `esp32-c3-4mb`; those ESP profiles retain the explicit UART RTS-to-EN
+   controller and release-edge timing. Pico retains its separately specified
+   power-disconnect seam. The one final physical power-cycle check in step 7
+   remains separate and unchanged for every profile.
 2. Record one `heap_default_free_bytes` diagnostic and one gated heap snapshot
    (`gc_free_bytes`, `gc_allocated_bytes`, and the three internal-heap
    quantities) after each of those 10 HELLO exchanges.
