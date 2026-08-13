@@ -1312,6 +1312,15 @@ The following ESP-IDF resolution rules are part of that fail-closed mapping:
    `frozen_content.c` MUST be byte-identical to the built file. Before that
    comparison, every generated board copy selected through `BOARD_DIR` MUST be
    byte-identical to its repository-logical overlay or `firmware/pyble` source.
+   For each isolated ESP release target, that `BOARD_DIR` is exactly
+   `<build-root>/.sources/<target>/micropython/ports/esp32/boards/<build-board>`
+   in the retained target-local checkout named by the admitted build. The
+   collector MUST audit that exact generated tree and record its paths in the
+   host-independent `build/.sources/<target>/micropython/...` namespace. A
+   missing, symlinked, or changed retained copy is fatal even if the ambient
+   canonical MicroPython checkout contains a matching or decoy generated board
+   tree; materializing such an ambient tree is neither an audit prerequisite
+   nor substitute evidence for bytes used by the build.
 
    The collector then selects the unique compile-command entry whose exact
    source is this `frozen_content.c`, requires an unambiguous argument-vector
