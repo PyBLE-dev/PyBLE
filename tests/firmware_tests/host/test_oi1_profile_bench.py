@@ -1599,6 +1599,28 @@ class ResetTimingTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(watcher.first_match_ns)
         self.assertFalse(watcher._match_event.is_set())
 
+    async def test_advertisement_watcher_restarts_a_complete_quiet_window(self):
+        watcher = profile_bench.AdvertisementWatcher("AA:BB")
+        device = argparse.Namespace(address="AA:BB")
+        advertisement = argparse.Namespace(
+            service_uuids=[profile_bench.SERVICE_UUID]
+        )
+        watcher.begin_quiet_interval()
+        loop = asyncio.get_running_loop()
+        started = loop.time()
+        loop.call_later(
+            0.05,
+            watcher._on_advertisement,
+            device,
+            advertisement,
+        )
+
+        await watcher.wait_for_quiet(100, 500)
+
+        self.assertGreaterEqual(loop.time() - started, 0.14)
+        self.assertIsNone(watcher.first_match_ns)
+        self.assertFalse(watcher._match_event.is_set())
+
 
 class SerialResetCleanupTest(unittest.TestCase):
     @staticmethod
