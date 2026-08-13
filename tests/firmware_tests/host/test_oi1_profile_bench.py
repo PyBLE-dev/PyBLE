@@ -1281,6 +1281,237 @@ class WaveshareBleExecutorRedTest(unittest.IsolatedAsyncioTestCase):
         )
 
 
+class WaveshareBleDeadlineAndCleanupRedTest(unittest.IsolatedAsyncioTestCase):
+    @staticmethod
+    def _args():
+        return argparse.Namespace(
+            address="private-test-address",
+            expect_chip="esp32-s3",
+            profile="waveshare-esp32-s3-lcd-147b",
+        )
+
+    @staticmethod
+    def _log():
+        class Log:
+            def write(self, _event, **_values):
+                return None
+
+        return Log()
+
+    async def test_probe_total_deadline_includes_command_writes(self):
+        class HungWriteCentral:
+            def event_cursor(self):
+                return 0
+
+            async def send_cmd(self, *_args, **_kwargs):
+                await asyncio.Event().wait()
+
+        with self.assertRaisesRegex(bench.BenchError, "deadline|timed out"):
+            await asyncio.wait_for(
+                bench.run_oi1_link_fact_probe(
+                    HungWriteCentral(),
+                    lambda: 1,
+                    nonce="deadline",
+                    timeout_s=0.01,
+                ),
+                timeout=0.20,
+            )
+
+    async def test_probe_rejects_queued_terminal_after_absolute_deadline(self):
+        clock = type("Clock", (), {"now": 100.0})()
+        snapshot = _waveshare_link_fact_snapshot()
+        marker = (
+            b"__PYBLE_OI1_LINK_FACTS_late="
+            + json.dumps(snapshot, sort_keys=True).encode("ascii")
+            + b"\n"
+        )
+
+        class LateCentral:
+            def event_cursor(self):
+                return 0
+
+            async def send_cmd(self, opcode, id_, _payload, timeout):
+                self.assert_positive_timeout = timeout
+                return wire.Frame(wire.RSP, opcode, id_, b"\x00")
+
+            def events_since(self, _cursor):
+                clock.now = 100.011
+                events = [wire.Frame(wire.EVT, wire.OP_RUN_STATE, 0, b"\x01")]
+                events.extend(
+                    wire.Frame(
+                        wire.EVT,
+                        wire.OP_CONSOLE_DATA,
+                        0,
+                        b"\x00" + marker[offset : offset + 150],
+                    )
+                    for offset in range(0, len(marker), 150)
+                )
+                events.append(
+                    wire.Frame(wire.EVT, wire.OP_RUN_STATE, 0, b"\x02")
+                )
+                return len(events), events
+
+        with (
+            mock.patch.object(bench.time, "monotonic", new=lambda: clock.now),
+            self.assertRaisesRegex(bench.BenchError, "deadline|timed out"),
+        ):
+            await bench.run_oi1_link_fact_probe(
+                LateCentral(),
+                lambda: 1,
+                nonce="late",
+                timeout_s=0.01,
+            )
+
+    async def test_diagnostic_hello_total_deadline_includes_command_writes(self):
+        executor_type = profile_bench.WaveshareHardwareExecutor
+        executor = executor_type(self._args(), object(), self._log())
+        calls = []
+
+        class Diagnostic:
+            def __init__(self):
+                self.disconnect_count = 0
+
+            async def disconnect(self):
+                self.disconnect_count += 1
+
+        diagnostic = Diagnostic()
+
+        async def connect(_address, timeout):
+            self.assertEqual(timeout, 20.0)
+            return diagnostic
+
+        async def hung_hello(*_args, **_kwargs):
+            await asyncio.Event().wait()
+
+        real_wait_for = asyncio.wait_for
+
+        async def bounded_wait_for(awaitable, timeout):
+            calls.append(timeout)
+            return await real_wait_for(awaitable, timeout=0.01)
+
+        with (
+            mock.patch.object(profile_bench.PbleCentral, "connect", new=connect),
+            mock.patch.object(profile_bench, "hello", new=hung_hello),
+            mock.patch.object(
+                profile_bench.asyncio,
+                "wait_for",
+                new=bounded_wait_for,
+            ),
+            self.assertRaisesRegex(profile_bench.BenchError, "HELLO.*deadline"),
+        ):
+            await executor._diagnostic_snapshot()
+        self.assertEqual(calls, [2.0])
+        self.assertEqual(diagnostic.disconnect_count, 1)
+
+    async def test_settlement_rejects_snapshot_returned_after_outer_deadline(self):
+        executor_type = profile_bench.WaveshareHardwareExecutor
+        executor = executor_type(self._args(), object(), self._log())
+        executor._measured_connection = object()
+
+        class Loop:
+            now = 100.0
+
+            def time(self):
+                return self.now
+
+        loop = Loop()
+
+        async def late_probe(_connection, _next_id, *, timeout_s):
+            self.assertEqual(timeout_s, 2.0)
+            loop.now = 105.001
+            return _waveshare_link_fact_snapshot()
+
+        with (
+            mock.patch.object(
+                profile_bench.asyncio,
+                "get_running_loop",
+                return_value=loop,
+            ),
+            mock.patch.object(
+                profile_bench,
+                "run_oi1_link_fact_probe",
+                new=late_probe,
+            ),
+            self.assertRaisesRegex(profile_bench.BenchError, "not observed"),
+        ):
+            await executor.await_transfer_link_settlement(5000)
+        self.assertIsNone(executor._transfer_epoch)
+
+    async def test_cleanup_preserves_primary_and_is_idempotent(self):
+        class PrimaryError(RuntimeError):
+            pass
+
+        class CleanupError(RuntimeError):
+            pass
+
+        executor_type = profile_bench.WaveshareHardwareExecutor
+        executor = executor_type(self._args(), object(), self._log())
+
+        class Diagnostic:
+            def __init__(self):
+                self.disconnect_count = 0
+
+            async def disconnect(self):
+                self.disconnect_count += 1
+                raise CleanupError("diagnostic cleanup")
+
+        diagnostic = Diagnostic()
+
+        async def connect(_address, timeout):
+            self.assertEqual(timeout, 20.0)
+            return diagnostic
+
+        async def primary_hello(*_args, **_kwargs):
+            raise PrimaryError("diagnostic primary")
+
+        with (
+            mock.patch.object(profile_bench.PbleCentral, "connect", new=connect),
+            mock.patch.object(profile_bench, "hello", new=primary_hello),
+        ):
+            with self.assertRaisesRegex(
+                profile_bench.BenchError,
+                "diagnostic and disconnect",
+            ) as raised:
+                await executor._diagnostic_snapshot()
+        self.assertEqual(diagnostic.disconnect_count, 1)
+        self.assertIsInstance(raised.exception.__cause__, CleanupError)
+        chain = []
+        current = raised.exception
+        while current is not None and current not in chain:
+            chain.append(current)
+            current = current.__cause__ or current.__context__
+        self.assertTrue(any(isinstance(item, PrimaryError) for item in chain))
+
+        class Measured:
+            def __init__(self):
+                self.disconnect_count = 0
+
+            async def disconnect(self):
+                self.disconnect_count += 1
+
+        measured = Measured()
+        executor = executor_type(self._args(), object(), self._log())
+        executor._capture_started = True
+        executor._measured_connection = measured
+        executor._transfer_epoch = 41
+        executor._transfer_facts = _transfer_link_facts(
+            "waveshare-esp32-s3-lcd-147b"
+        )
+
+        async def primary_probe(*_args, **_kwargs):
+            raise PrimaryError("pre-disconnect primary")
+
+        with mock.patch.object(
+            profile_bench,
+            "run_oi1_link_fact_probe",
+            new=primary_probe,
+        ):
+            with self.assertRaises(PrimaryError):
+                await executor.disconnect(measured)
+            await executor.disconnect(measured)
+        self.assertEqual(measured.disconnect_count, 1)
+
+
 class TransferLinkFactsObservationRedTests(unittest.TestCase):
     """`validate_observation(value, *, profile_id=...)` is profile-exact."""
 
