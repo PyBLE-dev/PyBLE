@@ -3016,6 +3016,58 @@ def _audit_repo_file(repo_root: Path, relative: str, label: str) -> Path:
     return candidate
 
 
+def _audit_stable_regular_file_bytes(path: Path, label: str) -> bytes:
+    """Read one exact file while proving it remained the same regular node."""
+
+    source = Path(path)
+    descriptor: int | None = None
+    try:
+        before = source.lstat()
+        descriptor = os.open(
+            source,
+            os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+        )
+        opened = os.fstat(descriptor)
+        chunks = []
+        while True:
+            chunk = os.read(descriptor, 1024 * 1024)
+            if not chunk:
+                break
+            chunks.append(chunk)
+        closed = os.fstat(descriptor)
+        after = source.lstat()
+    except OSError as exc:
+        raise ReleaseError(
+            "%s is missing, unsafe, or changed while read" % label
+        ) from exc
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+
+    def identity(value: os.stat_result) -> tuple[int, ...]:
+        return (
+            value.st_dev,
+            value.st_ino,
+            value.st_mode,
+            value.st_size,
+            value.st_mtime_ns,
+            value.st_ctime_ns,
+        )
+
+    _require(
+        stat_module.S_ISREG(before.st_mode)
+        and not stat_module.S_ISLNK(before.st_mode)
+        and identity(before) == identity(opened) == identity(closed) == identity(after),
+        "%s must be one stable regular non-symlink file" % label,
+    )
+    value = b"".join(chunks)
+    _require(
+        len(value) == before.st_size,
+        "%s changed size while read" % label,
+    )
+    return value
+
+
 def _audit_path_in_roots(
     raw_path: str | Path,
     *,
@@ -4220,6 +4272,8 @@ def _audit_v2_shipment_review(
 def _audit_v2_manifest_evidence(
     repo_root: Path,
     raw_evidence: Any,
+    *,
+    build_root: Path | None = None,
 ) -> list[dict[str, Any]]:
     """Validate canonical literal-manifest evidence derived by the collector."""
 
@@ -4358,19 +4412,70 @@ def _audit_v2_manifest_evidence(
             record["generated_board_manifest"],
             "%s generated board manifest path" % target,
         )
-        expected_board_manifest = (
-            "firmware/upstream/micropython/ports/esp32/boards/%s/manifest.py"
-            % FROZEN_TARGET_SETTINGS[target]["board"]
-        )
+        retained_board_snapshot: dict[str, tuple[Any, ...]] | None = None
+        retained_board_logical_prefix: str | None = None
+        if build_root is None:
+            board_dir = (
+                Path(repo_root)
+                / "firmware"
+                / "upstream"
+                / "micropython"
+                / "ports"
+                / "esp32"
+                / "boards"
+                / FROZEN_TARGET_SETTINGS[target]["board"]
+            )
+            expected_board_manifest = (
+                "firmware/upstream/micropython/ports/esp32/boards/%s/manifest.py"
+                % FROZEN_TARGET_SETTINGS[target]["board"]
+            )
+            generated_manifest_path = _audit_repo_file(
+                repo_root,
+                expected_board_manifest,
+                "%s generated board manifest" % target,
+            )
+            generated_manifest_bytes = _audit_stable_regular_file_bytes(
+                generated_manifest_path,
+                "%s generated board manifest" % target,
+            )
+        else:
+            (
+                board_dir,
+                retained_board_logical_prefix,
+                retained_board_snapshot,
+            ) = _audit_retained_generated_board_snapshot(
+                    build_root=Path(build_root),
+                    target=target,
+            )
+            generated_manifest_bytes = (
+                _audit_retained_generated_board_snapshot_file(
+                    retained_board_snapshot,
+                    "manifest.py",
+                    "%s generated board manifest" % target,
+                )
+            )
+            expected_board_manifest = (
+                retained_board_logical_prefix + "/manifest.py"
+            )
         _require(
             generated_board_manifest == expected_board_manifest,
             "%s generated board manifest path changed" % target,
         )
-        _audit_repo_file(
-            repo_root,
-            generated_board_manifest,
-            "%s generated board manifest" % target,
-        )
+        if build_root is not None:
+            reviewed_manifest = _audit_repo_file(
+                repo_root,
+                "firmware/board_overlays/%s/manifest.py" % target,
+                "%s reviewed board manifest" % target,
+            )
+            _require(
+                generated_manifest_bytes
+                == _audit_stable_regular_file_bytes(
+                    reviewed_manifest,
+                    "%s reviewed board manifest" % target,
+                ),
+                "%s generated board manifest differs from its reviewed overlay"
+                % target,
+            )
 
         manifests_raw = record["manifests"]
         _require(
@@ -4499,16 +4604,7 @@ def _audit_v2_manifest_evidence(
             _audit_first_party_frozen_source_evidence(
                 repo_root=repo_root,
                 target=target,
-                board_dir=(
-                    Path(repo_root)
-                    / "firmware"
-                    / "upstream"
-                    / "micropython"
-                    / "ports"
-                    / "esp32"
-                    / "boards"
-                    / FROZEN_TARGET_SETTINGS[target]["board"]
-                ),
+                board_dir=board_dir,
                 selections={
                     selection["destination"]: (
                         Path(repo_root) / selection["source_path"]
@@ -4516,6 +4612,11 @@ def _audit_v2_manifest_evidence(
                     for selection in selections
                 },
                 firmware_version=firmware_version,
+                build_root=(
+                    None if build_root is None else Path(build_root)
+                ),
+                retained_board_snapshot=retained_board_snapshot,
+                retained_board_logical_prefix=retained_board_logical_prefix,
             )
         )
         if includes_first_party_field:
@@ -4622,6 +4723,27 @@ def _audit_v2_manifest_evidence(
         if includes_first_party_field:
             normalized_record["first_party_frozen_sources"] = (
                 first_party_frozen_sources
+            )
+        if build_root is not None:
+            _require(
+                retained_board_snapshot is not None
+                and retained_board_logical_prefix is not None,
+                "%s retained generated board state was not captured" % target,
+            )
+            (
+                final_board_dir,
+                final_logical_prefix,
+                final_board_snapshot,
+            ) = _audit_retained_generated_board_snapshot(
+                build_root=Path(build_root),
+                target=target,
+            )
+            _require(
+                final_board_dir == board_dir
+                and final_logical_prefix == retained_board_logical_prefix
+                and final_board_snapshot == retained_board_snapshot,
+                "%s retained generated board tree changed during validation"
+                % target,
             )
         normalized.append(normalized_record)
     _require(
@@ -6502,6 +6624,7 @@ def _audit_validate_policy_v2(
     observed_inputs: Any,
     manifest_evidence: Any,
     toolchain_roots: Any = None,
+    build_root: Path | None = None,
 ) -> dict[str, Any]:
     """Validate schema-v2 raw/reviewed/resolved license evidence.
 
@@ -6619,6 +6742,7 @@ def _audit_validate_policy_v2(
     validated_manifest_evidence = _audit_v2_manifest_evidence(
         root,
         manifest_evidence,
+        build_root=build_root,
     )
 
     reviewed_raw = policy["reviewed_packages"]
@@ -14498,6 +14622,468 @@ def _audit_generated_version_module_bytes(repo_root: Path) -> bytes:
     ).encode("utf-8")
 
 
+_AUDIT_RETAINED_BOARD_MAX_FILES = 512
+_AUDIT_RETAINED_BOARD_MAX_FILE_BYTES = 16 * 1024 * 1024
+_AUDIT_RETAINED_BOARD_MAX_TOTAL_BYTES = 64 * 1024 * 1024
+_AUDIT_RETAINED_BOARD_ID_FIELDS = (
+    "st_dev",
+    "st_ino",
+    "st_mode",
+    "st_nlink",
+    "st_size",
+    "st_mtime_ns",
+    "st_ctime_ns",
+)
+
+
+def _audit_retained_board_identity(value: os.stat_result) -> tuple[int, ...]:
+    return tuple(
+        getattr(value, field) for field in _AUDIT_RETAINED_BOARD_ID_FIELDS
+    )
+
+
+def _audit_retained_generated_board_location(
+    *,
+    build_root: Path,
+    target: str,
+) -> tuple[Path, str]:
+    """Return the exact lexical and host-independent retained board identity."""
+
+    settings = FROZEN_TARGET_SETTINGS.get(target)
+    _require(settings is not None, "generated board target is unsupported")
+    try:
+        builds = Path(build_root).resolve(strict=True)
+    except OSError as exc:
+        raise ReleaseError("generated board build root is missing") from exc
+    suffix = (
+        Path(".sources")
+        / target
+        / "micropython"
+        / "ports"
+        / "esp32"
+        / "boards"
+        / settings["board"]
+    )
+    return builds / suffix, "build/" + suffix.as_posix()
+
+
+def _audit_retained_generated_board_snapshot(
+    *,
+    build_root: Path,
+    target: str,
+    board_dir_override: Path | None = None,
+    logical_prefix_override: str | None = None,
+) -> tuple[Path, str, dict[str, tuple[Any, ...]]]:
+    """Capture one retained BOARD_DIR through held, no-follow directory fds."""
+
+    if board_dir_override is None:
+        board_dir, logical_prefix = _audit_retained_generated_board_location(
+            build_root=build_root,
+            target=target,
+        )
+    else:
+        _require(
+            isinstance(logical_prefix_override, str)
+            and bool(logical_prefix_override),
+            "%s private generated board logical identity is missing" % target,
+        )
+        try:
+            board_dir = Path(board_dir_override).resolve(strict=True)
+        except OSError as exc:
+            raise ReleaseError(
+                "%s private generated board staging is missing" % target
+            ) from exc
+        logical_prefix = logical_prefix_override
+    label = "%s retained generated board tree" % target
+    chain: list[tuple[int, Path, tuple[int, int, int]]] = []
+    descendants: list[tuple[int, Path, tuple[int, ...]]] = []
+    snapshot: dict[str, tuple[Any, ...]] = {}
+    file_count = 0
+    total_bytes = 0
+
+    directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    file_flags = os.O_RDONLY | os.O_NOFOLLOW
+    if hasattr(os, "O_CLOEXEC"):
+        directory_flags |= os.O_CLOEXEC
+        file_flags |= os.O_CLOEXEC
+
+    def verify_directory(
+        descriptor: int,
+        path: Path,
+        expected: tuple[int, ...],
+    ) -> None:
+        try:
+            held = os.fstat(descriptor)
+            visible = path.lstat()
+        except OSError as exc:
+            raise ReleaseError("%s changed during capture" % label) from exc
+        _require(
+            stat_module.S_ISDIR(held.st_mode)
+            and stat_module.S_ISDIR(visible.st_mode)
+            and not stat_module.S_ISLNK(visible.st_mode)
+            and _audit_retained_board_identity(held) == expected
+            and _audit_retained_board_identity(visible) == expected,
+            "%s changed during capture" % label,
+        )
+
+    def read_file(
+        parent_descriptor: int,
+        parent_path: Path,
+        name: str,
+        observed: os.stat_result,
+        relative: str,
+    ) -> None:
+        nonlocal file_count, total_bytes
+        descriptor = -1
+        try:
+            descriptor = os.open(
+                name,
+                file_flags,
+                dir_fd=parent_descriptor,
+            )
+            opened = os.fstat(descriptor)
+            expected = _audit_retained_board_identity(observed)
+            _require(
+                stat_module.S_ISREG(observed.st_mode)
+                and stat_module.S_ISREG(opened.st_mode)
+                and expected == _audit_retained_board_identity(opened)
+                and 0 <= opened.st_size <= _AUDIT_RETAINED_BOARD_MAX_FILE_BYTES,
+                "%s contains an unsafe or oversized file: %s" % (label, relative),
+            )
+
+            def read_once() -> bytes:
+                chunks: list[bytes] = []
+                remaining = _AUDIT_RETAINED_BOARD_MAX_FILE_BYTES + 1
+                while remaining:
+                    chunk = os.read(descriptor, min(remaining, 1024 * 1024))
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+                    remaining -= len(chunk)
+                return b"".join(chunks)
+
+            value = read_once()
+            os.lseek(descriptor, 0, os.SEEK_SET)
+            repeated = read_once()
+            after = os.fstat(descriptor)
+            visible = os.stat(
+                name,
+                dir_fd=parent_descriptor,
+                follow_symlinks=False,
+            )
+            _require(
+                value == repeated
+                and len(value) == opened.st_size
+                and expected == _audit_retained_board_identity(after)
+                and expected == _audit_retained_board_identity(visible),
+                "%s file changed during capture: %s" % (label, relative),
+            )
+            file_count += 1
+            total_bytes += len(value)
+            _require(
+                file_count <= _AUDIT_RETAINED_BOARD_MAX_FILES
+                and total_bytes <= _AUDIT_RETAINED_BOARD_MAX_TOTAL_BYTES,
+                "%s exceeds its bounded inventory" % label,
+            )
+            snapshot[relative] = ("file", expected, value)
+        finally:
+            if descriptor >= 0:
+                os.close(descriptor)
+
+    def walk(
+        descriptor: int,
+        directory_path: Path,
+        relative_parent: str,
+        expected_directory: tuple[int, ...],
+    ) -> None:
+        verify_directory(descriptor, directory_path, expected_directory)
+        try:
+            before_names = sorted(os.listdir(descriptor))
+        except OSError as exc:
+            raise ReleaseError("%s inventory is unreadable" % label) from exc
+        _require(
+            len(before_names) == len(set(before_names))
+            and all(
+                isinstance(name, str)
+                and bool(name)
+                and name not in (".", "..")
+                and "/" not in name
+                and "\x00" not in name
+                for name in before_names
+            ),
+            "%s inventory contains an unsafe name" % label,
+        )
+        for name in before_names:
+            relative = "%s/%s" % (relative_parent, name) if relative_parent else name
+            try:
+                observed = os.stat(
+                    name,
+                    dir_fd=descriptor,
+                    follow_symlinks=False,
+                )
+            except OSError as exc:
+                raise ReleaseError(
+                    "%s entry changed during capture: %s" % (label, relative)
+                ) from exc
+            if stat_module.S_ISREG(observed.st_mode):
+                read_file(
+                    descriptor,
+                    directory_path,
+                    name,
+                    observed,
+                    relative,
+                )
+                continue
+            _require(
+                stat_module.S_ISDIR(observed.st_mode)
+                and not stat_module.S_ISLNK(observed.st_mode),
+                "%s contains a symlink or special node: %s" % (label, relative),
+            )
+            child_descriptor = -1
+            try:
+                child_descriptor = os.open(
+                    name,
+                    directory_flags,
+                    dir_fd=descriptor,
+                )
+                opened = os.fstat(child_descriptor)
+                visible_after_open = os.stat(
+                    name,
+                    dir_fd=descriptor,
+                    follow_symlinks=False,
+                )
+                expected_child = _audit_retained_board_identity(observed)
+                _require(
+                    stat_module.S_ISDIR(opened.st_mode)
+                    and expected_child == _audit_retained_board_identity(opened)
+                    and expected_child
+                    == _audit_retained_board_identity(visible_after_open),
+                    "%s directory changed during capture: %s" % (label, relative),
+                )
+                descendants.append(
+                    (child_descriptor, directory_path / name, expected_child)
+                )
+                snapshot[relative] = ("directory", expected_child)
+                walk(
+                    child_descriptor,
+                    directory_path / name,
+                    relative,
+                    expected_child,
+                )
+                visible_after_walk = os.stat(
+                    name,
+                    dir_fd=descriptor,
+                    follow_symlinks=False,
+                )
+                _require(
+                    expected_child
+                    == _audit_retained_board_identity(visible_after_walk),
+                    "%s directory changed during capture: %s" % (label, relative),
+                )
+                child_descriptor = -1
+            finally:
+                if child_descriptor >= 0:
+                    os.close(child_descriptor)
+        try:
+            after_names = sorted(os.listdir(descriptor))
+        except OSError as exc:
+            raise ReleaseError("%s inventory changed during capture" % label) from exc
+        _require(
+            after_names == before_names,
+            "%s inventory changed during capture" % label,
+        )
+        verify_directory(descriptor, directory_path, expected_directory)
+
+    try:
+        try:
+            chain = _V060_PROFILE_GATE._open_directory_chain(
+                board_dir,
+                label=label,
+                create=False,
+            )
+        except _V060_PROFILE_GATE.QualificationError as exc:
+            raise ReleaseError("%s is missing or unsafe: %s" % (label, exc)) from exc
+        root_descriptor = chain[-1][0]
+        root_identity = _audit_retained_board_identity(
+            os.fstat(root_descriptor)
+        )
+        snapshot[""] = ("directory", root_identity)
+        walk(root_descriptor, board_dir, "", root_identity)
+        for descriptor, path, expected in descendants:
+            verify_directory(descriptor, path, expected)
+        try:
+            _V060_PROFILE_GATE._verify_directory_chain(chain, label)
+        except _V060_PROFILE_GATE.QualificationError as exc:
+            raise ReleaseError("%s changed during capture: %s" % (label, exc)) from exc
+        _require(bool(snapshot) and file_count > 0, "%s is empty" % label)
+        return board_dir, logical_prefix, snapshot
+    except OSError as exc:
+        raise ReleaseError("%s is missing, unsafe, or unstable" % label) from exc
+    finally:
+        for descriptor, _path, _expected in reversed(descendants):
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+        _V060_PROFILE_GATE._close_directory_chain(chain)
+
+
+def _audit_private_generated_board_snapshot(
+    board_dir: Path,
+    *,
+    target: str,
+) -> dict[str, tuple[Any, ...]]:
+    """Descriptor-capture the private BOARD_DIR staging used by reconstruction."""
+
+    board = Path(board_dir)
+    _require(
+        board.name == "retained-board",
+        "%s private retained board staging path changed" % target,
+    )
+    _captured, _logical, snapshot = _audit_retained_generated_board_snapshot(
+        build_root=board.parent,
+        target=target,
+        board_dir_override=board,
+        logical_prefix_override="private/retained-board",
+    )
+    return snapshot
+
+
+def _audit_generated_board_snapshot_payload(
+    snapshot: dict[str, tuple[Any, ...]],
+) -> dict[str, tuple[str] | tuple[str, bytes]]:
+    """Drop host inode metadata while retaining the complete tree payload."""
+
+    return {
+        relative: (
+            ("directory",)
+            if record[0] == "directory"
+            else ("file", record[2])
+        )
+        for relative, record in snapshot.items()
+    }
+
+
+def _audit_retained_generated_board_snapshot_file(
+    snapshot: dict[str, tuple[Any, ...]],
+    relative: str,
+    label: str,
+) -> bytes:
+    safe = _safe_relative_path(relative, label)
+    record = snapshot.get(safe)
+    _require(
+        isinstance(record, tuple)
+        and len(record) == 3
+        and record[0] == "file"
+        and isinstance(record[2], bytes),
+        "%s is missing from the retained generated board snapshot" % label,
+    )
+    return record[2]
+
+
+def _audit_materialize_retained_board_snapshot(
+    snapshot: dict[str, tuple[Any, ...]],
+    destination: Path,
+    *,
+    target: str,
+) -> Path:
+    """Create a private, read-only BOARD_DIR from descriptor-captured bytes."""
+
+    root = Path(destination)
+    label = "%s retained generated board execution snapshot" % target
+    directory_descriptors: dict[str, int] = {}
+    try:
+        root.mkdir(mode=0o700)
+        directory_descriptors[""] = os.open(
+            root,
+            os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+        )
+        directories = sorted(
+            (
+                relative
+                for relative, record in snapshot.items()
+                if relative and record[0] == "directory"
+            ),
+            key=lambda relative: (len(PurePosixPath(relative).parts), relative),
+        )
+        for relative in directories:
+            safe = _safe_relative_path(relative, label)
+            value = PurePosixPath(safe)
+            parent = value.parent.as_posix()
+            if parent == ".":
+                parent = ""
+            _require(
+                parent in directory_descriptors,
+                "%s directory order is invalid" % label,
+            )
+            os.mkdir(
+                value.name,
+                0o700,
+                dir_fd=directory_descriptors[parent],
+            )
+            directory_descriptors[relative] = os.open(
+                value.name,
+                os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                dir_fd=directory_descriptors[parent],
+            )
+        file_count = 0
+        for relative, record in sorted(snapshot.items()):
+            if not relative or record[0] != "file":
+                continue
+            safe = _safe_relative_path(relative, label)
+            value = PurePosixPath(safe)
+            parent = value.parent.as_posix()
+            if parent == ".":
+                parent = ""
+            _require(
+                parent in directory_descriptors,
+                "%s file parent is invalid" % label,
+            )
+            descriptor = -1
+            try:
+                descriptor = os.open(
+                    value.name,
+                    os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                    0o600,
+                    dir_fd=directory_descriptors[parent],
+                )
+                payload = record[2]
+                offset = 0
+                while offset < len(payload):
+                    written = os.write(descriptor, payload[offset:])
+                    _require(written > 0, "%s file write was short" % label)
+                    offset += written
+                os.fsync(descriptor)
+                os.fchmod(descriptor, 0o400)
+                staged = os.fstat(descriptor)
+                _require(
+                    stat_module.S_ISREG(staged.st_mode)
+                    and staged.st_size == len(payload),
+                    "%s file staging is unsafe" % label,
+                )
+            finally:
+                if descriptor >= 0:
+                    os.close(descriptor)
+            file_count += 1
+        for relative in reversed(directories):
+            os.fchmod(directory_descriptors[relative], 0o500)
+        os.fchmod(directory_descriptors[""], 0o500)
+        _require(
+            file_count
+            == sum(1 for record in snapshot.values() if record[0] == "file"),
+            "%s file inventory changed during staging" % label,
+        )
+        return root
+    except (OSError, ValueError) as exc:
+        raise ReleaseError("%s could not be materialized safely" % label) from exc
+    finally:
+        for descriptor in reversed(tuple(directory_descriptors.values())):
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+
+
 def _audit_first_party_frozen_source_evidence(
     *,
     repo_root: Path,
@@ -14505,6 +15091,9 @@ def _audit_first_party_frozen_source_evidence(
     board_dir: Path,
     selections: dict[str, Path],
     firmware_version: str | None = None,
+    build_root: Path | None = None,
+    retained_board_snapshot: dict[str, tuple[Any, ...]] | None = None,
+    retained_board_logical_prefix: str | None = None,
 ) -> list[dict[str, str]]:
     """Bind canonical PyBLE Python sources to their generated board copies."""
 
@@ -14517,11 +15106,36 @@ def _audit_first_party_frozen_source_evidence(
     active_contracts = _audit_first_party_frozen_sources_for_version(
         source_version
     )
+    if build_root is not None and retained_board_snapshot is None:
+        (
+            captured_board,
+            retained_board_logical_prefix,
+            retained_board_snapshot,
+        ) = _audit_retained_generated_board_snapshot(
+            build_root=build_root,
+            target=target,
+        )
+        _require(
+            captured_board == Path(board_dir).absolute(),
+            "%s retained generated board identity changed" % target,
+        )
+    if build_root is not None:
+        _require(
+            isinstance(retained_board_snapshot, dict)
+            and isinstance(retained_board_logical_prefix, str),
+            "%s retained generated board snapshot is incomplete" % target,
+        )
+
+    def generated_exists(destination: str) -> bool:
+        if build_root is None:
+            generated = Path(board_dir).absolute() / destination
+            return generated.exists() or generated.is_symlink()
+        return destination in retained_board_snapshot
+
     records: list[dict[str, str]] = []
     for destination, contract in sorted(
         _AUDIT_FIRST_PARTY_FROZEN_SOURCES.items()
     ):
-        generated = Path(board_dir).absolute() / destination
         if destination not in active_contracts:
             _require(
                 destination not in selections,
@@ -14529,7 +15143,7 @@ def _audit_first_party_frozen_source_evidence(
                 % (target, destination),
             )
             _require(
-                not generated.exists() and not generated.is_symlink(),
+                not generated_exists(destination),
                 "%s contains an unavailable generated first-party source %s"
                 % (target, destination),
             )
@@ -14549,7 +15163,7 @@ def _audit_first_party_frozen_source_evidence(
                 % (target, destination),
             )
             _require(
-                not generated.exists() and not generated.is_symlink(),
+                not generated_exists(destination),
                 "%s contains a stray generated first-party source %s"
                 % (target, destination),
             )
@@ -14561,12 +15175,13 @@ def _audit_first_party_frozen_source_evidence(
             "%s must select canonical first-party source %s"
             % (target, destination),
         )
+        canonical_bytes = _audit_stable_regular_file_bytes(
+            canonical,
+            "first-party frozen source %s" % destination,
+        )
         try:
-            canonical_text = canonical.read_text(
-                encoding="utf-8",
-                errors="strict",
-            )
-        except (OSError, UnicodeError) as exc:
+            canonical_text = canonical_bytes.decode("utf-8", errors="strict")
+        except UnicodeError as exc:
             raise ReleaseError(
                 "first-party frozen source %s is not strict UTF-8"
                 % destination
@@ -14577,21 +15192,36 @@ def _audit_first_party_frozen_source_evidence(
             "first-party frozen source %s must declare exactly SPDX %s"
             % (destination, expected_spdx),
         )
-        try:
-            generated_relative = generated.relative_to(root).as_posix()
-        except ValueError as exc:
-            raise ReleaseError(
-                "%s generated first-party source %s escapes the repository"
-                % (target, destination)
-            ) from exc
-        generated_source = _audit_repo_file(
-            root,
-            generated_relative,
-            "%s generated first-party source %s" % (target, destination),
-        )
-        canonical_bytes = canonical.read_bytes()
+        label = "%s generated first-party source %s" % (target, destination)
+        if build_root is None:
+            generated = Path(board_dir).absolute() / destination
+            try:
+                generated_relative = generated.relative_to(root).as_posix()
+            except ValueError as exc:
+                raise ReleaseError(
+                    "%s escapes the repository" % label
+                ) from exc
+            generated_source = _audit_repo_file(
+                root,
+                generated_relative,
+                label,
+            )
+            generated_bytes = _audit_stable_regular_file_bytes(
+                generated_source,
+                label,
+            )
+        else:
+            generated_bytes = _audit_retained_generated_board_snapshot_file(
+                retained_board_snapshot,
+                destination,
+                label,
+            )
+            generated_relative = "%s/%s" % (
+                retained_board_logical_prefix,
+                destination,
+            )
         _require(
-            generated_source.read_bytes() == canonical_bytes,
+            generated_bytes == canonical_bytes,
             "%s generated first-party source %s differs from canonical source"
             % (target, destination),
         )
@@ -14614,6 +15244,7 @@ def _audit_frozen_payload_proof(
     manifest_path: Path,
     frozen_path: Path,
     selections: dict[str, Path],
+    build_root: Path,
     trusted_mpy_cross_sha256: str | None = None,
 ) -> dict[str, Any]:
     """Rebuild frozen MPY content from clean state and compare every byte."""
@@ -14628,23 +15259,21 @@ def _audit_frozen_payload_proof(
     resolved_root = root.resolve()
     micropython = root / "firmware" / "upstream" / "micropython"
     port_dir = micropython / "ports" / "esp32"
-    board_dir = port_dir / "boards" / settings["board"]
-    try:
-        copied_manifest_relative = (
-            (board_dir / "manifest.py")
-            .absolute()
-            .relative_to(root.absolute())
-            .as_posix()
-        )
-    except ValueError as exc:
-        raise ReleaseError(
-            "%s generated board manifest escapes the repository" % target
-        ) from exc
-    copied_manifest = _audit_repo_file(
-        root,
-        copied_manifest_relative,
+    builds = Path(build_root).absolute()
+    (
+        board_dir,
+        board_logical_prefix,
+        board_snapshot,
+    ) = _audit_retained_generated_board_snapshot(
+        build_root=builds,
+        target=target,
+    )
+    copied_manifest_bytes = _audit_retained_generated_board_snapshot_file(
+        board_snapshot,
+        "manifest.py",
         "%s generated board manifest" % target,
     )
+    copied_manifest_relative = board_logical_prefix + "/manifest.py"
     reviewed_manifest = _audit_repo_file(
         root,
         Path(manifest_path)
@@ -14653,8 +15282,12 @@ def _audit_frozen_payload_proof(
         .as_posix(),
         "%s reviewed board manifest" % target,
     )
+    reviewed_manifest_bytes = _audit_stable_regular_file_bytes(
+        reviewed_manifest,
+        "%s reviewed board manifest" % target,
+    )
     _require(
-        copied_manifest.read_bytes() == reviewed_manifest.read_bytes(),
+        copied_manifest_bytes == reviewed_manifest_bytes,
         "%s generated board manifest differs from its reviewed overlay" % target,
     )
 
@@ -14664,6 +15297,9 @@ def _audit_frozen_payload_proof(
         board_dir=board_dir,
         selections=selections,
         firmware_version=firmware_version,
+        build_root=builds,
+        retained_board_snapshot=board_snapshot,
+        retained_board_logical_prefix=board_logical_prefix,
     )
 
     overlay_root = (
@@ -14676,40 +15312,26 @@ def _audit_frozen_payload_proof(
             destination == "_version.py"
             and resolved_source == (pyble_root / "_version.py").resolve()
         ):
-            copied_source = _audit_repo_file(
-                root,
-                (board_dir / "pyble" / destination)
-                .absolute()
-                .relative_to(root.absolute())
-                .as_posix(),
-                "%s generated lock-derived source %s" % (target, destination),
+            copied_bytes = _audit_retained_generated_board_snapshot_file(
+                board_snapshot,
+                "pyble/" + destination,
+                "%s generated lock-derived source %s"
+                % (target, destination),
             )
             _require(
-                copied_source.read_bytes()
-                == _audit_generated_version_module_bytes(root),
+                copied_bytes == _audit_generated_version_module_bytes(root),
                 "%s generated lock-derived source %s is stale"
                 % (target, destination),
             )
             continue
         if resolved_source.is_relative_to(overlay_root):
-            copied_source = board_dir / destination
+            copied_relative = destination
         elif resolved_source.is_relative_to(pyble_root):
-            copied_source = board_dir / destination
+            copied_relative = destination
         else:
             continue
-        try:
-            copied_relative = (
-                copied_source.absolute()
-                .relative_to(root.absolute())
-                .as_posix()
-            )
-        except ValueError as exc:
-            raise ReleaseError(
-                "%s generated board source %s escapes the repository"
-                % (target, destination)
-            ) from exc
-        copied_source = _audit_repo_file(
-            root,
+        copied_bytes = _audit_retained_generated_board_snapshot_file(
+            board_snapshot,
             copied_relative,
             "%s generated board source %s" % (target, destination),
         )
@@ -14718,8 +15340,12 @@ def _audit_frozen_payload_proof(
             resolved_source.relative_to(resolved_root).as_posix(),
             "%s reviewed frozen source %s" % (target, destination),
         )
+        reviewed_bytes = _audit_stable_regular_file_bytes(
+            reviewed_source,
+            "%s reviewed frozen source %s" % (target, destination),
+        )
         _require(
-            copied_source.read_bytes() == reviewed_source.read_bytes(),
+            copied_bytes == reviewed_bytes,
             "%s generated board source %s is stale" % (target, destination),
         )
 
@@ -14849,6 +15475,22 @@ def _audit_frozen_payload_proof(
         prefix="pyble-frozen-proof-%s-" % target
     ) as temporary_raw:
         temporary = Path(temporary_raw)
+        staged_board = _audit_materialize_retained_board_snapshot(
+            board_snapshot,
+            temporary / "retained-board",
+            target=target,
+        )
+        staged_board_snapshot = _audit_private_generated_board_snapshot(
+            staged_board,
+            target=target,
+        )
+        _require(
+            _audit_generated_board_snapshot_payload(staged_board_snapshot)
+            == _audit_generated_board_snapshot_payload(board_snapshot),
+            "%s retained generated board execution snapshot differs from capture"
+            % target,
+        )
+        staged_manifest = staged_board / "manifest.py"
         generated_qstr = temporary / "genhdr" / "qstrdefs.preprocessed.h"
         generated_qstr.parent.mkdir(parents=True)
         shutil.copyfile(qstr_path, generated_qstr)
@@ -14859,7 +15501,7 @@ def _audit_frozen_payload_proof(
             "-o",
             os.fspath(generated_frozen),
             "-v",
-            "BOARD_DIR=%s" % board_dir,
+            "BOARD_DIR=%s" % staged_board,
             "-v",
             "MPY_DIR=%s" % micropython,
             "-v",
@@ -14875,7 +15517,7 @@ def _audit_frozen_payload_proof(
             os.fspath(temporary),
             "-f-march=%s" % settings["architecture"],
             "--mpy-tool-flags=",
-            os.fspath(copied_manifest),
+            os.fspath(staged_manifest),
         ]
         environment = _audit_controlled_subprocess_environment(temporary)
         try:
@@ -14964,6 +15606,30 @@ def _audit_frozen_payload_proof(
             == built_frozen.read_bytes(),
             "%s frozen_content.c differs from clean reconstruction" % target,
         )
+        _require(
+            _audit_private_generated_board_snapshot(
+                staged_board,
+                target=target,
+            )
+            == staged_board_snapshot,
+            "%s retained generated board execution snapshot changed during audit"
+            % target,
+        )
+
+    (
+        final_board_dir,
+        final_board_logical_prefix,
+        final_board_snapshot,
+    ) = _audit_retained_generated_board_snapshot(
+        build_root=builds,
+        target=target,
+    )
+    _require(
+        final_board_dir == board_dir
+        and final_board_logical_prefix == board_logical_prefix
+        and final_board_snapshot == board_snapshot,
+        "%s retained generated board tree changed during audit" % target,
+    )
 
     proof = {
         "architecture": settings["architecture"],
@@ -14998,6 +15664,18 @@ def _audit_manifest_evidence_record(
     resolved_root = root.resolve()
     manifest = Path(manifest_path).absolute()
     frozen_source = Path(frozen_path).absolute()
+    target_build = frozen_source.parent
+    build_root = target_build.parent
+    _require(
+        frozen_source == build_root / target / "frozen_content.c"
+        and target_build.name == target,
+        "%s frozen payload is not in its exact target build directory" % target,
+    )
+    _audit_no_symlink_components(
+        build_root,
+        frozen_source,
+        "%s frozen payload" % target,
+    )
     frozen = _audit_frozen_names(frozen_source)
     selections, traversed, selection_details = _audit_resolve_manifest_context(
         manifest,
@@ -15052,6 +15730,7 @@ def _audit_manifest_evidence_record(
         manifest_path=manifest,
         frozen_path=frozen_source,
         selections=selections,
+        build_root=build_root,
         trusted_mpy_cross_sha256=trusted_mpy_cross_sha256,
     )
     return selections, {
@@ -17577,6 +18256,7 @@ def _audit_release_licenses_v2(
         observed_inputs=observations,
         manifest_evidence=initial_manifest_evidence,
         toolchain_roots=toolchain_context,
+        build_root=build_root,
     )
     reviewed_documents = _audit_v2_reviewed_documents(
         parsed_documents=parsed_documents,
@@ -18249,6 +18929,7 @@ def _audit_verify_esp_release_evidence(
         observed_inputs=observations,
         manifest_evidence=observed_context["manifest_evidence"],
         toolchain_roots=observed_context["toolchain_roots"],
+        build_root=builds,
     )
     expected_reviewed = _audit_v2_reviewed_documents(
         parsed_documents=parsed_documents,
