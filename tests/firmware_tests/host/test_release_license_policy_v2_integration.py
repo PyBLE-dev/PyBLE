@@ -921,13 +921,24 @@ output.write_text(
 
         micropython = self.firmware / "upstream" / "micropython"
         settings = RELEASE.FROZEN_TARGET_SETTINGS[target]
-        board = (
+        canonical_board = (
             micropython
             / "ports"
             / "esp32"
             / "boards"
             / settings["board"]
         )
+        retained_board = (
+            self.build_root
+            / ".sources"
+            / target
+            / "micropython"
+            / "ports"
+            / "esp32"
+            / "boards"
+            / settings["board"]
+        )
+        board = retained_board if retained_board.is_dir() else canonical_board
         target_build = self.build_root / target
         makemanifest = micropython / "tools" / "makemanifest.py"
         completed = os.spawnve(
@@ -3231,9 +3242,8 @@ class ObservePolicyV2InputsTests(unittest.TestCase):
         for _profile_id, target, _idf_target in PROFILE_TARGETS:
             board = RELEASE.FROZEN_TARGET_SETTINGS[target]["board"]
             generated_relative = (
-                "firmware/upstream/micropython/ports/esp32/boards/"
-                + board
-                + "/pyble_st7789.py"
+                "build/.sources/%s/micropython/ports/esp32/boards/%s/"
+                "pyble_st7789.py" % (target, board)
             )
             selected = {
                 item["destination"]: item
@@ -3280,8 +3290,9 @@ class ObservePolicyV2InputsTests(unittest.TestCase):
             "waveshare-esp32-s3-lcd-147b"
         ]
         generated = (
-            self.fixture.firmware
-            / "upstream"
+            self.fixture.build_root
+            / ".sources"
+            / "waveshare-esp32-s3-lcd-147b"
             / "micropython"
             / "ports"
             / "esp32"
@@ -3328,8 +3339,9 @@ class ObservePolicyV2InputsTests(unittest.TestCase):
         for target in ("esp32", "esp32-s3", "esp32-c3"):
             board = RELEASE.FROZEN_TARGET_SETTINGS[target]["board"]
             stray = (
-                self.fixture.firmware
-                / "upstream"
+                self.fixture.build_root
+                / ".sources"
+                / target
                 / "micropython"
                 / "ports"
                 / "esp32"
