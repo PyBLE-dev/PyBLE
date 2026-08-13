@@ -203,6 +203,32 @@ def _transfer_link_facts(profile_id):
     }
 
 
+def _waveshare_link_fact_record(
+        epoch, *, final, settled=True, overflow=False):
+    return {
+        "epoch": epoch,
+        "final": final,
+        "settled": settled,
+        "overflow": overflow,
+        "facts": _transfer_link_facts(
+            "waveshare-esp32-s3-lcd-147b"
+        ),
+    }
+
+
+def _waveshare_link_fact_snapshot(*, active_epoch=42, ended_epoch=41):
+    return {
+        "active": _waveshare_link_fact_record(
+            active_epoch,
+            final=False,
+        ),
+        "last_ended": _waveshare_link_fact_record(
+            ended_epoch,
+            final=True,
+        ),
+    }
+
+
 def _valid_observation(profile_id):
     heap = _heap()
     durations = [1_000_000_000] * 5
@@ -1058,6 +1084,7 @@ class HeapAndTransferValidationTest(unittest.TestCase):
                 "abc123",
             )
 
+
     def test_get_offsets_are_contiguous_unique_and_crc_verified(self):
         expected = b"abcdefghij"
         verifier = bench.DownloadVerifier(expected)
@@ -1095,6 +1122,163 @@ class HeapAndTransferValidationTest(unittest.TestCase):
         self.assertEqual(bench.goodput_bps(65536, 2_000_000_000), 32768)
         with self.assertRaises(bench.BenchError):
             bench.goodput_bps(65536, 0)
+
+
+class WaveshareBleLinkFactProbeRedTest(unittest.TestCase):
+    def test_exact_getter_probe_source_and_split_strict_marker(self):
+        source_fn = getattr(bench, "oi1_link_fact_probe_source", None)
+        parser_fn = getattr(
+            bench,
+            "parse_oi1_link_fact_probe_output",
+            None,
+        )
+        self.assertIsNotNone(source_fn, "HAND-OFF [green]: add probe source")
+        self.assertIsNotNone(parser_fn, "HAND-OFF [green]: add strict parser")
+
+        source = source_fn("abc123")
+        self.assertIn("import pble_ble", source)
+        self.assertIn("_oi1_link_facts()", source)
+        self.assertIn("__PYBLE_OI1_LINK_FACTS_abc123", source)
+        snapshot = _waveshare_link_fact_snapshot()
+        encoded = json.dumps(snapshot, sort_keys=True).encode("ascii")
+        parsed = parser_fn(
+            [
+                b"discarded console noise\n__PYBLE_OI1_LINK_FACTS_abc",
+                b"123=" + encoded + b"\n",
+            ],
+            "abc123",
+        )
+        self.assertEqual(parsed, snapshot)
+
+    def test_malformed_stale_and_overflowed_snapshots_fail_closed(self):
+        parser_fn = getattr(
+            bench,
+            "parse_oi1_link_fact_probe_output",
+            None,
+        )
+        pair_fn = getattr(
+            profile_bench,
+            "validate_waveshare_link_fact_pair",
+            None,
+        )
+        self.assertIsNotNone(parser_fn, "HAND-OFF [green]: add strict parser")
+        self.assertIsNotNone(pair_fn, "HAND-OFF [green]: add epoch validator")
+
+        snapshot = _waveshare_link_fact_snapshot()
+
+        def marker(value):
+            return (
+                b"__PYBLE_OI1_LINK_FACTS_nonce="
+                + json.dumps(value, sort_keys=True).encode("ascii")
+                + b"\n"
+            )
+
+        malformed = copy.deepcopy(snapshot)
+        malformed["address"] = "forbidden"
+        overflowed = copy.deepcopy(snapshot)
+        overflowed["last_ended"]["overflow"] = True
+        for payload in (
+            marker(malformed),
+            marker(overflowed),
+            marker(snapshot) + marker(snapshot),
+            b"__PYBLE_OI1_LINK_FACTS_nonce=\xff\n",
+        ):
+            with self.subTest(payload=payload[:80]):
+                with self.assertRaises(bench.BenchError):
+                    parser_fn([payload], "nonce")
+
+        pair_fn(snapshot, expected_ended_epoch=41)
+        stale = _waveshare_link_fact_snapshot(ended_epoch=40)
+        with self.assertRaisesRegex(bench.BenchError, "epoch|stale"):
+            pair_fn(stale, expected_ended_epoch=41)
+        non_successor = _waveshare_link_fact_snapshot(
+            active_epoch=43,
+            ended_epoch=41,
+        )
+        with self.assertRaisesRegex(bench.BenchError, "epoch|successor"):
+            pair_fn(non_successor, expected_ended_epoch=41)
+
+
+class WaveshareBleExecutorRedTest(unittest.IsolatedAsyncioTestCase):
+    async def test_first_nine_disconnects_use_bounded_ble_diagnostic_sequence(self):
+        executor_type = getattr(
+            profile_bench,
+            "WaveshareHardwareExecutor",
+            None,
+        )
+        self.assertIsNotNone(
+            executor_type,
+            "HAND-OFF [green]: add the no-serial Waveshare executor",
+        )
+        events = []
+
+        class Connection:
+            def __init__(self, name):
+                self.name = name
+                self.backend_mtu = 247
+
+            async def disconnect(self):
+                events.append(("disconnect", self.name))
+
+        class Log:
+            def write(self, event, **_values):
+                events.append(("log", event))
+
+        async def connect(address, timeout):
+            events.append(("connect", address, timeout))
+            return diagnostic
+
+        async def diagnostic_hello(
+                central, _next_id, *, expected_chip, profile_id, timeout_s):
+            self.assertIs(central, diagnostic)
+            events.append(("hello", expected_chip, profile_id, timeout_s))
+            return {}, (247, 8, 229, 0)
+
+        async def probe(central, _next_id, *, timeout_s):
+            self.assertIs(central, diagnostic)
+            events.append(("probe", timeout_s))
+            return _waveshare_link_fact_snapshot()
+
+        args = argparse.Namespace(
+            address="private-test-address",
+            expect_chip="esp32-s3",
+            profile="waveshare-esp32-s3-lcd-147b",
+        )
+        measured = Connection("measured")
+        diagnostic = Connection("diagnostic")
+        executor = executor_type(args, object(), Log())
+        with (
+            mock.patch.object(
+                profile_bench.PbleCentral,
+                "connect",
+                new=connect,
+            ),
+            mock.patch.object(profile_bench, "hello", new=diagnostic_hello),
+            mock.patch.object(
+                profile_bench,
+                "run_oi1_link_fact_probe",
+                new=probe,
+                create=True,
+            ),
+        ):
+            await executor.disconnect(measured)
+
+        evidence_events = [event for event in events if event[0] != "log"]
+        self.assertEqual(
+            evidence_events,
+            [
+                ("disconnect", "measured"),
+                ("connect", "private-test-address", 20.0),
+                (
+                    "hello",
+                    "esp32-s3",
+                    "waveshare-esp32-s3-lcd-147b",
+                    2.0,
+                ),
+                ("probe", 2.0),
+                ("disconnect", "diagnostic"),
+            ],
+        )
 
 
 class TransferLinkFactsObservationRedTests(unittest.TestCase):
@@ -2040,6 +2224,40 @@ class WaveshareNativeUsbReopenRedTest(unittest.IsolatedAsyncioTestCase):
 
 
 class EvidenceAndCliTest(unittest.TestCase):
+    def test_waveshare_cli_forbids_serial_reset_port(self):
+        required = [
+            "--mode",
+            "baseline",
+            "--profile",
+            "waveshare-esp32-s3-lcd-147b",
+            "--expect-chip",
+            "esp32-s3",
+            "--address",
+            "test-address",
+            "--operator-reset",
+            "--application-bin",
+            "application.bin",
+            "--partition-table-bin",
+            "partition-table.bin",
+            "--raw-log",
+            "raw.jsonl",
+            "--output",
+            "observation.json",
+        ]
+        with mock.patch.object(sys, "stderr", mock.MagicMock()):
+            try:
+                args = profile_bench._parse_args(required)
+            except SystemExit:
+                self.fail(
+                    "HAND-OFF [green]: Waveshare must not require a serial port"
+                )
+        self.assertIsNone(args.reset_port)
+        with mock.patch.object(sys, "stderr", mock.MagicMock()):
+            with self.assertRaises(SystemExit):
+                profile_bench._parse_args(
+                    required + ["--reset-port", "/dev/test-native-usb"]
+                )
+
     def test_waveshare_operator_reset_prompts_are_frozen(self):
         self.assertEqual(
             profile_bench.WAVESHARE_RESET_HOLD_PROMPT,
