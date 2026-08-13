@@ -553,19 +553,40 @@ class ObservationV2Fixture:
         """Bind each synthetic build to one pinned, target-local checkout."""
 
         canonical = self.firmware / "upstream" / "micropython"
-        fixture_git(canonical, "init", "-q")
-        fixture_git(canonical, "config", "user.name", "PyBLE Test")
-        fixture_git(canonical, "config", "user.email", "test@pyble.invalid")
-        fixture_git(canonical, "add", ".")
-        fixture_git(
-            canonical,
-            "-c",
-            "commit.gpgsign=false",
-            "commit",
-            "-q",
-            "-m",
-            "synthetic pinned MicroPython",
-        )
+        generated_backup = self.root / "generated-board-staging"
+        generated_backup.mkdir()
+        generated_boards = []
+        try:
+            for _profile_id, target, _idf_target in PROFILE_TARGETS:
+                board_name = RELEASE.FROZEN_TARGET_SETTINGS[target]["board"]
+                board = (
+                    canonical
+                    / "ports"
+                    / "esp32"
+                    / "boards"
+                    / board_name
+                )
+                backup = generated_backup / target
+                board.rename(backup)
+                generated_boards.append((board, backup))
+
+            fixture_git(canonical, "init", "-q")
+            fixture_git(canonical, "config", "user.name", "PyBLE Test")
+            fixture_git(canonical, "config", "user.email", "test@pyble.invalid")
+            fixture_git(canonical, "add", ".")
+            fixture_git(
+                canonical,
+                "-c",
+                "commit.gpgsign=false",
+                "commit",
+                "-q",
+                "-m",
+                "synthetic pinned MicroPython",
+            )
+        finally:
+            for board, backup in reversed(generated_boards):
+                backup.rename(board)
+            generated_backup.rmdir()
         commit = fixture_git(canonical, "rev-parse", "HEAD")
         fixture_git(
             canonical,
@@ -620,6 +641,19 @@ class ObservationV2Fixture:
                 "set-url",
                 "origin",
                 MICROPYTHON_ORIGIN,
+            )
+            board_name = RELEASE.FROZEN_TARGET_SETTINGS[target]["board"]
+            shutil.copytree(
+                canonical
+                / "ports"
+                / "esp32"
+                / "boards"
+                / board_name,
+                checkout
+                / "ports"
+                / "esp32"
+                / "boards"
+                / board_name,
             )
             description_path = (
                 self.build_root / target / "project_description.json"
@@ -3085,6 +3119,100 @@ class ObservePolicyV2InputsTests(unittest.TestCase):
                 ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns),
             )
             self.assert_rejected()
+
+    def test_frozen_proof_uses_retained_board_when_ambient_boards_are_absent(self):
+        ambient_boards = []
+        backup_root = self.fixture.root / "ambient-generated-board-backup"
+        backup_root.mkdir()
+        try:
+            for _profile_id, target, _idf_target in PROFILE_TARGETS:
+                board_name = RELEASE.FROZEN_TARGET_SETTINGS[target]["board"]
+                ambient = (
+                    self.fixture.firmware
+                    / "upstream"
+                    / "micropython"
+                    / "ports"
+                    / "esp32"
+                    / "boards"
+                    / board_name
+                )
+                retained = (
+                    self.fixture.build_root
+                    / ".sources"
+                    / target
+                    / "micropython"
+                    / "ports"
+                    / "esp32"
+                    / "boards"
+                    / board_name
+                )
+                self.assertTrue(retained.is_dir())
+                backup = backup_root / target
+                ambient.rename(backup)
+                ambient_boards.append((ambient, backup))
+
+            context = self.observe_context()
+            self.assertEqual(
+                {record["target"] for record in context["manifest_evidence"]},
+                {target for _profile, target, _idf in PROFILE_TARGETS},
+            )
+        finally:
+            for ambient, backup in reversed(ambient_boards):
+                backup.rename(ambient)
+            backup_root.rmdir()
+
+    def test_retained_board_missing_or_drift_rejects_ambient_decoy(self):
+        target = "esp32"
+        board_name = RELEASE.FROZEN_TARGET_SETTINGS[target]["board"]
+        relative = Path("ports") / "esp32" / "boards" / board_name
+        ambient = (
+            self.fixture.firmware / "upstream" / "micropython" / relative
+        )
+        retained = (
+            self.fixture.build_root
+            / ".sources"
+            / target
+            / "micropython"
+            / relative
+        )
+        self.assertEqual(
+            (ambient / "manifest.py").read_bytes(),
+            (retained / "manifest.py").read_bytes(),
+            "the ambient tree must be a convincing decoy for this boundary test",
+        )
+
+        with self.subTest(retained="missing"):
+            with BASE.removed_file(retained / "manifest.py"):
+                self.assert_rejected()
+        with self.subTest(retained="drift"):
+            boot = retained / "_boot.py"
+            with BASE.patched_bytes(
+                boot,
+                boot.read_bytes() + b"# retained target-local drift\n",
+            ):
+                self.assert_rejected()
+
+    def test_generated_board_evidence_uses_build_namespace(self):
+        context = self.observe_context()
+        evidence = {
+            record["target"]: record
+            for record in context["manifest_evidence"]
+        }
+        for _profile_id, target, _idf_target in PROFILE_TARGETS:
+            board_name = RELEASE.FROZEN_TARGET_SETTINGS[target]["board"]
+            prefix = (
+                "build/.sources/%s/micropython/ports/esp32/boards/%s/"
+                % (target, board_name)
+            )
+            self.assertEqual(
+                evidence[target]["generated_board_manifest"],
+                prefix + "manifest.py",
+            )
+            for record in evidence[target]["first_party_frozen_sources"]:
+                self.assertEqual(
+                    record["generated_path"],
+                    prefix + record["destination"],
+                )
 
     def test_first_party_sources_are_mit_identical_and_waveshare_only(self):
         context = self.observe_context()
