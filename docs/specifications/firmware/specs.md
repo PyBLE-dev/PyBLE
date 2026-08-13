@@ -874,6 +874,27 @@ For each exact profile and one immutable firmware/manifest candidate:
    remains required for private link-fact capture, but the harness MUST NOT
    toggle native USB RTS or DTR and call that a controlled reset.
 
+   Physical RESET also restarts the chip-native USB peripheral; a serial handle
+   opened before RESET is therefore stale and MUST NOT be used for the new BLE
+   session. After the first prompt returns, while RESET is still physically
+   held, the controller MUST close and discard that handle without reading it.
+   `EIO`, `ENXIO`, `ENODEV`, or `EBADF` while closing this deliberately removed
+   endpoint is expected cleanup. Any other close error is fatal. Closing the
+   stale handle MUST NOT set or clear RTS or DTR.
+
+   After the fresh matching advertisement has completed the numeric reset
+   measurement, and before initiating that sample's BLE connection, HELLO, or
+   link-fact session, the harness MUST call the reset controller's exact
+   `prepare_after_advertisement()` seam. For Waveshare that seam reopens the
+   same operator-selected native USB serial endpoint at the selected baud rate
+   and makes the fresh handle available to the existing private serial parser.
+   Opening or preparing the replacement handle MUST NOT set or clear RTS or
+   DTR. A missing replacement endpoint or an open failure is fatal; the harness
+   MUST NOT continue without link-fact capture. The reopen occurs after the
+   scanner callback and therefore cannot move, shorten, or otherwise enter the
+   reset-to-advertisement timer. The UART-reset ESP controllers expose the same
+   seam as a no-op so the executor has one fail-closed ordering boundary.
+
    The operator seam is forbidden for `esp32-4mb`, `esp32-s3-n16r8`, and
    `esp32-c3-4mb`; those ESP profiles retain the explicit UART RTS-to-EN
    controller and release-edge timing. Pico retains its separately specified
