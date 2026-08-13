@@ -1431,6 +1431,61 @@ class ResetTimingTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(reset.actions, ["assert", "release"])
         self.assertEqual(watcher.timeout_ms, 15000)
 
+    async def test_waveshare_operator_confirmation_precedes_timer_start(self):
+        events = []
+
+        class Reset:
+            def assert_reset(self):
+                events.append("hold-confirmed")
+
+            def release_reset(self):
+                events.append("release-confirmed")
+
+        class Watcher:
+            first_match_ns = None
+
+            async def start(self):
+                events.append("scanner-started")
+
+            async def stop(self):
+                events.append("scanner-stopped")
+
+            async def wait_for_match(self, timeout_ms):
+                events.append(("wait", timeout_ms))
+                return 12_000_001
+
+        async def no_sleep(_seconds):
+            events.append("quiet-interval-complete")
+
+        def clock_ns():
+            events.append("timer-started")
+            return 10_000_000
+
+        value = await bench.measure_reset_to_advertisement(
+            Reset(),
+            Watcher(),
+            hold_ms=1000,
+            timeout_ms=15000,
+            sleep=no_sleep,
+            monotonic_ns=clock_ns,
+        )
+
+        self.assertEqual(value, 3)
+        self.assertLess(
+            events.index("scanner-started"), events.index("hold-confirmed")
+        )
+        self.assertLess(
+            events.index("hold-confirmed"),
+            events.index("quiet-interval-complete"),
+        )
+        self.assertLess(
+            events.index("quiet-interval-complete"),
+            events.index("release-confirmed"),
+        )
+        self.assertLess(
+            events.index("release-confirmed"), events.index("timer-started")
+        )
+
 
 class SerialResetCleanupTest(unittest.TestCase):
     @staticmethod
@@ -1781,6 +1836,180 @@ class WorkloadOrchestrationTest(unittest.IsolatedAsyncioTestCase):
 
 
 class EvidenceAndCliTest(unittest.TestCase):
+    def test_waveshare_operator_reset_prompts_are_frozen(self):
+        self.assertEqual(
+            profile_bench.WAVESHARE_RESET_HOLD_PROMPT,
+            "Press and hold RESET on the Waveshare ESP32-S3-LCD-1.47B, "
+            "keep holding it, then press Enter: ",
+        )
+        self.assertEqual(
+            profile_bench.WAVESHARE_RESET_RELEASE_PROMPT,
+            "Release RESET now, then press Enter immediately: ",
+        )
+
+    def test_waveshare_controller_prompts_without_control_line_reset(self):
+        control_events = []
+        prompts = []
+
+        class Device:
+            port = None
+            baudrate = None
+            timeout = None
+            write_timeout = None
+            dsrdtr = None
+            rtscts = None
+            in_waiting = 0
+
+            @property
+            def rts(self):
+                return False
+
+            @rts.setter
+            def rts(self, value):
+                control_events.append(("rts", value))
+
+            @property
+            def dtr(self):
+                return False
+
+            @dtr.setter
+            def dtr(self, value):
+                control_events.append(("dtr", value))
+
+            def open(self):
+                return None
+
+            def reset_input_buffer(self):
+                return None
+
+            def close(self):
+                return None
+
+        serial_module = argparse.Namespace(Serial=lambda: Device())
+        with mock.patch.dict(sys.modules, {"serial": serial_module}):
+            controller = profile_bench.WaveshareOperatorResetController(
+                "/dev/test-native-usb",
+                115200,
+                operator_action=prompts.append,
+            )
+            pre_actions = list(control_events)
+            controller.assert_reset()
+            controller.release_reset()
+            self.assertEqual(control_events, pre_actions)
+            controller.close()
+
+        self.assertEqual(
+            prompts,
+            [
+                "Press and hold RESET on the Waveshare ESP32-S3-LCD-1.47B, "
+                "keep holding it, then press Enter: ",
+                "Release RESET now, then press Enter immediately: ",
+            ],
+        )
+
+    def test_waveshare_run_selects_operator_reset_controller(self):
+        args = argparse.Namespace(
+            mode="verify",
+            profile="waveshare-esp32-s3-lcd-147b",
+            expect_chip="esp32-s3",
+            address="test-address",
+            reset_port="/dev/test-native-usb",
+            reset_baud=115200,
+            application_bin="application.bin",
+            partition_table_bin="partition-table.bin",
+            operator_reset=True,
+            firmware_bin=None,
+            firmware_uf2=None,
+            policy="oi1-gates.json",
+            raw_log="raw.jsonl",
+            output="observation.json",
+            board_manufacturer="Waveshare",
+            board_model="ESP32-S3-LCD-1.47B",
+            module_marking="ESP32-S3-WROOM-1-N16R8",
+            device_flash_capacity_bytes=16 * 1024 * 1024,
+            device_psram_capacity_bytes=8 * 1024 * 1024,
+            firmware_sha256=None,
+            manifest_sha256="b" * 64,
+            install_sha256="a" * 64,
+            ble_backend="CoreBluetooth",
+            ble_adapter="built-in",
+        )
+        oi1_build = {
+            "application_image_bytes": 100,
+            "factory_partition_bytes": 200,
+            "application_headroom_bytes": 100,
+        }
+        observation = {"raw_log_sha256": "c" * 64}
+        raw_log = mock.MagicMock()
+        operator_reset = mock.MagicMock()
+        executor = mock.MagicMock()
+
+        async def run_case():
+            with (
+                mock.patch.object(
+                    profile_bench,
+                    "oi1_build_from_paths",
+                    return_value=oi1_build,
+                ),
+                mock.patch.object(
+                    profile_bench,
+                    "RedactedRawLog",
+                    return_value=raw_log,
+                ),
+                mock.patch.object(
+                    profile_bench,
+                    "WaveshareOperatorResetController",
+                    return_value=operator_reset,
+                    create=True,
+                ) as waveshare_controller,
+                mock.patch.object(
+                    profile_bench,
+                    "SerialResetController",
+                ) as serial_controller,
+                mock.patch.object(
+                    profile_bench,
+                    "HardwareExecutor",
+                    return_value=executor,
+                ) as hardware_executor,
+                mock.patch.object(
+                    profile_bench,
+                    "collect_observation",
+                    new=mock.AsyncMock(return_value=observation),
+                ),
+                mock.patch.object(
+                    profile_bench,
+                    "_load_policy_thresholds",
+                    return_value={},
+                ),
+                mock.patch.object(profile_bench, "evaluate_thresholds"),
+                mock.patch.object(
+                    profile_bench,
+                    "build_baseline_profile",
+                    return_value={"profile_id": args.profile},
+                ),
+                mock.patch.object(
+                    profile_bench,
+                    "output_for_mode",
+                    return_value=observation,
+                ),
+                mock.patch.object(profile_bench, "atomic_write_canonical_json"),
+            ):
+                result = await profile_bench._run(args)
+
+            self.assertEqual(result, 0)
+            waveshare_controller.assert_called_once_with(
+                args.reset_port,
+                args.reset_baud,
+            )
+            serial_controller.assert_not_called()
+            hardware_executor.assert_called_once_with(
+                args,
+                operator_reset,
+                raw_log,
+            )
+
+        asyncio.run(run_case())
+
     def test_canonical_json_is_sorted_indented_lf_terminated(self):
         encoded = bench.canonical_json_bytes({"z": 1, "a": ["é", {"b": 2}]})
         self.assertEqual(
@@ -1859,12 +2088,27 @@ class EvidenceAndCliTest(unittest.TestCase):
             "waveshare-esp32-s3-lcd-147b"
         )
         waveshare[waveshare.index("esp32")] = "esp32-s3"
+        with self.assertRaises(SystemExit):
+            profile_bench._parse_args(waveshare)
+        waveshare += ["--operator-reset"]
         waveshare_args = profile_bench._parse_args(waveshare)
         self.assertEqual(
             waveshare_args.profile,
             "waveshare-esp32-s3-lcd-147b",
         )
         self.assertEqual(waveshare_args.expect_chip, "esp32-s3")
+        for profile_id, chip in (
+            ("esp32-4mb", "esp32"),
+            ("esp32-s3-n16r8", "esp32-s3"),
+            ("esp32-c3-4mb", "esp32-c3"),
+        ):
+            scoped = list(required)
+            scoped[scoped.index("esp32-4mb")] = profile_id
+            scoped[scoped.index("esp32")] = chip
+            scoped += ["--operator-reset"]
+            with self.subTest(operator_reset_forbidden=profile_id):
+                with self.assertRaises(SystemExit):
+                    profile_bench._parse_args(scoped)
         for missing_flag in ("--reset-port", "--raw-log", "--output"):
             with self.subTest(missing=missing_flag):
                 index = required.index(missing_flag)
