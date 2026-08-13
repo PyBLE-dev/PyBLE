@@ -2035,6 +2035,80 @@ class EvidenceAndCliTest(unittest.TestCase):
         self.assertEqual(len(devices), 2)
         self.assertEqual(control_events, [])
 
+    def test_waveshare_posix_open_never_applies_rts_or_dtr(self):
+        control_events = []
+        devices = []
+
+        class PosixSerialOpenModel:
+            """Model pyserial's serialposix.Serial.open control-line branch."""
+
+            port = None
+            baudrate = None
+            timeout = None
+            write_timeout = None
+            in_waiting = 0
+
+            def __init__(self, index):
+                self.index = index
+                self._dsrdtr = False
+                self._rtscts = False
+                self._dtr_state = True
+                self._rts_state = True
+
+            @property
+            def dsrdtr(self):
+                return self._dsrdtr
+
+            @dsrdtr.setter
+            def dsrdtr(self, value):
+                self._dsrdtr = value
+
+            @property
+            def rtscts(self):
+                return self._rtscts
+
+            @rtscts.setter
+            def rtscts(self, value):
+                self._rtscts = value
+
+            def open(self):
+                # pyserial's POSIX backend performs both state updates on
+                # every open when the corresponding flow control is false.
+                if not self._dsrdtr:
+                    control_events.append(
+                        ("dtr", self.index, self._dtr_state)
+                    )
+                if not self._rtscts:
+                    control_events.append(
+                        ("rts", self.index, self._rts_state)
+                    )
+
+            def reset_input_buffer(self):
+                return None
+
+            def close(self):
+                return None
+
+        def serial_factory():
+            device = PosixSerialOpenModel(len(devices))
+            devices.append(device)
+            return device
+
+        serial_module = argparse.Namespace(Serial=serial_factory)
+        with mock.patch.dict(sys.modules, {"serial": serial_module}):
+            controller = profile_bench.WaveshareOperatorResetController(
+                "/dev/test-native-usb",
+                115200,
+                operator_action=lambda _prompt: None,
+            )
+            controller.assert_reset()
+            controller.release_reset()
+            controller.prepare_after_advertisement()
+            controller.close()
+
+        self.assertEqual(len(devices), 2)
+        self.assertEqual(control_events, [])
+
     def test_waveshare_closes_stale_usb_while_held_then_reopens_fresh(self):
         events = []
         devices = []
