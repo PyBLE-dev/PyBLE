@@ -319,14 +319,17 @@ class RetainedBoardConsumptionRaceTests(unittest.TestCase):
         actual_open = RELEASE.os.open
         raced = False
         unsafe_absolute_opens = []
+        retained_board_stat = retained_board.stat()
 
-        def fd_path(descriptor):
-            for prefix in ("/proc/self/fd", "/dev/fd"):
-                try:
-                    return Path(os.readlink("%s/%d" % (prefix, descriptor))).resolve()
-                except OSError:
-                    continue
-            return None
+        def descriptor_is_retained_board(descriptor):
+            try:
+                opened = os.fstat(descriptor)
+            except OSError:
+                return False
+            return (
+                opened.st_dev == retained_board_stat.st_dev
+                and opened.st_ino == retained_board_stat.st_ino
+            )
 
         def swap_parent_for_open(path, flags, *args, **kwargs):
             nonlocal raced
@@ -344,7 +347,7 @@ class RetainedBoardConsumptionRaceTests(unittest.TestCase):
             descriptor_parent = (
                 raw == "pyble"
                 and dir_fd is not None
-                and fd_path(dir_fd) == retained_board.resolve()
+                and descriptor_is_retained_board(dir_fd)
             )
             if raced or not (absolute_leaf or descriptor_parent):
                 return actual_open(path, flags, *args, **kwargs)
