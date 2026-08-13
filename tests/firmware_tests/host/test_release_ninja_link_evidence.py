@@ -1,0 +1,279 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# Part of PyBLE (https://pyble.dev) — see /LICENSE.
+#
+# [red] BLD-8 — Retain and independently replay Ninja final-link evidence.
+#
+# Frozen sources:
+#   docs/specifications/firmware/browser-flashing.md §6 rule 4
+#   docs/specifications/firmware/specs.md BLD-8
+
+from __future__ import annotations
+
+import importlib.util
+import hashlib
+import json
+from pathlib import Path
+import sys
+import tempfile
+import unittest
+
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+RELEASE_SCRIPT = REPO_ROOT / "firmware" / "scripts" / "release_bundle.py"
+
+
+def load_release_module():
+    spec = importlib.util.spec_from_file_location(
+        "pyble_release_ninja_link_evidence",
+        RELEASE_SCRIPT,
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError("cannot load release_bundle.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.modules.pop(spec.name, None)
+    return module
+
+
+RELEASE = load_release_module()
+SEAM_NAME = "_audit_ninja_link_command_evidence"
+
+
+class NinjaLinkEvidenceTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory(
+            prefix="pyble-ninja-link-evidence-"
+        )
+        self.role_build = (Path(self.temporary.name) / "esp32").resolve()
+        (self.role_build / "CMakeFiles").mkdir(parents=True)
+        self.outputs = {
+            self._object("CMakeFiles/micropython.elf.dir/project.c.obj"),
+            self._object("esp-idf/main/CMakeFiles/btree.dir/bt_close.c.obj"),
+        }
+        self.explicit = "CMakeFiles/micropython.elf.dir/project.c.obj"
+        self.implicit = "esp-idf/main/CMakeFiles/btree.dir/bt_close.c.obj"
+        self.map_outputs = set(self.outputs)
+        self.argv = [
+            "/toolchain/bin/fixture-g++",
+            self.explicit,
+            "-o",
+            "micropython.elf",
+            self.implicit,
+            "esp-idf/main/libmain.a",
+        ]
+        self._write_ninja()
+
+    def tearDown(self):
+        self.temporary.cleanup()
+
+    def _object(self, relative: str) -> Path:
+        path = self.role_build / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"synthetic object\n")
+        return path.resolve()
+
+    @property
+    def direct_relatives(self) -> list[str]:
+        return sorted(
+            path.relative_to(self.role_build).as_posix() for path in self.outputs
+        )
+
+    def _write_ninja(
+        self,
+        *,
+        edge_suffix: str = "",
+        include: str | None = None,
+        flags: str = "",
+    ):
+        include_line = include or "include CMakeFiles/rules.ninja"
+        (self.role_build / "build.ninja").write_text(
+            "# exact synthetic CMake Ninja graph\n"
+            + include_line
+            + "\n"
+            + "build micropython.elf: CXX_LINK %s | %s "
+            "esp-idf/main/libmain.a || graph-order%s\n"
+            % (self.explicit, self.implicit, edge_suffix)
+            + "  FLAGS =%s\n" % flags
+            + "  LINK_FLAGS =\n"
+            + "  LINK_LIBRARIES = %s esp-idf/main/libmain.a\n" % self.implicit
+            + "  LINK_PATH =\n"
+            + "  OBJECT_DIR = CMakeFiles/micropython.elf.dir\n"
+            + "  POST_BUILD = :\n"
+            + "  PRE_LINK = :\n"
+            + "  TARGET_COMPILE_PDB = CMakeFiles/micropython.elf.dir/\n"
+            + "  TARGET_FILE = micropython.elf\n"
+            + "  TARGET_PDB = micropython.elf.pdb\n",
+            encoding="utf-8",
+        )
+        (self.role_build / "CMakeFiles" / "rules.ninja").write_text(
+            "rule CXX_LINK\n"
+            "  command = $PRE_LINK && /toolchain/bin/fixture-g++ "
+            "$FLAGS $LINK_FLAGS $in -o $TARGET_FILE $LINK_PATH "
+            "$LINK_LIBRARIES && $POST_BUILD\n"
+            "  description = Linking CXX executable $TARGET_FILE\n"
+            "  restat = $RESTAT\n",
+            encoding="utf-8",
+        )
+
+    def observe(
+        self,
+        *,
+        compile_outputs: set[Path] | None = None,
+        map_outputs: set[Path] | None = None,
+        compiler_paths: set[Path] | None = None,
+    ):
+        seam = getattr(RELEASE, SEAM_NAME, None)
+        self.assertTrue(
+            callable(seam),
+            "release_bundle.py lacks %s" % SEAM_NAME,
+        )
+        return seam(
+            role_build=self.role_build,
+            app_elf="micropython.elf",
+            compile_outputs={
+                path: self.role_build / "source.c"
+                for path in (
+                    self.outputs if compile_outputs is None else compile_outputs
+                )
+            },
+            map_direct_outputs=(
+                self.map_outputs if map_outputs is None else map_outputs
+            ),
+            compiler_paths=(
+                {Path("/toolchain/bin/fixture-g++")}
+                if compiler_paths is None
+                else compiler_paths
+            ),
+        )
+
+    def test_exact_ninja_graph_replays_one_canonical_link_command(self):
+        observed = self.observe()
+        self.assertEqual(observed["argv"], self.argv)
+        self.assertEqual(observed["direct_outputs"], self.outputs)
+        encoded = (
+            json.dumps(self.argv, ensure_ascii=False, separators=(",", ":"))
+            + "\n"
+        ).encode("utf-8")
+        self.assertEqual(
+            observed["linker_command_sha256"],
+            hashlib.sha256(encoded).hexdigest(),
+        )
+        self.assertEqual(
+            set(observed),
+            {
+                "app_elf",
+                "argv",
+                "direct_outputs",
+                "linker_command_sha256",
+                "build_ninja_path",
+                "build_ninja_sha256",
+                "rules_ninja_path",
+                "rules_ninja_sha256",
+            },
+        )
+
+    def test_missing_ninja_graph_is_not_replaced_by_fabricated_link_txt(self):
+        (self.role_build / "build.ninja").unlink()
+        link_txt = self.role_build / "CMakeFiles/micropython.elf.dir/link.txt"
+        link_txt.parent.mkdir(exist_ok=True)
+        link_txt.write_text(" ".join(self.argv) + "\n", encoding="utf-8")
+
+        with self.assertRaises(RELEASE.ReleaseError):
+            self.observe()
+
+    def test_linker_frontend_must_be_compile_toolchain_admitted(self):
+        with self.assertRaises(RELEASE.ReleaseError):
+            self.observe(compiler_paths={Path("/attacker/bin/fixture-g++")})
+
+    def test_duplicate_elf_edge_or_linker_rule_is_rejected(self):
+        build_ninja = self.role_build / "build.ninja"
+        rules_ninja = self.role_build / "CMakeFiles/rules.ninja"
+        mutations = (
+            (
+                build_ninja,
+                "build micropython.elf: CXX_LINK CMakeFiles/other.obj\n",
+            ),
+            (
+                rules_ninja,
+                "rule CXX_LINK\n  command = /attacker/linker\n",
+            ),
+        )
+        for path, addition in mutations:
+            with self.subTest(path=path.name):
+                original = path.read_text(encoding="utf-8")
+                path.write_text(original + addition, encoding="utf-8")
+                try:
+                    with self.assertRaises(RELEASE.ReleaseError):
+                        self.observe()
+                finally:
+                    path.write_text(original, encoding="utf-8")
+
+    def test_alternate_include_or_nested_subninja_is_rejected(self):
+        for injected in (
+            "include ../outside/rules.ninja",
+            "include CMakeFiles/rules.ninja\nsubninja attacker.ninja",
+        ):
+            with self.subTest(injected=injected):
+                self._write_ninja(include=injected)
+                with self.assertRaises(RELEASE.ReleaseError):
+                    self.observe()
+
+    def test_response_file_shell_or_unknown_variable_is_rejected(self):
+        rules = self.role_build / "CMakeFiles/rules.ninja"
+        original = rules.read_text(encoding="utf-8")
+        attacks = (" @$rspfile", " ; attacker", " $unknown")
+        for attack in attacks:
+            with self.subTest(attack=attack):
+                rules.write_text(
+                    original.replace(" -o $TARGET_FILE", attack + " -o $TARGET_FILE"),
+                    encoding="utf-8",
+                )
+                try:
+                    with self.assertRaises(RELEASE.ReleaseError):
+                        self.observe()
+                finally:
+                    rules.write_text(original, encoding="utf-8")
+
+    def test_variable_cycle_or_duplicate_edge_assignment_is_rejected(self):
+        for flags in (" $FLAGS", " one\n  FLAGS = two"):
+            with self.subTest(flags=flags):
+                self._write_ninja(flags=flags)
+                with self.assertRaises(RELEASE.ReleaseError):
+                    self.observe()
+
+    def test_direct_objects_must_match_map_and_compile_evidence(self):
+        missing = next(iter(self.outputs))
+        for kwargs in (
+            {"compile_outputs": self.outputs - {missing}},
+            {"map_outputs": self.map_outputs - {missing}},
+        ):
+            with self.subTest(kwargs=sorted(kwargs)):
+                with self.assertRaises(RELEASE.ReleaseError):
+                    self.observe(**kwargs)
+
+    def test_graph_inputs_must_not_be_symlinks(self):
+        rules = self.role_build / "CMakeFiles/rules.ninja"
+        real_rules = self.role_build / "CMakeFiles/rules-real.ninja"
+        rules.rename(real_rules)
+        rules.symlink_to(real_rules.name)
+
+        with self.assertRaises(RELEASE.ReleaseError):
+            self.observe()
+
+    def test_path_escape_and_line_continuation_are_rejected(self):
+        for edge_suffix in (
+            " ../outside.obj",
+            " $",
+        ):
+            with self.subTest(edge_suffix=edge_suffix):
+                self._write_ninja(edge_suffix=edge_suffix)
+                with self.assertRaises(RELEASE.ReleaseError):
+                    self.observe()
+
+
+if __name__ == "__main__":
+    unittest.main()
