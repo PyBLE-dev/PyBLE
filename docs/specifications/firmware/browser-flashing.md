@@ -1078,18 +1078,54 @@ The following ESP-IDF resolution rules are part of that fail-closed mapping:
    bytes is not equivalent. Receipt records for files below the selected build
    root MUST use `build/<build-relative-path>` even when that build root is
    itself nested below the repository root.
-   The role's exact `CMakeFiles/<app-elf>.dir/link.txt` MUST also be a regular,
-   symlink-free receipt input. Its safely parsed direct `.o`/`.obj` argument
-   set MUST equal the map's direct-object `LOAD` set exactly. Response files,
-   including driver-wrapped forms, shell operators, duplicate object
-   arguments, and path escape are fatal.
+   ESP-IDF's Ninja generator does not emit
+   `CMakeFiles/<app-elf>.dir/link.txt`; absence of that Makefile-generator
+   artifact is not license evidence. The deterministic final-link source is
+   instead the exact role-root `build.ninja` and its one literal
+   `include CMakeFiles/rules.ninja`. The auditor MUST NOT execute Ninja, trust
+   the build invocation/environment/log, or fabricate a `link.txt`. It uses a
+   bounded, non-executing parser for only the pinned CMake-generated shape to
+   reconstruct the final linker argv and direct-object set. Both graph inputs
+   MUST be stable regular non-symlink files below the role build.
+
+   The admitted graph has exactly one edge whose sole explicit output is the
+   literal relative project-description `app_elf`, exactly one referenced rule
+   declaration in the literal role-relative rules file, exactly one `|` and
+   one `||` dependency separator, and the exact ten edge assignments `FLAGS`,
+   `LINK_FLAGS`, `LINK_LIBRARIES`, `LINK_PATH`, `OBJECT_DIR`, `POST_BUILD`,
+   `PRE_LINK`, `TARGET_COMPILE_PDB`, `TARGET_FILE`, and `TARGET_PDB`.
+   `TARGET_FILE` MUST equal `app_elf`; `PRE_LINK` and `POST_BUILD` MUST each be
+   the shell no-op `:`. The edge, assignments, and the rule's single `command`
+   template permit no continuation, quote, escape, embedded newline, response
+   file, substitution, or shell operator other than the rule's exact two `&&`
+   separators around those no-ops. Expansion is confined to the known edge
+   assignments plus Ninja's literal `$in`/`$out` values; no other variable or
+   Ninja construct is interpreted. Edge-assignment values cannot themselves
+   contain variables, which makes a variable cycle fatal; the rule's
+   non-command description/restat metadata cannot add command inputs.
+
+   After expansion, the safely tokenized command MUST contain one absolute
+   compiler frontend already admitted by the toolchain contract, one exact
+   `-o <app-elf>`, and a sorted-unique set of canonical build-relative
+   `.o`/`.obj` operands. Absolute/escaping objects, duplicate operands, or any
+   other output are fatal. That set MUST equal both the normalized map `LOAD`
+   set and the exact linked subset of compile outputs. The receipt binds
+   SHA-256 of the exact two Ninja files and `linker_command_sha256`, defined as
+   SHA-256 of the reconstructed argv encoded as canonical compact JSON plus
+   one final LF. The same derivation is repeated after all eight SBOM runs and
+   during public replay. An alternate include, nested `include`/`subninja`,
+   duplicate edge/output/rule/assignment, unknown escape or variable, path
+   escape, or any graph/map/compile/ELF mismatch is fatal. Parsing is
+   resource-bounded and never becomes a general Ninja interpreter.
    Basename-only matching is forbidden.
 
    One logical source may therefore have multiple compile outputs. Archive
    source records remain archive-only and unique by logical path. The role's
    generated `main` binding additionally contains:
 
-   - `linker_command_sha256`, the exact role `link.txt` digest;
+   - `linker_command_sha256`, the canonical reconstructed-argv digest,
+     `build_ninja_sha256`, and `rules_ninja_sha256` for the exact
+     `build.ninja` and `CMakeFiles/rules.ninja` bytes;
    - `metadata_inputs`, the canonical logical path/SHA-256 records for the six
      application `genhdr/` inputs (empty for bootloader); and
    - `direct_objects`, canonical records containing each direct output's
@@ -1101,7 +1137,8 @@ The following ESP-IDF resolution rules are part of that fail-closed mapping:
    archive/output multiset mismatch, or treating an unlinked output as
    redistributed is fatal.
 
-   `project_description.json`, `compile_commands.json`, and map SHA-256 values,
+   `project_description.json`, `compile_commands.json`, map, canonical link
+   command, and both Ninja-file SHA-256 values,
    generated source and auxiliary-input hashes, compile-output/direct-`LOAD`
    and linker-command reconciliation, direct object/source hashes, member
    lists, and the final archive SHA-256 are
@@ -1119,8 +1156,8 @@ The following ESP-IDF resolution rules are part of that fail-closed mapping:
    exact generated-input context and require byte-for-byte equality with the
    initial observations. A source-era verifier uses its frozen historical
    count. Rechecking only archive/tree digests is insufficient:
-   project/compile/map/link documents, metadata inputs, archive sources, direct
-   outputs, and direct sources are all race-sensitive release inputs.
+   project/compile/map/link/Ninja documents, metadata inputs, archive sources,
+   direct outputs, and direct sources are all race-sensitive release inputs.
 
 6. An archive outside the repository and build roots is admitted only below
    one versioned toolchain root proven by the exact compile-command

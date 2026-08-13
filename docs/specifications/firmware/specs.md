@@ -1432,7 +1432,12 @@ This is software-level safety of the IDE/agent, **not** hardware/actuator safety
   output exactly once to an archive member or exact direct-object linker-map
   `LOAD` and linker-command object, permitting only redundant complete `.`
   segments in a direct-`LOAD` path and rejecting every other noncanonical or
-  unmatched path form, classify build-only outputs as unlinked,
+  unmatched path form. For every ESP role it MUST non-executingly reproduce
+  the final linker argv with the bounded parser over the exact single ELF edge
+  and linker rule retained in `build.ninja` and `CMakeFiles/rules.ninja`, and
+  bind the canonical argv and both graph-file hashes; invocation state and an
+  absent/fabricated `link.txt` cannot substitute. It MUST then classify
+  build-only outputs as unlinked,
   retain source/output/metadata hashes in the generated `main` binding, repeat
   that observation after SBOM execution to close input races, and admit the
   pinned PyBLE, retained Berkeley DB, and zero-byte IDF ELF-anchor exceptions
