@@ -187,6 +187,12 @@ DEFAULT_ACK_TIMEOUT_S = 0.75
 DEFAULT_OPERATION_TIMEOUT_S = 120.0
 DEFAULT_EVENT_TIMEOUT_S = 15.0
 HEAP_MARKER_PREFIX = "__PYBLE_OI1_HEAP_"
+OI1_LINK_FACT_MARKER_PREFIX = "__PYBLE_OI1_LINK_FACTS_"
+OI1_LINK_FACT_MAX_CHUNK_BYTES = 2048
+OI1_LINK_FACT_MAX_CONSOLE_CHUNK_BYTES = 200
+OI1_LINK_FACT_MAX_OUTPUT_BYTES = 8192
+OI1_LINK_FACT_MAX_UINT32 = (1 << 32) - 1
+OI1_LINK_FACT_MAX_EPOCH = (1 << 64) - 1
 
 
 class BenchError(RuntimeError):
@@ -993,6 +999,337 @@ def parse_rp2_heap_probe_output(chunks, nonce):
         )
     snapshot = dict(zip(RP2_HEAP_KEYS, matches[0]))
     return _validated_heap(snapshot, "RP2 heap probe", RP2_HEAP_KEYS)
+
+
+def _validated_probe_nonce(nonce):
+    if (
+        not isinstance(nonce, str)
+        or not re.fullmatch(r"[0-9A-Za-z_-]{1,64}", nonce)
+    ):
+        raise BenchError("OI-1 link-fact probe nonce is invalid")
+    return nonce
+
+
+def oi1_link_fact_probe_source(nonce):
+    """Return the Wave-only RUN source for the hidden native snapshot."""
+    marker = OI1_LINK_FACT_MARKER_PREFIX + _validated_probe_nonce(nonce)
+    return (
+        "import json\n"
+        "import pble_ble\n"
+        "_oi1=pble_ble._oi1_link_facts()\n"
+        'print("%s="+json.dumps(_oi1))\n' % marker
+    )
+
+
+def _json_object_without_duplicates(pairs):
+    value = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError("duplicate JSON key")
+        value[key] = item
+    return value
+
+
+def _reject_json_constant(value):
+    raise ValueError("non-finite JSON number: %s" % value)
+
+
+def _bounded_probe_int(value, label, maximum=OI1_LINK_FACT_MAX_UINT32):
+    value = _require_nonnegative_int(value, label)
+    if value > maximum:
+        raise BenchError("%s exceeds its frozen bound" % label)
+    return value
+
+
+def _validate_oi1_link_fact_facts(value, label):
+    _require_exact_keys(
+        value,
+        ("dle", "phy", "connection_parameters", "tx_mbuf_starve_count"),
+        label,
+    )
+    dle = value["dle"]
+    _require_exact_keys(
+        dle,
+        ("request_attempts", "max_tx_octets", "max_tx_time_us"),
+        label + ".dle",
+    )
+    if _bounded_probe_int(
+        dle["request_attempts"], label + ".dle.request_attempts"
+    ) > 4:
+        raise BenchError(label + ".dle.request_attempts exceeds 4")
+    _bounded_probe_int(
+        dle["max_tx_octets"], label + ".dle.max_tx_octets", (1 << 16) - 1
+    )
+    _bounded_probe_int(
+        dle["max_tx_time_us"], label + ".dle.max_tx_time_us", (1 << 16) - 1
+    )
+
+    phy = value["phy"]
+    _require_exact_keys(
+        phy,
+        ("required_2m", "request_attempts", "updates", "settled_tx", "settled_rx"),
+        label + ".phy",
+    )
+    if phy["required_2m"] is not True:
+        raise BenchError(label + ".phy.required_2m must be true")
+    if _bounded_probe_int(
+        phy["request_attempts"], label + ".phy.request_attempts"
+    ) > 4:
+        raise BenchError(label + ".phy.request_attempts exceeds 4")
+    if not isinstance(phy["updates"], list) or len(phy["updates"]) > 8:
+        raise BenchError(label + ".phy.updates must contain at most 8 items")
+    for index, update in enumerate(phy["updates"]):
+        update_label = "%s.phy.updates[%d]" % (label, index)
+        _require_exact_keys(update, ("status", "tx", "rx"), update_label)
+        for key in ("status", "tx", "rx"):
+            _bounded_probe_int(
+                update[key], "%s.%s" % (update_label, key),
+                OI1_LINK_FACT_MAX_UINT32 if key == "status" else (1 << 8) - 1,
+            )
+    _bounded_probe_int(
+        phy["settled_tx"], label + ".phy.settled_tx", (1 << 8) - 1
+    )
+    _bounded_probe_int(
+        phy["settled_rx"], label + ".phy.settled_rx", (1 << 8) - 1
+    )
+
+    connection = value["connection_parameters"]
+    _require_exact_keys(
+        connection,
+        ("request_return_codes", "updates", "settled_interval_units"),
+        label + ".connection_parameters",
+    )
+    codes = connection["request_return_codes"]
+    if not isinstance(codes, list) or len(codes) > 3:
+        raise BenchError(
+            label + ".connection_parameters.request_return_codes "
+            "must contain at most 3 items"
+        )
+    for index, code in enumerate(codes):
+        _bounded_probe_int(
+            code,
+            "%s.connection_parameters.request_return_codes[%d]"
+            % (label, index),
+        )
+    updates = connection["updates"]
+    if not isinstance(updates, list) or len(updates) > 8:
+        raise BenchError(
+            label + ".connection_parameters.updates must contain at most 8 items"
+        )
+    for index, update in enumerate(updates):
+        update_label = "%s.connection_parameters.updates[%d]" % (
+            label,
+            index,
+        )
+        _require_exact_keys(update, ("status", "interval_units"), update_label)
+        _bounded_probe_int(update["status"], update_label + ".status")
+        _bounded_probe_int(
+            update["interval_units"], update_label + ".interval_units",
+            (1 << 16) - 1,
+        )
+    _bounded_probe_int(
+        connection["settled_interval_units"],
+        label + ".connection_parameters.settled_interval_units",
+        (1 << 16) - 1,
+    )
+    _bounded_probe_int(
+        value["tx_mbuf_starve_count"], label + ".tx_mbuf_starve_count"
+    )
+
+
+def _validate_oi1_link_fact_record(value, label):
+    _require_exact_keys(
+        value,
+        ("epoch", "final", "settled", "overflow", "facts"),
+        label,
+    )
+    _bounded_probe_int(value["epoch"], label + ".epoch", OI1_LINK_FACT_MAX_EPOCH)
+    if value["epoch"] == 0:
+        raise BenchError(label + ".epoch must be positive")
+    for key in ("final", "settled", "overflow"):
+        if type(value[key]) is not bool:
+            raise BenchError("%s.%s must be a boolean" % (label, key))
+    _validate_oi1_link_fact_facts(value["facts"], label + ".facts")
+
+
+def _validate_oi1_link_fact_snapshot(value):
+    _require_exact_keys(value, ("active", "last_ended"), "OI-1 link snapshot")
+    for key in ("active", "last_ended"):
+        record = value[key]
+        if record is not None:
+            _validate_oi1_link_fact_record(record, "OI-1 link snapshot.%s" % key)
+    return value
+
+
+def parse_oi1_link_fact_probe_output(chunks, nonce):
+    marker = (OI1_LINK_FACT_MARKER_PREFIX + _validated_probe_nonce(nonce) + "=").encode(
+        "ascii"
+    )
+    if not isinstance(chunks, (list, tuple)):
+        raise BenchError("OI-1 link-fact output must be a chunk sequence")
+    encoded = bytearray()
+    try:
+        for chunk in chunks:
+            if not isinstance(chunk, (bytes, bytearray, memoryview)):
+                raise BenchError("OI-1 link-fact output chunk must contain bytes")
+            payload = bytes(chunk)
+            if len(payload) > OI1_LINK_FACT_MAX_CHUNK_BYTES:
+                raise BenchError("OI-1 link-fact output chunk exceeds its bound")
+            if len(encoded) + len(payload) > OI1_LINK_FACT_MAX_OUTPUT_BYTES:
+                raise BenchError("OI-1 link-fact output exceeds its total bound")
+            encoded.extend(payload)
+        output = bytes(encoded).decode("ascii", errors="strict")
+    except (TypeError, ValueError, UnicodeDecodeError) as exc:
+        raise BenchError("OI-1 link-fact output is not strict ASCII") from exc
+
+    marker_text = marker.decode("ascii")
+    matches = [line[len(marker_text):] for line in output.splitlines()
+               if line.startswith(marker_text)]
+    if len(matches) != 1:
+        raise BenchError(
+            "OI-1 link-fact probe produced %d matching marker lines; expected one"
+            % len(matches)
+        )
+    try:
+        snapshot = json.loads(
+            matches[0],
+            object_pairs_hook=_json_object_without_duplicates,
+            parse_constant=_reject_json_constant,
+        )
+    except (ValueError, TypeError, json.JSONDecodeError) as exc:
+        raise BenchError("OI-1 link-fact marker contains invalid JSON") from exc
+    snapshot = _validate_oi1_link_fact_snapshot(snapshot)
+    for key in ("active", "last_ended"):
+        record = snapshot[key]
+        if record is not None and record["overflow"]:
+            raise BenchError("OI-1 link snapshot.%s overflowed" % key)
+    if snapshot["active"] is not None and snapshot["active"]["final"]:
+        raise BenchError("OI-1 link snapshot.active must not be final")
+    if snapshot["last_ended"] is not None and not snapshot["last_ended"]["final"]:
+        raise BenchError("OI-1 link snapshot.last_ended must be final")
+    return snapshot
+
+
+async def run_oi1_link_fact_probe(
+        central,
+        next_id,
+        *,
+        nonce=None,
+        timeout_s=2.0,
+        sleep=asyncio.sleep):
+    """Read one strict Wave-only link snapshot through an ordinary RUN."""
+    if nonce is None:
+        nonce = hashlib.sha256(
+            ("%d:%d" % (time.monotonic_ns(), os.getpid())).encode("ascii")
+        ).hexdigest()[:16]
+    if (
+        isinstance(timeout_s, bool)
+        or not isinstance(timeout_s, (int, float))
+        or not 0 < timeout_s <= 2.0
+    ):
+        raise BenchError("OI-1 link-fact probe timeout must be in (0, 2] seconds")
+    source = oi1_link_fact_probe_source(nonce).encode("utf-8")
+    cursor = central.event_cursor()
+    deadline = time.monotonic() + timeout_s
+
+    def require_before_deadline():
+        if time.monotonic() >= deadline:
+            raise BenchError("OI-1 link-fact probe exhausted its deadline")
+
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise BenchError("OI-1 link-fact probe exhausted its deadline")
+    try:
+        response = await asyncio.wait_for(
+            central.send_cmd(
+                wire.OP_RUN,
+                next_id(),
+                b"\x01" + source,
+                timeout=remaining,
+            ),
+            timeout=remaining,
+        )
+    except asyncio.TimeoutError as exc:
+        raise BenchError("OI-1 link-fact probe exhausted its deadline") from exc
+    require_before_deadline()
+    status = rsp_status(response)
+    if status != wire.ST_OK:
+        raise StatusFailure("RUN OI-1 link-fact probe", status)
+
+    stdout_chunks = []
+    running_count = 0
+    terminal_count = 0
+    while terminal_count == 0:
+        require_before_deadline()
+        cursor, events = central.events_since(cursor)
+        for event in events:
+            require_before_deadline()
+            if event.opcode == wire.OP_CONSOLE_DATA:
+                if not event.payload:
+                    raise BenchError(
+                        "OI-1 link-fact probe emitted malformed CONSOLE_DATA"
+                    )
+                stream = event.payload[0]
+                if stream == 1:
+                    raise BenchError("OI-1 link-fact probe emitted stderr")
+                if stream != 0:
+                    raise BenchError(
+                        "OI-1 link-fact probe emitted unknown console stream"
+                    )
+                chunk = event.payload[1:]
+                if terminal_count:
+                    raise BenchError(
+                        "OI-1 link-fact probe emitted console data after terminal state"
+                    )
+                if len(chunk) > OI1_LINK_FACT_MAX_CONSOLE_CHUNK_BYTES:
+                    raise BenchError(
+                        "OI-1 link-fact output chunk exceeds its bound"
+                    )
+                stdout_chunks.append(chunk)
+                if sum(len(item) for item in stdout_chunks) > OI1_LINK_FACT_MAX_OUTPUT_BYTES:
+                    raise BenchError(
+                        "OI-1 link-fact output exceeds its total bound"
+                    )
+            elif event.opcode == wire.OP_RUN_STATE:
+                if len(event.payload) != 1:
+                    raise BenchError(
+                        "OI-1 link-fact probe emitted malformed RUN_STATE"
+                    )
+                state = event.payload[0]
+                if state == 1:
+                    running_count += 1
+                    if running_count != 1 or terminal_count:
+                        raise BenchError(
+                            "OI-1 link-fact probe emitted duplicate/out-of-order running state"
+                        )
+                elif state == 2:
+                    if running_count != 1:
+                        raise BenchError(
+                            "OI-1 link-fact probe ended without one running state"
+                        )
+                    terminal_count += 1
+                    if terminal_count != 1:
+                        raise BenchError(
+                            "OI-1 link-fact probe emitted duplicate terminal state"
+                        )
+                elif state == 3:
+                    raise BenchError(
+                        "OI-1 link-fact probe ended in RUN_STATE(error)"
+                    )
+                else:
+                    raise BenchError(
+                        "OI-1 link-fact probe emitted unexpected RUN_STATE"
+                    )
+        if terminal_count == 0:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise BenchError(
+                    "OI-1 link-fact probe timed out before RUN_STATE(done)"
+                )
+            await sleep(min(0.002, remaining))
+    snapshot = parse_oi1_link_fact_probe_output(stdout_chunks, nonce)
+    require_before_deadline()
+    return snapshot
 
 
 def goodput_bps(unique_bytes, duration_ns):

@@ -33,6 +33,9 @@
 #ifndef PBLE_ENABLE_SPLASH_READINESS
 #define PBLE_ENABLE_SPLASH_READINESS 0
 #endif
+#ifndef PBLE_ENABLE_OI1_LINK_FACTS
+#define PBLE_ENABLE_OI1_LINK_FACTS 0
+#endif
 #if PBLE_ENABLE_SPLASH_READINESS
 #include "py/mpthread.h"   // bounded wait_ready releases the MicroPython GIL
 #endif
@@ -43,6 +46,7 @@
 // CONSOLE_DATA/RUN_STATE). A recursive mutex serializes whole-message
 // fragmentation so §3.2 fragments from concurrent senders never interleave.
 #include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #if PBLE_ENABLE_SPLASH_READINESS
 #include "freertos/event_groups.h"
 #endif
@@ -146,6 +150,66 @@
 #define PBLE_CP_ATTEMPT_MAX      3     // bounded re-fires after a CONN_UPDATE
                                        // collision (HCI 0x2A, seen as status=554
                                        // ~50% of the time on macOS).
+
+#if PBLE_ENABLE_OI1_LINK_FACTS
+#define PBLE_OI1_PHY_UPDATE_CAP 8
+#define PBLE_OI1_CP_UPDATE_CAP 8
+
+typedef struct {
+    uint32_t status;
+    uint8_t tx;
+    uint8_t rx;
+} pble_oi1_phy_update_t;
+
+typedef struct {
+    uint32_t status;
+    uint16_t interval_units;
+} pble_oi1_cp_update_t;
+
+typedef struct {
+    bool valid;
+    bool final;
+    bool overflow;
+    uint64_t epoch;
+    uint8_t dle_request_attempts;
+    uint16_t dle_max_tx_octets;
+    uint16_t dle_max_tx_time_us;
+    uint8_t phy_request_attempts;
+    uint8_t phy_update_count;
+    pble_oi1_phy_update_t phy_updates[PBLE_OI1_PHY_UPDATE_CAP];
+    uint8_t settled_tx;
+    uint8_t settled_rx;
+    uint8_t cp_return_code_count;
+    uint32_t cp_return_codes[PBLE_CP_ATTEMPT_MAX];
+    uint8_t cp_update_count;
+    pble_oi1_cp_update_t cp_updates[PBLE_OI1_CP_UPDATE_CAP];
+    uint16_t settled_interval_units;
+    uint32_t tx_mbuf_starve_count;
+} pble_oi1_link_record_t;
+
+typedef struct {
+    pble_oi1_link_record_t active;
+    pble_oi1_link_record_t last_ended;
+    bool epoch_exhausted;
+    uint64_t current_epoch;
+    bool active_handle_valid;
+} pble_oi1_link_snapshot_t;
+
+typedef struct {
+    uint16_t conn_handle;
+    uint64_t epoch;
+} pble_oi1_session_token_t;
+
+// Qualification-only retained POD. The existing live pble_conn_handle remains
+// the runtime transport owner; no handle, address, or identifier enters these
+// records. Every mutation and getter copy shares this short critical section.
+static pble_oi1_link_record_t pble_oi1_active;
+static pble_oi1_link_record_t pble_oi1_last_ended;
+static uint64_t pble_oi1_epoch;
+static bool pble_oi1_epoch_exhausted;
+static uint16_t pble_oi1_active_handle = BLE_HS_CONN_HANDLE_NONE;
+static portMUX_TYPE pble_oi1_mux = portMUX_INITIALIZER_UNLOCKED;
+#endif
 
 // --- Peer modules (native cross-module contract; in the build as of S3) -------
 // The protocol engine + identity modules are compiled alongside pble_ble now:
@@ -251,12 +315,43 @@ static uint8_t pble_cp_attempts = 0;
 static bool    pble_phy_classic_skip_logged = false;
 #endif
 
+#if PBLE_ENABLE_OI1_LINK_FACTS
+static void pble_oi1_begin_session(uint16_t conn_handle);
+static void pble_oi1_note_dle_request(uint16_t conn_handle, uint8_t attempts);
+static void pble_oi1_note_phy_request(uint16_t conn_handle, uint8_t attempts);
+static void pble_oi1_note_cp_request(uint16_t conn_handle, int rc);
+static void pble_oi1_note_dle(uint16_t conn_handle, uint16_t octets,
+                              uint16_t time_us);
+static void pble_oi1_note_phy(uint16_t conn_handle, int status,
+                              uint8_t tx, uint8_t rx);
+static void pble_oi1_note_cp(uint16_t conn_handle, int status,
+                             uint16_t interval_units);
+static pble_oi1_session_token_t pble_oi1_session_token(uint16_t conn_handle);
+static void pble_oi1_note_starve(pble_oi1_session_token_t token);
+static void pble_oi1_end_session(uint16_t conn_handle);
+static void pble_oi1_invalidate_active(void);
+#else
+#define pble_oi1_begin_session(conn) ((void)(conn))
+#define pble_oi1_note_dle_request(conn, attempts) ((void)(conn), (void)(attempts))
+#define pble_oi1_note_phy_request(conn, attempts) ((void)(conn), (void)(attempts))
+#define pble_oi1_note_cp_request(conn, rc) ((void)(conn), (void)(rc))
+#define pble_oi1_note_dle(conn, octets, time_us) ((void)(conn), (void)(octets), (void)(time_us))
+#define pble_oi1_note_phy(conn, status, tx, rx) ((void)(conn), (void)(status), (void)(tx), (void)(rx))
+#define pble_oi1_note_cp(conn, status, interval) ((void)(conn), (void)(status), (void)(interval))
+typedef uint16_t pble_oi1_session_token_t;
+#define pble_oi1_session_token(conn) (conn)
+#define pble_oi1_note_starve(token) ((void)(token), pble_tx_mbuf_starve++)
+#define pble_oi1_end_session(conn) ((void)(conn))
+#define pble_oi1_invalidate_active() ((void)0)
+#endif
+
 static int pble_request_dle(uint16_t conn, const char *ctx) {
     if (pble_dle_confirmed || pble_dle_attempts >= PBLE_DLE_ATTEMPT_MAX) {
         return 0;
     }
     pble_dle_attempts++;
     int rc = ble_gap_set_data_len(conn, 251, 2120);
+    pble_oi1_note_dle_request(conn, pble_dle_attempts);
     // ERROR level: this build strips everything below ERROR
     // (CONFIG_LOG_DEFAULT_LEVEL=1), and the link-fact lines ARE the no-sniffer
     // bench evidence (§G5-impl G5i.4) — invisible evidence is none.
@@ -270,6 +365,169 @@ static int pble_request_dle(uint16_t conn, const char *ctx) {
 // drained by in-flight notifications). Logged at DISCONNECT; observability only —
 // it never changes the paced-TX pump's behavior.
 static volatile uint32_t pble_tx_mbuf_starve = 0;
+
+#if PBLE_ENABLE_OI1_LINK_FACTS
+static void pble_oi1_begin_session(uint16_t conn_handle) {
+    taskENTER_CRITICAL(&pble_oi1_mux);
+    if (pble_oi1_active.valid || pble_oi1_epoch_exhausted ||
+        pble_oi1_epoch == UINT64_MAX) {
+        // A duplicate active connect or a forbidden successor would make the
+        // snapshot ambiguous. Latch exhaustion so the getter raises forever
+        // for this boot rather than manufacturing an epoch.
+        pble_oi1_epoch_exhausted = true;
+        memset(&pble_oi1_active, 0, sizeof(pble_oi1_active));
+        pble_oi1_active_handle = BLE_HS_CONN_HANDLE_NONE;
+    } else {
+        pble_oi1_epoch++;
+        memset(&pble_oi1_active, 0, sizeof(pble_oi1_active));
+        pble_oi1_active.valid = true;
+        pble_oi1_active.epoch = pble_oi1_epoch;
+        pble_oi1_active_handle = conn_handle;
+    }
+    taskEXIT_CRITICAL(&pble_oi1_mux);
+}
+
+static void pble_oi1_note_dle_request(uint16_t conn_handle, uint8_t attempts) {
+    taskENTER_CRITICAL(&pble_oi1_mux);
+    if (pble_oi1_active.valid && pble_oi1_active_handle == conn_handle) {
+        pble_oi1_active.dle_request_attempts = attempts;
+    }
+    taskEXIT_CRITICAL(&pble_oi1_mux);
+}
+
+static void pble_oi1_note_phy_request(uint16_t conn_handle, uint8_t attempts) {
+    taskENTER_CRITICAL(&pble_oi1_mux);
+    if (pble_oi1_active.valid && pble_oi1_active_handle == conn_handle) {
+        pble_oi1_active.phy_request_attempts = attempts;
+    }
+    taskEXIT_CRITICAL(&pble_oi1_mux);
+}
+
+static void pble_oi1_note_cp_request(uint16_t conn_handle, int rc) {
+    taskENTER_CRITICAL(&pble_oi1_mux);
+    if (pble_oi1_active.valid && pble_oi1_active_handle == conn_handle) {
+        if (rc < 0) {
+            pble_oi1_active.overflow = true;
+        } else if (pble_oi1_active.cp_return_code_count < PBLE_CP_ATTEMPT_MAX) {
+            pble_oi1_active.cp_return_codes[
+                pble_oi1_active.cp_return_code_count++] = (uint32_t)rc;
+        } else {
+            pble_oi1_active.overflow = true;
+        }
+    }
+    taskEXIT_CRITICAL(&pble_oi1_mux);
+}
+
+static void pble_oi1_note_dle(uint16_t conn_handle, uint16_t octets, uint16_t time_us) {
+    taskENTER_CRITICAL(&pble_oi1_mux);
+    if (pble_oi1_active.valid && pble_oi1_active_handle == conn_handle) {
+        pble_oi1_active.dle_max_tx_octets = octets;
+        pble_oi1_active.dle_max_tx_time_us = time_us;
+    }
+    taskEXIT_CRITICAL(&pble_oi1_mux);
+}
+
+static void pble_oi1_note_phy(uint16_t conn_handle, int status,
+                              uint8_t tx, uint8_t rx) {
+    taskENTER_CRITICAL(&pble_oi1_mux);
+    if (pble_oi1_active.valid && pble_oi1_active_handle == conn_handle) {
+        if (status < 0) {
+            pble_oi1_active.overflow = true;
+        } else if (pble_oi1_active.phy_update_count < PBLE_OI1_PHY_UPDATE_CAP) {
+            pble_oi1_phy_update_t *update = &pble_oi1_active.phy_updates[
+                pble_oi1_active.phy_update_count++];
+            update->status = (uint32_t)status;
+            update->tx = tx;
+            update->rx = rx;
+        } else {
+            pble_oi1_active.overflow = true;
+        }
+        if (status == 0 && tx == 2 && rx == 2) {
+            pble_oi1_active.settled_tx = tx;
+            pble_oi1_active.settled_rx = rx;
+        } else {
+            pble_oi1_active.settled_tx = 0;
+            pble_oi1_active.settled_rx = 0;
+        }
+    }
+    taskEXIT_CRITICAL(&pble_oi1_mux);
+}
+
+static void pble_oi1_note_cp(uint16_t conn_handle, int status,
+                             uint16_t interval_units) {
+    taskENTER_CRITICAL(&pble_oi1_mux);
+    if (pble_oi1_active.valid && pble_oi1_active_handle == conn_handle) {
+        if (status < 0) {
+            pble_oi1_active.overflow = true;
+        } else if (pble_oi1_active.cp_update_count < PBLE_OI1_CP_UPDATE_CAP) {
+            pble_oi1_cp_update_t *update = &pble_oi1_active.cp_updates[
+                pble_oi1_active.cp_update_count++];
+            update->status = (uint32_t)status;
+            update->interval_units = interval_units;
+        } else {
+            pble_oi1_active.overflow = true;
+        }
+        if (status == 0 && interval_units >= PBLE_CONN_ITVL_MIN &&
+            interval_units <= PBLE_CONN_ITVL_MAX) {
+            pble_oi1_active.settled_interval_units = interval_units;
+        } else {
+            pble_oi1_active.settled_interval_units = 0;
+        }
+    }
+    taskEXIT_CRITICAL(&pble_oi1_mux);
+}
+
+static pble_oi1_session_token_t pble_oi1_session_token(uint16_t conn_handle) {
+    pble_oi1_session_token_t token = {
+        .conn_handle = conn_handle,
+        .epoch = 0,
+    };
+    taskENTER_CRITICAL(&pble_oi1_mux);
+    if (pble_oi1_active.valid && pble_oi1_active_handle == conn_handle) {
+        token.epoch = pble_oi1_active.epoch;
+    }
+    taskEXIT_CRITICAL(&pble_oi1_mux);
+    return token;
+}
+
+static void pble_oi1_note_starve(pble_oi1_session_token_t token) {
+    taskENTER_CRITICAL(&pble_oi1_mux);
+    if (pble_oi1_active.valid &&
+        pble_oi1_active_handle == token.conn_handle &&
+        pble_oi1_active.epoch == token.epoch && token.epoch != 0 &&
+        token.conn_handle != BLE_HS_CONN_HANDLE_NONE) {
+        if (pble_tx_mbuf_starve == UINT32_MAX ||
+            pble_oi1_active.tx_mbuf_starve_count == UINT32_MAX) {
+            pble_oi1_active.overflow = true;
+        } else {
+            pble_tx_mbuf_starve++;
+            pble_oi1_active.tx_mbuf_starve_count++;
+        }
+    }
+    taskEXIT_CRITICAL(&pble_oi1_mux);
+}
+
+static void pble_oi1_end_session(uint16_t conn_handle) {
+    taskENTER_CRITICAL(&pble_oi1_mux);
+    if (pble_oi1_active.valid && pble_oi1_active_handle == conn_handle) {
+        pble_oi1_active.final = true;
+        pble_oi1_last_ended = pble_oi1_active;
+        memset(&pble_oi1_active, 0, sizeof(pble_oi1_active));
+        pble_oi1_active_handle = BLE_HS_CONN_HANDLE_NONE;
+    }
+    taskEXIT_CRITICAL(&pble_oi1_mux);
+}
+
+static void pble_oi1_invalidate_active(void) {
+    taskENTER_CRITICAL(&pble_oi1_mux);
+    if (pble_oi1_active.valid) {
+        pble_oi1_epoch_exhausted = true;
+    }
+    memset(&pble_oi1_active, 0, sizeof(pble_oi1_active));
+    pble_oi1_active_handle = BLE_HS_CONN_HANDLE_NONE;
+    taskEXIT_CRITICAL(&pble_oi1_mux);
+}
+#endif
 
 // TX serialization: guards the whole fragment-and-Notify sequence in
 // pble_ble_notify so a multi-fragment message goes out atomically relative to
@@ -398,9 +656,14 @@ static int pble_msys1_num_free(void) {
 
 static int pble_notify_packet(const uint8_t *pkt, size_t len,
                               uint8_t reserve_blocks) {
+    uint16_t conn_handle = pble_conn_handle;
+    if (conn_handle == BLE_HS_CONN_HANDLE_NONE) {
+        return PBLE_TX_NO_CONN;
+    }
+    pble_oi1_session_token_t session_token = pble_oi1_session_token(conn_handle);
     struct os_mbuf *om = ble_hs_mbuf_from_flat(pkt, (uint16_t)len);
     if (om == NULL) {
-        pble_tx_mbuf_starve++;   // GAP-2: host msys pool drained (pool-starve gate)
+        pble_oi1_note_starve(session_token);  // GAP-2 pool-starve gate
         return PBLE_TX_AGAIN;
     }
     // The data chain above is already charged to msys_1. Before a BULK submit,
@@ -410,11 +673,11 @@ static int pble_notify_packet(const uint8_t *pkt, size_t len,
     if (reserve_blocks > 0 &&
         pble_msys1_num_free() < PBLE_TX_ATT_WRAPPER_BLOCKS + reserve_blocks) {
         os_mbuf_free_chain(om);
-        pble_tx_mbuf_starve++;
+        pble_oi1_note_starve(session_token);
         return PBLE_TX_AGAIN;
     }
     // ble_gatts_notify_custom consumes the mbuf on both success and failure.
-    int rc = ble_gatts_notify_custom(pble_conn_handle, pble_tx_val_handle, om);
+    int rc = ble_gatts_notify_custom(conn_handle, pble_tx_val_handle, om);
     if (rc == 0) {
         return PBLE_TX_OK;
     }
@@ -691,6 +954,7 @@ static int pble_request_phy(uint16_t conn, const char *ctx) {
                                          BLE_GAP_LE_PHY_1M_MASK | BLE_GAP_LE_PHY_2M_MASK,
                                          BLE_GAP_LE_PHY_1M_MASK | BLE_GAP_LE_PHY_2M_MASK,
                                          BLE_GAP_LE_PHY_CODED_ANY);
+    pble_oi1_note_phy_request(conn, pble_phy_attempts);
     ESP_LOGE(PBLE_TAG, "link tune req phase=phy attempt=%u context=%s rc=%d",
              pble_phy_attempts, ctx, rc);
     return rc;
@@ -714,6 +978,7 @@ static int pble_request_conn_param(uint16_t conn, const char *ctx) {
     }
     pble_cp_attempts++;
     int rc = ble_gap_update_params(conn, &params);
+    pble_oi1_note_cp_request(conn, rc);
     ESP_LOGE(PBLE_TAG, "link tune req phase=conn-param attempt=%u context=%s rc=%d",
              pble_cp_attempts, ctx, rc);
     return rc;
@@ -771,10 +1036,11 @@ static int pble_gap_event(struct ble_gap_event *event, void *arg) {
     switch (event->type) {
         case BLE_GAP_EVENT_CONNECT:
             if (event->connect.status == 0) {
+                pble_tx_mbuf_starve = 0;        // fresh per-session GAP-2 count
+                pble_oi1_begin_session(event->connect.conn_handle);
                 pble_conn_handle = event->connect.conn_handle;
                 pble_ready_refresh();
                 pble_reset_reassembly();
-                pble_tx_mbuf_starve = 0;        // fresh per-session GAP-2 count
                 ble_npl_callout_stop(&pble_link_tune_co);
                 pble_dle_confirmed = false;
                 pble_dle_attempts = 0;
@@ -824,6 +1090,7 @@ static int pble_gap_event(struct ble_gap_event *event, void *arg) {
                      event->disconnect.reason, (unsigned)event->disconnect.reason);
             ESP_LOGE(PBLE_TAG, "link tune session end tx_mbuf_starve_count=%lu",
                      (unsigned long)pble_tx_mbuf_starve);
+            pble_oi1_end_session(event->disconnect.conn.conn_handle);
             pble_conn_handle = BLE_HS_CONN_HANDLE_NONE;
             pble_ready_clear();
             pble_mtu_val = PBLE_MTU_DEFAULT;
@@ -857,6 +1124,10 @@ static int pble_gap_event(struct ble_gap_event *event, void *arg) {
             ESP_LOGE(PBLE_TAG, "link tune complete phase=phy status=%d tx=%u rx=%u",
                      event->phy_updated.status,
                      event->phy_updated.tx_phy, event->phy_updated.rx_phy);
+            pble_oi1_note_phy(event->phy_updated.conn_handle,
+                              event->phy_updated.status,
+                              event->phy_updated.tx_phy,
+                              event->phy_updated.rx_phy);
 #if PBLE_HAS_2M_PHY
             if (pble_phy_attempts > 0 &&
                 event->phy_updated.status == 0 &&
@@ -882,6 +1153,9 @@ static int pble_gap_event(struct ble_gap_event *event, void *arg) {
             ESP_LOGE(PBLE_TAG, "link tune complete phase=dle max_tx_octets=%u max_tx_time_us=%u",
                      event->data_len_chg.max_tx_octets,
                      event->data_len_chg.max_tx_time);
+            pble_oi1_note_dle(event->data_len_chg.conn_handle,
+                              event->data_len_chg.max_tx_octets,
+                              event->data_len_chg.max_tx_time);
             if (pble_conn_handle != BLE_HS_CONN_HANDLE_NONE) {
                 ble_npl_callout_reset(&pble_link_tune_co,
                     ble_npl_time_ms_to_ticks32(PBLE_LINK_TUNE_DELAY_MS));
@@ -898,6 +1172,8 @@ static int pble_gap_event(struct ble_gap_event *event, void *arg) {
             }
             ESP_LOGE(PBLE_TAG, "link tune complete phase=conn-param status=%d interval_units=%u",
                      event->conn_update.status, itvl);
+            pble_oi1_note_cp(event->conn_update.conn_handle,
+                             event->conn_update.status, itvl);
             if (pble_cp_attempts > 0 &&
                 event->conn_update.status == 0 &&
                 itvl >= PBLE_CONN_ITVL_MIN &&
@@ -999,6 +1275,7 @@ static void pble_on_sync(void) {
 
 static void pble_on_reset(int reason) {
     pble_synced = false;
+    pble_oi1_invalidate_active();
     pble_conn_handle = BLE_HS_CONN_HANDLE_NONE;
     pble_ready_clear();
     ESP_LOGW(PBLE_TAG, "nimble reset; reason=%d", reason);
@@ -1106,6 +1383,173 @@ static mp_obj_t pble_ble_init_agent(void) {
 }
 static MP_DEFINE_CONST_FUN_OBJ_0(pble_ble_init_agent_obj, pble_ble_init_agent);
 
+#if PBLE_ENABLE_OI1_LINK_FACTS
+static mp_obj_t pble_oi1_u64(uint64_t value) {
+    return mp_obj_new_int_from_ull(value);
+}
+
+static mp_obj_t pble_oi1_make_update3(uint32_t status, uint8_t tx, uint8_t rx) {
+    mp_obj_t dict = mp_obj_new_dict(3);
+    mp_obj_dict_store(dict, MP_OBJ_NEW_QSTR(MP_QSTR_status),
+                      mp_obj_new_int_from_uint(status));
+    mp_obj_dict_store(dict, MP_OBJ_NEW_QSTR(MP_QSTR_tx),
+                      mp_obj_new_int_from_uint(tx));
+    mp_obj_dict_store(dict, MP_OBJ_NEW_QSTR(MP_QSTR_rx),
+                      mp_obj_new_int_from_uint(rx));
+    return dict;
+}
+
+static mp_obj_t pble_oi1_make_update2(uint32_t status, uint16_t interval) {
+    mp_obj_t dict = mp_obj_new_dict(2);
+    mp_obj_dict_store(dict, MP_OBJ_NEW_QSTR(MP_QSTR_status),
+                      mp_obj_new_int_from_uint(status));
+    mp_obj_dict_store(dict, MP_OBJ_NEW_QSTR(MP_QSTR_interval_units),
+                      mp_obj_new_int_from_uint(interval));
+    return dict;
+}
+
+static bool pble_oi1_record_settled(const pble_oi1_link_record_t *record) {
+    const pble_oi1_phy_update_t *final_phy = record->phy_update_count > 0
+        ? &record->phy_updates[record->phy_update_count - 1] : NULL;
+    const pble_oi1_cp_update_t *final_cp = record->cp_update_count > 0
+        ? &record->cp_updates[record->cp_update_count - 1] : NULL;
+    return record->dle_request_attempts >= 1 &&
+           record->dle_request_attempts <= PBLE_DLE_ATTEMPT_MAX &&
+           record->dle_max_tx_octets >= 244 &&
+           record->dle_max_tx_time_us > 0 &&
+           record->phy_request_attempts >= 1 &&
+           record->phy_request_attempts <= PBLE_PHY_ATTEMPT_MAX &&
+           record->phy_update_count > 0 &&
+           final_phy->status == 0 && final_phy->tx == 2 && final_phy->rx == 2 &&
+           record->settled_tx == 2 && record->settled_rx == 2 &&
+           record->cp_return_code_count >= 1 &&
+           record->cp_return_code_count <= PBLE_CP_ATTEMPT_MAX &&
+           record->cp_update_count > 0 &&
+           final_cp->status == 0 &&
+           final_cp->interval_units == record->settled_interval_units &&
+           record->settled_interval_units >= PBLE_CONN_ITVL_MIN &&
+           record->settled_interval_units <= PBLE_CONN_ITVL_MAX;
+}
+
+static mp_obj_t pble_oi1_make_record(const pble_oi1_link_record_t *record) {
+    if (!record->valid) {
+        return mp_const_none;
+    }
+    mp_obj_t phy_updates = mp_obj_new_list(0, NULL);
+    for (size_t i = 0; i < record->phy_update_count; i++) {
+        const pble_oi1_phy_update_t *update = &record->phy_updates[i];
+        mp_obj_list_append(
+            phy_updates, pble_oi1_make_update3(update->status, update->tx, update->rx));
+    }
+    mp_obj_t cp_codes = mp_obj_new_list(0, NULL);
+    for (size_t i = 0; i < record->cp_return_code_count; i++) {
+        mp_obj_list_append(cp_codes,
+            mp_obj_new_int_from_uint(record->cp_return_codes[i]));
+    }
+    mp_obj_t cp_updates = mp_obj_new_list(0, NULL);
+    for (size_t i = 0; i < record->cp_update_count; i++) {
+        const pble_oi1_cp_update_t *update = &record->cp_updates[i];
+        mp_obj_list_append(cp_updates,
+            pble_oi1_make_update2(update->status, update->interval_units));
+    }
+
+    mp_obj_t dle = mp_obj_new_dict(3);
+    mp_obj_dict_store(dle, MP_OBJ_NEW_QSTR(MP_QSTR_request_attempts),
+                      mp_obj_new_int_from_uint(record->dle_request_attempts));
+    mp_obj_dict_store(dle, MP_OBJ_NEW_QSTR(MP_QSTR_max_tx_octets),
+                      mp_obj_new_int_from_uint(record->dle_max_tx_octets));
+    mp_obj_dict_store(dle, MP_OBJ_NEW_QSTR(MP_QSTR_max_tx_time_us),
+                      mp_obj_new_int_from_uint(record->dle_max_tx_time_us));
+
+    mp_obj_t phy = mp_obj_new_dict(5);
+    mp_obj_dict_store(phy, MP_OBJ_NEW_QSTR(MP_QSTR_required_2m), mp_const_true);
+    mp_obj_dict_store(phy, MP_OBJ_NEW_QSTR(MP_QSTR_request_attempts),
+                      mp_obj_new_int_from_uint(record->phy_request_attempts));
+    mp_obj_dict_store(phy, MP_OBJ_NEW_QSTR(MP_QSTR_updates), phy_updates);
+    mp_obj_dict_store(phy, MP_OBJ_NEW_QSTR(MP_QSTR_settled_tx),
+                      mp_obj_new_int_from_uint(record->settled_tx));
+    mp_obj_dict_store(phy, MP_OBJ_NEW_QSTR(MP_QSTR_settled_rx),
+                      mp_obj_new_int_from_uint(record->settled_rx));
+
+    mp_obj_t cp = mp_obj_new_dict(3);
+    mp_obj_dict_store(cp, MP_OBJ_NEW_QSTR(MP_QSTR_request_return_codes), cp_codes);
+    mp_obj_dict_store(cp, MP_OBJ_NEW_QSTR(MP_QSTR_updates), cp_updates);
+    mp_obj_dict_store(cp, MP_OBJ_NEW_QSTR(MP_QSTR_settled_interval_units),
+                      mp_obj_new_int_from_uint(record->settled_interval_units));
+
+    mp_obj_t facts = mp_obj_new_dict(4);
+    mp_obj_dict_store(facts, MP_OBJ_NEW_QSTR(MP_QSTR_dle), dle);
+    mp_obj_dict_store(facts, MP_OBJ_NEW_QSTR(MP_QSTR_phy), phy);
+    mp_obj_dict_store(facts, MP_OBJ_NEW_QSTR(MP_QSTR_connection_parameters), cp);
+    mp_obj_dict_store(facts, MP_OBJ_NEW_QSTR(MP_QSTR_tx_mbuf_starve_count),
+                      mp_obj_new_int_from_uint(record->tx_mbuf_starve_count));
+
+    mp_obj_t result = mp_obj_new_dict(5);
+    mp_obj_dict_store(result, MP_OBJ_NEW_QSTR(MP_QSTR_epoch),
+                      pble_oi1_u64(record->epoch));
+    mp_obj_dict_store(result, MP_OBJ_NEW_QSTR(MP_QSTR_final),
+                      mp_obj_new_bool(record->final));
+    mp_obj_dict_store(result, MP_OBJ_NEW_QSTR(MP_QSTR_settled),
+                      mp_obj_new_bool(pble_oi1_record_settled(record)));
+    mp_obj_dict_store(result, MP_OBJ_NEW_QSTR(MP_QSTR_overflow),
+                      mp_obj_new_bool(record->overflow));
+    mp_obj_dict_store(result, MP_OBJ_NEW_QSTR(MP_QSTR_facts), facts);
+    return result;
+}
+
+static mp_obj_t pble_ble_oi1_link_facts(void) {
+    pble_oi1_link_snapshot_t snapshot;
+    taskENTER_CRITICAL(&pble_oi1_mux);
+    snapshot.active = pble_oi1_active;
+    snapshot.last_ended = pble_oi1_last_ended;
+    snapshot.epoch_exhausted = pble_oi1_epoch_exhausted;
+    snapshot.current_epoch = pble_oi1_epoch;
+    snapshot.active_handle_valid =
+        pble_oi1_active_handle != BLE_HS_CONN_HANDLE_NONE;
+    taskEXIT_CRITICAL(&pble_oi1_mux);
+
+    // The critical section above copies POD only. All MicroPython allocation
+    // and dictionary/list construction happens after it has been released.
+    bool bad_counts =
+        snapshot.active.dle_request_attempts > PBLE_DLE_ATTEMPT_MAX ||
+        snapshot.active.phy_request_attempts > PBLE_PHY_ATTEMPT_MAX ||
+        snapshot.active.phy_update_count > PBLE_OI1_PHY_UPDATE_CAP ||
+        snapshot.active.cp_return_code_count > PBLE_CP_ATTEMPT_MAX ||
+        snapshot.active.cp_update_count > PBLE_OI1_CP_UPDATE_CAP ||
+        snapshot.last_ended.phy_update_count > PBLE_OI1_PHY_UPDATE_CAP ||
+        snapshot.last_ended.dle_request_attempts > PBLE_DLE_ATTEMPT_MAX ||
+        snapshot.last_ended.phy_request_attempts > PBLE_PHY_ATTEMPT_MAX ||
+        snapshot.last_ended.cp_return_code_count > PBLE_CP_ATTEMPT_MAX ||
+        snapshot.last_ended.cp_update_count > PBLE_OI1_CP_UPDATE_CAP;
+    bool bad_shape =
+        (snapshot.active.valid && snapshot.active.final) ||
+        (!snapshot.active.valid && snapshot.active_handle_valid) ||
+        (snapshot.active.valid && !snapshot.active_handle_valid) ||
+        (snapshot.last_ended.valid && !snapshot.last_ended.final) ||
+        (snapshot.active.valid &&
+         snapshot.active.epoch != snapshot.current_epoch) ||
+        (!snapshot.active.valid && snapshot.last_ended.valid &&
+         snapshot.last_ended.epoch != snapshot.current_epoch) ||
+        (snapshot.active.valid && snapshot.last_ended.valid &&
+         (snapshot.last_ended.epoch == UINT64_MAX ||
+          snapshot.active.epoch != snapshot.last_ended.epoch + 1));
+    if (snapshot.epoch_exhausted || bad_counts || bad_shape ||
+        (snapshot.active.valid && snapshot.active.epoch == 0) ||
+        (snapshot.last_ended.valid && snapshot.last_ended.epoch == 0)) {
+        mp_raise_msg(&mp_type_RuntimeError,
+                     MP_ERROR_TEXT("OI-1 link snapshot inconsistent"));
+    }
+    mp_obj_t result = mp_obj_new_dict(2);
+    mp_obj_dict_store(result, MP_OBJ_NEW_QSTR(MP_QSTR_active),
+                      pble_oi1_make_record(&snapshot.active));
+    mp_obj_dict_store(result, MP_OBJ_NEW_QSTR(MP_QSTR_last_ended),
+                      pble_oi1_make_record(&snapshot.last_ended));
+    return result;
+}
+static MP_DEFINE_CONST_FUN_OBJ_0(pble_ble_oi1_link_facts_obj,
+                                 pble_ble_oi1_link_facts);
+#endif
+
 #if PBLE_ENABLE_SPLASH_READINESS
 static mp_obj_t pble_ble_wait_ready(mp_obj_t timeout_in) {
     if (!mp_obj_is_int(timeout_in)) {
@@ -1139,6 +1583,10 @@ static const mp_rom_map_elem_t pble_ble_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR_init_agent), MP_ROM_PTR(&pble_ble_init_agent_obj) },
 #if PBLE_ENABLE_SPLASH_READINESS
     { MP_ROM_QSTR(MP_QSTR_wait_ready), MP_ROM_PTR(&pble_ble_wait_ready_obj) },
+#endif
+#if PBLE_ENABLE_OI1_LINK_FACTS
+    { MP_ROM_QSTR(MP_QSTR__oi1_link_facts),
+      MP_ROM_PTR(&pble_ble_oi1_link_facts_obj) },
 #endif
 };
 static MP_DEFINE_CONST_DICT(pble_ble_globals, pble_ble_globals_table);

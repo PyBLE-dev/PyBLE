@@ -13,6 +13,7 @@
 // Provisioning identity is exact-board; PBLE/1 runtime identity remains chip-level.
 #define PBLE_TARGET_ID                   "esp32-s3"
 #define PBLE_ENABLE_SPLASH_READINESS     (1)
+#define PBLE_ENABLE_OI1_LINK_FACTS       (1)
 #define MICROPY_HW_BOARD_NAME            "PyBLE v" PBLE_AGENT_VERSION " Waveshare ESP32-S3-LCD-1.47B"
 #define MICROPY_HW_MCU_NAME              "ESP32-S3"
 #define MICROPY_HW_ENABLE_UART_REPL      (1)
