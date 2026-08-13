@@ -1835,6 +1835,75 @@ class WorkloadOrchestrationTest(unittest.IsolatedAsyncioTestCase):
         )
 
 
+class WaveshareNativeUsbReopenRedTest(unittest.IsolatedAsyncioTestCase):
+    async def test_reopen_is_after_measurement_and_before_ble_session(self):
+        events = []
+
+        class Reset:
+            def prepare_after_advertisement(self):
+                events.append("serial-reopened")
+
+        class RawLog:
+            def write(self, event, **_fields):
+                events.append(("log", event))
+
+        args = argparse.Namespace(
+            address="private-test-address",
+            expect_chip="esp32-s3",
+            profile="waveshare-esp32-s3-lcd-147b",
+        )
+        connection = mock.AsyncMock()
+        caps = {
+            "chip": "esp32-s3",
+            "mtu": "247",
+            "window": "8",
+            "chunk": "229",
+            "free_mem": "8192",
+        }
+
+        async def measured(_reset, _watcher):
+            events.append("advertisement-measured")
+            return 321
+
+        async def connect(address):
+            self.assertEqual(address, args.address)
+            events.append("ble-connect")
+            return connection
+
+        with (
+            mock.patch.object(
+                profile_bench,
+                "measure_reset_to_advertisement",
+                new=measured,
+            ),
+            mock.patch.object(
+                profile_bench.PbleCentral,
+                "connect",
+                new=connect,
+            ),
+            mock.patch.object(
+                profile_bench,
+                "hello",
+                new=mock.AsyncMock(
+                    return_value=(caps, (247, 8, 229, 8192))
+                ),
+            ),
+        ):
+            executor = profile_bench.HardwareExecutor(args, Reset(), RawLog())
+            result = await executor.reset_connect_hello(0)
+
+        self.assertEqual(result[0], 321)
+        self.assertIn("serial-reopened", events)
+        self.assertLess(
+            events.index("advertisement-measured"),
+            events.index("serial-reopened"),
+        )
+        self.assertLess(
+            events.index("serial-reopened"),
+            events.index("ble-connect"),
+        )
+
+
 class EvidenceAndCliTest(unittest.TestCase):
     def test_waveshare_operator_reset_prompts_are_frozen(self):
         self.assertEqual(
@@ -1905,6 +1974,139 @@ class EvidenceAndCliTest(unittest.TestCase):
                 "keep holding it, then press Enter: ",
                 "Release RESET now, then press Enter immediately: ",
             ],
+        )
+
+    def test_waveshare_native_usb_never_touches_rts_or_dtr(self):
+        control_events = []
+        devices = []
+
+        class Device:
+            port = None
+            baudrate = None
+            timeout = None
+            write_timeout = None
+            dsrdtr = None
+            rtscts = None
+            in_waiting = 0
+
+            @property
+            def rts(self):
+                return False
+
+            @rts.setter
+            def rts(self, value):
+                control_events.append(("rts", value))
+
+            @property
+            def dtr(self):
+                return False
+
+            @dtr.setter
+            def dtr(self, value):
+                control_events.append(("dtr", value))
+
+            def open(self):
+                return None
+
+            def reset_input_buffer(self):
+                return None
+
+            def close(self):
+                return None
+
+        def serial_factory():
+            device = Device()
+            devices.append(device)
+            return device
+
+        serial_module = argparse.Namespace(Serial=serial_factory)
+        with mock.patch.dict(sys.modules, {"serial": serial_module}):
+            controller = profile_bench.WaveshareOperatorResetController(
+                "/dev/test-native-usb",
+                115200,
+                operator_action=lambda _prompt: None,
+            )
+            self.assertEqual(control_events, [])
+            controller.assert_reset()
+            controller.release_reset()
+            controller.prepare_after_advertisement()
+            controller.close()
+
+        self.assertEqual(len(devices), 2)
+        self.assertEqual(control_events, [])
+
+    def test_waveshare_closes_stale_usb_while_held_then_reopens_fresh(self):
+        events = []
+        devices = []
+
+        class Device:
+            port = None
+            baudrate = None
+            timeout = None
+            write_timeout = None
+            dsrdtr = None
+            rtscts = None
+            in_waiting = 0
+
+            def __init__(self, index):
+                self.index = index
+
+            def open(self):
+                events.append(("open", self.index))
+
+            def reset_input_buffer(self):
+                events.append(("reset-input", self.index))
+
+            def close(self):
+                events.append(("close", self.index))
+                if self.index == 0:
+                    raise OSError(errno.ENODEV, "native USB reset")
+
+        def serial_factory():
+            device = Device(len(devices))
+            devices.append(device)
+            return device
+
+        def operator_action(prompt):
+            if prompt == profile_bench.WAVESHARE_RESET_HOLD_PROMPT:
+                events.append("reset-held-confirmed")
+            elif prompt == profile_bench.WAVESHARE_RESET_RELEASE_PROMPT:
+                events.append("reset-released-confirmed")
+            else:
+                self.fail("unexpected operator prompt")
+
+        serial_module = argparse.Namespace(Serial=serial_factory)
+        with mock.patch.dict(sys.modules, {"serial": serial_module}):
+            controller = profile_bench.WaveshareOperatorResetController(
+                "/dev/test-native-usb",
+                115200,
+                operator_action=operator_action,
+            )
+            controller.assert_reset()
+            self.assertIn(("close", 0), events)
+            self.assertLess(
+                events.index("reset-held-confirmed"),
+                events.index(("close", 0)),
+            )
+            controller.release_reset()
+            events.append("advertisement-measured")
+            controller.prepare_after_advertisement()
+
+            self.assertLess(
+                events.index("advertisement-measured"),
+                events.index(("open", 1)),
+            )
+            self.assertEqual(devices[1].port, "/dev/test-native-usb")
+            self.assertEqual(devices[1].baudrate, 115200)
+            controller.close()
+
+        self.assertEqual(
+            events.count("reset-held-confirmed"),
+            1,
+        )
+        self.assertEqual(
+            events.count("reset-released-confirmed"),
+            1,
         )
 
     def test_waveshare_run_selects_operator_reset_controller(self):
