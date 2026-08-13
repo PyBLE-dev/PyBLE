@@ -87,6 +87,20 @@ five-profile exact-byte gates pass.
 
 ## P10. Gates (per PRD §1B.7 sub-gate allowance; G0–G4 untouched)
 
+The OI reset samples use a bounded operator power-disconnect seam because Pico
+2 W exposes no host-controlled reset edge in this setup. The service-filtered
+scanner MUST be active before the disconnect prompt. After the operator
+confirms all Pico power is disconnected and `assert_reset()` returns, the
+harness MUST establish the common `begin_quiet_interval()` watcher boundary
+from [§5.3.2](../specs.md#532-frozen-qualification-workload), discarding every
+pre-confirmation callback while keeping the scanner active. It then observes
+the complete 1,000 ms quiet interval; any matching callback in that new epoch
+fails the sample. Only after that interval may the harness prompt for power
+reconnection, and the numeric sample begins immediately after the operator
+confirms reconnection. Thus an advertisement seen while the operator was still
+reaching for the cable can neither fail the confirmed power-off interval nor
+pass as a fresh post-reconnection advertisement.
+
 - **GP0 build/boot:** image builds under the pinned toolchain, passes the size gate, boots advertising. *Verify: build.*
 - **GP1 parity:** host unit + shared conformance corpus green for every grown module. *Verify: unit/conformance.*
 - **GP2 HIL:** the complete matrix is green on one physical Pico 2 W against

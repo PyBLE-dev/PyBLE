@@ -849,6 +849,17 @@ For each exact profile and one immutable firmware/manifest candidate:
    timeout is **15,000 ms**; a timeout is a gate failure, not a latency sample.
    Connect and complete HELLO after each successful sample.
 
+   Scanner callbacks received before reset assertion is confirmed are discovery
+   input only; they are not evidence about the quiet interval. Immediately after
+   the synchronous `assert_reset()` seam returns, the harness MUST call the
+   active watcher's `begin_quiet_interval()` seam. That call MUST keep the
+   scanner active, atomically discard every earlier retained matching timestamp
+   and completion signal, and establish a new callback epoch. Only then may the
+   complete 1,000 ms quiet interval begin. Any matching callback in that new
+   epoch before reset release is a gate failure. A callback from before the
+   boundary MUST be discarded and MUST neither fail the quiet interval nor
+   become the measured post-release advertisement.
+
    The exact `waveshare-esp32-s3-lcd-147b` profile has one bounded reset seam:
    its native USB serial RTS is not evidence that EN/reset was asserted, so
    every baseline and final-candidate sample MUST use the physical RESET button
@@ -862,8 +873,9 @@ For each exact profile and one immutable firmware/manifest candidate:
    "Release RESET now, then press Enter immediately: "
    ```
 
-   After the first prompt returns, the harness MUST enforce the complete
-   1,000 ms quiet interval while RESET remains held. The operator MUST release
+   After the first prompt returns, the harness MUST establish the common
+   `begin_quiet_interval()` boundary and enforce the complete 1,000 ms quiet
+   interval while RESET remains held. The operator MUST release
    RESET before acknowledging the second prompt. The numeric sample begins at
    the host monotonic timestamp taken immediately after that acknowledgement
    returns and ends at the first later matching scanner callback; a callback
