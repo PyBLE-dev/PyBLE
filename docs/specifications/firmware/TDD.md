@@ -1065,14 +1065,17 @@ also requires RUN status OK, no stderr, one terminal RUN_STATE(done), and its
 bounded deadline. It never adds a wire constant or capability.
 
 After each of the first nine Waveshare measured disconnects, the executor
-makes a diagnostic reconnect, requires a final last-ended record and its exact
-non-wrapping active successor, disconnects, and discards both. On the tenth
+makes a diagnostic reconnect through `PbleCentral.connect` and HELLO using the
+existing 20-second bound, then gives the getter RUN its separate 2-second
+deadline. It requires a final last-ended record and its exact non-wrapping
+active successor, disconnects, and discards both. On the tenth
 connection it polls the active record for no more than 5,000 ms until the
 record is settled, non-final, non-overflowed, and profile-valid, then retains
 its epoch before timing. It probes the same active epoch again after the final
-heap snapshot and before disconnect. A final diagnostic reconnect must expose
-that epoch as immutable `last_ended` and its exact active successor within
-2,000 ms. Only the ended record's `facts`, including its final starvation
+heap snapshot and before disconnect. A final diagnostic reconnect uses the
+same 20-second connect/HELLO bound; its getter RUN must expose that epoch as
+immutable `last_ended` and its exact active successor within 2,000 ms. Only the
+ended record's `facts`, including its final starvation
 count, enters evidence. Missing/null, stale, non-successor, wrapped,
 overflowed, unsettled, malformed, duplicate-marker, stderr, RUN error, and
 timeout cases all fail closed. The raw log is exclusively created mode `0600`

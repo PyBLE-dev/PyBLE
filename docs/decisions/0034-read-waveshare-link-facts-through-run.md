@@ -56,7 +56,9 @@ transport.
    snapshot. Arbitrary non-marker stdout is discarded and never enters
    evidence.
 6. After each of the first nine measured sessions disconnects, the runner
-   makes one diagnostic reconnect and queries the getter. The returned
+   makes one diagnostic reconnect through the existing bounded 20-second BLE
+   connect/HELLO path and queries the getter with a separate 2-second RUN
+   deadline. The returned
    `last_ended` epoch must be positive and final; the returned active epoch
    must be its exact non-wrapping successor. Those facts and the diagnostic
    session itself are discarded. This replaces only the Waveshare UART
@@ -68,7 +70,9 @@ transport.
    After all transfers, reliability work, and the final heap probe, it queries
    again before disconnect and requires the same active epoch and valid
    settled ladder.
-8. After that disconnect, the runner makes one bounded diagnostic reconnect.
+8. After that disconnect, the runner makes one diagnostic reconnect through
+   the same bounded 20-second BLE connect/HELLO path, then applies a separate
+   2-second deadline to the getter RUN.
    Its active epoch must be the exact non-wrapping successor of the retained
    transfer epoch, and `last_ended` must be the final, non-overflowed record for
    that exact transfer epoch. The final public `transfer_link_facts` object is
