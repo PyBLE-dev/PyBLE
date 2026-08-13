@@ -363,32 +363,31 @@ class V060Oi1CatalogTests(unittest.TestCase):
     def test_profile_cli_accepts_all_five_exact_profile_chip_pairs(self):
         for profile_id in PROFILE_ORDER:
             with self.subTest(profile_id=profile_id):
-                target_args = (
-                    [
+                if profile_id == "rpi-pico2-w":
+                    target_args = [
                         "--operator-reset",
                         "--firmware-bin",
                         "firmware.bin",
                         "--firmware-uf2",
                         "firmware.uf2",
                     ]
-                    if profile_id == "rpi-pico2-w"
-                    else (
-                        [
-                            "--reset-port",
-                            "/dev/private-test-reset",
-                            "--application-bin",
-                            "application.bin",
-                            "--partition-table-bin",
-                            "partition-table.bin",
-                            *(
-                                ["--operator-reset"]
-                                if profile_id
-                                == "waveshare-esp32-s3-lcd-147b"
-                                else []
-                            ),
-                        ]
-                    )
-                )
+                elif profile_id == "waveshare-esp32-s3-lcd-147b":
+                    target_args = [
+                        "--operator-reset",
+                        "--application-bin",
+                        "application.bin",
+                        "--partition-table-bin",
+                        "partition-table.bin",
+                    ]
+                else:
+                    target_args = [
+                        "--reset-port",
+                        "/dev/private-test-reset",
+                        "--application-bin",
+                        "application.bin",
+                        "--partition-table-bin",
+                        "partition-table.bin",
+                    ]
                 with redirect_stderr(io.StringIO()):
                     args = profile_bench._parse_args(
                         [
