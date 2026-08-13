@@ -1616,6 +1616,12 @@ async def measure_reset_to_advertisement(
     await watcher.start()
     try:
         reset.assert_reset()
+        # An operator-confirmed reset/power-off can take long enough for the
+        # already-running scanner to observe the board before it is actually
+        # off.  Discard only that pre-confirmation epoch, then apply the full
+        # quiet interval to callbacks observed after reset assertion has been
+        # confirmed.
+        watcher.begin_quiet_interval()
         await sleep(hold_ms / 1000.0)
         if watcher.first_match_ns is not None:
             raise BenchError(

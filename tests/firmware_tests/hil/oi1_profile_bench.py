@@ -986,6 +986,11 @@ class AdvertisementWatcher:
     def first_match_ns(self):
         return self._first_match_ns
 
+    def begin_quiet_interval(self):
+        """Start a fresh callback epoch without stopping the active scan."""
+        self._first_match_ns = None
+        self._match_event = asyncio.Event()
+
     def _on_advertisement(self, device, advertisement):
         address = str(getattr(device, "address", "")).casefold()
         advertised = {
