@@ -110,6 +110,7 @@ RP2_HEAP_KEYS = (
 RP2_IMAGE_LIMIT_BYTES = 1_572_864
 RP2_UF2_ARM_FAMILY = 0xE48BFF59
 RP2_UF2_EXTENSION_FAMILY = 0xE48BFF57
+RP2_UF2_IGNORE_BLOCK_TAG = 0x9957E304
 
 THRESHOLD_KEYS = (
     "application_image_max_bytes",
@@ -493,11 +494,11 @@ def _reconstruct_rp2350_uf2(uf2):
         if payload_size <= 0 or payload_size > 476:
             raise BenchError("RP2 firmware.uf2 payload length is invalid")
         payload = block[32 : 32 + payload_size]
-        if any(block[32 + payload_size : 508]):
-            raise BenchError(
-                "RP2 firmware.uf2 contains bytes outside a block payload"
-            )
         if flags == 0x00002000 and family == RP2_UF2_ARM_FAMILY:
+            if any(block[32 + payload_size : 508]):
+                raise BenchError(
+                    "RP2 firmware.uf2 contains bytes outside a block payload"
+                )
             arm_blocks.append(
                 (address, block_number, total_blocks, payload)
             )
@@ -509,6 +510,19 @@ def _reconstruct_rp2350_uf2(uf2):
             and block_number == 0
             and total_blocks == 2
         ):
+            extension_end = 32 + payload_size + 4
+            if (
+                struct.unpack_from("<I", block, 32 + payload_size)[0]
+                != RP2_UF2_IGNORE_BLOCK_TAG
+                or any(block[extension_end:508])
+            ):
+                raise BenchError(
+                    "RP2 firmware.uf2 ignore-block extension tag is invalid"
+                )
+            if offset != 0:
+                raise BenchError(
+                    "RP2 firmware.uf2 ignore-block extension must be first"
+                )
             extension_blocks += 1
         else:
             raise BenchError(
