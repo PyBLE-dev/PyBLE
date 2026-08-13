@@ -532,8 +532,10 @@ class PrepareFixture:
         )
         pyble = self.firmware / "pyble"
         pyble.mkdir()
-        (pyble / "__init__.py").write_text("VALUE = 1\n", encoding="utf-8")
-        (pyble / "agent.py").write_text("AGENT = 1\n", encoding="utf-8")
+        for name in ("__init__.py", "_version.py", "pyble_ble.py", "pyble_proto.py"):
+            (pyble / name).write_text(
+                "# synthetic reviewed ESP input\n", encoding="utf-8"
+            )
         (self.firmware / "patches").mkdir()
         (self.firmware / "versions.lock").write_text(
             textwrap.dedent(
