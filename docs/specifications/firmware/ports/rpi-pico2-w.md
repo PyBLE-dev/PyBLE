@@ -118,6 +118,20 @@ download and must create the download from those verified in-memory bytes.
 There is no ESP Web Tools manifest, chip family, offset, partition component
 map, or Web Serial fallback for this profile.
 
+The UF2/raw-image identity check accepts exactly the pinned RP2350 Arm stream
+emitted by the build: its first 512-byte record is the RP2 ignore-block
+extension (`flags = 0x0000a000`, family `0xe48bff57`, address `0x10ffff00`,
+256-byte payload, block number `0`, total `2`) and carries the little-endian
+extension tag `0x9957e304` in the four bytes immediately after that payload;
+the rest of the record before the end magic is zero. Every following record
+is one sequential 256-byte RP2350 Arm payload (`flags = 0x00002000`, family
+`0xe48bff59`) at `0x10000000 + 256 * block_number`, with zero padding outside
+the payload. Validation reconstructs those Arm payloads and requires an exact
+raw `firmware.bin` prefix followed only by zero image padding. Any missing,
+duplicate, reordered, differently tagged, nonzero-padded, or additional UF2
+record fails closed. Baseline HIL MUST use this same release validator shape;
+it must not reject the required extension tag as stray payload padding.
+
 The pending V5 Pico gate summary is JSON `null`. Finalization may replace it
 only with a validator-derived `passed` summary that binds GP0, GP1, complete
 GP2, the final candidate UF2/raw-image hashes, both app platforms, manual
