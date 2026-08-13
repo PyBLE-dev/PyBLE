@@ -1342,7 +1342,7 @@ class TransferTimerBoundaryTest(unittest.IsolatedAsyncioTestCase):
 
 
 class ResetTimingTest(unittest.IsolatedAsyncioTestCase):
-    async def test_stale_advertisement_during_quiet_interval_is_rejected(self):
+    async def test_matching_advertisement_after_quiet_boundary_is_rejected(self):
         class Reset:
             def __init__(self):
                 self.actions = []
@@ -1354,10 +1354,11 @@ class ResetTimingTest(unittest.IsolatedAsyncioTestCase):
                 self.actions.append("release")
 
         class Watcher:
-            def __init__(self, stale):
-                self.stale = stale
+            def __init__(self):
                 self.started = False
                 self.stopped = False
+                self.quiet_boundaries = 0
+                self.match_ns = None
 
             async def start(self):
                 self.started = True
@@ -1367,28 +1368,80 @@ class ResetTimingTest(unittest.IsolatedAsyncioTestCase):
 
             @property
             def first_match_ns(self):
-                return 100 if self.stale else None
+                return self.match_ns
+
+            def begin_quiet_interval(self):
+                self.quiet_boundaries += 1
+                self.match_ns = None
 
             async def wait_for_match(self, timeout_ms):
                 return 2_900_000
 
-        async def no_sleep(_seconds):
-            return None
+        async def observe_during_quiet(_seconds):
+            watcher.match_ns = 100
 
         clock_values = iter((1_000_000, 2_000_000))
         reset = Reset()
-        watcher = Watcher(stale=True)
+        watcher = Watcher()
         with self.assertRaises(bench.BenchError):
             await bench.measure_reset_to_advertisement(
                 reset,
                 watcher,
                 hold_ms=1000,
                 timeout_ms=15000,
-                sleep=no_sleep,
+                sleep=observe_during_quiet,
                 monotonic_ns=lambda: next(clock_values),
             )
         self.assertEqual(reset.actions, ["assert"])
+        self.assertEqual(watcher.quiet_boundaries, 1)
         self.assertTrue(watcher.stopped)
+
+    async def test_pre_confirmation_advertisement_is_discarded(self):
+        events = []
+
+        class Reset:
+            def assert_reset(self):
+                events.append("assert-confirmed")
+
+            def release_reset(self):
+                events.append("release")
+
+        class Watcher:
+            def __init__(self):
+                self.first_match_ns = None
+
+            async def start(self):
+                events.append("scanner-started")
+                self.first_match_ns = 100
+
+            def begin_quiet_interval(self):
+                events.append("quiet-boundary")
+                self.first_match_ns = None
+
+            async def stop(self):
+                events.append("scanner-stopped")
+
+            async def wait_for_match(self, timeout_ms):
+                events.append(("wait", timeout_ms))
+                return 12_000_001
+
+        async def quiet_sleep(_seconds):
+            events.append("quiet-sleep")
+
+        value = await bench.measure_reset_to_advertisement(
+            Reset(),
+            Watcher(),
+            hold_ms=1000,
+            timeout_ms=15000,
+            sleep=quiet_sleep,
+            monotonic_ns=lambda: 10_000_000,
+        )
+
+        self.assertEqual(value, 3)
+        self.assertLess(events.index("scanner-started"), events.index("assert-confirmed"))
+        self.assertLess(events.index("assert-confirmed"), events.index("quiet-boundary"))
+        self.assertLess(events.index("quiet-boundary"), events.index("quiet-sleep"))
+        self.assertLess(events.index("quiet-sleep"), events.index("release"))
 
     async def test_reset_latency_is_ceil_milliseconds_from_release(self):
         class Reset:
@@ -1404,11 +1457,17 @@ class ResetTimingTest(unittest.IsolatedAsyncioTestCase):
         class Watcher:
             first_match_ns = None
 
+            def __init__(self):
+                self.quiet_boundaries = 0
+
             async def start(self):
                 return None
 
             async def stop(self):
                 return None
+
+            def begin_quiet_interval(self):
+                self.quiet_boundaries += 1
 
             async def wait_for_match(self, timeout_ms):
                 self.timeout_ms = timeout_ms
@@ -1429,6 +1488,7 @@ class ResetTimingTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(value, 3)
         self.assertEqual(reset.actions, ["assert", "release"])
+        self.assertEqual(watcher.quiet_boundaries, 1)
         self.assertEqual(watcher.timeout_ms, 15000)
 
     async def test_waveshare_operator_confirmation_precedes_timer_start(self):
@@ -1449,6 +1509,9 @@ class ResetTimingTest(unittest.IsolatedAsyncioTestCase):
 
             async def stop(self):
                 events.append("scanner-stopped")
+
+            def begin_quiet_interval(self):
+                events.append("quiet-boundary")
 
             async def wait_for_match(self, timeout_ms):
                 events.append(("wait", timeout_ms))
@@ -1476,6 +1539,10 @@ class ResetTimingTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertLess(
             events.index("hold-confirmed"),
+            events.index("quiet-boundary"),
+        )
+        self.assertLess(
+            events.index("quiet-boundary"),
             events.index("quiet-interval-complete"),
         )
         self.assertLess(
@@ -1485,6 +1552,23 @@ class ResetTimingTest(unittest.IsolatedAsyncioTestCase):
         self.assertLess(
             events.index("release-confirmed"), events.index("timer-started")
         )
+
+    def test_advertisement_watcher_quiet_boundary_replaces_completion_epoch(self):
+        watcher = profile_bench.AdvertisementWatcher("AA:BB")
+        device = argparse.Namespace(address="AA:BB")
+        advertisement = argparse.Namespace(
+            service_uuids=[profile_bench.SERVICE_UUID]
+        )
+        watcher._on_advertisement(device, advertisement)
+        prior_event = watcher._match_event
+
+        self.assertIsNotNone(watcher.first_match_ns)
+        self.assertTrue(prior_event.is_set())
+        watcher.begin_quiet_interval()
+
+        self.assertIsNone(watcher.first_match_ns)
+        self.assertIsNot(watcher._match_event, prior_event)
+        self.assertFalse(watcher._match_event.is_set())
 
 
 class SerialResetCleanupTest(unittest.TestCase):
