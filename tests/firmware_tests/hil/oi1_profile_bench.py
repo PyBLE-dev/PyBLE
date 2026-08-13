@@ -800,6 +800,59 @@ class WaveshareOperatorResetController:
         self._operator_action = operator_action
         self._open_device()
 
+    @staticmethod
+    def _open_without_modem_line_updates(device):
+        """Open pyserial without applying its cached RTS/DTR states.
+
+        POSIX pyserial normally applies both cached modem-line states after
+        configuring a newly opened descriptor.  Its flow-control flags guard
+        those two updates, but the port itself must still be configured with
+        hardware flow control disabled.  While open() runs, present the guard
+        values to that post-config branch and wrap pyserial's configuration
+        hook so the actual termios state remains no-flow.  The private flags
+        can then return to their truthful false values without another ioctl.
+        """
+        reconfigure = getattr(device, "_reconfigure_port", None)
+        guards_posix_open = (
+            callable(reconfigure)
+            and hasattr(device, "_dsrdtr")
+            and hasattr(device, "_rtscts")
+        )
+
+        if guards_posix_open:
+            def reconfigure_without_flow_control(*args, **kwargs):
+                saved_dsrdtr = device._dsrdtr
+                saved_rtscts = device._rtscts
+                device._dsrdtr = False
+                device._rtscts = False
+                try:
+                    return reconfigure(*args, **kwargs)
+                finally:
+                    device._dsrdtr = saved_dsrdtr
+                    device._rtscts = saved_rtscts
+
+            device._reconfigure_port = reconfigure_without_flow_control
+
+        # These are open-time guards, not the live port configuration.  On
+        # pyserial POSIX the wrapper above keeps hardware flow control off.
+        device.dsrdtr = True
+        device.rtscts = True
+        opened = False
+        try:
+            device.open()
+            opened = True
+        finally:
+            if guards_posix_open:
+                device._reconfigure_port = reconfigure
+                device._dsrdtr = False
+                device._rtscts = False
+            elif opened:
+                # Test doubles and non-POSIX implementations do not expose
+                # pyserial's configuration hook.  Restore their public state
+                # only after the guarded open has completed.
+                device.dsrdtr = False
+                device.rtscts = False
+
     def _open_device(self):
         if self._closed:
             raise BenchError("Waveshare reset controller is closed")
@@ -811,11 +864,10 @@ class WaveshareOperatorResetController:
             device.baudrate = self._baudrate
             device.timeout = 1
             device.write_timeout = 1
-            device.dsrdtr = False
-            device.rtscts = False
-            # Native USB control lines are deliberately never assigned: they
-            # are not wired proof of EN/reset on this exact board.
-            device.open()
+            # Native USB control lines are deliberately never assigned or
+            # implicitly applied: they are not wired proof of EN/reset on
+            # this exact board.
+            self._open_without_modem_line_updates(device)
         except Exception as exc:
             raise BenchError("cannot open explicit reset serial device: %s" % exc) from exc
         self._device = device
