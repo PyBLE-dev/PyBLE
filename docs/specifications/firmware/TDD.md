@@ -1315,8 +1315,8 @@ exact public tree, manifest, separate integrity/provenance metadata, recovery,
 HIL report, activation, and rollback are frozen in
 [browser-flashing.md](browser-flashing.md). Identical immutable bytes publish
 both at the versioned `pyble.dev` path and through the matching GitHub Release,
-with exact source-era profile parity: two hardware-tested beta profiles in the
-immutable v0.4.2 history; the unfinished three-profile v0.5.1 source candidate
+with exact source-era profile parity: two hardware-tested beta profiles in v0.4.2,
+retained as immutable history; the unfinished three-profile v0.5.1 source candidate
 retained only as history; and exactly five profiles in the pending v0.6.0
 candidate. No v0.6.0 profile is published until the atomic five-profile gate
 passes (BLD-7/17…22). `DEVICE_INFO`/HELLO,

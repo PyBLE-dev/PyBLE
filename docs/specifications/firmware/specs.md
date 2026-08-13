@@ -710,8 +710,9 @@ upstream package and required runtime primitive for that target.
 > evidence schema before any threshold is selected. It does not invent or
 > claim a numeric threshold.
 
-The current v0.4.2 public-beta set is exactly, and in this order, `esp32-4mb`
-and `esp32-s3-n16r8`. Production-browser installation and interrupted-flash
+The exact v0.4.2 public-beta bundle covers exactly the two enabled, not-yet-qualified profiles,
+in this order: `esp32-4mb` and
+`esp32-s3-n16r8`. Production-browser installation and interrupted-flash
 recovery passed for both under the bounded exception in
 [browser-flashing §10](browser-flashing.md#10-activation-and-rollback).
 Each still MUST have a complete numeric policy and final-candidate HIL record

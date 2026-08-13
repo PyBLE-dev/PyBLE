@@ -90,9 +90,10 @@ contains no runtime board detector or per-chip product routing logic.
 The browser installer does not publish unqualified family-wide images. The
 exact v0.4.2 bundle is offered as a hardware-tested beta for `esp32-4mb`
 (classic ESP32, 4 MiB flash) and `esp32-s3-n16r8` (ESP32-S3, 16 MiB flash plus
-8 MiB Octal PSRAM). On both exact profiles, browser installation and
-interrupted-flash recovery passed; complete release qualification remains
-pending. The unqualified v0.5.1 source candidate set was exactly `esp32-4mb`,
+8 MiB Octal PSRAM). On both exact profiles,
+browser installation and interrupted-flash recovery passed; complete release
+qualification remains pending. The unqualified v0.5.1 source candidate set was
+exactly `esp32-4mb`,
 `esp32-s3-n16r8`, and `waveshare-esp32-s3-lcd-147b`; its source identity and
 retained evidence remain immutable history.
 
