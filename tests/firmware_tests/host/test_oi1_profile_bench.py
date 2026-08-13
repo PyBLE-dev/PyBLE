@@ -2542,7 +2542,7 @@ class EvidenceAndCliTest(unittest.TestCase):
             profile="waveshare-esp32-s3-lcd-147b",
             expect_chip="esp32-s3",
             address="test-address",
-            reset_port="/dev/test-native-usb",
+            reset_port=None,
             reset_baud=115200,
             application_bin="application.bin",
             partition_table_bin="partition-table.bin",
@@ -2587,17 +2587,20 @@ class EvidenceAndCliTest(unittest.TestCase):
                 ),
                 mock.patch.object(
                     profile_bench,
-                    "WaveshareOperatorResetController",
+                    "WavesharePromptResetController",
                     return_value=operator_reset,
-                    create=True,
                 ) as waveshare_controller,
+                mock.patch.object(
+                    profile_bench,
+                    "WaveshareOperatorResetController",
+                ) as serial_waveshare_controller,
                 mock.patch.object(
                     profile_bench,
                     "SerialResetController",
                 ) as serial_controller,
                 mock.patch.object(
                     profile_bench,
-                    "HardwareExecutor",
+                    "WaveshareHardwareExecutor",
                     return_value=executor,
                 ) as hardware_executor,
                 mock.patch.object(
@@ -2626,10 +2629,8 @@ class EvidenceAndCliTest(unittest.TestCase):
                 result = await profile_bench._run(args)
 
             self.assertEqual(result, 0)
-            waveshare_controller.assert_called_once_with(
-                args.reset_port,
-                args.reset_baud,
-            )
+            waveshare_controller.assert_called_once_with()
+            serial_waveshare_controller.assert_not_called()
             serial_controller.assert_not_called()
             hardware_executor.assert_called_once_with(
                 args,
@@ -2717,6 +2718,8 @@ class EvidenceAndCliTest(unittest.TestCase):
             "waveshare-esp32-s3-lcd-147b"
         )
         waveshare[waveshare.index("esp32")] = "esp32-s3"
+        reset_index = waveshare.index("--reset-port")
+        waveshare = waveshare[:reset_index] + waveshare[reset_index + 2 :]
         with self.assertRaises(SystemExit):
             profile_bench._parse_args(waveshare)
         waveshare += ["--operator-reset"]
@@ -2726,6 +2729,11 @@ class EvidenceAndCliTest(unittest.TestCase):
             "waveshare-esp32-s3-lcd-147b",
         )
         self.assertEqual(waveshare_args.expect_chip, "esp32-s3")
+        self.assertIsNone(waveshare_args.reset_port)
+        with self.assertRaises(SystemExit):
+            profile_bench._parse_args(
+                waveshare + ["--reset-port", "/dev/test-native-usb"]
+            )
         for profile_id, chip in (
             ("esp32-4mb", "esp32"),
             ("esp32-s3-n16r8", "esp32-s3"),
@@ -2734,10 +2742,14 @@ class EvidenceAndCliTest(unittest.TestCase):
             scoped = list(required)
             scoped[scoped.index("esp32-4mb")] = profile_id
             scoped[scoped.index("esp32")] = chip
-            scoped += ["--operator-reset"]
             with self.subTest(operator_reset_forbidden=profile_id):
                 with self.assertRaises(SystemExit):
-                    profile_bench._parse_args(scoped)
+                    profile_bench._parse_args(scoped + ["--operator-reset"])
+            serial_index = scoped.index("--reset-port")
+            without_serial = scoped[:serial_index] + scoped[serial_index + 2 :]
+            with self.subTest(reset_port_required=profile_id):
+                with self.assertRaises(SystemExit):
+                    profile_bench._parse_args(without_serial)
         for missing_flag in ("--reset-port", "--raw-log", "--output"):
             with self.subTest(missing=missing_flag):
                 index = required.index(missing_flag)
