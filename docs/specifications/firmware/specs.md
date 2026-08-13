@@ -964,9 +964,9 @@ For each exact profile and one immutable firmware/manifest candidate:
    clear that same private serial-input buffer and begin link-fact capture.
 
    Waveshare instead makes one diagnostic reconnect after each of the first
-   nine measured disconnects through the existing bounded **20,000 ms** BLE
-   connect/HELLO path, then runs a nonce-bound getter probe with a separate
-   **2,000 ms** RUN/query deadline. Its
+   nine measured disconnects. `PbleCentral.connect` has its existing
+   **20,000 ms** deadline; diagnostic HELLO and the nonce-bound getter RUN each
+   have separate **2,000 ms** deadlines. Its
    `last_ended` record MUST be final with a positive epoch, and its active
    record MUST be the exact non-wrapping successor. An absent, stale,
    non-successor, malformed, or overflowed boundary fails. The runner then
@@ -1005,9 +1005,9 @@ For each exact profile and one immutable firmware/manifest candidate:
    its exact non-wrapping successor. Derive the public `transfer_link_facts`
    solely from that immutable ended record, including the final starvation
    count, then disconnect the diagnostic session. The diagnostic BLE
-   connect/HELLO retains the existing **20,000 ms** bound; each getter RUN/query
-   has its own **2,000 ms** bound. The harness MUST NOT compress the whole
-   reconnect transaction into the query deadline.
+   connect retains the existing **20,000 ms** bound; diagnostic HELLO and each
+   getter RUN/query have their own **2,000 ms** bounds. The harness MUST NOT
+   compress the whole reconnect transaction into either shorter deadline.
 
    The other ESP profiles instead disconnect and wait at most **2,000 ms** for
    the same UART session's final TX-mbuf-starvation fact before sealing
