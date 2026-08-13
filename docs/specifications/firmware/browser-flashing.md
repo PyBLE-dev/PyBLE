@@ -1322,6 +1322,18 @@ The following ESP-IDF resolution rules are part of that fail-closed mapping:
    tree; materializing such an ambient tree is neither an audit prerequisite
    nor substitute evidence for bytes used by the build.
 
+   The collector MUST open every component of that exact retained `BOARD_DIR`
+   descriptor-relatively without following links, capture its complete bytes
+   and node identities, and materialize a byte-identical execution snapshot in
+   fresh private audit staging. Clean frozen-payload reconstruction MUST consume
+   only that immutable private snapshot; its temporary path is not evidence and
+   does not replace the original `build/.sources/...` logical identity recorded
+   above. After every `BOARD_DIR` consumer finishes, the collector MUST reopen
+   and resnapshot the exact retained namespace without following links and
+   require it to equal the initial capture. A component swap, transient symlink,
+   replacement, or byte change at any phase is fatal even if an attacker restores
+   the lexical path before a later path-based check.
+
    The collector then selects the unique compile-command entry whose exact
    source is this `frozen_content.c`, requires an unambiguous argument-vector
    command with one source and one `-o`, and replays it from its recorded
