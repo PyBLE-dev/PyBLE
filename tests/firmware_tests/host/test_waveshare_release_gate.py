@@ -15,7 +15,6 @@ import stat
 import subprocess
 import sys
 import tempfile
-import tomllib
 import unittest
 from unittest import mock
 
@@ -63,9 +62,8 @@ FINAL_TEST, FINAL_TEST_ERROR = load_module(
     HERE / "test_release_finalization.py",
 )
 
-with (REPO_ROOT / "firmware" / "versions.lock").open("rb") as handle:
-    PROSPECTIVE_VERSION = tomllib.load(handle)["pyble"]["agent_version"]
 EARLIER_WAVESHARE_SOURCE_VERSION = "0.5.1"
+PROSPECTIVE_VERSION = EARLIER_WAVESHARE_SOURCE_VERSION
 
 
 def canonical_bytes(value):
@@ -201,16 +199,31 @@ async def make_result(firmware):
         raise RuntimeError(COMBINED_TEST_ERROR)
     bench = COMBINED_TEST.bench
     measurement = firmware_measurement(firmware)
+    fixture_caps = COMBINED_TEST.CAPS.replace(
+        COMBINED_TEST.SELECTED_AGENT_VERSION.encode("ascii"),
+        PROSPECTIVE_VERSION.encode("ascii"),
+    )
     connections = [
         COMBINED_TEST.CombinedFakeCentral(
             "candidate/setup-disabled",
             live_candidate_sha256=measurement["attestation"]["sha256"],
+            hello_payload=fixture_caps,
         ),
-        COMBINED_TEST.CombinedFakeCentral("setup-disabled/setup-enabled"),
-        COMBINED_TEST.CombinedFakeCentral("setup-enabled/exercise/cycle-1-arm"),
-        COMBINED_TEST.CombinedFakeCentral("cycle-1/final-disable/cycle-2-arm"),
-        COMBINED_TEST.CombinedFakeCentral("cycle-2/cycle-3-arm"),
-        COMBINED_TEST.CombinedFakeCentral("cycle-3/final-proof"),
+        COMBINED_TEST.CombinedFakeCentral(
+            "setup-disabled/setup-enabled", hello_payload=fixture_caps
+        ),
+        COMBINED_TEST.CombinedFakeCentral(
+            "setup-enabled/exercise/cycle-1-arm", hello_payload=fixture_caps
+        ),
+        COMBINED_TEST.CombinedFakeCentral(
+            "cycle-1/final-disable/cycle-2-arm", hello_payload=fixture_caps
+        ),
+        COMBINED_TEST.CombinedFakeCentral(
+            "cycle-2/cycle-3-arm", hello_payload=fixture_caps
+        ),
+        COMBINED_TEST.CombinedFakeCentral(
+            "cycle-3/final-proof", hello_payload=fixture_caps
+        ),
     ]
     connector = COMBINED_TEST.CombinedFakeConnector(connections)
 
@@ -221,22 +234,31 @@ async def make_result(firmware):
         connector.last.visual_confirmed = True
         return True
 
-    result = await bench.run_combined_qualification(
-        connector,
-        "private-input-only",
-        COMBINED_TEST.preflight(),
-        measurement["sha256"],
-        measurement["size_bytes"],
-        measurement["attestation"],
-        timeout_s=2.0,
-        poll_interval_s=0,
-        production_app_probe=COMBINED_TEST.production_app_evidence,
-        confirm_splash=confirm_splash,
-        confirm_tft=confirm_tft,
-        session_id="12" * 16,
-    )
-    if bench.validate_combined_qualification_result(result) is not result:
-        raise AssertionError("combined production validator did not retain its result")
+    with mock.patch.object(
+        bench, "EXPECTED_FIRMWARE_VERSION", PROSPECTIVE_VERSION
+    ), mock.patch.object(
+        bench.tft, "EXPECTED_AGENT_VERSION", PROSPECTIVE_VERSION
+    ), mock.patch.object(
+        COMBINED_TEST, "CAPS", fixture_caps
+    ):
+        result = await bench.run_combined_qualification(
+            connector,
+            "private-input-only",
+            COMBINED_TEST.preflight(),
+            measurement["sha256"],
+            measurement["size_bytes"],
+            measurement["attestation"],
+            timeout_s=2.0,
+            poll_interval_s=0,
+            production_app_probe=COMBINED_TEST.production_app_evidence,
+            confirm_splash=confirm_splash,
+            confirm_tft=confirm_tft,
+            session_id="12" * 16,
+        )
+        if bench.validate_combined_qualification_result(result) is not result:
+            raise AssertionError(
+                "combined production validator did not retain its result"
+            )
     return result
 
 
@@ -457,7 +479,12 @@ class ResultValidationTests(unittest.TestCase):
 
     def test_happy_fixture_and_release_gate_share_the_authoritative_validator(self):
         authoritative = COMBINED_TEST.bench.validate_combined_qualification_result
-        self.assertIs(authoritative(self.result), self.result)
+        with mock.patch.object(
+            COMBINED_TEST.bench,
+            "EXPECTED_FIRMWARE_VERSION",
+            PROSPECTIVE_VERSION,
+        ):
+            self.assertIs(authoritative(self.result), self.result)
         self.assertEqual(self.validate()["status"], "passed")
 
     def test_fully_rehashed_semantic_tampering_fails_both_validators(self):
@@ -483,8 +510,14 @@ class ResultValidationTests(unittest.TestCase):
                 value = copy.deepcopy(self.result)
                 mutate(value)
                 value = COMBINED_TEST.rechain_combined_result(value)
-                with self.assertRaises(COMBINED_TEST.bench.BenchError):
-                    COMBINED_TEST.bench.validate_combined_qualification_result(value)
+                with mock.patch.object(
+                    COMBINED_TEST.bench,
+                    "EXPECTED_FIRMWARE_VERSION",
+                    PROSPECTIVE_VERSION,
+                ), self.assertRaises(COMBINED_TEST.bench.BenchError):
+                    COMBINED_TEST.bench.validate_combined_qualification_result(
+                        value
+                    )
                 self.write_result(value)
                 with self.assertRaises(GATE.QualificationError):
                     self.validate()
