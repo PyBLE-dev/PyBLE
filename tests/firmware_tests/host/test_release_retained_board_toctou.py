@@ -55,6 +55,142 @@ class RetainedBoardConsumptionRaceTests(unittest.TestCase):
     def tearDownClass(cls):
         cls.fixture.close()
 
+    def _assert_rejects_private_staged_board_race(self, attack: str):
+        target = "esp32"
+        board_name = RELEASE.FROZEN_TARGET_SETTINGS[target]["board"]
+        retained_board = (
+            self.fixture.build_root
+            / ".sources"
+            / target
+            / "micropython"
+            / "ports"
+            / "esp32"
+            / "boards"
+            / board_name
+        )
+        makemanifest = (
+            self.fixture.firmware
+            / "upstream"
+            / "micropython"
+            / "tools"
+            / "makemanifest.py"
+        ).resolve()
+        actual_run = RELEASE.subprocess.run
+        raced = False
+        consumed_board = None
+
+        def race_private_snapshot(*args, **kwargs):
+            nonlocal consumed_board, raced
+            command = [
+                os.fspath(value)
+                for value in (args[0] if args else kwargs.get("args", ()))
+            ]
+            completed = actual_run(*args, **kwargs)
+            board_values = [
+                value.removeprefix("BOARD_DIR=")
+                for value in command
+                if value.startswith("BOARD_DIR=")
+            ]
+            if (
+                raced
+                or len(command) <= 1
+                or Path(command[1]).resolve() != makemanifest
+            ):
+                return completed
+
+            self.assertEqual(len(board_values), 1)
+            consumed_board = Path(board_values[0])
+            self.assertNotEqual(
+                consumed_board.resolve(),
+                retained_board.resolve(),
+                "makemanifest must consume private staging, not retained build state",
+            )
+            self.assertEqual(
+                Path(command[-1]).resolve(),
+                (consumed_board / "manifest.py").resolve(),
+                "makemanifest must consume the manifest inside private BOARD_DIR staging",
+            )
+            victim = consumed_board / "_boot.py"
+            original = victim.read_bytes()
+            original_file_mode = victim.stat().st_mode & 0o777
+            original_board_mode = consumed_board.stat().st_mode & 0o777
+            backup = consumed_board / ".boot-before-staged-race"
+
+            # The real child has consumed BOARD_DIR, but subprocess.run has
+            # not returned control to the auditor. Exercise a same-owner
+            # transient attack, then restore the lexical bytes and name before
+            # any later path-based check can run.
+            try:
+                if attack == "mutation":
+                    victim.chmod(original_file_mode | 0o200)
+                    victim.write_bytes(original + b"# private staging race\n")
+                    victim.write_bytes(original)
+                    victim.chmod(original_file_mode)
+                elif attack == "replacement":
+                    consumed_board.chmod(original_board_mode | 0o200)
+                    victim.rename(backup)
+                    victim.write_bytes(original + b"# replacement race\n")
+                    victim.unlink()
+                    backup.rename(victim)
+                else:  # pragma: no cover - test-helper misuse
+                    self.fail("unsupported private staged BOARD_DIR attack")
+            finally:
+                if backup.exists():
+                    if victim.exists():
+                        victim.unlink()
+                    backup.rename(victim)
+                if victim.exists():
+                    victim.chmod(original_file_mode | 0o200)
+                    victim.write_bytes(original)
+                    victim.chmod(original_file_mode)
+                consumed_board.chmod(original_board_mode)
+            raced = True
+            return completed
+
+        manifest = (
+            self.fixture.firmware
+            / "board_overlays"
+            / target
+            / "manifest.py"
+        )
+        frozen = self.fixture.build_root / target / "frozen_content.c"
+        mpy_cross = (
+            self.fixture.firmware
+            / "upstream"
+            / "micropython"
+            / "mpy-cross"
+            / "build"
+            / "mpy-cross"
+        )
+        with mock.patch.object(
+            RELEASE.subprocess,
+            "run",
+            side_effect=race_private_snapshot,
+        ):
+            with self.assertRaisesRegex(
+                RELEASE.ReleaseError,
+                "%s retained generated board execution snapshot changed during audit"
+                % target,
+            ):
+                RELEASE._audit_manifest_evidence_record(
+                    manifest,
+                    frozen,
+                    repo_root=self.fixture.repo,
+                    target=target,
+                    trusted_mpy_cross_sha256=BASE.sha256_path(mpy_cross),
+                )
+        self.assertTrue(
+            raced,
+            "the test did not race the private staged BOARD_DIR consumer",
+        )
+        self.assertIsNotNone(consumed_board)
+
+    def test_rejects_private_staged_board_mutation_during_consumption(self):
+        self._assert_rejects_private_staged_board_race("mutation")
+
+    def test_rejects_private_staged_board_replacement_during_consumption(self):
+        self._assert_rejects_private_staged_board_race("replacement")
+
     def test_rejects_retained_board_changed_before_makemanifest_returns(self):
         target = "esp32"
         board_name = RELEASE.FROZEN_TARGET_SETTINGS[target]["board"]
