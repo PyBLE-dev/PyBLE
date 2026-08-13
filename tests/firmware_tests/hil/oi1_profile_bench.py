@@ -715,6 +715,10 @@ class SerialResetController:
     def release_reset(self):
         self._device.rts = False
 
+    def prepare_after_advertisement(self):
+        """External UART bridges remain open across an ESP reset."""
+        return None
+
     def clear_input_buffer(self):
         if self._device is None:
             raise BenchError("reset serial device is closed")
@@ -758,6 +762,123 @@ class SerialResetController:
                     first_error = exc
         if first_error is not None:
             raise first_error
+
+
+WAVESHARE_RESET_HOLD_PROMPT = (
+    "Press and hold RESET on the Waveshare ESP32-S3-LCD-1.47B, "
+    "keep holding it, then press Enter: "
+)
+WAVESHARE_RESET_RELEASE_PROMPT = (
+    "Release RESET now, then press Enter immediately: "
+)
+
+
+class WaveshareOperatorResetController:
+    """Native-USB UART capture plus the exact-board physical RESET seam.
+
+    The board's USB serial control lines are not wired evidence of EN/reset.
+    They are therefore never changed by assert_reset()/release_reset(); those
+    methods only collect the two frozen physical-action confirmations.
+    """
+
+    def __init__(self, port, baudrate=115200, operator_action=None):
+        if operator_action is None:
+            operator_action = input
+        if not callable(operator_action):
+            raise BenchError("Waveshare operator action must be callable")
+        try:
+            import serial
+        except Exception as exc:  # pragma: no cover - HIL-only dependency
+            raise BenchError(
+                "pyserial is required for reset control (pip install pyserial)"
+            ) from exc
+        self._serial = serial
+        self._port = port
+        self._baudrate = baudrate
+        self._device = None
+        self._closed = False
+        self._operator_action = operator_action
+        self._open_device()
+
+    def _open_device(self):
+        if self._closed:
+            raise BenchError("Waveshare reset controller is closed")
+        if self._device is not None:
+            raise BenchError("Waveshare native USB device is already open")
+        try:
+            device = self._serial.Serial()
+            device.port = self._port
+            device.baudrate = self._baudrate
+            device.timeout = 1
+            device.write_timeout = 1
+            device.dsrdtr = False
+            device.rtscts = False
+            # Native USB control lines are deliberately never assigned: they
+            # are not wired proof of EN/reset on this exact board.
+            device.open()
+        except Exception as exc:
+            raise BenchError("cannot open explicit reset serial device: %s" % exc) from exc
+        self._device = device
+
+    def _close_device(self, *, allow_endpoint_gone=False):
+        device = self._device
+        if device is None:
+            return
+        self._device = None
+        try:
+            device.close()
+        except Exception as exc:
+            endpoint_gone = (
+                allow_endpoint_gone
+                and isinstance(exc, OSError)
+                and exc.errno in SERIAL_ENDPOINT_GONE_ERRNOS
+            )
+            if not endpoint_gone:
+                raise
+
+    def _prompt(self, message):
+        if self._closed:
+            raise BenchError("Waveshare reset controller is closed")
+        self._operator_action(message)
+
+    def assert_reset(self):
+        self._prompt(WAVESHARE_RESET_HOLD_PROMPT)
+        # The chip-native USB endpoint disappears during physical RESET. Close
+        # its stale descriptor after RESET-held confirmation; ENODEV here is
+        # expected and is not a reason to lose the physical measurement.
+        self._close_device(allow_endpoint_gone=True)
+
+    def release_reset(self):
+        self._prompt(WAVESHARE_RESET_RELEASE_PROMPT)
+
+    def prepare_after_advertisement(self):
+        # Reopen only after the first measured fresh advertisement and before
+        # BLE HELLO/link-fact capture. Never toggle RTS or DTR.
+        self._open_device()
+
+    def clear_input_buffer(self):
+        if self._device is None:
+            raise BenchError("reset serial device is closed")
+        self._device.reset_input_buffer()
+
+    def read_available(self):
+        if self._device is None:
+            raise BenchError("reset serial device is closed")
+        waiting = self._device.in_waiting
+        if isinstance(waiting, bool) or not isinstance(waiting, int) or waiting < 0:
+            raise BenchError("reset serial device reported invalid buffered length")
+        if waiting == 0:
+            return b""
+        payload = self._device.read(waiting)
+        if not isinstance(payload, bytes):
+            raise BenchError("reset serial device returned non-byte data")
+        return payload
+
+    def close(self, *, allow_endpoint_gone=False):
+        if self._closed:
+            return
+        self._closed = True
+        self._close_device(allow_endpoint_gone=allow_endpoint_gone)
 
 
 class Rp2OperatorResetController:
@@ -955,6 +1076,11 @@ class HardwareExecutor:
             self.reset,
             watcher,
         )
+        # External UART controllers keep their descriptor and no-op here. The
+        # exact Waveshare native-USB controller reopens its post-reset endpoint
+        # after the measured advertisement and before BLE/serial evidence.
+        if self.args.profile == "waveshare-esp32-s3-lcd-147b":
+            self.reset.prepare_after_advertisement()
         self.log.write(
             "reset_advertisement",
             sample_index=sample_index,
@@ -1351,7 +1477,7 @@ def _parse_args(argv=None):
     parser.add_argument(
         "--operator-reset",
         action="store_true",
-        help="use the injected operator reset/power seam for Pico 2 W",
+        help="use the exact physical reset seam for Waveshare or Pico 2 W",
     )
     parser.add_argument("--firmware-bin")
     parser.add_argument("--firmware-uf2")
@@ -1389,6 +1515,7 @@ def _parse_args(argv=None):
         args.firmware_bin,
         args.firmware_uf2,
     )
+    is_waveshare = args.profile == "waveshare-esp32-s3-lcd-147b"
     if is_rp2:
         if not args.operator_reset or any(value is None for value in rp2_inputs):
             parser.error(
@@ -1403,8 +1530,12 @@ def _parse_args(argv=None):
                 "ESP profiles require --reset-port, --application-bin, "
                 "and --partition-table-bin"
             )
-        if args.operator_reset or any(value is not None for value in rp2_inputs):
+        if any(value is not None for value in rp2_inputs):
             parser.error("ESP profiles forbid RP2 reset and build inputs")
+        if is_waveshare and not args.operator_reset:
+            parser.error("Waveshare requires --operator-reset")
+        if not is_waveshare and args.operator_reset:
+            parser.error("operator reset is forbidden for UART-reset ESP profiles")
     return args
 
 
@@ -1489,6 +1620,12 @@ async def _run(args):
         if is_rp2:
             reset = Rp2OperatorResetController()
             executor = Rp2HardwareExecutor(args, reset, raw_log)
+        elif args.profile == "waveshare-esp32-s3-lcd-147b":
+            reset = WaveshareOperatorResetController(
+                args.reset_port,
+                args.reset_baud,
+            )
+            executor = HardwareExecutor(args, reset, raw_log)
         else:
             reset = SerialResetController(args.reset_port, args.reset_baud)
             executor = HardwareExecutor(args, reset, raw_log)

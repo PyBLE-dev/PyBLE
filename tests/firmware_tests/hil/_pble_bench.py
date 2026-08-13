@@ -1607,8 +1607,12 @@ async def measure_reset_to_advertisement(
             raise BenchError(
                 "matching advertisement observed while reset was asserted"
             )
-        release_ns = monotonic_ns()
         reset.release_reset()
+        # A serial reset controller returns immediately after releasing EN.
+        # The exact Waveshare operator seam returns only after the operator has
+        # released RESET and confirmed that physical action, so its proxy
+        # release boundary is the first host timestamp after this call.
+        release_ns = monotonic_ns()
         try:
             match_ns = await watcher.wait_for_match(timeout_ms)
         except asyncio.TimeoutError as exc:

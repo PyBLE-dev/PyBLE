@@ -372,14 +372,22 @@ class V060Oi1CatalogTests(unittest.TestCase):
                         "firmware.uf2",
                     ]
                     if profile_id == "rpi-pico2-w"
-                    else [
-                        "--reset-port",
-                        "/dev/private-test-reset",
-                        "--application-bin",
-                        "application.bin",
-                        "--partition-table-bin",
-                        "partition-table.bin",
-                    ]
+                    else (
+                        [
+                            "--reset-port",
+                            "/dev/private-test-reset",
+                            "--application-bin",
+                            "application.bin",
+                            "--partition-table-bin",
+                            "partition-table.bin",
+                            *(
+                                ["--operator-reset"]
+                                if profile_id
+                                == "waveshare-esp32-s3-lcd-147b"
+                                else []
+                            ),
+                        ]
+                    )
                 )
                 with redirect_stderr(io.StringIO()):
                     args = profile_bench._parse_args(
