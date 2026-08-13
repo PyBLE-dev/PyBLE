@@ -118,11 +118,20 @@ class NeoPixelManifestContractTest(unittest.TestCase):
                 )
 
     def test_pyble_does_not_copy_or_implement_a_neopixel_driver(self):
-        copied_drivers = []
-        for path in FIRMWARE_DIR.rglob("neopixel.py"):
-            resolved = path.resolve()
-            if UPSTREAM_DIR.resolve() not in resolved.parents:
-                copied_drivers.append(path.relative_to(REPO_ROOT).as_posix())
+        # Release source is the Git-tracked tree.  Retained build checkouts are
+        # intentionally ignored and may contain their own pristine upstream
+        # neopixel.py; scanning the ambient filesystem would misclassify those
+        # generated inputs as PyBLE-authored/shipped copies.
+        tracked_paths = _git(
+            REPO_ROOT,
+            "ls-files",
+            "-z",
+            "--",
+            "firmware",
+        ).decode("utf-8").split("\0")
+        copied_drivers = sorted(
+            path for path in tracked_paths if path.endswith("/neopixel.py")
+        )
         self.assertEqual(
             copied_drivers,
             [],
