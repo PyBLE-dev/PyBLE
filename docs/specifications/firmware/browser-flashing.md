@@ -1061,7 +1061,17 @@ The following ESP-IDF resolution rules are part of that fail-closed mapping:
      for the fourteen retained Berkeley DB sources.
 
    Each direct output MUST be a regular, symlink-free file below the selected
-   role build, and the map MUST name its exact build-relative path once.
+   role build, and the map MUST name its exact build-relative path once after
+   the following one narrow lexical normalization. Within an otherwise exact
+   direct-object `LOAD` token, a segment whose complete value is `.` is
+   redundant and MUST be removed before build-root containment, component
+   symlink checks, exact compile-output matching, and duplicate accounting.
+   This syntax rule applies uniformly to every direct object; it is not a
+   Berkeley DB source or topology exception. The raw map bytes remain
+   receipt-bound. No other map-path normalization is permitted: `..`, an empty
+   segment (including repeated `/`), a backslash, an absolute path, a symlinked
+   component, or a normalized path absent from the exact compile-output set is
+   fatal.
    Exact generated-header, source-exception, anchor, and direct-output
    topologies MUST be checked lexically for symlink components before any
    canonical-path equality check; an alternate path resolving to the same

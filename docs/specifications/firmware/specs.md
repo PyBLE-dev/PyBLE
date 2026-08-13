@@ -1430,7 +1430,9 @@ This is software-level safety of the IDE/agent, **not** hardware/actuator safety
   but MUST NOT recursively admit uncompiled files. It MUST separately
   hash-bind the pinned `main` generated headers, reconcile every linked compile
   output exactly once to an archive member or exact direct-object linker-map
-  `LOAD` and linker-command object, classify build-only outputs as unlinked,
+  `LOAD` and linker-command object, permitting only redundant complete `.`
+  segments in a direct-`LOAD` path and rejecting every other noncanonical or
+  unmatched path form, classify build-only outputs as unlinked,
   retain source/output/metadata hashes in the generated `main` binding, repeat
   that observation after SBOM execution to close input races, and admit the
   pinned PyBLE, retained Berkeley DB, and zero-byte IDF ELF-anchor exceptions
