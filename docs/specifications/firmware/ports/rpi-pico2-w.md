@@ -91,15 +91,17 @@ The OI reset samples use a bounded operator power-disconnect seam because Pico
 2 W exposes no host-controlled reset edge in this setup. The service-filtered
 scanner MUST be active before the disconnect prompt. After the operator
 confirms all Pico power is disconnected and `assert_reset()` returns, the
-harness MUST establish the common `begin_quiet_interval()` watcher boundary
-from [§5.3.2](../specs.md#532-frozen-qualification-workload), discarding every
-pre-confirmation callback while keeping the scanner active. It then observes
-the complete 1,000 ms quiet interval; any matching callback in that new epoch
-fails the sample. Only after that interval may the harness prompt for power
-reconnection, and the numeric sample begins immediately after the operator
-confirms reconnection. Thus an advertisement seen while the operator was still
-reaching for the cable can neither fail the confirmed power-off interval nor
-pass as a fresh post-reconnection advertisement.
+harness MUST establish the common bounded consecutive quiet window from
+[§5.3.2](../specs.md#532-frozen-qualification-workload), discarding every
+pre-confirmation callback while keeping the scanner active. A callback queued
+before confirmation but delivered afterward restarts the 1,000 ms window; it
+does not fail the sample by itself. The runner MUST obtain a full callback-free
+window within 15,000 ms, so a Pico that remains powered and advertising cannot
+pass. Only after that interval may the harness prompt for power reconnection.
+After the operator confirms reconnection, the watcher atomically establishes
+the post-release epoch and numeric start boundary. Thus an advertisement seen
+while the operator was reaching for either cable action can neither pass the
+power-off proof nor become the measured post-reconnection advertisement.
 
 - **GP0 build/boot:** image builds under the pinned toolchain, passes the size gate, boots advertising. *Verify: build.*
 - **GP1 parity:** host unit + shared conformance corpus green for every grown module. *Verify: unit/conformance.*

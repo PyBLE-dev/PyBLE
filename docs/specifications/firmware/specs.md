@@ -843,22 +843,35 @@ capability and no INFO/HELLO equivalence ambiguity.
 For each exact profile and one immutable firmware/manifest candidate:
 
 1. Perform **10** controlled reset samples. Start a service-UUID-filtered BLE
-   scan, hold EN/reset asserted for **1,000 ms**, fail the sample if a matching
-   advertisement is observed during that quiet interval, release reset, and
-   record the first fresh matching advertisement. The per-sample discovery
-   timeout is **15,000 ms**; a timeout is a gate failure, not a latency sample.
-   Connect and complete HELLO after each successful sample.
+   scan, establish a complete consecutive **1,000 ms** interval with EN/reset
+   asserted and no matching callback, release reset, and record the first fresh
+   matching advertisement. Both acquisition of that quiet interval and
+   post-release discovery are independently bounded at **15,000 ms**; a timeout
+   is a gate failure, not a latency sample. Connect and complete HELLO after
+   each successful sample.
 
    Scanner callbacks received before reset assertion is confirmed are discovery
    input only; they are not evidence about the quiet interval. Immediately after
    the synchronous `assert_reset()` seam returns, the harness MUST call the
-   active watcher's `begin_quiet_interval()` seam. That call MUST keep the
-   scanner active, atomically discard every earlier retained matching timestamp
-   and completion signal, and establish a new callback epoch. Only then may the
-   complete 1,000 ms quiet interval begin. Any matching callback in that new
-   epoch before reset release is a gate failure. A callback from before the
-   boundary MUST be discarded and MUST neither fail the quiet interval nor
-   become the measured post-release advertisement.
+   active watcher's quiet-window seam. That call MUST keep the scanner active,
+   atomically discard every earlier retained matching timestamp and completion
+   signal, and establish a new callback epoch. CoreBluetooth may deliver a
+   callback queued before the operator-confirmed boundary after that boundary;
+   such a callback restarts the quiet window instead of proving that the board
+   remained powered. Every matching callback while reset is held MUST restart
+   the required consecutive 1,000 ms window. Failure to obtain one complete
+   window within 15,000 ms is a gate failure, so a target that continues to
+   advertise cannot pass. A callback preceding the completed quiet window MUST
+   neither become the measured post-release advertisement nor shorten the
+   reset hold.
+
+   Immediately after the release seam returns, the watcher MUST atomically
+   discard the held-reset callback epoch and take the monotonic release-proxy
+   timestamp before the event loop can process another scanner callback. The
+   numeric sample ends at the first matching callback in that new post-release
+   epoch. This also prevents an advertisement queued while the operator was
+   reconnecting power or acknowledging the Waveshare release prompt from being
+   misrepresented as a post-confirmation measurement.
 
    The exact `waveshare-esp32-s3-lcd-147b` profile has one bounded reset seam:
    its native USB serial RTS is not evidence that EN/reset was asserted, so
@@ -874,8 +887,7 @@ For each exact profile and one immutable firmware/manifest candidate:
    ```
 
    After the first prompt returns, the harness MUST establish the common
-   `begin_quiet_interval()` boundary and enforce the complete 1,000 ms quiet
-   interval while RESET remains held. The operator MUST release
+   bounded consecutive quiet window while RESET remains held. The operator MUST release
    RESET before acknowledging the second prompt. The numeric sample begins at
    the host monotonic timestamp taken immediately after that acknowledgement
    returns and ends at the first later matching scanner callback; a callback
