@@ -12608,6 +12608,21 @@ def _audit_compile_sources(
     }
 
 
+def _normalize_map_direct_load_token(value: Any) -> str:
+    """Remove only redundant full ``.`` components from one map LOAD token."""
+
+    label = "linked map direct object"
+    _require(isinstance(value, str) and bool(value), "%s path must be nonempty" % label)
+    _require("\\" not in value, "%s path contains a backslash" % label)
+    _require(not value.startswith("/"), "%s path must be relative" % label)
+    parts = value.split("/")
+    _require(all(part != "" for part in parts), "%s path contains an empty segment" % label)
+    _require(all(part != ".." for part in parts), "%s path contains a parent segment" % label)
+    normalized = "/".join(part for part in parts if part != ".")
+    _require(bool(normalized), "%s path normalizes to empty" % label)
+    return _safe_relative_path(normalized, label)
+
+
 def _audit_map_direct_outputs(
     map_path: Path,
     *,
@@ -12633,9 +12648,8 @@ def _audit_map_direct_outputs(
                 "linked map direct-object LOAD is not exact",
             )
             continue
-        relative = _safe_relative_path(
+        relative = _normalize_map_direct_load_token(
             match.group(1),
-            "linked map direct object",
         )
         output = _audit_path_in_roots(
             relative,
