@@ -971,7 +971,11 @@ For each exact profile and one immutable firmware/manifest candidate:
    record MUST be the exact non-wrapping successor. An absent, stale,
    non-successor, malformed, or overflowed boundary fails. The runner then
    disconnects the diagnostic session and discards both records. It retains no
-   numeric fact from those nine sessions.
+   numeric fact from those nine sessions. Either record MAY be structurally
+   valid but unsettled: the measured session ends immediately after HELLO and
+   its heap probe, and the diagnostic successor has only just connected.
+   Unsettled first-nine records cannot authorize throughput and MUST NOT be
+   promoted into `transfer_link_facts`.
 
    On the tenth measured connection, after HELLO, every ESP path waits at most
    **5,000 ms** for the profile-exact DLE/PHY/connection-parameter facts in

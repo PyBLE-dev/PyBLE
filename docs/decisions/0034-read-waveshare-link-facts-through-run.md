@@ -52,9 +52,13 @@ transport.
    stderr, and terminal RUN_STATE(done) are required within the existing
    bounded probe timeout. The parser accepts exact keys and types only, bounds
    every integer, list, output chunk, and total output, and fails closed on a
-   missing, duplicate, stale, malformed, unsettled, overflowed, or timed-out
-   snapshot. Arbitrary non-marker stdout is discarded and never enters
-   evidence.
+   missing, duplicate, stale, malformed, overflowed, or timed-out snapshot.
+   The first-nine boundary snapshots are structural isolation records and MAY
+   be unsettled because those measured links disconnect immediately after
+   HELLO and the heap probe; they are discarded and never authorize timed
+   work. Only the tenth transfer session's active and ended records MUST be
+   settled and pass the exact public fact validator. Arbitrary non-marker
+   stdout is discarded and never enters evidence.
 6. After each of the first nine measured sessions disconnects, the runner
    makes one diagnostic reconnect with separate deadlines: 20 seconds for
    `PbleCentral.connect`, 2 seconds for diagnostic HELLO, and 2 seconds for the

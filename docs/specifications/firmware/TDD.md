@@ -1068,7 +1068,10 @@ After each of the first nine Waveshare measured disconnects, the executor
 makes a diagnostic reconnect with separate deadlines: 20 seconds for
 `PbleCentral.connect`, 2 seconds for diagnostic HELLO, and 2 seconds for the
 getter RUN. It requires a final last-ended record and its exact non-wrapping
-active successor, disconnects, and discards both. On the tenth
+active successor, disconnects, and discards both. Those two boundary records
+MAY be unsettled because neither the just-ended short sample nor the newly
+connected diagnostic session is a transfer session; exact structure, epochs,
+finality, and `overflow=false` remain mandatory. On the tenth
 connection it polls the active record for no more than 5,000 ms until the
 record is settled, non-final, non-overflowed, and profile-valid, then retains
 its epoch before timing. It probes the same active epoch again after the final
@@ -1078,8 +1081,10 @@ deadlines. The getter must expose that epoch as immutable `last_ended` and its
 exact active successor. Only the
 ended record's `facts`, including its final starvation
 count, enters evidence. Missing/null, stale, non-successor, wrapped,
-overflowed, unsettled, malformed, duplicate-marker, stderr, RUN error, and
-timeout cases all fail closed. The raw log is exclusively created mode `0600`
+overflowed, malformed, duplicate-marker, stderr, RUN error, and timeout cases
+all fail closed; unsettled additionally fails for the tenth transfer record,
+but is permitted only for discarded first-nine boundary records. The raw log
+is exclusively created mode `0600`
 before its first write,
 independent of ambient umask, and a pre-existing path is rejected. The result
 writes atomically and never silently drops a successful sample. RP2 instead

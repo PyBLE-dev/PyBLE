@@ -1929,7 +1929,9 @@ one atomic `{active,last_ended}` snapshot from
 followed by a diagnostic reconnect with separate 20-second connect, 2-second
 diagnostic-HELLO, and 2-second getter-RUN deadlines. It must show
 the ended epoch and its exact non-wrapping active successor; both records are
-discarded. On reset ten, the
+discarded. Those first-nine boundary records may be unsettled because they are
+not transfer evidence; they still require exact structure, finality, epoch
+ordering, and no overflow. On reset ten, the
 active epoch and settled facts are bound before timing and checked again after
 the workload but before disconnect. One final diagnostic reconnect retains the
 same three separate deadlines. Its getter RUN must expose that exact epoch as
@@ -1937,7 +1939,8 @@ immutable and final, plus its active
 successor. Only the ended record's `facts` is sealed. Strict parsing rejects
 null, stale, wrapped, non-successor, overflowed, unsettled, malformed,
 duplicate, stderr, RUN-error, and timeout results, and discards arbitrary
-console output. No serial endpoint, new opcode, public capability, BLE
+console output; `unsettled` applies to the reset-ten transfer record, not the
+discarded first-nine boundary pair. No serial endpoint, new opcode, public capability, BLE
 identifier, connection handle, path, label, user source, or console text enters
 the Waveshare report.
 
