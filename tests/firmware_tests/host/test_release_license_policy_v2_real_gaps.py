@@ -25,6 +25,7 @@ from tests.firmware_tests.host.test_release_license_policy_v2 import (
 )
 from tests.firmware_tests.host.test_release_license_policy_v2_integration import (
     ObservationV2Fixture,
+    PROFILE_TARGETS,
 )
 
 
@@ -472,7 +473,10 @@ class PolicyV2RealGapTests(unittest.TestCase):
         ]
         self.assertEqual(
             sum(len(record["package_refs"]) for record in aggregates),
-            24,
+            sum(
+                6 if role == "application" else 2
+                for _profile_id, role in PROFILE_ROLES
+            ),
         )
         self.assertTrue(all(record["input_refs"] == [] for record in aggregates))
         self.assertEqual(
@@ -663,6 +667,7 @@ class StableGeneratedMatcherIntegrationTests(unittest.TestCase):
             observed_inputs=context["observed_inputs"],
             manifest_evidence=context["manifest_evidence"],
             toolchain_roots=context["toolchain_roots"],
+            build_root=fixture.build_root,
         )
 
     def test_one_stable_policy_accepts_two_clean_absolute_build_roots(self):
@@ -726,12 +731,7 @@ class StableGeneratedMatcherIntegrationTests(unittest.TestCase):
     ) -> dict:
         result = stable_generated_policy(policy)
         nested_targets = {"mbedcrypto", "mbedtls", "mbedx509"}
-        for profile_id, target, _idf_target in (
-            ("esp32-4mb", "esp32", "esp32"),
-            ("esp32-s3-n16r8", "esp32-s3", "esp32s3"),
-            ("esp32-c3-4mb", "esp32-c3", "esp32c3"),
-        ):
-            del profile_id
+        for _profile_id, target, _idf_target in PROFILE_TARGETS:
             description_path = fixture.build_root / target / "project_description.json"
             description = json.loads(description_path.read_text(encoding="utf-8"))
             for component in nested_targets:
@@ -800,7 +800,7 @@ class StableGeneratedMatcherIntegrationTests(unittest.TestCase):
                 for record in context["observed_inputs"]
                 if record["kind"] == "generated-supplemental-archive"
             ]
-            self.assertEqual(len(nested), 9)
+            self.assertEqual(len(nested), 3 * len(PROFILE_TARGETS))
             self.assertEqual(
                 {
                     record["generated_binding"]["nested_archive"]["target"]
