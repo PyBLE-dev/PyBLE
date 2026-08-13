@@ -1622,17 +1622,18 @@ async def measure_reset_to_advertisement(
         # quiet interval to callbacks observed after reset assertion has been
         # confirmed.
         watcher.begin_quiet_interval()
-        await sleep(hold_ms / 1000.0)
-        if watcher.first_match_ns is not None:
+        try:
+            await watcher.wait_for_quiet(hold_ms, timeout_ms)
+        except asyncio.TimeoutError as exc:
             raise BenchError(
-                "matching advertisement observed while reset was asserted"
-            )
+                "no continuous reset quiet interval within %d ms" % timeout_ms
+            ) from exc
         reset.release_reset()
         # A serial reset controller returns immediately after releasing EN.
         # The exact Waveshare operator seam returns only after the operator has
         # released RESET and confirmed that physical action, so its proxy
         # release boundary is the first host timestamp after this call.
-        release_ns = monotonic_ns()
+        release_ns = watcher.begin_post_release_interval(monotonic_ns)
         try:
             match_ns = await watcher.wait_for_match(timeout_ms)
         except asyncio.TimeoutError as exc:

@@ -991,6 +991,62 @@ class AdvertisementWatcher:
         self._first_match_ns = None
         self._match_event = asyncio.Event()
 
+    async def wait_for_quiet(self, quiet_ms, timeout_ms):
+        """Require one bounded consecutive interval with no matching callback."""
+        if (
+            isinstance(quiet_ms, bool)
+            or not isinstance(quiet_ms, int)
+            or quiet_ms <= 0
+            or isinstance(timeout_ms, bool)
+            or not isinstance(timeout_ms, int)
+            or timeout_ms < quiet_ms
+        ):
+            raise BenchError("advertisement quiet-window bounds are invalid")
+        loop = asyncio.get_running_loop()
+        quiet_seconds = quiet_ms / 1000.0
+        deadline = loop.time() + timeout_ms / 1000.0
+        quiet_started = loop.time()
+        while True:
+            now = loop.time()
+            quiet_remaining = quiet_seconds - (now - quiet_started)
+            total_remaining = deadline - now
+            if quiet_remaining <= 0 and self._first_match_ns is None:
+                return
+            if total_remaining <= 0:
+                raise asyncio.TimeoutError
+            event = self._match_event
+            try:
+                await asyncio.wait_for(
+                    event.wait(),
+                    timeout=min(quiet_remaining, total_remaining),
+                )
+            except asyncio.TimeoutError:
+                now = loop.time()
+                if (
+                    self._first_match_ns is None
+                    and now - quiet_started >= quiet_seconds
+                ):
+                    return
+                if now >= deadline:
+                    raise
+            if self._first_match_ns is not None:
+                self.begin_quiet_interval()
+                quiet_started = loop.time()
+
+    def begin_post_release_interval(self, monotonic_ns):
+        """Atomically establish the post-release callback/timer epoch."""
+        if not callable(monotonic_ns):
+            raise BenchError("post-release monotonic clock is not callable")
+        self.begin_quiet_interval()
+        release_ns = monotonic_ns()
+        if (
+            isinstance(release_ns, bool)
+            or not isinstance(release_ns, int)
+            or release_ns < 0
+        ):
+            raise BenchError("post-release monotonic timestamp is invalid")
+        return release_ns
+
     def _on_advertisement(self, device, advertisement):
         address = str(getattr(device, "address", "")).casefold()
         advertised = {
