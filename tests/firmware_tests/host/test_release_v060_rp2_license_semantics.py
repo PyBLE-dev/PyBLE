@@ -1688,6 +1688,45 @@ class RP2PolicyAndObserverContractTests(unittest.TestCase):
         link.write_text(original_link, encoding="utf-8")
         linker_map.write_text(original_map, encoding="utf-8")
 
+        with self.subTest(runtime="misleading-literal-without-map-proof"):
+            linker_map.write_text(
+                "\n".join(
+                    line
+                    for line in original_map.splitlines()
+                    if runtime not in line
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                RELEASE.ReleaseError, "libgcc|runtime|map|link"
+            ):
+                self.fixture.observe()
+            linker_map.write_text(original_map, encoding="utf-8")
+
+        with self.subTest(runtime="unpinned-substitution"):
+            substitute = self.fixture.write(
+                self.fixture.target,
+                "unreviewed/libgcc.a",
+                (
+                    self.fixture.repo / "firmware/.arm-gnu/lib/libgcc.a"
+                ).read_bytes(),
+            )
+            link.write_text(
+                original_link.replace(runtime, str(substitute)),
+                encoding="utf-8",
+            )
+            linker_map.write_text(
+                original_map.replace(runtime, str(substitute)),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                RELEASE.ReleaseError, "libgcc|runtime|owner|toolchain"
+            ):
+                self.fixture.observe()
+            link.write_text(original_link, encoding="utf-8")
+            linker_map.write_text(original_map, encoding="utf-8")
+
         policy = copy.deepcopy(self.fixture.policy)
         policy["source_owners"][0]["license_texts"][0]["sha256"] = "f" * 64
         with self.assertRaisesRegex(RELEASE.ReleaseError, "license|digest|changed"):

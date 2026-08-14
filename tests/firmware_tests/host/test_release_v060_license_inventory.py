@@ -603,6 +603,66 @@ class V060LicenseFixture:
         }
         write_json(receipt_path, receipt)
 
+    def rebind_rp2_link_command(self, text: str) -> None:
+        """Rebind an intentionally changed retained RP2 link command."""
+
+        link_path = (
+            self.build
+            / "rpi-pico2-w"
+            / "CMakeFiles"
+            / "firmware.dir"
+            / "link.txt"
+        )
+        link_path.write_text(text, encoding="utf-8")
+        document_path = (
+            self.evidence / "rp2" / "rpi-pico2-w--linked-inputs.json"
+        )
+        document = json.loads(document_path.read_text(encoding="utf-8"))
+        linker_records = [
+            record
+            for record in document["inputs"]
+            if record["kind"] == "linker-command"
+        ]
+        self._assert_one(linker_records, "RP2 linker-command fixture record")
+        linker_records[0]["sha256"] = sha256_path(link_path)
+        write_json(document_path, document)
+        self.rp2_observation["role_documents"]["linked-inputs"] = copy.deepcopy(
+            document
+        )
+        semantic_payload = {
+            key: value
+            for key, value in self.rp2_observation.items()
+            if key != "semantic_sha256"
+        }
+        self.rp2_observation["semantic_sha256"] = sha256_bytes(
+            canonical_json_bytes(semantic_payload)
+        )
+
+        inventory_path = self.evidence / "release-inventory.json"
+        inventory = json.loads(inventory_path.read_text(encoding="utf-8"))
+        rp2_profile = inventory["profiles"][-1]
+        linked_roles = [
+            record
+            for record in rp2_profile["roles"]
+            if record["role"] == "linked-inputs"
+        ]
+        self._assert_one(linked_roles, "RP2 linked-inputs inventory record")
+        linked_roles[0]["evidence_sha256"] = sha256_path(document_path)
+        write_json(inventory_path, inventory)
+
+        receipt_path = self.evidence / "audit-receipt.json"
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        receipt["input_sha256"]["semantic/rp2-license-closure"] = (
+            self.rp2_observation["semantic_sha256"]
+        )
+        write_json(receipt_path, receipt)
+        self.refresh_inventory_and_receipt()
+
+    @staticmethod
+    def _assert_one(records: list[object], label: str) -> None:
+        if len(records) != 1:
+            raise AssertionError("%s is missing or duplicated" % label)
+
 
 @unittest.skipUnless(RELEASE is not None, RELEASE_LOAD_ERROR)
 class V060LicenseInventoryContractTests(unittest.TestCase):
@@ -683,6 +743,50 @@ class V060LicenseInventoryContractTests(unittest.TestCase):
             [record["role"] for record in result["profiles"][-1]["roles"]],
             list(RP2_ROLES),
         )
+
+    def test_proven_implicit_libgcc_needs_no_literal_link_token(self) -> None:
+        link_path = (
+            self.fixture.build
+            / "rpi-pico2-w"
+            / "CMakeFiles"
+            / "firmware.dir"
+            / "link.txt"
+        )
+        implicit = link_path.read_text(encoding="utf-8").replace(" -lgcc", "")
+        self.assertNotIn("libgcc", implicit.lower())
+        self.assertNotIn("-lgcc", implicit.lower())
+        self.fixture.rebind_rp2_link_command(implicit)
+
+        result = self.verify()
+        if result is not None:
+            self.assertEqual(result["profiles"][-1]["profile_id"], "rpi-pico2-w")
+
+    def test_libgcc_literal_cannot_replace_failed_semantic_replay(self) -> None:
+        with mock.patch.object(
+            RELEASE,
+            "_audit_verify_rp2_semantic_replay",
+            side_effect=RELEASE.ReleaseError("implicit runtime replay failed"),
+        ):
+            with self.assertRaisesRegex(
+                RELEASE.ReleaseError, "implicit runtime replay failed"
+            ):
+                self.verify()
+
+    def test_implicit_libgcc_public_replay_drift_is_rejected(self) -> None:
+        link_path = (
+            self.fixture.build
+            / "rpi-pico2-w"
+            / "CMakeFiles"
+            / "firmware.dir"
+            / "link.txt"
+        )
+        implicit = link_path.read_text(encoding="utf-8").replace(" -lgcc", "")
+        self.fixture.rebind_rp2_link_command(implicit)
+        self.fixture.rp2_observation["semantic_sha256"] = "f" * 64
+        with self.assertRaisesRegex(
+            RELEASE.ReleaseError, "semantic|replay|receipt|runtime"
+        ):
+            self.verify()
 
     def test_missing_tinyusb_is_rejected_even_when_receipt_is_rehashed(self) -> None:
         inventory_path = self.fixture.evidence / "release-inventory.json"
