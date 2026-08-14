@@ -361,6 +361,31 @@ class NinjaLinkEvidenceTests(unittest.TestCase):
                 finally:
                     path.write_text(original, encoding="utf-8")
 
+    def test_comment_does_not_end_selected_edge_or_rule_binding_scope(self):
+        build_ninja = self.role_build / "build.ninja"
+        rules_ninja = self.role_build / "CMakeFiles" / "rules.ninja"
+        mutations = (
+            (
+                build_ninja,
+                "# gap\n"
+                "  FLAGS = --for-linker=-o --for-linker=attacker.elf\n",
+            ),
+            (
+                rules_ninja,
+                "# gap\n"
+                "  command = /attacker/linker -o attacker.elf\n",
+            ),
+        )
+        for path, addition in mutations:
+            with self.subTest(path=path.name):
+                original = path.read_text(encoding="utf-8")
+                path.write_text(original + addition, encoding="utf-8")
+                try:
+                    with self.assertRaises(RELEASE.ReleaseError):
+                        self.observe()
+                finally:
+                    path.write_text(original, encoding="utf-8")
+
     def test_direct_objects_must_match_map_and_compile_evidence(self):
         missing = next(iter(self.outputs))
         for kwargs in (
