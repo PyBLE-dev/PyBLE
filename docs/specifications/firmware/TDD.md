@@ -1073,8 +1073,10 @@ its 5-second cap. A wrong projection/cap pair fails before RUN. This
 accommodates the existing bounded 250 ms per-console-event and 1,000 ms
 per-RUN_STATE pacing: the maximum valid pair can occupy fourteen paced console
 submissions when `print` emits its newline separately, while the maximum valid
-active projection can occupy eight. Output shape and volume stay unchanged.
-It never adds a wire constant or capability.
+active projection can occupy eight. The parser's existing per-chunk and
+total-output ceilings remain bounded; `active` deliberately reduces serialized
+volume while preserving the exact two-key envelope. It never adds a wire
+constant or capability.
 
 `oi1_link_fact_probe_source(nonce, projection=...)` calls
 `pble_ble._oi1_link_facts()` exactly once. `pair` prints that atomic copy
