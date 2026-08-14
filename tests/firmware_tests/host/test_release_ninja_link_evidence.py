@@ -274,6 +274,23 @@ class NinjaLinkEvidenceTests(unittest.TestCase):
         with self.assertRaises(RELEASE.ReleaseError):
             self.observe()
 
+    def test_global_variable_expansion_has_an_aggregate_bound(self):
+        build_ninja = self.role_build / "build.ninja"
+        original = build_ninja.read_text(encoding="utf-8")
+        marker = "build micropython.elf:"
+        seed = "x" * 60_000
+        bindings = "seed = %s\n" % seed
+        bindings += "".join(
+            "expanded_%03d = %03d$seed\n" % (index, index)
+            for index in range(140)
+        )
+        mutated = original.replace(marker, bindings + marker, 1)
+        self.assertLess(len(mutated.encode("utf-8")), 128 * 1024)
+        build_ninja.write_text(mutated, encoding="utf-8")
+
+        with self.assertRaises(RELEASE.ReleaseError):
+            self.observe()
+
     def test_ninja_spacing_cannot_hide_duplicate_elf_edge(self):
         build_ninja = self.role_build / "build.ninja"
         original = build_ninja.read_text(encoding="utf-8")
