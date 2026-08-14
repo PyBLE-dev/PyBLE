@@ -152,6 +152,7 @@ def write_ninja_link_graph(
     *,
     app_elf: str,
     compiler: str,
+    map_path: Path,
     explicit_inputs: list[str],
     implicit_inputs: list[str],
     link_libraries: list[str],
@@ -166,6 +167,7 @@ def write_ninja_link_graph(
     )
     build_ninja = role_root / "build.ninja"
     rules_ninja = role_root / "CMakeFiles" / "rules.ninja"
+    map_flag = "-Wl,--Map=%s" % map_path
     rules_ninja.parent.mkdir(parents=True, exist_ok=True)
     build_ninja.write_text(
         "# exact synthetic CMake Ninja graph\n"
@@ -177,7 +179,7 @@ def write_ninja_link_graph(
             " ".join(explicit_inputs),
             " ".join(implicit_inputs),
         )
-        + "  FLAGS =\n"
+        + "  FLAGS = %s\n" % map_flag
         + "  LINK_FLAGS =\n"
         + "  LINK_LIBRARIES = %s\n" % " ".join(link_libraries)
         + "  LINK_PATH =\n"
@@ -198,7 +200,14 @@ def write_ninja_link_graph(
         + "  restat = $RESTAT\n",
         encoding="utf-8",
     )
-    argv = [compiler, *explicit_inputs, "-o", app_elf, *link_libraries]
+    argv = [
+        compiler,
+        map_flag,
+        *explicit_inputs,
+        "-o",
+        app_elf,
+        *link_libraries,
+    ]
     canonical_argv = (
         json.dumps(argv, ensure_ascii=False, separators=(",", ":")) + "\n"
     ).encode("utf-8")
@@ -429,6 +438,7 @@ def real_idf_main_topology(fixture):
             role_root,
             app_elf="micropython.elf",
             compiler=compiler,
+            map_path=map_path,
             explicit_inputs=[
                 direct_loads["project"],
                 direct_loads["pyble"],
@@ -1555,6 +1565,7 @@ output.write_text(
                     role_root,
                     app_elf=app_elf,
                     compiler=compiler,
+                    map_path=map_path,
                     explicit_inputs=[anchor_output_relative],
                     implicit_inputs=archives,
                     link_libraries=archives,
