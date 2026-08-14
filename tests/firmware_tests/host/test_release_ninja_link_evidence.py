@@ -658,6 +658,16 @@ class NinjaLinkEvidenceTests(unittest.TestCase):
                 self.observe()
 
         self.map_path.write_text(original_map, encoding="utf-8")
+        for flags in (
+            " -Wl,%s" % payload.name,
+            " -Xlinker %s" % payload.name,
+            " --for-linker=%s" % payload.name,
+            " --for-linker %s" % payload.name,
+        ):
+            with self.subTest(case="forwarded-positional", flags=flags):
+                self._write_ninja(flags=flags)
+                with self.assertRaises(RELEASE.ReleaseError):
+                    self.observe()
 
     def test_ninja_object_operand_must_be_canonical_before_argv_digest(self):
         build_ninja = self.role_build / "build.ninja"
