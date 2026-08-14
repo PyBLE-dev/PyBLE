@@ -698,6 +698,18 @@ class NinjaLinkEvidenceTests(unittest.TestCase):
             with self.assertRaises(RELEASE.ReleaseError):
                 self.observe()
 
+        for case_name, aliased_load in (
+            ("tab-joined-map-load", "LOAD\tattacker.payload\n"),
+            ("leading-space-map-load", " LOAD attacker.payload\n"),
+        ):
+            self.map_path.write_text(
+                original_map + aliased_load,
+                encoding="utf-8",
+            )
+            with self.subTest(case=case_name):
+                with self.assertRaises(RELEASE.ReleaseError):
+                    self.observe()
+
         valid_archive = self.role_build / "esp-idf/main/libmain.a"
         unmapped_archive = self.role_build / "unmapped.a"
         unmapped_archive.write_bytes(valid_archive.read_bytes())
