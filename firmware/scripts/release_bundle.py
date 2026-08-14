@@ -5035,6 +5035,8 @@ def _audit_v2_generated_binding(
         expected.update(
             {
                 "linker_command_sha256",
+                "build_ninja_sha256",
+                "rules_ninja_sha256",
                 "metadata_inputs",
                 "direct_objects",
             }
@@ -5066,10 +5068,15 @@ def _audit_v2_generated_binding(
     ):
         _audit_v2_hash(binding[field], "%s %s" % (label, field))
     if is_main:
-        _audit_v2_hash(
-            binding["linker_command_sha256"],
-            "%s linker command digest" % label,
-        )
+        for field in (
+            "linker_command_sha256",
+            "build_ninja_sha256",
+            "rules_ninja_sha256",
+        ):
+            _audit_v2_hash(
+                binding[field],
+                "%s %s" % (label, field),
+            )
     sources = binding["sources"]
     _require(
         isinstance(sources, list) and bool(sources),
@@ -8605,6 +8612,8 @@ def _audit_rp2_reject_driver_overrides(
                 or lowered in {"-wrapper", "-fuse-ld"}
                 or lowered.startswith("-wrapper=")
                 or lowered.startswith("-fuse-ld=")
+                or lowered == "-fplugin"
+                or lowered.startswith("-fplugin=")
                 or lowered == "--sysroot"
                 or lowered.startswith("--sysroot=")
                 or lowered == "-isysroot"
@@ -12623,13 +12632,49 @@ def _normalize_map_direct_load_token(value: Any) -> str:
     return _safe_relative_path(normalized, label)
 
 
-def _audit_map_direct_outputs(
+def _audit_linker_archive_path(
+    value: str,
+    *,
+    role_build: Path,
+    dependency_roots: tuple[Path, ...],
+    label: str,
+    validated: set[Path] | None = None,
+) -> Path:
+    """Resolve and structurally validate one exact linker archive input."""
+
+    _require(
+        isinstance(value, str)
+        and value.endswith(".a")
+        and bool(value)
+        and "\\" not in value,
+        "%s is not an archive path" % label,
+    )
+    if not Path(value).is_absolute():
+        value = _safe_relative_path(value, label)
+    archive = _audit_path_in_roots(
+        value,
+        relative_to=role_build,
+        roots=(role_build, *dependency_roots),
+        label=label,
+    )
+    _audit_regular_compile_file(archive, label)
+    resolved = archive.resolve()
+    if validated is None or resolved not in validated:
+        _audit_ar_members(archive)
+        if validated is not None:
+            validated.add(resolved)
+    return resolved
+
+
+def _audit_map_load_inventory(
     map_path: Path,
     *,
     role_build: Path,
     compile_outputs: dict[Path, Path],
-) -> set[Path]:
-    """Return the exact direct object ``LOAD`` set from one linker map."""
+    dependency_roots: tuple[Path, ...] = (),
+    validated_archives: set[Path] | None = None,
+) -> tuple[set[Path], set[Path]]:
+    """Classify every exact linker-map ``LOAD`` as an object or archive."""
 
     try:
         lines = map_path.read_text(
@@ -12639,118 +12684,1069 @@ def _audit_map_direct_outputs(
     except (OSError, UnicodeError) as exc:
         raise ReleaseError("linked map file is missing or invalid") from exc
     direct_outputs: set[Path] = set()
+    archives: set[Path] = set()
     for line in lines:
-        match = re.fullmatch(r"LOAD (\S+\.(?:o|obj))", line)
-        if match is None:
+        if not line.startswith("LOAD "):
             _require(
-                re.fullmatch(r"\s*LOAD\s+.*\.(?:o|obj)(?:\s.*)?", line)
-                is None,
-                "linked map direct-object LOAD is not exact",
+                re.match(r"^\s*LOAD\s+", line) is None,
+                "linked map LOAD is not exact",
             )
             continue
-        relative = _normalize_map_direct_load_token(
-            match.group(1),
-        )
-        output = _audit_path_in_roots(
-            relative,
-            relative_to=role_build,
-            roots=(role_build,),
-            label="linked map direct object",
-        ).resolve()
-        _audit_regular_compile_file(output, "linked map direct object")
+        match = re.fullmatch(r"LOAD (\S+)", line)
+        _require(match is not None, "linked map LOAD is not exact")
+        token = match.group(1)
+        if token.endswith((".o", ".obj")):
+            relative = _normalize_map_direct_load_token(token)
+            output = _audit_path_in_roots(
+                relative,
+                relative_to=role_build,
+                roots=(role_build,),
+                label="linked map direct object",
+            ).resolve()
+            _audit_regular_compile_file(output, "linked map direct object")
+            _require(
+                output in compile_outputs and output not in direct_outputs,
+                "linked map direct object is uncompiled or duplicated",
+            )
+            direct_outputs.add(output)
+            continue
         _require(
-            output in compile_outputs and output not in direct_outputs,
-            "linked map direct object is uncompiled or duplicated",
+            token.endswith(".a"),
+            "linked map LOAD is not a classified object or archive",
         )
-        direct_outputs.add(output)
+        archives.add(
+            _audit_linker_archive_path(
+                token,
+                role_build=role_build,
+                dependency_roots=dependency_roots,
+                label="linked map archive LOAD",
+                validated=validated_archives,
+            )
+        )
+    return direct_outputs, archives
+
+
+def _audit_map_direct_outputs(
+    map_path: Path,
+    *,
+    role_build: Path,
+    compile_outputs: dict[Path, Path],
+    dependency_roots: tuple[Path, ...] = (),
+) -> set[Path]:
+    """Return the exact direct object ``LOAD`` set from one linker map."""
+
+    direct_outputs, _archives = _audit_map_load_inventory(
+        map_path,
+        role_build=role_build,
+        compile_outputs=compile_outputs,
+        dependency_roots=dependency_roots,
+    )
     return direct_outputs
 
 
-def _audit_link_command_direct_outputs(
+def _audit_ninja_role_identity(path: Path, label: str) -> tuple[int, ...]:
+    """Return one exact real-directory identity for a role build."""
+
+    try:
+        value = Path(path).lstat()
+    except OSError as exc:
+        raise ReleaseError("%s is missing" % label) from exc
+    _require(
+        stat_module.S_ISDIR(value.st_mode)
+        and not stat_module.S_ISLNK(value.st_mode),
+        "%s is not a real directory" % label,
+    )
+    return (
+        value.st_dev,
+        value.st_ino,
+        value.st_mode,
+        value.st_size,
+        value.st_mtime_ns,
+        value.st_ctime_ns,
+    )
+
+
+def _audit_ninja_link_command_evidence_from_descriptors(
     *,
     role_build: Path,
-    description: dict[str, Any],
+    app_elf: str,
     compile_outputs: dict[Path, Path],
-) -> tuple[str, Path, set[Path]]:
-    """Safely parse one CMake link command and return its direct objects."""
+    map_direct_outputs: set[Path],
+    compiler_paths: set[Path],
+    map_path: Path,
+    dependency_roots: tuple[Path, ...],
+    role_descriptor: int,
+    rules_descriptor: int,
+) -> dict[str, Any]:
+    """Reconstruct one final-link argv without executing the Ninja graph."""
 
-    app_elf_raw = description.get("app_elf")
+    role_root = Path(role_build)
+    app_elf = _safe_relative_path(app_elf, "project description app_elf")
     _require(
-        isinstance(app_elf_raw, str)
-        and bool(app_elf_raw)
-        and "\x00" not in app_elf_raw
-        and "\\" not in app_elf_raw,
+        PurePosixPath(app_elf).parts == (app_elf,) and app_elf.endswith(".elf"),
         "project description app_elf is invalid",
     )
-    app_elf_path = Path(app_elf_raw)
-    app_elf = app_elf_path.name
+    build_ninja = role_root / "build.ninja"
+    rules_ninja = role_root / "CMakeFiles" / "rules.ninja"
+    observed_map = Path(map_path)
     _require(
-        bool(app_elf)
-        and app_elf.endswith(".elf")
-        and (
-            (
-                app_elf_path.is_absolute()
-                and app_elf_path.parent.resolve() == role_build.resolve()
-            )
-            or (
-                not app_elf_path.is_absolute()
-                and PurePosixPath(app_elf_raw).parts == (app_elf,)
-            )
-        ),
-        "project description app_elf is invalid",
-    )
-    link_path = (
-        role_build / "CMakeFiles" / ("%s.dir" % app_elf) / "link.txt"
+        observed_map.is_absolute(),
+        "observed Ninja linker map path must be absolute",
     )
     _audit_no_symlink_components(
-        role_build,
-        link_path,
-        "linker command",
+        role_root,
+        observed_map,
+        "observed Ninja linker map",
     )
-    _audit_regular_compile_file(link_path, "linker command")
-    try:
-        text = link_path.read_text(encoding="utf-8", errors="strict")
-    except (OSError, UnicodeError) as exc:
-        raise ReleaseError("linker command is missing or invalid") from exc
-    stripped = text.strip()
-    _require(
-        bool(stripped)
-        and "\x00" not in stripped
-        and "\n" not in stripped
-        and "\r" not in stripped,
-        "linker command is empty or contains multiple commands",
+    _audit_regular_compile_file(observed_map, "observed Ninja linker map")
+    validated_archives: set[Path] = set()
+    _observed_map_objects, observed_map_archives = _audit_map_load_inventory(
+        observed_map,
+        role_build=role_root,
+        compile_outputs=compile_outputs,
+        dependency_roots=dependency_roots,
+        validated_archives=validated_archives,
     )
-    try:
-        tokens = shlex.split(stripped, posix=True)
-    except ValueError as exc:
-        raise ReleaseError("linker command is malformed") from exc
+
+    def graph_identity(value: os.stat_result) -> tuple[int, ...]:
+        return (
+            value.st_dev,
+            value.st_ino,
+            value.st_mode,
+            value.st_size,
+            value.st_mtime_ns,
+            value.st_ctime_ns,
+        )
+
+    def capture(path: Path, label: str, maximum: int) -> tuple[bytes, tuple[int, ...]]:
+        _audit_no_symlink_components(role_root, path, label)
+        try:
+            relative = path.absolute().relative_to(role_root.absolute())
+        except ValueError as exc:
+            raise ReleaseError("%s escapes its role build" % label) from exc
+        if relative.parts == ("build.ninja",):
+            parent_descriptor = role_descriptor
+            leaf = "build.ninja"
+        elif relative.parts == ("CMakeFiles", "rules.ninja"):
+            parent_descriptor = rules_descriptor
+            leaf = "rules.ninja"
+        else:
+            raise ReleaseError("%s is not an admitted Ninja graph path" % label)
+        descriptor: int | None = None
+        try:
+            parent_before = os.fstat(parent_descriptor)
+            before = os.stat(
+                leaf,
+                dir_fd=parent_descriptor,
+                follow_symlinks=False,
+            )
+            _require(
+                stat_module.S_ISREG(before.st_mode)
+                and not stat_module.S_ISLNK(before.st_mode)
+                and 0 < before.st_size <= maximum,
+                "%s is unsafe, unstable, or oversized" % label,
+            )
+            descriptor = os.open(
+                leaf,
+                os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+                dir_fd=parent_descriptor,
+            )
+            opened = os.fstat(descriptor)
+            chunks: list[bytes] = []
+            remaining = maximum + 1
+            while remaining:
+                chunk = os.read(descriptor, min(1024 * 1024, remaining))
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                remaining -= len(chunk)
+            closed = os.fstat(descriptor)
+            after = os.stat(
+                leaf,
+                dir_fd=parent_descriptor,
+                follow_symlinks=False,
+            )
+            parent_after = os.fstat(parent_descriptor)
+        except OSError as exc:
+            raise ReleaseError("%s is missing" % label) from exc
+        finally:
+            if descriptor is not None:
+                os.close(descriptor)
+        value = b"".join(chunks)
+        identity = graph_identity(before)
+        _require(
+            identity
+            == graph_identity(opened)
+            == graph_identity(closed)
+            == graph_identity(after)
+            and graph_identity(parent_before) == graph_identity(parent_after)
+            and 0 < len(value) <= maximum,
+            "%s is unsafe, unstable, or oversized" % label,
+        )
+        _require(
+            len(value) == before.st_size,
+            "%s changed size while read" % label,
+        )
+        return value, identity
+
+    build_raw, build_identity = capture(
+        build_ninja,
+        "Ninja build graph",
+        64 * 1024 * 1024,
+    )
+    rules_raw, rules_identity = capture(
+        rules_ninja,
+        "Ninja rules graph",
+        1024 * 1024,
+    )
+
+    def graph_lines(raw: bytes, label: str) -> list[str]:
+        try:
+            text = raw.decode("utf-8", errors="strict")
+        except UnicodeError as exc:
+            raise ReleaseError("%s is not strict UTF-8" % label) from exc
+        _require(
+            text.endswith("\n")
+            and "\x00" not in text
+            and "\r" not in text,
+            "%s has a noncanonical text encoding" % label,
+        )
+        lines = text.splitlines()
+        _require(
+            0 < len(lines) <= 100000
+            and all(len(line.encode("utf-8")) <= 512 * 1024 for line in lines)
+            and not any(line.endswith("$") for line in lines),
+            "%s exceeds the bounded grammar or uses a continuation" % label,
+        )
+        return lines
+
+    build_lines = graph_lines(build_raw, "Ninja build graph")
+    rules_lines = graph_lines(rules_raw, "Ninja rules graph")
+
+    def ascii_words(value: str, label: str, *, reject_glob: bool = False) -> list[str]:
+        _require(
+            not any(character.isspace() and character != " " for character in value),
+            "%s contains non-ASCII whitespace" % label,
+        )
+        words = [word for word in value.split(" ") if word]
+        _require(
+            not reject_glob
+            or not any(
+                word.startswith("~")
+                or any(character in word for character in "*?[]{}()")
+                for word in words
+            ),
+            "%s contains a shell expansion" % label,
+        )
+        return words
+
+    directives = [
+        line
+        for line in build_lines
+        if re.match(r"^\s*(?:include|subninja)\s+", line) is not None
+    ]
     _require(
-        bool(tokens)
+        directives == ["include CMakeFiles/rules.ninja"],
+        "Ninja build graph does not include exactly the pinned rules file",
+    )
+    _require(
+        not any(
+            re.match(r"^\s*(?:include|subninja)\s+", line) is not None
+            for line in rules_lines
+        ),
+        "Ninja rules graph contains a nested graph include",
+    )
+
+    ninja_variable_name = r"[A-Za-z0-9_.-]+"
+    ninja_bare_variable_name = r"[A-Za-z0-9_-]+"
+    output_variable = re.compile(
+        r"\$(?:\{(%s)\}|(%s))"
+        % (ninja_variable_name, ninja_bare_variable_name)
+    )
+    global_variables: dict[str, str] = {}
+    global_variable_value_bytes = 0
+
+    def expanded_output(value: str) -> str | None:
+        result = value
+        for _attempt in range(32):
+            match = output_variable.search(result)
+            if match is None:
+                return result if "$" not in result else None
+            name = match.group(1) or match.group(2)
+            replacement = global_variables.get(name)
+            if replacement is None:
+                return None
+            result = result[: match.start()] + replacement + result[match.end() :]
+            if len(result) > 64 * 1024:
+                return None
+        return None
+
+    def aliases_app_elf(raw_output: str) -> bool:
+        expanded = expanded_output(raw_output)
+        _require(
+            expanded is not None,
+            "Ninja output uses an unknown or cyclic variable",
+        )
+        if "\\" in expanded:
+            return False
+        absolute = expanded.startswith("/")
+        normalized_parts: list[str] = []
+        for part in expanded.split("/"):
+            if part in ("", "."):
+                continue
+            if part == "..":
+                if normalized_parts:
+                    normalized_parts.pop()
+                continue
+            normalized_parts.append(part)
+        normalized = "/".join(normalized_parts)
+        if absolute:
+            normalized = "/" + normalized
+            expected = (role_root.absolute() / app_elf).as_posix()
+        else:
+            expected = app_elf
+        return normalized == expected
+
+    edge_candidates: list[tuple[int, str, str]] = []
+    for index, line in enumerate(build_lines):
+        assignment = re.fullmatch(
+            r"(%s)[ \t]*=[ \t]*(.*)" % ninja_variable_name,
+            line,
+        )
+        if assignment is not None:
+            value = expanded_output(assignment.group(2))
+            _require(
+                value is not None,
+                "Ninja output variable uses an unknown or cyclic variable",
+            )
+            name = assignment.group(1)
+            previous = global_variables.get(name)
+            retained_value_bytes = (
+                global_variable_value_bytes
+                - (0 if previous is None else len(previous.encode("utf-8")))
+                + len(value.encode("utf-8"))
+            )
+            _require(
+                retained_value_bytes <= 8 * 1024 * 1024,
+                "Ninja output variables exceed the aggregate expansion bound",
+            )
+            global_variable_value_bytes = retained_value_bytes
+            global_variables[name] = value
+            continue
+        build_directive = re.fullmatch(r"build +(.*)", line)
+        if build_directive is None or ":" not in build_directive.group(1):
+            continue
+        outputs = ascii_words(
+            build_directive.group(1).split(":", 1)[0],
+            "Ninja build outputs",
+        )
+        for output in outputs:
+            if aliases_app_elf(output):
+                edge_candidates.append((index, line, output))
+    _require(
+        len(edge_candidates) == 1,
+        "Ninja graph does not contain exactly one final ELF edge",
+    )
+    edge_index, edge_line, edge_output = edge_candidates[0]
+    _require(
+        edge_output == app_elf
+        and edge_line.startswith("build %s: " % app_elf)
+        and not any(character in edge_line for character in "\x00\r\n\\\"'@$;&<>`#"),
+        "Ninja final ELF edge is not literal and shell-neutral",
+    )
+    edge_words = ascii_words(
+        edge_line,
+        "Ninja final ELF edge",
+        reject_glob=True,
+    )
+    _require(
+        len(edge_words) >= 7
+        and edge_words[0] == "build"
+        and edge_words[1] == "%s:" % app_elf
+        and edge_words.count("|") == 1
+        and edge_words.count("||") == 1
+        and edge_words.index("|") > 3
+        and edge_words.index("||") > edge_words.index("|") + 1
+        and edge_words.index("||") < len(edge_words) - 1,
+        "Ninja final ELF edge dependency topology is invalid",
+    )
+    rule_name = edge_words[2]
+    _require(
+        re.fullmatch(r"[A-Za-z0-9_.+-]+", rule_name) is not None,
+        "Ninja final ELF rule name is invalid",
+    )
+    separator = edge_words.index("|")
+    order_separator = edge_words.index("||")
+    explicit_inputs = edge_words[3:separator]
+    dependencies = edge_words[3:separator] + edge_words[separator + 1 : order_separator]
+    dependencies += edge_words[order_separator + 1 :]
+    _require(
+        bool(explicit_inputs)
         and all(
             token
-            and not _audit_command_token_uses_response_file(token)
-            and not any(character in token for character in ";&|<>`$#")
-            for token in tokens
+            and "\\" not in token
+            and "//" not in token
+            and ".." not in PurePosixPath(token).parts
+            and not any(character in token for character in "\x00\r\n\"'@$;&|<>`#")
+            for token in dependencies
         ),
-        "linker command uses a response file or shell operator",
+        "Ninja final ELF edge contains an unsafe dependency",
     )
-    direct_outputs: set[Path] = set()
-    for token in tokens:
-        if not token.endswith((".o", ".obj")):
+    absolute_dependency_paths: set[Path] = set()
+    for token in dependencies:
+        if not token.startswith("/"):
+            if token.endswith(".ld"):
+                relative_script = _safe_relative_path(
+                    token,
+                    "Ninja final ELF relative linker-script dependency",
+                )
+                script_dependency = role_root / relative_script
+                try:
+                    script_mode = script_dependency.lstat().st_mode
+                except FileNotFoundError:
+                    continue
+                except OSError as exc:
+                    raise ReleaseError(
+                        "Ninja final ELF linker-script dependency is unsafe"
+                    ) from exc
+                _audit_no_symlink_components(
+                    role_root,
+                    script_dependency,
+                    "Ninja final ELF linker-script dependency",
+                )
+                _require(
+                    stat_module.S_ISREG(script_mode)
+                    and not stat_module.S_ISLNK(script_mode),
+                    "Ninja final ELF linker-script dependency is not regular",
+                )
+                absolute_dependency_paths.add(script_dependency.resolve())
             continue
-        output = _audit_command_operand_path(
-            token,
-            relative_to=role_build,
-            roots=(role_build,),
-            label="linker command direct object",
-        )
-        _audit_regular_compile_file(output, "linker command direct object")
         _require(
-            output in compile_outputs and output not in direct_outputs,
-            "linker command direct object is uncompiled or duplicated",
+            str(PurePosixPath(token)) == token and bool(dependency_roots),
+            "Ninja final ELF edge contains an unapproved absolute dependency",
         )
-        direct_outputs.add(output)
-    return app_elf, link_path, direct_outputs
+        admitted_dependency = _audit_path_in_roots(
+            token,
+            relative_to=role_root,
+            roots=dependency_roots,
+            label="Ninja final ELF absolute dependency",
+        )
+        _audit_regular_compile_file(
+            admitted_dependency,
+            "Ninja final ELF absolute dependency",
+        )
+        absolute_dependency_paths.add(admitted_dependency.resolve())
+
+    explicit_output_paths: set[Path] = set()
+    for token in explicit_inputs:
+        _require(
+            token.endswith((".o", ".obj")),
+            "Ninja explicit link input is not a compile object",
+        )
+        relative = _safe_relative_path(token, "Ninja explicit link input")
+        output = _audit_path_in_roots(
+            relative,
+            relative_to=role_root,
+            roots=(role_root,),
+            label="Ninja explicit link input",
+        ).resolve()
+        _audit_regular_compile_file(output, "Ninja explicit link input")
+        _require(
+            output in compile_outputs
+            and output in map_direct_outputs
+            and output not in explicit_output_paths,
+            "Ninja explicit link input is not one unique direct compile output",
+        )
+        explicit_output_paths.add(output)
+
+    assignment_names = {
+        "FLAGS",
+        "LINK_FLAGS",
+        "LINK_LIBRARIES",
+        "LINK_PATH",
+        "OBJECT_DIR",
+        "POST_BUILD",
+        "PRE_LINK",
+        "TARGET_COMPILE_PDB",
+        "TARGET_FILE",
+        "TARGET_PDB",
+    }
+    edge_assignments: dict[str, str] = {}
+    cursor = edge_index + 1
+    while cursor < len(build_lines):
+        line = build_lines[cursor]
+        if not line.strip(" \t") or re.fullmatch(r"[ \t]*#.*", line) is not None:
+            cursor += 1
+            continue
+        if not line.startswith((" ", "\t")):
+            break
+        indentation = re.match(r"^[ \t]+", line)
+        _require(
+            indentation is not None and "\t" not in indentation.group(0),
+            "Ninja final ELF assignment indentation is invalid",
+        )
+        assignment = re.fullmatch(
+            r" +([A-Z][A-Z0-9_]*) =(?: (.*))?",
+            line,
+        )
+        _require(assignment is not None, "Ninja final ELF assignment is malformed")
+        name = assignment.group(1)
+        value = assignment.group(2) or ""
+        _require(
+            name not in edge_assignments
+            and not any(
+                character in value for character in "\x00\r\n\\\"'$@;&|<>`#{}"
+            ),
+            "Ninja final ELF assignment is duplicated or unsafe",
+        )
+        edge_assignments[name] = value
+        cursor += 1
+    _require(
+        set(edge_assignments) == assignment_names
+        and edge_assignments["TARGET_FILE"] == app_elf
+        and edge_assignments["PRE_LINK"] == ":"
+        and edge_assignments["POST_BUILD"] == ":",
+        "Ninja final ELF assignments are incomplete or changed",
+    )
+
+    rule_indices = [
+        index
+        for index, line in enumerate(rules_lines)
+        if re.fullmatch(r"rule +%s *" % re.escape(rule_name), line) is not None
+    ]
+    _require(
+        len(rule_indices) == 1,
+        "Ninja final ELF linker rule is missing or duplicated",
+    )
+    rule_assignments: dict[str, str] = {}
+    cursor = rule_indices[0] + 1
+    while cursor < len(rules_lines):
+        line = rules_lines[cursor]
+        if not line.strip(" \t") or re.fullmatch(r"[ \t]*#.*", line) is not None:
+            cursor += 1
+            continue
+        if not line.startswith((" ", "\t")):
+            break
+        indentation = re.match(r"^[ \t]+", line)
+        _require(
+            indentation is not None and "\t" not in indentation.group(0),
+            "Ninja linker rule assignment indentation is invalid",
+        )
+        assignment = re.fullmatch(
+            r" +([a-z_]+) = (.*)",
+            line,
+        )
+        _require(assignment is not None, "Ninja linker rule assignment is malformed")
+        name, value = assignment.groups()
+        _require(
+            name not in rule_assignments,
+            "Ninja linker rule assignment is duplicated",
+        )
+        rule_assignments[name] = value
+        cursor += 1
+    _require(
+        set(rule_assignments) == {"command", "description", "restat"}
+        and rule_assignments["description"]
+        in (
+            "Linking C executable $TARGET_FILE",
+            "Linking CXX executable $TARGET_FILE",
+        )
+        and rule_assignments["restat"] == "$RESTAT",
+        "Ninja linker rule metadata is not the pinned shape",
+    )
+    template = ascii_words(
+        rule_assignments["command"],
+        "Ninja linker rule command",
+        reject_glob=True,
+    )
+    _require(
+        len(template) == 12
+        and template[:2] == ["$PRE_LINK", "&&"]
+        and template[3:] == [
+            "$FLAGS",
+            "$LINK_FLAGS",
+            "$in",
+            "-o",
+            "$TARGET_FILE",
+            "$LINK_PATH",
+            "$LINK_LIBRARIES",
+            "&&",
+            "$POST_BUILD",
+        ],
+        "Ninja linker rule command is outside the pinned grammar",
+    )
+    compiler = Path(template[2])
+    admitted_compilers = {Path(path).absolute() for path in compiler_paths}
+    _require(
+        compiler.is_absolute() and compiler.absolute() in admitted_compilers,
+        "Ninja linker frontend is not admitted by compile commands",
+    )
+
+    def assignment_tokens(name: str) -> list[str]:
+        return ascii_words(
+            edge_assignments[name],
+            "Ninja final ELF %s assignment" % name,
+            reject_glob=True,
+        )
+
+    flags_tokens = assignment_tokens("FLAGS")
+    link_flags_tokens = assignment_tokens("LINK_FLAGS")
+    link_path_tokens = assignment_tokens("LINK_PATH")
+    link_library_tokens = assignment_tokens("LINK_LIBRARIES")
+    argv = (
+        [template[2]]
+        + flags_tokens
+        + link_flags_tokens
+        + explicit_inputs
+        + ["-o", edge_assignments["TARGET_FILE"]]
+        + link_path_tokens
+        + link_library_tokens
+    )
+    argv_origins = (
+        ["compiler"]
+        + ["FLAGS"] * len(flags_tokens)
+        + ["LINK_FLAGS"] * len(link_flags_tokens)
+        + ["$in"] * len(explicit_inputs)
+        + ["rule", "TARGET_FILE"]
+        + ["LINK_PATH"] * len(link_path_tokens)
+        + ["LINK_LIBRARIES"] * len(link_library_tokens)
+    )
+    _require(
+        len(argv_origins) == len(argv),
+        "reconstructed Ninja linker argv origins are incomplete",
+    )
+
+    def ld_output_selector(value: str) -> bool:
+        return value.startswith("-o") or value.startswith("--ou")
+
+    def ld_map_selector(value: str) -> bool:
+        return value.startswith(("-Ma", "--M"))
+
+    def selects_alternate_output(index: int, token: str) -> bool:
+        if token.startswith("-Wl,"):
+            return any(
+                ld_output_selector(value)
+                for value in token[4:].split(",")
+            )
+        if token.startswith("--for-linker="):
+            value = token.removeprefix("--for-linker=")
+            return ld_output_selector(value)
+        if token in ("-Xlinker", "--for-linker") and index + 1 < len(argv):
+            return ld_output_selector(argv[index + 1])
+        return False
+
+    expected_map_selector = "-Wl,--Map=%s" % observed_map
+
+    def selects_linker_map(index: int, token: str) -> bool:
+        if token.startswith("-Wl,"):
+            return any(ld_map_selector(value) for value in token[4:].split(","))
+        if token.startswith("--for-linker="):
+            return ld_map_selector(token.removeprefix("--for-linker="))
+        if token in ("-Xlinker", "--for-linker") and index + 1 < len(argv):
+            return ld_map_selector(argv[index + 1])
+        return False
+
+    def ld_opaque_control(value: str) -> bool:
+        return (
+            value.startswith(("-plu", "--plu", "-mri", "--m"))
+            or value.startswith("-c")
+        )
+
+    def selects_opaque_linker_control(index: int, token: str) -> bool:
+        if token.startswith("-Wl,"):
+            return any(
+                ld_opaque_control(value) for value in token[4:].split(",")
+            )
+        if token.startswith("--for-linker="):
+            return ld_opaque_control(token.removeprefix("--for-linker="))
+        if token in ("-Xlinker", "--for-linker") and index + 1 < len(argv):
+            return ld_opaque_control(argv[index + 1])
+        return False
+
+    def admitted_forwarded_atom(value: str) -> bool:
+        return (
+            value == expected_map_selector.removeprefix("-Wl,")
+            or value
+            in {
+                "--cref",
+                "--gc-sections",
+                "--no-warn-rwx-segments",
+                "--orphan-handling=warn",
+                "--warn-common",
+            }
+            or re.fullmatch(
+                r"--defsym=IDF_TARGET_(?:ESP32|ESP32C3|ESP32S3)=0",
+                value,
+            )
+            is not None
+            or re.fullmatch(
+                r"--(?:undefined|wrap)=[A-Za-z_][A-Za-z0-9_]*",
+                value,
+            )
+            is not None
+        )
+
+    def forwarded_inputs_are_classified(index: int, token: str) -> bool:
+        if token.startswith("-Wl,"):
+            values = token[4:].split(",")
+            return len(values) == 1 and admitted_forwarded_atom(values[0])
+        if token.startswith("-Wl"):
+            return False
+        if token.startswith("--for-linker=") or token in (
+            "-Xlinker",
+            "--for-linker",
+        ):
+            return False
+        return True
+
+    _audit_rp2_reject_driver_overrides(
+        argv,
+        label="reconstructed Ninja linker argv",
+        allowed_specs={
+            token for token in argv if token == "--specs=nano.specs"
+        },
+    )
+
+    _require(
+        0 < len(argv) <= 10000
+        and all(
+            token
+            and not token.startswith("~")
+            and "@" not in token
+            and not _audit_command_token_uses_response_file(token)
+            and not any(
+                character in token
+                for character in "\x00\r\n\\\"';&|<>`$#{}()"
+            )
+            for token in argv
+        )
+        and argv.count("-o") == 1
+        and argv[argv.index("-o") + 1] == app_elf
+        and not any(
+            token != "-o"
+            and ld_output_selector(token)
+            for token in argv
+        )
+        and not any(
+            selects_alternate_output(index, token)
+            for index, token in enumerate(argv)
+        )
+        and not any(
+            selects_opaque_linker_control(index, token)
+            for index, token in enumerate(argv)
+        )
+        and all(
+            forwarded_inputs_are_classified(index, token)
+            for index, token in enumerate(argv)
+        )
+        and argv.count(expected_map_selector) == 1
+        and all(
+            not selects_linker_map(index, token)
+            or token == expected_map_selector
+            for index, token in enumerate(argv)
+        ),
+        "reconstructed Ninja linker argv is unsafe or selects another output",
+    )
+
+    link_search_directories: list[Path] = []
+    for token in argv:
+        if token == "-L" or token.startswith("--library-path"):
+            raise ReleaseError(
+                "reconstructed Ninja linker argv has an unclassified library path"
+            )
+        if not token.startswith("-L"):
+            continue
+        raw_directory = token[2:]
+        _require(
+            bool(raw_directory) and Path(raw_directory).is_absolute(),
+            "reconstructed Ninja linker search path is not absolute",
+        )
+        directory = _audit_path_in_roots(
+            raw_directory,
+            relative_to=role_root,
+            roots=(role_root, *dependency_roots),
+            label="Ninja linker search directory",
+        )
+        try:
+            directory_mode = directory.lstat().st_mode
+        except OSError as exc:
+            raise ReleaseError("Ninja linker search directory is missing") from exc
+        _require(
+            stat_module.S_ISDIR(directory_mode)
+            and not stat_module.S_ISLNK(directory_mode),
+            "Ninja linker search path is not a real directory",
+        )
+        link_search_directories.append(directory.resolve())
+
+    def linker_script_path(value: str) -> Path:
+        _require(
+            re.fullmatch(r"[A-Za-z0-9_.+-]+\.ld", value) is not None
+            and PurePosixPath(value).parts == (value,),
+            "Ninja linker script operand is not one canonical .ld basename",
+        )
+        matches: set[Path] = set()
+        for directory in link_search_directories:
+            candidate = directory / value
+            try:
+                candidate_mode = candidate.lstat().st_mode
+            except FileNotFoundError:
+                continue
+            except OSError as exc:
+                raise ReleaseError("Ninja linker script is unsafe") from exc
+            _audit_no_symlink_components(
+                directory,
+                candidate,
+                "Ninja linker script",
+            )
+            _require(
+                stat_module.S_ISREG(candidate_mode)
+                and not stat_module.S_ISLNK(candidate_mode),
+                "Ninja linker script is not a regular file",
+            )
+            matches.add(candidate.resolve())
+        _require(
+            len(matches) == 1
+            and next(iter(matches)) in absolute_dependency_paths,
+            "Ninja linker script does not resolve uniquely to an edge dependency",
+        )
+        return next(iter(matches))
+
+    direct_outputs: set[Path] = set()
+    command_archives: set[Path] = set()
+    index = 1
+    while index < len(argv):
+        token = argv[index]
+        origin = argv_origins[index]
+        if token == "-o":
+            _require(
+                index + 1 < len(argv) and argv[index + 1] == app_elf,
+                "Ninja linker output operand is not exact",
+            )
+            index += 2
+            continue
+        if token == "-u":
+            _require(
+                index + 1 < len(argv)
+                and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", argv[index + 1])
+                is not None,
+                "Ninja linker undefined-symbol operand is invalid",
+            )
+            index += 2
+            continue
+        if token == "-T":
+            _require(
+                index + 1 < len(argv),
+                "Ninja linker script operand is missing",
+            )
+            linker_script_path(argv[index + 1])
+            index += 2
+            continue
+        if token in ("-Xlinker", "--for-linker"):
+            raise ReleaseError("Ninja linker forwarding form is not admitted")
+        if token.endswith((".o", ".obj")):
+            relative = (
+                _normalize_map_direct_load_token(token)
+                if origin == "LINK_LIBRARIES"
+                else _safe_relative_path(token, "Ninja linker direct object")
+            )
+            output = _audit_path_in_roots(
+                relative,
+                relative_to=role_root,
+                roots=(role_root,),
+                label="Ninja linker direct object",
+            ).resolve()
+            _audit_regular_compile_file(output, "Ninja linker direct object")
+            _require(
+                output in compile_outputs and output not in direct_outputs,
+                "Ninja linker direct object is uncompiled or duplicated",
+            )
+            direct_outputs.add(output)
+            index += 1
+            continue
+        if token.endswith(".a"):
+            archive = _audit_linker_archive_path(
+                token,
+                role_build=role_root,
+                dependency_roots=dependency_roots,
+                label="Ninja linker archive input",
+                validated=validated_archives,
+            )
+            _require(
+                archive in observed_map_archives,
+                "Ninja linker archive is absent from map LOAD evidence",
+            )
+            command_archives.add(archive)
+            index += 1
+            continue
+        _require(
+            token.startswith("-")
+            and not token.startswith(
+                ("-T", "--script", "--default-script")
+            ),
+            "Ninja linker argv contains an unclassified positional input",
+        )
+        index += 1
+    _require(
+        bool(direct_outputs)
+        and direct_outputs == set(map_direct_outputs)
+        and command_archives.issubset(observed_map_archives),
+        "Ninja linker objects disagree with the map/compile evidence",
+    )
+
+    final_build_raw, final_build_identity = capture(
+        build_ninja,
+        "Ninja build graph",
+        64 * 1024 * 1024,
+    )
+    final_rules_raw, final_rules_identity = capture(
+        rules_ninja,
+        "Ninja rules graph",
+        1024 * 1024,
+    )
+    _require(
+        final_build_raw == build_raw
+        and final_rules_raw == rules_raw
+        and final_build_identity == build_identity
+        and final_rules_identity == rules_identity,
+        "Ninja final-link graph changed during audit",
+    )
+    canonical_argv = (
+        json.dumps(argv, ensure_ascii=False, separators=(",", ":")) + "\n"
+    ).encode("utf-8")
+    return {
+        "app_elf": app_elf,
+        "argv": argv,
+        "direct_outputs": direct_outputs,
+        "linker_command_sha256": _sha256_bytes(canonical_argv),
+        "build_ninja_path": build_ninja,
+        "build_ninja_sha256": _sha256_bytes(build_raw),
+        "rules_ninja_path": rules_ninja,
+        "rules_ninja_sha256": _sha256_bytes(rules_raw),
+    }
+
+
+def _audit_ninja_link_command_evidence(
+    *,
+    role_build: Path,
+    app_elf: str,
+    compile_outputs: dict[Path, Path],
+    map_direct_outputs: set[Path],
+    compiler_paths: set[Path],
+    map_path: Path,
+    dependency_roots: tuple[Path, ...] = (),
+    expected_role_identity: tuple[int, ...] | None = None,
+) -> dict[str, Any]:
+    """Hold the exact Ninja graph directory identities during replay."""
+
+    role_root = Path(role_build)
+    role_descriptor: int | None = None
+    rules_descriptor: int | None = None
+
+    def identity(value: os.stat_result) -> tuple[int, ...]:
+        return (
+            value.st_dev,
+            value.st_ino,
+            value.st_mode,
+            value.st_size,
+            value.st_mtime_ns,
+            value.st_ctime_ns,
+        )
+
+    directory_flags = (
+        os.O_RDONLY
+        | getattr(os, "O_DIRECTORY", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+    )
+    try:
+        role_before = role_root.lstat()
+        _require(
+            stat_module.S_ISDIR(role_before.st_mode)
+            and not stat_module.S_ISLNK(role_before.st_mode),
+            "Ninja role build is not a real directory",
+        )
+        role_descriptor = os.open(role_root, directory_flags)
+        role_opened = os.fstat(role_descriptor)
+        role_after = role_root.lstat()
+        bound_role_identity = (
+            identity(role_before)
+            if expected_role_identity is None
+            else expected_role_identity
+        )
+        _require(
+            bound_role_identity
+            == identity(role_before)
+            == identity(role_opened)
+            == identity(role_after),
+            "Ninja role build changed while opened",
+        )
+
+        rules_before = os.stat(
+            "CMakeFiles",
+            dir_fd=role_descriptor,
+            follow_symlinks=False,
+        )
+        _require(
+            stat_module.S_ISDIR(rules_before.st_mode)
+            and not stat_module.S_ISLNK(rules_before.st_mode),
+            "Ninja rules parent is not a real directory",
+        )
+        rules_descriptor = os.open(
+            "CMakeFiles",
+            directory_flags,
+            dir_fd=role_descriptor,
+        )
+        rules_opened = os.fstat(rules_descriptor)
+        rules_after = os.stat(
+            "CMakeFiles",
+            dir_fd=role_descriptor,
+            follow_symlinks=False,
+        )
+        _require(
+            identity(rules_before)
+            == identity(rules_opened)
+            == identity(rules_after),
+            "Ninja rules parent changed while opened",
+        )
+
+        result = _audit_ninja_link_command_evidence_from_descriptors(
+            role_build=role_root,
+            app_elf=app_elf,
+            compile_outputs=compile_outputs,
+            map_direct_outputs=map_direct_outputs,
+            compiler_paths=compiler_paths,
+            map_path=map_path,
+            dependency_roots=tuple(Path(root) for root in dependency_roots),
+            role_descriptor=role_descriptor,
+            rules_descriptor=rules_descriptor,
+        )
+
+        final_role_opened = os.fstat(role_descriptor)
+        final_role_visible = role_root.lstat()
+        final_rules_opened = os.fstat(rules_descriptor)
+        final_rules_visible = os.stat(
+            "CMakeFiles",
+            dir_fd=role_descriptor,
+            follow_symlinks=False,
+        )
+        _require(
+            bound_role_identity
+            == identity(final_role_opened)
+            == identity(final_role_visible)
+            and identity(rules_before)
+            == identity(final_rules_opened)
+            == identity(final_rules_visible),
+            "Ninja graph directory identity changed during audit",
+        )
+        return result
+    except OSError as exc:
+        raise ReleaseError(
+            "Ninja graph directories are missing, unsafe, or unstable"
+        ) from exc
+    finally:
+        if rules_descriptor is not None:
+            os.close(rules_descriptor)
+        if role_descriptor is not None:
+            os.close(role_descriptor)
 
 
 def _audit_component_output_inventory(
@@ -16092,6 +17088,10 @@ def _audit_observe_policy_v2_context_once(
             role_build, description_path, compile_path, map_path = (
                 _audit_v2_role_paths(builds, target, role)
             )
+            role_identity = _audit_ninja_role_identity(
+                role_build,
+                "%s/%s role build" % (profile_id, role),
+            )
             for label, path in (
                 ("project description", description_path),
                 ("compile commands", compile_path),
@@ -16120,6 +17120,15 @@ def _audit_observe_policy_v2_context_once(
                 compile_path,
                 "%s/%s" % (profile_id, role),
             )
+            _require(
+                _audit_ninja_role_identity(
+                    role_build,
+                    "%s/%s role build" % (profile_id, role),
+                )
+                == role_identity,
+                "%s/%s role build changed during metadata observation"
+                % (profile_id, role),
+            )
             compiler_paths.update(compilers)
             role_metadata[(profile_id, role)] = {
                 "target": target,
@@ -16129,6 +17138,7 @@ def _audit_observe_policy_v2_context_once(
                 "map_path": map_path,
                 "description": description,
                 "compilers": compilers,
+                "role_identity": role_identity,
             }
 
     toolchain_contexts = _audit_v2_derive_toolchain_cache_context(
@@ -16148,6 +17158,14 @@ def _audit_observe_policy_v2_context_once(
         profile_id, role = identity
         target = metadata["target"]
         description = metadata["description"]
+        _require(
+            _audit_ninja_role_identity(
+                metadata["role_build"],
+                "%s/%s role build" % (profile_id, role),
+            )
+            == metadata["role_identity"],
+            "%s/%s role build changed before input observation" % identity,
+        )
         compile_inventory = _audit_compile_sources(
             metadata["compile_path"],
             description=description,
@@ -16162,6 +17180,25 @@ def _audit_observe_policy_v2_context_once(
             metadata["map_path"],
             role_build=metadata["role_build"],
             compile_outputs=compile_outputs,
+            dependency_roots=(root, builds, *admitted_roots),
+        )
+        _require(
+            _audit_ninja_role_identity(
+                metadata["role_build"],
+                "%s/%s role build" % (profile_id, role),
+            )
+            == metadata["role_identity"],
+            "%s/%s role build changed during compile/map observation" % identity,
+        )
+        link_evidence = _audit_ninja_link_command_evidence(
+            role_build=metadata["role_build"],
+            app_elf=description.get("app_elf"),
+            compile_outputs=compile_outputs,
+            map_direct_outputs=direct_outputs,
+            compiler_paths=metadata["compilers"],
+            map_path=metadata["map_path"],
+            dependency_roots=(root, builds, *admitted_roots),
+            expected_role_identity=metadata["role_identity"],
         )
         linked = _audit_map_archives(
             metadata["map_path"],
@@ -16408,17 +17445,7 @@ def _audit_observe_policy_v2_context_once(
                         nested is None,
                         "generated main binding cannot use a nested archive",
                     )
-                    app_elf, link_path, link_direct_outputs = (
-                        _audit_link_command_direct_outputs(
-                            role_build=metadata["role_build"],
-                            description=description,
-                            compile_outputs=compile_outputs,
-                        )
-                    )
-                    _require(
-                        link_direct_outputs == direct_outputs,
-                        "linker map and linker command direct objects disagree",
-                    )
+                    app_elf = link_evidence["app_elf"]
                     metadata_paths = compile_inventory[
                         "metadata_by_component"
                     ].get("main", set())
@@ -16454,7 +17481,15 @@ def _audit_observe_policy_v2_context_once(
                     consumed_outputs.update(direct_outputs)
                     generated_binding.update(
                         {
-                            "linker_command_sha256": _sha256_path(link_path),
+                            "linker_command_sha256": link_evidence[
+                                "linker_command_sha256"
+                            ],
+                            "build_ninja_sha256": link_evidence[
+                                "build_ninja_sha256"
+                            ],
+                            "rules_ninja_sha256": link_evidence[
+                                "rules_ninja_sha256"
+                            ],
                             "metadata_inputs": sorted(
                                 (
                                     _audit_v2_source_record(
@@ -16641,6 +17676,14 @@ def _audit_observe_policy_v2_context_once(
             consumed_outputs == expected_linked_outputs,
             "%s/%s linked compile outputs are not exactly covered by generated inputs"
             % identity,
+        )
+        _require(
+            _audit_ninja_role_identity(
+                metadata["role_build"],
+                "%s/%s role build" % (profile_id, role),
+            )
+            == metadata["role_identity"],
+            "%s/%s role build changed during input observation" % identity,
         )
 
     _require(
