@@ -175,13 +175,48 @@ class WaveshareNativeLinkFactContractTests(unittest.TestCase):
         phy = _gap_case(
             "BLE_GAP_EVENT_PHY_UPDATE_COMPLETE", "BLE_GAP_EVENT_DATA_LEN_CHG"
         )
-        dle = _gap_case("BLE_GAP_EVENT_DATA_LEN_CHG", "BLE_GAP_EVENT_CONN_UPDATE")
         cp = _gap_case("BLE_GAP_EVENT_CONN_UPDATE", "BLE_GAP_EVENT_NOTIFY_TX")
         self.assertIn("pble_oi1_begin_session(event->connect.conn_handle)", connect)
         self.assertIn("pble_oi1_end_session(event->disconnect.conn.conn_handle)", disconnect)
         self.assertIn("event->phy_updated.conn_handle", phy)
-        self.assertIn("event->data_len_chg.conn_handle", dle)
         self.assertIn("event->conn_update.conn_handle", cp)
+
+    def test_data_length_event_uses_one_live_cached_handle_snapshot(self):
+        dle = _gap_case("BLE_GAP_EVENT_DATA_LEN_CHG", "BLE_GAP_EVENT_CONN_UPDATE")
+        self.assertNotIn("event->data_len_chg.conn_handle", dle)
+
+        snapshots = list(
+            re.finditer(
+                r"\buint16_t\s+(?P<name>[A-Za-z_]\w*)\s*=\s*"
+                r"pble_conn_handle\s*;",
+                dle,
+            )
+        )
+        self.assertEqual(len(snapshots), 1)
+        snapshot = snapshots[0]
+        handle = snapshot.group("name")
+        self.assertEqual(dle.count("pble_conn_handle"), 1)
+
+        none_guard = re.search(
+            r"\bif\s*\(\s*{}\s*==\s*BLE_HS_CONN_HANDLE_NONE\s*\)\s*"
+            r"\{{\s*break\s*;\s*\}}".format(re.escape(handle)),
+            dle,
+        )
+        self.assertIsNotNone(none_guard)
+        self.assertGreater(none_guard.start(), snapshot.end())
+        self.assertGreater(dle.find("pble_dle_confirmed"), none_guard.end())
+        self.assertGreater(dle.find("pble_oi1_note_dle("), none_guard.end())
+        self.assertRegex(
+            dle,
+            r"pble_oi1_note_dle\s*\(\s*{}\s*,".format(re.escape(handle)),
+        )
+
+        note = _strip_c_comments(_function("pble_oi1_note_dle"))
+        self.assertRegex(
+            note,
+            r"pble_oi1_active\.valid\s*&&\s*"
+            r"pble_oi1_active_handle\s*==\s*conn_handle",
+        )
 
     def test_cross_task_starvation_uses_handle_and_epoch_once(self):
         clean = _strip_c_comments(SOURCE)
