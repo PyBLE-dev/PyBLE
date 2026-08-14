@@ -238,6 +238,17 @@ class NinjaLinkEvidenceTests(unittest.TestCase):
                 finally:
                     rules.write_text(original, encoding="utf-8")
 
+    def test_driver_wrapped_alternate_output_is_rejected(self):
+        for flags in (
+            " -Wl,-o,attacker.elf",
+            " -Wl,--output=attacker.elf",
+            " -Xlinker -o -Xlinker attacker.elf",
+        ):
+            with self.subTest(flags=flags):
+                self._write_ninja(flags=flags)
+                with self.assertRaises(RELEASE.ReleaseError):
+                    self.observe()
+
     def test_variable_cycle_or_duplicate_edge_assignment_is_rejected(self):
         for flags in (" $FLAGS", " one\n  FLAGS = two"):
             with self.subTest(flags=flags):
