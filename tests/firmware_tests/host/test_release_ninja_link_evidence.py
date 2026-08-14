@@ -845,6 +845,29 @@ class NinjaLinkEvidenceTests(unittest.TestCase):
         with self.assertRaises(RELEASE.ReleaseError):
             self.observe()
 
+    def test_dot_object_normalization_is_scoped_to_link_libraries(self):
+        build_ninja = self.role_build / "build.ninja"
+        original = build_ninja.read_text(encoding="utf-8")
+        dotted = self.implicit.replace("esp-idf/main/", "esp-idf/main/./", 1)
+        libraries = "  LINK_LIBRARIES = %s esp-idf/main/libmain.a\n" % self.implicit
+        self.assertIn(libraries, original)
+
+        for assignment in ("FLAGS", "LINK_FLAGS"):
+            with self.subTest(assignment=assignment):
+                marker = "  %s =" % assignment
+                graph = original.replace(
+                    marker,
+                    "%s %s" % (marker, dotted),
+                    1,
+                ).replace(
+                    libraries,
+                    "  LINK_LIBRARIES = esp-idf/main/libmain.a\n",
+                    1,
+                )
+                build_ninja.write_text(graph, encoding="utf-8")
+                with self.assertRaises(RELEASE.ReleaseError):
+                    self.observe()
+
     def test_explicit_link_inputs_must_be_exact_compile_outputs(self):
         linker_script = self.role_build / "extra-linker-script.ld"
         linker_script.write_text("SECTIONS {}\n", encoding="utf-8")
