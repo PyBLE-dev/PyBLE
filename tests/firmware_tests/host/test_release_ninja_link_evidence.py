@@ -294,6 +294,11 @@ class NinjaLinkEvidenceTests(unittest.TestCase):
                 "elf_alias\t=\tmicropython.elf\n"
                 "build $elf_alias: phony\n"
             ),
+            (
+                "elf = harmless.out\n"
+                "elf-alias = micropython.elf\n"
+                "build $elf-alias: phony\n"
+            ),
             "build\tmicropython.elf: phony\n",
         )
         for addition in additions:
