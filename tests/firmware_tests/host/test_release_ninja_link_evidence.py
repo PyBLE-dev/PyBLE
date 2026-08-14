@@ -61,6 +61,24 @@ class NinjaLinkEvidenceTests(unittest.TestCase):
         self.map_path = self.role_build / "micropython.map"
         self.map_path.write_text("synthetic linker map\n", encoding="utf-8")
         self.map_flag = "-Wl,--Map=%s" % self.map_path
+        archive = self.role_build / "esp-idf/main/libmain.a"
+        archive.parent.mkdir(parents=True, exist_ok=True)
+        payload = b"synthetic archive member\n"
+        header = (
+            b"fixture.o/".ljust(16, b" ")
+            + b"0".ljust(12, b" ")
+            + b"0".ljust(6, b" ")
+            + b"0".ljust(6, b" ")
+            + b"100644".ljust(8, b" ")
+            + str(len(payload)).encode("ascii").ljust(10, b" ")
+            + b"`\n"
+        )
+        archive.write_bytes(
+            b"!<arch>\n"
+            + header
+            + payload
+            + (b"\n" if len(payload) % 2 else b"")
+        )
         self.argv = [
             "/toolchain/bin/fixture-g++",
             self.map_flag,
