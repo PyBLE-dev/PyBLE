@@ -280,7 +280,12 @@ class LicenseAuditSnapshotRaceTests(unittest.TestCase):
             "metadata header": lambda topology: topology[
                 "generated_headers"
             ][0],
-            "link command": lambda topology: topology["link_path"],
+            "Ninja build graph": lambda topology: topology[
+                "build_ninja_path"
+            ],
+            "Ninja rules graph": lambda topology: topology[
+                "rules_ninja_path"
+            ],
             "direct object": lambda topology: (
                 topology["role_root"]
                 / topology["direct_loads"]["project"]
