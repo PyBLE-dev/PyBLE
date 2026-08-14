@@ -663,6 +663,7 @@ class NinjaLinkEvidenceTests(unittest.TestCase):
         self.map_path.write_text(original_map, encoding="utf-8")
         for flags in (
             " -Wl,%s" % payload.name,
+            " -Wl,--gc-sections,%s" % payload.name,
             " -Xlinker %s" % payload.name,
             " --for-linker=%s" % payload.name,
             " --for-linker %s" % payload.name,
@@ -671,6 +672,67 @@ class NinjaLinkEvidenceTests(unittest.TestCase):
                 self._write_ninja(flags=flags)
                 with self.assertRaises(RELEASE.ReleaseError):
                     self.observe()
+
+    def test_map_loads_and_direct_archives_match_exact_evidence(self):
+        build_ninja = self.role_build / "build.ninja"
+        original_graph = build_ninja.read_text(encoding="utf-8")
+        original_map = self.map_path.read_text(encoding="utf-8")
+        marker = "  LINK_LIBRARIES = %s esp-idf/main/libmain.a\n" % self.implicit
+
+        for suffix in (".o", ".obj"):
+            with self.subTest(case="uncompiled-map-object", suffix=suffix):
+                uncompiled = self.role_build / ("attacker" + suffix)
+                uncompiled.write_bytes(b"uncompiled object input\n")
+                self.map_path.write_text(
+                    original_map + "LOAD %s\n" % uncompiled.name,
+                    encoding="utf-8",
+                )
+                with self.assertRaises(RELEASE.ReleaseError):
+                    self.observe()
+
+        self.map_path.write_text(
+            original_map + "LOAD esp-idf/main/libmain.a attacker.payload\n",
+            encoding="utf-8",
+        )
+        with self.subTest(case="multiword-map-load"):
+            with self.assertRaises(RELEASE.ReleaseError):
+                self.observe()
+
+        valid_archive = self.role_build / "esp-idf/main/libmain.a"
+        unmapped_archive = self.role_build / "unmapped.a"
+        unmapped_archive.write_bytes(valid_archive.read_bytes())
+        build_ninja.write_text(
+            original_graph.replace(
+                marker,
+                "  LINK_LIBRARIES = %s %s esp-idf/main/libmain.a\n"
+                % (self.implicit, unmapped_archive.name),
+                1,
+            ),
+            encoding="utf-8",
+        )
+        self.map_path.write_text(original_map, encoding="utf-8")
+        with self.subTest(case="command-archive-missing-map-load"):
+            with self.assertRaises(RELEASE.ReleaseError):
+                self.observe()
+
+        symlink_archive = self.role_build / "symlinked.a"
+        symlink_archive.symlink_to(valid_archive)
+        build_ninja.write_text(
+            original_graph.replace(
+                marker,
+                "  LINK_LIBRARIES = %s %s esp-idf/main/libmain.a\n"
+                % (self.implicit, symlink_archive.name),
+                1,
+            ),
+            encoding="utf-8",
+        )
+        self.map_path.write_text(
+            original_map + "LOAD %s\n" % symlink_archive.name,
+            encoding="utf-8",
+        )
+        with self.subTest(case="symlinked-archive"):
+            with self.assertRaises(RELEASE.ReleaseError):
+                self.observe()
 
     def test_ninja_object_operand_must_be_canonical_before_argv_digest(self):
         build_ninja = self.role_build / "build.ninja"
