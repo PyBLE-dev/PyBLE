@@ -386,6 +386,24 @@ class NinjaLinkEvidenceTests(unittest.TestCase):
                 finally:
                     path.write_text(original, encoding="utf-8")
 
+    def test_tab_indented_edge_or_rule_bindings_are_rejected(self):
+        paths = (
+            self.role_build / "build.ninja",
+            self.role_build / "CMakeFiles" / "rules.ninja",
+        )
+        for path in paths:
+            with self.subTest(path=path.name):
+                original = path.read_text(encoding="utf-8")
+                tab_indented = original.replace("\n  ", "\n\t")
+                self.assertNotEqual(tab_indented, original)
+                self.assertNotIn("\n  ", tab_indented)
+                path.write_text(tab_indented, encoding="utf-8")
+                try:
+                    with self.assertRaises(RELEASE.ReleaseError):
+                        self.observe()
+                finally:
+                    path.write_text(original, encoding="utf-8")
+
     def test_direct_objects_must_match_map_and_compile_evidence(self):
         missing = next(iter(self.outputs))
         for kwargs in (
