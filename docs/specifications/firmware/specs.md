@@ -1431,8 +1431,11 @@ This is software-level safety of the IDE/agent, **not** hardware/actuator safety
   hash-bind the pinned `main` generated headers, reconcile every linked compile
   output exactly once to an archive member or exact direct-object linker-map
   `LOAD` and linker-command object, permitting only redundant complete `.`
-  segments in a direct-`LOAD` path and rejecting every other noncanonical or
-  unmatched path form. For every ESP role it MUST non-executingly reproduce
+  segments in a direct-`LOAD` path or an expanded `LINK_LIBRARIES` object
+  operand. The latter is normalized only for object identity while its raw
+  spelling remains linker-command-hash-bound; literal `$in` objects remain
+  strictly canonical. Every other noncanonical or unmatched path form is
+  rejected. For every ESP role it MUST non-executingly reproduce
   the final linker argv with the bounded parser over the exact single ELF edge
   and linker rule retained in `build.ninja` and `CMakeFiles/rules.ninja`, and
   bind the canonical argv and both graph-file hashes; invocation state and an

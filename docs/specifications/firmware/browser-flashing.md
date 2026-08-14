@@ -1107,13 +1107,19 @@ The following ESP-IDF resolution rules are part of that fail-closed mapping:
    After expansion, the safely tokenized command MUST contain one absolute
    compiler frontend already admitted by the toolchain contract, one exact
    `-o <app-elf>`, and a sorted-unique set of canonical build-relative
-   `.o`/`.obj` operands. Absolute/escaping objects, duplicate operands, or any
-   other output are fatal. That set MUST equal both the normalized map `LOAD`
-   set and the exact linked subset of compile outputs. The receipt binds
-   SHA-256 of the exact two Ninja files and `linker_command_sha256`, defined as
-   SHA-256 of the reconstructed argv encoded as canonical compact JSON plus
-   one final LF. The same derivation is repeated after all eight SBOM runs and
-   during public replay. An alternate include, nested `include`/`subninja`,
+   `.o`/`.obj` identities. Literal `$in` object operands MUST already be
+   canonical. ESP-IDF's generated `LINK_LIBRARIES` value may spell an object
+   with redundant complete `.` path components; only those complete
+   components are removed for object identity and map/compile reconciliation,
+   while the raw expanded token remains unchanged in the reconstructed argv.
+   Absolute/escaping objects, duplicate normalized identities, any other
+   noncanonical component, or any other output are fatal. That normalized set
+   MUST equal both the normalized map `LOAD` set and the exact linked subset of
+   compile outputs. The receipt binds SHA-256 of the exact two Ninja files and
+   `linker_command_sha256`, defined as SHA-256 of the raw reconstructed argv
+   encoded as canonical compact JSON plus one final LF. The same derivation is
+   repeated after all eight SBOM runs and during public replay. An alternate
+   include, nested `include`/`subninja`,
    duplicate edge/output/rule/assignment, unknown escape or variable, path
    escape, or any graph/map/compile/ELF mismatch is fatal. Parsing is
    resource-bounded and never becomes a general Ninja interpreter. The sum of
