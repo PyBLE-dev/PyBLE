@@ -30,6 +30,8 @@ from _pble_bench import (
     PROFILE_RESOURCE_KINDS,
     PROFILE_TARGETS,
     PROFILE_TRANSPORTS,
+    OI1_LINK_FACT_ACTIVE_TIMEOUT_S,
+    OI1_LINK_FACT_PAIR_TIMEOUT_S,
     RedactedRawLog,
     RP2_THRESHOLD_KEYS,
     THRESHOLD_KEYS,
@@ -1505,7 +1507,10 @@ class WaveshareHardwareExecutor(HardwareExecutor):
                     "Waveshare diagnostic HELLO exhausted its deadline"
                 )
             snapshot = await run_oi1_link_fact_probe(
-                diagnostic, self.ids.next, timeout_s=2.0
+                diagnostic,
+                self.ids.next,
+                projection="pair",
+                timeout_s=OI1_LINK_FACT_PAIR_TIMEOUT_S,
             )
         except BaseException:
             try:
@@ -1539,7 +1544,10 @@ class WaveshareHardwareExecutor(HardwareExecutor):
             self._disconnect_probe_connection = connection
             try:
                 before = await run_oi1_link_fact_probe(
-                    connection, self.ids.next, timeout_s=2.0
+                    connection,
+                    self.ids.next,
+                    projection="active",
+                    timeout_s=OI1_LINK_FACT_ACTIVE_TIMEOUT_S,
                 )
                 active = before["active"]
                 if (
@@ -1593,15 +1601,16 @@ class WaveshareHardwareExecutor(HardwareExecutor):
         ):
             raise BenchError("Waveshare link settlement timeout must be 1..5000 ms")
         loop = asyncio.get_running_loop()
-        deadline = loop.time() + timeout_ms / 1000.0
+        remaining = timeout_ms / 1000.0
+        deadline = loop.time() + remaining
         while True:
-            remaining = deadline - loop.time()
             if remaining <= 0:
                 raise BenchError("settled Waveshare transfer link was not observed")
             snapshot = await run_oi1_link_fact_probe(
                 self._measured_connection,
                 self.ids.next,
-                timeout_s=min(2.0, remaining),
+                projection="active",
+                timeout_s=min(OI1_LINK_FACT_ACTIVE_TIMEOUT_S, remaining),
             )
             if loop.time() >= deadline:
                 raise BenchError("settled Waveshare transfer link was not observed")
@@ -1621,7 +1630,11 @@ class WaveshareHardwareExecutor(HardwareExecutor):
                 return
             if loop.time() >= deadline:
                 raise BenchError("settled Waveshare transfer link was not observed")
-            await asyncio.sleep(min(0.05, deadline - loop.time()))
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                raise BenchError("settled Waveshare transfer link was not observed")
+            await asyncio.sleep(min(0.05, remaining))
+            remaining = deadline - loop.time()
 
     async def seal_transfer_link_facts(self, timeout_ms):
         if self._transfer_epoch is None:

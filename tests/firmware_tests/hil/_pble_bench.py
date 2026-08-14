@@ -188,6 +188,8 @@ DEFAULT_OPERATION_TIMEOUT_S = 120.0
 DEFAULT_EVENT_TIMEOUT_S = 15.0
 HEAP_MARKER_PREFIX = "__PYBLE_OI1_HEAP_"
 OI1_LINK_FACT_MARKER_PREFIX = "__PYBLE_OI1_LINK_FACTS_"
+OI1_LINK_FACT_PAIR_TIMEOUT_S = 8.0
+OI1_LINK_FACT_ACTIVE_TIMEOUT_S = 5.0
 OI1_LINK_FACT_MAX_CHUNK_BYTES = 2048
 OI1_LINK_FACT_MAX_CONSOLE_CHUNK_BYTES = 200
 OI1_LINK_FACT_MAX_OUTPUT_BYTES = 8192
@@ -1010,15 +1012,24 @@ def _validated_probe_nonce(nonce):
     return nonce
 
 
-def oi1_link_fact_probe_source(nonce):
+def _validated_oi1_link_fact_projection(projection):
+    if type(projection) is not str or projection not in ("pair", "active"):
+        raise BenchError("OI-1 link-fact probe projection is invalid")
+    return projection
+
+
+def oi1_link_fact_probe_source(nonce, *, projection):
     """Return the Wave-only RUN source for the hidden native snapshot."""
     marker = OI1_LINK_FACT_MARKER_PREFIX + _validated_probe_nonce(nonce)
-    return (
+    projection = _validated_oi1_link_fact_projection(projection)
+    source = (
         "import json\n"
         "import pble_ble\n"
         "_oi1=pble_ble._oi1_link_facts()\n"
-        'print("%s="+json.dumps(_oi1))\n' % marker
     )
+    if projection == "active":
+        source += '_oi1={"active":_oi1["active"],"last_ended":None}\n'
+    return source + 'print("%s="+json.dumps(_oi1))\n' % marker
 
 
 def _json_object_without_duplicates(pairs):
@@ -1161,7 +1172,8 @@ def _validate_oi1_link_fact_snapshot(value):
     return value
 
 
-def parse_oi1_link_fact_probe_output(chunks, nonce):
+def parse_oi1_link_fact_probe_output(chunks, nonce, *, projection):
+    projection = _validated_oi1_link_fact_projection(projection)
     marker = (OI1_LINK_FACT_MARKER_PREFIX + _validated_probe_nonce(nonce) + "=").encode(
         "ascii"
     )
@@ -1207,6 +1219,13 @@ def parse_oi1_link_fact_probe_output(chunks, nonce):
         raise BenchError("OI-1 link snapshot.active must not be final")
     if snapshot["last_ended"] is not None and not snapshot["last_ended"]["final"]:
         raise BenchError("OI-1 link snapshot.last_ended must be final")
+    if projection == "active":
+        if snapshot["active"] is None or snapshot["last_ended"] is not None:
+            raise BenchError(
+                "OI-1 active projection requires active and last-ended null"
+            )
+    elif snapshot["active"] is None or snapshot["last_ended"] is None:
+        raise BenchError("OI-1 pair projection requires active and last-ended records")
     return snapshot
 
 
@@ -1214,21 +1233,30 @@ async def run_oi1_link_fact_probe(
         central,
         next_id,
         *,
+        projection,
         nonce=None,
-        timeout_s=2.0,
+        timeout_s,
         sleep=asyncio.sleep):
     """Read one strict Wave-only link snapshot through an ordinary RUN."""
+    projection = _validated_oi1_link_fact_projection(projection)
     if nonce is None:
         nonce = hashlib.sha256(
             ("%d:%d" % (time.monotonic_ns(), os.getpid())).encode("ascii")
         ).hexdigest()[:16]
-    if (
-        isinstance(timeout_s, bool)
-        or not isinstance(timeout_s, (int, float))
-        or not 0 < timeout_s <= 2.0
-    ):
-        raise BenchError("OI-1 link-fact probe timeout must be in (0, 2] seconds")
-    source = oi1_link_fact_probe_source(nonce).encode("utf-8")
+    if isinstance(timeout_s, bool) or not isinstance(timeout_s, (int, float)):
+        raise BenchError("OI-1 link-fact probe timeout is invalid")
+    if projection == "pair":
+        if timeout_s != OI1_LINK_FACT_PAIR_TIMEOUT_S:
+            raise BenchError(
+                "OI-1 pair projection requires its exact 8-second timeout cap"
+            )
+    elif not 0 < timeout_s <= OI1_LINK_FACT_ACTIVE_TIMEOUT_S:
+        raise BenchError(
+            "OI-1 active projection timeout must be within its 5-second cap"
+        )
+    source = oi1_link_fact_probe_source(
+        nonce, projection=projection
+    ).encode("utf-8")
     cursor = central.event_cursor()
     deadline = time.monotonic() + timeout_s
 
@@ -1326,8 +1354,11 @@ async def run_oi1_link_fact_probe(
                 raise BenchError(
                     "OI-1 link-fact probe timed out before RUN_STATE(done)"
                 )
-            await sleep(min(0.002, remaining))
-    snapshot = parse_oi1_link_fact_probe_output(stdout_chunks, nonce)
+            if not events:
+                await sleep(min(0.002, remaining))
+    snapshot = parse_oi1_link_fact_probe_output(
+        stdout_chunks, nonce, projection=projection
+    )
     require_before_deadline()
     return snapshot
 
