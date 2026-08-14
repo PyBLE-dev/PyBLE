@@ -1115,7 +1115,15 @@ The following ESP-IDF resolution rules are part of that fail-closed mapping:
    Absolute/escaping objects, duplicate normalized identities, any other
    noncanonical component, or any other output are fatal. That normalized set
    MUST equal both the normalized map `LOAD` set and the exact linked subset of
-   compile outputs. The receipt binds SHA-256 of the exact two Ninja files and
+   compile outputs. Every map line beginning `LOAD ` MUST have the exact
+   one-token form and classify as either a reconciled `.o`/`.obj` direct object
+   or a validated `.a` archive; an unknown suffix or unclassified `LOAD` is
+   fatal. Every reconstructed command word MUST likewise be consumed exactly
+   once as the admitted compiler frontend, a frozen option, the required
+   operand of a frozen option, the exact output, a reconciled direct object, or
+   a validated archive. A bare or otherwise unclassified positional word is
+   fatal; a `.a` suffix alone does not establish archive identity. The receipt
+   binds SHA-256 of the exact two Ninja files and
    `linker_command_sha256`, defined as SHA-256 of the raw reconstructed argv
    encoded as canonical compact JSON plus one final LF. The same derivation is
    repeated after all eight SBOM runs and during public replay. An alternate
