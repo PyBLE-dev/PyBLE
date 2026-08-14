@@ -1931,6 +1931,43 @@ class PbleCentralConnectionTest(unittest.IsolatedAsyncioTestCase):
                 timeout=0.01,
             )
 
+    async def test_response_arriving_at_wait_clear_boundary_is_not_lost(self):
+        request_id = 74
+        expected = wire.Frame(
+            wire.RSP,
+            wire.OP_RUN,
+            request_id,
+            bytes((wire.ST_OK,)),
+        )
+
+        class FakeBleakClient:
+            is_connected = True
+
+            async def write_gatt_char(self, _uuid, _packet, response):
+                self.assert_response = response
+
+        central = central_module.PbleCentral(FakeBleakClient())
+
+        class BoundaryEvent(asyncio.Event):
+            def __init__(self):
+                super().__init__()
+                self.injected = False
+
+            def clear(self):
+                if not self.injected:
+                    self.injected = True
+                    central._rsp_by_id[request_id] = expected
+                    self.set()
+                super().clear()
+
+        central._rsp_event = BoundaryEvent()
+        observed = await central.send_cmd(
+            wire.OP_RUN,
+            request_id,
+            timeout=0.01,
+        )
+        self.assertIs(observed, expected)
+
 
 class NativeSoftRebootOrderingTest(unittest.TestCase):
     def test_ok_response_has_a_bounded_delivery_grace_before_vm_reset(self):
