@@ -1897,9 +1897,9 @@ class PbleCentralConnectionTest(unittest.IsolatedAsyncioTestCase):
             await connected._write(b"frame")
 
         with self.assertRaises(central_module.PbleLinkLossError):
-            await disconnected._await_rsp(1, 0)
+            await disconnected._await_rsp(wire.OP_RUN, 1, 0)
         with self.assertRaises(asyncio.TimeoutError):
-            await connected._await_rsp(1, 0)
+            await connected._await_rsp(wire.OP_RUN, 1, 0)
 
     async def test_same_id_wrong_opcode_response_cannot_complete_command(self):
         request_id = 73

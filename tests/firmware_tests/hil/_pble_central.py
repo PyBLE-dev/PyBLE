@@ -336,24 +336,32 @@ class PbleCentral:
         await self._write(wire.encode(wire.CMD, opcode, id_, payload))
 
     async def send_cmd(self, opcode, id_, payload=b"", timeout=10.0):
-        """Send a CMD and await the matching RSP (same ID). Returns a Frame."""
+        """Send a CMD and await the matching RSP (same opcode and ID)."""
         self._rsp_by_id.pop(id_, None)
         await self._write(wire.encode(wire.CMD, opcode, id_, payload))
-        return await self._await_rsp(id_, timeout)
+        return await self._await_rsp(opcode, id_, timeout)
 
-    async def _await_rsp(self, id_, timeout):
+    async def _await_rsp(self, opcode, id_, timeout):
         loop = asyncio.get_event_loop()
         deadline = loop.time() + timeout
-        while id_ not in self._rsp_by_id:
-            self._rsp_event.clear()
-            remaining = deadline - loop.time()
-            if remaining <= 0:
-                self._raise_response_timeout(id_, timeout)
-            try:
-                await asyncio.wait_for(self._rsp_event.wait(), timeout=remaining)
-            except asyncio.TimeoutError:
-                self._raise_response_timeout(id_, timeout)
-        return self._rsp_by_id.pop(id_)
+        while True:
+            while id_ not in self._rsp_by_id:
+                self._rsp_event.clear()
+                # A Notify callback may land between the loop condition and
+                # clear().  Recheck the response map before sleeping so that
+                # clearing the shared wake signal cannot hide that response.
+                if id_ in self._rsp_by_id:
+                    continue
+                remaining = deadline - loop.time()
+                if remaining <= 0:
+                    self._raise_response_timeout(id_, timeout)
+                try:
+                    await asyncio.wait_for(self._rsp_event.wait(), timeout=remaining)
+                except asyncio.TimeoutError:
+                    self._raise_response_timeout(id_, timeout)
+            response = self._rsp_by_id.pop(id_)
+            if response.opcode == opcode:
+                return response
 
 
 def rsp_status(frame):
