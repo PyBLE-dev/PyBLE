@@ -6,9 +6,12 @@
 
 import argparse
 import asyncio
+import contextlib
 import copy
 import errno
 import hashlib
+import inspect
+import io
 import json
 import os
 import struct
@@ -227,6 +230,79 @@ def _waveshare_link_fact_snapshot(*, active_epoch=42, ended_epoch=41):
             final=True,
         ),
     }
+
+
+def _waveshare_active_link_fact_snapshot(*, active_epoch=42):
+    return {
+        "active": _waveshare_link_fact_record(
+            active_epoch,
+            final=False,
+        ),
+        "last_ended": None,
+    }
+
+
+def _max_waveshare_link_fact_record(epoch, *, final):
+    uint32_max = (1 << 32) - 1
+    facts = {
+        "dle": {
+            "request_attempts": 4,
+            "max_tx_octets": (1 << 16) - 1,
+            "max_tx_time_us": (1 << 16) - 1,
+        },
+        "phy": {
+            "required_2m": True,
+            "request_attempts": 4,
+            "updates": [
+                {"status": uint32_max, "tx": 255, "rx": 255}
+                for _ in range(7)
+            ]
+            + [{"status": 0, "tx": 2, "rx": 2}],
+            "settled_tx": 2,
+            "settled_rx": 2,
+        },
+        "connection_parameters": {
+            "request_return_codes": [uint32_max, uint32_max, 0],
+            "updates": [
+                {"status": uint32_max, "interval_units": (1 << 16) - 1}
+                for _ in range(7)
+            ]
+            + [{"status": 0, "interval_units": 12}],
+            "settled_interval_units": 12,
+        },
+        "tx_mbuf_starve_count": uint32_max,
+    }
+    return {
+        "epoch": epoch,
+        "final": final,
+        "settled": True,
+        "overflow": False,
+        "facts": facts,
+    }
+
+
+def _max_waveshare_link_fact_snapshot(projection):
+    epoch_max = (1 << 64) - 1
+    if projection == "active":
+        return {
+            "active": _max_waveshare_link_fact_record(
+                epoch_max,
+                final=False,
+            ),
+            "last_ended": None,
+        }
+    if projection == "pair":
+        return {
+            "active": _max_waveshare_link_fact_record(
+                epoch_max,
+                final=False,
+            ),
+            "last_ended": _max_waveshare_link_fact_record(
+                epoch_max - 1,
+                final=True,
+            ),
+        }
+    raise AssertionError("test fixture received an unsupported projection")
 
 
 def _valid_observation(profile_id):
@@ -1125,7 +1201,30 @@ class HeapAndTransferValidationTest(unittest.TestCase):
 
 
 class WaveshareBleLinkFactProbeRedTest(unittest.TestCase):
-    def test_exact_getter_probe_source_and_split_strict_marker(self):
+    def test_probe_projection_and_timeout_contract_is_mandatory(self):
+        self.assertEqual(
+            getattr(bench, "OI1_LINK_FACT_PAIR_TIMEOUT_S", None),
+            8.0,
+        )
+        self.assertEqual(
+            getattr(bench, "OI1_LINK_FACT_ACTIVE_TIMEOUT_S", None),
+            5.0,
+        )
+        for function_name in (
+            "oi1_link_fact_probe_source",
+            "parse_oi1_link_fact_probe_output",
+            "run_oi1_link_fact_probe",
+        ):
+            with self.subTest(function_name=function_name):
+                function = getattr(bench, function_name)
+                parameters = inspect.signature(function).parameters
+                self.assertIn("projection", parameters)
+                self.assertIs(
+                    parameters["projection"].default,
+                    inspect.Parameter.empty,
+                )
+
+    def test_exact_getter_projection_source_and_split_strict_markers(self):
         source_fn = getattr(bench, "oi1_link_fact_probe_source", None)
         parser_fn = getattr(
             bench,
@@ -1135,20 +1234,101 @@ class WaveshareBleLinkFactProbeRedTest(unittest.TestCase):
         self.assertIsNotNone(source_fn, "HAND-OFF [green]: add probe source")
         self.assertIsNotNone(parser_fn, "HAND-OFF [green]: add strict parser")
 
-        source = source_fn("abc123")
-        self.assertIn("import pble_ble", source)
-        self.assertIn("_oi1_link_facts()", source)
-        self.assertIn("__PYBLE_OI1_LINK_FACTS_abc123", source)
-        snapshot = _waveshare_link_fact_snapshot()
-        encoded = json.dumps(snapshot, sort_keys=True).encode("ascii")
-        parsed = parser_fn(
+        pair_source = source_fn("abc123", projection="pair")
+        active_source = source_fn("abc123", projection="active")
+        for source in (pair_source, active_source):
+            self.assertIn("import pble_ble", source)
+            self.assertEqual(source.count("_oi1_link_facts()"), 1)
+            self.assertIn("__PYBLE_OI1_LINK_FACTS_abc123", source)
+
+        native_pair = _waveshare_link_fact_snapshot()
+        fake_pble_ble = mock.Mock()
+        fake_pble_ble._oi1_link_facts.side_effect = lambda: copy.deepcopy(
+            native_pair
+        )
+        observed_source_values = {}
+        for projection, source in (
+            ("pair", pair_source),
+            ("active", active_source),
+        ):
+            stdout = io.StringIO()
+            with (
+                mock.patch.dict(sys.modules, {"pble_ble": fake_pble_ble}),
+                contextlib.redirect_stdout(stdout),
+            ):
+                exec(source, {})  # nosec - generated, fixed qualification source
+            marker = "__PYBLE_OI1_LINK_FACTS_abc123="
+            line = stdout.getvalue()
+            self.assertTrue(line.startswith(marker))
+            observed_source_values[projection] = json.loads(
+                line[len(marker):]
+            )
+        self.assertEqual(fake_pble_ble._oi1_link_facts.call_count, 2)
+        self.assertEqual(observed_source_values["pair"], native_pair)
+        self.assertEqual(
+            observed_source_values["active"],
+            {
+                "active": native_pair["active"],
+                "last_ended": None,
+            },
+        )
+        with self.assertRaisesRegex(bench.BenchError, "projection"):
+            source_fn("abc123", projection="full")
+
+        pair = _waveshare_link_fact_snapshot()
+        pair_encoded = json.dumps(pair, sort_keys=True).encode("ascii")
+        parsed_pair = parser_fn(
             [
                 b"discarded console noise\n__PYBLE_OI1_LINK_FACTS_abc",
-                b"123=" + encoded + b"\n",
+                b"123=" + pair_encoded + b"\n",
             ],
             "abc123",
+            projection="pair",
         )
-        self.assertEqual(parsed, snapshot)
+        self.assertEqual(parsed_pair, pair)
+
+        active = _waveshare_active_link_fact_snapshot()
+        active_encoded = json.dumps(active, sort_keys=True).encode("ascii")
+        parsed_active = parser_fn(
+            [
+                b"__PYBLE_OI1_LINK_FACTS_abc123=" + active_encoded,
+                b"\n",
+            ],
+            "abc123",
+            projection="active",
+        )
+        self.assertEqual(parsed_active, active)
+
+    def test_projection_parser_rejects_cross_scope_records(self):
+        parser_fn = bench.parse_oi1_link_fact_probe_output
+
+        def marker(value):
+            return (
+                b"__PYBLE_OI1_LINK_FACTS_scope="
+                + json.dumps(value, sort_keys=True).encode("ascii")
+                + b"\n"
+            )
+
+        with self.assertRaisesRegex(bench.BenchError, "last.ended|active"):
+            parser_fn(
+                [marker(_waveshare_link_fact_snapshot())],
+                "scope",
+                projection="active",
+            )
+        with self.assertRaisesRegex(bench.BenchError, "last.ended|pair"):
+            parser_fn(
+                [marker(_waveshare_active_link_fact_snapshot())],
+                "scope",
+                projection="pair",
+            )
+        for projection in ("", "full", True, None):
+            with self.subTest(projection=projection):
+                with self.assertRaisesRegex(bench.BenchError, "projection"):
+                    parser_fn(
+                        [marker(_waveshare_link_fact_snapshot())],
+                        "scope",
+                        projection=projection,
+                    )
 
     def test_malformed_stale_and_overflowed_snapshots_fail_closed(self):
         parser_fn = getattr(
@@ -1185,7 +1365,7 @@ class WaveshareBleLinkFactProbeRedTest(unittest.TestCase):
         ):
             with self.subTest(payload=payload[:80]):
                 with self.assertRaises(bench.BenchError):
-                    parser_fn([payload], "nonce")
+                    parser_fn([payload], "nonce", projection="pair")
 
         pair_fn(snapshot, expected_ended_epoch=41)
         stale = _waveshare_link_fact_snapshot(ended_epoch=40)
@@ -1234,9 +1414,9 @@ class WaveshareBleExecutorRedTest(unittest.IsolatedAsyncioTestCase):
             events.append(("hello", expected_chip, profile_id, timeout_s))
             return {}, (247, 8, 229, 0)
 
-        async def probe(central, _next_id, *, timeout_s):
+        async def probe(central, _next_id, *, projection, timeout_s):
             self.assertIs(central, diagnostic)
-            events.append(("probe", timeout_s))
+            events.append(("probe", projection, timeout_s))
             return _waveshare_link_fact_snapshot()
 
         args = argparse.Namespace(
@@ -1275,7 +1455,7 @@ class WaveshareBleExecutorRedTest(unittest.IsolatedAsyncioTestCase):
                     "waveshare-esp32-s3-lcd-147b",
                     2.0,
                 ),
-                ("probe", 2.0),
+                ("probe", "pair", 8.0),
                 ("disconnect", "diagnostic"),
             ],
         )
@@ -1298,6 +1478,126 @@ class WaveshareBleDeadlineAndCleanupRedTest(unittest.IsolatedAsyncioTestCase):
 
         return Log()
 
+    @staticmethod
+    def _immediate_central(
+            snapshot, nonce, *, chunk_bytes=150, separate_newline=False):
+        marker = (
+            ("__PYBLE_OI1_LINK_FACTS_%s=" % nonce).encode("ascii")
+            + json.dumps(snapshot, sort_keys=True).encode("ascii")
+        )
+        chunks = [
+            marker[offset : offset + chunk_bytes]
+            for offset in range(0, len(marker), chunk_bytes)
+        ]
+        if separate_newline:
+            chunks.append(b"\n")
+        else:
+            chunks[-1] += b"\n"
+
+        class ImmediateCentral:
+            def __init__(self):
+                self.command_timeout = None
+
+            def event_cursor(self):
+                return 0
+
+            async def send_cmd(self, opcode, id_, _payload, timeout):
+                self.command_timeout = timeout
+                return wire.Frame(wire.RSP, opcode, id_, b"\x00")
+
+            def events_since(self, _cursor):
+                events = [wire.Frame(wire.EVT, wire.OP_RUN_STATE, 0, b"\x01")]
+                events.extend(
+                    wire.Frame(
+                        wire.EVT,
+                        wire.OP_CONSOLE_DATA,
+                        0,
+                        b"\x00" + chunk,
+                    )
+                    for chunk in chunks
+                )
+                events.append(
+                    wire.Frame(wire.EVT, wire.OP_RUN_STATE, 0, b"\x02")
+                )
+                return len(events), events
+
+        return ImmediateCentral(), len(chunks)
+
+    async def test_probe_accepts_exact_projection_caps_and_rejects_wrong_caps(self):
+        pair = _waveshare_link_fact_snapshot()
+        pair_central, _ = self._immediate_central(pair, "pair-cap")
+        observed_pair = await bench.run_oi1_link_fact_probe(
+            pair_central,
+            lambda: 1,
+            nonce="pair-cap",
+            projection="pair",
+            timeout_s=8.0,
+        )
+        self.assertEqual(observed_pair, pair)
+        self.assertGreater(pair_central.command_timeout, 0)
+        self.assertLessEqual(pair_central.command_timeout, 8.0)
+
+        active = _waveshare_active_link_fact_snapshot()
+        active_central, _ = self._immediate_central(active, "active-cap")
+        observed_active = await bench.run_oi1_link_fact_probe(
+            active_central,
+            lambda: 1,
+            nonce="active-cap",
+            projection="active",
+            timeout_s=5.0,
+        )
+        self.assertEqual(observed_active, active)
+        self.assertGreater(active_central.command_timeout, 0)
+        self.assertLessEqual(active_central.command_timeout, 5.0)
+
+        invalid_cases = (
+            ("pair", 5.0),
+            ("pair", 8.001),
+            ("active", 5.001),
+            ("active", 0.0),
+            ("full", 8.0),
+        )
+        for projection, timeout_s in invalid_cases:
+            with self.subTest(projection=projection, timeout_s=timeout_s):
+                with self.assertRaisesRegex(
+                    bench.BenchError,
+                    "projection|timeout|cap",
+                ):
+                    await bench.run_oi1_link_fact_probe(
+                        object(),
+                        lambda: 1,
+                        nonce="invalid-cap",
+                        projection=projection,
+                        timeout_s=timeout_s,
+                    )
+
+    async def test_maximum_projection_shapes_accept_separate_newline_event(self):
+        cases = (
+            ("pair", 8.0, 14),
+            ("active", 5.0, 8),
+        )
+        for projection, timeout_s, expected_console_submissions in cases:
+            with self.subTest(projection=projection):
+                snapshot = _max_waveshare_link_fact_snapshot(projection)
+                central, console_submissions = self._immediate_central(
+                    snapshot,
+                    "0123456789abcdef",
+                    chunk_bytes=200,
+                    separate_newline=True,
+                )
+                self.assertEqual(
+                    console_submissions,
+                    expected_console_submissions,
+                )
+                observed = await bench.run_oi1_link_fact_probe(
+                    central,
+                    lambda: 1,
+                    nonce="0123456789abcdef",
+                    projection=projection,
+                    timeout_s=timeout_s,
+                )
+                self.assertEqual(observed, snapshot)
+
     async def test_probe_total_deadline_includes_command_writes(self):
         class HungWriteCentral:
             def event_cursor(self):
@@ -1312,6 +1612,7 @@ class WaveshareBleDeadlineAndCleanupRedTest(unittest.IsolatedAsyncioTestCase):
                     HungWriteCentral(),
                     lambda: 1,
                     nonce="deadline",
+                    projection="active",
                     timeout_s=0.01,
                 ),
                 timeout=0.20,
@@ -1319,7 +1620,7 @@ class WaveshareBleDeadlineAndCleanupRedTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_probe_rejects_queued_terminal_after_absolute_deadline(self):
         clock = type("Clock", (), {"now": 100.0})()
-        snapshot = _waveshare_link_fact_snapshot()
+        snapshot = _waveshare_active_link_fact_snapshot()
         marker = (
             b"__PYBLE_OI1_LINK_FACTS_late="
             + json.dumps(snapshot, sort_keys=True).encode("ascii")
@@ -1359,7 +1660,62 @@ class WaveshareBleDeadlineAndCleanupRedTest(unittest.IsolatedAsyncioTestCase):
                 LateCentral(),
                 lambda: 1,
                 nonce="late",
+                projection="active",
                 timeout_s=0.01,
+            )
+
+    async def test_active_probe_drip_progress_does_not_extend_absolute_cap(self):
+        clock = type("Clock", (), {"now": 100.0})()
+        snapshot = _max_waveshare_link_fact_snapshot("active")
+        marker = (
+            b"__PYBLE_OI1_LINK_FACTS_0123456789abcdef="
+            + json.dumps(snapshot, sort_keys=True).encode("ascii")
+        )
+        console_chunks = [
+            marker[offset : offset + 200]
+            for offset in range(0, len(marker), 200)
+        ] + [b"\n"]
+        scripted = [wire.Frame(wire.EVT, wire.OP_RUN_STATE, 0, b"\x01")]
+        scripted.extend(
+            wire.Frame(
+                wire.EVT,
+                wire.OP_CONSOLE_DATA,
+                0,
+                b"\x00" + chunk,
+            )
+            for chunk in console_chunks
+        )
+        scripted.append(
+            wire.Frame(wire.EVT, wire.OP_RUN_STATE, 0, b"\x02")
+        )
+
+        class DripCentral:
+            def __init__(self):
+                self.published = []
+
+            def event_cursor(self):
+                return 0
+
+            async def send_cmd(self, opcode, id_, _payload, timeout):
+                self.command_timeout = timeout
+                return wire.Frame(wire.RSP, opcode, id_, b"\x00")
+
+            def events_since(self, cursor):
+                clock.now += 0.6
+                if len(self.published) < len(scripted):
+                    self.published.append(scripted[len(self.published)])
+                return len(self.published), self.published[cursor:]
+
+        with (
+            mock.patch.object(bench.time, "monotonic", new=lambda: clock.now),
+            self.assertRaisesRegex(bench.BenchError, "deadline|timed out"),
+        ):
+            await bench.run_oi1_link_fact_probe(
+                DripCentral(),
+                lambda: 1,
+                nonce="0123456789abcdef",
+                projection="active",
+                timeout_s=5.0,
             )
 
     async def test_diagnostic_hello_total_deadline_includes_command_writes(self):
@@ -1416,10 +1772,12 @@ class WaveshareBleDeadlineAndCleanupRedTest(unittest.IsolatedAsyncioTestCase):
 
         loop = Loop()
 
-        async def late_probe(_connection, _next_id, *, timeout_s):
-            self.assertEqual(timeout_s, 2.0)
+        async def late_probe(
+                _connection, _next_id, *, projection, timeout_s):
+            self.assertEqual(projection, "active")
+            self.assertEqual(timeout_s, 5.0)
             loop.now = 105.001
-            return _waveshare_link_fact_snapshot()
+            return _waveshare_active_link_fact_snapshot()
 
         with (
             mock.patch.object(
@@ -1435,6 +1793,32 @@ class WaveshareBleDeadlineAndCleanupRedTest(unittest.IsolatedAsyncioTestCase):
             self.assertRaisesRegex(profile_bench.BenchError, "not observed"),
         ):
             await executor.await_transfer_link_settlement(5000)
+        self.assertIsNone(executor._transfer_epoch)
+
+    async def test_settlement_does_not_retry_after_probe_failure(self):
+        executor = profile_bench.WaveshareHardwareExecutor(
+            self._args(), object(), self._log()
+        )
+        executor._measured_connection = object()
+        calls = []
+
+        async def failed_probe(*_args, **kwargs):
+            calls.append(kwargs)
+            raise profile_bench.BenchError("probe failed closed")
+
+        with (
+            mock.patch.object(
+                profile_bench,
+                "run_oi1_link_fact_probe",
+                new=failed_probe,
+            ),
+            self.assertRaisesRegex(profile_bench.BenchError, "failed closed"),
+        ):
+            await executor.await_transfer_link_settlement(5000)
+        self.assertEqual(
+            calls,
+            [{"projection": "active", "timeout_s": 5.0}],
+        )
         self.assertIsNone(executor._transfer_epoch)
 
     async def test_cleanup_preserves_primary_and_is_idempotent(self):
@@ -1498,7 +1882,9 @@ class WaveshareBleDeadlineAndCleanupRedTest(unittest.IsolatedAsyncioTestCase):
             "waveshare-esp32-s3-lcd-147b"
         )
 
-        async def primary_probe(*_args, **_kwargs):
+        async def primary_probe(*_args, **kwargs):
+            self.assertEqual(kwargs["projection"], "active")
+            self.assertEqual(kwargs["timeout_s"], 5.0)
             raise PrimaryError("pre-disconnect primary")
 
         with mock.patch.object(
