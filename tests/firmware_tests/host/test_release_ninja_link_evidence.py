@@ -370,6 +370,7 @@ class NinjaLinkEvidenceTests(unittest.TestCase):
     def test_path_escape_and_line_continuation_are_rejected(self):
         for edge_suffix in (
             " ../outside.obj",
+            " /attacker/libevil.a",
             " $",
         ):
             with self.subTest(edge_suffix=edge_suffix):
