@@ -270,6 +270,41 @@ class NinjaLinkEvidenceTests(unittest.TestCase):
         with self.assertRaises(RELEASE.ReleaseError):
             self.observe()
 
+    def test_ninja_spacing_cannot_hide_duplicate_elf_edge(self):
+        build_ninja = self.role_build / "build.ninja"
+        original = build_ninja.read_text(encoding="utf-8")
+        additions = (
+            (
+                "elf_alias = harmless.out\n"
+                "elf_alias=micropython.elf\n"
+                "build $elf_alias: phony\n"
+            ),
+            (
+                "elf_alias = harmless.out\n"
+                "elf_alias =micropython.elf\n"
+                "build $elf_alias: phony\n"
+            ),
+            (
+                "elf_alias = harmless.out\n"
+                "elf_alias   = micropython.elf\n"
+                "build $elf_alias: phony\n"
+            ),
+            (
+                "elf_alias = harmless.out\n"
+                "elf_alias\t=\tmicropython.elf\n"
+                "build $elf_alias: phony\n"
+            ),
+            "build\tmicropython.elf: phony\n",
+        )
+        for addition in additions:
+            with self.subTest(addition=addition):
+                build_ninja.write_text(original + addition, encoding="utf-8")
+                try:
+                    with self.assertRaises(RELEASE.ReleaseError):
+                        self.observe()
+                finally:
+                    build_ninja.write_text(original, encoding="utf-8")
+
     def test_alternate_include_or_nested_subninja_is_rejected(self):
         for injected in (
             "include ../outside/rules.ninja",
