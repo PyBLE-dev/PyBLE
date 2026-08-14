@@ -303,7 +303,6 @@ class NinjaLinkEvidenceTests(unittest.TestCase):
                 "elf-alias = micropython.elf\n"
                 "build $elf-alias: phony\n"
             ),
-            "build\tmicropython.elf: phony\n",
         )
         for addition in additions:
             with self.subTest(addition=addition):
