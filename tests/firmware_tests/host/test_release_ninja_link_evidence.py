@@ -608,6 +608,47 @@ class NinjaLinkEvidenceTests(unittest.TestCase):
         with self.assertRaises(RELEASE.ReleaseError):
             self.observe()
 
+    def test_link_libraries_dot_object_keeps_raw_digest_and_normalized_identity(self):
+        build_ninja = self.role_build / "build.ninja"
+        original = build_ninja.read_text(encoding="utf-8")
+        dotted = self.implicit.replace("esp-idf/main/", "esp-idf/main/./", 1)
+        marker = "  LINK_LIBRARIES = %s esp-idf/main/libmain.a\n" % self.implicit
+        self.assertIn(marker, original)
+        build_ninja.write_text(
+            original.replace(
+                marker,
+                "  LINK_LIBRARIES = %s esp-idf/main/libmain.a\n" % dotted,
+                1,
+            ),
+            encoding="utf-8",
+        )
+
+        observed = self.observe()
+        expected_argv = list(self.argv)
+        expected_argv[expected_argv.index(self.implicit)] = dotted
+        self.assertEqual(observed["argv"], expected_argv)
+        self.assertEqual(observed["direct_outputs"], self.outputs)
+        encoded = (
+            json.dumps(expected_argv, ensure_ascii=False, separators=(",", ":"))
+            + "\n"
+        ).encode("utf-8")
+        self.assertEqual(
+            observed["linker_command_sha256"],
+            hashlib.sha256(encoded).hexdigest(),
+        )
+
+        build_ninja.write_text(
+            original.replace(
+                marker,
+                "  LINK_LIBRARIES = %s %s esp-idf/main/libmain.a\n"
+                % (self.implicit, dotted),
+                1,
+            ),
+            encoding="utf-8",
+        )
+        with self.assertRaises(RELEASE.ReleaseError):
+            self.observe()
+
     def test_explicit_link_inputs_must_be_exact_compile_outputs(self):
         linker_script = self.role_build / "extra-linker-script.ld"
         linker_script.write_text("SECTIONS {}\n", encoding="utf-8")
