@@ -2043,13 +2043,16 @@ into its image. Through ordinary PBLE/1 RUN, a nonce-bound strict marker reads
 one atomic `{active,last_ended}` snapshot from
 `pble_ble._oi1_link_facts()`. Each of the first nine measured disconnects is
 followed by a diagnostic reconnect with separate 20-second connect, 2-second
-diagnostic-HELLO, and 2-second getter-RUN deadlines. It must show
+diagnostic-HELLO, and 8-second getter-RUN deadlines. The getter bound is one
+absolute transport ceiling over its command writes, response, bounded console
+pacing, and terminal state. It must show
 the ended epoch and its exact non-wrapping active successor; both records are
 discarded. Those first-nine boundary records may be unsettled because they are
 not transfer evidence; they still require exact structure, finality, epoch
-ordering, and no overflow. On reset ten, the
-active epoch and settled facts are bound before timing and checked again after
-the workload but before disconnect. One final diagnostic reconnect retains the
+ordering, and no overflow. On reset ten, the active epoch and settled facts are
+bound under a separate 5-second outer settlement deadline before timing and
+checked again after the workload but before disconnect. One final diagnostic
+reconnect retains the
 same three separate deadlines. Its getter RUN must expose that exact epoch as
 immutable and final, plus its active
 successor. Only the ended record's `facts` is sealed. Strict parsing rejects

@@ -1062,21 +1062,29 @@ invokes that getter through ordinary PBLE/1 RUN and emits one
 line, exact keys/types, epochs in `1..2^64-1`, fixed list capacities, and a
 bounded total output; it discards all other stdout. `run_oi1_link_fact_probe`
 also requires RUN status OK, no stderr, one terminal RUN_STATE(done), and its
-bounded deadline. It never adds a wire constant or capability.
+single 8-second absolute transport deadline across command writes, RUN
+response, CONSOLE_DATA, and terminal state. This accommodates the existing
+bounded 250 ms per-console-event and 1,000 ms per-RUN_STATE pacing across the
+maximum schema-valid snapshot, with bounded scheduling/response headroom,
+without relaxing output shape or volume. It never adds a wire constant or
+capability.
 
 After each of the first nine Waveshare measured disconnects, the executor
 makes a diagnostic reconnect with separate deadlines: 20 seconds for
-`PbleCentral.connect`, 2 seconds for diagnostic HELLO, and 2 seconds for the
+`PbleCentral.connect`, 2 seconds for diagnostic HELLO, and 8 seconds for the
 getter RUN. It requires a final last-ended record and its exact non-wrapping
 active successor, disconnects, and discards both. Those two boundary records
 MAY be unsettled because neither the just-ended short sample nor the newly
 connected diagnostic session is a transfer session; exact structure, epochs,
-finality, and `overflow=false` remain mandatory. On the tenth
-connection it polls the active record for no more than 5,000 ms until the
-record is settled, non-final, non-overflowed, and profile-valid, then retains
-its epoch before timing. It probes the same active epoch again after the final
-heap snapshot and before disconnect. A final diagnostic reconnect uses the
-same separate 20-second connect, 2-second HELLO, and 2-second getter-RUN
+finality, and `overflow=false` remain mandatory. On the tenth connection it
+polls the active record under an independent 5,000 ms outer settlement
+deadline, passing `min(8,000 ms, remaining settlement budget)` to each probe
+and rejecting a snapshot returned at or after that outer deadline. The record
+must be settled, non-final, non-overflowed, and profile-valid before the
+executor retains its epoch and starts timing. It probes the same active epoch
+again after the final heap snapshot and before disconnect. A final diagnostic
+reconnect uses the
+same separate 20-second connect, 2-second HELLO, and 8-second getter-RUN
 deadlines. The getter must expose that epoch as immutable `last_ended` and its
 exact active successor. Only the
 ended record's `facts`, including its final starvation

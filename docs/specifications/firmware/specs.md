@@ -967,7 +967,9 @@ For each exact profile and one immutable firmware/manifest candidate:
    Waveshare instead makes one diagnostic reconnect after each of the first
    nine measured disconnects. `PbleCentral.connect` has its existing
    **20,000 ms** deadline; diagnostic HELLO and the nonce-bound getter RUN each
-   have separate **2,000 ms** deadlines. Its
+   have separate **2,000 ms** and **8,000 ms** deadlines, respectively. The
+   getter-RUN bound is one absolute transport ceiling over command writes, RUN
+   response, bounded CONSOLE_DATA pacing, and terminal RUN_STATE. Its
    `last_ended` record MUST be final with a positive epoch, and its active
    record MUST be the exact non-wrapping successor. An absent, stale,
    non-successor, malformed, or overflowed boundary fails. The runner then
@@ -981,7 +983,10 @@ For each exact profile and one immutable firmware/manifest candidate:
    On the tenth measured connection, after HELLO, every ESP path waits at most
    **5,000 ms** for the profile-exact DLE/PHY/connection-parameter facts in
    §5.3.1 to settle. No PUT/GET timer may start before that succeeds.
-   Waveshare polls the active getter record and retains its epoch only after
+   This remains an independent outer settlement ceiling for Waveshare: each
+   poll receives `min(8,000 ms, remaining settlement budget)`, and a snapshot
+   returned at or after the outer deadline fails. Waveshare retains the active
+   epoch only after
    `final: false`, `settled: true`, `overflow: false`, and exact fact
    validation; the UART profiles retain their existing parser. Arbitrary or
    identifying serial or console text MUST be discarded rather than retained.
@@ -1011,7 +1016,8 @@ For each exact profile and one immutable firmware/manifest candidate:
    solely from that immutable ended record, including the final starvation
    count, then disconnect the diagnostic session. The diagnostic BLE
    connect retains the existing **20,000 ms** bound; diagnostic HELLO and each
-   getter RUN/query have their own **2,000 ms** bounds. The harness MUST NOT
+   getter RUN/query have their own **2,000 ms** and **8,000 ms** bounds,
+   respectively. The harness MUST NOT
    compress the whole reconnect transaction into either shorter deadline.
 
    The other ESP profiles instead disconnect and wait at most **2,000 ms** for

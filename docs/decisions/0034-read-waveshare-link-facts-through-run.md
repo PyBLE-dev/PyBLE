@@ -2,6 +2,7 @@
 
 - Status: **Accepted**
 - Date: 2026-08-13
+- Amended: 2026-08-14
 
 ## Context
 
@@ -21,6 +22,15 @@ stdout as CONSOLE_DATA on the connected BLE session. Adding a wire opcode,
 GATT characteristic, INFO field, or public capability solely for release
 instrumentation would expand the product protocol for a board-local evidence
 transport.
+
+Two consecutive v0.6.0 baseline attempts reached the tenth measured HELLO and
+then exhausted the getter-RUN deadline before admitting any link fact. The
+getter's fixed snapshot crosses multiple 200-byte CONSOLE_DATA events. Each
+console event may use the runner's bounded 250 ms transmit pacing and each
+RUN_STATE control event may use its bounded 1,000 ms pacing. The former 2,000
+ms absolute getter-RUN deadline was therefore shorter than the normal bounded
+transport it was intended to observe; it was not a link-settlement limit. Both
+attempts remain failed and contribute no qualification evidence.
 
 ## Decision
 
@@ -49,10 +59,12 @@ transport.
 5. The HIL runner invokes the getter only through the existing PBLE/1 RUN
    opcode. A host-generated nonce names one strict-ASCII marker line whose
    suffix is JSON. Exactly one matching marker, a successful RUN response, no
-   stderr, and terminal RUN_STATE(done) are required within the existing
-   bounded probe timeout. The parser accepts exact keys and types only, bounds
-   every integer, list, output chunk, and total output, and fails closed on a
-   missing, duplicate, stale, malformed, overflowed, or timed-out snapshot.
+   stderr, and terminal RUN_STATE(done) are required within one
+   **8,000 ms absolute getter-RUN transport ceiling**. That one ceiling includes
+   command writes, the RUN response, all CONSOLE_DATA delivery, and the
+   terminal state. The parser accepts exact keys and types only, bounds every
+   integer, list, output chunk, and total output, and fails closed on a missing,
+   duplicate, stale, malformed, overflowed, or timed-out snapshot.
    The first-nine boundary snapshots are structural isolation records and MAY
    be unsettled because those measured links disconnect immediately after
    HELLO and the heap probe; they are discarded and never authorize timed
@@ -61,21 +73,25 @@ transport.
    stdout is discarded and never enters evidence.
 6. After each of the first nine measured sessions disconnects, the runner
    makes one diagnostic reconnect with separate deadlines: 20 seconds for
-   `PbleCentral.connect`, 2 seconds for diagnostic HELLO, and 2 seconds for the
+   `PbleCentral.connect`, 2 seconds for diagnostic HELLO, and 8 seconds for the
    getter RUN. The returned
    `last_ended` epoch must be positive and final; the returned active epoch
    must be its exact non-wrapping successor. Those facts and the diagnostic
    session itself are discarded. This replaces only the Waveshare UART
    session-end boundary.
 7. On the tenth measured connection, the runner polls its active snapshot for
-   at most five seconds. The epoch is retained only after `settled=true`,
+   at most five seconds. This settlement deadline remains an independent outer
+   ceiling: each getter invocation receives the lesser of its 8-second
+   transport ceiling and the remaining settlement budget, and a snapshot
+   returned at or after the outer deadline is rejected. The epoch is retained
+   only after `settled=true`,
    `final=false`, `overflow=false`, and the existing exact Waveshare
    `transfer_link_facts` validator passes. No timed transfer starts first.
    After all transfers, reliability work, and the final heap probe, it queries
    again before disconnect and requires the same active epoch and valid
    settled ladder.
 8. After that disconnect, the runner makes one diagnostic reconnect with the
-   same separate 20-second connect, 2-second HELLO, and 2-second getter-RUN
+   same separate 20-second connect, 2-second HELLO, and 8-second getter-RUN
    deadlines.
    Its active epoch must be the exact non-wrapping successor of the retained
    transfer epoch, and `last_ended` must be the final, non-overflowed record for
