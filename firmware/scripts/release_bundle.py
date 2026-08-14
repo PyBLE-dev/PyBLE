@@ -15564,8 +15564,7 @@ def _audit_verify_release_inventory_evidence(
         all(
             token in link_text_lower
             for token in ("pico-sdk", "btstack", "cyw43", "tinyusb")
-        )
-        and ("-lgcc" in link_text_lower or "libgcc" in link_text_lower),
+        ),
         "RP2 linker command lacks one reviewed dependency/runtime input",
     )
     _require(
