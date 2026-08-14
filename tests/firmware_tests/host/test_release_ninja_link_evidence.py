@@ -244,6 +244,17 @@ class NinjaLinkEvidenceTests(unittest.TestCase):
                 finally:
                     build_ninja.write_text(original, encoding="utf-8")
 
+    def test_redundant_separator_elf_output_alias_is_rejected(self):
+        build_ninja = self.role_build / "build.ninja"
+        original = build_ninja.read_text(encoding="utf-8")
+        build_ninja.write_text(
+            original + "build .//micropython.elf: phony\n",
+            encoding="utf-8",
+        )
+
+        with self.assertRaises(RELEASE.ReleaseError):
+            self.observe()
+
     def test_immediate_variable_expansion_cannot_hide_duplicate_elf_edge(self):
         build_ninja = self.role_build / "build.ninja"
         original = build_ninja.read_text(encoding="utf-8")
