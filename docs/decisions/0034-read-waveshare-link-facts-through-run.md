@@ -32,6 +32,17 @@ ms absolute getter-RUN deadline was therefore shorter than the normal bounded
 transport it was intended to observe; it was not a link-settlement limit. Both
 attempts remain failed and contribute no qualification evidence.
 
+After that transport bound was corrected, a controlled reproduction returned
+34 valid active snapshots inside the five-second settlement window, but every
+one remained unsettled. Its ended record showed one DLE request with zero DLE
+completion values while PHY and connection-parameter completion had landed.
+In the pinned ESP-IDF, the real HCI data-length-change path routes the event to
+the correct per-connection callback but does not populate
+`event->data_len_chg.conn_handle`; only a separate synthetic same-parameters
+path populates that member. Treating the member as authoritative therefore
+misattributes a real completion whenever the live PBLE connection's controller
+handle is not the incidental zero value.
+
 ## Decision
 
 1. Only the exact `waveshare-esp32-s3-lcd-147b` image defines
@@ -56,7 +67,20 @@ attempts remain failed and contribute no qualification evidence.
    `{active: record-or-null, last_ended: record-or-null}`. It does not reset,
    consume, or alter either record. It raises instead of returning a wrapped
    epoch or an internally inconsistent copy.
-5. The HIL runner invokes the getter only through the existing PBLE/1 RUN
+5. DATA_LEN_CHG attribution is independent of controller-handle allocation,
+   reuse, and prior connection history. The GAP callback MUST snapshot the
+   agent's one cached live PBLE connection handle exactly once before any DLE
+   confirmation or retained-record mutation. A `BLE_HS_CONN_HANDLE_NONE`
+   snapshot fails closed. The snapshot is passed to the existing handle-bound
+   retained-record mutation; if it no longer names the active retained session,
+   that stale event records no DLE fact and the record remains unsettled.
+   Disconnect invalidation and epoch/handle equality remain authoritative. The
+   callback MUST NOT read or fall back to
+   `event->data_len_chg.conn_handle`, including when its value is zero. Real HCI
+   and synthetic same-parameters completions follow this same rule. The fix is
+   local to `pble_ble`; it neither patches pinned ESP-IDF nor restricts the
+   controller to one connection as a way to force a particular handle value.
+6. The HIL runner invokes the getter only through the existing PBLE/1 RUN
    opcode. Every probe selects one host-internal exact projection, `pair` or
    `active`; it is never user text. Both source forms call the native getter
    exactly once, preserving its one atomic copy. `pair` serializes that full
@@ -80,7 +104,7 @@ attempts remain failed and contribute no qualification evidence.
    work. Only the tenth transfer session's active and ended records MUST be
    settled and pass the exact public fact validator. Arbitrary non-marker
    stdout is discarded and never enters evidence.
-6. After each of the first nine measured sessions disconnects, the runner
+7. After each of the first nine measured sessions disconnects, the runner
    makes one diagnostic reconnect with separate deadlines: 20 seconds for
    `PbleCentral.connect`, 2 seconds for diagnostic HELLO, and 8 seconds for the
    `pair` getter RUN. The returned
@@ -88,7 +112,7 @@ attempts remain failed and contribute no qualification evidence.
    must be its exact non-wrapping successor. Those facts and the diagnostic
    session itself are discarded. This replaces only the Waveshare UART
    session-end boundary.
-7. On the tenth measured connection, the runner polls its active snapshot for
+8. On the tenth measured connection, the runner polls its active snapshot for
    at most five seconds. This settlement deadline remains an independent outer
    ceiling: each `active` getter invocation receives the lesser of its 5-second
    transport ceiling and the remaining settlement budget, and a snapshot
@@ -101,7 +125,7 @@ attempts remain failed and contribute no qualification evidence.
    After all transfers, reliability work, and the final heap probe, it queries
    again with one separate 5-second `active` probe before disconnect and
    requires the same active epoch and valid settled ladder.
-8. After that disconnect, the runner makes one diagnostic reconnect with the
+9. After that disconnect, the runner makes one diagnostic reconnect with the
    same separate 20-second connect, 2-second HELLO, and 8-second `pair`
    getter-RUN deadlines.
    Its active epoch must be the exact non-wrapping successor of the retained
@@ -109,7 +133,7 @@ attempts remain failed and contribute no qualification evidence.
    that exact transfer epoch. The final public `transfer_link_facts` object is
    derived only from this immutable ended record, including its final
    TX-mbuf-starvation count. The diagnostic connection is then disconnected.
-9. The physical RESET prompts and release-to-advertisement measurement remain
+10. The physical RESET prompts and release-to-advertisement measurement remain
    unchanged. Waveshare qualification no longer opens, reopens, reads, or
    requires a serial endpoint and never treats native-USB RTS/DTR as reset
    evidence.
@@ -122,6 +146,10 @@ attempts remain failed and contribute no qualification evidence.
   connection and that no intervening successful link was substituted.
 - Fixed arrays and strict host parsing keep the diagnostic bounded and prevent
   identifiers or arbitrary console output from entering retained evidence.
+- DLE evidence works for any live controller handle without an ESP-IDF patch or
+  a handle-zero/MAX_CONNECTIONS masking assumption. Other BLE clients must
+  still be closed during qualification to preserve an exclusive measurement;
+  that operator precondition never authorizes an assumed handle value.
 - The diagnostic is qualification-only implementation surface in one named
   image. It does not make board identity or link tuning a dynamic app
   capability.

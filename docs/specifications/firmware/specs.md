@@ -878,6 +878,18 @@ returned values are numeric facts only. Firmware MUST NOT retain or return a
 BLE address, connection handle, device identifier, label, filesystem path,
 user source, arbitrary console text, or other user data.
 
+DLE completion attribution MUST be independent of the numeric controller
+handle and all earlier connections. For DATA_LEN_CHG, firmware MUST take one
+snapshot of its cached live PBLE connection handle before confirming or
+recording DLE and MUST use that snapshot for the handle-bound active-session
+mutation. NONE or a snapshot stale against the retained active session fails
+closed and cannot contribute a DLE fact; the record remains unsettled.
+Firmware MUST NOT use `event->data_len_chg.conn_handle`, because the pinned
+ESP-IDF real-HCI conversion does not populate that member even though callback
+dispatch is connection-scoped. Disconnect invalidation and epoch/handle checks
+remain mandatory. Neither an ESP-IDF patch nor a reduced maximum-connection
+setting may substitute for this contract.
+
 The heap probe MUST keep these measurements out of HELLO/INFO capabilities.
 It uses existing standard MicroPython APIs and therefore adds no dynamic PBLE/1
 capability and no INFO/HELLO equivalence ambiguity.

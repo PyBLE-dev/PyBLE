@@ -335,6 +335,19 @@ records cover every request and completion so the OI-1 runner can attest the
 exact transfer connection without adding a PBLE/1 field (NFR-PERF-5,
 ADR-0027).
 
+**DATA_LEN_CHG attribution:** controller handle values are opaque and their
+allocation, reuse, and history MUST NOT affect link settlement. In the pinned
+ESP-IDF, the real HCI path dispatches DATA_LEN_CHG to the connection-scoped GAP
+callback without populating `event->data_len_chg.conn_handle`; the synthetic
+same-parameters path does populate it. The callback therefore snapshots the
+single cached live `pble_conn_handle` exactly once, before confirming DLE or
+mutating retained facts, and uses only that snapshot. NONE fails closed. The
+OI-1 mutation retains its active-session handle comparison, so a stale snapshot
+records no fact and leaves the record unsettled; disconnect invalidation and
+epoch safety are unchanged. Code MUST NOT inspect or fall back to the event
+member, even when it contains zero. This is a Layer-3 workaround only: do not
+patch pinned ESP-IDF or constrain MAX_CONNECTIONS to mask attribution.
+
 **Dependencies:** Layer-1 `bluetooth`; the protocol constants mirror (UUIDs, frag-header bits); the device-config store ([§4.8](#48-device-config-store--label--identify-led-nvs)) for the label/`device_id` feeding the advertised name. Calls up into `pyble_proto` via the `on_message` callback.
 
 **Frozen-vs-native plan:** frozen first. Reassembly, the per-fragment copy loop, and TX fragmentation are prime **native** candidates (D1) since they run per packet.

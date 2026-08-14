@@ -2065,6 +2065,13 @@ discarded first-nine boundary pair. No serial endpoint, new opcode, public
 capability, BLE identifier, connection handle, path, label, user source, or
 console text enters the Waveshare report.
 
+Its DLE fact is independent of controller-handle allocation or connection
+history: DATA_LEN_CHG takes one cached live PBLE-handle snapshot, rejects NONE
+or a stale session, and never reads the pinned-IDF event member that real HCI
+conversion leaves unpopulated. Closing other BLE clients remains qualification
+isolation, not permission to assume a handle value; no ESP-IDF patch or
+MAX_CONNECTIONS restriction may mask this rule.
+
 For both transports, the final PHY update
 used to settle either S3 record MUST itself have status zero and `tx=2`, `rx=2`;
 the final connection-parameter update MUST itself have status zero and match
