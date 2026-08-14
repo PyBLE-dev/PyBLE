@@ -1,6 +1,6 @@
 # PyBLE Agent Firmware — Technical Design Document (TDD)
 
-Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-08-12
+Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-08-14
 
 > **Frozen at G0 (2026-07-01, `[docs]`):** the source-tree layout ([§10.5](#105-source-layout-frozen)), which realizes the frozen NFR-MAINT-2 six-module design and the [specs.md](specs.md) §5.1/§5.6/§6/§8 freeze. Design narrative elsewhere in this doc remains DRAFT and is pinned per-story by its `[red]` tests ([§4](#4-module-design)).
 >
@@ -42,6 +42,8 @@ Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-08-12
 > `rpi-pico2-w` with verified UF2/manual BOOTSEL. C3-G0…C3-G6 and Pico GP2
 > remain gates. Two clean builds, policy schema 3, release schema 4, V5 exact-
 > byte HIL, and both-platform app HIL are required before activation.
+>
+> **Frozen transactional RUN admission (2026-08-14, `[docs]`):** [§4.3](#43-pyble_runner--execution-control), [§5.1](#51-two-tasks-one-link), and [§5.4](#54-console-backpressure) bind execution to one successful, connection-bound, zero-wait submission of the matching `RSP{OK}`. Submission failure is side-effect-free and is never retried on the NimBLE host task.
 
 ## 0. Naming note (acronym clash)
 
@@ -397,7 +399,9 @@ class Runner:
 
 **Key data structures / state:** `RUN_STATE` enum (`idle` / `running` / `done` / `error`); a single runner-thread handle; a `busy` flag guarded by the single-writer lock (D4/SEC-3); the compiled code object for `mode: source`.
 
-**Execution model:** a `RUN` while `state == running` returns `EBUSY` (FR-RUN-4). On launch: reply `RSP{status}` then emit `RUN_STATE(running)` (FR-RUN-1). `STOP` raises `KeyboardInterrupt` in the runner thread (using MicroPython's scheduled-exception / pending-interrupt mechanism) so it lands even against a tight loop (FR-RUN-5, NFR-SAFE-1). On normal return → `RUN_STATE(done)`; on uncaught exception → traceback to `CONSOLE_DATA(stderr)` then emit `RUN_STATE(error)` (FR-RUN-9). After `STOP`/exception, teardown is clean and the board returns to `idle` (FR-RUN-6/10). `SOFT_REBOOT` submits its one-packet `RSP{OK}`, arms one pre-created 250 ms one-shot, and only the timer callback schedules `SystemExit` on the main task. The pending flag rejects duplicate reboot requests; a TX failure cancels reset. This separates local Notify acceptance from VM teardown while keeping the handler non-blocking and bounded (FR-RUN-8).
+**Execution model:** a `RUN` while `state == running` returns `EBUSY` (FR-RUN-4). The ESP handler validates the request and initialized hand-off semaphore, remembers the exact prior runnable state (`idle`, `done`, or `error`), reserves `running`, and copies the request. It then encodes the matching one-fragment `RSP{OK}` in call-local storage and makes one connection-bound control submission attempt. That transport seam takes the TX mutex with zero wait, rechecks the originating connection, and makes exactly one Notify call; it never sleeps, waits for drain progress, or retries on the NimBLE host task. `PBLE_TX_OK` is the admission cut: only then does the handler give the binary runner semaphore exactly once and suppress the dispatcher's generic response. The empty-semaphore give is an invariant of the single `running` reservation. Mutex contention, no connection, connection mismatch, or `PBLE_TX_AGAIN` restores the remembered state, suppresses generic response fallback, and returns without a worker wake, execution, console output, or RUN event. A disconnect after `PBLE_TX_OK` does not revoke the accepted run. The non-dispatch auto-run path remains a direct reserve/copy/give with no response.
+
+Once admitted, the worker emits `RUN_STATE(running)` (FR-RUN-1). `STOP` raises `KeyboardInterrupt` in the runner thread (using MicroPython's scheduled-exception / pending-interrupt mechanism) so it lands even against a tight loop (FR-RUN-5, NFR-SAFE-1). On normal return → `RUN_STATE(done)`; on uncaught exception → traceback to `CONSOLE_DATA(stderr)` then emit `RUN_STATE(error)` (FR-RUN-9). After `STOP`/exception, teardown is clean and the board returns to `idle` (FR-RUN-6/10). `SOFT_REBOOT` submits its one-packet `RSP{OK}`, arms one pre-created 250 ms one-shot, and only the timer callback schedules `SystemExit` on the main task. The pending flag rejects duplicate reboot requests; a TX failure cancels reset. This separates local Notify acceptance from VM teardown while keeping the handler non-blocking and bounded (FR-RUN-8).
 
 **Dependencies:** Layer-1 `_thread`, `asyncio`, the VM's exec primitives; `pyble_console` for stream capture; `pyble_agent` for the single-writer lock.
 
@@ -780,7 +784,7 @@ The boot-internal wrapper converts that failure to false so startup proceeds.
 
 Two cooperating execution contexts (D4):
 
-- **BLE/agent context** — the asyncio event loop on the main task. It services NimBLE callbacks, runs reassembly/dispatch, executes all control-plane handlers (info/fs/console-input/run-control), and drains the TX queue. It must **never** block on user code.
+- **BLE/agent context** — the asyncio event loop on the main task. It services NimBLE callbacks, runs reassembly/dispatch, executes all control-plane handlers (info/fs/console-input/run-control), and drains the TX queue. It must **never** block on user code or wait for TX capacity; RUN admission uses one zero-wait control submission attempt.
 - **Runner task** — spawned via `_thread` for each `RUN`. It executes user code with `sys.stdout`/`stderr` redirected to the console tee.
 
 Because the link is serviced by the BLE/agent context and user code lives on the runner task, a `while True: pass` cannot wedge BLE or block `STOP` (FR-BLE-11, FR-RUN-3, NFR-SAFE-2).
@@ -812,6 +816,13 @@ reassembly, and 500 ms terminal deadline rather than an unproved lock layout.
 This is required for both a quiet tight loop and a loop continuously printing
 to stdout
 ([C3-G2](ports/esp32-c3-4mb.md#c3-g2--run-console-and-authoritative-stop-frozen)).
+
+RUN admission uses the same control capacity but not the paced worker API. Its
+exact `RSP{OK}` occupies one PBLE transport fragment even at the minimum valid
+ATT MTU. The host callback makes one zero-wait, connection-bound submission;
+only local acceptance wakes the runner. Pressure or a stale/disconnected link
+therefore yields no execution, and neither drain progress nor elapsed time can
+extend or repeat the attempt.
 
 ### 5.5 Identify blink (non-blocking)
 
@@ -1921,7 +1932,7 @@ This is where the Technical Design meets **Test-Driven Development** ([§0](#0-n
 | `pyble_proto` | frame codec, CRC32, ID correlation, error-status mapping | full opcode round-trip vs fake transport | SPDX/no-leak lint | — | — |
 | `pyble_ble` | fragment/reassemble logic (pure), adv-name = label-else-`PyBLE-XXXX` | fragmentation vs MTU matrix | NimBLE-only config | NimBLE buffer sizing | adv/scan-filter, MTU 247, INFO read, label shows in scan |
 | `pyble_fs` | jail resolution, CRC accumulate, temp-rename | put/get window + resume + CRC vs fake | — | file-buffer footprint | multi-file upload, dropped-link resume |
-| `pyble_runner` | state-machine transitions | RUN/STOP/RUN_STATE sequence | — | — | STOP vs `while True: pass`, traceback→stderr |
+| `pyble_runner` | state-machine transitions; transactional RUN admission under mutex/Notify/connection failure; exact-state rollback; auto-run bypass | response-before-wake/RUN_STATE sequence; single-fragment response at minimum MTU | — | — | STOP vs `while True: pass`, traceback→stderr; pressure/disconnect RUN remains side-effect-free |
 | `pyble_console` | tee + backpressure and control-priority logic | CONSOLE_DATA stream tagging; whole-message non-interleaving | — | staging-buffer/transport-reserve footprint | live stdout/stdin latency; C3 print-flood STOP response then idle in <500 ms |
 | `pyble_info` | caps assembly (incl. device_id/label/has_identify/identify_led), label bound→ERANGE, identify EUNSUPPORTED-when-unset, version negotiation | HELLO/DEVICE_INFO identity fields, SET_LABEL/SET_IDENTIFY_LED/IDENTIFY round-trip | — | — | real chip/mpy/free_mem/has_sd, label↔NVS persist across reboot, non-blocking blink |
 | `pyble_agent` | dispatch wiring, lock serialization | EBUSY, single-writer | frozen-manifest build | flash/heap gates | cold-boot safety, fail-safe |

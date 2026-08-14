@@ -1,6 +1,6 @@
 # PBLE/1 — PyBLE BLE Wire Protocol
 
-Status: **§2–§10 FROZEN for v1.0 (complete)** · Version: 1 · Last updated: 2026-07-29
+Status: **§2–§10 FROZEN for v1.0 (complete)** · Version: 1 · Last updated: 2026-08-14
 
 > PBLE/1 is a **clean-room, original** protocol authored for PyBLE. It reuses no closed-source wire format, opcodes, or UUIDs. It carries PyBLE's app↔board messages over a BLE GATT service.
 >
@@ -11,6 +11,9 @@ The 2026-07-29 portability amendment clarifies that the existing `chip` and
 targets. It changes no PBLE/1 key, payload shape, opcode, status, UUID, or other
 wire byte.
 
+The 2026-08-14 RUN-admission amendment makes the existing response-before-run
+ordering fail closed under local TX pressure. It changes no PBLE/1 byte.
+
 **Freeze ledger (per-section):**
 
 | Section | Freeze status | Freeze act |
@@ -19,7 +22,7 @@ wire byte.
 | §3 Framing — §3.1 message frame, §3.2 fragmentation | **FROZEN for v1.0** | G0 · 2026-07-01 · `[docs]` |
 | §4 Opcodes — the v1.0 opcode set + numbers | **FROZEN for v1.0** | G1 · 2026-07-01 · `[docs]` (closes OI-4) |
 | §8 Status / error codes — the 1-byte status set + numbers | **FROZEN for v1.0** | G1 · 2026-07-01 · `[docs]` |
-| §6 Run/Stop/Console — RUN{file,source}, RUN_STATE, EBUSY, STOP, SOFT_REBOOT, CONSOLE_DATA/INPUT | **FROZEN for v1.0** | G1 · 2026-07-01 · `[docs]` (RUN-file at S3; STOP / console / RUN-source at S4) |
+| §6 Run/Stop/Console — RUN{file,source}, RUN_STATE, EBUSY, STOP, SOFT_REBOOT, CONSOLE_DATA/INPUT | **FROZEN for v1.0 (amended)** | G1 · 2026-07-01; transactional RUN admission · 2026-08-14 · `[docs]` (RUN-file at S3; STOP / console / RUN-source at S4) |
 | §7 HELLO & capabilities — caps field set, HELLO-first, INFO==DEVICE_INFO, label max = 24 B (label half of OI-6) | **FROZEN for v1.0** | G1 · 2026-07-01 · `[docs]` |
 | §9 Versioning policy — accept only `VER 0x01`, refuse unsatisfiable, additive caps | **FROZEN for v1.0** | G1 · 2026-07-01 · `[docs]` |
 | §5 File transfer — read + windowed upload + workspace jail | **FROZEN for v1.0** | G1 · 2026-07-01 · `[docs]` |
@@ -152,9 +155,21 @@ A message larger than one packet is split across consecutive RX writes (or TX no
 
 ## 6. Run / Stop / Console
 
-> **FROZEN for v1.0** — RUN-file at G1 · S3; **`RUN{source}`, `STOP`, `SOFT_REBOOT`, `CONSOLE_DATA`, `CONSOLE_INPUT` frozen at G1 · S4 (2026-07-01 · `[docs]`)** — the DoR for F-05/F-06/F-07. Wire below; amend only via a `[docs]` commit before dependent code.
+> **FROZEN for v1.0 (amended)** — RUN-file at G1 · S3; **`RUN{source}`, `STOP`, `SOFT_REBOOT`, `CONSOLE_DATA`, `CONSOLE_INPUT` frozen at G1 · S4 (2026-07-01 · `[docs]`)**; transactional RUN admission clarified 2026-08-14. Wire below; amend only via a `[docs]` commit before dependent code.
 
 - **`RUN` (0x20)** payload `[mode:u8][data]` — `mode` 0=file (`data` = UTF-8 path), 1=source (`data` = UTF-8 snippet). → `RSP{status}` (`OK` | `EBUSY` if one already running, FR-RUN-4 | `EBADREQ` bad mode | `ERANGE` over-length), then `RUN_STATE(running)`. Both modes share one lifecycle. Completion → `RUN_STATE(done)`; an uncaught exception → `CONSOLE_DATA(stderr, traceback)` then `RUN_STATE(error)`. A missing/inaccessible file surfaces asynchronously (`CONSOLE_DATA(stderr)` + `RUN_STATE(error)`), not as the `RSP`.
+
+  An otherwise valid, non-busy RUN is admitted transactionally. The ESP
+  reference agent reserves and copies the request, then makes exactly one
+  connection-bound, single-fragment, zero-wait attempt to submit its matching
+  `RSP{OK}`; that response fits one fragment even at the minimum valid ATT MTU.
+  Local Notify acceptance is the admission cut: only after it succeeds may the
+  agent wake the runner exactly once. Therefore user code, console output, and
+  every RUN event follow the response submission. Mutex contention, a missing
+  or changed connection, or local Notify backpressure restores the exact prior
+  runnable state and produces no wake, execution, event, fallback response, or
+  retry; the caller's timeout is side-effect-free. A disconnect after local
+  acceptance does not revoke the already-admitted run.
 - **`STOP` (0x21)** no payload. Idempotent — always `RSP{OK}` (STOP while idle is a no-op). If a program is running, a `KeyboardInterrupt` is raised **in the runner task only** (the link stays live, FR-BLE-11) → clean teardown → `RUN_STATE(idle)` (FR-RUN-5/6/10).
 - **`SOFT_REBOOT` (0x22)** no payload. `RSP{OK}` immediately; stops any run,
   then soft-resets the MicroPython VM and returns to `RUN_STATE(idle)`
