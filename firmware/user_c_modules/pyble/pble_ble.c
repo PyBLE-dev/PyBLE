@@ -1143,7 +1143,11 @@ static int pble_gap_event(struct ble_gap_event *event, void *arg) {
             }
 #endif
             break;
-        case BLE_GAP_EVENT_DATA_LEN_CHG:
+        case BLE_GAP_EVENT_DATA_LEN_CHG: {
+            const uint16_t conn_handle = pble_conn_handle;
+            if (conn_handle == BLE_HS_CONN_HANDLE_NONE) {
+                break;
+            }
             // Rung-1 confirmation (ERROR level, G5i.4): DLE landed when
             // max_tx_octets >= 244; stuck near 27 = refused/lost — the retry
             // latch keeps re-issuing until confirmed or capped.
@@ -1153,14 +1157,15 @@ static int pble_gap_event(struct ble_gap_event *event, void *arg) {
             ESP_LOGE(PBLE_TAG, "link tune complete phase=dle max_tx_octets=%u max_tx_time_us=%u",
                      event->data_len_chg.max_tx_octets,
                      event->data_len_chg.max_tx_time);
-            pble_oi1_note_dle(event->data_len_chg.conn_handle,
+            pble_oi1_note_dle(conn_handle,
                               event->data_len_chg.max_tx_octets,
                               event->data_len_chg.max_tx_time);
-            if (pble_conn_handle != BLE_HS_CONN_HANDLE_NONE) {
+            if (conn_handle != BLE_HS_CONN_HANDLE_NONE) {
                 ble_npl_callout_reset(&pble_link_tune_co,
                     ble_npl_time_ms_to_ticks32(PBLE_LINK_TUNE_DELAY_MS));
             }
             break;
+        }
         case BLE_GAP_EVENT_CONN_UPDATE: {
             // Bench confirmation (ERROR level): expect the 15 ms interval
             // (itvl 12) granted. The event carries only status, so read the
