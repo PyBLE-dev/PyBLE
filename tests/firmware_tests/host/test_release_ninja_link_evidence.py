@@ -306,6 +306,16 @@ class NinjaLinkEvidenceTests(unittest.TestCase):
                 with self.assertRaises(RELEASE.ReleaseError):
                     self.observe()
 
+    def test_linker_assignment_rejects_shell_brace_expansion(self):
+        for flags in (
+            " --for-linker={-o,attacker.elf}",
+            " -Wl,{--Map=attacker.map,--gc-sections}",
+        ):
+            with self.subTest(flags=flags):
+                self._write_ninja(flags=flags)
+                with self.assertRaises(RELEASE.ReleaseError):
+                    self.observe()
+
     def test_driver_wrapped_alternate_output_is_rejected(self):
         for flags in (
             " -Wl,-o,attacker.elf",
