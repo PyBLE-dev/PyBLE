@@ -264,6 +264,25 @@ class NinjaLinkEvidenceTests(unittest.TestCase):
         with self.assertRaises(RELEASE.ReleaseError):
             self.observe()
 
+    def test_oversized_graph_is_rejected_before_unbounded_read(self):
+        rules = self.role_build / "CMakeFiles/rules.ninja"
+        with rules.open("r+b") as stream:
+            stream.truncate(1024 * 1024 + 1)
+
+        original_reader = RELEASE._audit_stable_regular_file_bytes
+
+        def guarded_reader(path, label):
+            if Path(path) == rules:
+                self.fail("oversized Ninja graph reached the unbounded read seam")
+            return original_reader(path, label)
+
+        RELEASE._audit_stable_regular_file_bytes = guarded_reader
+        try:
+            with self.assertRaises(RELEASE.ReleaseError):
+                self.observe()
+        finally:
+            RELEASE._audit_stable_regular_file_bytes = original_reader
+
     def test_path_escape_and_line_continuation_are_rejected(self):
         for edge_suffix in (
             " ../outside.obj",
