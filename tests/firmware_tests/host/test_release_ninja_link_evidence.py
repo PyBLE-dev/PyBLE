@@ -287,6 +287,21 @@ class NinjaLinkEvidenceTests(unittest.TestCase):
                 with self.assertRaises(RELEASE.ReleaseError):
                     self.observe(**kwargs)
 
+    def test_ninja_object_operand_must_be_canonical_before_argv_digest(self):
+        build_ninja = self.role_build / "build.ninja"
+        original = build_ninja.read_text(encoding="utf-8")
+        build_ninja.write_text(
+            original.replace(
+                "build micropython.elf: CXX_LINK %s" % self.explicit,
+                "build micropython.elf: CXX_LINK ./%s" % self.explicit,
+                1,
+            ),
+            encoding="utf-8",
+        )
+
+        with self.assertRaises(RELEASE.ReleaseError):
+            self.observe()
+
     def test_graph_inputs_must_not_be_symlinks(self):
         rules = self.role_build / "CMakeFiles/rules.ninja"
         real_rules = self.role_build / "CMakeFiles/rules-real.ninja"
