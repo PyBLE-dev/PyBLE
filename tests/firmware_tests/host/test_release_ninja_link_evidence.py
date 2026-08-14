@@ -130,6 +130,7 @@ class NinjaLinkEvidenceTests(unittest.TestCase):
         compile_outputs: set[Path] | None = None,
         map_outputs: set[Path] | None = None,
         compiler_paths: set[Path] | None = None,
+        dependency_roots: tuple[Path, ...] | None = None,
     ):
         seam = getattr(RELEASE, SEAM_NAME, None)
         self.assertTrue(
@@ -156,6 +157,8 @@ class NinjaLinkEvidenceTests(unittest.TestCase):
         }
         if "map_path" in inspect.signature(seam).parameters:
             arguments["map_path"] = self.map_path
+        if dependency_roots is not None:
+            arguments["dependency_roots"] = dependency_roots
         return seam(**arguments)
 
     def test_exact_ninja_graph_replays_one_canonical_link_command(self):
@@ -331,6 +334,40 @@ class NinjaLinkEvidenceTests(unittest.TestCase):
 
         with self.assertRaises(RELEASE.ReleaseError):
             self.observe()
+
+    def test_explicit_link_inputs_must_be_exact_compile_outputs(self):
+        linker_script = self.role_build / "extra-linker-script.ld"
+        linker_script.write_text("SECTIONS {}\n", encoding="utf-8")
+        build_ninja = self.role_build / "build.ninja"
+        original = build_ninja.read_text(encoding="utf-8")
+        build_ninja.write_text(
+            original.replace(
+                "%s |" % self.explicit,
+                "%s %s |" % (self.explicit, linker_script.name),
+                1,
+            ),
+            encoding="utf-8",
+        )
+
+        with self.assertRaises(RELEASE.ReleaseError):
+            self.observe()
+
+    def test_absolute_dependency_must_be_a_regular_file(self):
+        directory_dependency = self.role_build.parent / "directory-dependency"
+        directory_dependency.mkdir()
+        build_ninja = self.role_build / "build.ninja"
+        original = build_ninja.read_text(encoding="utf-8")
+        build_ninja.write_text(
+            original.replace(
+                " || graph-order",
+                " %s || graph-order" % directory_dependency,
+                1,
+            ),
+            encoding="utf-8",
+        )
+
+        with self.assertRaises(RELEASE.ReleaseError):
+            self.observe(dependency_roots=(self.role_build.parent,))
 
     def test_graph_inputs_must_not_be_symlinks(self):
         rules = self.role_build / "CMakeFiles/rules.ninja"
