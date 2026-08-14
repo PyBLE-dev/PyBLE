@@ -1116,7 +1116,11 @@ The following ESP-IDF resolution rules are part of that fail-closed mapping:
    during public replay. An alternate include, nested `include`/`subninja`,
    duplicate edge/output/rule/assignment, unknown escape or variable, path
    escape, or any graph/map/compile/ELF mismatch is fatal. Parsing is
-   resource-bounded and never becomes a general Ninja interpreter.
+   resource-bounded and never becomes a general Ninja interpreter. The sum of
+   the UTF-8 byte lengths of all fully expanded file-scope binding values held
+   by the parser MUST NOT exceed 8 MiB; the parser charges that budget when
+   each binding is stored and rejects the graph before retaining a value that
+   would exceed it.
    Basename-only matching is forbidden.
 
    One logical source may therefore have multiple compile outputs. Archive
