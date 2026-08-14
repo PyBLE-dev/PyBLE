@@ -160,16 +160,19 @@ A message larger than one packet is split across consecutive RX writes (or TX no
 - **`RUN` (0x20)** payload `[mode:u8][data]` — `mode` 0=file (`data` = UTF-8 path), 1=source (`data` = UTF-8 snippet). → `RSP{status}` (`OK` | `EBUSY` if one already running, FR-RUN-4 | `EBADREQ` bad mode | `ERANGE` over-length), then `RUN_STATE(running)`. Both modes share one lifecycle. Completion → `RUN_STATE(done)`; an uncaught exception → `CONSOLE_DATA(stderr, traceback)` then `RUN_STATE(error)`. A missing/inaccessible file surfaces asynchronously (`CONSOLE_DATA(stderr)` + `RUN_STATE(error)`), not as the `RSP`.
 
   An otherwise valid, non-busy RUN is admitted transactionally. The ESP
-  reference agent reserves and copies the request, then makes exactly one
+  reference agent makes a provisional, non-observable reservation and copies
+  the request, then makes exactly one
   connection-bound, single-fragment, zero-wait attempt to submit its matching
-  `RSP{OK}`; that response fits one fragment even at the minimum valid ATT MTU.
+  `RSP{OK}`. At the minimum ATT MTU 23, a fragment carries 19 PBLE/1 message
+  bytes and the response frame is 11 bytes, so it is always one fragment.
   Local Notify acceptance is the admission cut: only after it succeeds may the
   agent wake the runner exactly once. Therefore user code, console output, and
   every RUN event follow the response submission. Mutex contention, a missing
   or changed connection, or local Notify backpressure restores the exact prior
   runnable state and produces no wake, execution, event, fallback response, or
-  retry; the caller's timeout is side-effect-free. A disconnect after local
-  acceptance does not revoke the already-admitted run.
+  retry. A timeout caused by one of these local admission failures is therefore
+  side-effect-free. Timeout alone does not prove rejection: a disconnect or
+  response loss after local acceptance does not revoke the already-admitted run.
 - **`STOP` (0x21)** no payload. Idempotent — always `RSP{OK}` (STOP while idle is a no-op). If a program is running, a `KeyboardInterrupt` is raised **in the runner task only** (the link stays live, FR-BLE-11) → clean teardown → `RUN_STATE(idle)` (FR-RUN-5/6/10).
 - **`SOFT_REBOOT` (0x22)** no payload. `RSP{OK}` immediately; stops any run,
   then soft-resets the MicroPython VM and returns to `RUN_STATE(idle)`

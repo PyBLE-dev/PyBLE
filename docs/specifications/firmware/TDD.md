@@ -399,7 +399,7 @@ class Runner:
 
 **Key data structures / state:** `RUN_STATE` enum (`idle` / `running` / `done` / `error`); a single runner-thread handle; a `busy` flag guarded by the single-writer lock (D4/SEC-3); the compiled code object for `mode: source`.
 
-**Execution model:** a `RUN` while `state == running` returns `EBUSY` (FR-RUN-4). The ESP handler validates the request and initialized hand-off semaphore, remembers the exact prior runnable state (`idle`, `done`, or `error`), reserves `running`, and copies the request. It then encodes the matching one-fragment `RSP{OK}` in call-local storage and makes one connection-bound control submission attempt. That transport seam takes the TX mutex with zero wait, rechecks the originating connection, and makes exactly one Notify call; it never sleeps, waits for drain progress, or retries on the NimBLE host task. `PBLE_TX_OK` is the admission cut: only then does the handler give the binary runner semaphore exactly once and suppress the dispatcher's generic response. The empty-semaphore give is an invariant of the single `running` reservation. Mutex contention, no connection, connection mismatch, or `PBLE_TX_AGAIN` restores the remembered state, suppresses generic response fallback, and returns without a worker wake, execution, console output, or RUN event. A disconnect after `PBLE_TX_OK` does not revoke the accepted run. The non-dispatch auto-run path remains a direct reserve/copy/give with no response.
+**Execution model:** a `RUN` while `state == running` returns `EBUSY` (FR-RUN-4). The ESP handler validates the request and initialized hand-off semaphore, remembers the exact prior runnable state (`idle`, `done`, or `error`), makes a provisional, non-observable reservation of `running`, and copies the request. It then encodes the matching one-fragment `RSP{OK}` in call-local storage and makes one connection-bound control submission attempt. That transport seam takes the TX mutex with zero wait, rechecks the originating connection, and makes exactly one Notify call; it never sleeps, waits for drain progress, or retries on the NimBLE host task. `PBLE_TX_OK` is the admission cut: only then does the provisional reservation become an observable lifecycle transition, the handler give the binary runner semaphore exactly once, and the handler suppress the dispatcher's generic response. The empty-semaphore give is an invariant of the single `running` reservation. Mutex contention, no connection, connection mismatch, or `PBLE_TX_AGAIN` restores the remembered state, suppresses generic response fallback, and returns without a worker wake, execution, console output, or RUN event. A disconnect after `PBLE_TX_OK` does not revoke the accepted run. The non-dispatch auto-run path remains a direct reserve/copy/give with no response.
 
 Once admitted, the worker emits `RUN_STATE(running)` (FR-RUN-1). `STOP` raises `KeyboardInterrupt` in the runner thread (using MicroPython's scheduled-exception / pending-interrupt mechanism) so it lands even against a tight loop (FR-RUN-5, NFR-SAFE-1). On normal return → `RUN_STATE(done)`; on uncaught exception → traceback to `CONSOLE_DATA(stderr)` then emit `RUN_STATE(error)` (FR-RUN-9). After `STOP`/exception, teardown is clean and the board returns to `idle` (FR-RUN-6/10). `SOFT_REBOOT` submits its one-packet `RSP{OK}`, arms one pre-created 250 ms one-shot, and only the timer callback schedules `SystemExit` on the main task. The pending flag rejects duplicate reboot requests; a TX failure cancels reset. This separates local Notify acceptance from VM teardown while keeping the handler non-blocking and bounded (FR-RUN-8).
 
@@ -785,7 +785,7 @@ The boot-internal wrapper converts that failure to false so startup proceeds.
 Two cooperating execution contexts (D4):
 
 - **BLE/agent context** — the asyncio event loop on the main task. It services NimBLE callbacks, runs reassembly/dispatch, executes all control-plane handlers (info/fs/console-input/run-control), and drains the TX queue. It must **never** block on user code or wait for TX capacity; RUN admission uses one zero-wait control submission attempt.
-- **Runner task** — spawned via `_thread` for each `RUN`. It executes user code with `sys.stdout`/`stderr` redirected to the console tee.
+- **Runner task** — launched once via `_thread` and kept persistent. It waits on the binary hand-off semaphore, then executes each admitted RUN with `sys.stdout`/`stderr` redirected to the console tee.
 
 Because the link is serviced by the BLE/agent context and user code lives on the runner task, a `while True: pass` cannot wedge BLE or block `STOP` (FR-BLE-11, FR-RUN-3, NFR-SAFE-2).
 
@@ -817,9 +817,10 @@ This is required for both a quiet tight loop and a loop continuously printing
 to stdout
 ([C3-G2](ports/esp32-c3-4mb.md#c3-g2--run-console-and-authoritative-stop-frozen)).
 
-RUN admission uses the same control capacity but not the paced worker API. Its
-exact `RSP{OK}` occupies one PBLE transport fragment even at the minimum valid
-ATT MTU. The host callback makes one zero-wait, connection-bound submission;
+RUN admission uses the same control capacity but not the paced worker API. At
+the minimum ATT MTU 23, one fragment carries 19 PBLE/1 message bytes and the
+exact `RSP{OK}` frame is 11 bytes. The host callback therefore makes one
+single-fragment, zero-wait, connection-bound submission;
 only local acceptance wakes the runner. Pressure or a stale/disconnected link
 therefore yields no execution, and neither drain progress nor elapsed time can
 extend or repeat the attempt.
