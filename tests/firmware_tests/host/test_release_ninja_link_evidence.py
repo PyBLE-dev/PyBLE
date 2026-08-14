@@ -306,6 +306,16 @@ class NinjaLinkEvidenceTests(unittest.TestCase):
                 with self.assertRaises(RELEASE.ReleaseError):
                     self.observe()
 
+    def test_gcc_for_linker_wrapped_outputs_are_rejected(self):
+        for flags in (
+            " --for-linker=-o --for-linker=attacker.elf",
+            " --for-linker=--Map=attacker.map",
+        ):
+            with self.subTest(flags=flags):
+                self._write_ninja(flags=flags)
+                with self.assertRaises(RELEASE.ReleaseError):
+                    self.observe()
+
     def test_linker_map_output_must_match_the_observed_map(self):
         build_ninja = self.role_build / "build.ninja"
         attacker_map = self.role_build / "attacker.map"
