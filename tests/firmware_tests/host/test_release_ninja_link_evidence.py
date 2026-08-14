@@ -267,6 +267,16 @@ class NinjaLinkEvidenceTests(unittest.TestCase):
                 finally:
                     rules.write_text(original, encoding="utf-8")
 
+    def test_linker_assignment_tokenization_must_be_shell_neutral(self):
+        for flags in (
+            " -Lfirst\N{NO-BREAK SPACE}-Lsecond",
+            " -L*",
+        ):
+            with self.subTest(flags=flags):
+                self._write_ninja(flags=flags)
+                with self.assertRaises(RELEASE.ReleaseError):
+                    self.observe()
+
     def test_driver_wrapped_alternate_output_is_rejected(self):
         for flags in (
             " -Wl,-o,attacker.elf",
