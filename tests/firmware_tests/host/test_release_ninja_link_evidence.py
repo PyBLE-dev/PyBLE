@@ -516,6 +516,46 @@ class NinjaLinkEvidenceTests(unittest.TestCase):
                 with self.assertRaises(RELEASE.ReleaseError):
                     self.observe()
 
+    def test_gnu_ld_forwarding_is_the_exact_generated_catalog(self):
+        admitted = (
+            "-Wl,--cref",
+            "-Wl,--gc-sections",
+            "-Wl,--no-warn-rwx-segments",
+            "-Wl,--orphan-handling=warn",
+            "-Wl,--warn-common",
+            "-Wl,--defsym=IDF_TARGET_ESP32=0",
+            "-Wl,--undefined=esp_panic_handler",
+            "-Wl,--wrap=_Unwind_Backtrace",
+        )
+        for option in admitted:
+            with self.subTest(case="admitted", option=option):
+                self._write_ninja(flags=" " + option)
+                self.assertIn(option, self.observe()["argv"])
+
+        rejected = (
+            "-Xlinker --gc-sections",
+            "--for-linker=--gc-sections",
+            "--for-linker --gc-sections",
+            "-Wl,--gc-sections,--cref",
+            "-Wl,--format=binary",
+            "-Wl,--version-script=/attacker/version.map",
+            "-Wl,--dynamic-list=/attacker/dynamic.list",
+            "-Wl,--retain-symbols-file=/attacker/symbols.txt",
+            "-Wl,--just-symbols=/attacker/symbols.sym",
+            "-Wl,-R/attacker/symbols.sym",
+            "-Wl,--section-ordering-file=/attacker/order.txt",
+            "-Wl,--export-dynamic-symbol-list=/attacker/exports.txt",
+            "-Wl,--remap-inputs-file=/attacker/remap.txt",
+            "-Wl,--error-handling-script=/attacker/handler.sh",
+            "-Wl,--dynconfig=/attacker/dynconfig.so",
+            "-Wl,--dependency-file=/attacker/link.d",
+        )
+        for option in rejected:
+            with self.subTest(case="rejected", option=option):
+                self._write_ninja(flags=" " + option)
+                with self.assertRaises(RELEASE.ReleaseError):
+                    self.observe()
+
     def test_linker_map_output_must_match_the_observed_map(self):
         build_ninja = self.role_build / "build.ninja"
         attacker_map = self.role_build / "attacker.map"
