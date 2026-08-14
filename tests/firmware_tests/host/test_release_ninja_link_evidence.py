@@ -593,6 +593,54 @@ class NinjaLinkEvidenceTests(unittest.TestCase):
                 with self.assertRaises(RELEASE.ReleaseError):
                     self.observe(**kwargs)
 
+    def test_every_map_load_and_positional_input_is_classified(self):
+        build_ninja = self.role_build / "build.ninja"
+        original_graph = build_ninja.read_text(encoding="utf-8")
+        original_map = self.map_path.read_text(encoding="utf-8")
+        marker = "  LINK_LIBRARIES = %s esp-idf/main/libmain.a\n" % self.implicit
+
+        payload = self.role_build / "attacker.payload"
+        payload.write_bytes(b"unclassified positional input\n")
+        build_ninja.write_text(
+            original_graph.replace(
+                marker,
+                "  LINK_LIBRARIES = %s %s esp-idf/main/libmain.a\n"
+                % (self.implicit, payload.name),
+                1,
+            ),
+            encoding="utf-8",
+        )
+        with self.subTest(case="positional"):
+            with self.assertRaises(RELEASE.ReleaseError):
+                self.observe()
+
+        build_ninja.write_text(original_graph, encoding="utf-8")
+        self.map_path.write_text("LOAD %s\n" % payload.name, encoding="utf-8")
+        with self.subTest(case="unknown-map-load"):
+            with self.assertRaises(RELEASE.ReleaseError):
+                self.observe()
+
+        fake_archive = self.role_build / "attacker.a"
+        fake_archive.write_bytes(b"not an ar archive\n")
+        build_ninja.write_text(
+            original_graph.replace(
+                marker,
+                "  LINK_LIBRARIES = %s %s esp-idf/main/libmain.a\n"
+                % (self.implicit, fake_archive.name),
+                1,
+            ),
+            encoding="utf-8",
+        )
+        self.map_path.write_text(
+            "LOAD %s\n" % fake_archive.name,
+            encoding="utf-8",
+        )
+        with self.subTest(case="suffix-only-archive"):
+            with self.assertRaises(RELEASE.ReleaseError):
+                self.observe()
+
+        self.map_path.write_text(original_map, encoding="utf-8")
+
     def test_ninja_object_operand_must_be_canonical_before_argv_digest(self):
         build_ninja = self.role_build / "build.ninja"
         original = build_ninja.read_text(encoding="utf-8")
