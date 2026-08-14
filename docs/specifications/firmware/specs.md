@@ -969,7 +969,9 @@ For each exact profile and one immutable firmware/manifest candidate:
    **20,000 ms** deadline; diagnostic HELLO and the nonce-bound getter RUN each
    have separate **2,000 ms** and **8,000 ms** deadlines, respectively. The
    getter-RUN bound is one absolute transport ceiling over command writes, RUN
-   response, bounded CONSOLE_DATA pacing, and terminal RUN_STATE. Its
+   response, bounded CONSOLE_DATA pacing, and terminal RUN_STATE. This query
+   uses the exact `pair` projection: the one atomic native
+   `{active,last_ended}` copy is serialized unchanged. Its
    `last_ended` record MUST be final with a positive epoch, and its active
    record MUST be the exact non-wrapping successor. An absent, stale,
    non-successor, malformed, or overflowed boundary fails. The runner then
@@ -984,9 +986,12 @@ For each exact profile and one immutable firmware/manifest candidate:
    **5,000 ms** for the profile-exact DLE/PHY/connection-parameter facts in
    §5.3.1 to settle. No PUT/GET timer may start before that succeeds.
    This remains an independent outer settlement ceiling for Waveshare: each
-   poll receives `min(8,000 ms, remaining settlement budget)`, and a snapshot
-   returned at or after the outer deadline fails. Waveshare retains the active
-   epoch only after
+   poll uses the exact `active` projection and receives
+   `min(5,000 ms, remaining settlement budget)`. That projection calls the
+   getter once, then serializes exactly
+   `{active: copy.active, last_ended: null}`; a non-null `last_ended` fails. A
+   snapshot returned at or after the outer deadline fails. Waveshare retains
+   the active epoch only after
    `final: false`, `settled: true`, `overflow: false`, and exact fact
    validation; the UART profiles retain their existing parser. Arbitrary or
    identifying serial or console text MUST be discarded rather than retained.
@@ -1007,18 +1012,19 @@ For each exact profile and one immutable firmware/manifest candidate:
    counted. Record one final gated heap snapshot after this workload.
 
    Before the Waveshare transfer connection disconnects, run one more bounded
-   getter probe and require the same active epoch, a settled non-final,
-   non-overflowed record, and the same validated ladder facts; its provisional
-   starvation count is not evidence. Then disconnect, make one diagnostic
-   reconnect, and query again. `last_ended` MUST be final and non-overflowed
+   **5,000 ms** `active` getter probe and require the same active epoch, a
+   settled non-final, non-overflowed record, and the same validated ladder
+   facts; its provisional starvation count is not evidence. Then disconnect,
+   make one diagnostic reconnect, and query again. `last_ended` MUST be final
+   and non-overflowed
    with the retained transfer epoch, while the diagnostic active epoch MUST be
    its exact non-wrapping successor. Derive the public `transfer_link_facts`
    solely from that immutable ended record, including the final starvation
    count, then disconnect the diagnostic session. The diagnostic BLE
    connect retains the existing **20,000 ms** bound; diagnostic HELLO and each
-   getter RUN/query have their own **2,000 ms** and **8,000 ms** bounds,
-   respectively. The harness MUST NOT
-   compress the whole reconnect transaction into either shorter deadline.
+   final `pair` getter RUN/query have their own **2,000 ms** and **8,000 ms**
+   bounds, respectively. The harness MUST NOT compress the whole reconnect
+   transaction into either shorter deadline.
 
    The other ESP profiles instead disconnect and wait at most **2,000 ms** for
    the same UART session's final TX-mbuf-starvation fact before sealing

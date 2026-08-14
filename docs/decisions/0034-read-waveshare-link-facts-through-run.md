@@ -57,14 +57,23 @@ attempts remain failed and contribute no qualification evidence.
    consume, or alter either record. It raises instead of returning a wrapped
    epoch or an internally inconsistent copy.
 5. The HIL runner invokes the getter only through the existing PBLE/1 RUN
-   opcode. A host-generated nonce names one strict-ASCII marker line whose
-   suffix is JSON. Exactly one matching marker, a successful RUN response, no
-   stderr, and terminal RUN_STATE(done) are required within one
-   **8,000 ms absolute getter-RUN transport ceiling**. That one ceiling includes
-   command writes, the RUN response, all CONSOLE_DATA delivery, and the
-   terminal state. The parser accepts exact keys and types only, bounds every
-   integer, list, output chunk, and total output, and fails closed on a missing,
-   duplicate, stale, malformed, overflowed, or timed-out snapshot.
+   opcode. Every probe selects one host-internal exact projection, `pair` or
+   `active`; it is never user text. Both source forms call the native getter
+   exactly once, preserving its one atomic copy. `pair` serializes that full
+   `{active,last_ended}` copy unchanged. `active` projects the already-copied
+   value to exactly `{active: copy.active, last_ended: null}` before JSON
+   serialization. A host-generated nonce names one strict-ASCII marker line
+   whose suffix is JSON. Exactly one matching marker, a successful RUN
+   response, no stderr, and terminal RUN_STATE(done) are required within the
+   projection's absolute transport ceiling: **8,000 ms for `pair`** and
+   **5,000 ms for `active`**. Each one ceiling includes command writes, the RUN
+   response, all CONSOLE_DATA delivery, and the terminal state, with no
+   progress extension. The parser accepts exact keys and types only, bounds
+   every integer, list, output chunk, and total output, and fails closed on a
+   missing, duplicate, stale, malformed, overflowed, or timed-out snapshot.
+   `active` additionally requires a positive-epoch, non-final, non-overflowed
+   active record and exact `last_ended=null`; `pair` requires non-null final
+   ended and non-final active records with no overflow.
    The first-nine boundary snapshots are structural isolation records and MAY
    be unsettled because those measured links disconnect immediately after
    HELLO and the heap probe; they are discarded and never authorize timed
@@ -74,25 +83,27 @@ attempts remain failed and contribute no qualification evidence.
 6. After each of the first nine measured sessions disconnects, the runner
    makes one diagnostic reconnect with separate deadlines: 20 seconds for
    `PbleCentral.connect`, 2 seconds for diagnostic HELLO, and 8 seconds for the
-   getter RUN. The returned
+   `pair` getter RUN. The returned
    `last_ended` epoch must be positive and final; the returned active epoch
    must be its exact non-wrapping successor. Those facts and the diagnostic
    session itself are discarded. This replaces only the Waveshare UART
    session-end boundary.
 7. On the tenth measured connection, the runner polls its active snapshot for
    at most five seconds. This settlement deadline remains an independent outer
-   ceiling: each getter invocation receives the lesser of its 8-second
+   ceiling: each `active` getter invocation receives the lesser of its 5-second
    transport ceiling and the remaining settlement budget, and a snapshot
-   returned at or after the outer deadline is rejected. The epoch is retained
-   only after `settled=true`,
-   `final=false`, `overflow=false`, and the existing exact Waveshare
-   `transfer_link_facts` validator passes. No timed transfer starts first.
+   returned at or after the outer deadline is rejected. A timed-out, malformed,
+   or failed probe ends the measurement; only a successfully returned but
+   unsettled snapshot may be polled again. The epoch is retained only after
+   `settled=true`, `final=false`, `overflow=false`, and the existing exact
+   Waveshare `transfer_link_facts` validator passes. No timed transfer starts
+   first.
    After all transfers, reliability work, and the final heap probe, it queries
-   again before disconnect and requires the same active epoch and valid
-   settled ladder.
+   again with one separate 5-second `active` probe before disconnect and
+   requires the same active epoch and valid settled ladder.
 8. After that disconnect, the runner makes one diagnostic reconnect with the
-   same separate 20-second connect, 2-second HELLO, and 8-second getter-RUN
-   deadlines.
+   same separate 20-second connect, 2-second HELLO, and 8-second `pair`
+   getter-RUN deadlines.
    Its active epoch must be the exact non-wrapping successor of the retained
    transfer epoch, and `last_ended` must be the final, non-overflowed record for
    that exact transfer epoch. The final public `transfer_link_facts` object is

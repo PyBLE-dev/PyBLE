@@ -2043,25 +2043,27 @@ into its image. Through ordinary PBLE/1 RUN, a nonce-bound strict marker reads
 one atomic `{active,last_ended}` snapshot from
 `pble_ble._oi1_link_facts()`. Each of the first nine measured disconnects is
 followed by a diagnostic reconnect with separate 20-second connect, 2-second
-diagnostic-HELLO, and 8-second getter-RUN deadlines. The getter bound is one
-absolute transport ceiling over its command writes, response, bounded console
-pacing, and terminal state. It must show
+diagnostic-HELLO, and 8-second `pair` getter-RUN deadlines. The getter bound is
+one absolute transport ceiling over its command writes, response, bounded
+console pacing, and terminal state. It must show
 the ended epoch and its exact non-wrapping active successor; both records are
 discarded. Those first-nine boundary records may be unsettled because they are
 not transfer evidence; they still require exact structure, finality, epoch
-ordering, and no overflow. On reset ten, the active epoch and settled facts are
-bound under a separate 5-second outer settlement deadline before timing and
-checked again after the workload but before disconnect. One final diagnostic
-reconnect retains the
-same three separate deadlines. Its getter RUN must expose that exact epoch as
-immutable and final, plus its active
-successor. Only the ended record's `facts` is sealed. Strict parsing rejects
+ordering, and no overflow. On reset ten, the exact `active` projection calls
+the native getter once and serializes only its active record plus
+`last_ended:null`. It binds the active epoch and settled facts under a separate
+5-second outer settlement deadline before timing, then checks them again with
+a separate 5-second `active` query after the workload but before disconnect.
+One final diagnostic reconnect retains the
+same three separate deadlines. Its `pair` getter RUN must expose that exact
+epoch as immutable and final, plus its active successor. Only the ended
+record's `facts` is sealed. Strict parsing rejects
 null, stale, wrapped, non-successor, overflowed, unsettled, malformed,
 duplicate, stderr, RUN-error, and timeout results, and discards arbitrary
 console output; `unsettled` applies to the reset-ten transfer record, not the
-discarded first-nine boundary pair. No serial endpoint, new opcode, public capability, BLE
-identifier, connection handle, path, label, user source, or console text enters
-the Waveshare report.
+discarded first-nine boundary pair. No serial endpoint, new opcode, public
+capability, BLE identifier, connection handle, path, label, user source, or
+console text enters the Waveshare report.
 
 For both transports, the final PHY update
 used to settle either S3 record MUST itself have status zero and `tx=2`, `rx=2`;

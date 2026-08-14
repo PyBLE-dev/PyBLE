@@ -1055,40 +1055,60 @@ post-disconnect seal path unchanged.
 
 Waveshare uses `WaveshareHardwareExecutor` and an operator-only reset
 controller with no serial dependency. Its exact image alone exposes the hidden
-`pble_ble._oi1_link_facts()` native getter. `oi1_link_fact_probe_source(nonce)`
-invokes that getter through ordinary PBLE/1 RUN and emits one
+`pble_ble._oi1_link_facts()` native getter.
+`oi1_link_fact_probe_source(nonce, projection=...)` invokes that getter through
+ordinary PBLE/1 RUN and emits one
 `__PYBLE_OI1_LINK_FACTS_<nonce>=<json>` stdout line.
 `parse_oi1_link_fact_probe_output` requires strict ASCII, exactly one matching
 line, exact keys/types, epochs in `1..2^64-1`, fixed list capacities, and a
 bounded total output; it discards all other stdout. `run_oi1_link_fact_probe`
-also requires RUN status OK, no stderr, one terminal RUN_STATE(done), and its
-single 8-second absolute transport deadline across command writes, RUN
-response, CONSOLE_DATA, and terminal state. This accommodates the existing
-bounded 250 ms per-console-event and 1,000 ms per-RUN_STATE pacing across the
-maximum schema-valid snapshot, with bounded scheduling/response headroom,
-without relaxing output shape or volume. It never adds a wire constant or
-capability.
+requires an exact `projection` of `pair` or `active`, RUN status OK, no stderr,
+exactly one ordered RUN_STATE(running) and RUN_STATE(done), and one absolute
+transport deadline across command writes, RUN response, CONSOLE_DATA, parsing,
+and terminal state, with no progress extension. Named constants freeze
+`OI1_LINK_FACT_PAIR_TIMEOUT_S = 8.0` and
+`OI1_LINK_FACT_ACTIVE_TIMEOUT_S = 5.0`. The `pair` scope accepts only its exact
+8-second cap. The `active` scope accepts a positive residual no greater than
+its 5-second cap. A wrong projection/cap pair fails before RUN. This
+accommodates the existing bounded 250 ms per-console-event and 1,000 ms
+per-RUN_STATE pacing: the maximum valid pair can occupy fourteen paced console
+submissions when `print` emits its newline separately, while the maximum valid
+active projection can occupy eight. Output shape and volume stay unchanged.
+It never adds a wire constant or capability.
+
+`oi1_link_fact_probe_source(nonce, projection=...)` calls
+`pble_ble._oi1_link_facts()` exactly once. `pair` prints that atomic copy
+unchanged. `active` first constructs exactly
+`{"active": _oi1["active"], "last_ended": None}` from that copy and then
+prints it. The parser receives the expected projection. `active` requires a
+strict positive-epoch, non-final, non-overflowed active record and
+`last_ended is None`; `pair` requires strict non-null active and last-ended
+records with active non-final, ended final, and neither overflowed. It never
+silently discards a non-null ended record supplied to `active`, or admits a
+null ended record supplied to `pair`.
 
 After each of the first nine Waveshare measured disconnects, the executor
 makes a diagnostic reconnect with separate deadlines: 20 seconds for
 `PbleCentral.connect`, 2 seconds for diagnostic HELLO, and 8 seconds for the
-getter RUN. It requires a final last-ended record and its exact non-wrapping
-active successor, disconnects, and discards both. Those two boundary records
+`pair` getter RUN. It requires a final last-ended record and its exact
+non-wrapping active successor, disconnects, and discards both. Those two
+boundary records
 MAY be unsettled because neither the just-ended short sample nor the newly
 connected diagnostic session is a transfer session; exact structure, epochs,
 finality, and `overflow=false` remain mandatory. On the tenth connection it
-polls the active record under an independent 5,000 ms outer settlement
-deadline, passing `min(8,000 ms, remaining settlement budget)` to each probe
-and rejecting a snapshot returned at or after that outer deadline. The record
-must be settled, non-final, non-overflowed, and profile-valid before the
-executor retains its epoch and starts timing. It probes the same active epoch
-again after the final heap snapshot and before disconnect. A final diagnostic
-reconnect uses the
-same separate 20-second connect, 2-second HELLO, and 8-second getter-RUN
+polls the `active` projection under an independent 5,000 ms outer settlement
+deadline, passing `min(5,000 ms, remaining settlement budget)` to each probe
+and rejecting a snapshot returned at or after that outer deadline. A probe
+error or timeout ends the measurement; only a returned unsettled record is
+polled again. The record must be settled, non-final, non-overflowed, and
+profile-valid before the
+executor retains its epoch and starts timing. It uses one separate 5-second
+`active` probe to check the same epoch after the final heap snapshot and before
+disconnect. A final diagnostic reconnect uses the
+same separate 20-second connect, 2-second HELLO, and 8-second `pair` getter-RUN
 deadlines. The getter must expose that epoch as immutable `last_ended` and its
-exact active successor. Only the
-ended record's `facts`, including its final starvation
-count, enters evidence. Missing/null, stale, non-successor, wrapped,
+exact active successor. Only the ended record's `facts`, including its final
+starvation count, enters evidence. Missing/null, stale, non-successor, wrapped,
 overflowed, malformed, duplicate-marker, stderr, RUN error, and timeout cases
 all fail closed; unsettled additionally fails for the tenth transfer record,
 but is permitted only for discarded first-nine boundary records. The raw log
