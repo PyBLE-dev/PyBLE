@@ -216,7 +216,13 @@ class NativeRunAdmissionContractTests(unittest.TestCase):
             "g_run_len = dlen",
             "pble_proto_emit_rsp_status_try",
             "xSemaphoreGive(g_run_sem)",
-            "return PBLE_NO_RSP",
+        )
+        give = body.find("xSemaphoreGive(g_run_sem)")
+        success_return = body.rfind("return PBLE_NO_RSP")
+        self.assertGreater(
+            success_return,
+            give,
+            "the accepted RUN must suppress generic dispatch after its worker wake",
         )
         self.assertRegex(
             body,
