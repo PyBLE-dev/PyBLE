@@ -248,6 +248,16 @@ MUST NOT be described as contents of the firmware. A later build in which such
 an input contributes MUST fail closed until its exact source/license mapping is
 admitted and MUST then include its notice.
 
+For the pinned RP2350 build, `libgcc.a` may be supplied implicitly by the GCC
+driver even when retained `link.txt` contains no literal `-lgcc` or `libgcc`.
+That case remains a link input only when scrubbed replay of the unchanged link
+arguments through the exact pinned driver/toolchain resolves the same
+regular, non-symlink archive beneath the pinned ARM GNU root as the structural
+map `LOAD` and archive/member allocation evidence. The archive path and bytes,
+runtime owner, source/member mapping, Eligible Compilation receipt, and public
+semantic replay MUST all agree; a literal token or basename alone proves
+nothing.
+
 The Arm GNU 14.2.Rel1 closure is exactly five independently reviewed owners:
 
 | Owner | Kind | Exact scope | Selected terms |

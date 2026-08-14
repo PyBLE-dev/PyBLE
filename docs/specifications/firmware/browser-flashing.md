@@ -704,6 +704,18 @@ not presented as shipped. Every contributing object is owned by exactly one
 source and one reviewed dependency class. An unowned, ambiguously owned,
 duplicated, map-only, or link-only input is fatal.
 
+The pinned GCC driver may add its exact `libgcc.a` runtime without emitting a
+literal `-lgcc` or `libgcc` operand in retained `link.txt`. That literal is
+therefore neither required nor sufficient evidence. A map-only `libgcc.a` is
+admitted only when the unchanged retained argument vector is replayed through
+the exact pinned driver and resolved toolchain in the scrubbed environment,
+with scratch outputs, and the driver trace names the same regular,
+non-symlink archive beneath the pinned ARM GNU root that the structural map
+`LOAD`, archive/member allocation records, byte hashes, ownership, and Eligible
+Compilation evidence identify. An absent runtime, a different or unpinned
+archive, a misleading literal token, driver/map disagreement, or any drift when
+public verification repeats the semantic observation is fatal.
+
 The linked-object inventory also determines the complete compiler-dependency
 closure. Each C/C++ object named by the final firmware target has exactly the
 compiler depfile declared by its DependInfo record. Assembly records, for
