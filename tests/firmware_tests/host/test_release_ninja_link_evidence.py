@@ -212,6 +212,22 @@ class NinjaLinkEvidenceTests(unittest.TestCase):
                 finally:
                     path.write_text(original, encoding="utf-8")
 
+    def test_canonical_or_variable_output_alias_is_rejected(self):
+        build_ninja = self.role_build / "build.ninja"
+        additions = (
+            "build ./micropython.elf: phony\n",
+            "elf_alias = micropython.elf\nbuild $elf_alias: phony\n",
+        )
+        for addition in additions:
+            with self.subTest(addition=addition):
+                original = build_ninja.read_text(encoding="utf-8")
+                build_ninja.write_text(original + addition, encoding="utf-8")
+                try:
+                    with self.assertRaises(RELEASE.ReleaseError):
+                        self.observe()
+                finally:
+                    build_ninja.write_text(original, encoding="utf-8")
+
     def test_alternate_include_or_nested_subninja_is_rejected(self):
         for injected in (
             "include ../outside/rules.ninja",
