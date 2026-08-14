@@ -1124,8 +1124,24 @@ The following ESP-IDF resolution rules are part of that fail-closed mapping:
    once as the admitted compiler frontend, a frozen option, the required
    operand of a frozen option, the exact output, a reconciled direct object, or
    a validated archive. A bare or otherwise unclassified positional word is
-   fatal; a `.a` suffix alone does not establish archive identity. The receipt
-   binds SHA-256 of the exact two Ninja files and
+   fatal; a `.a` suffix alone does not establish archive identity.
+
+   GNU-ld forwarding is closed to the exact generated catalog. The sole
+   admitted spelling is one `-Wl,<atom>` word containing exactly one atom. The
+   atom MUST be the exact observed-map selector, one of `--cref`,
+   `--gc-sections`, `--no-warn-rwx-segments`,
+   `--orphan-handling=warn`, or `--warn-common`, an exact
+   `--defsym=IDF_TARGET_<target>=0` for `ESP32`, `ESP32C3`, or `ESP32S3`, or
+   `--undefined=<C-identifier>` / `--wrap=<C-identifier>`. `-Xlinker` and both
+   joined and separate `--for-linker` forms are not emitted by the pinned graph
+   and are fatal. Every other forwarded atom is fatal, including file-reading
+   controls such as version/dynamic lists, retained/just-symbols files,
+   ordering/export/remap files, error-handling scripts, or Xtensa dynamic
+   configuration, and file-writing controls such as dependency or import
+   library outputs. Those inputs need not produce a map `LOAD` and cannot be
+   admitted merely because the atom begins with `-`.
+
+   The receipt binds SHA-256 of the exact two Ninja files and
    `linker_command_sha256`, defined as SHA-256 of the raw reconstructed argv
    encoded as canonical compact JSON plus one final LF. The same derivation is
    repeated after all eight SBOM runs and during public replay. An alternate

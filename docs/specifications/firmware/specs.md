@@ -1440,7 +1440,9 @@ This is software-level safety of the IDE/agent, **not** hardware/actuator safety
   classified exactly once as a reconciled direct object, validated archive,
   admitted frontend, frozen option/operand, or exact output; a noncanonical or
   unknown `LOAD`, a bare positional word, or an archive admitted only by its
-  suffix is fatal. For
+  suffix is fatal. GNU-ld forwarding is restricted to the one-atom `-Wl,`
+  catalog frozen in browser-flashing §6; `-Xlinker`, `--for-linker`, every
+  unlisted atom, and every unbound external control/output file are fatal. For
   every ESP role it MUST non-executingly reproduce
   the final linker argv with the bounded parser over the exact single ELF edge
   and linker rule retained in `build.ninja` and `CMakeFiles/rules.ninja`, and
