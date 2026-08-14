@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import importlib.util
 import hashlib
+import inspect
 import json
 from pathlib import Path
 import sys
@@ -57,8 +58,12 @@ class NinjaLinkEvidenceTests(unittest.TestCase):
         self.explicit = "CMakeFiles/micropython.elf.dir/project.c.obj"
         self.implicit = "esp-idf/main/CMakeFiles/btree.dir/bt_close.c.obj"
         self.map_outputs = set(self.outputs)
+        self.map_path = self.role_build / "micropython.map"
+        self.map_path.write_text("synthetic linker map\n", encoding="utf-8")
+        self.map_flag = "-Wl,--Map=%s" % self.map_path
         self.argv = [
             "/toolchain/bin/fixture-g++",
+            self.map_flag,
             self.explicit,
             "-o",
             "micropython.elf",
@@ -97,7 +102,7 @@ class NinjaLinkEvidenceTests(unittest.TestCase):
             + "build micropython.elf: CXX_LINK %s | %s "
             "esp-idf/main/libmain.a || graph-order%s\n"
             % (self.explicit, self.implicit, edge_suffix)
-            + "  FLAGS =%s\n" % flags
+            + "  FLAGS = %s%s\n" % (self.map_flag, flags)
             + "  LINK_FLAGS =\n"
             + "  LINK_LIBRARIES = %s esp-idf/main/libmain.a\n" % self.implicit
             + "  LINK_PATH =\n"
@@ -131,24 +136,27 @@ class NinjaLinkEvidenceTests(unittest.TestCase):
             callable(seam),
             "release_bundle.py lacks %s" % SEAM_NAME,
         )
-        return seam(
-            role_build=self.role_build,
-            app_elf="micropython.elf",
-            compile_outputs={
+        arguments = {
+            "role_build": self.role_build,
+            "app_elf": "micropython.elf",
+            "compile_outputs": {
                 path: self.role_build / "source.c"
                 for path in (
                     self.outputs if compile_outputs is None else compile_outputs
                 )
             },
-            map_direct_outputs=(
+            "map_direct_outputs": (
                 self.map_outputs if map_outputs is None else map_outputs
             ),
-            compiler_paths=(
+            "compiler_paths": (
                 {Path("/toolchain/bin/fixture-g++")}
                 if compiler_paths is None
                 else compiler_paths
             ),
-        )
+        }
+        if "map_path" in inspect.signature(seam).parameters:
+            arguments["map_path"] = self.map_path
+        return seam(**arguments)
 
     def test_exact_ninja_graph_replays_one_canonical_link_command(self):
         observed = self.observe()
@@ -269,6 +277,18 @@ class NinjaLinkEvidenceTests(unittest.TestCase):
                 self._write_ninja(flags=flags)
                 with self.assertRaises(RELEASE.ReleaseError):
                     self.observe()
+
+    def test_linker_map_output_must_match_the_observed_map(self):
+        build_ninja = self.role_build / "build.ninja"
+        attacker_map = self.role_build / "attacker.map"
+        original = build_ninja.read_text(encoding="utf-8")
+        build_ninja.write_text(
+            original.replace(str(self.map_path), str(attacker_map), 1),
+            encoding="utf-8",
+        )
+
+        with self.assertRaises(RELEASE.ReleaseError):
+            self.observe()
 
     def test_variable_cycle_or_duplicate_edge_assignment_is_rejected(self):
         for flags in (" $FLAGS", " one\n  FLAGS = two"):
