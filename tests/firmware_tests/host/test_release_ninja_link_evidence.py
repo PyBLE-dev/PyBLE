@@ -212,6 +212,10 @@ class NinjaLinkEvidenceTests(unittest.TestCase):
                 rules_ninja,
                 "rule CXX_LINK\n  command = /attacker/linker\n",
             ),
+            (
+                rules_ninja,
+                "rule  CXX_LINK\n  command = /attacker/linker\n",
+            ),
         )
         for path, addition in mutations:
             with self.subTest(path=path.name):
