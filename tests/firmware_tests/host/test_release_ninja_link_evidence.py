@@ -59,7 +59,10 @@ class NinjaLinkEvidenceTests(unittest.TestCase):
         self.implicit = "esp-idf/main/CMakeFiles/btree.dir/bt_close.c.obj"
         self.map_outputs = set(self.outputs)
         self.map_path = self.role_build / "micropython.map"
-        self.map_path.write_text("synthetic linker map\n", encoding="utf-8")
+        self.map_path.write_text(
+            "LOAD esp-idf/main/libmain.a\n",
+            encoding="utf-8",
+        )
         self.map_flag = "-Wl,--Map=%s" % self.map_path
         archive = self.role_build / "esp-idf/main/libmain.a"
         archive.parent.mkdir(parents=True, exist_ok=True)
