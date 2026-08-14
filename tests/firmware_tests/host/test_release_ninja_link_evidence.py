@@ -309,6 +309,64 @@ class NinjaLinkEvidenceTests(unittest.TestCase):
         finally:
             RELEASE.os.read = original_read
 
+    def test_graph_parent_swap_cannot_supply_external_rules(self):
+        cmake_files = self.role_build / "CMakeFiles"
+        held_cmake_files = self.role_build / "CMakeFiles-held"
+        rules = cmake_files / "rules.ninja"
+        admitted_rules = rules.read_bytes()
+        rules.write_text("invalid local rules\n", encoding="utf-8")
+        external = self.role_build.parent / "external-rules"
+        external.mkdir()
+        (external / "rules.ninja").write_bytes(admitted_rules)
+
+        original_check = RELEASE._audit_no_symlink_components
+        original_lstat = RELEASE.Path.lstat
+        armed = False
+        path_stats = 0
+        races = 0
+
+        def swap_after_check(root, path, label):
+            nonlocal armed, path_stats, races
+            original_check(root, path, label)
+            if Path(path) == rules:
+                self.assertFalse(armed)
+                cmake_files.rename(held_cmake_files)
+                cmake_files.symlink_to(external, target_is_directory=True)
+                armed = True
+                path_stats = 0
+                races += 1
+
+        def restore_after_second_stat(path, *args, **kwargs):
+            nonlocal armed, path_stats
+            result = original_lstat(path, *args, **kwargs)
+            if armed and Path(path) == rules:
+                path_stats += 1
+                if path_stats == 2:
+                    cmake_files.unlink()
+                    held_cmake_files.rename(cmake_files)
+                    armed = False
+            return result
+
+        RELEASE._audit_no_symlink_components = swap_after_check
+        RELEASE.Path.lstat = restore_after_second_stat
+        rejected = False
+        try:
+            try:
+                self.observe()
+            except RELEASE.ReleaseError:
+                rejected = True
+        finally:
+            RELEASE._audit_no_symlink_components = original_check
+            RELEASE.Path.lstat = original_lstat
+            if armed:
+                cmake_files.unlink()
+                held_cmake_files.rename(cmake_files)
+
+        self.assertGreaterEqual(races, 1, "parent-swap race did not fire")
+        if not rejected:
+            self.assertEqual(races, 2, "accepted graph was not raced twice")
+        self.assertTrue(rejected, "external rules graph was accepted")
+
     def test_path_escape_and_line_continuation_are_rejected(self):
         for edge_suffix in (
             " ../outside.obj",
