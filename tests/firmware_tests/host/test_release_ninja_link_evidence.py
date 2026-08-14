@@ -217,6 +217,11 @@ class NinjaLinkEvidenceTests(unittest.TestCase):
         additions = (
             "build ./micropython.elf: phony\n",
             "elf_alias = micropython.elf\nbuild $elf_alias: phony\n",
+            (
+                "elf_alias = micropython.elf\n"
+                "build $elf_alias: phony\n"
+                "elf_alias = harmless.out\n"
+            ),
         )
         for addition in additions:
             with self.subTest(addition=addition):
