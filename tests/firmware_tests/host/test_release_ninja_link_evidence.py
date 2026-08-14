@@ -387,6 +387,20 @@ class NinjaLinkEvidenceTests(unittest.TestCase):
                 with self.assertRaises(RELEASE.ReleaseError):
                     self.observe()
 
+    def test_only_the_pinned_gcc_specs_file_is_admitted(self):
+        for flags in (
+            " -specs=attacker.specs",
+            " --specs=attacker.specs",
+        ):
+            with self.subTest(flags=flags):
+                self._write_ninja(flags=flags)
+                with self.assertRaises(RELEASE.ReleaseError):
+                    self.observe()
+
+        self._write_ninja(flags=" --specs=nano.specs")
+        observed = self.observe()
+        self.assertIn("--specs=nano.specs", observed["argv"])
+
     def test_linker_map_output_must_match_the_observed_map(self):
         build_ninja = self.role_build / "build.ninja"
         attacker_map = self.role_build / "attacker.map"
