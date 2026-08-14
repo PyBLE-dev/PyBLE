@@ -732,6 +732,38 @@ static int pble_notify_message(const uint8_t *msg, size_t len) {
     return PBLE_TX_OK;
 }
 
+// Transactional RUN admission: one connection-bound control submission with
+// no wait and no retry on the NimBLE host task. The response is known to fit at
+// the default MTU, but retain the exact one-fragment guard at this transport
+// boundary so future callers fail closed.
+int pble_ble_notify_control_try_for_conn(const uint8_t *msg, size_t len,
+                                         uint16_t expected_conn) {
+    if (pble_tx_mutex == NULL) {
+        return PBLE_TX_NO_CONN;
+    }
+    if (xSemaphoreTakeRecursive(pble_tx_mutex, 0) != pdTRUE) {
+        return PBLE_TX_AGAIN;
+    }
+
+    int rc;
+    if (expected_conn == BLE_HS_CONN_HANDLE_NONE ||
+        pble_conn_handle != expected_conn) {
+        rc = PBLE_TX_NO_CONN;
+    } else if (len > pble_payload_size(pble_mtu_val)) {
+        rc = PBLE_TX_OVERSIZE;
+    } else {
+        uint8_t pkt[PBLE_FRAG_PKT_MAX];
+        pkt[0] = PBLE_FRAG_FIRST | PBLE_FRAG_LAST;
+        if (len > 0) {
+            memcpy(pkt + 1, msg, len);
+        }
+        rc = pble_notify_packet(pkt, len + 1, 0);
+    }
+
+    xSemaphoreGiveRecursive(pble_tx_mutex);
+    return rc;
+}
+
 // Paced one-fragment TX. A retry serializes exactly one Notify attempt, releases
 // the mutex, and only then waits. Complete PBLE messages therefore remain atomic
 // while a control sender can acquire the mutex during bulk backpressure.
@@ -798,7 +830,7 @@ int pble_ble_notify_control_paced(const uint8_t *msg, size_t len,
     return pble_ble_notify_paced_with_reserve(msg, len, budget_ms, 0);
 }
 
-// Sole TX path (FR-BLE-3/10): fragment already-encoded PBLE/1 bytes to
+// General TX path (FR-BLE-3/10): fragment already-encoded PBLE/1 bytes to
 // payload_size(mtu) and Notify each §3.2 packet on TX. Byte-identical to the
 // receiver's reassembly. Returns PBLE_TX_OK / PBLE_TX_NO_CONN / PBLE_TX_AGAIN.
 //

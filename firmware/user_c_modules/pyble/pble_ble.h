@@ -51,7 +51,7 @@ void pble_ble_sm_config(void);
 #define PBLE_TX_AGAIN    (-2)
 #define PBLE_TX_OVERSIZE (-3)
 
-// Sole TX path: fragment already-encoded PBLE/1 bytes (§3.2) and Notify each
+// General TX path: fragment already-encoded PBLE/1 bytes (§3.2) and Notify each
 // packet on TX. Returns PBLE_TX_OK / PBLE_TX_NO_CONN / PBLE_TX_AGAIN (above).
 // (FR-BLE-3/10) — the bytes are never decoded here.
 //
@@ -61,6 +61,13 @@ void pble_ble_sm_config(void);
 // BLE packet (caps chunk_size) precisely so each stream event is a single packet
 // and PBLE_TX_AGAIN is always a clean "nothing sent, safe to retry".
 int pble_ble_notify(const uint8_t *msg, size_t len);
+
+// RUN-admission-only control submission. The encoded message MUST fit one
+// §3.2 fragment. Take the TX mutex with zero wait, recheck that expected_conn
+// still owns the transport, and make at most one Notify attempt. This never
+// waits for drain progress or retries on the NimBLE host task.
+int pble_ble_notify_control_try_for_conn(const uint8_t *msg, size_t len,
+                                         uint16_t expected_conn);
 
 // Paced TX for BULK streaming callers (fs-worker / console — NEVER the NimBLE
 // host task). The encoded message MUST fit one §3.2 fragment. Each retry makes

@@ -17,7 +17,7 @@
 #include "py/obj.h"
 
 #include "pble_proto.h"
-#include "pble_ble.h"   // pble_ble_notify — the sole TX path
+#include "pble_ble.h"   // general TX + transactional RUN-admission try
 
 // --- IEEE CRC-32 (protocol.md §3.1 / FR-PROTO-3) ----------------------------
 // Reflected, poly 0xEDB88320, init/xorout 0xFFFFFFFF — zlib-compatible, and
@@ -164,6 +164,20 @@ int pble_proto_emit_id(uint8_t type_, uint8_t opcode, uint8_t id_,
         return -1;
     }
     return pble_ble_notify(buf, (size_t)n);
+}
+
+// RUN admission owns this narrow status-only response path. Its 11-byte frame
+// is one fragment even at ATT MTU 23; the transport independently enforces that
+// invariant before its single zero-wait Notify attempt.
+int pble_proto_emit_rsp_status_try(uint8_t opcode, uint8_t id_, uint8_t status,
+                                   uint16_t expected_conn) {
+    uint8_t buf[PBLE_HDR_LEN + 1 + PBLE_CRC_LEN];
+    int n = pble_proto_encode(PBLE_TYPE_RSP, opcode, id_, &status, 1,
+                              buf, sizeof(buf));
+    if (n < 0) {
+        return PBLE_TX_OVERSIZE;
+    }
+    return pble_ble_notify_control_try_for_conn(buf, (size_t)n, expected_conn);
 }
 
 // Emit an event (TYPE=EVT, ID=0) — RUN_STATE etc. (FR-PROTO-4).

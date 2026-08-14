@@ -128,6 +128,11 @@ int  pble_proto_emit_control_paced(uint8_t opcode, const uint8_t *payload,
 int  pble_proto_emit_id(uint8_t type_, uint8_t opcode, uint8_t id_,
                         const uint8_t *payload, size_t len);
 
+// Encode one matching status-only RSP in call-local storage and submit it once
+// through the zero-wait, connection-bound RUN-admission transport seam.
+int  pble_proto_emit_rsp_status_try(uint8_t opcode, uint8_t id_, uint8_t status,
+                                    uint16_t expected_conn);
+
 #ifdef __cplusplus
 }
 #endif

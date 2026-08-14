@@ -14,10 +14,11 @@
 //     The worker has valid VM thread state; a user `while True: pass` blocks ONLY
 //     the worker — the NimBLE host task and the main-task REPL stay live.
 //   - The 0x20/0x21/0x22 handlers run on the NimBLE host task (pble_proto_dispatch)
-//     and NEVER execute user Python inline. RUN reserves + hands off + returns a
-//     §8 status; STOP stores a KeyboardInterrupt into the WORKER's own VM state;
-//     SOFT_REBOOT stops the worker then marshals a VM soft-reset to the MAIN task
-//     (the only VM-safe site for mp_deinit/mp_init).
+//     and NEVER execute user Python inline. RUN reserves + copies, admits only
+//     after one connection-bound zero-wait RSP{OK} submission, then hands off;
+//     STOP stores a KeyboardInterrupt into the WORKER's own VM state; SOFT_REBOOT
+//     stops the worker then marshals a VM soft-reset to the MAIN task (the only
+//     VM-safe site for mp_deinit/mp_init).
 //   - RUN_STATE (0x40) is emitted on EVERY transition via pble_proto_emit (EVT,
 //     ID=0) -> pble_ble_notify; the app never polls (FR-RUN-7, FR-MODE-3).
 //
@@ -65,8 +66,9 @@ int     pble_rsm_on_finished(pble_rsm_t *m, bool ok);  // -> DONE/ERROR; returns
 int     pble_rsm_on_stopped(pble_rsm_t *m);            // -> IDLE (STOP terminal); returns new state
 
 // --- Dispatch surface (registered into pble_proto; run on the NimBLE host task)
-// 0x20 RUN — reserve/refuse (EBUSY), parse [mode][data], hand off to the worker,
-// RSP{status} only. RUN_STATE(running) follows from the worker.
+// 0x20 RUN — validate/reserve/copy, submit the matching RSP{OK} once without
+// waiting, then hand off only on local acceptance. RUN_STATE(running) follows
+// from the worker. Admission failure rolls back and suppresses response fallback.
 uint8_t pble_runner_run(const pble_frame_t *req, uint8_t *rsp, size_t *rlen, uint16_t conn);
 // 0x21 STOP — idempotent; RSP{OK} always. If running, inject KeyboardInterrupt
 // into the WORKER's own VM state (FR-RUN-5/6/10). Link stays live (FR-BLE-11).

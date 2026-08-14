@@ -17,10 +17,11 @@
 //     NFR-SAFE-2, NFR-REL-1).
 //   - The 0x20/0x21/0x22 handlers run on the NimBLE host task and NEVER execute
 //     user Python inline. RUN reserves (or refuses EBUSY), captures [mode][data],
-//     wakes the worker, and returns a §8 status. STOP writes a KeyboardInterrupt
-//     into the WORKER's OWN VM state (NOT mp_sched_keyboard_interrupt(), which
-//     targets the MAIN/REPL thread) so it lands inside the worker's tight loop.
-//     SOFT_REBOOT stops the worker then marshals a VM soft-reset to the MAIN task.
+//     and wakes the worker only after one connection-bound zero-wait RSP{OK}
+//     submission succeeds. STOP writes a KeyboardInterrupt into the WORKER's OWN
+//     VM state (NOT mp_sched_keyboard_interrupt(), which targets the MAIN/REPL
+//     thread) so it lands inside the worker's tight loop. SOFT_REBOOT stops the
+//     worker then marshals a VM soft-reset to the MAIN task.
 //   - RUN_STATE (0x40) is emitted on EVERY transition via pble_proto_emit (EVT,
 //     ID=0) -> pble_ble_notify; the app never polls (FR-RUN-7, FR-MODE-3).
 //
@@ -45,6 +46,7 @@
 #include "py/compile.h"      // mp_compile
 
 #include "pble_runner.h"
+#include "pble_ble.h"        // PBLE_TX_OK for transactional RUN admission
 #include "pble_console.h"    // tee stdout/stderr, worker-origin gate
 
 // Port hook: wake the MAIN task out of a blocked readline so a marshalled
@@ -252,7 +254,6 @@ void pble_runner_worker(void) {
 // ============================================================================
 uint8_t pble_runner_run(const pble_frame_t *req, uint8_t *rsp, size_t *rlen, uint16_t conn) {
     (void)rsp;
-    (void)conn;
     if (rlen) {
         *rlen = 0;   // RSP{status} carries no extra bytes
     }
@@ -275,12 +276,17 @@ uint8_t pble_runner_run(const pble_frame_t *req, uint8_t *rsp, size_t *rlen, uin
     } else if (dlen > PBLE_RUN_BUF_MAX) {
         return PBLE_ERANGE;
     }
+    if (g_run_sem == NULL) {
+        return PBLE_EINTERNAL;
+    }
 
-    // Reserve the run (or refuse) under the single-writer critical section. STOP
-    // and read-only commands are never starved: the section only brackets the
-    // tiny state test/transition.
+    // Reserve provisionally (or refuse) under the single-writer critical
+    // section. Remember the exact runnable state so every local TX failure can
+    // roll back without manufacturing IDLE from DONE or ERROR.
     uint8_t status;
+    int prior_state;
     taskENTER_CRITICAL(&g_mux);
+    prior_state = g_rsm.state;
     status = pble_rsm_on_run(&g_rsm);
     taskEXIT_CRITICAL(&g_mux);
     if (status != PBLE_OK) {
@@ -293,8 +299,24 @@ uint8_t pble_runner_run(const pble_frame_t *req, uint8_t *rsp, size_t *rlen, uin
     if (dlen) {
         memcpy(g_run_buf, req->payload + 1, dlen);
     }
-    xSemaphoreGive(g_run_sem);   // RUN_STATE(running) follows from the worker
-    return PBLE_OK;
+
+    // The exact RSP{OK} is the admission cut. This call takes the TX mutex with
+    // zero wait, rechecks the originating connection, and attempts one Notify.
+    // Suppress generic dispatch fallback on both success and failure: a failed
+    // local submission is a side-effect-free timeout, not a second response.
+    int tx_rc = pble_proto_emit_rsp_status_try(req->opcode, req->id,
+                                                PBLE_OK, conn);
+    if (tx_rc != PBLE_TX_OK) {
+        taskENTER_CRITICAL(&g_mux);
+        g_rsm.state = prior_state;
+        taskEXIT_CRITICAL(&g_mux);
+        return PBLE_NO_RSP;
+    }
+
+    BaseType_t gave = xSemaphoreGive(g_run_sem);
+    configASSERT(gave == pdTRUE);  // single reservation => binary sem was empty
+    (void)gave;
+    return PBLE_NO_RSP;
 }
 
 // Inject a KeyboardInterrupt into the WORKER's own VM state. Single volatile-word
