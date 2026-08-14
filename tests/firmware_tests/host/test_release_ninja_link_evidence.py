@@ -359,6 +359,21 @@ class NinjaLinkEvidenceTests(unittest.TestCase):
                 with self.assertRaises(RELEASE.ReleaseError):
                     self.observe()
 
+    def test_gnu_ld_abbreviated_output_options_are_rejected(self):
+        for flags in (
+            " -Wl,-Ma=attacker.map",
+            " -Wl,--Ma=attacker.map",
+            " -Wl,--out=attacker.elf",
+            " --for-linker=-Ma=attacker.map",
+            " --for-linker=--out=attacker.elf",
+            " -Xlinker -Ma=attacker.map",
+            " -Xlinker --out=attacker.elf",
+        ):
+            with self.subTest(flags=flags):
+                self._write_ninja(flags=flags)
+                with self.assertRaises(RELEASE.ReleaseError):
+                    self.observe()
+
     def test_linker_map_output_must_match_the_observed_map(self):
         build_ninja = self.role_build / "build.ninja"
         attacker_map = self.role_build / "attacker.map"
