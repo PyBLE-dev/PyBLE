@@ -479,6 +479,9 @@ class NinjaLinkEvidenceTests(unittest.TestCase):
             " -Wl,--mri-script=/attacker/control.mri",
             " -Xlinker -c -Xlinker /attacker/control.mri",
             " --for-linker=-c --for-linker=/attacker/control.mri",
+            " -Wl,-c/attacker/control.mri",
+            " -Xlinker -c/attacker/control.mri",
+            " --for-linker=-c/attacker/control.mri",
         ):
             with self.subTest(flags=flags):
                 self._write_ninja(flags=flags)
