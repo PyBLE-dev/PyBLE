@@ -283,6 +283,32 @@ class NinjaLinkEvidenceTests(unittest.TestCase):
         finally:
             RELEASE._audit_stable_regular_file_bytes = original_reader
 
+    def test_growing_graph_stream_is_never_read_past_bound(self):
+        rules = self.role_build / "CMakeFiles/rules.ninja"
+        rules_stat = rules.stat()
+        rules_identity = (rules_stat.st_dev, rules_stat.st_ino)
+        maximum = 1024 * 1024
+        streamed = 0
+        original_read = RELEASE.os.read
+
+        def guarded_read(descriptor, count):
+            nonlocal streamed
+            opened = RELEASE.os.fstat(descriptor)
+            if (opened.st_dev, opened.st_ino) != rules_identity:
+                return original_read(descriptor, count)
+            if streamed >= maximum + 1:
+                self.fail("growing Ninja graph was read beyond its bound")
+            size = min(count, 64 * 1024, maximum + 1 - streamed)
+            streamed += size
+            return b"x" * size
+
+        RELEASE.os.read = guarded_read
+        try:
+            with self.assertRaises(RELEASE.ReleaseError):
+                self.observe()
+        finally:
+            RELEASE.os.read = original_read
+
     def test_path_escape_and_line_continuation_are_rejected(self):
         for edge_suffix in (
             " ../outside.obj",
