@@ -1901,6 +1901,36 @@ class PbleCentralConnectionTest(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(asyncio.TimeoutError):
             await connected._await_rsp(1, 0)
 
+    async def test_same_id_wrong_opcode_response_cannot_complete_command(self):
+        request_id = 73
+        expected_opcode = wire.OP_RUN
+        wrong_opcode = wire.OP_HELLO
+
+        class FakeBleakClient:
+            is_connected = True
+
+            async def write_gatt_char(self, _uuid, _packet, response):
+                self.assert_response = response
+                encoded = wire.encode(
+                    wire.RSP,
+                    wrong_opcode,
+                    request_id,
+                    bytes((wire.ST_OK,)),
+                )
+                for fragment in wire.fragment(
+                    encoded,
+                    central_module.DEFAULT_ATT_MTU,
+                ):
+                    central._on_notify(None, fragment)
+
+        central = central_module.PbleCentral(FakeBleakClient())
+        with self.assertRaises(asyncio.TimeoutError):
+            await central.send_cmd(
+                expected_opcode,
+                request_id,
+                timeout=0.01,
+            )
+
 
 class NativeSoftRebootOrderingTest(unittest.TestCase):
     def test_ok_response_has_a_bounded_delivery_grace_before_vm_reset(self):
