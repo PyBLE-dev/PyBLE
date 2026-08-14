@@ -244,6 +244,21 @@ class NinjaLinkEvidenceTests(unittest.TestCase):
                 finally:
                     build_ninja.write_text(original, encoding="utf-8")
 
+    def test_immediate_variable_expansion_cannot_hide_duplicate_elf_edge(self):
+        build_ninja = self.role_build / "build.ninja"
+        original = build_ninja.read_text(encoding="utf-8")
+        build_ninja.write_text(
+            original
+            + "base = micropython.elf\n"
+            + "elf_alias = $base\n"
+            + "base = harmless.out\n"
+            + "build $elf_alias: phony\n",
+            encoding="utf-8",
+        )
+
+        with self.assertRaises(RELEASE.ReleaseError):
+            self.observe()
+
     def test_alternate_include_or_nested_subninja_is_rejected(self):
         for injected in (
             "include ../outside/rules.ninja",
