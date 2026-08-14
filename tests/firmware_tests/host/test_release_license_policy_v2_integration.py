@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 import copy
+import hashlib
 import importlib.util
 import io
 import json
@@ -146,6 +147,71 @@ MAIN_GENERATED_HEADERS = (
 )
 
 
+def write_ninja_link_graph(
+    role_root: Path,
+    *,
+    app_elf: str,
+    compiler: str,
+    explicit_inputs: list[str],
+    implicit_inputs: list[str],
+    link_libraries: list[str],
+) -> dict:
+    """Write the exact bounded Ninja final-link shape frozen by BLD-8."""
+
+    rule_name = "CXX_LINK" if compiler.endswith("++") else "C_LINK"
+    description = (
+        "Linking CXX executable $TARGET_FILE"
+        if rule_name == "CXX_LINK"
+        else "Linking C executable $TARGET_FILE"
+    )
+    build_ninja = role_root / "build.ninja"
+    rules_ninja = role_root / "CMakeFiles" / "rules.ninja"
+    rules_ninja.parent.mkdir(parents=True, exist_ok=True)
+    build_ninja.write_text(
+        "# exact synthetic CMake Ninja graph\n"
+        "include CMakeFiles/rules.ninja\n"
+        "build %s: %s %s | %s || graph-order\n"
+        % (
+            app_elf,
+            rule_name,
+            " ".join(explicit_inputs),
+            " ".join(implicit_inputs),
+        )
+        + "  FLAGS =\n"
+        + "  LINK_FLAGS =\n"
+        + "  LINK_LIBRARIES = %s\n" % " ".join(link_libraries)
+        + "  LINK_PATH =\n"
+        + "  OBJECT_DIR = CMakeFiles/%s.dir\n" % app_elf
+        + "  POST_BUILD = :\n"
+        + "  PRE_LINK = :\n"
+        + "  TARGET_COMPILE_PDB = CMakeFiles/%s.dir/\n" % app_elf
+        + "  TARGET_FILE = %s\n" % app_elf
+        + "  TARGET_PDB = %s.pdb\n" % app_elf,
+        encoding="utf-8",
+    )
+    rules_ninja.write_text(
+        "rule %s\n" % rule_name
+        + "  command = $PRE_LINK && %s $FLAGS $LINK_FLAGS $in "
+        "-o $TARGET_FILE $LINK_PATH $LINK_LIBRARIES && $POST_BUILD\n"
+        % compiler
+        + "  description = %s\n" % description
+        + "  restat = $RESTAT\n",
+        encoding="utf-8",
+    )
+    argv = [compiler, *explicit_inputs, "-o", app_elf, *link_libraries]
+    canonical_argv = (
+        json.dumps(argv, ensure_ascii=False, separators=(",", ":")) + "\n"
+    ).encode("utf-8")
+    return {
+        "argv": argv,
+        "build_ninja_path": build_ninja,
+        "build_ninja_sha256": BASE.sha256_path(build_ninja),
+        "rules_ninja_path": rules_ninja,
+        "rules_ninja_sha256": BASE.sha256_path(rules_ninja),
+        "linker_command_sha256": hashlib.sha256(canonical_argv).hexdigest(),
+    }
+
+
 @contextmanager
 def real_idf_main_topology(fixture):
     """Install the source/output shapes emitted by the real ESP32 build."""
@@ -157,7 +223,8 @@ def real_idf_main_topology(fixture):
     description_path = role_root / "project_description.json"
     commands_path = role_root / "compile_commands.json"
     map_path = role_root / "micropython.map"
-    archive = role_root / "esp-idf" / "main" / "libfixture_app.a"
+    baseline_link = fixture.ninja_links[(target, "application")]
+    archive = baseline_link["main_archive"]
     command_directory = role_root / "compiler-working-directory"
     command_directory.mkdir(parents=True, exist_ok=True)
 
@@ -181,12 +248,11 @@ def real_idf_main_topology(fixture):
     build_only_source = (
         fixture.firmware / "components" / "app_core" / "build_only.c"
     )
+    main_source = baseline_link["main_source"]
 
-    app_output_relative = (
-        "esp-idf/main/CMakeFiles/app_core.dir/app_core.o"
-    )
+    app_output_relative = baseline_link["main_output_relative"]
     pyble_archive_output_relative = (
-        "esp-idf/main/CMakeFiles/app_core.dir/%s.obj"
+        "esp-idf/main/CMakeFiles/main.dir/%s.obj"
         % pyble_source.as_posix().lstrip("/")
     )
     pyble_direct_output_relative = (
@@ -209,9 +275,8 @@ def real_idf_main_topology(fixture):
         "pyble": pyble_direct_output_relative,
         "berkeley": berkeley_direct_output_relative,
     }
-    link_path = (
-        role_root / "CMakeFiles" / "micropython.elf.dir" / "link.txt"
-    )
+    build_ninja_path = role_root / "build.ninja"
+    rules_ninja_path = role_root / "CMakeFiles" / "rules.ninja"
 
     generated_headers = [
         role_root / "genhdr" / name for name in MAIN_GENERATED_HEADERS
@@ -276,7 +341,7 @@ def real_idf_main_topology(fixture):
             archive,
             BASE.make_ar_bytes(
                 [
-                    ("app_core.o", output_values[role_root / app_output_relative]),
+                    ("fixture_main.o", output_values[role_root / app_output_relative]),
                     (
                         "pble_proto.c.obj",
                         output_values[role_root / pyble_archive_output_relative],
@@ -286,44 +351,35 @@ def real_idf_main_topology(fixture):
         )
 
         description = json.loads(description_path.read_text(encoding="utf-8"))
-        component = description["build_component_info"].pop("app_core")
+        component = description["build_component_info"]["main"]
         component.update(
             {
                 "file": str(archive),
-                "lib": "app_core",
+                "lib": "main",
                 "sources": [
-                    str(fixture.firmware / "components" / "app_core" / "app_core.c"),
+                    str(main_source),
                     str(build_only_source),
                     *(str(path) for path in generated_headers),
                 ],
             }
         )
-        description["build_component_info"]["main"] = component
-        description["build_components"] = [
-            "main" if name == "app_core" else name
-            for name in description["build_components"]
-        ]
         write_json(description_path, description)
 
         commands = json.loads(commands_path.read_text(encoding="utf-8"))
-        app_command = next(
+        main_command = next(
             command
             for command in commands
-            if command["file"].endswith("/components/app_core/app_core.c")
+            if command["file"] == str(main_source)
         )
-        app_command["directory"] = str(command_directory)
-        app_command["output"] = app_output_relative
-        app_command["command"] = re.sub(
+        main_command["directory"] = str(command_directory)
+        main_command["output"] = app_output_relative
+        main_command["command"] = re.sub(
             r"(?<= -o )\S+",
             "../" + app_output_relative,
-            app_command["command"],
+            main_command["command"],
             count=1,
         )
-        compiler = next(
-            command["command"].split(" ", 1)[0]
-            for command in commands
-            if command is not app_command
-        )
+        compiler = baseline_link["argv"][0]
 
         def compile_command(source: Path, output_relative: str) -> dict:
             return {
@@ -339,49 +395,50 @@ def real_idf_main_topology(fixture):
                 compile_command(pyble_source, pyble_archive_output_relative),
                 compile_command(pyble_source, pyble_direct_output_relative),
                 compile_command(berkeley_source, berkeley_direct_output_relative),
-                compile_command(project_source, project_output_relative),
                 compile_command(build_only_source, build_only_output_relative),
             ]
         )
         write_json(commands_path, commands)
-        write_bytes(
-            link_path,
-            (
-                "%s %s -o micropython.elf\n"
-                % (
-                    compiler,
-                    " ".join(direct_loads.values()),
-                )
-            ).encode("utf-8"),
-        )
 
         map_text = map_path.read_text(encoding="utf-8")
         map_text = map_text.replace(
-            "esp-idf/app_core/libfixture_app.a",
-            "esp-idf/main/libfixture_app.a",
-        )
-        map_text = map_text.replace(
             "Linker script and memory map",
             (
-                "esp-idf/main/libfixture_app.a(pble_proto.c.obj)\n"
+                "%s(pble_proto.c.obj)\n"
                 "                              (fixture_pble_proto)\n\n"
                 "Linker script and memory map"
-            ),
+            )
+            % baseline_link["main_archive_relative"],
             1,
         )
         map_text += "".join(
-            "LOAD %s\n" % value for value in direct_loads.values()
+            "LOAD %s\n" % value
+            for name, value in direct_loads.items()
+            if name != "project"
         )
         write_bytes(map_path, map_text.encode("utf-8"))
 
-        policy = copy.deepcopy(fixture.policy)
-        identifier = archive_id("app_core", profile_id, "application")
-        policy_input = next(
-            item
-            for item in policy["resolved_inputs"]
-            if item["id"] == identifier
+        archives = [
+            match.group(1)
+            for line in map_text.splitlines()
+            if (match := re.fullmatch(r"LOAD (\S+\.a)", line)) is not None
+        ]
+        write_bytes(build_ninja_path, build_ninja_path.read_bytes())
+        write_bytes(rules_ninja_path, rules_ninja_path.read_bytes())
+        graph = write_ninja_link_graph(
+            role_root,
+            app_elf="micropython.elf",
+            compiler=compiler,
+            explicit_inputs=[
+                direct_loads["project"],
+                direct_loads["pyble"],
+            ],
+            implicit_inputs=[direct_loads["berkeley"], *archives],
+            link_libraries=[direct_loads["berkeley"], *archives],
         )
-        policy_input["generated_matcher"]["component"] = "main"
+
+        policy = copy.deepcopy(fixture.policy)
+        identifier = archive_id("main", profile_id, "application")
         yield {
             "policy": policy,
             "identifier": identifier,
@@ -389,9 +446,10 @@ def real_idf_main_topology(fixture):
             "description_path": description_path,
             "commands_path": commands_path,
             "map_path": map_path,
-            "link_path": link_path,
+            **graph,
             "archive": archive,
             "generated_headers": generated_headers,
+            "main_source": main_source,
             "pyble_source": pyble_source,
             "berkeley_source": berkeley_source,
             "project_source": project_source,
@@ -467,6 +525,7 @@ class ObservationV2Fixture:
         self._add_mbedtls_archives()
         self._install_compile_output_fixtures()
         self._rewrite_maps()
+        self._install_ninja_link_fixtures()
         self._install_retained_source_checkouts()
         self.runner = FrozenTagValueRunner(self.base)
         self.expected_inputs = self._make_expected_inputs()
@@ -1356,6 +1415,170 @@ output.write_text(
                 encoding="utf-8",
             )
 
+    def _install_ninja_link_fixtures(self):
+        """Add the exact generated-main and final-link evidence to all roles."""
+
+        self.ninja_links = {}
+        main_sources = {}
+        for role in ("application", "bootloader"):
+            source = (
+                self.firmware
+                / "components"
+                / ("fixture_main_app" if role == "application" else "fixture_main_boot")
+                / "fixture_main.c"
+            )
+            source.parent.mkdir(parents=True, exist_ok=True)
+            source.write_text(
+                "// SPDX-License-Identifier: MIT\n"
+                "int fixture_%s_main(void) { return 1; }\n"
+                % ("app" if role == "application" else "boot"),
+                encoding="utf-8",
+            )
+            main_sources[role] = source
+
+        for profile_id, target, idf_target in PROFILE_TARGETS:
+            for role in ("application", "bootloader"):
+                role_root = self.build_root / target
+                map_name = "micropython.map"
+                app_elf = "micropython.elf"
+                if role == "bootloader":
+                    role_root /= "bootloader"
+                    map_name = "bootloader.map"
+                    app_elf = "bootloader.elf"
+
+                description_path = role_root / "project_description.json"
+                commands_path = role_root / "compile_commands.json"
+                map_path = role_root / map_name
+                description = json.loads(
+                    description_path.read_text(encoding="utf-8")
+                )
+                commands = json.loads(
+                    commands_path.read_text(encoding="utf-8")
+                )
+                compiler = shlex.split(commands[0]["command"], posix=True)[0]
+
+                main_source = main_sources[role]
+                main_archive_relative = "esp-idf/main/libfixture_main.a"
+                main_archive = role_root / main_archive_relative
+                main_output_relative = (
+                    "esp-idf/main/CMakeFiles/main.dir/fixture_main.o"
+                )
+                main_output = role_root / main_output_relative
+                anchor_source = role_root / ("project_elf_src_%s.c" % idf_target)
+                anchor_output_relative = (
+                    "CMakeFiles/%s.dir/%s.obj" % (app_elf, anchor_source.name)
+                )
+                anchor_output = role_root / anchor_output_relative
+
+                main_output.parent.mkdir(parents=True, exist_ok=True)
+                main_output.write_bytes(
+                    ("synthetic %s main object\n" % role).encode("utf-8")
+                )
+                anchor_source.write_bytes(b"")
+                anchor_output.parent.mkdir(parents=True, exist_ok=True)
+                anchor_output.write_bytes(
+                    ("synthetic %s project anchor\n" % role).encode("utf-8")
+                )
+                main_archive.parent.mkdir(parents=True, exist_ok=True)
+                main_archive.write_bytes(
+                    BASE.make_ar_bytes(
+                        [("fixture_main.o", main_output.read_bytes())]
+                    )
+                )
+
+                metadata = []
+                if role == "application":
+                    for index, name in enumerate(MAIN_GENERATED_HEADERS):
+                        header = role_root / "genhdr" / name
+                        header.parent.mkdir(parents=True, exist_ok=True)
+                        header.write_text(
+                            "/* synthetic generated main header %d */\n" % index,
+                            encoding="utf-8",
+                        )
+                        metadata.append(header)
+
+                description["app_elf"] = app_elf
+                description["build_components"].append("main")
+                description["build_component_info"]["main"] = {
+                    "dir": str(main_source.parent),
+                    "type": "LIBRARY",
+                    "lib": "main",
+                    "file": str(main_archive),
+                    "sources": [
+                        str(main_source),
+                        *(str(path) for path in metadata),
+                    ],
+                }
+                BASE.write_json(description_path, description)
+
+                def compile_command(source: Path, output_relative: str) -> dict:
+                    return {
+                        "directory": str(role_root),
+                        "command": "%s -c %s -o %s"
+                        % (compiler, source, output_relative),
+                        "file": str(source),
+                        "output": output_relative,
+                    }
+
+                commands.extend(
+                    [
+                        compile_command(main_source, main_output_relative),
+                        compile_command(anchor_source, anchor_output_relative),
+                    ]
+                )
+                BASE.write_json(commands_path, commands)
+
+                map_text = map_path.read_text(encoding="utf-8")
+                map_text = map_text.replace(
+                    "\nLinker script and memory map\n",
+                    (
+                        "%s(fixture_main.o)\n"
+                        "                              (fixture_main)\n\n"
+                        "Linker script and memory map\n"
+                    )
+                    % main_archive_relative,
+                    1,
+                )
+                map_text += "LOAD %s\nLOAD %s\n" % (
+                    main_archive_relative,
+                    anchor_output_relative,
+                )
+                map_path.write_text(map_text, encoding="utf-8")
+
+                archives = [
+                    match.group(1)
+                    for line in map_text.splitlines()
+                    if (match := re.fullmatch(r"LOAD (\S+\.a)", line))
+                    is not None
+                ]
+                graph = write_ninja_link_graph(
+                    role_root,
+                    app_elf=app_elf,
+                    compiler=compiler,
+                    explicit_inputs=[anchor_output_relative],
+                    implicit_inputs=archives,
+                    link_libraries=archives,
+                )
+                stale_link = (
+                    role_root / "CMakeFiles" / ("%s.dir" % app_elf) / "link.txt"
+                )
+                if stale_link.exists():
+                    stale_link.unlink()
+                self.ninja_links[(target, role)] = {
+                    **graph,
+                    "profile_id": profile_id,
+                    "app_elf": app_elf,
+                    "main_source": main_source,
+                    "main_archive": main_archive,
+                    "main_archive_relative": main_archive_relative,
+                    "main_output": main_output,
+                    "main_output_relative": main_output_relative,
+                    "anchor_source": anchor_source,
+                    "anchor_output": anchor_output,
+                    "anchor_output_relative": anchor_output_relative,
+                    "metadata": metadata,
+                }
+
     def _source_path(self, path: Path) -> str:
         resolved = path.resolve()
         try:
@@ -1396,18 +1619,66 @@ output.write_text(
         record = description["build_component_info"][component]
         archive = Path(record["file"])
         members = sorted(BASE.parse_ar_members(archive.read_bytes()))
+        source_paths = [Path(source) for source in record["sources"]]
+        if component == "main":
+            metadata_paths = set(self.ninja_links[(target, role)]["metadata"])
+            source_paths = [
+                source for source in source_paths if source not in metadata_paths
+            ]
         sources = [
             {
-                "path": self._source_path(Path(source)),
-                "sha256": BASE.sha256_path(Path(source)),
+                "path": self._source_path(source),
+                "sha256": BASE.sha256_path(source),
             }
-            for source in record["sources"]
+            for source in source_paths
         ]
         kind = (
             "generated-supplemental-archive"
             if component in {item[0] for item in self.MBED_COMPONENTS}
             else "generated-component-archive"
         )
+        generated_binding = {
+            "component": component,
+            "project_description_sha256": BASE.sha256_path(
+                description_path
+            ),
+            "compile_commands_sha256": BASE.sha256_path(commands_path),
+            "linker_map_sha256": BASE.sha256_path(map_path),
+            "sources": sorted(sources, key=lambda item: item["path"]),
+            "members": members,
+        }
+        if component == "main":
+            link = self.ninja_links[(target, role)]
+            generated_binding.update(
+                {
+                    "linker_command_sha256": link["linker_command_sha256"],
+                    "build_ninja_sha256": link["build_ninja_sha256"],
+                    "rules_ninja_sha256": link["rules_ninja_sha256"],
+                    "metadata_inputs": [
+                        {
+                            "path": self._source_path(path),
+                            "sha256": BASE.sha256_path(path),
+                        }
+                        for path in link["metadata"]
+                    ],
+                    "direct_objects": [
+                        {
+                            "output": {
+                                "path": self._source_path(link["anchor_output"]),
+                                "sha256": BASE.sha256_path(
+                                    link["anchor_output"]
+                                ),
+                            },
+                            "source": {
+                                "path": self._source_path(link["anchor_source"]),
+                                "sha256": BASE.sha256_path(
+                                    link["anchor_source"]
+                                ),
+                            },
+                        }
+                    ],
+                }
+            )
         return {
             "id": archive_id(component, profile_id, role),
             "profile_id": profile_id,
@@ -1415,16 +1686,7 @@ output.write_text(
             "kind": kind,
             "observed_path": str(archive.resolve()),
             "sha256": BASE.sha256_path(archive),
-            "generated_binding": {
-                "component": component,
-                "project_description_sha256": BASE.sha256_path(
-                    description_path
-                ),
-                "compile_commands_sha256": BASE.sha256_path(commands_path),
-                "linker_map_sha256": BASE.sha256_path(map_path),
-                "sources": sorted(sources, key=lambda item: item["path"]),
-                "members": members,
-            },
+            "generated_binding": generated_binding,
         }
 
     def _make_expected_inputs(self) -> list[dict]:
@@ -1444,6 +1706,7 @@ output.write_text(
         for profile_id, target, _idf_target in PROFILE_TARGETS:
             for component in (
                 "app_core",
+                "main",
                 "micropython",
                 *(item[0] for item in self.MBED_COMPONENTS),
             ):
@@ -1461,6 +1724,14 @@ output.write_text(
                     target=target,
                     role="bootloader",
                     component="boot_core",
+                )
+            )
+            inputs.append(
+                self._generated_observation(
+                    profile_id=profile_id,
+                    target=target,
+                    role="bootloader",
+                    component="main",
                 )
             )
             build = self.build_root / target
@@ -1560,9 +1831,14 @@ output.write_text(
             key: observation[key]
             for key in ("id", "profile_id", "role", "kind")
         }
-        common["reviewed_package_id"] = owners[
-            observation["id"].split("--", 1)[0]
-        ]
+        name = observation["id"].split("--", 1)[0]
+        common["reviewed_package_id"] = (
+            "fixture-app-core"
+            if name == "main" and observation["role"] == "application"
+            else "fixture-boot-core"
+            if name == "main"
+            else owners[name]
+        )
         kind = observation["kind"]
         if kind.startswith("generated-"):
             return {
@@ -1676,6 +1952,19 @@ output.write_text(
             item["id"]
             for item in self.expected_inputs
             if item["id"].startswith(prefixes)
+            or (
+                item["id"].startswith("main--")
+                and (
+                    (
+                        identifier == "fixture-app-core"
+                        and item["role"] == "application"
+                    )
+                    or (
+                        identifier == "fixture-boot-core"
+                        and item["role"] == "bootloader"
+                    )
+                )
+            )
         )
 
     def _resolutions(self) -> list[dict]:
@@ -2133,10 +2422,7 @@ class ObservePolicyV2InputsTests(unittest.TestCase):
             expected_sources = {
                 self.fixture._source_path(path)
                 for path in (
-                    self.fixture.firmware
-                    / "components"
-                    / "app_core"
-                    / "app_core.c",
+                    topology["main_source"],
                     topology["pyble_source"],
                 )
             }
@@ -2196,11 +2482,19 @@ class ObservePolicyV2InputsTests(unittest.TestCase):
             )
             self.assertEqual(
                 binding["linker_command_sha256"],
-                BASE.sha256_path(topology["link_path"]),
+                topology["linker_command_sha256"],
+            )
+            self.assertEqual(
+                binding["build_ninja_sha256"],
+                topology["build_ninja_sha256"],
+            )
+            self.assertEqual(
+                binding["rules_ninja_sha256"],
+                topology["rules_ninja_sha256"],
             )
             self.assertEqual(
                 binding["members"],
-                ["app_core.o", "pble_proto.c.obj"],
+                ["fixture_main.o", "pble_proto.c.obj"],
                 "ordinary archive membership comes from the exact object root",
             )
 
@@ -2316,7 +2610,7 @@ class ObservePolicyV2InputsTests(unittest.TestCase):
                 )
             )
             changed_link = (
-                topology["link_path"]
+                topology["build_ninja_path"]
                 .read_text(encoding="utf-8")
                 .replace(expected_relative, alias_relative)
             )
@@ -2334,7 +2628,7 @@ class ObservePolicyV2InputsTests(unittest.TestCase):
                     topology["map_path"],
                     changed_map,
                 ), BASE.patched_text(
-                    topology["link_path"],
+                    topology["build_ninja_path"],
                     changed_link,
                 ):
                     self.assertTrue(expected_root.is_symlink())
@@ -2672,10 +2966,7 @@ class ObservePolicyV2InputsTests(unittest.TestCase):
             with self.subTest(source_family=label):
                 with real_idf_main_topology(self.fixture) as topology:
                     source = (
-                        self.fixture.firmware
-                        / "components"
-                        / "app_core"
-                        / "app_core.c"
+                        topology["main_source"]
                         if source_key is None
                         else topology[source_key]
                     )
@@ -2793,7 +3084,7 @@ class ObservePolicyV2InputsTests(unittest.TestCase):
                     .replace("LOAD %s\n" % exact, "LOAD %s\n" % wrong)
                 )
                 changed_link = (
-                    topology["link_path"]
+                    topology["build_ninja_path"]
                     .read_text(encoding="utf-8")
                     .replace(exact, wrong)
                 )
@@ -2803,7 +3094,9 @@ class ObservePolicyV2InputsTests(unittest.TestCase):
                 ), BASE.patched_text(
                     topology["map_path"],
                     changed_map,
-                ), BASE.patched_text(topology["link_path"], changed_link):
+                ), BASE.patched_text(
+                    topology["build_ninja_path"], changed_link
+                ):
                     self.assert_rejected(topology["policy"])
 
     def test_unlinked_direct_like_output_is_allowed_but_extra_load_is_rejected(self):
@@ -2880,41 +3173,44 @@ class ObservePolicyV2InputsTests(unittest.TestCase):
             exact = topology["direct_loads"]["pyble"]
             replacement = topology["outputs"]["build_only"]
             changed_link = (
-                topology["link_path"]
+                topology["build_ninja_path"]
                 .read_text(encoding="utf-8")
                 .replace(exact, replacement)
             )
-            with BASE.patched_text(topology["link_path"], changed_link):
+            with BASE.patched_text(
+                topology["build_ninja_path"], changed_link
+            ):
                 self.assert_rejected(topology["policy"])
 
     def test_link_command_rejects_driver_wrapped_response_file(self):
         with real_idf_main_topology(self.fixture) as topology:
             changed_link = (
-                topology["link_path"]
+                topology["rules_ninja_path"]
                 .read_text(encoding="utf-8")
                 .replace(
-                    " -o micropython.elf",
-                    " -Wl,@objects.rsp -o micropython.elf",
+                    " -o $TARGET_FILE",
+                    " -Wl,@objects.rsp -o $TARGET_FILE",
                 )
             )
-            with BASE.patched_text(topology["link_path"], changed_link):
-                with self.assertRaisesRegex(
-                    RELEASE.ReleaseError,
-                    "response file",
-                ):
+            with BASE.patched_text(
+                topology["rules_ninja_path"], changed_link
+            ):
+                with self.assertRaises(RELEASE.ReleaseError):
                     self.observe(topology["policy"])
 
     def test_link_command_rejects_shell_comment_before_direct_objects(self):
         with real_idf_main_topology(self.fixture) as topology:
-            original = topology["link_path"].read_text(encoding="utf-8")
-            compiler, separator, operands = original.partition(" ")
-            self.assertTrue(separator)
-            changed_link = "%s # %s" % (compiler, operands)
-            with BASE.patched_text(topology["link_path"], changed_link):
-                with self.assertRaisesRegex(
-                    RELEASE.ReleaseError,
-                    "shell|comment",
-                ):
+            original = topology["rules_ninja_path"].read_text(
+                encoding="utf-8"
+            )
+            changed_link = original.replace(
+                " -o $TARGET_FILE",
+                " # attacker -o $TARGET_FILE",
+            )
+            with BASE.patched_text(
+                topology["rules_ninja_path"], changed_link
+            ):
+                with self.assertRaises(RELEASE.ReleaseError):
                     self.observe(topology["policy"])
 
     def test_opaque_archive_requires_exact_reviewed_bytes(self):
