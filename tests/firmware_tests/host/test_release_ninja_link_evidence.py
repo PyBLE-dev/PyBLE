@@ -461,6 +461,21 @@ class NinjaLinkEvidenceTests(unittest.TestCase):
         observed = self.observe()
         self.assertIn("--specs=nano.specs", observed["argv"])
 
+    def test_linker_plugin_and_mri_controls_are_rejected(self):
+        for flags in (
+            " -Wl,-plugin,/attacker/plugin.so",
+            " -Xlinker -plugin -Xlinker /attacker/plugin.so",
+            " --for-linker=-plugin --for-linker=/attacker/plugin.so",
+            " -Wl,-c,/attacker/control.mri",
+            " -Wl,--mri-script=/attacker/control.mri",
+            " -Xlinker -c -Xlinker /attacker/control.mri",
+            " --for-linker=-c --for-linker=/attacker/control.mri",
+        ):
+            with self.subTest(flags=flags):
+                self._write_ninja(flags=flags)
+                with self.assertRaises(RELEASE.ReleaseError):
+                    self.observe()
+
     def test_linker_map_output_must_match_the_observed_map(self):
         build_ninja = self.role_build / "build.ninja"
         attacker_map = self.role_build / "attacker.map"
