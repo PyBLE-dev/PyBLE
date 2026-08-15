@@ -35,7 +35,7 @@ HAVE_BASELINE_ASSEMBLER = HAVE_RELEASE and callable(
 HAVE_HIL_ASSEMBLER = HAVE_RELEASE and callable(
     getattr(RELEASE, "assemble_completed_hil_report", None)
 )
-PROFILE_ORDER = ("esp32-4mb", "esp32-s3-n16r8")
+PROFILE_ORDER = bundle_fixture.RELEASE_PROFILE_ORDER
 OPERATOR_CHECKS = {
     "browser_erase_install",
     "family_offsets_reset",
@@ -121,7 +121,10 @@ class BaselineAssemblyFixture:
             destination.mkdir(mode=0o700)
             manifest = (
                 json.dumps(
-                    bundle_fixture.exact_manifest("0.4.1", profile_id),
+                    bundle_fixture.exact_manifest(
+                        bundle_fixture.PROSPECTIVE_FIRMWARE_VERSION,
+                        profile_id,
+                    ),
                     indent=2,
                     sort_keys=False,
                 )
@@ -296,7 +299,10 @@ class BaselineEvidenceAssemblyTests(unittest.TestCase):
                 },
             )
             self.assertEqual(baseline["source_commit"], fixture.source_commit)
-            self.assertEqual(baseline["firmware_version"], "0.4.1")
+            self.assertEqual(
+                baseline["firmware_version"],
+                bundle_fixture.PROSPECTIVE_FIRMWARE_VERSION,
+            )
             self.assertEqual(baseline["created_at"], fixture.created_at)
             self.assertEqual(
                 [profile["profile_id"] for profile in baseline["profiles"]],
@@ -321,6 +327,9 @@ class BaselineEvidenceAssemblyTests(unittest.TestCase):
                     RELEASE._derived_qualification_thresholds(
                         baseline_profile["oi1_build"],
                         baseline_profile["oi1_observation"],
+                        firmware_version=(
+                            bundle_fixture.PROSPECTIVE_FIRMWARE_VERSION
+                        ),
                     ),
                 )
             self.assertEqual(
