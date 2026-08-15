@@ -1956,7 +1956,9 @@ class NativeFsEpochContractTests(unittest.TestCase):
             self,
             soft,
             "pble_fs_quiesce_try",
+            "pble_vm_reboot_close",
             "pble_proto_emit_rsp_status_try",
+            "runner_control_attempt_resolve(true)",
             "esp_timer_start_once",
         )
         self.assertEqual(soft.count("esp_timer_start_once"), 1)
@@ -1965,23 +1967,35 @@ class NativeFsEpochContractTests(unittest.TestCase):
         for marker in (
             "if (tx_rc != PBLE_TX_OK)",
             "esp_restart",
-            "g_stop_requested = true",
+            "runner_control_attempt_resolve(true)",
         ):
             self.assertIn(marker, soft)
         tx_failure = soft[
             soft.index("if (tx_rc != PBLE_TX_OK)") :
             soft.index("esp_timer_start_once")
         ]
+        self.assertIn("pble_vm_reboot_abort", tx_failure)
         self.assertIn("pble_fs_quiesce_abort", tx_failure)
+        self.assertIn("runner_control_attempt_resolve(false)", tx_failure)
         self.assertNotIn("esp_restart", tx_failure)
 
+        self.assertNotIn("g_stop_requested = true", soft)
+        self.assertNotIn("inject_worker_kbd_interrupt", soft)
+        resolver = code_only(
+            c_function(RUNNER, "runner_control_attempt_resolve")
+        )
+        ordered(
+            self,
+            resolver,
+            "g_stop_requested = true",
+            "inject_worker_kbd_interrupt",
+        )
+
         after_timer_attempt = soft[soft.index("esp_timer_start_once") :]
-        restart = after_timer_attempt.index("esp_restart")
-        stop_worker = after_timer_attempt.index("g_stop_requested = true")
-        self.assertLess(restart, stop_worker)
+        self.assertIn("esp_restart", after_timer_attempt)
         self.assertNotIn(
             "pble_fs_quiesce_abort",
-            after_timer_attempt[:stop_worker],
+            after_timer_attempt,
             "accepted RSP must never reopen admission",
         )
 

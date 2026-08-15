@@ -198,28 +198,40 @@ class ConsoleAndStopSourceContractTests(unittest.TestCase):
             failure,
             "every non-OK STOP submission must fail closed",
         )
+        self.assertIn(
+            "runner_control_attempt_resolve(false)",
+            failure.group("body"),
+            "failed STOP submission must release pickup without stop intent",
+        )
         self.assertIn("return PBLE_NO_RSP;", failure.group("body"))
-        effect_re = re.compile(
-            r"\bg_stop_requested\s*="
-            r"|\bmp_pending_exception\b"
-            r"|\binject_worker_kbd_interrupt\s*\("
-            r"|\bpble_rsm_[A-Za-z_]\w*\s*\("
-            r"|\brunner_emit_state\s*\("
-            r"|\bxSemaphoreGive\s*\("
+
+        resolver = function(RUNNER, "runner_control_attempt_resolve")
+        accepted_param = re.search(
+            r"runner_control_attempt_resolve\s*\(\s*bool\s+"
+            r"(?P<name>[A-Za-z_]\w*)",
+            resolver,
         )
-        first_effect = effect_re.search(stop)
-        self.assertIsNotNone(first_effect, "successful STOP needs an interrupt effect")
-        self.assertGreater(
-            first_effect.start(),
-            failure.end(),
-            "no STOP state/interrupt effect may precede the non-OK return cut",
+        self.assertIsNotNone(accepted_param)
+        accepted_branch = re.search(
+            rf"if\s*\(\s*{re.escape(accepted_param.group('name'))}\s*\)\s*"
+            r"\{(?P<body>.*?)\}",
+            resolver,
+            re.DOTALL,
         )
+        self.assertIsNotNone(accepted_branch)
+        ordered(
+            self,
+            accepted_branch.group("body"),
+            "g_stop_requested = true",
+            "inject_worker_kbd_interrupt",
+        )
+        self.assertNotIn("g_stop_requested = true", stop)
+        self.assertNotIn("inject_worker_kbd_interrupt", stop)
         ordered(
             self,
             stop,
             "pble_proto_emit_rsp_status_try",
-            "g_stop_requested = true",
-            "inject_worker_kbd_interrupt",
+            "runner_control_attempt_resolve(true)",
         )
         self.assertIn("return PBLE_NO_RSP", stop)
         self.assertNotRegex(stop, r"return\s+PBLE_OK\s*;")

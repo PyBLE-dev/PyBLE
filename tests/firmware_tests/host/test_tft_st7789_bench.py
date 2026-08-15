@@ -2194,12 +2194,22 @@ class NativeSoftRebootOrderingTest(unittest.TestCase):
             body.index(timer_start),
             "SOFT_REBOOT must submit RSP{OK} before arming VM teardown",
         )
-        for side_effect in (
-            "g_stop_requested = true",
-            "inject_worker_kbd_interrupt",
-        ):
-            with self.subTest(side_effect=side_effect):
-                self.assertGreater(body.index(side_effect), response)
+        self.assertIn("runner_control_attempt_resolve(true)", body)
+        resolve = body.index("runner_control_attempt_resolve(true)")
+        self.assertLess(response, resolve)
+        self.assertLess(
+            resolve,
+            body.index(timer_start),
+            "accepted stop intent must be resolved before timer arm",
+        )
+        self.assertNotIn("g_stop_requested = true", body)
+        self.assertNotIn("inject_worker_kbd_interrupt", body)
+
+        resolver_start = source.index("runner_control_attempt_resolve(")
+        resolver_end = source.index("bool pble_runner_stop_requested(", resolver_start)
+        resolver = source[resolver_start:resolver_end]
+        self.assertIn("g_stop_requested = true", resolver)
+        self.assertIn("inject_worker_kbd_interrupt", resolver)
         self.assertNotIn(
             "mp_sched_exception(",
             body,
@@ -2234,6 +2244,9 @@ class NativeSoftRebootOrderingTest(unittest.TestCase):
         self.assertNotIn("esp_timer_start_once(", before_response)
         failed_submit = body[response:timer_start]
         self.assertIn("if (tx_rc != PBLE_TX_OK)", failed_submit)
+        self.assertIn("pble_vm_reboot_abort", failed_submit)
+        self.assertIn("pble_fs_quiesce_abort", failed_submit)
+        self.assertIn("runner_control_attempt_resolve(false)", failed_submit)
         self.assertIn("return PBLE_NO_RSP;", failed_submit)
 
     def test_cli_is_exact_profile_staged_and_never_accepts_identity_output(self):
