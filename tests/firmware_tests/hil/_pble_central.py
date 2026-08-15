@@ -98,14 +98,30 @@ def _require_bleak():
             "this is a hardware-in-the-loop bench, not a host unit test. (%s)" % exc)
 
 
+class _CommandDeadlineExpired(Exception):
+    """Only the central's own absolute command deadline expired."""
+
+
+async def _capture_backend_timeout(awaitable):
+    """Return a backend TimeoutError so wait_for cannot confuse its origin."""
+    try:
+        await awaitable
+    except asyncio.TimeoutError as exc:
+        return exc
+    return None
+
+
 class PbleCentral:
-    """One connection to a PyBLE board. Correlates RSPs by frame ID, tracks the
-    latest cumulative FILE_PUT_ACK watermark, and buffers async EVTs."""
+    """One connection to a PyBLE board. Correlates RSPs by exact opcode/ID,
+    tracks the latest cumulative FILE_PUT_ACK watermark, and buffers EVTs."""
 
     def __init__(self, client):
         self._client = client
         self._re = wire.Reassembler()
-        self._rsp_by_id = {}
+        self._rsp_by_key = {}
+        # Kept as an alias for deterministic host benches that inject at the
+        # event-clear boundary; notifications always use exact tuple keys.
+        self._rsp_by_id = self._rsp_by_key
         self._rsp_event = asyncio.Event()
         self._confirmed_caps_mtu = None
         self._ack_history = []
@@ -290,7 +306,10 @@ class PbleCentral:
             return
         self.rx_frames += 1
         if frame.type == wire.RSP:
-            self._rsp_by_id[frame.id] = frame
+            self._rsp_by_key.setdefault(
+                (frame.opcode, frame.id),
+                (frame, asyncio.get_running_loop().time()),
+            )
             self._rsp_event.set()
         elif frame.opcode == wire.OP_FILE_PUT_ACK:
             if len(frame.payload) == 4:
@@ -306,11 +325,40 @@ class PbleCentral:
             self.events.append(frame)
 
     # ---- request / response --------------------------------------------------
-    async def _write(self, frame_bytes):
+    async def _write(self, frame_bytes, *, response=False, deadline=None):
         for pkt in wire.fragment(frame_bytes, self.mtu):
-            # Write-Without-Response for throughput (RX supports it, §2).
             try:
-                await self._client.write_gatt_char(RX_UUID, pkt, response=False)
+                if deadline is None:
+                    await self._client.write_gatt_char(
+                        RX_UUID,
+                        pkt,
+                        response=response,
+                    )
+                else:
+                    remaining = deadline - asyncio.get_running_loop().time()
+                    if remaining <= 0:
+                        raise _CommandDeadlineExpired(
+                            "command deadline expired before fragment write"
+                        )
+                    try:
+                        backend_timeout = await asyncio.wait_for(
+                            _capture_backend_timeout(
+                                self._client.write_gatt_char(
+                                    RX_UUID,
+                                    pkt,
+                                    response=response,
+                                )
+                            ),
+                            timeout=remaining,
+                        )
+                    except asyncio.TimeoutError as exc:
+                        raise _CommandDeadlineExpired(
+                            "command deadline expired during fragment write"
+                        ) from exc
+                    if backend_timeout is not None:
+                        raise backend_timeout.with_traceback(
+                            backend_timeout.__traceback__
+                        )
             except Exception as exc:
                 self._raise_link_loss_if_disconnected(exc, "command write")
                 raise
@@ -333,24 +381,88 @@ class PbleCentral:
         raise cause
 
     async def send_cmd_no_rsp(self, opcode, id_, payload=b""):
-        await self._write(wire.encode(wire.CMD, opcode, id_, payload))
+        await self._write(
+            wire.encode(wire.CMD, opcode, id_, payload),
+            response=False,
+        )
 
     async def send_cmd(self, opcode, id_, payload=b"", timeout=10.0):
         """Send a CMD and await the matching RSP (same opcode and ID)."""
-        self._rsp_by_id.pop(id_, None)
-        await self._write(wire.encode(wire.CMD, opcode, id_, payload))
-        return await self._await_rsp(opcode, id_, timeout)
+        loop = asyncio.get_running_loop()
+        started_at = loop.time()
+        deadline = started_at + timeout
+        self._discard_responses_for_id(id_)
+        try:
+            await self._write(
+                wire.encode(wire.CMD, opcode, id_, payload),
+                response=True,
+                deadline=deadline,
+            )
+        except _CommandDeadlineExpired:
+            # An exact response received while the final acknowledged write
+            # was pending remains authoritative; _await_rsp validates both
+            # sides of its request-start/absolute-deadline arrival window.
+            pass
+        return await self._await_rsp(
+            opcode,
+            id_,
+            timeout,
+            deadline=deadline,
+            started_at=started_at,
+        )
 
-    async def _await_rsp(self, opcode, id_, timeout):
-        loop = asyncio.get_event_loop()
-        deadline = loop.time() + timeout
+    def _discard_responses_for_id(self, id_):
+        for key in tuple(self._rsp_by_key):
+            key_id = key[1] if isinstance(key, tuple) else key
+            if key_id == id_:
+                self._rsp_by_key.pop(key, None)
+
+    def _take_response(self, opcode, id_):
+        key = (opcode, id_)
+        entry = self._rsp_by_key.pop(key, None)
+        if entry is not None:
+            return entry
+
+        # Compatibility for a deterministic host bench that injects the frame
+        # directly at Event.clear(). Real notifications never take this path.
+        entry = self._rsp_by_key.pop(id_, None)
+        if entry is None:
+            return None
+        if isinstance(entry, tuple):
+            frame, arrived_at = entry
+        else:
+            frame, arrived_at = entry, asyncio.get_running_loop().time()
+        if (
+            frame.type != wire.RSP
+            or frame.opcode != opcode
+            or frame.id != id_
+        ):
+            return None
+        return frame, arrived_at
+
+    async def _await_rsp(
+        self,
+        opcode,
+        id_,
+        timeout,
+        *,
+        deadline=None,
+        started_at=None,
+    ):
+        loop = asyncio.get_running_loop()
+        if started_at is None:
+            started_at = float("-inf")
+        if deadline is None:
+            deadline = loop.time() + timeout
         while True:
-            while id_ not in self._rsp_by_id:
+            entry = self._take_response(opcode, id_)
+            while entry is None:
                 self._rsp_event.clear()
                 # A Notify callback may land between the loop condition and
                 # clear().  Recheck the response map before sleeping so that
                 # clearing the shared wake signal cannot hide that response.
-                if id_ in self._rsp_by_id:
+                entry = self._take_response(opcode, id_)
+                if entry is not None:
                     continue
                 remaining = deadline - loop.time()
                 if remaining <= 0:
@@ -358,10 +470,20 @@ class PbleCentral:
                 try:
                     await asyncio.wait_for(self._rsp_event.wait(), timeout=remaining)
                 except asyncio.TimeoutError:
-                    self._raise_response_timeout(id_, timeout)
-            response = self._rsp_by_id.pop(id_)
-            if response.opcode == opcode:
-                return response
+                    # The timeout task and a Notify callback can become runnable
+                    # together. Arrival time, not scheduling order, is decisive.
+                    entry = self._take_response(opcode, id_)
+                    if entry is None:
+                        self._raise_response_timeout(id_, timeout)
+                else:
+                    entry = self._take_response(opcode, id_)
+            response, arrived_at = entry
+            if arrived_at < started_at:
+                entry = None
+                continue
+            if arrived_at > deadline:
+                self._raise_response_timeout(id_, timeout)
+            return response
 
 
 def rsp_status(frame):

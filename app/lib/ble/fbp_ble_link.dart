@@ -11,8 +11,8 @@ import 'ble_link.dart';
 /// The `flutter_blue_plus` [BleLink]: a pure byte pipe over one GATT connection.
 ///
 /// It interprets NOTHING (FR-BLE-3) — [inbound] forwards TX (…0003)
-/// notifications verbatim and [write] pushes bytes to RX (…0002)
-/// Write-Without-Response. Along with [FbpBleAdapter] these are the ONLY files
+/// notifications verbatim and [write] pushes bytes to RX (…0002) using the
+/// caller-selected GATT write mode. Along with [FbpBleAdapter] these are the ONLY files
 /// permitted to import `flutter_blue_plus`; no such type escapes this seam.
 class FbpBleLink implements BleLink {
   FbpBleLink(this._device, this._rx, this._tx) {
@@ -36,8 +36,8 @@ class FbpBleLink implements BleLink {
   Stream<List<int>> get inbound => _tx.onValueReceived;
 
   @override
-  Future<void> write(List<int> bytes) =>
-      _rx.write(bytes, withoutResponse: true);
+  Future<void> write(List<int> bytes, {required bool withoutResponse}) =>
+      _rx.write(bytes, withoutResponse: withoutResponse);
 
   @override
   int get mtu => _device.mtuNow;

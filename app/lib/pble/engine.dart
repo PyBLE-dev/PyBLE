@@ -14,9 +14,9 @@ import 'pble_exception.dart';
 ///
 /// Runs over a [ByteTransport]: it fragments outbound frames to `mtu - 4`,
 /// reassembles inbound packets, verifies each frame's CRC (a CRC-failed frame
-/// is DROPPED, never surfaced — FR-PBLE-3), correlates RSP frames to their CMD
-/// by ID, and routes EVT frames (ID = 0) onto [events]. The only mutable state
-/// is the ID counter and the pending-request table.
+/// is DROPPED, never surfaced — FR-PBLE-3), correlates each CMD only to the RSP
+/// with its exact opcode and ID, and routes EVT frames (ID = 0) onto [events].
+/// The only mutable state is the ID counter and the pending-request table.
 class PbleEngine {
   PbleEngine(this._transport) {
     _inboundSub = _transport.inbound.listen(_onPacket);
@@ -26,7 +26,7 @@ class PbleEngine {
   late final StreamSubscription<Uint8List> _inboundSub;
 
   final PbleReassembler _reassembler = PbleReassembler();
-  final Map<int, Completer<PbleFrame>> _pending = <int, Completer<PbleFrame>>{};
+  final Map<int, _PendingRequest> _pending = <int, _PendingRequest>{};
   final StreamController<PbleFrame> _events =
       StreamController<PbleFrame>.broadcast();
 
@@ -46,7 +46,7 @@ class PbleEngine {
   /// EVT frames (ID = 0), routed as they arrive. Broadcast: listen per opcode.
   Stream<PbleFrame> get events => _events.stream;
 
-  /// Sends [cmd] and completes with the RSP carrying the matching ID.
+  /// Sends [cmd] and completes with the RSP carrying its exact opcode and ID.
   ///
   /// Throws [PbleTimeoutException] if no RSP arrives within [timeout]. The
   /// caller owns [cmd].id (typically from [nextId]).
@@ -57,20 +57,40 @@ class PbleEngine {
     if (_disposed) {
       throw StateError('PbleEngine used after dispose()');
     }
-    final Completer<PbleFrame> completer = Completer<PbleFrame>();
-    _pending[cmd.id] = completer;
+    final _PendingRequest pending = _PendingRequest(cmd.opcode, timeout);
+    _pending[cmd.id] = pending;
     try {
       final List<Uint8List> packets = PbleFragmenter(
         mtu: _transport.mtu,
       ).fragment(encodeFrame(cmd));
       for (final Uint8List packet in packets) {
-        await _transport.send(packet);
+        final Duration remaining = pending.remaining;
+        await _transport
+            .send(packet, acknowledged: true)
+            .timeout(
+              remaining,
+              onTimeout: () => throw const _RequestDeadlineExpired(),
+            );
       }
-      return await completer.future.timeout(timeout);
-    } on TimeoutException {
+      if (pending.completer.isCompleted) {
+        return await pending.completer.future;
+      }
+      return await pending.completer.future.timeout(
+        pending.remaining,
+        onTimeout: () => throw const _RequestDeadlineExpired(),
+      );
+    } on _RequestDeadlineExpired {
+      // An exact response can arrive while the final acknowledged write is
+      // still pending. Its recorded on-time completion is authoritative even
+      // if that write's residual deadline expires afterward.
+      if (pending.completer.isCompleted) {
+        return await pending.completer.future;
+      }
       throw const PbleTimeoutException('no RSP within timeout');
     } finally {
-      _pending.remove(cmd.id);
+      if (identical(_pending[cmd.id], pending)) {
+        _pending.remove(cmd.id);
+      }
     }
   }
 
@@ -88,7 +108,7 @@ class PbleEngine {
       mtu: _transport.mtu,
     ).fragment(encodeFrame(cmd));
     for (final Uint8List packet in packets) {
-      await _transport.send(packet);
+      await _transport.send(packet, acknowledged: false);
     }
   }
 
@@ -111,10 +131,14 @@ class PbleEngine {
       return;
     }
 
-    // Otherwise correlate to the pending CMD by ID.
-    final Completer<PbleFrame>? completer = _pending.remove(frame.id);
-    if (completer != null && !completer.isCompleted) {
-      completer.complete(frame);
+    // Otherwise complete only the exact {TYPE=RSP, OPCODE, ID} request.
+    final _PendingRequest? pending = _pending[frame.id];
+    if (pending != null &&
+        frame.type == Pble.typeRsp &&
+        frame.opcode == pending.opcode &&
+        !pending.completer.isCompleted &&
+        !pending.expired) {
+      pending.completer.complete(frame);
     }
   }
 
@@ -124,12 +148,38 @@ class PbleEngine {
     if (_disposed) return;
     _disposed = true;
     await _inboundSub.cancel();
-    for (final Completer<PbleFrame> completer in _pending.values) {
-      if (!completer.isCompleted) {
-        completer.completeError(const PbleTimeoutException('engine disposed'));
+    for (final _PendingRequest pending in _pending.values) {
+      if (!pending.completer.isCompleted) {
+        pending.completer.completeError(
+          const PbleTimeoutException('engine disposed'),
+        );
       }
     }
     _pending.clear();
     await _events.close();
   }
+}
+
+/// One monotonic deadline shared by every acknowledged write and the RSP wait.
+final class _PendingRequest {
+  _PendingRequest(this.opcode, this.timeout) : elapsed = (Stopwatch()..start());
+
+  final int opcode;
+  final Duration timeout;
+  final Stopwatch elapsed;
+  final Completer<PbleFrame> completer = Completer<PbleFrame>();
+
+  bool get expired => elapsed.elapsed > timeout;
+
+  Duration get remaining {
+    final int microseconds =
+        timeout.inMicroseconds - elapsed.elapsedMicroseconds;
+    if (microseconds <= 0) throw const _RequestDeadlineExpired();
+    return Duration(microseconds: microseconds);
+  }
+}
+
+/// Identifies only expiry of this engine's own absolute request deadline.
+final class _RequestDeadlineExpired implements Exception {
+  const _RequestDeadlineExpired();
 }

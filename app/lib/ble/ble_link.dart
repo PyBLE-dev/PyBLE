@@ -22,7 +22,8 @@ enum BleLinkState { disconnected, connecting, connected, reconnecting }
 /// fragmentation, no opcode routing (that is all `lib/pble`, FR-BLE-3).
 ///
 ///   • [inbound] surfaces raw TX (…0003) notification payloads, uninterpreted;
-///   • [write] pushes already-encoded bytes to RX (…0002), Write-Without-Response;
+///   • [write] pushes already-encoded bytes to RX (…0002) using the requested
+///     acknowledged or Write-Without-Response GATT mode;
 ///   • [mtu] is the negotiated ATT MTU (247 requested, down to the BLE default)
 ///     so `lib/pble` can size fragments at `MTU − 4` (FR-BLE-2);
 ///   • [linkState] surfaces up/down transitions for the layer above.
@@ -30,8 +31,8 @@ abstract interface class BleLink {
   /// Raw TX notification payloads, byte-for-byte (never parsed).
   Stream<List<int>> get inbound;
 
-  /// Writes already-encoded bytes to RX (Write-Without-Response).
-  Future<void> write(List<int> bytes);
+  /// Writes already-encoded bytes to RX using the selected GATT write mode.
+  Future<void> write(List<int> bytes, {required bool withoutResponse});
 
   /// The negotiated ATT MTU (BLE default 23 up to the requested 247).
   int get mtu;
