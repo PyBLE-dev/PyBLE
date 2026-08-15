@@ -136,7 +136,12 @@ notification fragment. `CONSOLE_DATA` MUST leave the two `msys_1` blocks used
 by one small control notification (data plus ATT wrapper). The STOP response
 submits first; paced terminal idle then reuses the blocks returned as that
 response drains. Bulk traffic MUST permit a pending STOP response to pre-empt
-the next console message promptly. Pre-emption occurs only at a
+the next console message promptly. The specialized response may wait under one
+absolute **15 ms** deadline only for the complete-message TX-mutex owner that
+was current when STOP became pending; later ordinary/bulk messages MUST NOT
+begin ahead of it. After acquiring that boundary it revalidates the session and
+makes exactly one local Notify submission, with no wait or retry for mbuf/
+controller capacity. Pre-emption occurs only at a
 complete PBLE/1 message boundary: fragments of the current message remain
 contiguous, no control fragment is inserted into a bulk message, and the app's
 single reassembly buffer never sees interleaved messages. The implementation

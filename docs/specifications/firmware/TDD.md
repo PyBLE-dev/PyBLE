@@ -43,7 +43,7 @@ Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-08-15
 > remain gates. Two clean builds, policy schema 3, release schema 4, V5 exact-
 > byte HIL, and both-platform app HIL are required before activation.
 >
-> **Frozen transactional RUN admission (2026-08-14, `[docs]`):** [§4.3](#43-pyble_runner--execution-control), [§5.1](#51-execution-contexts-one-link), and [§5.4](#54-console-backpressure) bind execution to one successful, connection-bound, zero-wait submission of the matching `RSP{OK}`. Submission failure is side-effect-free and is never retried on the NimBLE host task.
+> **Frozen transactional RUN admission (2026-08-14, amended 2026-08-15, `[docs]`):** [§4.3](#43-pyble_runner--execution-control), [§5.1](#51-execution-contexts-one-link), and [§5.4](#54-console-backpressure) bind execution to one successful, connection-bound submission of the matching `RSP{OK}`. The specialized attempt may wait under one absolute 15 ms deadline only for the current complete-message TX-mutex boundary, then makes one local Notify submission with no capacity wait or retry. Submission failure is side-effect-free.
 >
 > **Frozen default-MTU response delivery (2026-08-15, `[docs]`):**
 > [§4.1](#41-pyble_ble--ble-peripheral--transport),
@@ -339,7 +339,9 @@ dispatch; one leave occurs afterward. Teardown closes admission and drains this
 activity before its RX reset transaction uses the same synchronization to
 clear the run. Therefore reset cannot recycle state beneath a callback paused
 after a `FIRST` copy, and a closed-epoch `FIRST` followed by a fresh-epoch
-`LAST` never dispatches. The host callback never waits.
+`LAST` never dispatches. Lifecycle entry and refusal never wait; an admitted
+complete specialized control may use only the §5.1 absolute 15 ms current-
+message TX-boundary wait.
 
 **Session-safe response callout:** GAP connect mints, and disconnect invalidates,
 a `{handle, generation}` token. The pre-created response callout runs on the
@@ -1117,7 +1119,7 @@ The boot-internal wrapper converts that failure to false so startup proceeds.
 
 Three cooperating execution contexts (D4):
 
-- **NimBLE host context** — services GAP/GATT callbacks and RX reassembly/dispatch. Its pre-created generic-response callout owns the fixed depth-2 pool's ready FIFO and one logical message at a time. Each callback validates ticket/session/publication deadline/stream generation, attempts exactly one fragment with zero wait, and rearms after one tick on progress or at most 15 ms on `AGAIN`. RUN/STOP/SOFT_REBOOT admission uses one specialized zero-wait control attempt; only a successful preemption changes the stream generation and makes the response restart at `FIRST`. Required session teardown closes logical admission and arms its independent watchdog before making one potentially blocking GAP termination call; it does not retry on this context.
+- **NimBLE host context** — services GAP/GATT callbacks and RX reassembly/dispatch. Its pre-created generic-response callout owns the fixed depth-2 pool's ready FIFO and one logical message at a time. Each callback validates ticket/session/publication deadline/stream generation, attempts exactly one fragment with zero wait, and rearms after one tick on progress or at most 15 ms on `AGAIN`. RUN/STOP/SOFT_REBOOT admission declares one specialized control attempt pending and may wait under one absolute 15 ms deadline only for the current complete-message TX-mutex boundary. It then revalidates the session and makes one local Notify submission without waiting or retrying for mbuf/controller capacity; only success changes the stream generation and makes the response restart at `FIRST`. Required session teardown closes logical admission and arms its independent watchdog before making exactly one potentially blocking GAP termination call; it does not retry on this context.
 - **Filesystem worker** — one persistent MicroPython-aware worker consuming the bounded FS queue. Response-bearing items carry a reserved response ticket, connection generation, and VM epoch. One gate synchronizes enqueue+insertion, dequeue-to-busy, and soft-reset quiescence; busy covers the entire dispatch. The worker revalidates immediately before/after each VFS operation or chunk and before publishing worker-scratch output, and orders `FILE_GET_BEGIN` response completion before exact-session data events.
 - **Runner task** — launched once via `_thread` and kept persistent. It waits on the binary hand-off semaphore, then executes each admitted RUN with `sys.stdout`/`stderr` redirected to the console tee.
 
@@ -1125,7 +1127,7 @@ Because the link is serviced by the NimBLE host context and user code lives on t
 
 ### 5.2 STOP delivery
 
-`STOP` is handled on the NimBLE host context (so it is always reachable). Only after its connection-bound one-fragment `RSP{OK}` try succeeds does it raise `KeyboardInterrupt` into the runner thread via MicroPython's pending-exception/`schedule` mechanism, which lands even inside a tight bytecode loop (FR-RUN-5, NFR-SAFE-1). Submission failure emits no fallback and performs no interrupt. The runner's top frame wraps user code in a try/finally to guarantee teardown and a final `RUN_STATE` (FR-RUN-6/10).
+`STOP` is handled on the NimBLE host context (so it is always reachable). Its connection-bound one-fragment `RSP{OK}` path may wait under one absolute 15 ms deadline only for the complete-message TX-mutex owner that was current when STOP became pending; later ordinary/bulk traffic cannot begin ahead of it. Once acquired it performs one local Notify submission without capacity wait/retry. Only after that submission succeeds does it raise `KeyboardInterrupt` into the runner thread via MicroPython's pending-exception/`schedule` mechanism, which lands even inside a tight bytecode loop (FR-RUN-5, NFR-SAFE-1). Boundary-deadline or submission failure emits no fallback and performs no interrupt. The runner's top frame wraps user code in a try/finally to guarantee teardown and a final `RUN_STATE` (FR-RUN-6/10).
 
 The response try is not itself inside the runner critical section. The
 unresolved-control gate above bridges that lock-domain gap: response success and
@@ -1167,7 +1169,8 @@ fragments while retaining logical ownership, and only a successful specialized
 RUN/STOP/SOFT_REBOOT response may preempt it. That one-fragment `FIRST|LAST`
 control response increments the stream generation under the mutex; the next
 generic callback restarts at `FIRST`, abandoning its old partial run. A pending
-STOP response wins before another bulk message and may win between generic
+STOP response owns the next complete-message boundary, waits no more than its
+single absolute 15 ms boundary deadline, and may win between generic
 response fragments, followed by `RUN_STATE(idle)`. Tests bind capacity,
 ordering, valid reassembly/restart, and the 500 ms terminal deadline.
 This is required for both a quiet tight loop and a loop continuously printing
@@ -1176,8 +1179,10 @@ to stdout
 
 RUN admission uses the same control capacity but not the paced worker API. At
 the minimum ATT MTU 23, one fragment carries 19 PBLE/1 message bytes and the
-exact `RSP{OK}` frame is 11 bytes. The host callback therefore makes one
-single-fragment, zero-wait, connection-bound submission;
+exact `RSP{OK}` frame is 11 bytes. The host callback therefore waits under the
+same absolute 15 ms deadline only for the current complete-message TX boundary,
+then makes one single-fragment, connection-bound local submission with no
+capacity wait or retry;
 only local acceptance wakes the runner. Pressure or a stale/disconnected link
 therefore yields no execution, and neither drain progress nor elapsed time can
 extend or repeat the attempt.

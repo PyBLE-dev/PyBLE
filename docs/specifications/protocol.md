@@ -177,10 +177,18 @@ transient pressure it retains the same unaccepted fragment and rearms after at
 most 15 ms. The callback never sleeps, loops, or waits for capacity. Non-control
 and bulk senders cannot interleave while the logical ownership is held.
 
-A successful single-fragment `RUN`, `STOP`, or `SOFT_REBOOT` response MAY
-preempt between fragments. It increments a stream generation under the same TX mutex; the
-response callout observes the change and then restarts its identical encoded
-frame from `FIRST`, which abandons the interrupted prefix. Deadline expiry on a
+A specialized single-fragment `RUN`, `STOP`, or `SOFT_REBOOT` response MAY
+wait under one absolute **15 ms** deadline only for the current complete-message
+TX-mutex boundary. Declaring that specialized attempt pending prevents a later
+ordinary or bulk message from starting; it does not interrupt a fragment run
+already in progress. Once the mutex is acquired, the agent revalidates the
+originating session and makes exactly one local Notify submission, with no wait
+or retry for mbuf/controller capacity. A successful response MAY preempt between
+generic-response fragments and increments a stream generation under the same TX
+mutex; the response callout observes the change and then restarts its identical
+encoded frame from `FIRST`, which abandons the interrupted prefix. Boundary
+deadline expiry or local submission failure suppresses the specialized side
+effect and generic fallback. Deadline expiry on a
 still-live connection terminates that session rather than silently losing an
 admitted response. Disconnect stops/cancels the callout and invalidates its
 ticket before normal re-advertising; any already-queued callback revalidates and
@@ -378,8 +386,11 @@ following operation only when no other effect intervenes.
 
 `RUN`, `STOP`, and `SOFT_REBOOT` retain their specialized one-fragment
 response-before-side-effect contracts in §6. Their response attempt is
-connection-bound and zero-wait; failure suppresses generic fallback and causes
-no corresponding execution, interrupt, or reset side effect.
+connection-bound and may wait only for the current complete-message TX-mutex
+boundary under the single absolute 15 ms deadline above. It then makes exactly
+one local Notify submission and never waits or retries for mbuf/controller
+capacity. Failure suppresses generic fallback and causes no corresponding
+execution, interrupt, or reset side effect.
 
 ## 4. Opcodes
 
@@ -468,20 +479,24 @@ before wrap, so the quiescence seam cannot reintroduce ABA.
 
 ## 6. Run / Stop / Console
 
-> **FROZEN for v1.0 (amended)** — RUN-file at G1 · S3; **`RUN{source}`, `STOP`, `SOFT_REBOOT`, `CONSOLE_DATA`, `CONSOLE_INPUT` frozen at G1 · S4 (2026-07-01 · `[docs]`)**; transactional RUN admission clarified 2026-08-14; default-MTU `STOP`/`SOFT_REBOOT` response-before-side-effect admission, per-event session binding, and the runner pickup/control-resolution cut clarified 2026-08-15. Wire below; amend only via a `[docs]` commit before dependent code.
+> **FROZEN for v1.0 (amended)** — RUN-file at G1 · S3; **`RUN{source}`, `STOP`, `SOFT_REBOOT`, `CONSOLE_DATA`, `CONSOLE_INPUT` frozen at G1 · S4 (2026-07-01 · `[docs]`)**; transactional RUN admission clarified 2026-08-14; default-MTU `STOP`/`SOFT_REBOOT` response-before-side-effect admission, per-event session binding, the runner pickup/control-resolution cut, and the bounded current-message TX-boundary wait clarified 2026-08-15. Wire below; amend only via a `[docs]` commit before dependent code.
 
 - **`RUN` (0x20)** payload `[mode:u8][data]` — `mode` 0=file (`data` = UTF-8 path), 1=source (`data` = UTF-8 snippet). → `RSP{status}` (`OK` | `EBUSY` if one already running, FR-RUN-4 | `EBADREQ` bad mode | `ERANGE` over-length), then `RUN_STATE(running)`. Both modes share one lifecycle. Completion → `RUN_STATE(done)`; an uncaught exception → `CONSOLE_DATA(stderr, traceback)` then `RUN_STATE(error)`. A missing/inaccessible file surfaces asynchronously (`CONSOLE_DATA(stderr)` + `RUN_STATE(error)`), not as the `RSP`.
 
   An otherwise valid, non-busy RUN is admitted transactionally. The ESP
   reference agent makes a provisional, non-observable reservation and copies
-  the request, then makes exactly one
-  connection-bound, single-fragment, zero-wait attempt to submit its matching
-  `RSP{OK}`. At the minimum ATT MTU 23, a fragment carries 19 PBLE/1 message
+  the request, then declares one specialized response attempt pending. Under one
+  absolute 15 ms deadline it may wait only for the current complete-message TX-
+  mutex boundary; once acquired it revalidates the connection and makes exactly
+  one single-fragment local Notify submission for its matching `RSP{OK}`, with no
+  capacity wait or retry. At the minimum ATT MTU 23, a fragment carries 19
+  PBLE/1 message
   bytes and the response frame is 11 bytes, so it is always one fragment.
   Local Notify acceptance is the admission cut: only after it succeeds may the
   agent wake the runner exactly once. Therefore user code, console output, and
-  every RUN event follow the response submission. Mutex contention, a missing
-  or changed connection, or local Notify backpressure restores the exact prior
+  every RUN event follow the response submission. Boundary-deadline expiry, a
+  missing or changed connection, or local Notify backpressure restores the exact
+  prior
   runnable state and produces no wake, execution, event, fallback response, or
   retry. A timeout caused by one of these local admission failures is therefore
   side-effect-free. Timeout alone does not prove rejection: a disconnect or
@@ -499,7 +514,8 @@ before wrap, so the quiescence seam cannot reintroduce ABA.
   worker MUST NOT cross its event/execution gate while an earlier control
   attempt is unresolved. It waits on a pre-created resolution signal outside
   the runner domain, then loops and rechecks both the unresolved predicate and
-  stop snapshot together under that domain. After the zero-wait response attempt, one runner-domain
+  stop snapshot together under that domain. After the bounded single-submission
+  response attempt, one runner-domain
   cut either (a) publishes the accepted STOP intent and worker pending exception
   before resolving the gate, or (b) resolves a failed attempt without an
   interrupt or stop effect; either resolution then wakes the worker. Thus response success before pickup permits no user
