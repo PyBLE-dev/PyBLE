@@ -1090,7 +1090,10 @@ For each exact profile and one immutable firmware/manifest candidate:
    Waveshare instead makes one diagnostic reconnect after each of the first
    nine measured disconnects. `PbleCentral.connect` has its existing
    **20,000 ms** deadline; diagnostic HELLO and the nonce-bound getter RUN each
-   have separate **2,000 ms** and **8,000 ms** deadlines, respectively. The
+   have separate **5,000 ms** and **8,000 ms** deadlines, respectively. The
+   HELLO deadline is one absolute diagnostic transaction ceiling over its
+   acknowledged command write and response. It is not a measured OI threshold,
+   and the runner MUST NOT retry HELLO or insert an unmeasured quiet delay. The
    getter-RUN bound is one absolute transport ceiling over command writes, RUN
    response, bounded CONSOLE_DATA pacing, and terminal RUN_STATE. This query
    uses the exact `pair` projection: the one atomic native
@@ -1145,7 +1148,7 @@ For each exact profile and one immutable firmware/manifest candidate:
    solely from that immutable ended record, including the final starvation
    count, then disconnect the diagnostic session. The diagnostic BLE
    connect retains the existing **20,000 ms** bound; diagnostic HELLO and each
-   final `pair` getter RUN/query have their own **2,000 ms** and **8,000 ms**
+   final `pair` getter RUN/query have their own **5,000 ms** and **8,000 ms**
    bounds, respectively. The harness MUST NOT compress the whole reconnect
    transaction into either shorter deadline.
 

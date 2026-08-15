@@ -106,7 +106,7 @@ handle is not the incidental zero value.
    stdout is discarded and never enters evidence.
 7. After each of the first nine measured sessions disconnects, the runner
    makes one diagnostic reconnect with separate deadlines: 20 seconds for
-   `PbleCentral.connect`, 2 seconds for diagnostic HELLO, and 8 seconds for the
+   `PbleCentral.connect`, 5 seconds for diagnostic HELLO, and 8 seconds for the
    `pair` getter RUN. The returned
    `last_ended` epoch must be positive and final; the returned active epoch
    must be its exact non-wrapping successor. Those facts and the diagnostic
@@ -126,13 +126,18 @@ handle is not the incidental zero value.
    again with one separate 5-second `active` probe before disconnect and
    requires the same active epoch and valid settled ladder.
 9. After that disconnect, the runner makes one diagnostic reconnect with the
-   same separate 20-second connect, 2-second HELLO, and 8-second `pair`
+   same separate 20-second connect, 5-second HELLO, and 8-second `pair`
    getter-RUN deadlines.
    Its active epoch must be the exact non-wrapping successor of the retained
    transfer epoch, and `last_ended` must be the final, non-overflowed record for
    that exact transfer epoch. The final public `transfer_link_facts` object is
    derived only from this immutable ended record, including its final
    TX-mbuf-starvation count. The diagnostic connection is then disconnected.
+   The HELLO ceiling includes its acknowledged GATT command write and response;
+   it is diagnostic transaction plumbing, not a measured OI threshold. Repeated
+   CoreBluetooth connection churn produced valid live-link writes completing at
+   about 3.23 seconds, so the former 2-second ceiling rejected healthy sessions.
+   The runner neither retries HELLO nor inserts an unmeasured quiet delay.
 10. The physical RESET prompts and release-to-advertisement measurement remain
    unchanged. Waveshare qualification no longer opens, reopens, reads, or
    requires a serial endpoint and never treats native-USB RTS/DTR as reset

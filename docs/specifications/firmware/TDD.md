@@ -1598,7 +1598,7 @@ null ended record supplied to `pair`.
 
 After each of the first nine Waveshare measured disconnects, the executor
 makes a diagnostic reconnect with separate deadlines: 20 seconds for
-`PbleCentral.connect`, 2 seconds for diagnostic HELLO, and 8 seconds for the
+`PbleCentral.connect`, 5 seconds for diagnostic HELLO, and 8 seconds for the
 `pair` getter RUN. It requires a final last-ended record and its exact
 non-wrapping active successor, disconnects, and discards both. Those two
 boundary records
@@ -1614,14 +1614,17 @@ profile-valid before the
 executor retains its epoch and starts timing. It uses one separate 5-second
 `active` probe to check the same epoch after the final heap snapshot and before
 disconnect. A final diagnostic reconnect uses the
-same separate 20-second connect, 2-second HELLO, and 8-second `pair` getter-RUN
+same separate 20-second connect, 5-second HELLO, and 8-second `pair` getter-RUN
 deadlines. The getter must expose that epoch as immutable `last_ended` and its
 exact active successor. Only the ended record's `facts`, including its final
 starvation count, enters evidence. Missing/null, stale, non-successor, wrapped,
 overflowed, malformed, duplicate-marker, stderr, RUN error, and timeout cases
 all fail closed; unsettled additionally fails for the tenth transfer record,
-but is permitted only for discarded first-nine boundary records. The raw log
-is exclusively created mode `0600`
+but is permitted only for discarded first-nine boundary records. The HELLO
+ceiling covers its acknowledged GATT command write and response under
+CoreBluetooth churn. It is a diagnostic transaction bound, not a measured OI
+threshold; it permits no retry or unmeasured inter-session quiet delay. The raw
+log is exclusively created mode `0600`
 before its first write,
 independent of ambient umask, and a pre-existing path is rejected. The result
 writes atomically and never silently drops a successful sample. RP2 instead
