@@ -569,21 +569,28 @@ class SoftRebootOracle:
 
     def __init__(self) -> None:
         self.fs_open = True
-        self.admission_open = True
+        self.lifecycle_open = True
+        self.non_reboot_open = True
         self.response_submitted = False
         self.timer_armed = False
         self.pending = False
+        self.reset_scheduled = False
         self.worker_stopped = False
+        self.effects: list[str] = []
 
     def attempt(self, *, fs_idle: bool, tx_ok: bool, timer_ok: bool) -> str:
+        if not self.lifecycle_open:
+            return "DROP"
+        if self.pending or not self.non_reboot_open:
+            return "EBUSY"
         self.fs_open = False
         if not fs_idle:
             self.fs_open = True
             return "EBUSY"
-        self.admission_open = False
+        self.non_reboot_open = False
         if not tx_ok:
             self.fs_open = True
-            self.admission_open = True
+            self.non_reboot_open = True
             return "TX_REFUSED"
 
         self.response_submitted = True
@@ -593,6 +600,25 @@ class SoftRebootOracle:
         self.timer_armed = True
         self.worker_stopped = True
         return "ACCEPTED"
+
+    def dispatch(self, opcode: str, *, response_bearing: bool = True) -> str:
+        if not self.lifecycle_open:
+            return "DROP"
+        if opcode == "SOFT_REBOOT" and self.pending:
+            return "EBUSY"
+        if opcode != "SOFT_REBOOT" and not self.non_reboot_open:
+            return "EBUSY" if response_bearing else "DROP"
+        self.effects.append(opcode)
+        return "ADMITTED"
+
+    def timer_fire(self) -> None:
+        if not self.pending or not self.timer_armed:
+            return
+        self.timer_armed = False
+        self.reset_scheduled = True
+
+    def wrapper_close(self) -> None:
+        self.lifecycle_open = False
 
 
 class FrozenLifecycleInterleavingTests(unittest.TestCase):
@@ -897,7 +923,8 @@ class FrozenLifecycleInterleavingTests(unittest.TestCase):
             busy.attempt(fs_idle=False, tx_ok=True, timer_ok=True), "EBUSY"
         )
         self.assertTrue(busy.fs_open)
-        self.assertTrue(busy.admission_open)
+        self.assertTrue(busy.lifecycle_open)
+        self.assertTrue(busy.non_reboot_open)
         self.assertFalse(busy.response_submitted)
         self.assertFalse(busy.timer_armed)
 
@@ -907,7 +934,8 @@ class FrozenLifecycleInterleavingTests(unittest.TestCase):
             "TX_REFUSED",
         )
         self.assertTrue(tx_refused.fs_open)
-        self.assertTrue(tx_refused.admission_open)
+        self.assertTrue(tx_refused.lifecycle_open)
+        self.assertTrue(tx_refused.non_reboot_open)
         self.assertFalse(tx_refused.timer_armed)
 
         timer_failed = SoftRebootOracle()
@@ -915,7 +943,8 @@ class FrozenLifecycleInterleavingTests(unittest.TestCase):
             timer_failed.attempt(fs_idle=True, tx_ok=True, timer_ok=False)
         self.assertTrue(timer_failed.response_submitted)
         self.assertFalse(timer_failed.fs_open)
-        self.assertFalse(timer_failed.admission_open)
+        self.assertTrue(timer_failed.lifecycle_open)
+        self.assertFalse(timer_failed.non_reboot_open)
 
         accepted = SoftRebootOracle()
         self.assertEqual(
@@ -925,6 +954,36 @@ class FrozenLifecycleInterleavingTests(unittest.TestCase):
         self.assertTrue(accepted.pending)
         self.assertTrue(accepted.timer_armed)
         self.assertTrue(accepted.worker_stopped)
+
+    def test_soft_reboot_grace_refuses_non_reboot_but_routes_duplicate(self):
+        accepted = SoftRebootOracle()
+        self.assertEqual(
+            accepted.attempt(fs_idle=True, tx_ok=True, timer_ok=True),
+            "ACCEPTED",
+        )
+        self.assertTrue(accepted.lifecycle_open)
+        self.assertFalse(accepted.non_reboot_open)
+
+        self.assertEqual(accepted.dispatch("RUN"), "EBUSY")
+        self.assertEqual(
+            accepted.dispatch("CONSOLE_INPUT", response_bearing=False),
+            "DROP",
+        )
+        self.assertEqual(accepted.dispatch("SOFT_REBOOT"), "EBUSY")
+        self.assertEqual(accepted.effects, [])
+
+        accepted.timer_fire()
+        self.assertTrue(accepted.reset_scheduled)
+        self.assertTrue(
+            accepted.pending,
+            "the committed closure, not the fired timer, ends duplicate EBUSY",
+        )
+        self.assertEqual(accepted.dispatch("SOFT_REBOOT"), "EBUSY")
+        self.assertFalse(accepted.non_reboot_open)
+        self.assertFalse(accepted.fs_open)
+
+        accepted.wrapper_close()
+        self.assertEqual(accepted.dispatch("SOFT_REBOOT"), "DROP")
 
 
 class NativeVmLifecycleContractTests(unittest.TestCase):
@@ -1596,6 +1655,153 @@ class NativeFsEpochContractTests(unittest.TestCase):
             "xSemaphoreGive(g_fs_gate",
         )
         self.assertIn("g_fs_admission_open = true", quiesce)
+
+    def test_soft_grace_uses_a_provisional_non_reboot_dispatch_gate(self):
+        reboot_close = code_only(c_function(VM_C, "pble_vm_reboot_close"))
+        reboot_abort = code_only(c_function(VM_C, "pble_vm_reboot_abort"))
+        command_admitted = code_only(
+            c_function(VM_C, "pble_vm_reboot_command_admitted")
+        )
+        global_close = code_only(c_function(VM_C, "pble_vm_close_admission"))
+        global_open = code_only(c_function(VM_C, "pble_vm_open_admission"))
+        epoch_begin = code_only(c_function(VM_C, "pble_vm_epoch_begin"))
+
+        self.assertNotIn(
+            "pble_vm_dispatch_open = false",
+            reboot_close,
+            "the 250 ms grace must keep complete-CMD lifecycle admission open",
+        )
+        self.assertNotIn(
+            "pble_vm_lifecycle_active = false",
+            reboot_close,
+            "the 250 ms grace must keep callback/activity accounting alive",
+        )
+        gate_candidates = {
+            name
+            for name in re.findall(
+                r"\b(pble_vm_[A-Za-z_]\w*)\s*=\s*false\b",
+                reboot_close,
+            )
+            if name not in {"pble_vm_dispatch_open", "pble_vm_lifecycle_active"}
+        }
+        self.assertEqual(
+            len(gate_candidates),
+            1,
+            "reboot-close needs one distinct provisional non-reboot gate",
+        )
+        gate = next(iter(gate_candidates))
+        self.assertIn(f"{gate} = true", reboot_abort)
+        self.assertIn(f"{gate} = true", global_open)
+        self.assertIn(f"{gate} = false", global_close)
+        self.assertIn(f"{gate} = false", epoch_begin)
+        for global_flag in (
+            "pble_vm_dispatch_open = false",
+            "pble_vm_lifecycle_active = false",
+        ):
+            self.assertIn(
+                global_flag,
+                global_close,
+                "the wrapper/global cut must still close every command",
+            )
+
+        self.assertTrue(
+            command_admitted,
+            "add an admitted-dispatch query for the provisional reboot gate",
+        )
+        signature = command_admitted.partition("{")[0]
+        parameters = signature[
+            signature.find("(") + 1 : signature.rfind(")")
+        ]
+        soft_param = re.search(r"\bbool\s+([A-Za-z_]\w*)\b", parameters)
+        self.assertIsNotNone(soft_param)
+        soft_name = soft_param.group(1)
+        self.assertIn(gate, command_admitted)
+        self.assertRegex(
+            command_admitted,
+            rf"(?:\b{re.escape(gate)}\b\s*\|\|\s*\b{re.escape(soft_name)}\b"
+            rf"|\b{re.escape(soft_name)}\b\s*\|\|\s*\b{re.escape(gate)}\b)",
+            "SOFT_REBOOT alone bypasses the provisional non-reboot gate",
+        )
+        self.assertIn("taskENTER_CRITICAL(&pble_vm_mux)", command_admitted)
+        self.assertIn("taskEXIT_CRITICAL(&pble_vm_mux)", command_admitted)
+        self.assertRegex(
+            VM_H,
+            r"\bbool\s+pble_vm_reboot_command_admitted\s*\(\s*bool\b",
+        )
+
+        dispatch = code_only(c_function(PROTO, "pble_proto_dispatch_admitted"))
+        gate_call = re.search(
+            r"pble_vm_reboot_command_admitted\s*\(\s*"
+            r"f\.opcode\s*==\s*PBLE_OP_SOFT_REBOOT\s*\)",
+            dispatch,
+        )
+        self.assertIsNotNone(
+            gate_call,
+            "admitted dispatch must exempt only SOFT_REBOOT from the gate",
+        )
+        crc = dispatch.find("pble_proto_crc32")
+        self.assertGreater(gate_call.start(), crc)
+        handler_calls = [
+            position
+            for marker in ("special_handler(", "deferred(&f", "h(&f")
+            if (position := dispatch.find(marker)) >= 0
+        ]
+        self.assertTrue(handler_calls)
+        first_handler = min(handler_calls)
+        self.assertLess(gate_call.start(), first_handler)
+        refusal = dispatch[gate_call.start() : first_handler]
+        self.assertIn("PBLE_EBUSY", refusal)
+        self.assertIn(
+            "PBLE_HANDLER_NO_RESPONSE",
+            refusal,
+            "fire-and-forget commands remain effect-free and response-free",
+        )
+        self.assertGreater(dispatch.find("pble_rsp_publish"), gate_call.start())
+
+    def test_duplicate_soft_remains_ebusy_through_committed_grace(self):
+        soft = code_only(c_function(RUNNER, "pble_runner_soft_reboot"))
+        callback = code_only(c_function(RUNNER, "soft_reboot_timer_cb"))
+        disarm = code_only(c_function(RUNNER, "pble_runner_vm_timer_disarm"))
+        pre_deinit = code_only(c_function(VM_C, "pble_vm_epoch_pre_deinit"))
+
+        ordered(
+            self,
+            soft,
+            "if (g_soft_reboot_pending)",
+            "return PBLE_EBUSY",
+            "pble_fs_quiesce_try",
+        )
+        self.assertIn("g_soft_reboot_pending", callback)
+        self.assertIn("g_soft_reboot_epoch", callback)
+        forbidden_commit_mutations = (
+            "g_soft_reboot_pending = false",
+            "g_soft_reboot_epoch = 0",
+            "pble_vm_reboot_abort",
+            "pble_fs_quiesce_abort",
+        )
+        self.assertEqual(
+            [
+                forbidden
+                for forbidden in forbidden_commit_mutations
+                if forbidden in callback
+            ],
+            [],
+            "the fired timer must preserve the irreversible reboot closure",
+        )
+        for cleared in (
+            "g_soft_reboot_pending = false",
+            "g_soft_reboot_epoch = 0",
+        ):
+            self.assertIn(cleared, disarm)
+        ordered(
+            self,
+            pre_deinit,
+            "pble_vm_close_admission",
+            "pble_runner_vm_timer_disarm",
+        )
+        committed = soft[soft.index("esp_timer_start_once") :]
+        self.assertNotIn("pble_vm_reboot_abort", committed)
+        self.assertNotIn("pble_fs_quiesce_abort", committed)
 
     def test_soft_reboot_quiesces_then_commits_at_accepted_rsp(self):
         soft = code_only(c_function(RUNNER, "pble_runner_soft_reboot"))
