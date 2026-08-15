@@ -89,6 +89,7 @@
 // RUN_STATE(idle) reuses returned blocks after that response drains.
 #define PBLE_TX_BULK_RESERVE_BLOCKS 2
 #define PBLE_TX_ATT_WRAPPER_BLOCKS  1
+#define PBLE_CONTROL_TX_BOUNDARY_BUDGET_MS 15u
 
 #if PBLE_ENABLE_SPLASH_READINESS
 // Boot-internal readiness snapshot (ADR-0024 / FR-SPLASH-4), exact image only.
@@ -560,6 +561,32 @@ static uint32_t pble_tx_stream_generation = 1;
 // whole-message retry consumes more of the very mbuf pool it is waiting on.
 static SemaphoreHandle_t pble_tx_drain_sem;
 
+// A specialized RUN/STOP/SOFT_REBOOT response owns the next complete-message
+// boundary while it waits for pble_tx_mutex. The short spinlock protects only
+// this predicate; no caller holds it while acquiring or owning the TX mutex.
+static portMUX_TYPE pble_control_tx_boundary_mux = portMUX_INITIALIZER_UNLOCKED;
+static bool pble_control_tx_boundary_active;
+
+static void pble_control_tx_boundary_begin(void) {
+    taskENTER_CRITICAL(&pble_control_tx_boundary_mux);
+    pble_control_tx_boundary_active = true;
+    taskEXIT_CRITICAL(&pble_control_tx_boundary_mux);
+}
+
+static bool pble_control_tx_boundary_pending(void) {
+    bool pending;
+    taskENTER_CRITICAL(&pble_control_tx_boundary_mux);
+    pending = pble_control_tx_boundary_active;
+    taskEXIT_CRITICAL(&pble_control_tx_boundary_mux);
+    return pending;
+}
+
+static void pble_control_tx_boundary_end(void) {
+    taskENTER_CRITICAL(&pble_control_tx_boundary_mux);
+    pble_control_tx_boundary_active = false;
+    taskEXIT_CRITICAL(&pble_control_tx_boundary_mux);
+}
+
 // §3.2 reassembly accumulator (single static buffer).
 static uint8_t  pble_rx_buf[PBLE_MSG_MAX];
 static size_t   pble_rx_len;
@@ -929,42 +956,62 @@ static int pble_notify_message(const uint8_t *msg, size_t len,
     return PBLE_TX_OK;
 }
 
-// Transactional RUN admission: one connection-bound control submission with
-// no wait and no retry on the NimBLE host task. The response is known to fit at
-// the default MTU, but retain the exact one-fragment guard at this transport
-// boundary so future callers fail closed.
+// Transactional RUN/STOP/SOFT_REBOOT admission: wait at most one absolute 15 ms
+// deadline for the current complete-message boundary, then make one local
+// Notify submission. Capacity pressure is never waited or retried. The response
+// is known to fit at the default MTU, but retain the exact one-fragment guard at
+// this transport boundary so future callers fail closed.
 int pble_ble_notify_control_try_for_conn(const uint8_t *msg, size_t len,
                                          const pble_session_token_t *expected_conn) {
     if (pble_tx_mutex == NULL) {
         return PBLE_TX_NO_CONN;
     }
-    if (xSemaphoreTakeRecursive(pble_tx_mutex, 0) != pdTRUE) {
-        return PBLE_TX_AGAIN;
-    }
 
-    int rc;
-    if (expected_conn == NULL ||
-        pble_conn_handle != expected_conn->conn ||
-        !pble_ble_session_live(expected_conn)) {
-        rc = PBLE_TX_NO_CONN;
-    } else if (len > pble_payload_size(pble_mtu_val)) {
-        rc = PBLE_TX_OVERSIZE;
-    } else {
-        uint8_t pkt[PBLE_FRAG_PKT_MAX];
-        pkt[0] = PBLE_FRAG_FIRST | PBLE_FRAG_LAST;
-        if (len > 0) {
-            memcpy(pkt + 1, msg, len);
+    int64_t deadline_us = esp_timer_get_time() +
+                          (int64_t)PBLE_CONTROL_TX_BOUNDARY_BUDGET_MS *
+                              INT64_C(1000);
+    pble_control_tx_boundary_begin();
+    int rc = PBLE_TX_AGAIN;
+    bool tx_locked = false;
+    int64_t now_us = esp_timer_get_time();
+    if (now_us < deadline_us) {
+        int64_t remaining_us = deadline_us - now_us;
+        TickType_t remaining_ticks = pdMS_TO_TICKS(
+            (uint32_t)((remaining_us + INT64_C(999)) / INT64_C(1000)));
+        if (remaining_ticks == 0) {
+            remaining_ticks = 1;
         }
-        rc = pble_notify_packet(pkt, len + 1, 0, expected_conn);
-        if (rc == PBLE_TX_OK) {
-            pble_tx_stream_generation++;
-            if (pble_tx_stream_generation == 0) {
-                pble_tx_stream_generation++;
+        if (xSemaphoreTakeRecursive(pble_tx_mutex, remaining_ticks) == pdTRUE) {
+            tx_locked = true;
+            if (esp_timer_get_time() < deadline_us) {
+                if (expected_conn == NULL ||
+                    pble_conn_handle != expected_conn->conn ||
+                    !pble_ble_session_live(expected_conn)) {
+                    rc = PBLE_TX_NO_CONN;
+                } else if (len > pble_payload_size(pble_mtu_val)) {
+                    rc = PBLE_TX_OVERSIZE;
+                } else {
+                    uint8_t pkt[PBLE_FRAG_PKT_MAX];
+                    pkt[0] = PBLE_FRAG_FIRST | PBLE_FRAG_LAST;
+                    if (len > 0) {
+                        memcpy(pkt + 1, msg, len);
+                    }
+                    rc = pble_notify_packet(pkt, len + 1, 0, expected_conn);
+                    if (rc == PBLE_TX_OK) {
+                        pble_tx_stream_generation++;
+                        if (pble_tx_stream_generation == 0) {
+                            pble_tx_stream_generation++;
+                        }
+                    }
+                }
             }
         }
     }
 
-    xSemaphoreGiveRecursive(pble_tx_mutex);
+    if (tx_locked) {
+        xSemaphoreGiveRecursive(pble_tx_mutex);
+    }
+    pble_control_tx_boundary_end();
     return rc;
 }
 
@@ -1124,11 +1171,13 @@ static int pble_ble_notify_paced_with_reserve(const uint8_t *msg, size_t len,
             return PBLE_TX_AGAIN;
         }
         int rc;
-        if (pble_rsp_owner_active()) {
+        if (pble_control_tx_boundary_pending()) {
             rc = PBLE_TX_AGAIN;
         } else {
-            rc = pble_notify_packet(pkt, len + 1, reserve_blocks,
-                                    session);
+            rc = pble_rsp_owner_active()
+                     ? PBLE_TX_AGAIN
+                     : pble_notify_packet(pkt, len + 1, reserve_blocks,
+                                          session);
         }
         xSemaphoreGiveRecursive(pble_tx_mutex);
         if (rc != PBLE_TX_AGAIN) {
@@ -1187,8 +1236,13 @@ int pble_ble_notify(const uint8_t *msg, size_t len,
         return PBLE_TX_NO_CONN;          // not brought up yet — no link to send on.
     }
     xSemaphoreTakeRecursive(pble_tx_mutex, portMAX_DELAY);
-    int rc = pble_rsp_owner_active() ? PBLE_TX_AGAIN
+    int rc;
+    if (pble_control_tx_boundary_pending()) {
+        rc = PBLE_TX_AGAIN;
+    } else {
+        rc = pble_rsp_owner_active() ? PBLE_TX_AGAIN
                                      : pble_notify_message(msg, len, session);
+    }
     xSemaphoreGiveRecursive(pble_tx_mutex);
     return rc;
 }
