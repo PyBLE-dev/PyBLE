@@ -801,6 +801,67 @@ class SoftRebootClosingTest(AgentTestBase):
         self.assertEqual(run_states(link), [],
                          "RUN after acknowledged SOFT MUST never execute")
 
+    def test_closing_gate_covers_every_non_soft_command_and_unknown(self):
+        agent, link = self.new_agent(
+            "F-27/P4 global closing admission matrix")
+        send(self, link, 0x22, id_=120)
+
+        request_id = 121
+        for name, opcode in sorted(CMD_OPCODES.items()):
+            if opcode == CMD_OPCODES["SOFT_REBOOT"]:
+                continue
+            with self.subTest(opcode=name):
+                payload = b"z" if opcode == CMD_OPCODES["CONSOLE_INPUT"] else b""
+                send(self, link, opcode, payload, id_=request_id)
+                answers = rsps(link, opcode, request_id)
+                if opcode in NO_RSP_OPCODES:
+                    self.assertEqual(answers, [],
+                                     "no-RSP command is dropped while closing")
+                else:
+                    self.assertEqual(len(answers), 1)
+                    self.assertEqual(
+                        answers[0].payload[0], EBUSY,
+                        "every response-bearing command is gated before handler")
+                request_id += 1
+
+        send(self, link, 0x7F, id_=150)
+        self.assertEqual(rsps(link, 0x7F, 150)[0].payload[0], EBUSY,
+                         "unknown valid commands are gated while closing too")
+
+    def test_closing_gate_prevents_inline_persistent_and_console_mutation(self):
+        keep = os.path.join(self.root, "keep.txt")
+        with open(keep, "wb") as fh:
+            fh.write(b"keep")
+        agent, link = self.new_agent(
+            "F-27/P4 closing gate blocks handler side effects")
+        send(self, link, 0x22, id_=151)
+
+        def path_payload(path):
+            raw = path.encode("utf-8")
+            return struct.pack("<H", len(raw)) + raw
+
+        commands = (
+            (0x18, path_payload("/keep.txt"), 152),
+            (0x19, path_payload("/newdir"), 153),
+            (0x50, b"mutated", 154),
+            (0x23, b"\x01", 155),
+        )
+        statuses = []
+        for opcode, payload, id_ in commands:
+            send(self, link, opcode, payload, id_=id_)
+            statuses.append(rsps(link, opcode, id_)[0].payload[0])
+        send(self, link, 0x31, b"z", id_=156)
+
+        self.assertEqual(statuses, [EBUSY] * len(commands))
+        self.assertTrue(os.path.isfile(keep),
+                        "closing FILE_DELETE MUST NOT reach filesystem handler")
+        self.assertFalse(os.path.exists(os.path.join(self.root, "newdir")),
+                         "closing MKDIR MUST NOT reach filesystem handler")
+        self.assertEqual(agent._config.label, "")
+        self.assertEqual(agent._config.auto_run, 0)
+        self.assertIsNone(agent.console.readinto(bytearray(1)),
+                          "closing CONSOLE_INPUT is dropped before ring mutation")
+
     def test_closing_exception_resets_instead_of_losing_deadline(self):
         order = []
 

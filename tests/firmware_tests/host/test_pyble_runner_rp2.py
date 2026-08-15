@@ -386,6 +386,36 @@ class TerminalStateTest(unittest.TestCase):
                          "a STOP accepted before normal completion's terminal "
                          "cut MUST land idle (stopped wins over done)")
 
+    def test_kbi_after_idle_publication_does_not_duplicate_terminal(self):
+        emitted = []
+        cell = {}
+        raised = [False]
+
+        def emit_then_interrupt(state):
+            emitted.append(state)
+            if state == IDLE and not raised[0]:
+                raised[0] = True
+                raise KeyboardInterrupt()
+
+        def stop_then_return(mode, data):
+            cell["runner"].handle_stop()
+
+        cls = RUNNER.attr(
+            self, "Runner", "F-27/P3 terminal publication exactly once")
+        runner = cls(emit_then_interrupt, stop_then_return)
+        cell["runner"] = runner
+        runner.handle_run(GOOD_SOURCE)
+
+        with self.assertRaises(KeyboardInterrupt,
+                               msg="oracle injects KBI after recording IDLE"):
+            runner.service()
+        runner.service_interrupted()
+
+        self.assertEqual(emitted, [RUNNING, IDLE],
+                         "recovery MUST NOT retry an already-published IDLE")
+        self.assertEqual(runner.rsm.state, IDLE)
+        self.assertFalse(runner.is_executing())
+
     def test_run_allowed_again_after_terminal(self):
         r, _, _ = make_runner(self, "F-25/§6 run-after-terminal")
         r.handle_run(GOOD_SOURCE)
