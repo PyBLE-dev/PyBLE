@@ -156,7 +156,10 @@ contract, and HIL matrix live in
   reservation cannot cross into its RUN event or user-code effects while an
   earlier `STOP`/`SOFT_REBOOT` response attempt is unresolved; response success
   publishes stop intent before releasing that pickup gate, while response
-  failure releases it without an interrupt.
+  failure releases it without an interrupt. An active worker also cannot
+  classify its terminal state while an earlier control attempt is unresolved.
+  It waits outside the runner domain and the MicroPython GIL, then atomically
+  observes the resolved stop intent and commits `idle` versus `done`/`error`.
 - **The agent owns the filesystem bridge**, but user code may also touch the FS normally; uploads use temp-write-then-rename to avoid corrupting a file mid-transfer.
 - **Console mirrors everywhere.** `stdout`/`stderr` go to BLE and (if connected)
   USB-serial, regardless of who started the run. Each new BLE console chunk and

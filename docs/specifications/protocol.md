@@ -504,7 +504,19 @@ before wrap, so the quiescence seam cannot reintroduce ABA.
   before resolving the gate, or (b) resolves a failed attempt without an
   interrupt or stop effect; either resolution then wakes the worker. Thus response success before pickup permits no user
   code or RUN event from that reservation; pickup first makes the command an
-  ordinary active-run interrupt. A successful later RUN reservation may consume
+  ordinary active-run interrupt.
+
+  An active worker's terminal classification is a second consumer of the same
+  gate. It MUST NOT commit `done`, `error`, or `idle` while a control attempt
+  whose begin cut precedes that terminal cut remains unresolved. It waits on the
+  same signal outside both the runner domain and the MicroPython GIL, then in one
+  runner-domain cut observes the resolved stop flag and commits either
+  `RUN_STATE(idle)` for accepted `STOP`/`SOFT_REBOOT` or the natural
+  `done`/`error` state after response failure. If the terminal cut wins first,
+  the natural terminal state is already authoritative and a later accepted
+  `STOP` is the specified idle no-op. This ordering closes the local Notify
+  acceptance-to-intent gap without holding the runner lock across TX or a wait.
+  A successful later RUN reservation may consume
   only resolved stale idle-STOP intent, never an unresolved control attempt.
 - **`SOFT_REBOOT` (0x22)** no payload. On the normal successfully armed grace
   path, `RSP{OK}` is immediate; the command stops any run, then soft-resets the

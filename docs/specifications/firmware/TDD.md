@@ -643,11 +643,21 @@ stop flag together under the runner domain. A failed response resolves the gate 
 a successful response publishes `g_stop_requested` and the worker's pending
 `KeyboardInterrupt` in the same runner-domain cut that resolves it. The worker
 is signalled after that cut on both success and failure. The accepted-only branch
-owns every stop/KBI write; failure owns neither. The worker
-then either skips the reserved run or, if it crossed the gate first, receives a
-normal active-run interrupt. Reservation-time cleanup may clear only an older,
-resolved idle-STOP flag/pending exception and never the unresolved gate. The
-same rules cover command RUN and the direct auto-run reservation.
+owns every stop/KBI write; failure owns neither. The worker then either skips
+the reserved run or, if it crossed the gate first, receives a normal active-run
+interrupt. The active worker's terminal classification uses the same predicate
+and signal. It never holds the runner domain or MicroPython GIL while waiting,
+and after every wake it loops. Only one runner-domain cut that has observed the
+gate resolved may snapshot stop intent, choose `pble_rsm_on_stopped` versus
+`pble_rsm_on_finished`, clear the worker pending exception, and publish the
+terminal result to its caller. Therefore a control begin before that cut
+resolves success to `idle` and failure to the natural `done`/`error`; a terminal
+cut first remains authoritative and makes a later accepted `STOP` an idle
+no-op. A separate resolved snapshot followed by a later terminal lock
+acquisition is forbidden because it recreates the race. Reservation-time
+cleanup may clear only an older, resolved idle-STOP flag/pending exception and
+never the unresolved gate. The same rules cover command RUN and the direct
+auto-run reservation.
 
 Once admitted, the worker authors `RUN_STATE(running)` (FR-RUN-1). Each new
 `RUN_STATE` event atomically snapshots the then-current live full session token
@@ -1122,7 +1132,11 @@ unresolved-control gate above bridges that lock-domain gap: response success and
 accepted intent become visible to pickup in one post-TX runner cut, and response
 failure merely releases the pickup. This prevents a context switch after local
 Notify acceptance but before intent publication from starting reserved user
-code.
+code. The same gate also orders natural completion against that gap: terminal
+classification waits without the GIL or runner lock and then performs its
+resolved-gate check, stop snapshot, and state transition atomically. Accepted
+control wins `idle` when its begin cut came first; failed control preserves the
+natural terminal; a terminal cut that came first is not retroactively rewritten.
 
 ### 5.3 Serialization (single active writer)
 
