@@ -75,6 +75,39 @@ def code_only(source: str) -> str:
     return re.sub(r"/\*.*?\*/|//[^\n]*", "", source, flags=re.DOTALL)
 
 
+def braced_block(source: str, opening: int) -> tuple[str, int]:
+    """Return one balanced C block and the index immediately after it."""
+    if opening < 0 or source[opening] != "{":
+        raise AssertionError("missing opening brace")
+    depth = 0
+    state = "code"
+    index = opening
+    while index < len(source):
+        char = source[index]
+        if state == "string":
+            if char == "\\":
+                index += 1
+            elif char == '"':
+                state = "code"
+        elif state == "char":
+            if char == "\\":
+                index += 1
+            elif char == "'":
+                state = "code"
+        elif char == '"':
+            state = "string"
+        elif char == "'":
+            state = "char"
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return source[opening : index + 1], index + 1
+        index += 1
+    raise AssertionError("unterminated C block")
+
+
 def ordered(test: unittest.TestCase, source: str, *needles: str) -> None:
     positions = [source.find(needle) for needle in needles]
     for needle, position in zip(needles, positions):
@@ -164,17 +197,57 @@ class NativeControlTryContractTests(unittest.TestCase):
         ordered(
             self,
             body,
+            "int64_t deadline_us = esp_timer_get_time()",
             "pble_control_tx_boundary_begin()",
-            "xTaskGetTickCount()",
+            "int64_t now_us = esp_timer_get_time()",
+            "deadline_us - now_us",
+            "pdMS_TO_TICKS",
             "xSemaphoreTakeRecursive(pble_tx_mutex",
+            "esp_timer_get_time() < deadline_us",
             "pble_conn_handle != expected_conn",
             "pble_notify_packet",
             "xSemaphoreGiveRecursive(pble_tx_mutex)",
             "pble_control_tx_boundary_end()",
+            "return rc",
         )
-        self.assertIn("PBLE_CONTROL_TX_BOUNDARY_BUDGET_MS", body)
-        self.assertRegex(body, r"\bdeadline\b")
-        self.assertRegex(body, r"\bremaining\b")
+        self.assertRegex(
+            body,
+            r"int64_t\s+deadline_us\s*=\s*esp_timer_get_time\s*\(\s*\)\s*\+"
+            r"\s*\(int64_t\)\s*PBLE_CONTROL_TX_BOUNDARY_BUDGET_MS\s*\*"
+            r"\s*INT64_C\s*\(\s*1000\s*\)\s*;",
+            "the 15 ms budget must be minted once from the monotonic clock",
+        )
+        self.assertEqual(body.count("deadline_us ="), 1)
+        self.assertEqual(
+            body.count("esp_timer_get_time()"),
+            3,
+            "one start, one residual sample, and one post-acquire expiry check",
+        )
+        self.assertRegex(
+            body,
+            r"int64_t\s+now_us\s*=\s*esp_timer_get_time\s*\(\s*\)\s*;"
+            r"\s*if\s*\(\s*now_us\s*<\s*deadline_us\s*\)\s*\{"
+            r"\s*int64_t\s+remaining_us\s*=\s*deadline_us\s*-\s*now_us\s*;",
+            "expiry must be rejected before the signed residual is converted",
+        )
+        self.assertRegex(
+            body,
+            r"TickType_t\s+remaining_ticks\s*=\s*pdMS_TO_TICKS\s*\(\s*"
+            r"\(uint32_t\)\s*\(\s*\(\s*remaining_us\s*\+\s*"
+            r"INT64_C\s*\(\s*999\s*\)\s*\)\s*/\s*INT64_C\s*\(\s*1000\s*\)"
+            r"\s*\)\s*\)\s*;",
+            "the sole mutex wait must consume the rounded-up residual",
+        )
+        self.assertRegex(
+            body,
+            r"if\s*\(\s*remaining_ticks\s*==\s*0\s*\)\s*\{\s*"
+            r"remaining_ticks\s*=\s*1\s*;\s*\}",
+        )
+        self.assertRegex(
+            body,
+            r"xSemaphoreTakeRecursive\s*\(\s*pble_tx_mutex\s*,\s*"
+            r"remaining_ticks\s*\)",
+        )
         self.assertNotRegex(
             body,
             r"xSemaphoreTakeRecursive\s*\(\s*pble_tx_mutex\s*,\s*0\s*\)",
@@ -184,12 +257,29 @@ class NativeControlTryContractTests(unittest.TestCase):
         self.assertEqual(body.count("xSemaphoreTakeRecursive("), 1)
         self.assertEqual(body.count("pble_notify_packet("), 1)
         self.assertNotIn("pble_notify_message", body)
+        self.assertNotIn("xTaskGetTickCount", body)
+
+        post_guard = re.search(
+            r"if\s*\(\s*esp_timer_get_time\s*\(\s*\)\s*<\s*deadline_us\s*\)"
+            r"\s*\{",
+            body,
+        )
+        self.assertIsNotNone(
+            post_guard,
+            "a semaphore return at/after the deadline must not submit Notify",
+        )
+        post_block, _ = braced_block(body, body.find("{", post_guard.start()))
+        self.assertIn("pble_notify_packet", post_block)
+        self.assertIn("pble_conn_handle != expected_conn", post_block)
+
         after_begin = body[body.index("pble_control_tx_boundary_begin()") :]
+        self.assertEqual(after_begin.count("pble_control_tx_boundary_end()"), 1)
         self.assertEqual(
             len(re.findall(r"\breturn\b", after_begin)),
             1,
             "every post-claim outcome must clear pending ownership at one exit",
         )
+        self.assertNotIn("goto ", after_begin)
         for forbidden in (
             "portMAX_DELAY",
             "pble_tx_drain_sem",

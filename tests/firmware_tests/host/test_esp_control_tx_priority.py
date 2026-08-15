@@ -82,6 +82,56 @@ def code_only(source: str) -> str:
     return re.sub(r"/\*.*?\*/|//[^\n]*", "", source, flags=re.DOTALL)
 
 
+def braced_block(source: str, opening: int) -> tuple[str, int]:
+    """Return one balanced C block and the index immediately after it."""
+    if opening < 0 or source[opening] != "{":
+        raise AssertionError("missing opening brace")
+    depth = 0
+    state = "code"
+    index = opening
+    while index < len(source):
+        char = source[index]
+        if state == "string":
+            if char == "\\":
+                index += 1
+            elif char == '"':
+                state = "code"
+        elif state == "char":
+            if char == "\\":
+                index += 1
+            elif char == "'":
+                state = "code"
+        elif char == '"':
+            state = "string"
+        elif char == "'":
+            state = "char"
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return source[opening : index + 1], index + 1
+        index += 1
+    raise AssertionError("unterminated C block")
+
+
+def pending_branch(source: str) -> tuple[str, str]:
+    """Return explicit pending and non-pending branches from a TX sender."""
+    match = re.search(
+        r"if\s*\(\s*pble_control_tx_boundary_pending\s*\(\s*\)\s*\)\s*\{",
+        source,
+    )
+    if match is None:
+        raise AssertionError("missing explicit specialized-pending branch")
+    pending, after_pending = braced_block(source, source.find("{", match.start()))
+    alternate = re.match(r"\s*else\s*\{", source[after_pending:])
+    if alternate is None:
+        raise AssertionError("pending gate must have an explicit non-pending branch")
+    opening = source.find("{", after_pending + alternate.start())
+    non_pending, _ = braced_block(source, opening)
+    return pending, non_pending
+
+
 class FrozenCapacityModelTests(unittest.TestCase):
     """Pure model: payload is allocated before the msys_1 reserve check."""
 
@@ -168,15 +218,62 @@ class NativeReserveSourceContractTests(unittest.TestCase):
         self.assertIn("pble_proto_emit_control_paced", RUNNER)
 
     def test_specialized_pending_gate_is_owned_until_after_mutex_release(self):
-        for name in (
-            "pble_control_tx_boundary_begin",
-            "pble_control_tx_boundary_pending",
-            "pble_control_tx_boundary_end",
-        ):
-            with self.subTest(helper=name):
-                helper = code_only(function(BLE, name))
-                self.assertIn("taskENTER_CRITICAL", helper)
-                self.assertIn("taskEXIT_CRITICAL", helper)
+        begin = code_only(function(BLE, "pble_control_tx_boundary_begin"))
+        state_set = re.search(
+            r"\b(?P<state>pble_[A-Za-z_]\w*)\s*=\s*true\s*;",
+            begin,
+        )
+        self.assertIsNotNone(state_set, "begin must set the shared bool true")
+        state = state_set.group("state")
+        self.assertRegex(
+            BLE,
+            rf"static\s+bool\s+{re.escape(state)}(?:\s*=\s*false)?\s*;",
+        )
+        ordered(
+            self,
+            begin,
+            "taskENTER_CRITICAL",
+            "{} = true;".format(state),
+            "taskEXIT_CRITICAL",
+        )
+        self.assertEqual(begin.count("{} = true;".format(state)), 1)
+
+        pending = code_only(function(BLE, "pble_control_tx_boundary_pending"))
+        state_read = re.search(
+            rf"\b(?P<local>[A-Za-z_]\w*)\s*=\s*{re.escape(state)}\s*;",
+            pending,
+        )
+        self.assertIsNotNone(
+            state_read,
+            "pending must read the exact shared bool under its critical section",
+        )
+        local = state_read.group("local")
+        self.assertRegex(pending, rf"\bbool\s+{re.escape(local)}\b")
+        ordered(
+            self,
+            pending,
+            "taskENTER_CRITICAL",
+            "{} = {};".format(local, state),
+            "taskEXIT_CRITICAL",
+            "return {};".format(local),
+        )
+
+        end = code_only(function(BLE, "pble_control_tx_boundary_end"))
+        ordered(
+            self,
+            end,
+            "taskENTER_CRITICAL",
+            "{} = false;".format(state),
+            "taskEXIT_CRITICAL",
+        )
+        self.assertEqual(end.count("{} = false;".format(state)), 1)
+
+        for helper in (begin, pending, end):
+            self.assertNotIn(
+                "xSemaphoreTake",
+                helper,
+                "the pending-state critical section must never cover a TX wait",
+            )
 
         control = code_only(
             function(BLE, "pble_ble_notify_control_try_for_conn")
@@ -190,6 +287,8 @@ class NativeReserveSourceContractTests(unittest.TestCase):
             "xSemaphoreGiveRecursive(pble_tx_mutex)",
             "pble_control_tx_boundary_end()",
         )
+        self.assertNotIn("taskENTER_CRITICAL", control)
+        self.assertNotIn("taskEXIT_CRITICAL", control)
 
     def test_paced_bulk_rechecks_pending_after_lock_before_notify(self):
         paced = code_only(function(BLE, "pble_ble_notify_paced_with_reserve"))
@@ -201,6 +300,12 @@ class NativeReserveSourceContractTests(unittest.TestCase):
             "pble_notify_packet",
             "xSemaphoreGiveRecursive(pble_tx_mutex)",
         )
+        pending, non_pending = pending_branch(paced)
+        self.assertIn("PBLE_TX_AGAIN", pending)
+        self.assertNotIn("pble_notify_packet", pending)
+        self.assertIn("pble_notify_packet", non_pending)
+        self.assertIn("pble_rsp_owner_active", non_pending)
+        self.assertEqual(paced.count("pble_notify_packet("), 1)
 
     def test_general_bulk_rechecks_pending_only_at_complete_message_boundary(self):
         general = code_only(function(BLE, "pble_ble_notify"))
@@ -212,6 +317,12 @@ class NativeReserveSourceContractTests(unittest.TestCase):
             "pble_notify_message",
             "xSemaphoreGiveRecursive(pble_tx_mutex)",
         )
+        pending, non_pending = pending_branch(general)
+        self.assertIn("PBLE_TX_AGAIN", pending)
+        self.assertNotIn("pble_notify_message", pending)
+        self.assertIn("pble_notify_message", non_pending)
+        self.assertIn("pble_rsp_owner_active", non_pending)
+        self.assertEqual(general.count("pble_notify_message("), 1)
         message = code_only(function(BLE, "pble_notify_message"))
         self.assertNotIn(
             "pble_control_tx_boundary_pending",
