@@ -116,11 +116,12 @@ class PumpOracle:
 
 
 class CompletionWakeOracle:
-    """Model one response-slot incarnation and its binary completion signal."""
+    """Model transition-before-give ABA on one static binary semaphore."""
 
     FREE = 0
     RESERVED = 1
-    COMPLETE = 2
+    READY = 2
+    COMPLETE = 3
 
     def __init__(self) -> None:
         self.state = self.FREE
@@ -136,17 +137,38 @@ class CompletionWakeOracle:
         self.state = self.RESERVED
         return self.incarnation
 
-    def complete(self, incarnation: int) -> None:
-        if incarnation != self.incarnation or self.state == self.COMPLETE:
-            return
+    def transition_complete(self, incarnation: int) -> int | None:
+        """Commit COMPLETE, but return a give that the test may delay."""
+        if (
+            incarnation != self.incarnation
+            or self.state in (self.FREE, self.COMPLETE)
+        ):
+            return None
         self.state = self.COMPLETE
+        return incarnation
+
+    def deliver_give(self, producer_incarnation: int | None) -> bool:
+        """Deliver an untagged FreeRTOS binary give from any incarnation."""
+        del producer_incarnation
+        if self.signal:
+            return False
         self.signal = 1
+        return True
+
+    def hard_recycle(self) -> None:
+        self.signal = 0
+        self.state = self.FREE
+        self.incarnation += 1
 
     def wait_nowait(self, incarnation: int) -> bool | None:
         if self.signal == 0:
             return None
         self.signal = 0
-        if incarnation != self.incarnation or self.state != self.COMPLETE:
+        if incarnation != self.incarnation:
+            return False
+        if self.state in (self.RESERVED, self.READY):
+            return None
+        if self.state != self.COMPLETE:
             return False
         self.state = self.FREE
         self.incarnation += 1
@@ -177,20 +199,57 @@ class FrozenResponsePumpOracleTests(unittest.TestCase):
         model.step(model.AGAIN, 1000)
         self.assertTrue(model.terminated)
 
-    def test_duplicate_completion_cannot_wake_a_recycled_incarnation(self):
+    def test_duplicate_completion_owns_only_one_give(self):
         model = CompletionWakeOracle()
         first = model.reserve()
-        model.complete(first)
-        model.complete(first)
+        give = model.transition_complete(first)
+        self.assertIsNone(model.transition_complete(first))
+        self.assertTrue(model.deliver_give(give))
         self.assertEqual(model.signal, 1, "COMPLETE owns exactly one wake")
         self.assertTrue(model.wait_nowait(first))
 
-        # Model the adversarial delayed-give boundary explicitly. Even if an
-        # old producer left a token after recycle, reserve must drain it before
-        # exposing the next incarnation.
-        model.signal = 1
+    def test_delayed_old_give_is_ignored_until_new_incarnation_completes(self):
+        model = CompletionWakeOracle()
+        first = model.reserve()
+        delayed_first_give = model.transition_complete(first)
+
+        # Reset/recycle runs after old COMPLETE was committed under the pool
+        # mux but before its producer performs the physical give.
+        model.hard_recycle()
         second = model.reserve()
         self.assertNotEqual(second, first)
+        self.assertTrue(model.deliver_give(delayed_first_give))
+        self.assertIsNone(
+            model.wait_nowait(second),
+            "new RESERVED waiter must consume and ignore the stale old give",
+        )
+
+        second_give = model.transition_complete(second)
+        self.assertTrue(model.deliver_give(second_give))
+        self.assertTrue(model.wait_nowait(second))
+
+    def test_new_complete_state_survives_binary_full_delayed_old_give(self):
+        model = CompletionWakeOracle()
+        first = model.reserve()
+        delayed_first_give = model.transition_complete(first)
+        model.hard_recycle()
+        second = model.reserve()
+
+        second_give = model.transition_complete(second)
+        self.assertTrue(model.deliver_give(second_give))
+        self.assertFalse(
+            model.deliver_give(delayed_first_give),
+            "binary-full semaphore suppresses one of the physical gives",
+        )
+        self.assertTrue(
+            model.wait_nowait(second),
+            "authoritative COMPLETE state must still complete the new waiter",
+        )
+
+    def test_reserve_drains_an_already_delivered_old_signal(self):
+        model = CompletionWakeOracle()
+        model.signal = 1
+        second = model.reserve()
         self.assertIsNone(model.wait_nowait(second))
 
 
@@ -295,7 +354,7 @@ class NativeResponsePoolContractTests(unittest.TestCase):
                     c_function(RUNNER, handler),
                 )
 
-    def test_completion_wakes_are_transition_only_and_reserve_drains_stale_token(self):
+    def test_completion_transitions_once_and_reserve_drains_stale_token(self):
         cancel_session = code_only(c_function(PROTO, "pble_rsp_cancel_session"))
         cancel_ticket = code_only(c_function(PROTO, "pble_rsp_cancel_ticket"))
         self.assertIn("slot->state != PBLE_RSP_COMPLETE", cancel_session)
@@ -308,6 +367,30 @@ class NativeResponsePoolContractTests(unittest.TestCase):
             "xSemaphoreTake(s_rsp_done[i], 0)",
             "slot->state = PBLE_RSP_RESERVED",
         )
+
+    def test_completion_wait_rechecks_tagged_state_after_every_wake(self):
+        cancel_session = code_only(c_function(PROTO, "pble_rsp_cancel_session"))
+        cancel_ticket = code_only(c_function(PROTO, "pble_rsp_cancel_ticket"))
+        wait = code_only(c_function(PROTO, "pble_rsp_wait"))
+        self.assertRegex(wait, r"\b(?:while|for)\s*\(")
+        ordered(
+            self,
+            wait,
+            "xSemaphoreTake",
+            "taskENTER_CRITICAL",
+            "pble_rsp_ticket_matches_locked",
+            "taskEXIT_CRITICAL",
+        )
+        self.assertIn("PBLE_RSP_RESERVED", wait)
+        self.assertIn("PBLE_RSP_READY", wait)
+        self.assertIn("PBLE_RSP_COMPLETE", wait)
+        self.assertIn("continue;", wait)
+
+        # Producers commit state under the pool mux and only then perform the
+        # untagged give, so the waiter loop—not mutex-held signaling—closes ABA.
+        for body in (cancel_session, cancel_ticket):
+            give = body.find("xSemaphoreGive")
+            self.assertGreater(give, body.rfind("taskEXIT_CRITICAL", 0, give))
 
 
 class NativeDeferredResponseContractTests(unittest.TestCase):
