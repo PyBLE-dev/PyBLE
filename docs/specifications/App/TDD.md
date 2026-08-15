@@ -1,6 +1,6 @@
 # PyBLE App — Technical Design Document (TDD)
 
-Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-08-12
+Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-08-15
 
 ## 0. Naming note (acronym clash)
 
@@ -31,6 +31,13 @@ The design covers the **entire Flutter app**: the BLE adapter (`lib/ble/`), the 
 The decisions below are the load-bearing choices the rest of the design rests on. Each cites the requirement(s) it serves.
 
 ### 2.1 The `Connection` API is the single seam
+
+> **Frozen acknowledged command-write amendment (2026-08-15, `[docs]`):**
+> [§7.2](#72-byte-boundary), [§8.2](#82-fragmentation--reassembly), and
+> [§8.3](#83-requestresponse-correlation--event-routing) bind response-bearing
+> requests to acknowledged GATT writes while fire-and-forget traffic retains
+> Write-Without-Response. Existing request durations remain one absolute
+> end-to-end deadline.
 
 **Decision (D1):** every UI widget binds **only** to the abstract `Connection` interface ([app.md §3](../app.md#3-the-connection-api-the-seam-every-widget-binds-to), [§5](#5-the-connection-api-design)) or to narrow callbacks derived from it. The wire format lives **only** in `lib/pble/`; no widget imports `lib/ble/`. This is enforced by an import-boundary lint ([§15.6](#156-import-boundary--no-leak-gates)). — *(satisfies FR-CONN-*, FR-PBLE-14, FR-BLE-8, NFR-MAINT-1, CON-8; the whole-document binding principle of [specs.md §1.4](specs.md).)*
 
@@ -85,7 +92,7 @@ Rationale: a single approach keeps the strict layering observable (state flows d
 |   file-transfer state machine (window+resume) · console stream ·     |
 |   HELLO/caps · status-byte -> typed PbleException                    |
 +-----------------------------+----------------------------------------+
-            Stream<List<int>> in   |   write(bytes) out
+            Stream<List<int>> in   |   mode-explicit write(bytes) out
                               v
 +----------------------------------------------------------------------+
 | lib/ble/    BLE adapter  ── scan(filter UUID) · connect · MTU 247 ·  |
@@ -140,7 +147,7 @@ Each subsection states **responsibility · public API/type sketch · key data st
 
 ### 4.1 `lib/ble/` — BLE adapter
 
-**Responsibility:** the thin, mockable `flutter_blue_plus` seam: scan filtered to the PyBLE service UUID, connect, MTU negotiation to 247, a byte-stream boundary (`Stream<List<int>>` in / `write(bytes)` out), connection-state transitions, reconnect, and platform permission/adapter-state handling. It knows **nothing** about PBLE/1.
+**Responsibility:** the thin, mockable `flutter_blue_plus` seam: scan filtered to the PyBLE service UUID, connect, MTU negotiation to 247, a byte-stream boundary (`Stream<List<int>>` in / mode-explicit `write(bytes)` out), connection-state transitions, reconnect, and platform permission/adapter-state handling. It knows **nothing** about PBLE/1.
 
 **Public interface (sketch):**
 
@@ -153,7 +160,7 @@ abstract interface class BleTransport {
 }
 abstract interface class BleSession {
   Stream<List<int>> get inbound;                // TX notifications (FR-BLE-3)
-  Future<void> write(List<int> bytes);          // RX Write / Write-Without-Response (FR-BLE-3)
+  Future<void> write(List<int> bytes, {required bool withoutResponse}); // RX write mode (FR-BLE-3)
   int get mtu;                                   // negotiated, down to default (FR-BLE-2)
   ValueListenable<BleLinkState> get link;        // up/down transitions (FR-BLE-4)
   Future<void> reconnect();                      // by remembered id (FR-BLE-4)
@@ -177,7 +184,7 @@ abstract interface class BleSession {
 
 **Dependencies:** `lib/ble/` (byte transport) below; presents `Connection` (neutral types) above. Authored fresh, clean-room (FR-PBLE-15).
 
-**Satisfies:** FR-PBLE-1..15, FR-CONN-1..9 (implementation), IF-1, IF-2, SEC-1/2/7.
+**Satisfies:** FR-PBLE-1..16, FR-CONN-1..9 (implementation), IF-1, IF-2, SEC-1/2/7.
 
 ### 4.3 `lib/editor/` — code editor
 
@@ -475,7 +482,13 @@ Implements the byte boundary; references [protocol.md §2](../protocol.md#2-ble-
 
 ### 7.2 Byte boundary
 
-`inbound` is a `Stream<List<int>>` of raw TX notification payloads; `write(bytes)` writes to RX (Write / Write-Without-Response). The adapter never interprets frame contents (FR-BLE-3) — fragmentation/reassembly is entirely `lib/pble/`'s job ([§8.2](#82-fragmentation--reassembly)).
+`inbound` is a `Stream<List<int>>` of raw TX notification payloads;
+`write(bytes, {required withoutResponse})` writes to RX and maps the flag
+directly to the platform GATT mode. `BleByteTransport.send(packet,
+{required acknowledged})` maps to `withoutResponse: !acknowledged`. The adapter
+never interprets frame contents (FR-BLE-3) — fragmentation/reassembly and the
+choice between response-bearing and fire-and-forget traffic are entirely
+`lib/pble/`'s job ([§8.2](#82-fragmentation--reassembly)).
 
 ### 7.3 Reconnect
 
@@ -501,7 +514,7 @@ Implements the byte boundary; references [protocol.md §2](../protocol.md#2-ble-
 
 ## 8. PBLE/1 client design (`lib/pble/`)
 
-References [protocol.md](../protocol.md) throughout; redefines nothing. — *(satisfies FR-PBLE-1..15.)*
+References [protocol.md](../protocol.md) throughout; redefines nothing. — *(satisfies FR-PBLE-1..16.)*
 
 ### 8.1 Frame codec
 
@@ -509,11 +522,11 @@ Encode/decode the [protocol.md §3.1](../protocol.md#3-framing) message (`VER`/`
 
 ### 8.2 Fragmentation / reassembly
 
-Outbound messages are split across `MTU − 4` boundaries with the [protocol.md §3.2](../protocol.md#3-framing) `FRAG_HDR` (`bit7 FIRST`, `bit6 LAST`, `bits5..0 index mod 64`); inbound packets are concatenated from FIRST through LAST to reproduce the original message byte-identically (FR-PBLE-2). The per-fragment payload tracks the negotiated MTU from `lib/ble/`.
+Outbound messages are split across `MTU − 4` boundaries with the [protocol.md §3.2](../protocol.md#3-framing) `FRAG_HDR` (`bit7 FIRST`, `bit6 LAST`, `bits5..0 index mod 64`); inbound packets are concatenated from FIRST through LAST to reproduce the original message byte-identically (FR-PBLE-2). The per-fragment payload tracks the negotiated MTU from `lib/ble/`. `PbleEngine.request` sends every fragment through `ByteTransport.send(..., acknowledged: true)`; `PbleEngine.fire` sends every fragment with `acknowledged: false` (FR-PBLE-16).
 
 ### 8.3 Request/response correlation & event routing
 
-A pending-request table keyed by the 1-byte `ID` (1–255, app-chosen) matches each `CMD` to its `RSP`; `EVT` frames (`ID = 0`) route by opcode to the console stream, run-state notifier, or file-transfer ack/data handlers (FR-PBLE-4). Each pending request carries a completer + timeout.
+A pending-request table keyed by the 1-byte `ID` (1–255, app-chosen) matches each `CMD` to its `RSP`; `EVT` frames (`ID = 0`) route by opcode to the console stream, run-state notifier, or file-transfer ack/data handlers (FR-PBLE-4). Each pending request carries a completer plus one absolute deadline created before its first acknowledged fragment write. Every fragment write and the response wait receives only the residual duration; neither a successful write, an unrelated frame, nor other progress resets or extends the existing timeout (FR-PBLE-16).
 
 ### 8.4 File-transfer state machine
 
@@ -1526,8 +1539,8 @@ This is where the Technical Design meets **Test-Driven Development** ([§0](#0-n
 
 | Package | unit | widget | golden | conformance | integration | locale |
 |---|---|---|---|---|---|---|
-| `lib/ble/` | scan filter, connect, MTU, reconnect (mocked transport) | — | — | — | on-device scan/connect/MTU per chip | — |
-| `lib/pble/` | codec, CRC32, correlation, error mapping | — | — | frame round-trip, fragmentation matrix, window+resume vs fake transport | resume across simulated drop | — |
+| `lib/ble/` | scan filter, connect, MTU, reconnect, acknowledged-vs-WWR mapping (mocked transport) | — | — | — | on-device scan/connect/MTU per chip | — |
+| `lib/pble/` | codec, CRC32, correlation, error mapping, request-ack/fire-WWR modes, absolute write+RSP deadline | — | — | frame round-trip, fragmentation matrix, window+resume vs fake transport | default-MTU HELLO; resume across simulated drop | — |
 | `Connection`/`FakeConnection` | every method against FakeConnection | — | — | both ends of shared corpus | — | — |
 | `lib/data/` | DAO CRUD, migrations, schema version | — | — | — | offline create→run→log | — |
 | `lib/editor/` | EditorSurface, tabs, save | tabs/find/run actions (FakeConnection) | landscape/portrait/phone | — | save→upload→run loop | strings from ARB |
@@ -1700,7 +1713,7 @@ Design element → satisfied requirement IDs. Each `FR-*`/`NFR-*`/`CON-*`/`DAT-*
 | Design element (section) | Package(s) | Requirement IDs |
 |---|---|---|
 | BLE adapter, scan filter, MTU, reconnect, permissions ([§4.1](#41-libble--ble-adapter), [§7](#7-ble-transport-design-libble)) | lib/ble | FR-BLE-1..8, IF-1/5, NFR-COMPAT-2/3, CON-1/2 |
-| PBLE/1 codec, fragmentation, correlation, transfer, HELLO, errors ([§4.2](#42-libpble--pble1-client--connection-implementation), [§8](#8-pble1-client-design-libpble)) | lib/pble | FR-PBLE-1..15, IF-1/2 |
+| PBLE/1 codec, fragmentation, correlation, acknowledged request writes, absolute deadlines, transfer, HELLO, errors ([§4.2](#42-libpble--pble1-client--connection-implementation), [§8](#8-pble1-client-design-libpble)) | lib/pble | FR-PBLE-1..16, IF-1/2 |
 | Connection interface + FakeConnection ([§5](#5-the-connection-api-design)) | lib/pble, test | FR-CONN-1..12, NFR-MAINT-3/4, CON-8 |
 | State management & data flow, single-writer, runtime connection session ([§6](#6-state-management--data-flow), [ADR-0009](../../decisions/0009-runtime-connection-manager.md)) | (app-wide), lib/pble | FR-CONN-5, FR-RUN-3, NFR-MAINT-1/2, CON-8, SEC-2 |
 | Editor ([§4.3](#43-libeditor--code-editor), [§11.1](#111-editor)) | lib/editor | FR-EDIT-1..7, FR-RUN-1/4, NFR-A11Y-3 |

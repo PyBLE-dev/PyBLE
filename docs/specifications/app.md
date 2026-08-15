@@ -1,6 +1,6 @@
 # PyBLE — App Architecture
 
-Status: **DRAFT** · Last updated: 2026-08-03
+Status: **DRAFT** · Last updated: 2026-08-15
 
 The PyBLE app is a Flutter, tablet-first IDE for iPad and Android. It connects
 to a compatible MicroPython board over BLE, speaks PBLE/1, and presents an
@@ -32,8 +32,8 @@ Strict rule: **UI widgets never import `lib/ble/`**, and only the `lib/pble/` cl
 
 | Path | Responsibility |
 |---|---|
-| `lib/ble/` | `flutter_blue_plus` wrapper: scan filtered to the PyBLE service UUID, connect, MTU 247, `Stream<List<int>>` in / `write(bytes)` out, connection-state + reconnect. |
-| `lib/pble/` | PBLE/1 client: frame codec + CRC, fragmentation/reassembly, request/response correlation, file-transfer state machine (window + resume), console stream, error→exception mapping. Exposes `Connection`. |
+| `lib/ble/` | `flutter_blue_plus` wrapper: scan filtered to the PyBLE service UUID, connect, MTU 247, `Stream<List<int>>` in / mode-explicit `write(bytes)` out, connection-state + reconnect. |
+| `lib/pble/` | PBLE/1 client: frame codec + CRC, fragmentation/reassembly, acknowledged response-bearing writes, fire-and-forget WWR, request/response correlation under one absolute deadline, file-transfer state machine (window + resume), console stream, error→exception mapping. Exposes `Connection`. |
 | `lib/editor/` | Code editor (`flutter_code_editor`), Run/Save actions, file tabs. |
 | `lib/console/` | Live console view + stdin input; traceback rendering. |
 | `lib/files/` | Board file explorer: list/open/upload/download/rename/delete/mkdir, multi-select. |

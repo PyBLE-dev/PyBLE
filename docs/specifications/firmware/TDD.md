@@ -1,6 +1,6 @@
 # PyBLE Agent Firmware — Technical Design Document (TDD)
 
-Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-08-14
+Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-08-15
 
 > **Frozen at G0 (2026-07-01, `[docs]`):** the source-tree layout ([§10.5](#105-source-layout-frozen)), which realizes the frozen NFR-MAINT-2 six-module design and the [specs.md](specs.md) §5.1/§5.6/§6/§8 freeze. Design narrative elsewhere in this doc remains DRAFT and is pinned per-story by its `[red]` tests ([§4](#4-module-design)).
 >
@@ -43,7 +43,18 @@ Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-08-14
 > remain gates. Two clean builds, policy schema 3, release schema 4, V5 exact-
 > byte HIL, and both-platform app HIL are required before activation.
 >
-> **Frozen transactional RUN admission (2026-08-14, `[docs]`):** [§4.3](#43-pyble_runner--execution-control), [§5.1](#51-two-tasks-one-link), and [§5.4](#54-console-backpressure) bind execution to one successful, connection-bound, zero-wait submission of the matching `RSP{OK}`. Submission failure is side-effect-free and is never retried on the NimBLE host task.
+> **Frozen transactional RUN admission (2026-08-14, `[docs]`):** [§4.3](#43-pyble_runner--execution-control), [§5.1](#51-execution-contexts-one-link), and [§5.4](#54-console-backpressure) bind execution to one successful, connection-bound, zero-wait submission of the matching `RSP{OK}`. Submission failure is side-effect-free and is never retried on the NimBLE host task.
+>
+> **Frozen default-MTU response delivery (2026-08-15, `[docs]`):**
+> [§4.1](#41-pyble_ble--ble-peripheral--transport),
+> [§4.2](#42-pyble_proto--protocol-engine),
+> [§5.1](#51-execution-contexts-one-link), and
+> [§7.3](#73-buffer-sizing) bind generic responses to a fixed whole-frame
+> reservation, a connection generation, and one 1000 ms publication deadline.
+> One pre-created NimBLE-host callout attempts exactly one fragment per callback,
+> retains a failed fragment under exclusive logical ownership, and restarts
+> from `FIRST` only after specialized control preemption changes the TX stream
+> generation.
 
 ## 0. Naming note (acronym clash)
 
@@ -112,9 +123,9 @@ future target-adapter implementation, not in this ESP32 chip overlay. —
 
 **Decision (D3):** all large, long-lived buffers (reassembly buffer, file I/O buffer, TX notification staging) are **allocated once at boot** and reused, never per-message. Per-message Python object churn on the hot path is minimized to keep the GC quiet and keep a predictable heap floor on the ESP32-C3 ([§8](#8-memory--footprint-design)). — *(serves NFR-FP-HEAP, NFR-FP-C3, NFR-REL-1.)*
 
-### 2.4 BLE/agent task vs runner task separation
+### 2.4 NimBLE host vs worker/runner separation
 
-**Decision (D4):** the agent runs on a **BLE/agent task** (the asyncio event loop servicing NimBLE + PBLE/1 dispatch). User code runs on a **separate runner task** spawned via `_thread`. The link, `STOP`, and all control-plane commands remain serviceable no matter what user code does — including `while True: pass`. — *(satisfies FR-RUN-3, FR-BLE-11, NFR-SAFE-2; see [§5](#5-concurrency--task-model).)*
+**Decision (D4):** GAP/GATT, PBLE/1 RX dispatch, and the one-fragment generic-response callout run on the **NimBLE host context** and never wait on user code or TX capacity. Filesystem VFS work runs on its dedicated MicroPython-aware worker; user code runs on a separate persistent runner task spawned via `_thread`. The link, `STOP`, and all control-plane commands remain serviceable no matter what user code does — including `while True: pass`. — *(satisfies FR-RUN-3, FR-BLE-11, NFR-SAFE-2; see [§5](#5-concurrency--task-model).)*
 
 ### 2.5 Never edit upstream; overlay copied in at build prep
 
@@ -248,7 +259,7 @@ FR-SPLASH-1…9 and preserves FR-BOOT-4/6.)*
         caps)    mkdir/rn) runner task) CONSOLE_*)    serialization)
                     |          |            |
                     v          v            v
-            vfs/LittleFS   _thread/asyncio  TX queue (back to pyble_ble)
+            vfs/LittleFS   _thread/asyncio  bounded host-callout RSP pump
             (fs_root jail)  user code task
 ```
 
@@ -256,8 +267,8 @@ FR-SPLASH-1…9 and preserves FR-BOOT-4/6.)*
 
 1. App writes PBLE/1 fragments to **RX**; `pyble_ble` reassembles per [protocol.md §3.2](../protocol.md#3-framing) into a complete §3.1 message in the static reassembly buffer.
 2. `pyble_proto` validates CRC32, decodes the frame, and dispatches by `OPCODE` to a handler (`pyble_fs` / `pyble_runner` / `pyble_console` / `pyble_info`), or returns an error status if CRC/structure/version is bad.
-3. The handler executes (file op, run, etc.) under the single-writer serialization owned by `pyble_agent`.
-4. Responses (`RSP`) and asynchronous events (`EVT`: `RUN_STATE`, `CONSOLE_DATA`, `FILE_PUT_ACK`, `FILE_GET_*`) are encoded by `pyble_proto` and handed to `pyble_ble`, which fragments and **Notifies** them on **TX**.
+3. Before an ordinary side-effecting handler executes, `pyble_proto` reserves a complete fixed-capacity response slot bound to the live connection generation. Deferred filesystem dispatch carries that reservation and generation in its bounded worker item and revalidates them before touching VFS.
+4. A pre-created NimBLE-host callout completes generic `RSP` delivery one fragment per callback. Each invocation validates ticket/session/deadline/stream generation, makes one zero-wait Notify attempt, rearms after one tick on progress or at most 15 ms on transient pressure, and returns. It retains the exact unaccepted fragment under logical ownership, so non-control/bulk traffic cannot interleave. A successful specialized control preemption changes the stream generation under the TX mutex, causing the next callback to restart from `FIRST`. Asynchronous events (`EVT`: `RUN_STATE`, `CONSOLE_DATA`, `FILE_PUT_ACK`, `FILE_GET_*`) retain their existing bounded paths; a `FILE_GET_BEGIN` response completes before its dependent data/end events.
 5. **INFO** characteristic reads are answered directly by `pyble_ble` from a `DEVICE_INFO`-equivalent payload prepared by `pyble_info`, with no subscription required.
 
 ### 3.4 Module-to-layer mapping
@@ -293,7 +304,19 @@ class BleLink:
     def on_disconnect(self, cb) -> None
 ```
 
-**Key data structures / state:** the GATT table (Service/RX/TX/INFO UUIDs from the [protocol.md §2](../protocol.md#2-ble-transport-gatt) constants mirror); a single **reassembly buffer** (static, sized `max_message`, see [§7.3](#73-buffer-sizing)); a fragment-index tracker (`FIRST`/`LAST`/`index mod 64`); negotiated MTU; connection handle; the **advertised name** — the device label when set, else `PyBLE-` + `device_id` (the last two BLE-MAC bytes in uppercase hex), used for the name only, never for access control ([§4.8](#48-device-config-store--label--identify-led-nvs), CON-7/SEC-7/SEC-11).
+**Key data structures / state:** the GATT table (Service/RX/TX/INFO UUIDs from the [protocol.md §2](../protocol.md#2-ble-transport-gatt) constants mirror); a single **reassembly buffer** (static, sized `max_message`, see [§7.3](#73-buffer-sizing)); a fragment-index tracker (`FIRST`/`LAST`/`index mod 64`); negotiated MTU; connection handle plus monotonic boot-local connection generation; logical TX owner plus mutex-protected stream generation; a pre-created generic-response callout; the **advertised name** — the device label when set, else `PyBLE-` + `device_id` (the last two BLE-MAC bytes in uppercase hex), used for the name only, never for access control ([§4.8](#48-device-config-store--label--identify-led-nvs), CON-7/SEC-7/SEC-11).
+
+**Session-safe response callout:** GAP connect mints, and disconnect invalidates,
+a `{handle, generation}` token. The pre-created response callout runs on the
+same NimBLE host context as GAP lifecycle. In one callback it validates the
+live slot incarnation, connection token, absolute deadline, and stream
+generation; takes the TX mutex with zero wait; submits exactly one fragment;
+updates state; rearms; and returns. It never sleeps, loops, waits for capacity,
+or performs a second Notify inline. Because token check and Notify are serialized
+with disconnect/connect on the host context, numeric handle reuse has no
+check-to-Notify gap. Disconnect stops/cancels the callout and invalidates its
+ticket before normal re-advertising. A callback already queued after stop still
+revalidates inactive/token state and emits nothing.
 
 **Advertised-name assembly:** at boot the name is `PyBLE-` + `device_id`; when `SET_LABEL` sets a non-empty label, `pyble_ble.set_adv_name(label)` updates the advertisement so the label shows in the scan list pre-connect; clearing the label restores `PyBLE-` + `device_id` (FR-BLE-12). Length bounding/validation happens in the device-config store before the value reaches the air ([§4.8](#48-device-config-store--label--identify-led-nvs), SEC-10).
 
@@ -374,7 +397,31 @@ class Dispatcher:
 
 **Key data structures:** `Frame` (namedtuple-like: `ver`, `type`, `opcode`, `id`, `payload`); the **dispatch table** — a dict mapping `OPCODE → handler` ([§7.2](#72-dispatch-table)); a small CRC-32 lookup table (or native CRC).
 
-**Internal state:** stateless per message except the registered dispatch table. Events use `ID = 0` (FR-PROTO-4).
+**Internal state:** the registered dispatch table plus a static depth-2 response
+pool. Each 491-byte slot stores an incarnation, immutable encoded frame,
+opcode/ID, session token, publication deadline (once ready), and completion state. Events use `ID = 0`
+(FR-PROTO-4).
+
+**Generic response admission and pump:** handler registrations distinguish
+ordinary generic replies, deferred filesystem replies, and specialized
+self/no-response handlers. Before an ordinary side-effecting handler runs, the
+dispatcher reserves a whole slot; failure invokes no handler and emits no
+unreserved response. Instead it requests termination of the originating
+session, making bounded link loss the observable refusal. When the fully
+encoded frame enters the ordered ready FIFO, its immutable 1000 ms publication
+deadline starts. The pre-created host callout owns one logical TX message and
+retains the exact offset/index after `AGAIN`; it rearms after at most 15 ms to
+retry the same unaccepted fragment, and no progress extends the deadline.
+Ordinary/bulk senders return or wait without emitting a `FIRST` while ownership
+is active. A successful specialized single-fragment control response increments
+the stream generation under the same mutex; on observing that change, the
+callout restarts its identical frame at `FIRST`. `NO_CONN`, token mismatch, or
+disconnect cancels the slot. Publication expiry on a still-live originating
+session requests termination before releasing it, so an admitted side effect
+cannot end in a silent live-session missing response. RUN keeps its existing
+specialized transactional path. STOP and SOFT_REBOOT also remain specialized
+only when their one-fragment response try is connection-bound and succeeds
+before the interrupt/reset side effect; failure suppresses generic fallback.
 
 **Error behaviour:** CRC fail → drop + `EVT ERROR(ECRC)` referencing opcode if known (FR-PROTO-3); structurally invalid → `EBADREQ` (FR-PROTO-8); unknown/unsupported opcode → `EUNSUPPORTED` (FR-PROTO-9); `VER != 0x01` → refuse per versioning (FR-PROTO-7).
 
@@ -435,6 +482,21 @@ class FsBridge:
 **Jail design ([§9.3](#93-path-jail-enforcement)):** every path is normalized and verified to resolve inside `fs_root`; `..` traversal or absolute escape → `EACCES` (FR-FS-10). Layer-2/Layer-3 paths are a forbidden set → `EACCES` (FR-FS-11, SEC-4, CON-10). Only `.py`/data artifacts accepted; `.mpy`/`.pyc` rejected (FR-FS-12, CON-3).
 
 **Upload integrity:** chunks land in a `.tmp` sibling; `FILE_PUT_END` verifies whole-file CRC before an atomic rename over the target; mismatch → `ECRC`, target untouched (FR-FS-6/9/14, NFR-REL-2/3). FS errors map to `ENOENT`/`ENOSPC`/`EACCES`/`EIO`/`ERANGE` (FR-FS-15).
+
+**Deferred-response ownership:** every response-bearing host-to-FS item owns a
+ticket for a pre-reserved generic-response slot and the originating
+`{handle, generation}`. Queue admission failure releases the ticket. Before any
+VFS side effect, the FS worker revalidates the token; stale/disconnected work is
+cancelled. It builds results in worker-owned scratch, then atomically revalidates
+the still-live ticket before copying into and publishing the reserved slot.
+Disconnect increments the slot incarnation and cancels/releases its ticket
+without waiting for a VFS operation that was already validly admitted; a late
+result observes the stale incarnation and cannot touch a recycled slot or
+publish bytes. Cancellation checks run before and after each VFS operation and
+each bounded directory/CRC/read chunk. The worker waits
+off-host for bounded response completion before emitting any dependent download
+events. `FILE_PUT_DATA` is protocol-defined no-response traffic and reserves no
+generic slot. No FS response or dependent event crosses sessions.
 
 **Frozen-vs-native plan:** frozen for orchestration; the **chunk write + incremental CRC** inner loop is a native candidate on C3 (D1).
 
@@ -549,7 +611,7 @@ equivalent stable, non-personal local suffix without changing the wire field.
 
 **Advertised-name assembly (in `pyble_ble`):** the advertised name is `label` when a non-empty label is set, else `PyBLE-` + `device_id`. Setting a label (including clearing to `""`) calls `pyble_ble.set_adv_name(...)` so the change is visible in the scan list pre-connect; an over-length label is rejected (`ERANGE`) before it can reach the air (FR-BLE-12, FR-IDENT-1, SEC-10). The concrete label max-length is owned by [protocol.md](../protocol.md) (OI-6).
 
-**Identify blink (non-blocking):** `IDENTIFY` schedules a bounded LED toggle on the BLE/agent context's timer/event-loop path (a `machine.Timer` or short-lived `asyncio` task), replies `RSP{OK}` immediately, and blinks for the protocol-bounded duration **without** blocking the dispatch loop or the runner task ([§5.5](#55-identify-blink-non-blocking)). With no identify LED configured it returns `EUNSUPPORTED (0x0A)` and changes no GPIO (FR-IDENT-3/4). The blink is cosmetic only and maps no hardware for user code (FR-IDENT-6, CON-13).
+**Identify blink (non-blocking):** `IDENTIFY` schedules a bounded LED toggle on an agent timer/event-loop path outside the NimBLE host callback (a `machine.Timer` or short-lived `asyncio` task), replies `RSP{OK}` immediately, and blinks for the protocol-bounded duration **without** blocking dispatch or the runner task ([§5.5](#55-identify-blink-non-blocking)). With no identify LED configured it returns `EUNSUPPORTED (0x0A)` and changes no GPIO (FR-IDENT-3/4). The blink is cosmetic only and maps no hardware for user code (FR-IDENT-6, CON-13).
 
 **Dispatch wiring:** `pyble_agent` registers `0x50 SET_LABEL → set_label`, `0x51 SET_IDENTIFY_LED → set_identify_led`, and `0x52 IDENTIFY → identify` into the [§7.2](#72-dispatch-table) table; each returns a [protocol.md §8](../protocol.md#8-status--error-codes-1-byte-status-in-rsp) status. The wire payload shapes (label encoding, `SET_IDENTIFY_LED` GPIO+active-level encoding, blink-duration bound) are **owned by [protocol.md](../protocol.md)** and mirrored, never redefined here (D6, OI-6).
 
@@ -780,18 +842,19 @@ The boot-internal wrapper converts that failure to false so startup proceeds.
 
 ## 5. Concurrency & task model
 
-### 5.1 Two tasks, one link
+### 5.1 Execution contexts, one link
 
-Two cooperating execution contexts (D4):
+Three cooperating execution contexts (D4):
 
-- **BLE/agent context** — the asyncio event loop on the main task. It services NimBLE callbacks, runs reassembly/dispatch, executes all control-plane handlers (info/fs/console-input/run-control), and drains the TX queue. It must **never** block on user code or wait for TX capacity; RUN admission uses one zero-wait control submission attempt.
+- **NimBLE host context** — services GAP/GATT callbacks and RX reassembly/dispatch. Its pre-created generic-response callout owns the fixed depth-2 pool's ready FIFO and one logical message at a time. Each callback validates ticket/session/publication deadline/stream generation, attempts exactly one fragment with zero wait, and rearms after one tick on progress or at most 15 ms on `AGAIN`. RUN/STOP/SOFT_REBOOT admission uses one specialized zero-wait control attempt; only a successful preemption changes the stream generation and makes the response restart at `FIRST`.
+- **Filesystem worker** — one persistent MicroPython-aware worker consuming the bounded FS queue. Response-bearing items carry a reserved response ticket and connection generation; it revalidates before VFS side effects and before publishing worker-scratch output, and orders `FILE_GET_BEGIN` response completion before data events.
 - **Runner task** — launched once via `_thread` and kept persistent. It waits on the binary hand-off semaphore, then executes each admitted RUN with `sys.stdout`/`stderr` redirected to the console tee.
 
-Because the link is serviced by the BLE/agent context and user code lives on the runner task, a `while True: pass` cannot wedge BLE or block `STOP` (FR-BLE-11, FR-RUN-3, NFR-SAFE-2).
+Because the link is serviced by the NimBLE host context and user code lives on the runner task, a `while True: pass` cannot wedge BLE or block `STOP` (FR-BLE-11, FR-RUN-3, NFR-SAFE-2).
 
 ### 5.2 STOP delivery
 
-`STOP` is handled on the BLE/agent context (so it is always reachable) and raises `KeyboardInterrupt` into the runner thread via MicroPython's pending-exception/`schedule` mechanism, which lands even inside a tight bytecode loop (FR-RUN-5, NFR-SAFE-1). The runner's top frame wraps user code in a try/finally to guarantee teardown and a final `RUN_STATE` (FR-RUN-6/10).
+`STOP` is handled on the NimBLE host context (so it is always reachable). Only after its connection-bound one-fragment `RSP{OK}` try succeeds does it raise `KeyboardInterrupt` into the runner thread via MicroPython's pending-exception/`schedule` mechanism, which lands even inside a tight bytecode loop (FR-RUN-5, NFR-SAFE-1). Submission failure emits no fallback and performs no interrupt. The runner's top frame wraps user code in a try/finally to guarantee teardown and a final `RUN_STATE` (FR-RUN-6/10).
 
 ### 5.3 Serialization (single active writer)
 
@@ -805,14 +868,17 @@ For the frozen C3 engineering gate, TX scheduling has two behavioral classes:
 control (`RSP`, `RUN_STATE`, and other lifecycle traffic) and bulk
 (`CONSOLE_DATA`). Bulk admission always leaves the two `msys_1` blocks needed
 to submit the one-fragment STOP response (data plus ATT wrapper); paced
-terminal idle then reuses returned capacity. One PBLE/1 message remains
-atomic across all of its fragments, because the app owns a single reassembly
-buffer; control therefore never interleaves inside an already-started bulk
-message. At the next complete-message boundary, a pending STOP response wins
-before another console message, followed by `RUN_STATE(idle)`. Backpressure,
-reserved transport credits, a priority queue, or another bounded mechanism MAY
-realize the invariant; tests bind the observable capacity, ordering, valid
-reassembly, and 500 ms terminal deadline rather than an unproved lock layout.
+terminal idle then reuses returned capacity. A bulk/event message remains atomic
+across its fragments because the app owns a single reassembly buffer; control
+therefore waits for that bulk complete-message boundary. The generic response
+callout is the narrow exception: it releases the physical mutex between
+fragments while retaining logical ownership, and only a successful specialized
+RUN/STOP/SOFT_REBOOT response may preempt it. That one-fragment `FIRST|LAST`
+control response increments the stream generation under the mutex; the next
+generic callback restarts at `FIRST`, abandoning its old partial run. A pending
+STOP response wins before another bulk message and may win between generic
+response fragments, followed by `RUN_STATE(idle)`. Tests bind capacity,
+ordering, valid reassembly/restart, and the 500 ms terminal deadline.
 This is required for both a quiet tight loop and a loop continuously printing
 to stdout
 ([C3-G2](ports/esp32-c3-4mb.md#c3-g2--run-console-and-authoritative-stop-frozen)).
@@ -827,7 +893,7 @@ extend or repeat the attempt.
 
 ### 5.5 Identify blink (non-blocking)
 
-The `IDENTIFY` actuator ([§4.8](#48-device-config-store--label--identify-led-nvs)) must never wedge BLE or user code. The blink runs as a bounded, self-terminating job on the BLE/agent context (a `machine.Timer` or short-lived `asyncio` task), **not** on the runner thread: the handler replies `RSP{OK}` and returns to the dispatch loop immediately while the LED toggles for the protocol-bounded duration (FR-IDENT-3). It holds no long-lived lock, allocates no per-toggle heap, and stops on its own; a concurrent `RUN`/`STOP`/file op is unaffected. With no identify LED configured the handler returns `EUNSUPPORTED` and does nothing (FR-IDENT-4). The blink is cosmetic and never repurposed for GPIO routing, capability mapping, or access gating (FR-IDENT-6, CON-13).
+The `IDENTIFY` actuator ([§4.8](#48-device-config-store--label--identify-led-nvs)) must never wedge BLE or user code. The blink runs as a bounded, self-terminating job on an agent timer path outside the NimBLE host callback (a `machine.Timer` or short-lived `asyncio` task), **not** on the runner thread: the handler replies `RSP{OK}` and returns immediately while the LED toggles for the protocol-bounded duration (FR-IDENT-3). It holds no long-lived lock, allocates no per-toggle heap, and stops on its own; a concurrent `RUN`/`STOP`/file op is unaffected. With no identify LED configured the handler returns `EUNSUPPORTED` and does nothing (FR-IDENT-4). The blink is cosmetic and never repurposed for GPIO routing, capability mapping, or access gating (FR-IDENT-6, CON-13).
 
 ## 6. Boot & runtime state machine
 
@@ -948,6 +1014,9 @@ Outbound EVTs (`0x13/0x14 FILE_GET_*`, `0x30 CONSOLE_DATA`, `0x40 RUN_STATE`, `0
 - **Per-fragment payload:** `MTU − 3` (ATT) − 1 (frag header), tracked from the negotiated MTU (FR-BLE-8). At MTU 247 this is 243 bytes.
 - **File I/O buffer:** one MTU-sized chunk (NFR-PERF-2, chunk = one MTU).
 - **TX staging:** bounded console + event queue ([§5.4](#54-console-backpressure)).
+- **Generic responses:** exactly two static 491-byte encoded-frame slots plus
+  fixed metadata. At ATT MTU 23, `ceil(491 / 19) = 26` fragments. Neither
+  command concurrency nor backpressure can allocate an unbounded buffer.
 
 ### 7.4 Windowed-upload state machine (resume + CRC)
 
@@ -1930,9 +1999,9 @@ This is where the Technical Design meets **Test-Driven Development** ([§0](#0-n
 
 | Module | unit (host) | conformance | build | size | HIL |
 |---|---|---|---|---|---|
-| `pyble_proto` | frame codec, CRC32, ID correlation, error-status mapping | full opcode round-trip vs fake transport | SPDX/no-leak lint | — | — |
-| `pyble_ble` | fragment/reassemble logic (pure), adv-name = label-else-`PyBLE-XXXX` | fragmentation vs MTU matrix | NimBLE-only config | NimBLE buffer sizing | adv/scan-filter, MTU 247, INFO read, label shows in scan |
-| `pyble_fs` | jail resolution, CRC accumulate, temp-rename | put/get window + resume + CRC vs fake | — | file-buffer footprint | multi-file upload, dropped-link resume |
+| `pyble_proto` | frame codec, CRC32, ID correlation, error-status mapping; whole-slot reserve-before-handler; absolute publication deadline/FIFO | full opcode round-trip; exact-fragment pressure retry and control-preemption `FIRST` restart vs fake transport | SPDX/no-leak lint | fixed depth-2 response pool | default-MTU generic RSP; no cross-session response |
+| `pyble_ble` | fragment/reassemble logic (pure), FIRST restart, slot/session/stream generations + one-fragment callout state | fragmentation/retry vs MTU matrix; reused-handle/late-ticket cancellation | NimBLE-only config; no host-context wait/loop | NimBLE buffer sizing | adv/scan-filter, MTU 247 and 23, INFO read, label shows in scan |
+| `pyble_fs` | jail resolution, CRC accumulate, temp-rename; reservation/generation ownership and stale pre-VFS cancellation | put/get window + resume + CRC vs fake; RSP-before-dependent-events | — | file-buffer + reserved-response footprint | multi-file upload, dropped-link resume; no old-session FS reply |
 | `pyble_runner` | state-machine transitions; transactional RUN admission under mutex/Notify/connection failure; exact-state rollback; auto-run bypass | response-before-wake/RUN_STATE sequence; single-fragment response at minimum MTU | — | — | STOP vs `while True: pass`, traceback→stderr; pressure/disconnect RUN remains side-effect-free |
 | `pyble_console` | tee + backpressure and control-priority logic | CONSOLE_DATA stream tagging; whole-message non-interleaving | — | staging-buffer/transport-reserve footprint | live stdout/stdin latency; C3 print-flood STOP response then idle in <500 ms |
 | `pyble_info` | caps assembly (incl. device_id/label/has_identify/identify_led), label bound→ERANGE, identify EUNSUPPORTED-when-unset, version negotiation | HELLO/DEVICE_INFO identity fields, SET_LABEL/SET_IDENTIFY_LED/IDENTIFY round-trip | — | — | real chip/mpy/free_mem/has_sd, label↔NVS persist across reboot, non-blocking blink |
@@ -1943,6 +2012,15 @@ This is where the Technical Design meets **Test-Driven Development** ([§0](#0-n
 ### 14.2 Shared fake transport
 
 PBLE/1 **conformance** tests run against an **in-memory fake transport** shared between the firmware agent and the Dart `pble` client ([app.md](../app.md)), so both ends are tested against the same byte sequences — the contract is validated once, both sides honor it (FR-PROTO-1, NFR-MAINT-3, IF-PROTO). This is the cross-language guard that protocol changes do not silently diverge.
+
+**Qualification-central write/deadline seam (frozen 2026-08-15).** The HIL
+`PbleCentral` exposes one mode-explicit fragment writer. `send_cmd` creates its
+single absolute command deadline before the first fragment, sends every
+fragment with Bleak `response=True`, and gives each write plus the opcode-and-ID
+response wait only the residual duration. `send_cmd_no_rsp` retains
+`response=False`. A completed write, unrelated notification, or other progress
+never resets or extends the deadline. Fakes record every write mode and inject
+delayed acknowledged writes so this contract is host-testable without BLE.
 
 ### 14.3 Build, size, and HIL gates
 

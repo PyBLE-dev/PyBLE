@@ -1,6 +1,6 @@
 # PBLE/1 — PyBLE BLE Wire Protocol
 
-Status: **§2–§10 FROZEN for v1.0 (complete)** · Version: 1 · Last updated: 2026-08-14
+Status: **§2–§10 FROZEN for v1.0 (complete)** · Version: 1 · Last updated: 2026-08-15
 
 > PBLE/1 is a **clean-room, original** protocol authored for PyBLE. It reuses no closed-source wire format, opcodes, or UUIDs. It carries PyBLE's app↔board messages over a BLE GATT service.
 >
@@ -14,12 +14,17 @@ wire byte.
 The 2026-08-14 RUN-admission amendment makes the existing response-before-run
 ordering fail closed under local TX pressure. It changes no PBLE/1 byte.
 
+The 2026-08-15 default-MTU delivery amendment makes response-bearing writes
+acknowledged and makes incomplete-fragment restart semantics explicit. It also
+binds the ESP reference agent's bounded, session-scoped generic-response
+delivery. It changes no PBLE/1 byte.
+
 **Freeze ledger (per-section):**
 
 | Section | Freeze status | Freeze act |
 |---|---|---|
-| §2 BLE transport (GATT) — Service/RX/TX/INFO UUID base, advertising, MTU | **FROZEN for v1.0** | G0 · 2026-07-01 · `[docs]` |
-| §3 Framing — §3.1 message frame, §3.2 fragmentation | **FROZEN for v1.0** | G0 · 2026-07-01 · `[docs]` |
+| §2 BLE transport (GATT) — Service/RX/TX/INFO UUID base, advertising, MTU | **FROZEN for v1.0 (amended)** | G0 · 2026-07-01; default-MTU delivery · 2026-08-15 · `[docs]` |
+| §3 Framing — §3.1 message frame, §3.2 fragmentation | **FROZEN for v1.0 (amended)** | G0 · 2026-07-01; restart/delivery semantics · 2026-08-15 · `[docs]` |
 | §4 Opcodes — the v1.0 opcode set + numbers | **FROZEN for v1.0** | G1 · 2026-07-01 · `[docs]` (closes OI-4) |
 | §8 Status / error codes — the 1-byte status set + numbers | **FROZEN for v1.0** | G1 · 2026-07-01 · `[docs]` |
 | §6 Run/Stop/Console — RUN{file,source}, RUN_STATE, EBUSY, STOP, SOFT_REBOOT, CONSOLE_DATA/INPUT | **FROZEN for v1.0 (amended)** | G1 · 2026-07-01; transactional RUN admission · 2026-08-14 · `[docs]` (RUN-file at S3; STOP / console / RUN-source at S4) |
@@ -61,6 +66,14 @@ PyBLE defines one primary GATT service with a PyBLE-owned 128-bit UUID base. The
   in the advertisement so it is visible in the scan list before connecting.
   The app scans **filtered to the Service UUID** — never a raw device list.
 - **MTU:** the app requests MTU **247**; the usable per-packet payload is `MTU − 3` (ATT header) minus the 1-byte fragmentation header.
+- **RX write acknowledgement:** every fragment of a `CMD` for which the client
+  awaits an `RSP` uses the RX characteristic's **Write** operation (an
+  acknowledged GATT write). A caller that explicitly uses the fire-and-forget
+  API MAY use **Write-Without-Response**; this includes commands for which
+  PBLE/1 defines no `RSP` and the existing `SOFT_REBOOT` fire-then-disconnect
+  client path. One absolute command deadline begins before the first write and
+  covers all acknowledged fragment writes plus the matching response wait;
+  fragment progress MUST NOT restart or extend it.
 - **INFO characteristic:** a read returns the same payload as a `DEVICE_INFO` response (chip, MicroPython version, free memory, `fs_root`, MTU, the stable `device_id`, and the `label`), so a client can identify a board before subscribing.
 
 ## 3. Framing
@@ -94,7 +107,47 @@ A message larger than one packet is split across consecutive RX writes (or TX no
 +----------+-------------------------------+
 ```
 
-`FRAG_HDR` bits: `bit7 = FIRST`, `bit6 = LAST`, `bits5..0 = index mod 64`. The receiver concatenates `FRAGMENT DATA` from the `FIRST` packet through the `LAST` packet (indices increasing mod 64) to reconstruct the §3.1 message, then validates the CRC. A frame whose CRC fails is dropped and answered with `EVT ERROR(ECRC)` referencing the opcode if known.
+`FRAG_HDR` bits: `bit7 = FIRST`, `bit6 = LAST`, `bits5..0 = index mod 64`. The receiver concatenates `FRAGMENT DATA` from the `FIRST` packet through the `LAST` packet (indices increasing mod 64) to reconstruct the §3.1 message, then validates the CRC. Receipt of `FIRST` always abandons any incomplete fragment run and starts a new one; a non-`FIRST` packet with no active run or with the wrong next index is dropped. This restart rule lets a sender restart an identical whole frame after its logical message ownership was preempted, without completing a stale prefix; ordinary transient pressure alone retries only the unaccepted fragment. A frame whose CRC fails is dropped and answered with `EVT ERROR(ECRC)` referencing the opcode if known.
+
+**ESP reference-agent generic-response delivery (amended 2026-08-15).** The
+largest ordinary response the reference dispatcher accepts is 491 encoded
+bytes (6-byte header + 481-byte payload including status + 4-byte CRC), or 26
+fragments at ATT MTU 23. Before an ordinary synchronous response-bearing
+handler can make a side effect, the agent atomically reserves fixed, bounded
+capacity for that entire encoded response. If capacity is unavailable, the
+handler is not invoked, no unreserved response is attempted, and the
+originating connection is terminated; observable link loss is the bounded
+refusal outcome rather than a silent live-session drop. Deferred filesystem
+commands reserve the same capacity before their bounded host-to-worker enqueue.
+The reservation is a ticket bound to a slot incarnation and the originating
+connection session, including a generation that cannot be confused by numeric
+connection-handle reuse. A deferred worker builds its result in private scratch
+and revalidates the whole ticket before copying into that slot.
+
+When a fully encoded response enters the ready FIFO, one absolute 1000 ms
+publication deadline begins. One pre-created NimBLE-host callout owns the
+logical message. Each callback validates ticket, connection generation,
+deadline, and TX stream generation; takes the physical TX mutex with zero wait;
+attempts exactly one fragment Notify; then releases and returns. On success it
+advances offset/index and rearms after one RTOS tick if data remains. On
+transient pressure it retains the same unaccepted fragment and rearms after at
+most 15 ms. The callback never sleeps, loops, or waits for capacity. Non-control
+and bulk senders cannot interleave while the logical ownership is held.
+
+A successful specialized single-fragment control response MAY preempt between
+fragments. It increments a stream generation under the same TX mutex; the
+response callout observes the change and then restarts its identical encoded
+frame from `FIRST`, which abandons the interrupted prefix. Deadline expiry on a
+still-live connection terminates that session rather than silently losing an
+admitted response. Disconnect stops/cancels the callout and invalidates its
+ticket before normal re-advertising; any already-queued callback revalidates and
+emits nothing. No queued or late response byte may cross into a later
+connection session.
+
+`RUN`, `STOP`, and `SOFT_REBOOT` retain their specialized one-fragment
+response-before-side-effect contracts in §6. Their response attempt is
+connection-bound and zero-wait; failure suppresses generic fallback and causes
+no corresponding execution, interrupt, or reset side effect.
 
 ## 4. Opcodes
 
@@ -173,16 +226,20 @@ A message larger than one packet is split across consecutive RX writes (or TX no
   retry. A timeout caused by one of these local admission failures is therefore
   side-effect-free. Timeout alone does not prove rejection: a disconnect or
   response loss after local acceptance does not revoke the already-admitted run.
-- **`STOP` (0x21)** no payload. Idempotent — always `RSP{OK}` (STOP while idle is a no-op). If a program is running, a `KeyboardInterrupt` is raised **in the runner task only** (the link stays live, FR-BLE-11) → clean teardown → `RUN_STATE(idle)` (FR-RUN-5/6/10).
+- **`STOP` (0x21)** no payload. Idempotent — on successful connection-bound,
+  single-fragment `RSP{OK}` submission, STOP while idle is a no-op and STOP
+  while running raises `KeyboardInterrupt` **in the runner task only** (the link
+  stays live, FR-BLE-11) → clean teardown → `RUN_STATE(idle)` (FR-RUN-5/6/10).
+  Local response-submission failure emits no fallback and performs no interrupt.
 - **`SOFT_REBOOT` (0x22)** no payload. `RSP{OK}` immediately; stops any run,
   then soft-resets the MicroPython VM and returns to `RUN_STATE(idle)`
   (FR-RUN-8). VM teardown MUST NOT begin merely because the local BLE stack
   accepted the notification: the implementation MUST allow a short bounded
   delivery grace after submitting `RSP{OK}` so queued response bytes can reach
   the central. The ESP32 reference agent uses a pre-created 250 ms one-shot and
-  refuses a second reboot with `EBUSY` while that reset is pending. If it cannot
-  submit the response, it MUST leave the VM running and report `EBUSY` rather
-  than perform an ambiguous reset. This is an execution-order clarification;
+  refuses a second reboot with `EBUSY` while that reset is pending. If the
+  transaction-control response attempt fails, it MUST leave the VM running and
+  emit no generic fallback rather than perform an ambiguous reset. This is an execution-order clarification;
   it changes no PBLE/1 bytes.
 - **`CONSOLE_DATA` (0x30, EVT, id 0)** payload `[stream:u8][bytes]` — `stream` 0=stdout, 1=stderr (FR-CON-1/2).
 - **`CONSOLE_INPUT` (0x31, CMD, no RSP)** payload `[bytes]` — appended to the running program's `stdin` (`input()`/`sys.stdin`); fire-and-forget, no reply frame (FR-CON-3).
