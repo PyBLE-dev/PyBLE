@@ -578,6 +578,8 @@ _AUDIT_PYBLE_C_SOURCES = (
     "pble_fs.c",
     "pble_lock.c",
     "pble_boot.c",
+    "pble_vm_lifecycle.c",
+    "pble_termination.c",
 )
 _AUDIT_BERKELEY_DB_C_SOURCES = (
     "btree/bt_close.c",
@@ -2994,11 +2996,21 @@ def _audit_read_spdx_output(path: Path, label: str) -> tuple[dict[str, Any], str
 def _audit_no_symlink_components(root: Path, path: Path, label: str) -> None:
     root_absolute = root.absolute()
     root_resolved = root.resolve()
+    path_absolute = path.absolute()
+    _require(
+        not root_absolute.is_symlink(),
+        "%s approved root is a symlink" % label,
+    )
     try:
-        relative = path.absolute().relative_to(root_absolute)
-    except ValueError as exc:
-        raise ReleaseError("%s escapes its approved root" % label) from exc
-    current = root_absolute
+        relative = path_absolute.relative_to(root_absolute)
+        walk_root = root_absolute
+    except ValueError:
+        try:
+            relative = path_absolute.relative_to(root_resolved)
+            walk_root = root_resolved
+        except ValueError as exc:
+            raise ReleaseError("%s escapes its approved root" % label) from exc
+    current = walk_root
     for part in relative.parts:
         current = current / part
         _require(not current.is_symlink(), "%s traverses a symlink" % label)
