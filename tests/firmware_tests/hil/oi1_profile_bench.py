@@ -82,6 +82,7 @@ SERIAL_ENDPOINT_GONE_ERRNOS = frozenset(
 PRE_CAPTURE_SESSION_END_TIMEOUT_MS = 2000
 SERIAL_POLL_INTERVAL_SECONDS = 0.01
 WAVESHARE_DIAGNOSTIC_HELLO_TIMEOUT_S = 5.0
+WAVESHARE_DIAGNOSTIC_SETTLE_GUARD_S = 1.0
 
 
 def _load_rp2_console_pacing():
@@ -1509,6 +1510,7 @@ class WaveshareHardwareExecutor(HardwareExecutor):
                 raise BenchError(
                     "Waveshare diagnostic HELLO exhausted its deadline"
                 )
+            await asyncio.sleep(WAVESHARE_DIAGNOSTIC_SETTLE_GUARD_S)
             snapshot = await run_oi1_link_fact_probe(
                 diagnostic,
                 self.ids.next,
