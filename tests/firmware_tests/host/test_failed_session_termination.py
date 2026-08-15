@@ -273,7 +273,8 @@ class FailedSessionTerminationIntegrationTest(unittest.TestCase):
         self.assertEqual(init.count("pble_term_init("), 1)
         self.assertEqual(self.ble.count("pble_term_init("), 1)
         self.assertEqual(_code(self.all_native_c).count("pble_term_init("), 2)
-        self.assertEqual(_code(self.all_native_c).count("esp_timer_create("), 1)
+        self.assertEqual(init.count("esp_timer_create("), 1)
+        self.assertEqual(_code(self.ble).count("esp_timer_create("), 1)
         self.assertNotRegex(
             _code(self.all_native_c),
             r"pble_term_initialized\s*=\s*(?:false|0)\b",
@@ -599,12 +600,31 @@ class FailedSessionTerminationIntegrationTest(unittest.TestCase):
     def test_watchdog_uses_immutable_ticket_and_residual_rearm(self) -> None:
         watchdog = _code(_function(self.ble, "pble_termination_watchdog_cb"))
         self.assertIn("pble_term_watchdog_ticket_t", watchdog)
+        ticket_match = re.search(
+            r"const\s+pble_term_watchdog_ticket_t\s*\*\s*"
+            r"([A-Za-z_]\w*)\s*=\s*"
+            r"\(\s*const\s+pble_term_watchdog_ticket_t\s*\*\s*\)\s*arg",
+            watchdog,
+        )
+        self.assertIsNotNone(ticket_match, "callback must retain its armed ticket")
+        ticket_var = ticket_match.group(1)
         self.assertRegex(
             watchdog,
+            rf"\b{re.escape(ticket_var)}\s*=\s*"
             r"\(\s*const\s+pble_term_watchdog_ticket_t\s*\*\s*\)\s*arg",
         )
         self.assertNotIn("pble_term_watchdog_ticket(", watchdog)
         self.assertNotIn("pble_ble_session_snapshot", watchdog)
+        for name in (
+            "pble_term_watchdog_fired",
+            "pble_term_remaining_us",
+            "pble_term_watchdog_rearmed",
+        ):
+            with self.subTest(ticket_call=name):
+                self.assertRegex(
+                    watchdog,
+                    rf"\b{name}\s*\([^;]*\b{re.escape(ticket_var)}\b",
+                )
         _assert_inside_session_critical(self, watchdog, "pble_term_watchdog_fired")
         _assert_inside_session_critical(self, watchdog, "pble_term_watchdog_rearmed")
         _ordered(
@@ -637,7 +657,6 @@ class FailedSessionTerminationIntegrationTest(unittest.TestCase):
             "ble_hs_sched_reset",
             "nimble_port_stop(",
             "nimble_port_deinit(",
-            "nimble_port_freertos_deinit(",
             "esp_nimble_deinit(",
             "esp_nimble_hci_deinit(",
             "esp_nimble_hci_and_controller_deinit",
@@ -648,6 +667,17 @@ class FailedSessionTerminationIntegrationTest(unittest.TestCase):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, native)
         self.assertEqual(native.count("ble_gap_terminate("), 1)
+
+        host_task = _code(_function(self.ble, "pble_host_task"))
+        self.assertEqual(host_task.count("nimble_port_freertos_deinit("), 1)
+        _ordered(
+            self,
+            host_task,
+            "nimble_port_run(",
+            "nimble_port_freertos_deinit(",
+        )
+        outside_host_task = _code(self.all_native_c).replace(host_task, "", 1)
+        self.assertNotIn("nimble_port_freertos_deinit(", outside_host_task)
 
 
 if __name__ == "__main__":

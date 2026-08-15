@@ -103,7 +103,7 @@ static void mock_adapter_begin(mock_adapter_t *mock, pble_term_state_t *state,
     assert(ticket.generation == generation);
     assert(ticket.deadline_us == state->deadline_us);
     int64_t remaining_us =
-        pble_term_remaining_us(state, conn, generation, arm_now_us);
+        pble_term_remaining_us(state, &ticket, arm_now_us);
     if (remaining_us <= 0) {
         effect = pble_term_watchdog_armed(state, conn, generation, false);
     } else {
@@ -177,18 +177,17 @@ static void mock_adapter_watchdog(mock_adapter_t *mock,
                                   int64_t now_us, bool rearm_ok) {
     mock_enter(mock);
     pble_term_effects_t effect =
-        pble_term_watchdog_fired(state, ticket.conn, ticket.generation, now_us);
+        pble_term_watchdog_fired(state, &ticket, now_us);
     mock_exit(mock);
     if (effect == PBLE_TERM_EFFECT_REARM_WATCHDOG) {
-        int64_t remaining_us = pble_term_remaining_us(
-            state, ticket.conn, ticket.generation, now_us);
+        int64_t remaining_us =
+            pble_term_remaining_us(state, &ticket, now_us);
         assert(remaining_us > 0);
         mock->rearm_calls++;
         mock->last_arm_delay_us = remaining_us;
         mock_record(mock, 'a');
         mock_enter(mock);
-        effect = pble_term_watchdog_rearmed(
-            state, ticket.conn, ticket.generation, rearm_ok);
+        effect = pble_term_watchdog_rearmed(state, &ticket, rearm_ok);
         mock_exit(mock);
     }
     if (effect == PBLE_TERM_EFFECT_RESTART) {
@@ -221,6 +220,11 @@ static void test_begin_and_terminal_deadline(void) {
     assert(pble_term_admits(&state, UINT16_C(7), UINT64_C(41)));
     assert(!pble_term_admits(&state, UINT16_C(7), UINT64_C(42)));
     assert_effects(
+        pble_term_begin(&state, UINT16_C(7), UINT64_C(42), INT64_C(1000000)),
+        PBLE_TERM_EFFECT_NONE);
+    assert(state.phase == PBLE_TERM_PHASE_OPEN);
+    assert(pble_term_admits(&state, UINT16_C(7), UINT64_C(41)));
+    assert_effects(
         pble_term_begin(&state, UINT16_C(8), UINT64_C(41), INT64_C(1000000)),
         PBLE_TERM_EFFECT_NONE);
     assert(state.phase == PBLE_TERM_PHASE_OPEN);
@@ -244,8 +248,7 @@ static void test_begin_and_terminal_deadline(void) {
 
     /* A callback cannot act in the CLOSING-before-arm acknowledgement window. */
     assert_effects(
-        pble_term_watchdog_fired(&state, UINT16_C(7), UINT64_C(41),
-                                 INT64_MAX),
+        pble_term_watchdog_fired(&state, &ticket, INT64_MAX),
         PBLE_TERM_EFFECT_NONE);
     assert_effects(
         pble_term_watchdog_armed(&state, UINT16_C(7), UINT64_C(42), true),
@@ -260,26 +263,46 @@ static void test_begin_and_terminal_deadline(void) {
         pble_term_gap_result(&state, UINT16_C(7), UINT64_C(41), true),
         PBLE_TERM_EFFECT_NONE);
 
+    /* All three immutable ticket fields are revalidated by callback APIs. */
+    pble_term_watchdog_ticket_t wrong_conn = ticket;
+    wrong_conn.conn++;
+    pble_term_watchdog_ticket_t wrong_generation = ticket;
+    wrong_generation.generation++;
+    pble_term_watchdog_ticket_t wrong_deadline = ticket;
+    wrong_deadline.deadline_us++;
+    const pble_term_watchdog_ticket_t invalid_tickets[] = {
+        wrong_conn,
+        wrong_generation,
+        wrong_deadline,
+    };
+    for (size_t i = 0;
+         i < sizeof(invalid_tickets) / sizeof(invalid_tickets[0]); i++) {
+        assert(pble_term_remaining_us(&state, &invalid_tickets[i],
+                                      INT64_C(3499900)) == 0);
+        assert_effects(
+            pble_term_watchdog_fired(&state, &invalid_tickets[i], INT64_MAX),
+            PBLE_TERM_EFFECT_NONE);
+        assert_effects(
+            pble_term_watchdog_rearmed(&state, &invalid_tickets[i], false),
+            PBLE_TERM_EFFECT_NONE);
+    }
+
     /* The early-fire delay is residual and the absolute deadline never moves. */
-    assert(pble_term_remaining_us(&state, UINT16_C(7), UINT64_C(41),
+    assert(pble_term_remaining_us(&state, &ticket,
                                   INT64_C(3499900)) == INT64_C(100));
-    assert(pble_term_remaining_us(&state, UINT16_C(7), UINT64_C(41),
+    assert(pble_term_remaining_us(&state, &ticket,
                                   INT64_C(3500000)) == 0);
-    assert(pble_term_remaining_us(&state, UINT16_C(7), UINT64_C(42),
-                                  INT64_C(3499900)) == 0);
     assert_effects(
-        pble_term_watchdog_fired(&state, UINT16_C(7), UINT64_C(41),
-                                 INT64_C(3499900)),
+        pble_term_watchdog_fired(&state, &ticket, INT64_C(3499900)),
         PBLE_TERM_EFFECT_REARM_WATCHDOG);
     assert_effects(
-        pble_term_watchdog_rearmed(&state, UINT16_C(7), UINT64_C(41), true),
+        pble_term_watchdog_rearmed(&state, &ticket, true),
         PBLE_TERM_EFFECT_NONE);
     assert(state.deadline_us == INT64_C(3500000));
 
     /* Deadline claims terminal restart before any external restart call. */
     assert_effects(
-        pble_term_watchdog_fired(&state, UINT16_C(7), UINT64_C(41),
-                                 INT64_C(3500000)),
+        pble_term_watchdog_fired(&state, &ticket, INT64_C(3500000)),
         PBLE_TERM_EFFECT_RESTART);
     assert(state.phase == PBLE_TERM_PHASE_RESTARTING);
     assert_effects(pble_term_disconnect(&state, UINT16_C(7), UINT64_C(41)),
@@ -292,6 +315,9 @@ static void test_exact_cleanup_and_timer_stop(void) {
     pble_term_state_t state;
     pble_term_init(&state);
     open_and_arm(&state, UINT16_C(7), UINT64_C(50), INT64_C(1000000));
+    pble_term_watchdog_ticket_t ticket;
+    assert(pble_term_watchdog_ticket(&state, UINT16_C(7), UINT64_C(50),
+                                     &ticket));
 
     assert_effects(pble_term_disconnect(&state, UINT16_C(8), UINT64_C(50)),
                    PBLE_TERM_EFFECT_NONE);
@@ -308,7 +334,7 @@ static void test_exact_cleanup_and_timer_stop(void) {
                    PBLE_TERM_EFFECT_NONE);
     assert(state.phase == PBLE_TERM_PHASE_CLEANING);
     assert_effects(
-        pble_term_watchdog_fired(&state, UINT16_C(7), UINT64_C(50), INT64_MAX),
+        pble_term_watchdog_fired(&state, &ticket, INT64_MAX),
         PBLE_TERM_EFFECT_NONE);
     assert(!pble_term_open(&state, UINT16_C(7), UINT64_C(51)));
 
@@ -384,18 +410,23 @@ static void test_failure_matrix_and_stale_successor(void) {
 
     pble_term_init(&state);
     open_and_arm(&state, UINT16_C(7), UINT64_C(62), INT64_C(3000000));
+    pble_term_watchdog_ticket_t ticket;
+    assert(pble_term_watchdog_ticket(&state, UINT16_C(7), UINT64_C(62),
+                                     &ticket));
     assert_effects(
-        pble_term_watchdog_fired(&state, UINT16_C(7), UINT64_C(62),
-                                 INT64_C(5499999)),
+        pble_term_watchdog_fired(&state, &ticket, INT64_C(5499999)),
         PBLE_TERM_EFFECT_REARM_WATCHDOG);
     assert_effects(
-        pble_term_watchdog_rearmed(&state, UINT16_C(7), UINT64_C(62), false),
+        pble_term_watchdog_rearmed(&state, &ticket, false),
         PBLE_TERM_EFFECT_RESTART);
     assert(state.phase == PBLE_TERM_PHASE_RESTARTING);
 
     /* Old callback remains inert while the reused handle's successor closes. */
     pble_term_init(&state);
     open_and_arm(&state, UINT16_C(7), UINT64_C(63), INT64_C(4000000));
+    pble_term_watchdog_ticket_t stale_ticket;
+    assert(pble_term_watchdog_ticket(&state, UINT16_C(7), UINT64_C(63),
+                                     &stale_ticket));
     assert_effects(pble_term_disconnect(&state, UINT16_C(7), UINT64_C(63)),
                    PBLE_TERM_EFFECT_STOP_WATCHDOG);
     assert_effects(
@@ -406,7 +437,7 @@ static void test_failure_matrix_and_stale_successor(void) {
     open_and_arm(&state, UINT16_C(7), UINT64_C(64), INT64_C(5000000));
     int64_t successor_deadline = state.deadline_us;
     assert_effects(
-        pble_term_watchdog_fired(&state, UINT16_C(7), UINT64_C(63), INT64_MAX),
+        pble_term_watchdog_fired(&state, &stale_ticket, INT64_MAX),
         PBLE_TERM_EFFECT_NONE);
     assert(state.phase == PBLE_TERM_PHASE_CLOSING);
     assert(state.deadline_us == successor_deadline);
