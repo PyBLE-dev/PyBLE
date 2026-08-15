@@ -346,6 +346,24 @@ class TxPublicationCutTest(_Rp2SurfaceTestCase):
         self.assertIs(accepted, False)
         self.assertEqual(len(self.rec.notify_calls), before)
 
+    def test_final_fragment_failure_withholds_receipt_after_prefix(self):
+        _, link = self.make_link("F-27/P3 fragmented TX receipt failure")
+        link._conn_handle = 11
+        receipts = []
+        original_notify = self.rec.gatts_notify
+
+        def fail_final(conn_handle, value_handle, data):
+            if self.rec.notify_calls:
+                raise OSError("final fragment refused")
+            original_notify(conn_handle, value_handle, data)
+
+        self.rec.gatts_notify = fail_final
+        with self.assertRaises(OSError):
+            link.send_message(
+                b"x" * 30, on_published=lambda: receipts.append(1))
+        self.assertEqual(len(self.rec.notify_calls), 1)
+        self.assertEqual(receipts, [])
+
 
 class StartBindingsTest(_Rp2SurfaceTestCase):
     """P7: start() must arm the RX attribute buffer and pin the MTU ceiling —
