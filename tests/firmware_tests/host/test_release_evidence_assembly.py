@@ -37,12 +37,12 @@ HAVE_HIL_ASSEMBLER = HAVE_RELEASE and callable(
 )
 PROFILE_ORDER = bundle_fixture.RELEASE_PROFILE_ORDER
 OPERATOR_CHECKS = {
-    "browser_erase_install",
-    "family_offsets_reset",
+    "provisioning_install",
+    "provisioning_recovery",
     "advertising_info_hello",
-    "app_workflow",
-    "neopixel_reboot",
-    "interrupted_flash_recovery",
+    "pble_workflow",
+    "safe_boot_reconnect",
+    "filesystem_resume_reliability",
 }
 COMPLETION_KEYS = {
     "profile_id",
@@ -60,6 +60,8 @@ COMPLETION_KEYS = {
     "ble_adapter",
     "python_version",
     "checks",
+    "app_hil",
+    "profile_gate_summary",
     "oi1_observation",
     "redacted_console_log",
 }
@@ -449,7 +451,7 @@ class CompletedHilEvidenceAssemblyTests(unittest.TestCase):
                 if mutation == "frozen-field":
                     payload["firmware_sha256"] = "0" * 64
                 elif mutation == "failed-check":
-                    payload["checks"]["app_workflow"] = "failed"
+                    payload["checks"]["pble_workflow"] = "failed"
                 else:
                     payload["oi1_observation"][
                         "put_committed_goodput_bytes_per_second"
@@ -457,7 +459,7 @@ class CompletedHilEvidenceAssemblyTests(unittest.TestCase):
                 write_json(temporary, payload)
                 output = self.root / (mutation + "-HIL_REPORT.md")
                 with self.assertRaises(RELEASE.ReleaseError):
-                    self.assemble(output, [temporary, self.fragments[1]])
+                    self.assemble(output, [temporary, *self.fragments[1:]])
                 self.assertFalse(output.exists())
 
     def test_existing_output_is_never_replaced(self) -> None:

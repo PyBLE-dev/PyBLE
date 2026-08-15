@@ -64,6 +64,7 @@ FINAL_TEST, FINAL_TEST_ERROR = load_module(
 
 EARLIER_WAVESHARE_SOURCE_VERSION = "0.5.1"
 PROSPECTIVE_VERSION = EARLIER_WAVESHARE_SOURCE_VERSION
+CURRENT_FINALIZATION_VERSION = "0.6.0"
 
 
 def canonical_bytes(value):
@@ -192,7 +193,7 @@ def firmware_measurement(firmware):
     }
 
 
-async def make_result(firmware):
+async def make_result(firmware, *, expected_version=PROSPECTIVE_VERSION):
     """Generate the fixture through the real combined runner and strict validator."""
 
     if COMBINED_TEST is None:
@@ -201,7 +202,7 @@ async def make_result(firmware):
     measurement = firmware_measurement(firmware)
     fixture_caps = COMBINED_TEST.CAPS.replace(
         COMBINED_TEST.SELECTED_AGENT_VERSION.encode("ascii"),
-        PROSPECTIVE_VERSION.encode("ascii"),
+        expected_version.encode("ascii"),
     )
     connections = [
         COMBINED_TEST.CombinedFakeCentral(
@@ -235,9 +236,9 @@ async def make_result(firmware):
         return True
 
     with mock.patch.object(
-        bench, "EXPECTED_FIRMWARE_VERSION", PROSPECTIVE_VERSION
+        bench, "EXPECTED_FIRMWARE_VERSION", expected_version
     ), mock.patch.object(
-        bench.tft, "EXPECTED_AGENT_VERSION", PROSPECTIVE_VERSION
+        bench.tft, "EXPECTED_AGENT_VERSION", expected_version
     ), mock.patch.object(
         COMBINED_TEST, "CAPS", fixture_caps
     ):
@@ -556,53 +557,14 @@ class ResultValidationTests(unittest.TestCase):
 class FinalizationIntegrationTests(unittest.TestCase):
     def setUp(self):
         FINAL_TEST.RELEASE = RELEASE
-        fixture_bundle_module = FINAL_TEST.BUNDLE_TEST
-        fixture_license_module = FINAL_TEST.LICENSE_TEST
-        release_fixture_class = fixture_bundle_module.ReleaseFixture
-        license_fixture_class = fixture_license_module.ReleaseLicenseFixture
-        original_policy_installer = (
-            fixture_bundle_module.install_fixture_qualification_policy
-        )
-        original_source_installer = (
-            license_fixture_class._install_retained_source_checkouts
-        )
-
-        def prospective_release_fixture():
-            return release_fixture_class(firmware_version=PROSPECTIVE_VERSION)
-
-        def prospective_policy(repo, build_root=None):
-            return install_prospective_qualification_policy(
-                original_policy_installer,
-                repo,
-                build_root,
-            )
-
-        def prospective_sources(fixture):
-            return install_prospective_source_version(
-                original_source_installer,
-                fixture,
-            )
-
-        with mock.patch.object(
-            fixture_bundle_module,
-            "ReleaseFixture",
-            new=prospective_release_fixture,
-        ), mock.patch.object(
-            fixture_bundle_module,
-            "install_fixture_qualification_policy",
-            new=prospective_policy,
-        ), mock.patch.object(
-            license_fixture_class,
-            "_install_retained_source_checkouts",
-            new=prospective_sources,
-        ):
-            self.fixture = FINAL_TEST.FinalizationFixture()
+        self.fixture = FINAL_TEST.FinalizationFixture()
         self.result_path = self.fixture.license_fixture.root / "lcd147-result.json"
         self.result = asyncio.run(
             make_result(
                 self.fixture.candidate
                 / "waveshare-esp32-s3-lcd-147b"
-                / "firmware.bin"
+                / "firmware.bin",
+                expected_version=CURRENT_FINALIZATION_VERSION,
             )
         )
         self.result_path.write_bytes(canonical_bytes(self.result))
@@ -622,6 +584,12 @@ class FinalizationIntegrationTests(unittest.TestCase):
             repo_root=self.fixture.license_fixture.repo,
             waveshare_lcd147b_qualification_result=(
                 self.result_path if result_path else None
+            ),
+            esp32_c3_qualification_result=(
+                self.fixture.c3_qualification_result
+            ),
+            rpi_pico2_w_qualification_result=(
+                self.fixture.pico_qualification_result
             ),
         )
 
@@ -660,7 +628,10 @@ class FinalizationIntegrationTests(unittest.TestCase):
             / "waveshare-esp32-s3-lcd-147b"
             / "firmware.bin",
         )
-        self.assertEqual(call.kwargs["expected_version"], PROSPECTIVE_VERSION)
+        self.assertEqual(
+            call.kwargs["expected_version"],
+            CURRENT_FINALIZATION_VERSION,
+        )
         self.assertEqual(
             call.kwargs["candidate_release_json_sha256"],
             self.fixture.candidate_release_sha256,
@@ -676,7 +647,7 @@ class FinalizationIntegrationTests(unittest.TestCase):
         self.assertNotIn(self.result_path.name, public)
         self.assertNotIn(self.result_path.read_bytes(), public.values())
         payload = FINAL_TEST.read_hil_payload(finalized / "HIL_REPORT.md")
-        self.assertEqual(payload["schema_version"], 4)
+        self.assertEqual(payload["schema_version"], 5)
         summary = payload["waveshare_lcd147b_qualification"]
         self.assertEqual(summary["status"], "passed")
         self.assertEqual(
@@ -750,6 +721,12 @@ class FinalizationIntegrationTests(unittest.TestCase):
                 license_build_root=self.fixture.license_fixture.build_root,
                 repo_root=self.fixture.license_fixture.repo,
                 waveshare_lcd147b_qualification_result=self.result_path,
+                esp32_c3_qualification_result=(
+                    self.fixture.c3_qualification_result
+                ),
+                rpi_pico2_w_qualification_result=(
+                    self.fixture.pico_qualification_result
+                ),
             )
         self.assertFalse(output.exists())
 
@@ -760,7 +737,7 @@ class FinalizationIntegrationTests(unittest.TestCase):
         payload["records"][0]["redacted_console_log"] += (
             " session_id=%s" % self.result["session_id"]
         )
-        write_hil_report(injected, payload, 4)
+        write_hil_report(injected, payload, 5)
         with mock.patch.object(
             RELEASE,
             "_audit_verify_release_evidence",
@@ -777,6 +754,12 @@ class FinalizationIntegrationTests(unittest.TestCase):
                 license_build_root=self.fixture.license_fixture.build_root,
                 repo_root=self.fixture.license_fixture.repo,
                 waveshare_lcd147b_qualification_result=self.result_path,
+                esp32_c3_qualification_result=(
+                    self.fixture.c3_qualification_result
+                ),
+                rpi_pico2_w_qualification_result=(
+                    self.fixture.pico_qualification_result
+                ),
             )
         self.assertFalse(output.exists())
 
@@ -787,7 +770,7 @@ class FinalizationIntegrationTests(unittest.TestCase):
         payload["records"][0]["redacted_console_log"] += (
             " BLE address AA:BB:CC:DD:EE:FF; label=Alice"
         )
-        write_hil_report(injected, payload, 4)
+        write_hil_report(injected, payload, 5)
         with mock.patch.object(
             RELEASE,
             "_audit_verify_release_evidence",
@@ -804,6 +787,12 @@ class FinalizationIntegrationTests(unittest.TestCase):
                 license_build_root=self.fixture.license_fixture.build_root,
                 repo_root=self.fixture.license_fixture.repo,
                 waveshare_lcd147b_qualification_result=self.result_path,
+                esp32_c3_qualification_result=(
+                    self.fixture.c3_qualification_result
+                ),
+                rpi_pico2_w_qualification_result=(
+                    self.fixture.pico_qualification_result
+                ),
             )
         self.assertFalse(output.exists())
 
@@ -814,7 +803,7 @@ class FinalizationIntegrationTests(unittest.TestCase):
         payload["records"][0]["redacted_console_log"] += (
             " BLE Address AA-BB-CC-DD-EE-FF; Label=Alice"
         )
-        write_hil_report(injected, payload, 4)
+        write_hil_report(injected, payload, 5)
         with mock.patch.object(
             RELEASE,
             "_audit_verify_release_evidence",
@@ -831,6 +820,12 @@ class FinalizationIntegrationTests(unittest.TestCase):
                 license_build_root=self.fixture.license_fixture.build_root,
                 repo_root=self.fixture.license_fixture.repo,
                 waveshare_lcd147b_qualification_result=self.result_path,
+                esp32_c3_qualification_result=(
+                    self.fixture.c3_qualification_result
+                ),
+                rpi_pico2_w_qualification_result=(
+                    self.fixture.pico_qualification_result
+                ),
             )
         self.assertFalse(output.exists())
 
