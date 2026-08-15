@@ -6,7 +6,10 @@
 // Runs the REAL engine over an in-memory [FakeByteTransport], asserting:
 //   • nextId() rolls 1..255, never 0 (0 is reserved for EVT), and is distinct
 //     across a full cycle;
-//   • request(cmd) resolves with the RSP that carries the matching ID;
+//   • request(cmd) resolves only with TYPE=RSP carrying the exact originating
+//     opcode + ID, even when an ID is reused;
+//   • wrong-opcode and non-RSP frames cannot complete a request or hide the
+//     exact response in either arrival order;
 //   • EVT frames (ID == 0) are routed onto events, keyed by opcode, and never
 //     mistaken for a response;
 //   • an unanswered request times out with PbleTimeoutException.
@@ -76,6 +79,164 @@ void main() {
       expect(rsp.type, Pble.typeRsp);
       expect(rsp.opcode, PbleOpcode.deviceInfo.code);
     });
+
+    test(
+      'wrong-opcode same-ID RSP before the exact RSP cannot complete it',
+      () async {
+        final PbleFrame cmd = PbleFrame(
+          type: Pble.typeCmd,
+          opcode: PbleOpcode.run.code,
+          id: engine.nextId(),
+          payload: Uint8List(0),
+        );
+        final Future<PbleFrame> pending = engine.request(cmd);
+        await pumpEventQueue();
+
+        transport.deliverFrame(
+          PbleFrame(
+            type: Pble.typeRsp,
+            opcode: PbleOpcode.hello.code,
+            id: cmd.id,
+            payload: Uint8List.fromList(<int>[PbleStatus.ok.code, 0x11]),
+          ),
+        );
+        transport.deliverFrame(
+          PbleFrame(
+            type: Pble.typeRsp,
+            opcode: cmd.opcode,
+            id: cmd.id,
+            payload: Uint8List.fromList(<int>[PbleStatus.ok.code, 0x22]),
+          ),
+        );
+
+        final PbleFrame rsp = await pending;
+        expect(rsp.type, Pble.typeRsp);
+        expect(rsp.opcode, cmd.opcode);
+        expect(rsp.payload, <int>[PbleStatus.ok.code, 0x22]);
+      },
+    );
+
+    test(
+      'exact RSP before a wrong-opcode same-ID RSP remains authoritative',
+      () async {
+        final PbleFrame cmd = PbleFrame(
+          type: Pble.typeCmd,
+          opcode: PbleOpcode.run.code,
+          id: engine.nextId(),
+          payload: Uint8List(0),
+        );
+        final Future<PbleFrame> pending = engine.request(cmd);
+        await pumpEventQueue();
+
+        transport.deliverFrame(
+          PbleFrame(
+            type: Pble.typeRsp,
+            opcode: cmd.opcode,
+            id: cmd.id,
+            payload: Uint8List.fromList(<int>[PbleStatus.ok.code, 0x33]),
+          ),
+        );
+        transport.deliverFrame(
+          PbleFrame(
+            type: Pble.typeRsp,
+            opcode: PbleOpcode.hello.code,
+            id: cmd.id,
+            payload: Uint8List.fromList(<int>[PbleStatus.ok.code, 0x44]),
+          ),
+        );
+
+        final PbleFrame rsp = await pending;
+        expect(rsp.type, Pble.typeRsp);
+        expect(rsp.opcode, cmd.opcode);
+        expect(rsp.payload, <int>[PbleStatus.ok.code, 0x33]);
+      },
+    );
+
+    test('non-RSP frame with a nonzero ID cannot complete a request', () async {
+      final PbleFrame cmd = PbleFrame(
+        type: Pble.typeCmd,
+        opcode: PbleOpcode.deviceInfo.code,
+        id: engine.nextId(),
+        payload: Uint8List(0),
+      );
+      final Future<PbleFrame> pending = engine.request(cmd);
+      await pumpEventQueue();
+
+      transport.deliverFrame(
+        PbleFrame(
+          type: Pble.typeCmd,
+          opcode: cmd.opcode,
+          id: cmd.id,
+          payload: Uint8List.fromList(<int>[0x55]),
+        ),
+      );
+      transport.deliverFrame(
+        PbleFrame(
+          type: Pble.typeRsp,
+          opcode: cmd.opcode,
+          id: cmd.id,
+          payload: Uint8List.fromList(<int>[PbleStatus.ok.code, 0x66]),
+        ),
+      );
+
+      final PbleFrame rsp = await pending;
+      expect(rsp.type, Pble.typeRsp);
+      expect(rsp.payload, <int>[PbleStatus.ok.code, 0x66]);
+    });
+
+    test(
+      'reused ID rejects the stale prior-opcode RSP and accepts the new one',
+      () async {
+        const int reusedId = 91;
+        final PbleFrame oldCmd = PbleFrame(
+          type: Pble.typeCmd,
+          opcode: PbleOpcode.hello.code,
+          id: reusedId,
+          payload: Uint8List(0),
+        );
+        final Future<PbleFrame> oldPending = engine.request(oldCmd);
+        await pumpEventQueue();
+        transport.deliverFrame(
+          PbleFrame(
+            type: Pble.typeRsp,
+            opcode: oldCmd.opcode,
+            id: reusedId,
+            payload: Uint8List.fromList(<int>[PbleStatus.ok.code, 0x77]),
+          ),
+        );
+        expect((await oldPending).opcode, oldCmd.opcode);
+
+        final PbleFrame newCmd = PbleFrame(
+          type: Pble.typeCmd,
+          opcode: PbleOpcode.run.code,
+          id: reusedId,
+          payload: Uint8List(0),
+        );
+        final Future<PbleFrame> newPending = engine.request(newCmd);
+        await pumpEventQueue();
+        transport.deliverFrame(
+          PbleFrame(
+            type: Pble.typeRsp,
+            opcode: oldCmd.opcode,
+            id: reusedId,
+            payload: Uint8List.fromList(<int>[PbleStatus.ok.code, 0x88]),
+          ),
+        );
+        transport.deliverFrame(
+          PbleFrame(
+            type: Pble.typeRsp,
+            opcode: newCmd.opcode,
+            id: reusedId,
+            payload: Uint8List.fromList(<int>[PbleStatus.ok.code, 0x99]),
+          ),
+        );
+
+        final PbleFrame rsp = await newPending;
+        expect(rsp.type, Pble.typeRsp);
+        expect(rsp.opcode, newCmd.opcode);
+        expect(rsp.payload, <int>[PbleStatus.ok.code, 0x99]);
+      },
+    );
 
     test('EVT frames (id==0) route onto events by opcode', () async {
       final Future<PbleFrame> evt = engine.events.first;
