@@ -194,9 +194,16 @@ Requirement voice is MUST / SHOULD / MAY. Each line: **ID** — statement — *(
   created successfully before NimBLE starts. GAP CONNECT MUST mint and open an
   exact nonzero-generation token under the session lock before exposing it;
   failure to open MUST restart rather than overwrite retained state. Every TX
-  attempt MUST carry its originating full token to the sole Notify exit. Arm,
-  GAP-error, deadline, timer-stop, and residual-rearm failures MUST atomically
-  claim terminal `RESTARTING` before public non-returning `esp_restart()`;
+  attempt MUST carry its originating full token to the sole Notify exit. With
+  physical TX mutex acquired before session state, that exit MUST serialize its
+  final exact-token check and Notify with connect/open, `OPEN → CLOSING`, and
+  cleanup claims. `CLOSING` makes work logically non-live but MUST NOT
+  physically cancel it before exact cleanup successfully stops any required
+  watchdog. The initial arm MUST use the positive residual to the stored
+  absolute deadline, and reducer begin, physical arm, and arm acknowledgement
+  MUST be one uninterrupted session-critical transaction. Arm, GAP-error,
+  deadline, timer-stop, and residual-rearm failures MUST atomically claim
+  terminal `RESTARTING` before public non-returning `esp_restart()`;
   later disconnect/reset/open operations cannot clear that claim. Exact
   disconnect/reset MUST claim `CLEANING` before timer action. Normal `OPEN`
   cleanup has no termination timer; `CLOSING` cleanup may invalidate work and

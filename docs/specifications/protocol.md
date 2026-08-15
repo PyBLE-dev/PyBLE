@@ -179,11 +179,20 @@ atomically changes the exact `{handle, connection generation}` from `OPEN` to
 `CLOSING`. A closing token is retained only for exact GAP lifecycle matching:
 it is not live for CMD admission, response-ticket reservation or validation,
 ordinary/event/control TX, or the specialized `RUN`, `STOP`, and `SOFT_REBOOT`
-paths. Existing work for that token is invalidated and cannot begin another
-side effect or publish a byte. Repeated close requests for the same token are
-idempotent. Every TX attempt carries its originating full token to the sole
-Notify exit; a new snapshot of a reused numeric handle cannot substitute for
-that ownership. The state machine is `CLOSED`/`OPEN`/`CLOSING`/`CLEANING`/
+paths. Entering `CLOSING` makes existing work logically non-live, so it cannot
+begin another side effect or publish a byte, but it does not yet physically
+cancel tickets/work or invalidate the retained token. That physical cleanup is
+reserved for exact `CLEANING` after any required watchdog stop succeeds.
+Repeated close requests for the same token are idempotent. Every TX attempt
+carries its originating full token to the sole Notify exit; a new snapshot of
+a reused numeric handle cannot substitute for that ownership. The physical
+recursive TX mutex has one lock order with lifecycle state: TX mutex first,
+then the session critical section. The final exact-token check and
+`ble_gatts_notify_custom` remain inside that TX ownership, and every
+connect/open, `OPEN → CLOSING`, and disconnect/reset cleanup claim uses the
+same serialization. A Notify therefore either completes while its token is
+still `OPEN`, or a winning lifecycle transition makes it fail before the
+NimBLE call. The state machine is `CLOSED`/`OPEN`/`CLOSING`/`CLEANING`/
 `RESTARTING`, and neither a reused handle nor a later lifecycle event can open
 or clean a terminal `RESTARTING` token.
 
@@ -195,19 +204,26 @@ a nonzero generation and opens the exact token under the session critical
 section before exposing it. If the state is not `CLOSED`, the board restarts
 instead of overwriting an old token.
 
-After entering `CLOSING`, the agent reads `esp_timer_get_time()` and arms that
-independent watchdog for one absolute 2500 ms termination deadline **before**
-making exactly one host-context `ble_gap_terminate` call. The deadline never
-moves. Initial arm failure claims `RESTARTING` and restarts without attempting
-GAP. Return `0` and `BLE_HS_EALREADY` mean only that GAP teardown is already
-pending; the agent waits for exact disconnect or NimBLE reset while the
-watchdog remains armed. Any other return claims `RESTARTING` and invokes public
-non-returning `esp_restart()` immediately. A `BLE_GAP_EVENT_TERM_FAILURE` is an
-explicit no-op: it cannot stop/rearm the timer, change the deadline, clean the
-token, advertise, or restart. The agent never retries termination and never
-calls `ble_hs_sched_reset`, `nimble_port_stop`, direct NimBLE/controller
-teardown, or a private restart entry point, because the pinned host may already
-have scheduled its own reset before returning an error.
+The `OPEN → CLOSING` reducer step reads `esp_timer_get_time()` once and stores
+one absolute deadline 2500 ms ahead. The initial physical arm uses only the
+positive residual `deadline - esp_timer_get_time()`, never a fresh 2500 ms
+interval; reaching the deadline before the arm instead claims `RESTARTING`.
+The reducer begin, residual calculation, `esp_timer_start_once`, and reducer
+arm acknowledgement form one uninterrupted session-critical transaction. A
+task-dispatched callback therefore cannot consume the physical one-shot while
+the reducer still considers it unarmed. Only after a successful acknowledgement
+does the host make exactly one `ble_gap_terminate` call, outside that critical
+section. The deadline never moves. Initial arm failure claims `RESTARTING` and
+restarts without attempting GAP. Return `0` and `BLE_HS_EALREADY` mean only
+that GAP teardown is already pending; the agent waits for exact disconnect or
+NimBLE reset while the watchdog remains armed. Any other return claims
+`RESTARTING` and invokes public non-returning `esp_restart()` immediately. A
+`BLE_GAP_EVENT_TERM_FAILURE` is an explicit no-op: it cannot stop/rearm the
+timer, change the deadline, clean the token, advertise, or restart. The agent
+never retries termination and never calls `ble_hs_sched_reset`,
+`nimble_port_stop`, direct NimBLE/controller teardown, or a private restart
+entry point, because the pinned host may already have scheduled its own reset
+before returning an error.
 
 Exact disconnect or NimBLE reset first atomically claims `CLEANING`; a stale
 token does nothing. Normal `OPEN` cleanup has no termination timer to stop.

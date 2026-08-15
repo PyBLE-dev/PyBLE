@@ -350,11 +350,18 @@ section, `OPEN → CLOSING` happens first and repeated requests against the same
 token are no-ops. Public snapshot/live-for-admission checks return false for
 `CLOSING`; GATT dispatch, ticket reserve/validate, all response/event/control
 TX, and specialized `RUN`/`STOP`/`SOFT_REBOOT` paths therefore admit no later
-work or byte. Each TX attempt carries the originating full token to the sole
-Notify exit; taking a fresh generation snapshot from a reused numeric handle
-is not an ownership check. Lifecycle cleanup uses an internal exact-token
-match that can still recognize `CLOSING`; it does not make the token live
-again.
+work or byte. This is a logical non-live gate only: retained tickets, work, and
+the token are physically cancelled/invalidated later, after exact cleanup has
+successfully stopped any required watchdog. Each TX attempt carries the
+originating full token to the sole Notify exit; taking a fresh generation
+snapshot from a reused numeric handle is not an ownership check. The physical
+recursive TX mutex is acquired before the session critical section wherever
+both are needed. The sole Notify exit keeps that mutex across its final exact
+token check and `ble_gatts_notify_custom`; connect/open, `OPEN → CLOSING`, and
+disconnect/reset cleanup claims use the same serialization. Thus a lifecycle
+transition cannot land between the final check and Notify. Lifecycle cleanup
+uses an internal exact-token match that can still recognize `CLOSING`; it does
+not make the token live again.
 
 Cold native initialization calls the reducer initializer exactly once per chip
 boot and pre-creates exactly one `ESP_TIMER_TASK` one-shot before NimBLE can
@@ -368,12 +375,18 @@ attempt while the reducer is not `CLOSED`, including numeric-handle reuse while
 an old token is `CLOSING`, `CLEANING`, or `RESTARTING`, invokes public
 non-returning `esp_restart()` instead of overwriting the retained token.
 
-On `OPEN → CLOSING`, the host reads `esp_timer_get_time()`, stores one absolute
-deadline 2500 ms ahead, and successfully arms the watchdog before exactly one
-`ble_gap_terminate` call. An arm failure atomically claims `RESTARTING` and
-calls public non-returning `esp_restart()` without a GAP attempt. This order
-matters: the pinned HCI command wait can occupy the NimBLE host task for 2000
-ms, while the ESP timer callback runs independently. Return `0` and
+On `OPEN → CLOSING`, the host reads `esp_timer_get_time()` once and stores one
+absolute deadline 2500 ms ahead. Its initial `esp_timer_start_once` interval is
+the positive residual `deadline - esp_timer_get_time()`, never a new 2500 ms;
+an already-reached deadline claims `RESTARTING` without arming or attempting
+GAP. Reducer begin, residual calculation, physical arm, and reducer arm
+acknowledgement are one uninterrupted session-critical transaction, so the
+task callback cannot consume the one-shot before logical arm acknowledgement.
+After that transaction releases, exactly one `ble_gap_terminate` call occurs.
+An arm failure atomically claims `RESTARTING` and calls public non-returning
+`esp_restart()` without a GAP attempt. This order matters: the pinned HCI
+command wait can occupy the NimBLE host task for 2000 ms, while the ESP timer
+callback runs independently. Return `0` and
 `BLE_HS_EALREADY` leave `CLOSING` and the watchdog intact pending exact GAP
 disconnect or `ble_hs_cfg.reset_cb`. Any other return atomically claims
 `RESTARTING` and immediately restarts. Once claimed, `RESTARTING` rejects
