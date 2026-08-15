@@ -32,6 +32,13 @@ RUNNING = 1
 DONE = 2
 ERROR = 3
 
+# Stopped-terminal publication phases.  The transition to IDLE and its wire
+# event are separate cuts because the deferred STOP KeyboardInterrupt may land
+# between them.
+_TERMINAL_NONE = 0
+_TERMINAL_UNPUBLISHED = 1
+_TERMINAL_PUBLISHED = 2
+
 # protocol.md §8 status codes used by this module (frozen).
 OK = 0x00
 EBADREQ = 0x01
@@ -84,14 +91,27 @@ class Runner:
     for every RUN_STATE transition; `exec_fn(mode, data)` executes user code
     in supervisor context (see make_exec_fn)."""
 
-    def __init__(self, emit_state, exec_fn):
+    def __init__(self, emit_state, exec_fn, emit_terminal=None):
         self.rsm = RunStateMachine()
         self._emit_state = emit_state
+        self._emit_terminal = (emit_terminal if emit_terminal is not None
+                               else self._default_emit_terminal)
         self._exec_fn = exec_fn
         self._pending = None          # captured (mode, data) awaiting pickup
         self._stop_requested = False
         self._executing = False       # reserved/pending is deliberately distinct
-        self._terminal_pending = False
+        self._terminal_phase = _TERMINAL_NONE
+
+    def _default_emit_terminal(self, state, published):
+        """Compatibility adapter for host users without a TX receipt seam."""
+        self._emit_state(state)
+        published()
+
+    def _terminal_published(self):
+        # Deliberately branch-free: BleLink calls this immediately after the
+        # final native Notify acceptance, before the VM's next branch/pending-
+        # exception check.
+        self._terminal_phase = _TERMINAL_PUBLISHED
 
     def handle_run(self, payload):
         # Validate BEFORE reserving (pble_runner_run twin) — the only place the
@@ -140,15 +160,16 @@ class Runner:
         self._pending = None
         self._executing = False
         self._stop_requested = False
-        if not self._terminal_pending:
+        if self._terminal_phase == _TERMINAL_NONE:
+            return False
+        if self._terminal_phase == _TERMINAL_PUBLISHED:
+            self._terminal_phase = _TERMINAL_NONE
             return False
         if self.rsm.state != IDLE:
             self.rsm.on_stopped()
-        # Commit the one-shot publication phase before entering the callback:
-        # if it records/sends IDLE and then KBI lands, supervisor recovery must
-        # observe completion and never publish the same terminal event twice.
-        self._terminal_pending = False
-        self._emit_state(IDLE)
+        self._emit_terminal(IDLE, self._terminal_published)
+        if self._terminal_phase == _TERMINAL_PUBLISHED:
+            self._terminal_phase = _TERMINAL_NONE
         return True
 
     def service_interrupted(self):
@@ -161,10 +182,12 @@ class Runner:
         Returns True iff a pending request was serviced.
         """
         if self._pending is None:
+            if self._terminal_phase == _TERMINAL_UNPUBLISHED:
+                return self._terminalize_stopped()
             return False
         mode, data = self._pending
         self._pending = None
-        self._terminal_pending = True
+        self._terminal_phase = _TERMINAL_UNPUBLISHED
 
         # Linearization cut: a control callback before this store leaves the
         # marker false and sets cancellation intent; one after it observes an
@@ -196,7 +219,7 @@ class Runner:
             self.rsm.on_finished(ok)
             self._stop_requested = False
             self._emit_state(self.rsm.state)
-            self._terminal_pending = False
+            self._terminal_phase = _TERMINAL_NONE
         return True
 
 

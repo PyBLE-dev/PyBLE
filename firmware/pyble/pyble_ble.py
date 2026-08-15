@@ -59,6 +59,10 @@ FRAG_INDEX_MOD = 64
 # via `on_oversize` so the agent can answer RSP ERANGE with an opcode/id echo.
 RX_MAX = 4096
 
+
+def _noop_published():
+    pass
+
 # MicroPython BLE IRQ event codes, module-local by REQUIREMENT (port spec P7):
 # rp2 modbluetooth exports NO `_IRQ_*` attributes (hardware-verified
 # 2026-08-11), so reading `bluetooth._IRQ_*` raises AttributeError on device.
@@ -191,14 +195,25 @@ class BleLink:
         if self._ble is not None and self._conn_handle is None:
             self._start_advertising()
 
-    def send_message(self, msg):
+    def send_message(self, msg, on_published=None):
         """Sole TX path: fragment `msg` to `payload_size(mtu)` and Notify each
         §3.2 fragment on TX (FR-BLE-3/10). `msg` is already-encoded PBLE/1 bytes
-        from pyble_proto — never inspected/decoded here."""
+        from pyble_proto — never inspected/decoded here. An optional receipt is
+        called immediately after local acceptance of the final fragment."""
         if self._ble is None or self._conn_handle is None:
             return
-        for frag in _fragment(msg, payload_size(self._mtu)):
+        published = (_noop_published if on_published is None
+                     else on_published)
+        fragments = tuple(_fragment(msg, payload_size(self._mtu)))
+        for frag in fragments[:-1]:
             self._ble.gatts_notify(self._conn_handle, self._tx_handle, frag)
+        # Keep these two calls branch-adjacent. The pinned MicroPython VM checks
+        # pending exceptions at branch points, while BTstack returns only after
+        # copying or queueing the Notify. The receipt therefore commits before
+        # a deferred STOP KeyboardInterrupt can be raised.
+        self._ble.gatts_notify(
+            self._conn_handle, self._tx_handle, fragments[-1])
+        published()
 
     def start(self, info_payload=b""):
         """Boot the NimBLE peripheral: bind the stack, read the MAC, register the

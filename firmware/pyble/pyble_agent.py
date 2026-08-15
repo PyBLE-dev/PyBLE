@@ -165,7 +165,8 @@ class Agent:
         # supervisor with the console stderr path for tracebacks.
         self._runner = pyble_runner.Runner(
             self._emit_run_state,
-            pyble_runner.make_exec_fn(write_stderr=self._stderr))
+            pyble_runner.make_exec_fn(write_stderr=self._stderr),
+            emit_terminal=self._emit_terminal_run_state)
 
         # Dispatcher: EVERY §4 CMD opcode gets a registered handler — none may
         # fall through to the EUNSUPPORTED default (that default is only for
@@ -241,6 +242,13 @@ class Agent:
         # opened at RUN_STATE(running), closed at every terminal state.
         self.console.set_run_active(state == _RUNNING)
         self.emit(_OP["RUN_STATE"], bytes((state,)))
+
+    def _emit_terminal_run_state(self, state, published):
+        """Emit stopped IDLE with a receipt at BleLink's local TX cut."""
+        self.console.set_run_active(False)
+        msg = pyble_proto.encode(
+            pyble_proto.EVT, _OP["RUN_STATE"], 0, bytes((state,)))
+        self._link.send_message(msg, on_published=published)
 
     # -- link callbacks --------------------------------------------------------
     def _closing_admission(self, msg):
