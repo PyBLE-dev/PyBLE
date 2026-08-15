@@ -29,6 +29,7 @@ class FakeByteTransport implements ByteTransport {
   FakeByteTransport({
     this.mtu = Pble.mtuRequest,
     this.sendDelay = Duration.zero,
+    this.onSendStarted,
   });
 
   @override
@@ -36,6 +37,10 @@ class FakeByteTransport implements ByteTransport {
 
   /// Optional deterministic delay used to verify end-to-end request deadlines.
   final Duration sendDelay;
+
+  /// Optional hook that runs after [send] starts but before its delayed Future
+  /// completes, so tests can model a Notify racing an acknowledged write.
+  final void Function()? onSendStarted;
 
   final StreamController<Uint8List> _inbound =
       StreamController<Uint8List>.broadcast();
@@ -60,6 +65,7 @@ class FakeByteTransport implements ByteTransport {
 
   @override
   Future<void> send(Uint8List packet, {required bool acknowledged}) async {
+    onSendStarted?.call();
     if (sendDelay > Duration.zero) await Future<void>.delayed(sendDelay);
     sentAcknowledged.add(acknowledged);
     sentPackets.add(Uint8List.fromList(packet));

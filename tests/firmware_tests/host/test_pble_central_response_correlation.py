@@ -159,6 +159,55 @@ class ExactResponseCorrelationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(observed.opcode, wire.OP_RUN)
         self.assertEqual(observed.payload, exact.payload)
 
+    async def test_on_time_exact_response_wins_over_late_write_completion(self):
+        request_id = 106
+        exact = _rsp(wire.OP_RUN, request_id, 0xBB)
+        central = None
+
+        class SlowAcknowledgedWrite:
+            is_connected = True
+
+            async def write_gatt_char(self, _uuid, _packet, response):
+                self.assert_response = response
+                _deliver(central, exact)
+                await asyncio.sleep(0.2)
+
+        central = central_module.PbleCentral(SlowAcknowledgedWrite())
+
+        observed = await central.send_cmd(
+            wire.OP_RUN,
+            request_id,
+            timeout=0.05,
+        )
+
+        self.assertEqual(observed.opcode, wire.OP_RUN)
+        self.assertEqual(observed.payload, exact.payload)
+
+    async def test_response_after_pending_write_deadline_still_times_out(self):
+        request_id = 107
+        late = _rsp(wire.OP_RUN, request_id, 0xCC)
+        central = None
+
+        class LateResponseAfterCancellation:
+            is_connected = True
+
+            async def write_gatt_char(self, _uuid, _packet, response):
+                self.assert_response = response
+                try:
+                    await asyncio.sleep(0.05)
+                except asyncio.CancelledError:
+                    await asyncio.sleep(0.005)
+                    _deliver(central, late)
+
+        central = central_module.PbleCentral(LateResponseAfterCancellation())
+
+        with self.assertRaises(asyncio.TimeoutError):
+            await central.send_cmd(
+                wire.OP_RUN,
+                request_id,
+                timeout=0.01,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

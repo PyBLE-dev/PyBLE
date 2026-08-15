@@ -17,6 +17,7 @@
 // CURRENTLY RED: `lib/pble/{engine,frame,pble_constants,pble_exception}.dart`
 // do not exist yet. HAND-OFF: `lib/pble/**` → app-protocol-engineer.
 
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -367,6 +368,86 @@ void main() {
           lessThan(const Duration(milliseconds: 110)),
           reason: 'each fragment must consume the same absolute request budget',
         );
+      },
+    );
+
+    test(
+      'on-time exact RSP wins when its acknowledged write completes late',
+      () async {
+        await engine.dispose();
+        await transport.dispose();
+        const int requestId = 92;
+        var delivered = false;
+        transport = FakeByteTransport(
+          sendDelay: const Duration(milliseconds: 40),
+          onSendStarted: () {
+            if (delivered) return;
+            delivered = true;
+            transport.deliverFrame(
+              PbleFrame(
+                type: Pble.typeRsp,
+                opcode: PbleOpcode.hello.code,
+                id: requestId,
+                payload: Uint8List.fromList(<int>[PbleStatus.ok.code, 0xa1]),
+              ),
+            );
+          },
+        );
+        engine = PbleEngine(transport);
+        final PbleFrame cmd = PbleFrame(
+          type: Pble.typeCmd,
+          opcode: PbleOpcode.hello.code,
+          id: requestId,
+          payload: Uint8List(0),
+        );
+
+        final PbleFrame response = await engine.request(
+          cmd,
+          timeout: const Duration(milliseconds: 15),
+        );
+
+        expect(response.opcode, cmd.opcode);
+        expect(response.id, cmd.id);
+        expect(response.payload, <int>[PbleStatus.ok.code, 0xa1]);
+      },
+    );
+
+    test(
+      'exact RSP arriving after a pending write deadline still times out',
+      () async {
+        await engine.dispose();
+        await transport.dispose();
+        const int requestId = 93;
+        Timer? lateResponse;
+        transport = FakeByteTransport(
+          sendDelay: const Duration(milliseconds: 30),
+          onSendStarted: () {
+            lateResponse ??= Timer(const Duration(milliseconds: 20), () {
+              transport.deliverFrame(
+                PbleFrame(
+                  type: Pble.typeRsp,
+                  opcode: PbleOpcode.hello.code,
+                  id: requestId,
+                  payload: Uint8List.fromList(<int>[PbleStatus.ok.code, 0xa2]),
+                ),
+              );
+            });
+          },
+        );
+        engine = PbleEngine(transport);
+        final PbleFrame cmd = PbleFrame(
+          type: Pble.typeCmd,
+          opcode: PbleOpcode.hello.code,
+          id: requestId,
+          payload: Uint8List(0),
+        );
+
+        await expectLater(
+          engine.request(cmd, timeout: const Duration(milliseconds: 8)),
+          throwsA(isA<PbleTimeoutException>()),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 35));
+        lateResponse?.cancel();
       },
     );
   });
