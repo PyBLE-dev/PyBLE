@@ -179,6 +179,41 @@ class ConsoleAndStopSourceContractTests(unittest.TestCase):
             "STOP must submit its status with the originating token",
         )
         self.assertEqual(stop.count("pble_proto_emit_rsp_status_try("), 1)
+        tx_result = re.search(
+            r"\b(?:int|pble_tx_result_t)\s+([A-Za-z_]\w*)\s*=\s*"
+            r"pble_proto_emit_rsp_status_try\s*\(",
+            stop,
+        )
+        self.assertIsNotNone(
+            tx_result,
+            "STOP must retain the specialized submission result",
+        )
+        failure = re.search(
+            rf"if\s*\(\s*{re.escape(tx_result.group(1))}\s*!=\s*"
+            r"PBLE_TX_OK\s*\)\s*\{(?P<body>.*?)\}",
+            stop,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(
+            failure,
+            "every non-OK STOP submission must fail closed",
+        )
+        self.assertIn("return PBLE_NO_RSP;", failure.group("body"))
+        effect_re = re.compile(
+            r"\bg_stop_requested\s*="
+            r"|\bmp_pending_exception\b"
+            r"|\binject_worker_kbd_interrupt\s*\("
+            r"|\bpble_rsm_[A-Za-z_]\w*\s*\("
+            r"|\brunner_emit_state\s*\("
+            r"|\bxSemaphoreGive\s*\("
+        )
+        first_effect = effect_re.search(stop)
+        self.assertIsNotNone(first_effect, "successful STOP needs an interrupt effect")
+        self.assertGreater(
+            first_effect.start(),
+            failure.end(),
+            "no STOP state/interrupt effect may precede the non-OK return cut",
+        )
         ordered(
             self,
             stop,
