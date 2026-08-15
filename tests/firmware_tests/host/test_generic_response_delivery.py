@@ -409,12 +409,55 @@ class NativeResponsePoolContractTests(unittest.TestCase):
         cancel_session = code_only(c_function(PROTO, "pble_rsp_cancel_session"))
         cancel_ticket = code_only(c_function(PROTO, "pble_rsp_cancel_ticket"))
         tx_result = code_only(c_function(PROTO, "pble_rsp_tx_result"))
+        publish = code_only(c_function(PROTO, "pble_rsp_publish"))
         self.assertIn("slot->state != PBLE_RSP_COMPLETE", cancel_session)
         self.assertIn("slot->state != PBLE_RSP_COMPLETE", cancel_ticket)
         self.assertIn("slot->state == PBLE_RSP_READY", tx_result)
 
-        for body in (cancel_session, cancel_ticket, tx_result):
+        transition_re = re.compile(
+            r"(?:slot->state\s*=\s*PBLE_RSP_COMPLETE"
+            r"|\bpble_rsp_[A-Za-z_]*complete[A-Za-z_]*\s*\()"
+        )
+        success_start = tx_result.find("tx_result == PBLE_TX_OK")
+        error_start = tx_result.find("tx_result != PBLE_TX_AGAIN")
+        self.assertGreaterEqual(success_start, 0)
+        self.assertGreater(error_start, success_start)
+        for outcome, cut in (
+            ("TX success", tx_result[success_start:error_start]),
+            ("TX error", tx_result[error_start:]),
+        ):
+            with self.subTest(completion_outcome=outcome):
+                self.assertRegex(cut, transition_re)
+        self.assertRegex(
+            tx_result[:success_start],
+            r"pble_rsp_ticket_matches_locked\s*\(\s*slot\s*,\s*"
+            r"&\s*tx->ticket\s*\)",
+            "both TX outcomes must match the exact slot incarnation first",
+        )
+
+        publish_failure = re.search(
+            r"if\s*\(\s*!\s*published\s*\)(?P<body>.*)",
+            publish,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(
+            publish_failure,
+            "a failed retained publication must complete its exact waiter",
+        )
+        self.assertRegex(publish_failure.group("body"), transition_re)
+        self.assertRegex(
+            publish,
+            r"pble_rsp_ticket_matches_locked\s*\(\s*slot\s*,\s*ticket\s*\)",
+        )
+
+        for body in (cancel_session, cancel_ticket, tx_result, publish):
+            self.assertLessEqual(
+                body.count("xSemaphoreGive"),
+                1,
+                "one completion path may own at most one physical give",
+            )
             give = body.find("xSemaphoreGive")
+            self.assertGreaterEqual(give, 0)
             self.assertGreater(give, body.rfind("taskEXIT_CRITICAL", 0, give))
 
         reserve = code_only(c_function(PROTO, "pble_rsp_reserve"))

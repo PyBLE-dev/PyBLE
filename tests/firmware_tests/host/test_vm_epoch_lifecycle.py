@@ -985,6 +985,38 @@ class NativeVmLifecycleContractTests(unittest.TestCase):
         for allocation in ("malloc(", "calloc(", "m_new(", "xSemaphoreCreate"):
             self.assertNotIn(allocation, wrapper + pre + post)
 
+        helper_sources = {
+            "pble_vm_wait_activity_idle": VM_C,
+            "pble_runner_vm_timer_disarm": RUNNER,
+            "pble_dc_vm_timer_disarm": DEVICE_CONFIG,
+            "pble_ble_vm_stop_response_callout": BLE,
+            "pble_ble_vm_tx_lock": BLE,
+        }
+        for helper, helper_source in helper_sources.items():
+            body = code_only(c_function(helper_source, helper))
+            signature, _brace, implementation = body.partition("{")
+            with self.subTest(residual_deadline_helper=helper):
+                self.assertTrue(body, "missing shared-deadline helper")
+                self.assertRegex(signature, r"\bdeadline_us\b")
+                self.assertRegex(
+                    implementation,
+                    r"(?:\besp_timer_get_time\s*\("
+                    r"|\b[A-Za-z_]\w*deadline[A-Za-z_]\w*\s*\("
+                    r"[^;]*\bdeadline_us\b)",
+                    "helper must derive a residual from the supplied deadline",
+                )
+                for forbidden in (
+                    "portMAX_DELAY",
+                    "PBLE_VM_DEINIT_BUDGET_MS",
+                    "PBLE_VM_READY_BUDGET_MS",
+                ):
+                    self.assertNotIn(forbidden, implementation)
+                self.assertNotRegex(
+                    implementation,
+                    r"\b2500(?:[uUlL]*)\b",
+                    "a helper must not mint a fresh wrapper budget",
+                )
+
     def test_lifecycle_counter_is_bounded_and_fails_closed(self):
         enter = code_only(c_function(VM_C, "pble_vm_dispatch_enter"))
         leave = code_only(c_function(VM_C, "pble_vm_dispatch_leave"))
@@ -1278,6 +1310,8 @@ class NativeFsEpochContractTests(unittest.TestCase):
         )
         self.assertIn("pble_vm_epoch_current", enqueue)
         valid = code_only(c_function(FS, "pble_fs_item_valid"))
+        self.assertNotIn("it->ticket", valid)
+        self.assertNotIn("pble_rsp_ticket_", valid)
         self.assertRegex(
             valid,
             r"pble_ble_session_live\s*\(\s*&\s*it->session\s*\)",
@@ -1432,6 +1466,119 @@ class NativeFsEpochContractTests(unittest.TestCase):
                         ),
                     )
         self.assertGreater(guarded_functions, 0, "no raw VFS effects were audited")
+
+    def test_get_recycles_ticket_then_uses_only_immutable_session_epoch(self):
+        get = code_only(c_function(FS, "fs_do_get"))
+        wait_call = re.search(
+            r"pble_rsp_wait\s*\(\s*&\s*it->ticket\s*\)",
+            get,
+        )
+        self.assertIsNotNone(wait_call)
+        before_wait = get[: wait_call.end()]
+        after_wait = get[wait_call.end() :]
+
+        ticket_guards = list(
+            re.finditer(
+                r"pble_rsp_ticket_valid\s*\(\s*&\s*it->ticket\s*\)",
+                before_wait,
+            )
+        )
+        pre_wait_effects = list(VFS_EFFECT_RE.finditer(before_wait))
+        pre_wait_effects.extend(
+            re.finditer(
+                r"\bfs_(?:open|stat_path|crc_file|crc_prefix)\s*\(",
+                before_wait,
+            )
+        )
+        pre_wait_effects.sort(key=lambda match: match.start())
+        self.assertTrue(pre_wait_effects)
+        for effect_index, effect in enumerate(pre_wait_effects):
+            previous_effect = (
+                pre_wait_effects[effect_index - 1].end() if effect_index else -1
+            )
+            next_effect = (
+                pre_wait_effects[effect_index + 1].start()
+                if effect_index + 1 < len(pre_wait_effects)
+                else len(before_wait) + 1
+            )
+            previous_guard = max(
+                (
+                    guard.start()
+                    for guard in ticket_guards
+                    if guard.end() <= effect.start()
+                ),
+                default=-1,
+            )
+            next_guard = min(
+                (
+                    guard.start()
+                    for guard in ticket_guards
+                    if guard.start() >= effect.end()
+                ),
+                default=len(before_wait) + 1,
+            )
+            with self.subTest(pre_wait_effect=effect.group(0)):
+                self.assertGreater(
+                    previous_guard,
+                    previous_effect,
+                    "pre-completion VFS work needs an adjacent whole-ticket check",
+                )
+                self.assertLess(
+                    next_guard,
+                    next_effect,
+                    "pre-completion VFS work needs an adjacent whole-ticket post-check",
+                )
+        self.assertIn("pble_rsp_publish(&it->ticket", before_wait)
+        self.assertNotIn(
+            "it->ticket",
+            after_wait,
+            "pble_rsp_wait recycles the response slot",
+        )
+        self.assertNotRegex(after_wait, r"\bpble_rsp_ticket_\w*\s*\(")
+
+        late_effects = list(VFS_EFFECT_RE.finditer(after_wait))
+        late_effects.extend(
+            re.finditer(
+                r"\bfs_emit_paced\s*\(\s*it\s*,\s*"
+                r"PBLE_OP_FILE_GET_(?:DATA|END)\b",
+                after_wait,
+            )
+        )
+        late_effects.sort(key=lambda match: match.start())
+        self.assertGreaterEqual(
+            len(late_effects),
+            3,
+            "GET must audit its later read chunks and DATA/END events",
+        )
+        guards = list(VFS_VALID_RE.finditer(after_wait))
+        for effect_index, effect in enumerate(late_effects):
+            previous_effect = (
+                late_effects[effect_index - 1].end() if effect_index else -1
+            )
+            next_effect = (
+                late_effects[effect_index + 1].start()
+                if effect_index + 1 < len(late_effects)
+                else len(after_wait) + 1
+            )
+            previous_guard = max(
+                (
+                    guard.start()
+                    for guard in guards
+                    if guard.end() <= effect.start()
+                ),
+                default=-1,
+            )
+            next_guard = min(
+                (
+                    guard.start()
+                    for guard in guards
+                    if guard.start() >= effect.end()
+                ),
+                default=len(after_wait) + 1,
+            )
+            with self.subTest(late_effect=effect.group(0)):
+                self.assertGreater(previous_guard, previous_effect)
+                self.assertLess(next_guard, next_effect)
 
     def test_fs_data_end_and_ack_use_exact_session_event_submit(self):
         self.assertIn("pble_proto_emit_paced_for_session", PROTO_H)
