@@ -267,6 +267,88 @@ class VmLifecycleOracle:
         return submitted
 
 
+@dataclass(frozen=True)
+class RxFragmentToken:
+    serial: int
+    epoch: int
+    valid_run: bool
+
+
+class RxLifecycleOracle:
+    """Model RX reassembly held inside one lifecycle activity."""
+
+    def __init__(self) -> None:
+        self.epoch = 3
+        self.open = True
+        self.serial = 0
+        self.callbacks: dict[int, RxFragmentToken] = {}
+        self.active_run = False
+        self.next_index = 0
+        self.buffer = bytearray()
+        self.dispatches: list[bytes] = []
+        self.activity_at_dispatch: list[int] = []
+
+    def _clear_run(self) -> None:
+        self.active_run = False
+        self.next_index = 0
+        self.buffer.clear()
+
+    def begin_fragment(
+        self,
+        *,
+        first: bool,
+        last: bool,
+        index: int,
+        data: bytes,
+    ) -> RxFragmentToken | None:
+        # Lifecycle admission precedes every fragment read/copy. Refusal clears
+        # the incomplete run and drops this fragment atomically.
+        if not self.open:
+            self._clear_run()
+            return None
+
+        self.serial += 1
+        if first:
+            self._clear_run()
+            self.active_run = True
+            valid_run = True
+        else:
+            valid_run = self.active_run and index == self.next_index
+            if not valid_run:
+                self._clear_run()
+
+        token = RxFragmentToken(self.serial, self.epoch, valid_run)
+        self.callbacks[token.serial] = token
+        if valid_run:
+            self.buffer.extend(data)
+            self.next_index = (index + 1) % 64
+        return token
+
+    def finish_fragment(self, token: RxFragmentToken, *, last: bool) -> None:
+        if self.callbacks.get(token.serial) != token:
+            raise AssertionError("RX callback token is not active")
+        if token.epoch != self.epoch:
+            raise AssertionError("RX callback resumed in a recycled epoch")
+        if token.valid_run and last:
+            self.activity_at_dispatch.append(len(self.callbacks))
+            self.dispatches.append(bytes(self.buffer))
+            self._clear_run()
+        self.callbacks.pop(token.serial)
+
+    def close(self) -> None:
+        self.open = False
+
+    def reset_if_drained(self) -> bool:
+        if self.callbacks:
+            return False
+        self._clear_run()
+        self.epoch += 1
+        return True
+
+    def ready(self) -> None:
+        self.open = True
+
+
 class FsQuiescenceOracle:
     """Model the one-lock enqueue/dequeue/busy/quiescence cut."""
 
@@ -451,6 +533,81 @@ class FrozenLifecycleInterleavingTests(unittest.TestCase):
         fresh = model.response_peek()
         self.assertIsNotNone(fresh)
         self.assertEqual(fresh[1], "new-frame")
+
+    def test_rx_first_paused_before_reset_cannot_resume_into_fresh_run(self):
+        rx = RxLifecycleOracle()
+        first = rx.begin_fragment(
+            first=True,
+            last=False,
+            index=0,
+            data=b"old-prefix",
+        )
+        self.assertIsNotNone(first)
+        self.assertTrue(rx.active_run)
+        self.assertEqual(bytes(rx.buffer), b"old-prefix")
+
+        rx.close()
+        self.assertFalse(
+            rx.reset_if_drained(),
+            "reset must not clear state beneath the entered FIRST callback",
+        )
+        rx.finish_fragment(first, last=False)
+        self.assertTrue(rx.reset_if_drained())
+        rx.ready()
+
+        last = rx.begin_fragment(
+            first=False,
+            last=True,
+            index=1,
+            data=b"fresh-suffix",
+        )
+        self.assertIsNotNone(last)
+        rx.finish_fragment(last, last=True)
+        self.assertEqual(rx.dispatches, [])
+        self.assertFalse(rx.active_run)
+        self.assertEqual(rx.buffer, b"")
+
+    def test_rx_first_while_closed_cannot_pair_with_last_after_ready(self):
+        rx = RxLifecycleOracle()
+        rx.close()
+        self.assertTrue(rx.reset_if_drained())
+        self.assertIsNone(
+            rx.begin_fragment(
+                first=True,
+                last=False,
+                index=0,
+                data=b"closed-prefix",
+            )
+        )
+        self.assertFalse(rx.active_run)
+        self.assertEqual(rx.buffer, b"")
+
+        rx.ready()
+        last = rx.begin_fragment(
+            first=False,
+            last=True,
+            index=1,
+            data=b"fresh-suffix",
+        )
+        self.assertIsNotNone(last)
+        rx.finish_fragment(last, last=True)
+        self.assertEqual(rx.dispatches, [])
+        self.assertFalse(rx.active_run)
+        self.assertEqual(rx.buffer, b"")
+
+    def test_rx_activity_remains_held_through_complete_dispatch(self):
+        rx = RxLifecycleOracle()
+        only = rx.begin_fragment(
+            first=True,
+            last=True,
+            index=0,
+            data=b"complete",
+        )
+        self.assertIsNotNone(only)
+        rx.finish_fragment(only, last=True)
+        self.assertEqual(rx.dispatches, [b"complete"])
+        self.assertEqual(rx.activity_at_dispatch, [1])
+        self.assertEqual(rx.callbacks, {})
 
     def test_fs_pop_busy_and_quiescence_are_one_cut_including_put_data(self):
         for opcode in ("FILE_LIST", "FILE_PUT_DATA"):
@@ -670,6 +827,51 @@ class NativeVmLifecycleContractTests(unittest.TestCase):
             with self.subTest(effect=effect):
                 self.assertIn(effect, inner)
                 self.assertNotIn(effect, outer)
+
+    def test_rx_callback_enters_before_copy_and_leaves_after_dispatch(self):
+        callback = code_only(c_function(BLE, "pble_rx_access"))
+        self.assertTrue(callback)
+        ordered(
+            self,
+            callback,
+            "pble_vm_callback_enter",
+            "OS_MBUF_PKTLEN",
+            "ble_hs_mbuf_to_flat",
+            "pble_rx_ingest",
+        )
+        self.assertGreater(
+            callback.rfind("pble_vm_callback_leave"),
+            callback.find("pble_rx_ingest"),
+            "the RX activity must cover reassembly and complete-CMD dispatch",
+        )
+        entry_pos = callback.find("pble_vm_callback_enter")
+        read_pos = callback.find("OS_MBUF_PKTLEN")
+        refusal_cut = callback[entry_pos:read_pos]
+        refused = re.search(
+            r"if\s*\([^)]*\)\s*\{(?P<body>.*?)\}",
+            refusal_cut,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(refused)
+        self.assertIn("pble_ble_vm_rx_reset", refused.group("body"))
+        self.assertRegex(refused.group("body"), r"\breturn\b")
+        for blocking in ("portMAX_DELAY", "vTaskDelay", "ulTaskNotifyTake"):
+            with self.subTest(blocking=blocking):
+                self.assertNotIn(blocking, callback)
+
+    def test_vm_reset_reuses_rx_clear_after_fragment_activity_drains(self):
+        reset = code_only(c_function(BLE, "pble_ble_vm_reset"))
+        rx_reset = code_only(c_function(BLE, "pble_ble_vm_rx_reset"))
+        pre_deinit = code_only(c_function(VM_C, "pble_vm_epoch_pre_deinit"))
+        self.assertTrue(rx_reset, "add one synchronized RX reset transaction")
+        self.assertIn("pble_reset_reassembly", rx_reset)
+        self.assertIn("pble_ble_vm_rx_reset", reset)
+        ordered(
+            self,
+            pre_deinit,
+            "pble_vm_close_admission",
+            "pble_vm_wait_activity_idle",
+        )
 
     def test_timer_callbacks_are_epoch_guarded_and_disarm_is_idempotent(self):
         soft_cb = code_only(c_function(RUNNER, "soft_reboot_timer_cb"))
