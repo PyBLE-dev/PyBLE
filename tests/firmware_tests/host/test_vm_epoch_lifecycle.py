@@ -1135,7 +1135,6 @@ class NativeVmLifecycleContractTests(unittest.TestCase):
         pre_deadline_cut = pre[close:deadline]
         for blocking in (
             "portMAX_DELAY",
-            "xSemaphoreTake",
             "vTaskDelay",
             "ulTaskNotifyTake",
             "pble_ble_vm_tx_lock",
@@ -1144,6 +1143,43 @@ class NativeVmLifecycleContractTests(unittest.TestCase):
                 self.assertNotIn(blocking, pre_deadline_cut)
 
         self.assertTrue(invalidate, "missing logical exact-session invalidation")
+        tx_try_call = re.search(
+            r"\b(?P<helper>pble_ble_vm_tx_[A-Za-z_]\w*nowait)\s*\(\s*\)",
+            invalidate,
+        )
+        self.assertIsNotNone(
+            tx_try_call,
+            "logical invalidation must enter a named zero-wait TX cut",
+        )
+        tx_try_name = tx_try_call.group("helper")
+        tx_try = code_only(c_function(BLE, tx_try_name))
+        self.assertTrue(tx_try, "zero-wait TX helper must be source-defined")
+        self.assertRegex(
+            tx_try,
+            r"\bxSemaphoreTakeRecursive\s*\(\s*pble_tx_mutex\s*,\s*0\s*\)",
+        )
+        self.assertRegex(
+            tx_try,
+            r"\bxSemaphoreTakeRecursive\s*\([^;]+\)\s*!=\s*pdTRUE",
+            "zero-wait TX acquisition failure must be checked",
+        )
+        failure = re.search(
+            r"\bif\s*\([^{}]*xSemaphoreTakeRecursive\s*\([^;{}]+\)"
+            r"[^{}]*\)\s*\{(?P<body>[^{}]*)\}",
+            tx_try,
+            flags=re.DOTALL,
+        )
+        self.assertIsNotNone(failure, "missing checked zero-wait failure branch")
+        self.assertIn(
+            "esp_restart()",
+            failure.group("body"),
+            "a busy pre-deadline TX cut must fail closed immediately",
+        )
+        self.assertRegex(
+            invalidate,
+            rf"\bif\s*\(\s*!\s*{re.escape(tx_try_name)}\s*\(\s*\)\s*\)",
+            "logical invalidation must stop if fail-closed TX acquisition returns",
+        )
         old_token = re.search(
             r"\bpble_session_token_t\s+([A-Za-z_]\w*)\b", invalidate
         )
@@ -1152,6 +1188,7 @@ class NativeVmLifecycleContractTests(unittest.TestCase):
         ordered(
             self,
             invalidate,
+            tx_try_name,
             "taskENTER_CRITICAL(&pble_session_mux)",
             ".conn = pble_conn_handle",
             ".generation = pble_conn_generation",
@@ -1159,6 +1196,7 @@ class NativeVmLifecycleContractTests(unittest.TestCase):
             "pble_session_vm_epoch = 0",
             "taskEXIT_CRITICAL(&pble_session_mux)",
             "pble_rsp_cancel_session",
+            "xSemaphoreGiveRecursive(pble_tx_mutex)",
         )
         self.assertRegex(
             invalidate,
@@ -1166,12 +1204,16 @@ class NativeVmLifecycleContractTests(unittest.TestCase):
         )
         for blocking in (
             "portMAX_DELAY",
-            "xSemaphoreTake",
             "vTaskDelay",
             "ulTaskNotifyTake",
         ):
             with self.subTest(invalidation_blocking=blocking):
                 self.assertNotIn(blocking, invalidate)
+        self.assertNotRegex(
+            invalidate,
+            r"\bxSemaphoreTake(?:Recursive)?\s*\(",
+            "all pre-deadline TX acquisition belongs in the audited zero-wait helper",
+        )
 
     def test_epoch_begin_rotates_retained_session_in_one_tx_session_cut(self):
         reset = code_only(c_function(BLE, "pble_ble_vm_reset"))
