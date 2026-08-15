@@ -324,7 +324,11 @@ class BleLink:
 **VM-safe RX ownership:** the RX GATT callback calls the same non-blocking
 lifecycle-entry seam used by other host callbacks before it reads the fragment
 header or mutates reassembly. Entry failure clears buffer length, active-run,
-and expected-index state atomically and returns. Successful entry covers the
+and expected-index state atomically and returns. Admission or refusal reset is
+one transaction under the authoritative lifecycle lock: a refusal clears only
+the same still-closed VM epoch before releasing the lock. There is no pause in
+which final readiness can open a new epoch, accept a fresh `FIRST`, and then
+have the old refusal clear that run. Successful entry covers the
 whole fragment operation and, for `LAST`, the synchronous complete-CMD
 dispatch; one leave occurs afterward. Teardown closes admission and drains this
 activity before its RX reset transaction uses the same synchronization to
@@ -501,7 +505,10 @@ class Dispatcher:
 
 **Internal state:** the registered dispatch table plus a static depth-2 response
 pool. A reserved 491-byte slot initially stores its incarnation, session-bound
-ticket, VM epoch, and reservation state. Only ready-FIFO publication adds the opcode/ID,
+ticket, VM epoch, and reservation state. The native ticket structure itself
+contains that reserved VM epoch; reserve snapshots it, and ticket match,
+publish, completion, and cancellation compare it together with slot
+incarnation and connection generation. Only ready-FIFO publication adds the opcode/ID,
 immutable encoded frame, absolute publication deadline, and completion state. Events use `ID = 0`
 (FR-PROTO-4).
 
@@ -528,7 +535,8 @@ only when their one-fragment response try is connection-bound and succeeds
 before the interrupt/reset side effect; failure suppresses generic fallback.
 
 **Completion and VM-epoch ownership:** only the exact ticket transition into
-`COMPLETE` gives its completion semaphore. Cancellation/completion of an
+`COMPLETE` gives its completion semaphore. This includes cancellation,
+publication failure, and `pble_rsp_tx_result` success/error paths. Cancellation/completion of an
 already-complete incarnation is idempotent and gives nothing. Reservation
 drains any stale signal before exposing a new incarnation, while the physical
 give remains outside the pool mutex. After every wake the waiter locks the
@@ -539,8 +547,7 @@ hard recycle/reserve as well as a new completion that fills the binary
 semaphore before that delayed old give.
 An allocation-free, idempotent `__wrap_mp_thread_deinit` closes all admission,
 invalidates old tickets/session work under the authoritative lifecycle lock,
-then drains a shared activity counter to zero under one absolute 2500 ms
-deadline. Every complete CMD enters that counter only while admission is open
+then mints one absolute deadline exactly 2500 ms ahead. Every complete CMD enters that counter only while admission is open
 and leaves after all handler effects. Exact-epoch callbacks that can touch
 VM/rooted or epoch-owned state use the same enter/leave barrier. Persistent
 runner and FS worker tasks are excluded from this wrapper counter; the FS
@@ -549,9 +556,10 @@ worker's entire-dispatch busy state belongs only to the pre-acceptance
 when it calls `mp_thread_deinit`, and the wrapper never releases that GIL.
 Therefore another MP worker cannot be executing VFS/rooted-VM work; only
 workers parked in explicit off-GIL queue/TX waits remain for upstream deinit to
-reclaim. The same deadline covers this
+reclaim. That same absolute deadline is passed unchanged through activity
 drain, soft-reboot/identify timer disarm, prevention of future response-callout
-scheduling, and acquisition of the physical recursive TX mutex. An inactive or
+scheduling, and acquisition of the physical recursive TX mutex. Each helper
+uses only the residual time; none may restart the 2500 ms budget. An inactive or
 already-fired lifecycle timer is idempotent disarm success. Timeout, counter
 underflow/overflow or other invariant failure, unexpected timer-disarm failure,
 or TX-quiescence failure calls non-returning `esp_restart()`. The wrapper holds
@@ -583,7 +591,11 @@ clears soft-reboot-pending and its armed epoch even for an inactive/already-fire
 timer. None reopen before final readiness.
 Admission reopens only after all
 native handlers and workers for the new VM are registered and entered, final
-boot wiring is safe, and auto-run admission has completed. Thus a dequeued
+boot wiring is safe, and auto-run admission has completed. Each `_thread`
+worker must acquire the MicroPython GIL before it can mark entry, so the pinned
+main-task ready binding releases the GIL during one absolute 2500 ms wait for
+both fresh entry flags and reacquires it before returning. A timeout leaves
+admission closed. Thus a dequeued
 old-epoch owner can neither act on a recycled slot nor publish into the retained
 link. Repeated `init_agent` calls within the same VM are idempotent. The usermod
 CMake link option and release link-map/build checks prove that all ESP targets
@@ -654,15 +666,23 @@ class FsBridge:
 ticket for a pre-reserved generic-response slot and the originating
 `{handle, connection generation, VM epoch}`. Enqueue admission plus insertion,
 dequeue-to-busy transition, and the soft-reset quiescence close plus
-idle/queue-empty decision use the same synchronization. `worker_busy` spans the
+idle/queue-empty decision use the same synchronization. Host-context enqueue
+and soft-reset quiescence both acquire that gate with zero wait. On contention,
+a response-bearing command publishes `RSP{EBUSY}` through its reserved ticket,
+`FILE_PUT_DATA` is dropped for retransmission, and `SOFT_REBOOT` returns
+`RSP{EBUSY}` without a reset effect. `worker_busy` spans the
 entire dequeued dispatch, not only individual VFS calls. A worker dequeued just
 before the gate closes either marks busy before quiescence can succeed or
 observes the closed epoch and cancels its ticket before any side effect. On
 queue admission failure, ownership of the ticket returns to the dispatcher,
 which performs no VFS operation and publishes `RSP{EBUSY}` through that same
-reserved slot. Immediately before and after every VFS operation or bounded
-directory/CRC/read/write chunk, the FS worker revalidates the token;
-stale/disconnected/old-epoch work is cancelled. It builds results in
+reserved slot. Immediately before and after every raw VFS effect or bounded
+directory/CRC/read/write chunk, the FS worker revalidates the token. This
+brackets stat/open, every directory iterator step, each CRC/read/write loop
+iteration, close, remove/rmdir, mkdir, and rename individually; one pair at a
+handler or multi-operation-loop perimeter is insufficient. A post-check may
+serve as the next pre-check only when no other effect intervenes.
+Stale/disconnected/old-epoch work is cancelled. It builds results in
 worker-owned scratch, then atomically revalidates the still-live ticket before
 copying into and publishing the reserved slot. Disconnect or VM reset changes
 the slot incarnation and cancels/releases its ticket; a late result observes
@@ -1178,9 +1198,11 @@ tasks do not enter it; FS entire-dispatch busy is only the `SOFT_REBOOT`
 quiescence predicate. The pinned ESP main task owns the MicroPython GIL at this
 call and the wrapper never releases it, so no other MP worker can be executing
 VFS/rooted-VM work; off-GIL queue/TX waiters are reclaimed by upstream deinit.
-The wrapper closes and invalidates, then under one
-absolute 2500 ms deadline drains activity, disarms soft-reboot/identify timers,
-prevents response-callout rearm, and acquires the physical recursive TX mutex.
+The wrapper closes and invalidates, then mints one absolute deadline exactly
+2500 ms ahead and passes it unchanged through activity drain,
+soft-reboot/identify timer disarm, prevention of response-callout rearm, and
+physical recursive TX-mutex acquisition. Each stage uses only its residual;
+no helper or retry restarts the budget.
 Inactive/already-fired lifecycle timers are idempotent success; timeout,
 counter invariant failure, unexpected disarm failure, or TX acquisition failure
 restarts the board. With TX still owned, the wrapper detaches runner/console
@@ -1226,7 +1248,10 @@ FS and runner workers, completes dupterm/handler wiring, and completes
 `pble_boot.maybe_autorun()`, then makes one explicit final native-ready call.
 The readiness barrier opens CMD admission only after both fresh workers have
 entered, final wiring is safe, and auto-run has reserved or declined its work;
-a boot exception leaves admission closed. A worker item dequeued around
+a boot exception leaves admission closed. Because `_thread` worker entry first
+requires the MicroPython GIL, the pinned main-task final-ready binding releases
+the GIL during one absolute 2500 ms wait for both entry flags, then reacquires
+it before returning. Timeout leaves admission closed. A worker item dequeued around
 provisional closure either makes its entire-dispatch busy state visible before
 quiescence can pass, or observes the closed epoch and cancels/releases its
 ticket before starting a VFS operation.

@@ -125,7 +125,11 @@ The ESP reference agent lifecycle-gates the entire RX write callback, not only
 complete-message dispatch. Before reading or copying any fragment byte, the
 host callback makes one non-blocking lifecycle-activity entry. A closed or
 not-ready refusal atomically clears the incomplete reassembly run and drops the
-fragment. A successful entry remains counted through index validation, copy,
+fragment. Admission and this refusal reset are one authoritative lifecycle-lock
+transaction: the refusal reset occurs before releasing that lock and only
+while the refused callback's VM epoch is still the same closed epoch. It cannot
+pause after refusal, allow a new VM to become ready and accept a fresh `FIRST`,
+then clear that fresh run. A successful entry remains counted through index validation, copy,
 `LAST` completion, and any resulting CMD dispatch, then leaves once. VM reset
 first closes/invalidates admission and drains these callbacks; only afterward,
 under the same synchronization, may it clear the RX buffer/index/run state.
@@ -149,7 +153,9 @@ publishes `RSP{EBUSY}` through the same reserved slot; it does not discard the
 reservation or attempt an unreserved fallback response. The reservation is a
 ticket bound to a slot incarnation, the originating connection session
 (including a generation that cannot be confused by numeric connection-handle
-reuse), and the current MicroPython VM epoch. A deferred worker builds its
+reuse), and the current MicroPython VM epoch. The native ticket stores that VM
+epoch; reserve captures it, and every match, publish, completion, and cancel
+operation compares it rather than consulting only the current global epoch. A deferred worker builds its
 result in private scratch and revalidates the whole ticket before and after
 each VFS operation and before copying into that slot.
 
@@ -247,10 +253,15 @@ session that silently lost an admitted response.
 workers, queues, semaphores, and response slots can outlive one MicroPython VM,
 so VM reset is an explicit admission boundary even when the BLE link and its
 numeric handle survive. `SOFT_REBOOT` first closes filesystem admission under
-the same non-blocking synchronization with which the FS worker marks itself
-busy, and may proceed only if that worker is idle and its queue is empty. If
+the same zero-wait synchronization with which host-context filesystem enqueue
+inserts an item and the FS worker marks itself busy, and may proceed only if
+that worker is idle and its queue is empty. If
 not, the gate reopens and the command returns `RSP{EBUSY}` with no reset side
-effect. The successful quiescence check provisionally closes all non-reboot
+effect. Both host-context enqueue and the `SOFT_REBOOT` quiescence attempt take
+this gate with zero wait. Gate contention is a bounded refusal: a
+response-bearing FS command publishes `RSP{EBUSY}` through its reserved ticket,
+`FILE_PUT_DATA` is dropped for protocol-level retransmission, and
+`SOFT_REBOOT` returns `RSP{EBUSY}` with no side effect. The successful quiescence check provisionally closes all non-reboot
 CMD admission. Only after the transactional `RSP{OK}` submission and reset
 timer arm both succeed does that closure proceed through the graceful path.
 Response-submission failure reopens all gates and leaves the VM intact. Local
@@ -289,10 +300,11 @@ the main task owns the MicroPython GIL when it reaches `mp_thread_deinit`, and
 the wrapper MUST NOT release that GIL. Consequently another MP worker cannot
 still be executing a VFS or rooted-VM operation; an old worker parked in an
 explicitly off-GIL queue/TX wait is reclaimed by the exact upstream deinit.
-The wrapper atomically closes and invalidates,
-then uses one absolute 2500 ms deadline to drain activity, disarm
-the soft-reboot and identify timers, prevent future callout scheduling, and
-acquire the physical recursive TX mutex. An inactive or already-fired lifecycle
+The wrapper atomically closes and invalidates, then mints one absolute deadline
+exactly 2500 ms ahead and passes that same deadline through activity drain,
+soft-reboot and identify timer disarm, prevention of future callout scheduling,
+and physical recursive TX-mutex acquisition. Every stage and retry consumes
+only the residual time; no helper may restart a 2500 ms budget. An inactive or already-fired lifecycle
 timer is idempotent disarm success. Timeout, counter invariant failure,
 unexpected timer-disarm failure, or TX-quiescence failure invokes non-returning
 `esp_restart()`; the host callback is never made to wait. The wrapper owns the
@@ -312,7 +324,10 @@ rotate the VM epoch and retained connection generation and perform the hard
 reset exactly once per subsequent `mp_init`. Repeating agent initialization in
 one VM is idempotent. Agent initialization does not itself open the gate: final boot wiring explicitly crosses the
 readiness barrier only after both workers have entered and auto-run admission
-has completed. A boot-wiring failure leaves admission closed. A response
+has completed. Because each `_thread` worker must first acquire the MicroPython
+GIL, the pinned main task's final ready call releases the GIL while waiting on
+both entry flags under one absolute 2500 ms readiness deadline, then reacquires
+it before returning. Timeout or a boot-wiring failure leaves admission closed. A response
 callback is a static event with no captured epoch or frame pointer. It first
 enters lifecycle activity and, while reset/not-ready admission is closed, does
 nothing. Once ready it can act only as a fresh kick that peeks the current
@@ -331,7 +346,8 @@ before invalidation MAY finish, but its owner MUST revalidate afterward and
 MUST start or publish nothing further.
 
 Response completion has transition ownership: an exact live ticket may move
-to complete and signal its waiter once. Repeated cancellation or completion of
+to complete and signal its waiter once, whether that transition originates in
+cancellation, publication failure, or a TX success/error result. Repeated cancellation or completion of
 an already-complete incarnation is idempotent and emits no second wake; slot
 reserve drains any stale completion signal before exposing a later incarnation.
 The physical semaphore give remains outside the pool mutex. After every wake,
@@ -345,7 +361,12 @@ old give. Filesystem no-response `FILE_PUT_DATA` work and
 attempts are bound to the exact `{handle, connection generation, VM epoch}` and
 serialize their final token check plus Notify with connection lifecycle. An
 outer worker check alone is not sufficient. These are reference-agent
-lifecycle rules and change no PBLE/1 wire byte.
+lifecycle rules and change no PBLE/1 wire byte. Every raw VFS effect, including
+stat/open, each directory iterator step, each bounded CRC/read/write chunk,
+close, remove/rmdir, mkdir, and rename, is bracketed by exact token checks. A
+single pair around an entire handler or multi-operation loop is insufficient;
+the check after one operation may serve as the check before the immediately
+following operation only when no other effect intervenes.
 
 `RUN`, `STOP`, and `SOFT_REBOOT` retain their specialized one-fragment
 response-before-side-effect contracts in §6. Their response attempt is
