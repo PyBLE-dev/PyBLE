@@ -120,17 +120,65 @@ def c_function(text: str, name: str) -> str:
     return ""
 
 
+def c_brace_depth(text: str, stop: int) -> int:
+    """Return lexical C brace depth immediately before ``stop``."""
+    depth = 0
+    state = "code"
+    index = 0
+    while index < stop:
+        char = text[index]
+        nxt = text[index + 1] if index + 1 < stop else ""
+        if state == "line":
+            if char == "\n":
+                state = "code"
+        elif state == "block":
+            if char == "*" and nxt == "/":
+                state = "code"
+                index += 1
+        elif state == "string":
+            if char == "\\":
+                index += 1
+            elif char == '"':
+                state = "code"
+        elif state == "char":
+            if char == "\\":
+                index += 1
+            elif char == "'":
+                state = "code"
+        elif char == "/" and nxt == "/":
+            state = "line"
+            index += 1
+        elif char == "/" and nxt == "*":
+            state = "block"
+            index += 1
+        elif char == '"':
+            state = "string"
+        elif char == "'":
+            state = "char"
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+        index += 1
+    return depth
+
+
 def c_function_names(text: str) -> list[str]:
-    """Return source-defined C function names, excluding control keywords."""
+    """Return only top-level source-defined C function names."""
+    clean = code_only(text)
     names: list[str] = []
     for match in re.finditer(
         r"(?m)^[^\n;{}]*\b(?P<name>[A-Za-z_]\w*)\s*\([^;{}]*\)\s*\{",
-        text,
+        clean,
     ):
         name = match.group("name")
-        if name in {"if", "for", "while", "switch"} or name in names:
+        if (
+            name in {"if", "for", "while", "switch"}
+            or c_brace_depth(clean, match.start()) != 0
+            or name in names
+        ):
             continue
-        if c_function(text, name):
+        if c_function(clean, name):
             names.append(name)
     return names
 
@@ -1275,8 +1323,19 @@ class NativeFsEpochContractTests(unittest.TestCase):
         )
 
     def test_every_vfs_dispatch_revalidates_before_and_after_effect(self):
+        function_names = c_function_names(FS)
+        self.assertIn("fs_open", function_names)
+        for nested_call in (
+            "mode",
+            "nlr_push",
+            "mp_iternext",
+            "it",
+            "file",
+            "RENAME",
+        ):
+            self.assertNotIn(nested_call, function_names)
         guarded_functions = 0
-        for name in c_function_names(FS):
+        for name in function_names:
             body = code_only(c_function(FS, name))
             effects = list(VFS_EFFECT_RE.finditer(body))
             if not effects:
