@@ -176,7 +176,7 @@ abstract interface class BleSession {
 
 ### 4.2 `lib/pble/` — PBLE/1 client + `Connection` implementation
 
-**Responsibility:** the only layer that knows the wire. It encodes/decodes [protocol.md §3.1](../protocol.md#3-framing) frames with IEEE CRC-32, fragments/reassembles across `MTU − 4` ([protocol.md §3.2](../protocol.md#3-framing)), correlates `CMD`↔`RSP` by `ID`, routes `EVT`s, runs the file-transfer window+resume state machine ([protocol.md §5](../protocol.md#5-file-transfer-the-reliability-core)), exposes the console stream, performs HELLO/caps negotiation ([protocol.md §7](../protocol.md#7-hello--capabilities)), and maps each [protocol.md §8](../protocol.md#8-status--error-codes-1-byte-status-in-rsp) status byte to a typed exception. It implements the `Connection` interface ([§5](#5-the-connection-api-design)).
+**Responsibility:** the only layer that knows the wire. It encodes/decodes [protocol.md §3.1](../protocol.md#3-framing) frames with IEEE CRC-32, fragments/reassembles across `MTU − 4` ([protocol.md §3.2](../protocol.md#3-framing)), correlates each `CMD` only to `TYPE=RSP` with its exact `{OPCODE, ID}`, routes `EVT`s, runs the file-transfer window+resume state machine ([protocol.md §5](../protocol.md#5-file-transfer-the-reliability-core)), exposes the console stream, performs HELLO/caps negotiation ([protocol.md §7](../protocol.md#7-hello--capabilities)), and maps each [protocol.md §8](../protocol.md#8-status--error-codes-1-byte-status-in-rsp) status byte to a typed exception. It implements the `Connection` interface ([§5](#5-the-connection-api-design)).
 
 **Public interface (sketch):** internal codec types (`Frame`, `Fragmenter`, `Reassembler`, `Crc32`, `Correlator`, `FileTransfer`, `HelloNegotiator`) plus the public `PbleConnection implements Connection` ([§5.1](#51-the-connection-interface)).
 
@@ -526,7 +526,20 @@ Outbound messages are split across `MTU − 4` boundaries with the [protocol.md 
 
 ### 8.3 Request/response correlation & event routing
 
-A pending-request table keyed by the 1-byte `ID` (1–255, app-chosen) matches each `CMD` to its `RSP`; `EVT` frames (`ID = 0`) route by opcode to the console stream, run-state notifier, or file-transfer ack/data handlers (FR-PBLE-4). Each pending request carries a completer plus one absolute deadline created before its first acknowledged fragment write. Every fragment write and the response wait receives only the residual duration; neither a successful write, an unrelated frame, nor other progress resets or extends the existing timeout (FR-PBLE-16).
+A connection-local pending-request entry retains the originating `OPCODE` as
+well as the 1-byte `ID` (1–255, app-chosen). It completes only for `TYPE=RSP`
+with that exact pair. A wrong-opcode response carrying a reused ID and a
+non-response carrying a nonzero ID are unrelated; neither may complete the
+entry nor overwrite or remove an exact response already received, regardless
+of arrival order. Thus a keyed implementation uses `{OPCODE, ID}`, or performs
+equivalent exact validation without allowing an unrelated frame to consume the
+entry. `EVT` frames (`ID = 0`) route by opcode to the console stream, run-state
+notifier, or file-transfer ack/data handlers (FR-PBLE-4). Each pending request
+carries a completer plus one absolute deadline created before its first
+acknowledged fragment write. Every fragment write and the response wait
+receives only the residual duration; an exact response records its arrival
+against that same deadline, while neither a successful write, an unrelated
+frame, nor other progress resets or extends the timeout (FR-PBLE-16).
 
 ### 8.4 File-transfer state machine
 
