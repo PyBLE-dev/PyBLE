@@ -420,7 +420,8 @@ that already-dequeued invocation. The handler therefore MUST NOT publish or
 start a successor active arm immediately after `stop`. It records the request
 as pending and queues a timer-task quiescence boundary. The first callback after
 that boundary is drain-only: it consumes no tick, changes no GPIO, performs no
-terminal stop, and queues a distinct activation callback. Only that later
+terminal stop, stops any still-armed handler boundary (accepting only `OK` or
+already-inactive), and queues a distinct activation callback. Only that later
 callback may mint/publish the successor `{VM epoch, arm incarnation, ticks}` and
 start its periodic schedule, again without consuming a tick. Activation first
 enters lifecycle activity for the pending epoch and then revalidates pending
@@ -432,6 +433,12 @@ already dequeued from any older periodic, quiescence, or activation phase can
 therefore become only the drain callback; it cannot read/adopt, toggle, consume,
 or stop the successor arm. Both phases remain non-blocking and allocation-free
 per toggle. This is an execution clarification and changes no PBLE/1 bytes.
+
+Any unexpected stop result or failure to queue the quiescence boundary makes
+the initiating handler return `EINTERNAL` with pending/active state cleared and
+the LED off. A drain or activation re-arm failure likewise clears to idle and
+has no GPIO/tick effect. Active-incarnation mint remains nonzero and fails closed
+before wrap, so the quiescence seam cannot reintroduce ABA.
 
 ## 5. File transfer (the reliability core)
 
@@ -490,10 +497,12 @@ per toggle. This is an execution clarification and changes no PBLE/1 bytes.
   control attempt unresolved under its runner-domain synchronization, then
   releases that synchronization before entering the TX domain. A reserved
   worker MUST NOT cross its event/execution gate while an earlier control
-  attempt is unresolved. After the zero-wait response attempt, one runner-domain
+  attempt is unresolved. It waits on a pre-created resolution signal outside
+  the runner domain, then loops and rechecks both the unresolved predicate and
+  stop snapshot together under that domain. After the zero-wait response attempt, one runner-domain
   cut either (a) publishes the accepted STOP intent and worker pending exception
   before resolving the gate, or (b) resolves a failed attempt without an
-  interrupt or stop effect. Thus response success before pickup permits no user
+  interrupt or stop effect; either resolution then wakes the worker. Thus response success before pickup permits no user
   code or RUN event from that reservation; pickup first makes the command an
   ordinary active-run interrupt. A successful later RUN reservation may consume
   only resolved stale idle-STOP intent, never an unresolved control attempt.

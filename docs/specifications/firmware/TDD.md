@@ -637,10 +637,13 @@ the runner domain. The handler marks the attempt before its response try, then
 leaves the runner domain before acquiring the TX domain; the implementation
 MUST NOT nest those locks. After a reservation handoff, the worker checks this
 gate before emitting `RUN_STATE(running)` or executing. If unresolved, it waits
-outside the runner critical section and releases the MicroPython GIL around any
-blocking/yielding wait. A failed response resolves the gate with no stop effect;
+on a pre-created resolution signal outside the runner critical section and
+releases the MicroPython GIL around the wait, then loops to snapshot the gate and
+stop flag together under the runner domain. A failed response resolves the gate with no stop effect;
 a successful response publishes `g_stop_requested` and the worker's pending
 `KeyboardInterrupt` in the same runner-domain cut that resolves it. The worker
+is signalled after that cut on both success and failure. The accepted-only branch
+owns every stop/KBI write; failure owns neither. The worker
 then either skips the reserved run or, if it crossed the gate first, receives a
 normal active-run interrupt. Reservation-time cleanup may clear only an older,
 resolved idle-STOP flag/pending exception and never the unresolved gate. The
@@ -1181,7 +1184,9 @@ uses an explicit two-callback quiescence seam under the identify-timer domain:
 2. Whatever callback runs next—including an already-dequeued old periodic or
    activation callback—may only acknowledge `QUIESCE`, queue a distinct
    `ACTIVATE` one-shot, and return. It consumes no tick, changes no GPIO, and
-   performs no terminal stop.
+   performs no terminal stop. Before queuing activation it stops the handler's
+   possibly still-armed boundary and accepts only `ESP_OK` or
+   `ESP_ERR_INVALID_STATE`.
 3. Only the later `ACTIVATE` callback may mint and publish the successor exact
    `{VM epoch, arm incarnation, ticks}`, start its periodic schedule, and return
    without consuming a tick. It snapshots the pending epoch, enters lifecycle
@@ -1200,6 +1205,10 @@ This seam is non-blocking on the NimBLE host, uses no per-toggle allocation, and
 closes both the after-entry ticket ABA and the before-entry dequeued-expiration
 race. Clear, LED reconfiguration, and VM disarm all set `IDLE`, clear pending
 and active tickets/ticks, and leave the LED off.
+Unexpected stop results, handler boundary-arm failure, or callback re-arm/start
+failure clear the same state; the handler reports `EINTERNAL` where it can still
+respond. Incarnation mint skips zero and invokes the existing fail-closed path
+before wrap.
 
 ## 6. Boot & runtime state machine
 
