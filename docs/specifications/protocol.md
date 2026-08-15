@@ -198,16 +198,23 @@ signals, resets filesystem queues and transfer state, and resets the runner
 hand-off semaphore, run-state machine,
 request buffers, worker pointer, console buffers, and BLE RX reassembly state.
 It reopens admission only after all native handlers and new-VM workers are
-registered, entered, and safe. Exactly-once
-new-VM detection uses a VM-rooted marker cleared by VM initialization;
-repeating agent initialization in one VM is idempotent. Agent initialization
-does not itself open the gate: final boot wiring explicitly crosses the
+registered, entered, and safe. The reference ESP port binds this lifecycle to
+two pinned port seams without editing upstream MicroPython. An allocation-free,
+idempotent linker wrapper around `mp_thread_deinit` closes all admission,
+invalidates old tickets/session work, and detaches runner/console worker
+pointers before calling the exact upstream function that deletes old VM
+threads. Each PyBLE ESP board overlay then uses `MICROPY_PORT_INIT_FUNC` to
+rotate the VM epoch and retained connection generation and perform the hard
+reset exactly once per subsequent `mp_init`. Repeating agent initialization in
+one VM is idempotent. Agent initialization does not itself open the gate: final boot wiring explicitly crosses the
 readiness barrier only after both workers have entered and auto-run admission
 has completed. A boot-wiring failure leaves admission closed. A response
 callback already queued when reset begins MUST revalidate the exact
 epoch/incarnation and touch nothing;
 reset MUST NOT depend on callout deinitialization or removal of a queued host
-event. Work dequeued under an older epoch MUST fail its token checks and MUST
+event. The release build and link map MUST prove that every ESP target resolves
+`mp_thread_deinit` through the wrapper and includes the per-`mp_init` hook; no
+upstream source is edited. Work dequeued under an older epoch MUST fail its token checks and MUST
 NOT start a VFS operation, publish a response, emit an event, wake the runner,
 or touch a recycled slot. An indivisible VFS operation that validly started
 before invalidation MAY finish, but its owner MUST revalidate afterward and

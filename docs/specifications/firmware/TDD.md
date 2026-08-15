@@ -472,9 +472,13 @@ before the interrupt/reset side effect; failure suppresses generic fallback.
 `COMPLETE` gives its completion semaphore. Cancellation/completion of an
 already-complete incarnation is idempotent and gives nothing; reservation and
 hard recycle drain any stale signal before a new incarnation can observe it.
-Each agent initialization begins with CMD admission closed. After the previous
-VM's MicroPython threads have been deleted, one reset transaction atomically
-increments the VM epoch and the generation of any retained live connection
+An allocation-free, idempotent `__wrap_mp_thread_deinit` closes all admission,
+invalidates old tickets/session work, and atomically detaches runner and console
+worker pointers before calling `__real_mp_thread_deinit`; therefore host
+callbacks cannot dereference a force-deleted VM thread in the teardown gap.
+After the previous VM's MicroPython threads have been deleted, each PyBLE ESP
+overlay's `MICROPY_PORT_INIT_FUNC` invokes one reset transaction per `mp_init`.
+That transaction atomically increments the VM epoch and the generation of any retained live connection
 while invalidating old tickets, prevents future response-callout scheduling,
 synchronizes with pool/TX ownership, hard-recycles all response slots and
 incarnations, drains their completion semaphores, and clears the dispatch
@@ -484,7 +488,10 @@ deinitialization or queued-event removal. Admission reopens only after all
 native handlers and workers for the new VM are registered and entered, final
 boot wiring is safe, and auto-run admission has completed. Thus a dequeued
 old-epoch owner can neither act on a recycled slot nor publish into the retained
-link.
+link. Repeated `init_agent` calls within the same VM are idempotent. The usermod
+CMake link option and release link-map/build checks prove that all ESP targets
+resolve `mp_thread_deinit` through the wrapper and include their port-init hook;
+upstream MicroPython source remains untouched.
 
 **Error behaviour:** CRC fail → drop + `EVT ERROR(ECRC)` referencing opcode if known (FR-PROTO-3); structurally invalid → `EBADREQ` (FR-PROTO-8); unknown/unsupported opcode → `EUNSUPPORTED` (FR-PROTO-9); `VER != 0x01` → refuse per versioning (FR-PROTO-7).
 
@@ -1061,11 +1068,14 @@ until that deadline rather than an attempt-count ceiling. A disconnect error
 counts as an already-closed link only when the central independently reports
 `is_connected == false`.
 
-New-VM detection is exactly once per MicroPython VM: a marker rooted in
-`MP_STATE_VM` is absent after `mp_init`, and the first `init_agent` consumes it;
-repeated `init_agent` calls in the same VM are idempotent and do not rotate an
-epoch or reset live state. That first call closes admission and atomically
-rotates the VM epoch together with the generation of any retained connection,
+VM teardown and initialization use two explicit pinned seams. The usermod
+defines allocation-free, idempotent `__wrap_mp_thread_deinit`; before calling
+`__real_mp_thread_deinit`, it closes all admission, invalidates tickets/session
+work, and detaches runner and console worker pointers. This closes the manual
+Ctrl-D gap before upstream force-deletes secondary tasks. Each PyBLE ESP board
+overlay defines `MICROPY_PORT_INIT_FUNC` to invoke the native epoch-begin hook
+exactly once on every subsequent `mp_init`, before `_boot.py`; the hook rotates
+the VM epoch together with the generation of any retained connection,
 invalidates every old ticket under the authoritative pool/TX state, and stops
 future response-callout scheduling. Because a pinned callout stop need not
 remove an event already queued on the host eventq, every late callback must
@@ -1075,6 +1085,9 @@ needed, hard-recycles every slot/incarnation and drains completion semaphores,
 drains the FS queue and resets transfer state, and resets runner semaphore/RSM/
 request buffers/worker pointer plus console buffers and BLE RX reassembly. It
 does not rely on unsafe callout deinitialization or queued-event removal.
+Repeated `init_agent` calls within that VM are idempotent. The CMake linker
+option and release link map/build gate must prove wrapper resolution and the
+port-init hook on every ESP target; no upstream file is patched.
 
 `init_agent` does not itself declare the new VM ready: `_boot.py` starts fresh
 FS and runner workers, completes dupterm/handler wiring, and completes
