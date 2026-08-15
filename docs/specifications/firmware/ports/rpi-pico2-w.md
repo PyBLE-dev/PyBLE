@@ -18,13 +18,13 @@ Status: **P1–P9 FROZEN for the F-25/F-26/F-27/X-13 stories (`[docs]` 2026-08-1
 
 ## P3. STOP (FROZEN)
 
-- STOP handler: `RSP{OK}` always (idempotent while idle), then arm `0x03` in the agent console tee and call `os.dupterm_notify(None)` → upstream converts the interrupt char into a main-thread `KeyboardInterrupt` at the next VM back-edge (`extmod/os_dupterm.c`, `py/scheduler.c`). The supervisor catches it → `RUN_STATE(idle)` (stopped ≠ done/error — the `pble_runner.c` twin).
+- STOP handler: `RSP{OK}` always (idempotent while idle), then arm `0x03` in the agent console tee and enqueue the native `os.dupterm_notify(None)` call with `micropython.schedule` → upstream converts the interrupt char into a main-thread `KeyboardInterrupt` at the next VM back-edge (`extmod/os_dupterm.c`, `py/scheduler.c`). The callback MUST be enqueued only after the RSP has been handed to the BLE TX path, and MUST NOT call `os.dupterm_notify` inline from the synchronous BTstack IRQ: an inline pending exception unwinds inside the protected BLE IRQ callback before the RSP and upstream disables that IRQ handler. The supervisor catches the deferred interrupt → `RUN_STATE(idle)` (stopped ≠ done/error — the `pble_runner.c` twin).
 - The supervisor pins `micropython.kbd_intr(3)` at start. Known limitation (same class as ESP32): user code calling `kbd_intr(-1)` defeats STOP.
 - `tee.readinto` returns 1 byte or `None` — never 0 and never raises (EOF/raise deactivates dupterm; `extmod/os_dupterm.c`).
 
 ## P4. SOFT_REBOOT (FROZEN)
 
-`machine.soft_reset()` is unusable from `_boot.py` on rp2 (the port's `main.c` falls to the REPL with the agent dead). Port semantics: `RSP{OK}`, then stop user code (the `0x03` path), then **`machine.reset()`** scheduled from the supervisor after a bounded TX-flush delay. Observable behavior matches ESP32: link drops, board returns advertising with a fresh VM. (Recorded deviation: hard reset — peripherals and USB re-enumerate.)
+`machine.soft_reset()` is unusable from `_boot.py` on rp2 (the port's `main.c` falls to the REPL with the agent dead). Port semantics: `RSP{OK}`, then stop user code through the same post-RSP, scheduler-deferred `0x03` path as P3, then **`machine.reset()`** scheduled from the supervisor after a bounded TX-flush delay. Observable behavior matches ESP32: link drops, board returns advertising with a fresh VM. (Recorded deviation: hard reset — peripherals and USB re-enumerate.)
 
 ## P5. Persistence (FROZEN — no NVS on rp2)
 
