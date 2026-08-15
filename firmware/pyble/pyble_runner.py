@@ -167,8 +167,12 @@ class Runner:
             return False
         if self.rsm.state != IDLE:
             self.rsm.on_stopped()
-        self._emit_terminal(IDLE, self._terminal_published)
+        accepted = self._emit_terminal(IDLE, self._terminal_published)
         if self._terminal_phase == _TERMINAL_PUBLISHED:
+            self._terminal_phase = _TERMINAL_NONE
+        elif accepted is False:
+            # No live session at event creation: omit instead of retaining the
+            # terminal for a future connection (protocol.md §6).
             self._terminal_phase = _TERMINAL_NONE
         return True
 

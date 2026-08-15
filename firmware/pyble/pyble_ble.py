@@ -129,6 +129,7 @@ class BleLink:
     def __init__(self):
         self._ble = None            # bluetooth.BLE(), bound in start()
         self._conn_handle = None
+        self._session_generation = 0
         self._mtu = DEFAULT_MTU     # until the central negotiates upward
         self._mac = b"\x00" * 6     # raw BLE MAC, read from the stack in start()
         self._info_payload = b""
@@ -180,6 +181,12 @@ class BleLink:
         derivation (FR-BLE-5) — pyble_ble never derives device_id itself."""
         return self._mac
 
+    def session_token(self):
+        """Current immutable RP2 event-session identity, or None offline."""
+        if self._conn_handle is None:
+            return None
+        return (self._conn_handle, self._session_generation)
+
     def set_info_payload(self, payload):
         """FR-BLE-4: update the INFO characteristic's served bytes (authored by
         pyble_info). Served verbatim; not decoded here."""
@@ -195,25 +202,46 @@ class BleLink:
         if self._ble is not None and self._conn_handle is None:
             self._start_advertising()
 
-    def send_message(self, msg, on_published=None):
+    def _notify_fragment(self, frag):
+        self._ble.gatts_notify(self._conn_handle, self._tx_handle, frag)
+        return True
+
+    def _omit_fragment(self, frag):
+        return False
+
+    def _notify_final(self, frag, published):
+        # Branch-free local-acceptance -> receipt cut; see send_message().
+        self._ble.gatts_notify(self._conn_handle, self._tx_handle, frag)
+        published()
+        return True
+
+    def _omit_final(self, frag, published):
+        return False
+
+    def send_message(self, msg, on_published=None, expected_session=None):
         """Sole TX path: fragment `msg` to `payload_size(mtu)` and Notify each
         §3.2 fragment on TX (FR-BLE-3/10). `msg` is already-encoded PBLE/1 bytes
         from pyble_proto — never inspected/decoded here. An optional receipt is
         called immediately after local acceptance of the final fragment."""
-        if self._ble is None or self._conn_handle is None:
-            return
+        current_session = self.session_token()
+        if self._ble is None or current_session is None:
+            return False
+        if expected_session is None:
+            expected_session = current_session
         published = (_noop_published if on_published is None
                      else on_published)
         fragments = tuple(_fragment(msg, payload_size(self._mtu)))
         for frag in fragments[:-1]:
-            self._ble.gatts_notify(self._conn_handle, self._tx_handle, frag)
-        # Keep these two calls branch-adjacent. The pinned MicroPython VM checks
-        # pending exceptions at branch points, while BTstack returns only after
-        # copying or queueing the Notify. The receipt therefore commits before
-        # a deferred STOP KeyboardInterrupt can be raised.
-        self._ble.gatts_notify(
-            self._conn_handle, self._tx_handle, fragments[-1])
-        published()
+            accepted = (self._omit_fragment, self._notify_fragment)[
+                expected_session == self.session_token()](frag)
+            if not accepted:
+                return False
+        # Selection, final Notify, and receipt are branch-adjacent. The pinned
+        # VM runs connection callbacks/pending exceptions only at branches, so
+        # a reused handle cannot slip between the exact-session check and TX.
+        return (self._omit_final, self._notify_final)[
+            expected_session == self.session_token()](
+                fragments[-1], published)
 
     def start(self, info_payload=b""):
         """Boot the NimBLE peripheral: bind the stack, read the MAC, register the
@@ -272,6 +300,7 @@ class BleLink:
         # may ever propagate from here.
         try:
             if event == _IRQ_CENTRAL_CONNECT:
+                self._session_generation += 1
                 self._conn_handle = data[0]
                 self._reset_reassembly()
                 if self._on_connect is not None:

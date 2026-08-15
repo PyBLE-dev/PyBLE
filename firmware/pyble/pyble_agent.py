@@ -119,6 +119,7 @@ def _make_hard_reset_alarm(timer_type, reset):
 
 _CONTROL_STOP = 1
 _CONTROL_SOFT_REBOOT = 2
+_NO_TERMINAL_SESSION = object()
 _NO_RSP_COMMANDS = (_OP["FILE_PUT_DATA"], _OP["CONSOLE_INPUT"])
 
 
@@ -155,6 +156,7 @@ class Agent:
         self.console = pyble_console.Console(
             self._console_emit, notify if notify is not None else _noop,
             clock=self._clock)
+        self._terminal_session = _NO_TERMINAL_SESSION
 
         # Filesystem bridge (F-08/F-09/F-17): EVT emission via emit().
         self._fs = pyble_fs.FsService(
@@ -246,9 +248,25 @@ class Agent:
     def _emit_terminal_run_state(self, state, published):
         """Emit stopped IDLE with a receipt at BleLink's local TX cut."""
         self.console.set_run_active(False)
+        if self._terminal_session is _NO_TERMINAL_SESSION:
+            self._terminal_session = self._link.session_token()
+        session = self._terminal_session
+        if session is None:
+            self._terminal_session = _NO_TERMINAL_SESSION
+            return False
+
+        def committed():
+            # Branch-free: this runs directly after the final native Notify.
+            self._terminal_session = _NO_TERMINAL_SESSION
+            published()
+
         msg = pyble_proto.encode(
             pyble_proto.EVT, _OP["RUN_STATE"], 0, bytes((state,)))
-        self._link.send_message(msg, on_published=published)
+        accepted = self._link.send_message(
+            msg, on_published=committed, expected_session=session)
+        if accepted is False:
+            self._terminal_session = _NO_TERMINAL_SESSION
+        return accepted
 
     # -- link callbacks --------------------------------------------------------
     def _closing_admission(self, msg):
