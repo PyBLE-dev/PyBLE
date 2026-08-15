@@ -27,7 +27,7 @@ delivery. It changes no PBLE/1 byte.
 | §3 Framing — §3.1 message frame, §3.2 fragmentation | **FROZEN for v1.0 (amended)** | G0 · 2026-07-01; restart/delivery semantics · 2026-08-15 · `[docs]` |
 | §4 Opcodes — the v1.0 opcode set + numbers | **FROZEN for v1.0** | G1 · 2026-07-01 · `[docs]` (closes OI-4) |
 | §8 Status / error codes — the 1-byte status set + numbers | **FROZEN for v1.0** | G1 · 2026-07-01 · `[docs]` |
-| §6 Run/Stop/Console — RUN{file,source}, RUN_STATE, EBUSY, STOP, SOFT_REBOOT, CONSOLE_DATA/INPUT | **FROZEN for v1.0 (amended)** | G1 · 2026-07-01; transactional RUN admission · 2026-08-14 · `[docs]` (RUN-file at S3; STOP / console / RUN-source at S4) |
+| §6 Run/Stop/Console — RUN{file,source}, RUN_STATE, EBUSY, STOP, SOFT_REBOOT, CONSOLE_DATA/INPUT | **FROZEN for v1.0 (amended)** | G1 · 2026-07-01; transactional RUN admission · 2026-08-14; default-MTU STOP/SOFT_REBOOT admission · 2026-08-15 · `[docs]` (RUN-file at S3; STOP / console / RUN-source at S4) |
 | §7 HELLO & capabilities — caps field set, HELLO-first, INFO==DEVICE_INFO, label max = 24 B (label half of OI-6) | **FROZEN for v1.0** | G1 · 2026-07-01 · `[docs]` |
 | §9 Versioning policy — accept only `VER 0x01`, refuse unsatisfiable, additive caps | **FROZEN for v1.0** | G1 · 2026-07-01 · `[docs]` |
 | §5 File transfer — read + windowed upload + workspace jail | **FROZEN for v1.0** | G1 · 2026-07-01 · `[docs]` |
@@ -119,7 +119,10 @@ handler is not invoked, no unreserved response is attempted, and the
 originating connection is terminated; observable link loss is the bounded
 refusal outcome rather than a silent live-session drop. Deferred filesystem
 commands reserve the same capacity before their bounded host-to-worker enqueue.
-The reservation is a ticket bound to a slot incarnation and the originating
+If that enqueue is full, the dispatcher invokes no filesystem operation and
+publishes `RSP{EBUSY}` through the same reserved slot; it does not discard the
+reservation or attempt an unreserved fallback response. The reservation is a
+ticket bound to a slot incarnation and the originating
 connection session, including a generation that cannot be confused by numeric
 connection-handle reuse. A deferred worker builds its result in private scratch
 and revalidates the whole ticket before copying into that slot.
@@ -134,8 +137,8 @@ transient pressure it retains the same unaccepted fragment and rearms after at
 most 15 ms. The callback never sleeps, loops, or waits for capacity. Non-control
 and bulk senders cannot interleave while the logical ownership is held.
 
-A successful specialized single-fragment control response MAY preempt between
-fragments. It increments a stream generation under the same TX mutex; the
+A successful single-fragment `RUN`, `STOP`, or `SOFT_REBOOT` response MAY
+preempt between fragments. It increments a stream generation under the same TX mutex; the
 response callout observes the change and then restarts its identical encoded
 frame from `FIRST`, which abandons the interrupted prefix. Deadline expiry on a
 still-live connection terminates that session rather than silently losing an
@@ -208,7 +211,7 @@ no corresponding execution, interrupt, or reset side effect.
 
 ## 6. Run / Stop / Console
 
-> **FROZEN for v1.0 (amended)** — RUN-file at G1 · S3; **`RUN{source}`, `STOP`, `SOFT_REBOOT`, `CONSOLE_DATA`, `CONSOLE_INPUT` frozen at G1 · S4 (2026-07-01 · `[docs]`)**; transactional RUN admission clarified 2026-08-14. Wire below; amend only via a `[docs]` commit before dependent code.
+> **FROZEN for v1.0 (amended)** — RUN-file at G1 · S3; **`RUN{source}`, `STOP`, `SOFT_REBOOT`, `CONSOLE_DATA`, `CONSOLE_INPUT` frozen at G1 · S4 (2026-07-01 · `[docs]`)**; transactional RUN admission clarified 2026-08-14; default-MTU `STOP`/`SOFT_REBOOT` response-before-side-effect admission clarified 2026-08-15. Wire below; amend only via a `[docs]` commit before dependent code.
 
 - **`RUN` (0x20)** payload `[mode:u8][data]` — `mode` 0=file (`data` = UTF-8 path), 1=source (`data` = UTF-8 snippet). → `RSP{status}` (`OK` | `EBUSY` if one already running, FR-RUN-4 | `EBADREQ` bad mode | `ERANGE` over-length), then `RUN_STATE(running)`. Both modes share one lifecycle. Completion → `RUN_STATE(done)`; an uncaught exception → `CONSOLE_DATA(stderr, traceback)` then `RUN_STATE(error)`. A missing/inaccessible file surfaces asynchronously (`CONSOLE_DATA(stderr)` + `RUN_STATE(error)`), not as the `RSP`.
 
@@ -238,7 +241,7 @@ no corresponding execution, interrupt, or reset side effect.
   delivery grace after submitting `RSP{OK}` so queued response bytes can reach
   the central. The ESP32 reference agent uses a pre-created 250 ms one-shot and
   refuses a second reboot with `EBUSY` while that reset is pending. If the
-  transaction-control response attempt fails, it MUST leave the VM running and
+  `SOFT_REBOOT` response attempt fails, it MUST leave the VM running and
   emit no generic fallback rather than perform an ambiguous reset. This is an execution-order clarification;
   it changes no PBLE/1 bytes.
 - **`CONSOLE_DATA` (0x30, EVT, id 0)** payload `[stream:u8][bytes]` — `stream` 0=stdout, 1=stderr (FR-CON-1/2).

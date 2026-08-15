@@ -53,8 +53,8 @@ Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-08-15
 > reservation, a connection generation, and one 1000 ms publication deadline.
 > One pre-created NimBLE-host callout attempts exactly one fragment per callback,
 > retains a failed fragment under exclusive logical ownership, and restarts
-> from `FIRST` only after specialized control preemption changes the TX stream
-> generation.
+> from `FIRST` only after a successful single-fragment `RUN`, `STOP`, or
+> `SOFT_REBOOT` response changes the TX stream generation.
 
 ## 0. Naming note (acronym clash)
 
@@ -268,7 +268,7 @@ FR-SPLASH-1…9 and preserves FR-BOOT-4/6.)*
 1. App writes PBLE/1 fragments to **RX**; `pyble_ble` reassembles per [protocol.md §3.2](../protocol.md#3-framing) into a complete §3.1 message in the static reassembly buffer.
 2. `pyble_proto` validates CRC32, decodes the frame, and dispatches by `OPCODE` to a handler (`pyble_fs` / `pyble_runner` / `pyble_console` / `pyble_info`), or returns an error status if CRC/structure/version is bad.
 3. Before an ordinary side-effecting handler executes, `pyble_proto` reserves a complete fixed-capacity response slot bound to the live connection generation. Deferred filesystem dispatch carries that reservation and generation in its bounded worker item and revalidates them before touching VFS.
-4. A pre-created NimBLE-host callout completes generic `RSP` delivery one fragment per callback. Each invocation validates ticket/session/deadline/stream generation, makes one zero-wait Notify attempt, rearms after one tick on progress or at most 15 ms on transient pressure, and returns. It retains the exact unaccepted fragment under logical ownership, so non-control/bulk traffic cannot interleave. A successful specialized control preemption changes the stream generation under the TX mutex, causing the next callback to restart from `FIRST`. Asynchronous events (`EVT`: `RUN_STATE`, `CONSOLE_DATA`, `FILE_PUT_ACK`, `FILE_GET_*`) retain their existing bounded paths; a `FILE_GET_BEGIN` response completes before its dependent data/end events.
+4. A pre-created NimBLE-host callout completes generic `RSP` delivery one fragment per callback. Each invocation validates ticket/session/deadline/stream generation, makes one zero-wait Notify attempt, rearms after one tick on progress or at most 15 ms on transient pressure, and returns. It retains the exact unaccepted fragment under logical ownership, so non-control/bulk traffic cannot interleave. A successful single-fragment `RUN`, `STOP`, or `SOFT_REBOOT` response changes the stream generation under the TX mutex, causing the next callback to restart from `FIRST`. Asynchronous events (`EVT`: `RUN_STATE`, `CONSOLE_DATA`, `FILE_PUT_ACK`, `FILE_GET_*`) retain their existing bounded paths; a `FILE_GET_BEGIN` response completes before its dependent data/end events.
 5. **INFO** characteristic reads are answered directly by `pyble_ble` from a `DEVICE_INFO`-equivalent payload prepared by `pyble_info`, with no subscription required.
 
 ### 3.4 Module-to-layer mapping
@@ -398,8 +398,9 @@ class Dispatcher:
 **Key data structures:** `Frame` (namedtuple-like: `ver`, `type`, `opcode`, `id`, `payload`); the **dispatch table** — a dict mapping `OPCODE → handler` ([§7.2](#72-dispatch-table)); a small CRC-32 lookup table (or native CRC).
 
 **Internal state:** the registered dispatch table plus a static depth-2 response
-pool. Each 491-byte slot stores an incarnation, immutable encoded frame,
-opcode/ID, session token, publication deadline (once ready), and completion state. Events use `ID = 0`
+pool. A reserved 491-byte slot initially stores its incarnation, session-bound
+ticket, and reservation state. Only ready-FIFO publication adds the opcode/ID,
+immutable encoded frame, absolute publication deadline, and completion state. Events use `ID = 0`
 (FR-PROTO-4).
 
 **Generic response admission and pump:** handler registrations distinguish
@@ -413,8 +414,8 @@ deadline starts. The pre-created host callout owns one logical TX message and
 retains the exact offset/index after `AGAIN`; it rearms after at most 15 ms to
 retry the same unaccepted fragment, and no progress extends the deadline.
 Ordinary/bulk senders return or wait without emitting a `FIRST` while ownership
-is active. A successful specialized single-fragment control response increments
-the stream generation under the same mutex; on observing that change, the
+is active. A successful single-fragment `RUN`, `STOP`, or `SOFT_REBOOT`
+response increments the stream generation under the same mutex; on observing that change, the
 callout restarts its identical frame at `FIRST`. `NO_CONN`, token mismatch, or
 disconnect cancels the slot. Publication expiry on a still-live originating
 session requests termination before releasing it, so an admitted side effect
@@ -485,8 +486,10 @@ class FsBridge:
 
 **Deferred-response ownership:** every response-bearing host-to-FS item owns a
 ticket for a pre-reserved generic-response slot and the originating
-`{handle, generation}`. Queue admission failure releases the ticket. Before any
-VFS side effect, the FS worker revalidates the token; stale/disconnected work is
+`{handle, generation}`. On queue admission failure, ownership of the ticket
+returns to the dispatcher, which performs no VFS operation and publishes
+`RSP{EBUSY}` through that same reserved slot. Before any VFS side effect, the
+FS worker revalidates the token; stale/disconnected work is
 cancelled. It builds results in worker-owned scratch, then atomically revalidates
 the still-live ticket before copying into and publishing the reserved slot.
 Disconnect increments the slot incarnation and cancels/releases its ticket
