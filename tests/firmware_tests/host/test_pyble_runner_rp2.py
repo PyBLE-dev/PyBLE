@@ -273,8 +273,9 @@ class TerminalStateTest(unittest.TestCase):
                          "RUN_STATE(idle) — never done/error")
         self.assertEqual(r.rsm.state, IDLE)
 
-    def test_stop_raced_with_completion_still_ends_idle(self):
-        # pble_runner.c worker: term = stop_requested ? stopped : finished.
+    def test_stop_accepted_before_terminal_cut_ends_idle(self):
+        # The STOP acceptance cut precedes this execution callback's return, so
+        # the later terminal cut must select stopped rather than finished.
         cell = {}
 
         def stop_then_return(mode, data):
@@ -286,8 +287,8 @@ class TerminalStateTest(unittest.TestCase):
         r.handle_run(GOOD_SOURCE)
         r.service()
         self.assertEqual(emitted, [RUNNING, IDLE],
-                         "a STOP that races normal completion MUST still land "
-                         "the terminal on idle (stopped wins over done)")
+                         "a STOP accepted before normal completion's terminal "
+                         "cut MUST land idle (stopped wins over done)")
 
     def test_run_allowed_again_after_terminal(self):
         r, _, _ = make_runner(self, "F-25/§6 run-after-terminal")
