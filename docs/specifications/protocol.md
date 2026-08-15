@@ -412,6 +412,23 @@ no corresponding execution, interrupt, or reset side effect.
 | `0x51` | SET_IDENTIFY_LED | CMD/RSP | Configure the **single** optional identify status-LED: payload `[gpio:u8][active_level:u8]` (`active_level` 0=active-low, 1=active-high), persisted; **empty payload clears it**. `ERANGE` if `gpio` out of range, `EBADREQ` if `active_level`∉{0,1}. Device config only — **not** a routing/pin profile, never exposed to user code. |
 | `0x52` | IDENTIFY | CMD/RSP | Blink the configured identify LED (5 Hz) for an optional `[duration_ds:u8]` (1–50 deciseconds; absent/0 → default 20 = 2 s; >50 clamped). Non-blocking — `RSP{OK}` returns immediately. `EUNSUPPORTED` if no identify LED is configured. |
 
+The ESP reference `IDENTIFY` timer must also close a task-dispatch race that is
+not visible on the wire. In the pinned ESP-IDF, a due periodic timer is
+reinserted and its callback/argument are copied before the timer-list lock is
+released; `esp_timer_stop()` can remove the reinserted timer but cannot revoke
+that already-dequeued invocation. The handler therefore MUST NOT publish or
+start a successor active arm immediately after `stop`. It records the request
+as pending and queues a timer-task quiescence boundary. The first callback after
+that boundary is drain-only: it consumes no tick, changes no GPIO, performs no
+terminal stop, and queues a distinct activation callback. Only that later
+callback may mint/publish the successor `{VM epoch, arm incarnation, ticks}` and
+start its periodic schedule, again without consuming a tick. Every active tick
+then revalidates the exact arm before GPIO or timer-stop effects. A callback
+already dequeued from any older periodic, quiescence, or activation phase can
+therefore become only the drain callback; it cannot read/adopt, toggle, consume,
+or stop the successor arm. Both phases remain non-blocking and allocation-free
+per toggle. This is an execution clarification and changes no PBLE/1 bytes.
+
 ## 5. File transfer (the reliability core)
 
 > **FROZEN for v1.0 (G1 · 2026-07-01 · `[docs]`).** The file-transfer wire below (read + windowed upload + jail) is stable — the DoR for F-08/F-09/F-17. Amend only via a `[docs]` commit before dependent code. Designed for a lossy, MTU-bounded link. All multi-byte fields little-endian; paths are `[plen:u16][path UTF-8]`, **max 128 B** (`ERANGE` over). File `DATA` chunks are sized to one BLE packet and never fragment. Exactly **one active transfer** (PUT or GET) at a time — a second `*_BEGIN` while one is active → `EBUSY`.
@@ -440,7 +457,7 @@ no corresponding execution, interrupt, or reset side effect.
 
 ## 6. Run / Stop / Console
 
-> **FROZEN for v1.0 (amended)** — RUN-file at G1 · S3; **`RUN{source}`, `STOP`, `SOFT_REBOOT`, `CONSOLE_DATA`, `CONSOLE_INPUT` frozen at G1 · S4 (2026-07-01 · `[docs]`)**; transactional RUN admission clarified 2026-08-14; default-MTU `STOP`/`SOFT_REBOOT` response-before-side-effect admission and per-event session binding clarified 2026-08-15. Wire below; amend only via a `[docs]` commit before dependent code.
+> **FROZEN for v1.0 (amended)** — RUN-file at G1 · S3; **`RUN{source}`, `STOP`, `SOFT_REBOOT`, `CONSOLE_DATA`, `CONSOLE_INPUT` frozen at G1 · S4 (2026-07-01 · `[docs]`)**; transactional RUN admission clarified 2026-08-14; default-MTU `STOP`/`SOFT_REBOOT` response-before-side-effect admission, per-event session binding, and the runner pickup/control-resolution cut clarified 2026-08-15. Wire below; amend only via a `[docs]` commit before dependent code.
 
 - **`RUN` (0x20)** payload `[mode:u8][data]` — `mode` 0=file (`data` = UTF-8 path), 1=source (`data` = UTF-8 snippet). → `RSP{status}` (`OK` | `EBUSY` if one already running, FR-RUN-4 | `EBADREQ` bad mode | `ERANGE` over-length), then `RUN_STATE(running)`. Both modes share one lifecycle. Completion → `RUN_STATE(done)`; an uncaught exception → `CONSOLE_DATA(stderr, traceback)` then `RUN_STATE(error)`. A missing/inaccessible file surfaces asynchronously (`CONSOLE_DATA(stderr)` + `RUN_STATE(error)`), not as the `RSP`.
 
@@ -463,6 +480,19 @@ no corresponding execution, interrupt, or reset side effect.
   while running raises `KeyboardInterrupt` **in the runner task only** (the link
   stays live, FR-BLE-11) → clean teardown → `RUN_STATE(idle)` (FR-RUN-5/6/10).
   Local response-submission failure emits no fallback and performs no interrupt.
+
+  Response acceptance and a delayed worker pickup are one ordered control
+  transaction. Before attempting the response, the reference runner marks the
+  control attempt unresolved under its runner-domain synchronization, then
+  releases that synchronization before entering the TX domain. A reserved
+  worker MUST NOT cross its event/execution gate while an earlier control
+  attempt is unresolved. After the zero-wait response attempt, one runner-domain
+  cut either (a) publishes the accepted STOP intent and worker pending exception
+  before resolving the gate, or (b) resolves a failed attempt without an
+  interrupt or stop effect. Thus response success before pickup permits no user
+  code or RUN event from that reservation; pickup first makes the command an
+  ordinary active-run interrupt. A successful later RUN reservation may consume
+  only resolved stale idle-STOP intent, never an unresolved control attempt.
 - **`SOFT_REBOOT` (0x22)** no payload. On the normal successfully armed grace
   path, `RSP{OK}` is immediate; the command stops any run, then soft-resets the
   MicroPython VM and returns to `RUN_STATE(idle)` (FR-RUN-8). VM teardown MUST
@@ -486,6 +516,13 @@ no corresponding execution, interrupt, or reset side effect.
   response-submission failure likewise reopens all gates and leaves the VM
   intact. This is an
   execution-order and lifecycle clarification; it changes no PBLE/1 bytes.
+
+  `SOFT_REBOOT` uses the same unresolved-control pickup gate as `STOP`. It marks
+  that gate only after its provisional FS/VM closure succeeds and before its
+  response attempt. `PBLE_TX_OK` publishes runner stop intent while resolving
+  the gate, before timer arm; failure resolves without stop intent while the
+  provisional FS/VM gates are aborted. Timer-arm failure remains the documented
+  post-acceptance non-returning restart exception.
 - **`CONSOLE_DATA` (0x30, EVT, id 0)** payload `[stream:u8][bytes]` — `stream` 0=stdout, 1=stderr (FR-CON-1/2).
 - **`CONSOLE_INPUT` (0x31, CMD, no RSP)** payload `[bytes]` — appended to the running program's `stdin` (`input()`/`sys.stdin`); fire-and-forget, no reply frame (FR-CON-3).
 - **`RUN_STATE` (0x40, EVT, id 0)** payload `[state:u8]` — 0 idle / 1 running / 2 done / 3 error (FR-RUN-7).

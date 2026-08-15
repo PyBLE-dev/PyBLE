@@ -632,6 +632,20 @@ class Runner:
 
 **Execution model:** a `RUN` while `state == running` returns `EBUSY` (FR-RUN-4). The ESP handler validates the request and initialized hand-off semaphore, remembers the exact prior runnable state (`idle`, `done`, or `error`), makes a provisional, non-observable reservation of `running`, and copies the request. It then encodes the matching one-fragment `RSP{OK}` in call-local storage and makes one connection-bound control submission attempt. That transport seam takes the TX mutex with zero wait, rechecks the originating connection, and makes exactly one Notify call; it never sleeps, waits for drain progress, or retries on the NimBLE host task. `PBLE_TX_OK` is the admission cut: only then does the provisional reservation become an observable lifecycle transition, the handler give the binary runner semaphore exactly once, and the handler suppress the dispatcher's generic response. The empty-semaphore give is an invariant of the single `running` reservation. Mutex contention, no connection, connection mismatch, or `PBLE_TX_AGAIN` restores the remembered state, suppresses generic response fallback, and returns without a worker wake, execution, console output, or RUN event. A disconnect after `PBLE_TX_OK` does not revoke the accepted run. The non-dispatch auto-run path remains a direct reserve/copy/give with no response.
 
+`STOP` and `SOFT_REBOOT` additionally use an unresolved-control gate guarded by
+the runner domain. The handler marks the attempt before its response try, then
+leaves the runner domain before acquiring the TX domain; the implementation
+MUST NOT nest those locks. After a reservation handoff, the worker checks this
+gate before emitting `RUN_STATE(running)` or executing. If unresolved, it waits
+outside the runner critical section and releases the MicroPython GIL around any
+blocking/yielding wait. A failed response resolves the gate with no stop effect;
+a successful response publishes `g_stop_requested` and the worker's pending
+`KeyboardInterrupt` in the same runner-domain cut that resolves it. The worker
+then either skips the reserved run or, if it crossed the gate first, receives a
+normal active-run interrupt. Reservation-time cleanup may clear only an older,
+resolved idle-STOP flag/pending exception and never the unresolved gate. The
+same rules cover command RUN and the direct auto-run reservation.
+
 Once admitted, the worker authors `RUN_STATE(running)` (FR-RUN-1). Each new
 `RUN_STATE` event atomically snapshots the then-current live full session token
 at that point, independently of the run's origin; with no live session it is
@@ -650,7 +664,8 @@ admission, and submits its one-packet `RSP{OK}`. A busy worker/non-empty FS queu
 returns `EBUSY`; TX failure reopens all gates and cancels reset. `PBLE_TX_OK`
 commits the reset and gates never reopen after that cut. The handler then arms
 one pre-created 250 ms one-shot; timer-arm failure invokes non-returning
-`esp_restart()`, while success leaves pending set and stops the worker so only
+`esp_restart()`, while success leaves pending set; accepted stop intent was
+already published while resolving the pickup gate, so only
 the timer callback schedules `SystemExit` on the main task. The timer is never
 pre-armed. The pending flag rejects duplicate reboot requests. On next
 initialization the runner semaphore is drained and its state machine, request
@@ -854,7 +869,7 @@ equivalent stable, non-personal local suffix without changing the wire field.
 
 **Advertised-name assembly (in `pyble_ble`):** the advertised name is `label` when a non-empty label is set, else `PyBLE-` + `device_id`. Setting a label (including clearing to `""`) calls `pyble_ble.set_adv_name(...)` so the change is visible in the scan list pre-connect; an over-length label is rejected (`ERANGE`) before it can reach the air (FR-BLE-12, FR-IDENT-1, SEC-10). The concrete label max-length is owned by [protocol.md](../protocol.md) (OI-6).
 
-**Identify blink (non-blocking):** `IDENTIFY` schedules a bounded LED toggle on an agent timer/event-loop path outside the NimBLE host callback (a `machine.Timer` or short-lived `asyncio` task), replies `RSP{OK}` immediately, and blinks for the protocol-bounded duration **without** blocking dispatch or the runner task ([§5.5](#55-identify-blink-non-blocking)). With no identify LED configured it returns `EUNSUPPORTED (0x0A)` and changes no GPIO (FR-IDENT-3/4). The blink is cosmetic only and maps no hardware for user code (FR-IDENT-6, CON-13).
+**Identify blink (non-blocking):** `IDENTIFY` schedules a bounded LED toggle on an agent timer/event-loop path outside the NimBLE host callback (a `machine.Timer` or short-lived `asyncio` task), replies `RSP{OK}` immediately, and blinks for the protocol-bounded duration **without** blocking dispatch or the runner task ([§5.5](#55-identify-blink-non-blocking)). The ESP path uses the two-callback timer-task quiescence/activation seam specified there, so an already-dequeued old expiration cannot adopt a new arm. With no identify LED configured it returns `EUNSUPPORTED (0x0A)` and changes no GPIO (FR-IDENT-3/4). The blink is cosmetic only and maps no hardware for user code (FR-IDENT-6, CON-13).
 
 **Dispatch wiring:** `pyble_agent` registers `0x50 SET_LABEL → set_label`, `0x51 SET_IDENTIFY_LED → set_identify_led`, and `0x52 IDENTIFY → identify` into the [§7.2](#72-dispatch-table) table; each returns a [protocol.md §8](../protocol.md#8-status--error-codes-1-byte-status-in-rsp) status. The wire payload shapes (label encoding, `SET_IDENTIFY_LED` GPIO+active-level encoding, blink-duration bound) are **owned by [protocol.md](../protocol.md)** and mirrored, never redefined here (D6, OI-6).
 
@@ -1099,6 +1114,13 @@ Because the link is serviced by the NimBLE host context and user code lives on t
 
 `STOP` is handled on the NimBLE host context (so it is always reachable). Only after its connection-bound one-fragment `RSP{OK}` try succeeds does it raise `KeyboardInterrupt` into the runner thread via MicroPython's pending-exception/`schedule` mechanism, which lands even inside a tight bytecode loop (FR-RUN-5, NFR-SAFE-1). Submission failure emits no fallback and performs no interrupt. The runner's top frame wraps user code in a try/finally to guarantee teardown and a final `RUN_STATE` (FR-RUN-6/10).
 
+The response try is not itself inside the runner critical section. The
+unresolved-control gate above bridges that lock-domain gap: response success and
+accepted intent become visible to pickup in one post-TX runner cut, and response
+failure merely releases the pickup. This prevents a context switch after local
+Notify acceptance but before intent publication from starting reserved user
+code.
+
 ### 5.3 Serialization (single active writer)
 
 `pyble_agent` holds one lock that serializes mutating operations (file writes, `RUN`, `SOFT_REBOOT`) so concurrent commands cannot corrupt workspace or runner state (SEC-3). Read-only commands (`FILE_LIST`, `FILE_STAT`, `DEVICE_INFO`) and `STOP` are not blocked by a long upload's data phase beyond what correctness requires; `RUN` during `running` short-circuits to `EBUSY` without taking the lock's slow path (FR-RUN-4).
@@ -1146,6 +1168,34 @@ extend or repeat the attempt.
 ### 5.5 Identify blink (non-blocking)
 
 The `IDENTIFY` actuator ([§4.8](#48-device-config-store--label--identify-led-nvs)) must never wedge BLE or user code. The blink runs as a bounded, self-terminating job on an agent timer path outside the NimBLE host callback (a `machine.Timer` or short-lived `asyncio` task), **not** on the runner thread: the handler replies `RSP{OK}` and returns immediately while the LED toggles for the protocol-bounded duration (FR-IDENT-3). It holds no long-lived lock, allocates no per-toggle heap, and stops on its own; a concurrent `RUN`/`STOP`/file op is unaffected. With no identify LED configured the handler returns `EUNSUPPORTED` and does nothing (FR-IDENT-4). The blink is cosmetic and never repurposed for GPIO routing, capability mapping, or access gating (FR-IDENT-6, CON-13).
+
+The pinned ESP-IDF task dispatcher removes a due timer, reinserts a periodic
+handle, copies its callback and argument, releases the timer-list lock, and only
+then invokes the callback. Consequently `esp_timer_stop()` can remove the
+reinserted handle but cannot cancel the copied invocation. The reference path
+uses an explicit two-callback quiescence seam under the identify-timer domain:
+
+1. The handler stops the active schedule, stores the requested configuration as
+   pending (not active), enters `QUIESCE`, arms a one-shot timer-task boundary,
+   and returns without publishing a successor active ticket.
+2. Whatever callback runs next—including an already-dequeued old periodic or
+   activation callback—may only acknowledge `QUIESCE`, queue a distinct
+   `ACTIVATE` one-shot, and return. It consumes no tick, changes no GPIO, and
+   performs no terminal stop.
+3. Only the later `ACTIVATE` callback may mint and publish the successor exact
+   `{VM epoch, arm incarnation, ticks}`, start its periodic schedule, and return
+   without consuming a tick. A newer request that overtakes an already-dequeued
+   activation resets the phase to `QUIESCE`, so that old invocation becomes the
+   drain callback instead of adopting the successor.
+4. Periodic callbacks revalidate the exact active ticket and phase under the
+   timer-state mutex before every tick/GPIO/terminal-stop effect. Stop, start,
+   phase changes, ticket mint/publication, and terminal stop retain the one
+   `identify-domain -> ESP timer-list` lock order; the pinned dispatcher releases
+   its list lock before callback entry, so there is no inverse nesting.
+
+This seam is non-blocking on the NimBLE host, uses no per-toggle allocation, and
+closes both the after-entry ticket ABA and the before-entry dequeued-expiration
+race.
 
 ## 6. Boot & runtime state machine
 
@@ -1214,7 +1264,8 @@ non-blocking FS gate atomically closes enqueue admission and proves
 `worker_busy == false` plus an empty queue; the worker marks busy for its entire
 dequeued dispatch under the same synchronization. Failure reopens the gate and
 returns `EBUSY`. Success provisionally closes all non-reboot CMD admission.
-After the handler successfully submits `RSP{OK}`, it arms that timer for 250 ms
+After the handler successfully submits `RSP{OK}`, it publishes runner stop
+intent while resolving the pre-pickup control gate, then arms that timer for 250 ms
 and returns without a duplicate dispatcher response. Response submission is
 the commit cut: a TX failure reopens all gates and leaves the VM intact; after
 `PBLE_TX_OK` gates never reopen. Timer-arm failure immediately calls

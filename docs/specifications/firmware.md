@@ -151,7 +151,12 @@ contract, and HIL matrix live in
 ## 5. Runtime rules
 
 - **BLE stays responsive while user code runs.** The runner executes user code on its own task; the BLE/agent task keeps servicing the link, so `STOP` always lands.
-- **STOP is authoritative.** `STOP` interrupts the runner promptly; on interrupt or exception the runner tears down cleanly and reports `RUN_STATE`.
+- **STOP is authoritative.** `STOP` interrupts the runner promptly; on interrupt
+  or exception the runner tears down cleanly and reports `RUN_STATE`. A worker
+  reservation cannot cross into its RUN event or user-code effects while an
+  earlier `STOP`/`SOFT_REBOOT` response attempt is unresolved; response success
+  publishes stop intent before releasing that pickup gate, while response
+  failure releases it without an interrupt.
 - **The agent owns the filesystem bridge**, but user code may also touch the FS normally; uploads use temp-write-then-rename to avoid corrupting a file mid-transfer.
 - **Console mirrors everywhere.** `stdout`/`stderr` go to BLE and (if connected)
   USB-serial, regardless of who started the run. Each new BLE console chunk and
@@ -166,6 +171,11 @@ contract, and HIL matrix live in
   BLE-readiness-gated splash may run before workers/autorun. Disabled state,
   timeout, or display failure produces no user-code execution and cannot
   prevent normal agent recovery. The lean S3 image has no splash path at all.
+- **Identify re-arm is callback-race-safe.** On the ESP reference path, stopping
+  the timer is followed by a timer-task drain boundary and a distinct activation
+  callback before a successor arm is published. An already-dequeued old timer
+  invocation can acknowledge only the drain phase; it cannot consume, toggle,
+  or stop the successor blink.
 
 ## 6. Build & distribution
 
