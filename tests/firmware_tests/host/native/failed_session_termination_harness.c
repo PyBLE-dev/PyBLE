@@ -604,6 +604,42 @@ static void test_mock_adapter_callback_and_stale_matrix(void) {
     assert(mock.enter_calls == mock.exit_calls);
 }
 
+static void test_open_generation_rotation(void) {
+    pble_term_state_t state;
+    pble_term_init(&state);
+    assert(pble_term_open(&state, UINT16_C(40), UINT64_C(110)));
+
+    /* Only the exact OPEN owner may rotate to a fresh nonzero generation. */
+    assert(!pble_term_rotate_open(&state, UINT16_C(41), UINT64_C(110),
+                                  UINT64_C(111)));
+    assert(!pble_term_rotate_open(&state, UINT16_C(40), UINT64_C(109),
+                                  UINT64_C(111)));
+    assert(!pble_term_rotate_open(&state, UINT16_C(40), UINT64_C(110),
+                                  UINT64_C(0)));
+    assert(!pble_term_rotate_open(&state, UINT16_C(40), UINT64_C(110),
+                                  UINT64_C(110)));
+    assert(pble_term_admits(&state, UINT16_C(40), UINT64_C(110)));
+
+    assert(pble_term_rotate_open(&state, UINT16_C(40), UINT64_C(110),
+                                 UINT64_C(111)));
+    assert(!pble_term_admits(&state, UINT16_C(40), UINT64_C(110)));
+    assert(pble_term_admits(&state, UINT16_C(40), UINT64_C(111)));
+    assert(state.deadline_us == 0);
+    assert(!state.watchdog_armed);
+    assert(!state.watchdog_rearm_pending);
+    assert(!state.cleanup_stop_required);
+    assert(!state.cleanup_allowed);
+
+    /* Rotation cannot erase a CLOSING claim or its watchdog. */
+    assert_effects(
+        pble_term_begin(&state, UINT16_C(40), UINT64_C(111), INT64_C(1)),
+        PBLE_TERM_EFFECT_ARM_WATCHDOG);
+    assert(!pble_term_rotate_open(&state, UINT16_C(40), UINT64_C(111),
+                                  UINT64_C(112)));
+    assert(state.phase == PBLE_TERM_PHASE_CLOSING);
+    assert(state.generation == UINT64_C(111));
+}
+
 int main(void) {
     test_begin_and_terminal_deadline();
     test_exact_cleanup_and_timer_stop();
@@ -611,6 +647,7 @@ int main(void) {
     test_mock_adapter_one_call_matrix();
     test_mock_adapter_cleanup_matrix();
     test_mock_adapter_callback_and_stale_matrix();
+    test_open_generation_rotation();
     puts("failed-session termination reducer: all scenarios passed");
     return 0;
 }

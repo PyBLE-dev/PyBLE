@@ -221,6 +221,13 @@ class ActivityToken:
     kind: str
 
 
+@dataclass(frozen=True)
+class VmSessionToken:
+    conn: int
+    generation: int
+    epoch: int
+
+
 class VmLifecycleOracle:
     """Deterministic model of the admission/activity and deinit boundary."""
 
@@ -244,6 +251,19 @@ class VmLifecycleOracle:
         self.soft_pending = True
         self.soft_armed_epoch: int | None = self.epoch
         self.current_response = "old-frame"
+        self.conn = 7
+        self.generation = 41
+        self.session_epoch = self.epoch
+        self.session_live = True
+        self.tickets = {self.current_session_token()}
+        self.session_cut_held = False
+        self.transitions: list[str] = []
+
+    def current_session_token(self) -> VmSessionToken:
+        return VmSessionToken(self.conn, self.generation, self.session_epoch)
+
+    def session_token_valid(self, token: VmSessionToken) -> bool:
+        return self.session_live and token == self.current_session_token()
 
     def enter(self, kind: str) -> ActivityToken | None:
         if not self.open:
@@ -273,8 +293,13 @@ class VmLifecycleOracle:
         if self.closing:
             raise ForcedRestart("CLOSING cannot become a fresh VM session")
         self.open = False
-        self.deadline_ms = now_ms + self.DEINIT_BUDGET_MS
+        self.transitions.append("close-admission")
+        self.session_live = False
+        self.tickets.clear()
         self.current_response = None
+        self.transitions.append("logical-invalidate")
+        self.deadline_ms = now_ms + self.DEINIT_BUDGET_MS
+        self.transitions.append("mint-deadline")
 
     def activity_drained(self, now_ms: int) -> bool:
         if self.deadline_ms is None:
@@ -314,21 +339,50 @@ class VmLifecycleOracle:
             raise AssertionError("TX released before old tasks were deleted")
         self.tx_owner = None
 
-    def worker_try_tx(self) -> bool:
-        if not self.old_tasks_alive or self.tx_owner is not None:
+    def worker_try_tx(self, token: VmSessionToken | None = None) -> bool:
+        token = self.current_session_token() if token is None else token
+        if (
+            not self.old_tasks_alive
+            or self.tx_owner is not None
+            or not self.session_token_valid(token)
+        ):
             return False
         self.tx_owner = "old-worker"
         return True
 
-    def port_init(self) -> None:
-        if self.closing:
-            raise ForcedRestart("CLOSING cannot rotate open")
+    def attempt_termination(self) -> bool:
+        if self.tx_owner is not None or self.session_cut_held:
+            return False
+        self.closing = True
+        return True
+
+    def port_init(self, during_cut: object | None = None) -> None:
         if self.old_tasks_alive:
             raise AssertionError("port init precedes old-task deletion")
-        self.epoch += 1
-        self.roots = {"runner": None, "fs": None}
-        self.open = False
-        self.current_response = None
+        if self.tx_owner is not None:
+            raise AssertionError("port init requires sole TX ownership")
+        self.tx_owner = "port-init"
+        self.session_cut_held = True
+        try:
+            if self.closing:
+                raise ForcedRestart("CLOSING cannot rotate open")
+            if callable(during_cut):
+                during_cut()
+            if self.closing:
+                raise ForcedRestart("CLOSING cannot rotate open")
+            self.epoch += 1
+            self.generation += 1
+            if self.generation == 0:
+                self.generation += 1
+            self.session_epoch = self.epoch
+            self.session_live = True
+            self.tickets.clear()
+            self.roots = {"runner": None, "fs": None}
+            self.open = False
+            self.current_response = None
+        finally:
+            self.session_cut_held = False
+            self.tx_owner = None
 
     def ready(self) -> None:
         self.open = True
@@ -604,6 +658,47 @@ class FrozenLifecycleInterleavingTests(unittest.TestCase):
         self.assertEqual(model.tx_owner, "wrapper")
         model.release_tx_after_real()
         self.assertFalse(model.worker_try_tx(), "deleted worker cannot reacquire TX")
+
+    def test_wrapper_logical_cut_precedes_deadline_and_blocks_old_worker_tx(self):
+        model = VmLifecycleOracle()
+        old_token = model.current_session_token()
+        self.assertTrue(model.session_token_valid(old_token))
+        self.assertIn(old_token, model.tickets)
+
+        model.begin_wrapper(100)
+
+        self.assertEqual(
+            model.transitions,
+            ["close-admission", "logical-invalidate", "mint-deadline"],
+        )
+        self.assertFalse(model.session_token_valid(old_token))
+        self.assertNotIn(old_token, model.tickets)
+        self.assertFalse(
+            model.worker_try_tx(old_token),
+            "an old off-GIL worker must not start TX while wrapper waits",
+        )
+        self.assertEqual(model.deadline_ms, 2600)
+
+    def test_port_init_rotation_is_one_tx_session_cut(self):
+        model = VmLifecycleOracle()
+        model.old_tasks_alive = False
+        old_token = model.current_session_token()
+        attempted: list[bool] = []
+
+        model.port_init(
+            during_cut=lambda: attempted.append(model.attempt_termination())
+        )
+
+        new_token = model.current_session_token()
+        self.assertEqual(attempted, [False])
+        self.assertNotEqual(new_token.epoch, old_token.epoch)
+        self.assertNotEqual(new_token.generation, old_token.generation)
+        self.assertNotEqual(new_token.generation, 0)
+        self.assertFalse(model.session_token_valid(old_token))
+        self.assertTrue(model.session_token_valid(new_token))
+        self.assertFalse(model.tickets, "old response tickets survive rotation")
+        self.assertIsNone(model.tx_owner)
+        self.assertFalse(model.session_cut_held)
 
     def test_inactive_and_fired_timer_disarm_are_success(self):
         for state in ("inactive", "already-fired", "stopped"):
@@ -1017,6 +1112,101 @@ class NativeVmLifecycleContractTests(unittest.TestCase):
                     r"\b2500(?:[uUlL]*)\b",
                     "a helper must not mint a fresh wrapper budget",
                 )
+
+    def test_wrapper_invalidates_logically_before_minting_shared_deadline(self):
+        pre = code_only(c_function(VM_C, "pble_vm_epoch_pre_deinit"))
+        invalidate = code_only(
+            c_function(BLE, "pble_ble_vm_invalidate_session")
+        )
+        ordered(
+            self,
+            pre,
+            "pble_vm_close_admission",
+            "pble_ble_vm_invalidate_session",
+            "deadline_us",
+            "pble_vm_wait_activity_idle",
+            "pble_runner_vm_timer_disarm",
+            "pble_dc_vm_timer_disarm",
+            "pble_ble_vm_stop_response_callout",
+            "pble_ble_vm_tx_lock",
+        )
+        close = pre.index("pble_vm_close_admission")
+        deadline = pre.index("deadline_us", close)
+        pre_deadline_cut = pre[close:deadline]
+        for blocking in (
+            "portMAX_DELAY",
+            "xSemaphoreTake",
+            "vTaskDelay",
+            "ulTaskNotifyTake",
+            "pble_ble_vm_tx_lock",
+        ):
+            with self.subTest(pre_deadline_blocking=blocking):
+                self.assertNotIn(blocking, pre_deadline_cut)
+
+        self.assertTrue(invalidate, "missing logical exact-session invalidation")
+        old_token = re.search(
+            r"\bpble_session_token_t\s+([A-Za-z_]\w*)\b", invalidate
+        )
+        self.assertIsNotNone(old_token, "snapshot the exact old session token")
+        token_name = old_token.group(1)
+        ordered(
+            self,
+            invalidate,
+            "taskENTER_CRITICAL(&pble_session_mux)",
+            ".conn = pble_conn_handle",
+            ".generation = pble_conn_generation",
+            ".vm_epoch = pble_session_vm_epoch",
+            "pble_session_vm_epoch = 0",
+            "taskEXIT_CRITICAL(&pble_session_mux)",
+            "pble_rsp_cancel_session",
+        )
+        self.assertRegex(
+            invalidate,
+            rf"\bpble_rsp_cancel_session\s*\(\s*&?\s*{re.escape(token_name)}\s*\)",
+        )
+        for blocking in (
+            "portMAX_DELAY",
+            "xSemaphoreTake",
+            "vTaskDelay",
+            "ulTaskNotifyTake",
+        ):
+            with self.subTest(invalidation_blocking=blocking):
+                self.assertNotIn(blocking, invalidate)
+
+    def test_epoch_begin_rotates_retained_session_in_one_tx_session_cut(self):
+        reset = code_only(c_function(BLE, "pble_ble_vm_reset"))
+        self.assertTrue(reset)
+        tx_take = reset.find("xSemaphoreTakeRecursive(pble_tx_mutex")
+        session_enter = reset.find("taskENTER_CRITICAL(&pble_session_mux)")
+        session_exit = reset.find(
+            "taskEXIT_CRITICAL(&pble_session_mux)", session_enter
+        )
+        cancel = reset.find("pble_rsp_cancel_session", session_exit)
+        tx_give = reset.find("xSemaphoreGiveRecursive(pble_tx_mutex)", cancel)
+        self.assertGreaterEqual(tx_take, 0, "VM reset must own physical TX")
+        self.assertGreater(session_enter, tx_take, "session cut must follow TX")
+        self.assertGreater(session_exit, session_enter)
+        self.assertGreater(cancel, session_exit, "cancel outside session spinlock")
+        self.assertGreater(tx_give, cancel, "old tickets cancel before TX exposure")
+
+        session_cut = reset[session_enter:session_exit]
+        for token in (
+            "PBLE_TERM_PHASE_CLOSING",
+            "PBLE_TERM_PHASE_RESTARTING",
+            "pble_conn_generation_counter++",
+            "pble_conn_generation_counter == 0",
+            "pble_term_rotate_open",
+            "pble_conn_generation =",
+            "pble_session_vm_epoch = vm_epoch",
+        ):
+            with self.subTest(atomic_rotation_token=token):
+                self.assertIn(token, session_cut)
+        self.assertIn("esp_restart", reset)
+        self.assertNotIn(
+            "pble_ble_session_closing",
+            reset,
+            "a separate check before the TX/session cut has a check/use race",
+        )
 
     def test_lifecycle_counter_is_bounded_and_fails_closed(self):
         enter = code_only(c_function(VM_C, "pble_vm_dispatch_enter"))
