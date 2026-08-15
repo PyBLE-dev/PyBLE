@@ -156,28 +156,51 @@ it is not live for CMD admission, response-ticket reservation or validation,
 ordinary/event/control TX, or the specialized `RUN`, `STOP`, and `SOFT_REBOOT`
 paths. Existing work for that token is invalidated and cannot begin another
 side effect or publish a byte. Repeated close requests for the same token are
-idempotent, and numeric handle reuse cannot reopen it.
+idempotent. Every TX attempt carries its originating full token to the sole
+Notify exit; a new snapshot of a reused numeric handle cannot substitute for
+that ownership. The state machine is `CLOSED`/`OPEN`/`CLOSING`/`CLEANING`/
+`RESTARTING`, and neither a reused handle nor a later lifecycle event can open
+or clean a terminal `RESTARTING` token.
 
-The reference agent pre-creates a task-dispatched ESP timer before advertising.
-After entering `CLOSING`, it arms that independent watchdog for one absolute
-2500 ms termination deadline **before** making exactly one host-context
-`ble_gap_terminate` call. The deadline never moves. Return `0` and
-`BLE_HS_EALREADY` mean only that GAP teardown is already pending; the agent
-waits for the exact disconnect or NimBLE reset while the watchdog remains
-armed. Any other return, watchdog-arm failure, or watchdog expiry invokes the
-public non-returning `esp_restart()` immediately. A termination-failure GAP
-event is not teardown completion and therefore cannot reopen admission or
-cancel the watchdog. The agent never retries termination and never calls
-`ble_hs_sched_reset`, because the pinned host may already have scheduled its
-own reset before returning an error.
+Cold native initialization initializes this retained state exactly once and
+pre-creates one task-dispatched ESP timer before NimBLE can start or advertise;
+MicroPython soft reset and repeated agent initialization do not reset either.
+Creation failure leaves the agent unadvertised. A successful GAP connect mints
+a nonzero generation and opens the exact token under the session critical
+section before exposing it. If the state is not `CLOSED`, the board restarts
+instead of overwriting an old token.
 
-Exact disconnect or NimBLE reset performs one idempotent cleanup: cancel the
-watchdog, invalidate the closing token and all work/tickets bound to it, and
-only then permit later advertising or admission. An already-queued watchdog
-callback revalidates the closing token and its absolute deadline, so it cannot
-restart a later session. Thus every requested termination produces either GAP
-teardown or a whole-board restart within the fixed bound rather than leaving a
-live session that silently lost an admitted response.
+After entering `CLOSING`, the agent reads `esp_timer_get_time()` and arms that
+independent watchdog for one absolute 2500 ms termination deadline **before**
+making exactly one host-context `ble_gap_terminate` call. The deadline never
+moves. Initial arm failure claims `RESTARTING` and restarts without attempting
+GAP. Return `0` and `BLE_HS_EALREADY` mean only that GAP teardown is already
+pending; the agent waits for exact disconnect or NimBLE reset while the
+watchdog remains armed. Any other return claims `RESTARTING` and invokes public
+non-returning `esp_restart()` immediately. A `BLE_GAP_EVENT_TERM_FAILURE` is an
+explicit no-op: it cannot stop/rearm the timer, change the deadline, clean the
+token, advertise, or restart. The agent never retries termination and never
+calls `ble_hs_sched_reset`, `nimble_port_stop`, direct NimBLE/controller
+teardown, or a private restart entry point, because the pinned host may already
+have scheduled its own reset before returning an error.
+
+Exact disconnect or NimBLE reset first atomically claims `CLEANING`; a stale
+token does nothing. Normal `OPEN` cleanup has no termination timer to stop.
+Cleanup claimed from `CLOSING` must receive `ESP_OK` from `esp_timer_stop()`
+before it may invalidate exact-token work, complete `CLEANING → CLOSED`, or
+advertise. Any other stop result cannot prove that the task callback is not
+already running, so it claims `RESTARTING` and restarts. After the successful
+required stop, cleanup invalidates all exact-token work/tickets/TX ownership
+and only then permits later advertising or admission.
+
+The callback carries the immutable armed `{handle, generation, deadline}` and
+revalidates all three. An early callback rearms only the residual
+`deadline - now` interval; rearm failure claims `RESTARTING`. At or after the
+inclusive deadline it claims `RESTARTING` before restarting. A stale callback
+therefore cannot affect a reused handle even when its successor is also
+`CLOSING`. Thus every requested termination produces either exact GAP teardown
+or a whole-board restart within the fixed bound rather than leaving a live
+session that silently lost an admitted response.
 
 **ESP reference-agent VM boundary (amended 2026-08-15).** Static native
 workers, queues, semaphores, and response slots can outlive one MicroPython VM,

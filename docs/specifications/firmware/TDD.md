@@ -314,7 +314,7 @@ class BleLink:
     def on_disconnect(self, cb) -> None
 ```
 
-**Key data structures / state:** the GATT table (Service/RX/TX/INFO UUIDs from the [protocol.md §2](../protocol.md#2-ble-transport-gatt) constants mirror); a single **reassembly buffer** (static, sized `max_message`, see [§7.3](#73-buffer-sizing)); a fragment-index tracker (`FIRST`/`LAST`/`index mod 64`); negotiated MTU; connection handle plus monotonic boot-local connection generation and `OPEN`/`CLOSING` state; logical TX owner plus mutex-protected stream generation; a pre-created generic-response callout; a pre-created task-dispatched failed-session watchdog; the **advertised name** — the device label when set, else `PyBLE-` + `device_id` (the last two BLE-MAC bytes in uppercase hex), used for the name only, never for access control ([§4.8](#48-device-config-store--label--identify-led-nvs), CON-7/SEC-7/SEC-11).
+**Key data structures / state:** the GATT table (Service/RX/TX/INFO UUIDs from the [protocol.md §2](../protocol.md#2-ble-transport-gatt) constants mirror); a single **reassembly buffer** (static, sized `max_message`, see [§7.3](#73-buffer-sizing)); a fragment-index tracker (`FIRST`/`LAST`/`index mod 64`); negotiated MTU; connection handle plus monotonic boot-local connection generation and `CLOSED`/`OPEN`/`CLOSING`/`CLEANING`/`RESTARTING` state; logical TX owner plus mutex-protected stream generation; a pre-created generic-response callout; a pre-created task-dispatched failed-session watchdog; the **advertised name** — the device label when set, else `PyBLE-` + `device_id` (the last two BLE-MAC bytes in uppercase hex), used for the name only, never for access control ([§4.8](#48-device-config-store--label--identify-led-nvs), CON-7/SEC-7/SEC-11).
 
 **Session-safe response callout:** GAP connect mints, and disconnect invalidates,
 a `{handle, generation}` token. The pre-created response callout runs on the
@@ -334,32 +334,62 @@ section, `OPEN → CLOSING` happens first and repeated requests against the same
 token are no-ops. Public snapshot/live-for-admission checks return false for
 `CLOSING`; GATT dispatch, ticket reserve/validate, all response/event/control
 TX, and specialized `RUN`/`STOP`/`SOFT_REBOOT` paths therefore admit no later
-work or byte. Lifecycle cleanup uses an internal exact-token match that can
-still recognize `CLOSING`; it does not make the token live again.
+work or byte. Each TX attempt carries the originating full token to the sole
+Notify exit; taking a fresh generation snapshot from a reused numeric handle
+is not an ownership check. Lifecycle cleanup uses an internal exact-token
+match that can still recognize `CLOSING`; it does not make the token live
+again.
 
-Initialization pre-creates an `ESP_TIMER_TASK` one-shot and fails before
-advertising if that resource cannot be created. On `OPEN → CLOSING`, the host
-stores an `esp_timer_get_time()`-based absolute deadline 2500 ms ahead and arms
-the watchdog before exactly one `ble_gap_terminate` call. This order matters:
-the pinned HCI command wait can occupy the NimBLE host task for 2000 ms, while
-the ESP timer callback runs independently. Return `0` and
+Cold native initialization calls the reducer initializer exactly once per chip
+boot and pre-creates exactly one `ESP_TIMER_TASK` one-shot before NimBLE can
+start or advertise. Repeated agent initialization, including after a
+MicroPython soft reset, neither reinitializes the reducer nor replaces the
+timer. Timer creation failure leaves NimBLE unstarted and the board
+unadvertised. A successful GAP connect first mints a nonzero monotonic
+generation and, under the session critical section, opens that exact token
+before exposing it to any snapshot, admission, TX, or link-tuning path. An open
+attempt while the reducer is not `CLOSED`, including numeric-handle reuse while
+an old token is `CLOSING`, `CLEANING`, or `RESTARTING`, invokes public
+non-returning `esp_restart()` instead of overwriting the retained token.
+
+On `OPEN → CLOSING`, the host reads `esp_timer_get_time()`, stores one absolute
+deadline 2500 ms ahead, and successfully arms the watchdog before exactly one
+`ble_gap_terminate` call. An arm failure atomically claims `RESTARTING` and
+calls public non-returning `esp_restart()` without a GAP attempt. This order
+matters: the pinned HCI command wait can occupy the NimBLE host task for 2000
+ms, while the ESP timer callback runs independently. Return `0` and
 `BLE_HS_EALREADY` leave `CLOSING` and the watchdog intact pending exact GAP
-disconnect or `ble_hs_cfg.reset_cb`. Any other return or arm failure calls
-public non-returning `esp_restart()` immediately. There is no termination
-retry and no PyBLE call to `ble_hs_sched_reset`: HCI wait/ack failures may have
-already queued the host reset whose callback is the success signal. A
-`BLE_GAP_EVENT_TERM_FAILURE` is not a teardown signal and leaves the watchdog
-to enforce the same bound.
+disconnect or `ble_hs_cfg.reset_cb`. Any other return atomically claims
+`RESTARTING` and immediately restarts. Once claimed, `RESTARTING` rejects
+disconnect/reset cleanup and every later open attempt; only cold native
+initialization can clear it. There is no termination retry and no PyBLE call to
+`ble_hs_sched_reset`, `nimble_port_stop`, direct NimBLE/controller teardown, or
+private restart entry point: HCI wait/ack failures may have already queued the
+host reset whose callback is the success signal. A
+`BLE_GAP_EVENT_TERM_FAILURE` is an explicit no-op: it cannot mutate the token,
+phase, deadline, timer, work, advertising, or restart decision.
 
-Exact disconnect/reset atomically claims idempotent cleanup, stops the
-watchdog, cancels all token-bound responses/work, invalidates the token, and
-only then allows subsequent advertising/admission. The watchdog callback
-rechecks `CLOSING`, the full token, and the unchanged absolute deadline before
-calling `esp_restart()`, so a stopped-but-already-queued callback cannot restart
-a later generation that reused the numeric handle. The whole-board fallback is
-deliberate: `nimble_port_stop()` waits on the host event queue and is not a
-bounded host-context fallback, while direct controller deinitialization has an
-ordered stop prerequisite.
+Exact disconnect/reset first atomically claims `CLEANING`; a stale token has no
+effect and therefore cannot stop a timer or cancel current work. Normal
+`OPEN → CLEANING` has no armed termination watchdog. `CLOSING → CLEANING` must
+then stop the armed one-shot successfully before invalidating any work. In the
+pinned ESP timer, a due one-shot is removed before its task callback begins, so
+`esp_timer_stop()` returning anything other than `ESP_OK` cannot prove callback
+quiescence; that path atomically claims `RESTARTING` and immediately restarts.
+After a successful required stop, cleanup cancels all exact-token
+responses/work and TX ownership, invalidates the token, completes
+`CLEANING → CLOSED`, and only then permits advertising or a later open.
+
+The watchdog callback carries the immutable armed `{handle, generation,
+deadline}`. It acts only while that exact ticket remains `CLOSING` and armed.
+If observed time is before the unchanged deadline, it rearms once for exactly
+`deadline - now` microseconds; rearm failure claims `RESTARTING`. At or after
+the inclusive deadline it atomically claims `RESTARTING` before calling
+`esp_restart()`. Thus a stale callback cannot rearm or restart a successor that
+is itself `CLOSING`, and an exact disconnect cannot race a validated callback
+into reopening. The whole-board fallback is deliberate: `nimble_port_stop()`
+waits on the host event queue and is not a bounded host-context fallback, while
+direct controller deinitialization has an ordered stop prerequisite.
 
 **Advertised-name assembly:** at boot the name is `PyBLE-` + `device_id`; when `SET_LABEL` sets a non-empty label, `pyble_ble.set_adv_name(label)` updates the advertisement so the label shows in the scan list pre-connect; clearing the label restores `PyBLE-` + `device_id` (FR-BLE-12). Length bounding/validation happens in the device-config store before the value reaches the air ([§4.8](#48-device-config-store--label--identify-led-nvs), SEC-10).
 
@@ -2170,7 +2200,7 @@ This is where the Technical Design meets **Test-Driven Development** ([§0](#0-n
 | Module | unit (host) | conformance | build | size | HIL |
 |---|---|---|---|---|---|
 | `pyble_proto` | frame codec, CRC32, ID correlation, error-status mapping; whole-slot reserve-before-handler; absolute publication deadline/FIFO; transition-only completion wake and stale-signal drain; VM-epoch hard recycle/admission barrier | full opcode round-trip; exact-fragment pressure retry and control-preemption `FIRST` restart vs fake transport | SPDX/no-leak lint | fixed depth-2 response pool | default-MTU generic RSP; no cross-session/VM response |
-| `pyble_ble` | fragment/reassemble logic (pure), FIRST restart, slot/session/stream generations + one-fragment callout state; OPEN/CLOSING reducer; watchdog-before-GAP order; rc/reset/disconnect/expiry matrix | fragmentation/retry vs MTU matrix; reused-handle/late-ticket/watchdog cancellation | NimBLE-only config; public `esp_timer`/`esp_restart`; no termination retry or `ble_hs_sched_reset` | NimBLE buffer sizing plus one pre-created watchdog | adv/scan-filter, MTU 247 and 23, INFO read, label shows in scan; forced response refusal yields bounded link loss |
+| `pyble_ble` | fragment/reassemble logic (pure), FIRST restart, slot/session/stream generations + one-fragment callout state; five-phase termination reducer; cold-init/open, arm/GAP, exact-cleanup/stop, residual-rearm, stale-callback, and terminal-restart matrices | fragmentation/retry vs MTU matrix; reused-handle/late-ticket/watchdog cancellation | NimBLE-only config; public `esp_timer`/`esp_restart`; one GAP attempt; no termination retry, host reset, NimBLE stop, or direct controller teardown | NimBLE buffer sizing plus one pre-created watchdog | adv/scan-filter, MTU 247 and 23, INFO read, label shows in scan; forced response refusal yields bounded link loss |
 | `pyble_fs` | jail resolution, CRC accumulate, temp-rename; response/session/VM ownership; adjacent VFS cancellation; exact-session GET/ACK send; atomic quiescence gate | put/get window + resume + CRC vs fake; RSP-before-dependent-events | — | file-buffer + reserved-response footprint | multi-file upload, dropped-link resume; no old-session/VM FS effect or reply |
 | `pyble_runner` | state-machine transitions; transactional RUN admission under mutex/Notify/connection failure; exact-state rollback; auto-run bypass; VM-reset semaphore/state/buffer reset | response-before-wake/RUN_STATE sequence; single-fragment response at minimum MTU | — | — | STOP vs `while True: pass`, traceback→stderr; pressure/disconnect RUN remains side-effect-free |
 | `pyble_console` | tee + backpressure and control-priority logic | CONSOLE_DATA stream tagging; whole-message non-interleaving | — | staging-buffer/transport-reserve footprint | live stdout/stdin latency; C3 print-flood STOP response then idle in <500 ms |
