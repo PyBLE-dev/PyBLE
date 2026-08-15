@@ -29,6 +29,8 @@
 #            # request for the supervisor, and NEVER emits or executes inline.
 #       .handle_stop() -> int                # always OK (0x00); arms stop intent
 #       .is_executing() -> bool              # false while only reserved/pending
+#       .service_interrupted() -> bool        # idempotently terminalize a KBI
+#            # that escaped service() after pickup; exactly one IDLE emission
 #       .service() -> bool                   # supervisor pickup: if a STOP was
 #            # accepted after reservation, consume the request without executing
 #            # or emitting running, and emit IDLE. Otherwise clear only stale
@@ -292,6 +294,51 @@ class PrePickupCancellationTest(unittest.TestCase):
         self.assertEqual(inside, [True])
         self.assertFalse(r.is_executing(), "terminal cleanup clears executing")
         self.assertEqual(emitted, [RUNNING, DONE])
+
+
+class PickupLinearizationTest(unittest.TestCase):
+    """P2/P3: publishing `_executing=True` is the pickup linearization cut.
+
+    This oracle injects STOP immediately before that exact attribute store. If
+    the final cancellation check has already happened, the accepted STOP falls
+    into a check-then-publish hole and user source incorrectly executes.
+    """
+
+    def test_stop_at_executing_store_is_consumed_before_source(self):
+        base = RUNNER.attr(
+            self, "Runner", "F-27/P2 executing-marker linearization cut")
+        emitted = []
+        calls = []
+        journal = []
+
+        class StopAtExecutingStore(base):
+            def __init__(self):
+                object.__setattr__(self, "_inject_at_store", False)
+                super().__init__(emitted.append, self._execute)
+
+            def _execute(self, mode, data):
+                calls.append((mode, bytes(data)))
+
+            def __setattr__(self, name, value):
+                if (name == "_executing" and value is True
+                        and self._inject_at_store):
+                    object.__setattr__(self, "_inject_at_store", False)
+                    journal.append(("before-store", self.is_executing()))
+                    journal.append(("stop", self.handle_stop()))
+                super().__setattr__(name, value)
+
+        runner = StopAtExecutingStore()
+        self.assertEqual(runner.handle_run(GOOD_SOURCE), OK)
+        runner._inject_at_store = True
+
+        self.assertTrue(runner.service())
+        self.assertEqual(journal, [("before-store", False), ("stop", OK)])
+        self.assertEqual(calls, [],
+                         "STOP accepted before the executing-marker store MUST "
+                         "be consumed by the final cancellation check")
+        self.assertEqual(emitted, [IDLE],
+                         "the pickup-cut cancellation emits only terminal idle")
+        self.assertFalse(runner.is_executing())
 
 
 class TerminalStateTest(unittest.TestCase):

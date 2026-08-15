@@ -27,7 +27,7 @@
 # ---------------------------------------------------------------------------
 # INTERFACE PINNED BY THIS [red] TEST (agent-engineer implements to it):
 #   pyble_agent.Agent(link, fs_root, unique_id=bytes, reset=callable,
-#                     clock=callable, notify=callable)
+#                     clock=callable, notify=callable, arm_reset=callable)
 #     - the host-testable init_agent() equivalent. The constructor wires
 #       everything: builds the Dispatcher, registers a handler for EVERY §4
 #       CMD opcode, registers link.on_message(cb) so cb(msg) ->
@@ -193,16 +193,20 @@ class AgentTestBase(unittest.TestCase):
         self.now = [0]
         self.resets = []
 
-    def new_agent(self, criterion=None, order=None, reset=None, notify=None):
+    def new_agent(self, criterion=None, order=None, reset=None, notify=None,
+                  arm_reset=None):
         cls = AGENT.attr(self, "Agent", criterion or self.CRIT)
         link = FakeLink(order)
-        agent = cls(
-            link, self.root,
-            unique_id=UNIQUE_ID,
-            reset=reset if reset is not None else (lambda: self.resets.append(1)),
-            clock=lambda: self.now[0],
-            notify=notify,
-        )
+        kwargs = {
+            "unique_id": UNIQUE_ID,
+            "reset": (reset if reset is not None
+                      else (lambda: self.resets.append(1))),
+            "clock": lambda: self.now[0],
+            "notify": notify,
+        }
+        if arm_reset is not None:
+            kwargs["arm_reset"] = arm_reset
+        agent = cls(link, self.root, **kwargs)
         return agent, link
 
 
@@ -651,6 +655,252 @@ class InterruptIntentExceptionSafetyTest(AgentTestBase):
 
 class _ResetNow(BaseException):
     """Host sentinel for the device's non-returning machine.reset seam."""
+
+
+class ControlCommitTransactionTest(AgentTestBase):
+    """P3/P4: STOP/SOFT effects commit only after response handoff.
+
+    A failed encode/send leaves the reserved run, VM, reboot deadline, and
+    hardware alarm exactly as they were before the command.
+    """
+
+    def test_reserved_stop_encode_failure_leaves_source_runnable(self):
+        agent, link = self.new_agent(
+            "F-27/P3 STOP encode failure rolls back control")
+        source = bytes((1,)) + b"x = 1"
+        send(self, link, 0x20, source, id_=90)
+        real_encode = pyble_proto.encode
+
+        def fail_stop_rsp(type_, opcode, id_, payload=b""):
+            if type_ == RSP and opcode == 0x21 and id_ == 91:
+                raise RuntimeError("deterministic STOP encode failure")
+            return real_encode(type_, opcode, id_, payload)
+
+        pyble_proto.encode = fail_stop_rsp
+        try:
+            with self.assertRaisesRegex(RuntimeError, "STOP encode failure"):
+                send(self, link, 0x21, id_=91)
+        finally:
+            pyble_proto.encode = real_encode
+
+        agent.poll()
+        self.assertEqual(run_states(link), [1, 2],
+                         "unacknowledged STOP MUST NOT cancel reserved source")
+        self.assertIsNone(agent._reboot_at)
+
+    def test_reserved_soft_send_failure_leaves_run_and_deadline_unchanged(self):
+        agent, link = self.new_agent(
+            "F-27/P4 SOFT send failure rolls back control")
+        send(self, link, 0x20, bytes((1,)) + b"x = 2", id_=92)
+        real_send = link.send_message
+
+        def fail_soft_rsp(msg):
+            frame = pyble_proto.decode(msg)
+            if frame.type == RSP and frame.opcode == 0x22 and frame.id == 93:
+                raise RuntimeError("deterministic SOFT send failure")
+            real_send(msg)
+
+        link.send_message = fail_soft_rsp
+        try:
+            with self.assertRaisesRegex(RuntimeError, "SOFT send failure"):
+                send(self, link, 0x22, id_=93)
+        finally:
+            link.send_message = real_send
+
+        self.assertIsNone(agent._reboot_at,
+                          "unacknowledged SOFT MUST NOT create a deadline")
+        agent.poll()
+        self.assertEqual(run_states(link), [1, 2],
+                         "unacknowledged SOFT MUST NOT cancel reserved source")
+        self.assertEqual(self.resets, [])
+
+
+class TerminalInterruptRecoveryTest(AgentTestBase):
+    """P3/P4: a deferred KBI at either side of the stopped transition is
+    recovered idempotently by Agent.poll: one IDLE event and no RUNNING wedge.
+    """
+
+    def _exercise_transition_cut(self, after_state_change):
+        order = []
+        agent, link = self.new_agent(
+            "F-27/P3 post-exec KBI terminal recovery", order=order,
+            notify=lambda: order.append(("notify",)),
+            reset=lambda: order.append(("reset",)))
+        send(self, link, 0x20, bytes((1,)) + b"x = 3", id_=94)
+        real_stopped = agent._runner.rsm.on_stopped
+        injected = [False]
+
+        def interrupt_at_transition():
+            if not injected[0]:
+                injected[0] = True
+                if after_state_change:
+                    real_stopped()
+                raise KeyboardInterrupt()
+            return real_stopped()
+
+        def acknowledge_soft_then_return(mode, data):
+            send(self, link, 0x22, id_=95)
+
+        agent._runner.rsm.on_stopped = interrupt_at_transition
+        agent._runner._exec_fn = acknowledge_soft_then_return
+        agent.poll()
+
+        self.assertEqual(run_states(link), [1, 0],
+                         "post-exec KBI MUST publish exactly one terminal idle")
+        self.assertEqual(agent._runner.rsm.events.count(0), 1,
+                         "idempotent recovery MUST transition to idle once")
+        self.assertNotEqual(agent._runner.rsm.state, 1,
+                            "escaped KBI MUST NOT strand the RSM in RUNNING")
+        self.assertFalse(agent._runner.is_executing())
+        self.now[0] = 250
+        agent.poll()
+        self.assertEqual(order.count(("reset",)), 1,
+                         "terminal recovery MUST leave SOFT reset serviceable")
+
+    def test_interrupt_before_stopped_transition_recovers_once(self):
+        self._exercise_transition_cut(after_state_change=False)
+
+    def test_interrupt_after_state_before_idle_publication_recovers_once(self):
+        self._exercise_transition_cut(after_state_change=True)
+
+
+class SoftRebootClosingTest(AgentTestBase):
+    """P4: one acknowledged SOFT fixes one deadline and closes admissions."""
+
+    def test_duplicate_is_ebusy_without_extending_original_deadline(self):
+        agent, link = self.new_agent(
+            "F-27/P4 duplicate SOFT preserves deadline")
+        send(self, link, 0x22, id_=96)
+        self.assertEqual(rsps(link, 0x22, 96)[0].payload[0], OK)
+        self.assertEqual(agent._reboot_at, 250)
+
+        self.now[0] = 200
+        send(self, link, 0x22, id_=97)
+        self.assertEqual(rsps(link, 0x22, 97)[0].payload[0], EBUSY)
+        self.assertEqual(agent._reboot_at, 250,
+                         "duplicate SOFT MUST NOT move the first deadline")
+
+        self.now[0] = 250
+        agent.poll()
+        self.assertEqual(self.resets, [1],
+                         "the original t=250 deadline remains authoritative")
+
+    def test_pending_reboot_rejects_run_and_skips_filesystem_pump(self):
+        agent, link = self.new_agent(
+            "F-27/P4 closing state rejects work")
+        pumps = []
+        agent._fs.pump = lambda: pumps.append(1)
+        send(self, link, 0x22, id_=98)
+
+        send(self, link, 0x20, bytes((1,)) + b"raise RuntimeError", id_=99)
+        self.assertEqual(rsps(link, 0x20, 99)[0].payload[0], EBUSY)
+        agent.poll()
+
+        self.assertEqual(pumps, [],
+                         "closing supervisor MUST NOT start filesystem work")
+        self.assertEqual(run_states(link), [],
+                         "RUN after acknowledged SOFT MUST never execute")
+
+    def test_closing_exception_resets_instead_of_losing_deadline(self):
+        order = []
+
+        def reset_now():
+            order.append(("reset",))
+            raise _ResetNow()
+
+        agent, link = self.new_agent(
+            "F-27/P4 closing exception fail-safe", reset=reset_now)
+        send(self, link, 0x20, bytes((1,)) + b"x = 4", id_=100)
+        send(self, link, 0x22, id_=101)
+
+        def fail_idle_emit(state):
+            raise RuntimeError("deterministic terminal send failure")
+
+        agent._runner._emit_state = fail_idle_emit
+        with self.assertRaises(_ResetNow,
+                               msg="closing exception MUST reset, not rebuild"):
+            agent.poll()
+        self.assertEqual(order, [("reset",)])
+
+
+class HardResetAlarmTest(AgentTestBase):
+    """P4: the RP2 alarm is a hard one-shot and does not depend on poll/KBI."""
+
+    def test_timer_factory_uses_hard_one_shot_and_direct_reset(self):
+        factory = AGENT.attr(
+            self, "_make_hard_reset_alarm",
+            "F-27/P4 RP2 hard reset alarm factory")
+        timers = []
+        resets = []
+
+        class FakeTimer:
+            ONE_SHOT = 0
+
+            def __init__(self):
+                self.kwargs = None
+                timers.append(self)
+
+            def init(self, **kwargs):
+                self.kwargs = kwargs
+
+        arm = factory(FakeTimer, lambda: resets.append(1))
+        arm(250)
+
+        self.assertEqual(len(timers), 1)
+        self.assertEqual(timers[0].kwargs["period"], 250)
+        self.assertEqual(timers[0].kwargs["mode"], FakeTimer.ONE_SHOT)
+        self.assertIs(timers[0].kwargs["hard"], True)
+        timers[0].kwargs["callback"](timers[0])
+        self.assertEqual(resets, [1],
+                         "hard callback invokes reset without Agent.poll")
+
+    def test_soft_arms_alarm_only_after_response_handoff(self):
+        order = []
+        armed = []
+
+        def arm(delay_ms):
+            order.append(("arm", delay_ms))
+            armed.append(delay_ms)
+
+        agent, link = self.new_agent(
+            "F-27/P4 response-before-hard-alarm", order=order,
+            arm_reset=arm)
+        send(self, link, 0x22, id_=102)
+
+        rsp_index = next(
+            i for i, event in enumerate(order)
+            if event[0] == "tx"
+            and pyble_proto.decode(event[1]).type == RSP
+            and pyble_proto.decode(event[1]).opcode == 0x22)
+        self.assertEqual(armed, [250])
+        self.assertLess(rsp_index, order.index(("arm", 250)),
+                        "hard deadline is armed only after SOFT RSP handoff")
+
+    def test_timer_admission_failure_resets_after_response(self):
+        order = []
+
+        def arm_fail(delay_ms):
+            order.append(("arm-fail", delay_ms))
+            raise RuntimeError("alarm pool full")
+
+        def reset_now():
+            order.append(("reset",))
+            raise _ResetNow()
+
+        agent, link = self.new_agent(
+            "F-27/P4 timer admission reset fail-safe", order=order,
+            reset=reset_now, arm_reset=arm_fail)
+        with self.assertRaises(_ResetNow):
+            send(self, link, 0x22, id_=103)
+
+        rsp_index = next(
+            i for i, event in enumerate(order)
+            if event[0] == "tx"
+            and pyble_proto.decode(event[1]).type == RSP
+            and pyble_proto.decode(event[1]).opcode == 0x22)
+        self.assertLess(rsp_index, order.index(("arm-fail", 250)))
+        self.assertLess(order.index(("arm-fail", 250)),
+                        order.index(("reset",)))
 
 
 class SchedulerFailureFailSafeTest(AgentTestBase):
