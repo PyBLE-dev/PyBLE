@@ -153,7 +153,13 @@ contract, and HIL matrix live in
 - **BLE stays responsive while user code runs.** The runner executes user code on its own task; the BLE/agent task keeps servicing the link, so `STOP` always lands.
 - **STOP is authoritative.** `STOP` interrupts the runner promptly; on interrupt or exception the runner tears down cleanly and reports `RUN_STATE`.
 - **The agent owns the filesystem bridge**, but user code may also touch the FS normally; uploads use temp-write-then-rename to avoid corrupting a file mid-transfer.
-- **Console mirrors everywhere.** `stdout`/`stderr` go to BLE and (if connected) USB-serial, regardless of who started the run.
+- **Console mirrors everywhere.** `stdout`/`stderr` go to BLE and (if connected)
+  USB-serial, regardless of who started the run. Each new BLE console chunk and
+  runner-state event binds to the live full connection-session token at its
+  creation; no live session means no event. Retries retain that token and old
+  buffered work dies on disconnect, while later output after reconnect may
+  bind the successor. A command's response/execution admission remains bound
+  to its origin.
 - **Cold boot is safe.** On boot the board advertises and waits; it does not auto-run user `main.py` unless explicitly enabled (a HELLO/`DEVICE_INFO` capability flag), so a bad `main.py` can't lock you out of the board.
 - **Exact-board identity is independent and fail-open.** On an explicitly
   configured Waveshare 1.47B running its exact-board image, one

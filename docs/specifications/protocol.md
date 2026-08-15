@@ -19,6 +19,10 @@ acknowledged and makes incomplete-fragment restart semantics explicit. It also
 binds the ESP reference agent's bounded, session-scoped generic-response
 delivery. It changes no PBLE/1 byte.
 
+The 2026-08-15 runner-event amendment binds each newly created `RUN_STATE` and
+`CONSOLE_DATA` event to the live connection session at that instant. It changes
+no PBLE/1 byte.
+
 **Freeze ledger (per-section):**
 
 | Section | Freeze status | Freeze act |
@@ -27,7 +31,7 @@ delivery. It changes no PBLE/1 byte.
 | §3 Framing — §3.1 message frame, §3.2 fragmentation | **FROZEN for v1.0 (amended)** | G0 · 2026-07-01; restart/delivery semantics · 2026-08-15 · `[docs]` |
 | §4 Opcodes — the v1.0 opcode set + numbers | **FROZEN for v1.0** | G1 · 2026-07-01 · `[docs]` (closes OI-4) |
 | §8 Status / error codes — the 1-byte status set + numbers | **FROZEN for v1.0** | G1 · 2026-07-01 · `[docs]` |
-| §6 Run/Stop/Console — RUN{file,source}, RUN_STATE, EBUSY, STOP, SOFT_REBOOT, CONSOLE_DATA/INPUT | **FROZEN for v1.0 (amended)** | G1 · 2026-07-01; transactional RUN admission · 2026-08-14; default-MTU STOP/SOFT_REBOOT admission · 2026-08-15 · `[docs]` (RUN-file at S3; STOP / console / RUN-source at S4) |
+| §6 Run/Stop/Console — RUN{file,source}, RUN_STATE, EBUSY, STOP, SOFT_REBOOT, CONSOLE_DATA/INPUT | **FROZEN for v1.0 (amended)** | G1 · 2026-07-01; transactional RUN admission · 2026-08-14; default-MTU STOP/SOFT_REBOOT admission and per-event session binding · 2026-08-15 · `[docs]` (RUN-file at S3; STOP / console / RUN-source at S4) |
 | §7 HELLO & capabilities — caps field set, HELLO-first, INFO==DEVICE_INFO, label max = 24 B (label half of OI-6) | **FROZEN for v1.0** | G1 · 2026-07-01 · `[docs]` |
 | §9 Versioning policy — accept only `VER 0x01`, refuse unsatisfiable, additive caps | **FROZEN for v1.0** | G1 · 2026-07-01 · `[docs]` |
 | §5 File transfer — read + windowed upload + workspace jail | **FROZEN for v1.0** | G1 · 2026-07-01 · `[docs]` |
@@ -436,7 +440,7 @@ no corresponding execution, interrupt, or reset side effect.
 
 ## 6. Run / Stop / Console
 
-> **FROZEN for v1.0 (amended)** — RUN-file at G1 · S3; **`RUN{source}`, `STOP`, `SOFT_REBOOT`, `CONSOLE_DATA`, `CONSOLE_INPUT` frozen at G1 · S4 (2026-07-01 · `[docs]`)**; transactional RUN admission clarified 2026-08-14; default-MTU `STOP`/`SOFT_REBOOT` response-before-side-effect admission clarified 2026-08-15. Wire below; amend only via a `[docs]` commit before dependent code.
+> **FROZEN for v1.0 (amended)** — RUN-file at G1 · S3; **`RUN{source}`, `STOP`, `SOFT_REBOOT`, `CONSOLE_DATA`, `CONSOLE_INPUT` frozen at G1 · S4 (2026-07-01 · `[docs]`)**; transactional RUN admission clarified 2026-08-14; default-MTU `STOP`/`SOFT_REBOOT` response-before-side-effect admission and per-event session binding clarified 2026-08-15. Wire below; amend only via a `[docs]` commit before dependent code.
 
 - **`RUN` (0x20)** payload `[mode:u8][data]` — `mode` 0=file (`data` = UTF-8 path), 1=source (`data` = UTF-8 snippet). → `RSP{status}` (`OK` | `EBUSY` if one already running, FR-RUN-4 | `EBADREQ` bad mode | `ERANGE` over-length), then `RUN_STATE(running)`. Both modes share one lifecycle. Completion → `RUN_STATE(done)`; an uncaught exception → `CONSOLE_DATA(stderr, traceback)` then `RUN_STATE(error)`. A missing/inaccessible file surfaces asynchronously (`CONSOLE_DATA(stderr)` + `RUN_STATE(error)`), not as the `RSP`.
 
@@ -486,7 +490,18 @@ no corresponding execution, interrupt, or reset side effect.
 - **`CONSOLE_INPUT` (0x31, CMD, no RSP)** payload `[bytes]` — appended to the running program's `stdin` (`input()`/`sys.stdin`); fire-and-forget, no reply frame (FR-CON-3).
 - **`RUN_STATE` (0x40, EVT, id 0)** payload `[state:u8]` — 0 idle / 1 running / 2 done / 3 error (FR-RUN-7).
 
-The console is **observe-anywhere**: `stdout`/`stderr` stream regardless of which client triggered the run. USB is a local-debug mirror only — never a runtime transport (FR-CON-5).
+The console is **observe-anywhere**: `stdout`/`stderr` stream regardless of
+which client triggered the run. Each new logical `RUN_STATE` event and each
+newly formed `CONSOLE_DATA` chunk independently captures the then-current live
+`{connection handle, connection generation, VM epoch}` at event creation. If
+no live session exists then, that event is omitted rather than retained for a
+future client. Every fragment and retry of one created event retains that exact
+token and MUST NOT retarget: disconnect or VM-epoch change invalidates its
+buffered work, while a later new event MAY bind a successor session after
+reconnect. This rule applies equally to command-started and opt-in auto-runs.
+It does not change `RUN` command admission: the matching response and execution
+cut remain bound to the command's originating session. USB is a local-debug
+mirror only — never a runtime transport (FR-CON-5).
 
 ## 7. HELLO & capabilities
 

@@ -65,6 +65,11 @@ Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-08-15
 > 2500 ms watchdog, and then calls GAP termination exactly once. Only success or
 > already-terminating awaits disconnect/reset; every other return or watchdog
 > failure/expiry uses a whole-board restart. No wire byte changes.
+> **Per-event session-binding amendment (2026-08-15).** Each newly authored
+> `RUN_STATE` event and newly staged `CONSOLE_DATA` chunk snapshots one live
+> full session token at creation. Its retries retain that token; old buffered
+> work never retargets after disconnect, while later events may bind a
+> successor. No wire byte changes.
 
 ## 0. Naming note (acronym clash)
 
@@ -627,7 +632,32 @@ class Runner:
 
 **Execution model:** a `RUN` while `state == running` returns `EBUSY` (FR-RUN-4). The ESP handler validates the request and initialized hand-off semaphore, remembers the exact prior runnable state (`idle`, `done`, or `error`), makes a provisional, non-observable reservation of `running`, and copies the request. It then encodes the matching one-fragment `RSP{OK}` in call-local storage and makes one connection-bound control submission attempt. That transport seam takes the TX mutex with zero wait, rechecks the originating connection, and makes exactly one Notify call; it never sleeps, waits for drain progress, or retries on the NimBLE host task. `PBLE_TX_OK` is the admission cut: only then does the provisional reservation become an observable lifecycle transition, the handler give the binary runner semaphore exactly once, and the handler suppress the dispatcher's generic response. The empty-semaphore give is an invariant of the single `running` reservation. Mutex contention, no connection, connection mismatch, or `PBLE_TX_AGAIN` restores the remembered state, suppresses generic response fallback, and returns without a worker wake, execution, console output, or RUN event. A disconnect after `PBLE_TX_OK` does not revoke the accepted run. The non-dispatch auto-run path remains a direct reserve/copy/give with no response.
 
-Once admitted, the worker emits `RUN_STATE(running)` (FR-RUN-1). `STOP` raises `KeyboardInterrupt` in the runner thread (using MicroPython's scheduled-exception / pending-interrupt mechanism) so it lands even against a tight loop (FR-RUN-5, NFR-SAFE-1). On normal return → `RUN_STATE(done)`; on uncaught exception → traceback to `CONSOLE_DATA(stderr)` then emit `RUN_STATE(error)` (FR-RUN-9). After `STOP`/exception, teardown is clean and the board returns to `idle` (FR-RUN-6/10). `SOFT_REBOOT` first takes the non-blocking FS quiescence gate described in §4.4, provisionally closes non-reboot CMD admission, and submits its one-packet `RSP{OK}`. A busy worker/non-empty FS queue returns `EBUSY`; TX failure reopens all gates and cancels reset. `PBLE_TX_OK` commits the reset and gates never reopen after that cut. The handler then arms one pre-created 250 ms one-shot; timer-arm failure invokes non-returning `esp_restart()`, while success leaves pending set and stops the worker so only the timer callback schedules `SystemExit` on the main task. The timer is never pre-armed. The pending flag rejects duplicate reboot requests. On next initialization the runner semaphore is drained and its state machine, request buffers, and worker pointer are reset before a replacement worker is registered; the old-epoch worker cannot wake or execute. This separates local Notify acceptance from VM teardown while keeping the handler non-blocking and bounded (FR-RUN-8).
+Once admitted, the worker authors `RUN_STATE(running)` (FR-RUN-1). Each new
+`RUN_STATE` event atomically snapshots the then-current live full session token
+at that point, independently of the run's origin; with no live session it is
+omitted. A created event keeps that immutable token through every paced retry,
+so disconnect invalidates old buffered work rather than retargeting it, while a
+later state transition may bind a successor. Command response and execution
+admission remain bound to the originating token. `STOP` raises
+`KeyboardInterrupt` in the runner thread (using MicroPython's
+scheduled-exception / pending-interrupt mechanism) so it lands even against a
+tight loop (FR-RUN-5, NFR-SAFE-1). On normal return → `RUN_STATE(done)`; on
+uncaught exception → traceback to `CONSOLE_DATA(stderr)` then emit
+`RUN_STATE(error)` (FR-RUN-9). After `STOP`/exception, teardown is clean and the
+board returns to `idle` (FR-RUN-6/10). `SOFT_REBOOT` first takes the non-blocking
+FS quiescence gate described in §4.4, provisionally closes non-reboot CMD
+admission, and submits its one-packet `RSP{OK}`. A busy worker/non-empty FS queue
+returns `EBUSY`; TX failure reopens all gates and cancels reset. `PBLE_TX_OK`
+commits the reset and gates never reopen after that cut. The handler then arms
+one pre-created 250 ms one-shot; timer-arm failure invokes non-returning
+`esp_restart()`, while success leaves pending set and stops the worker so only
+the timer callback schedules `SystemExit` on the main task. The timer is never
+pre-armed. The pending flag rejects duplicate reboot requests. On next
+initialization the runner semaphore is drained and its state machine, request
+buffers, and worker pointer are reset before a replacement worker is
+registered; the old-epoch worker cannot wake or execute. This separates local
+Notify acceptance from VM teardown while keeping the handler non-blocking and
+bounded (FR-RUN-8).
 
 **Dependencies:** Layer-1 `_thread`, `asyncio`, the VM's exec primitives; `pyble_console` for stream capture; `pyble_agent` for the single-writer lock.
 
@@ -721,7 +751,16 @@ class Console:
     def write_err(self, data: bytes) -> None    # -> CONSOLE_DATA(stderr)
 ```
 
-**Key data structures / state:** an output staging buffer with **backpressure** ([§5.4](#54-console-backpressure)); a stdin queue feeding the runner; stream-tag constants (`stdout`/`stderr`). Output is observe-anywhere — emitted regardless of which client triggered the run (FR-CON-4).
+**Key data structures / state:** an output staging buffer with **backpressure**
+([§5.4](#54-console-backpressure)); a stdin queue feeding the runner;
+stream-tag constants (`stdout`/`stderr`). Output is observe-anywhere — emitted
+regardless of which client triggered the run (FR-CON-4). Immediately before
+the paced emit of each newly staged `CONSOLE_DATA` chunk, the console snapshots
+one then-current live full session token. With no live session the new chunk is
+omitted. The transport receives that immutable token once and keeps it through
+all fragments and retries; it never resnapshots a successor. Disconnect
+invalidates the old chunk, but output created after reconnect may bind the new
+session, including output from a continuing auto-run.
 
 **Dependencies:** `pyble_proto`/`pyble_ble` (TX), `pyble_runner` (stdin target), optional `sys`/UART for USB mirror (FR-CON-5, IF-USB — debug only, never a runtime transport).
 
@@ -1066,7 +1105,16 @@ Because the link is serviced by the NimBLE host context and user code lives on t
 
 ### 5.4 Console backpressure
 
-The console tee writes into a bounded staging buffer drained by the TX notification path. When BLE is slower than the program's output, the tee applies backpressure: the runner thread blocks briefly on a full buffer rather than dropping data or growing the heap without bound (protects NFR-FP-HEAP and keeps console latency bounded, NFR-PERF-3). `CONSOLE_INPUT` bytes are queued and delivered to the runner's `stdin` (FR-CON-3).
+The console tee writes into a bounded staging buffer drained by the TX
+notification path. When BLE is slower than the program's output, the tee
+applies backpressure: the runner thread blocks briefly on a full buffer rather
+than dropping data or growing the heap without bound (protects NFR-FP-HEAP and
+keeps console latency bounded, NFR-PERF-3). A newly staged chunk captures a
+live full session token once immediately before its paced emit; absence omits
+that chunk, and retries never refresh its token. Thus reconnect drops old
+buffered work but may receive later chunks from the continuing run.
+`CONSOLE_INPUT` bytes are queued and delivered to the runner's `stdin`
+(FR-CON-3).
 
 For the frozen C3 engineering gate, TX scheduling has two behavioral classes:
 control (`RSP`, `RUN_STATE`, and other lifecycle traffic) and bulk
