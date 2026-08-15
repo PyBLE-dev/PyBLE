@@ -1453,7 +1453,7 @@ class WaveshareBleExecutorRedTest(unittest.IsolatedAsyncioTestCase):
                     "hello",
                     "esp32-s3",
                     "waveshare-esp32-s3-lcd-147b",
-                    2.0,
+                    5.0,
                 ),
                 ("probe", "pair", 8.0),
                 ("disconnect", "diagnostic"),
