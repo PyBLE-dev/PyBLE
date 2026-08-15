@@ -41,7 +41,7 @@
 #         exactly
 #         once immediately after the final Notify is locally accepted. It does
 #         not publish a receipt while disconnected or after a Notify error;
-#         returns False only for the disconnected/no-live-session omission.
+#         returns False when offline or when the captured session is stale.
 # ---------------------------------------------------------------------------
 
 import os

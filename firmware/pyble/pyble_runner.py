@@ -171,8 +171,9 @@ class Runner:
         if self._terminal_phase == _TERMINAL_PUBLISHED:
             self._terminal_phase = _TERMINAL_NONE
         elif accepted is False:
-            # No live session at event creation: omit instead of retaining the
-            # terminal for a future connection (protocol.md §6).
+            # No live session, or the captured session went stale: omit instead
+            # of retaining the terminal for a future connection (protocol.md
+            # §6).
             self._terminal_phase = _TERMINAL_NONE
         return True
 
