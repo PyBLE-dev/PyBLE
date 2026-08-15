@@ -122,10 +122,11 @@ commands reserve the same capacity before their bounded host-to-worker enqueue.
 If that enqueue is full, the dispatcher invokes no filesystem operation and
 publishes `RSP{EBUSY}` through the same reserved slot; it does not discard the
 reservation or attempt an unreserved fallback response. The reservation is a
-ticket bound to a slot incarnation and the originating
-connection session, including a generation that cannot be confused by numeric
-connection-handle reuse. A deferred worker builds its result in private scratch
-and revalidates the whole ticket before copying into that slot.
+ticket bound to a slot incarnation, the originating connection session
+(including a generation that cannot be confused by numeric connection-handle
+reuse), and the current MicroPython VM epoch. A deferred worker builds its
+result in private scratch and revalidates the whole ticket before and after
+each VFS operation and before copying into that slot.
 
 When a fully encoded response enters the ready FIFO, one absolute 1000 ms
 publication deadline begins. One pre-created NimBLE-host callout owns the
@@ -146,6 +147,49 @@ admitted response. Disconnect stops/cancels the callout and invalidates its
 ticket before normal re-advertising; any already-queued callback revalidates and
 emits nothing. No queued or late response byte may cross into a later
 connection session.
+
+**ESP reference-agent VM boundary (amended 2026-08-15).** Static native
+workers, queues, semaphores, and response slots can outlive one MicroPython VM,
+so VM reset is an explicit admission boundary even when the BLE link and its
+numeric handle survive. `SOFT_REBOOT` first closes filesystem admission under
+the same non-blocking synchronization with which the FS worker marks itself
+busy, and may proceed only if that worker is idle and its queue is empty. If
+not, the gate reopens and the command returns `RSP{EBUSY}` with no reset side
+effect. The successful quiescence check provisionally closes all non-reboot
+CMD admission. Only after the transactional `RSP{OK}` submission and reset
+timer arm both succeed does that closure become committed through teardown; if
+either local admission fails, all gates reopen and the VM remains intact. A
+new VM initialization keeps admission closed while it atomically rotates the
+live connection generation and VM epoch with old-ticket invalidation, prevents
+future response-callout scheduling, synchronizes with pool/TX ownership, and
+hard-recycles every response-slot incarnation. It drains response-completion
+signals, resets filesystem queues and transfer state, and resets the runner
+hand-off semaphore, run-state machine,
+request buffers, worker pointer, console buffers, and BLE RX reassembly state.
+It reopens admission only after all native handlers and new-VM workers are
+registered, entered, and safe. Exactly-once
+new-VM detection uses a VM-rooted marker cleared by VM initialization;
+repeating agent initialization in one VM is idempotent. Agent initialization
+does not itself open the gate: final boot wiring explicitly crosses the
+readiness barrier only after both workers have entered and auto-run admission
+has completed. A boot-wiring failure leaves admission closed. A response
+callback already queued when reset begins MUST revalidate the exact
+epoch/incarnation and touch nothing;
+reset MUST NOT depend on callout deinitialization or removal of a queued host
+event. Work dequeued under an older epoch MUST fail its token checks and MUST
+NOT perform a VFS operation,
+publish a response, emit an event, wake the runner, or touch a recycled slot.
+
+Response completion has transition ownership: an exact live ticket may move
+to complete and signal its waiter once. Repeated cancellation or completion of
+an already-complete incarnation is idempotent and emits no second wake; slot
+recycle drains any stale completion signal before a later incarnation can be
+reserved. Filesystem no-response `FILE_PUT_DATA` work and
+`FILE_GET_DATA`, `FILE_GET_END`, and `FILE_PUT_ACK` event
+attempts are bound to the exact `{handle, connection generation, VM epoch}` and
+serialize their final token check plus Notify with connection lifecycle. An
+outer worker check alone is not sufficient. These are reference-agent
+lifecycle rules and change no PBLE/1 wire byte.
 
 `RUN`, `STOP`, and `SOFT_REBOOT` retain their specialized one-fragment
 response-before-side-effect contracts in §6. Their response attempt is
@@ -242,8 +286,16 @@ no corresponding execution, interrupt, or reset side effect.
   the central. The ESP32 reference agent uses a pre-created 250 ms one-shot and
   refuses a second reboot with `EBUSY` while that reset is pending. If the
   `SOFT_REBOOT` response attempt fails, it MUST leave the VM running and
-  emit no generic fallback rather than perform an ambiguous reset. This is an execution-order clarification;
-  it changes no PBLE/1 bytes.
+  emit no generic fallback rather than perform an ambiguous reset. Once the
+  non-blocking FS quiescence gate succeeds and the response submission and
+  timer arm both succeed, all non-reboot CMD admission remains closed;
+  the next VM initialization performs the epoch/reset transaction in §3.2 and
+  reopens admission only after workers have entered, final wiring is safe, and
+  auto-run admission has completed. A busy FS worker or
+  non-empty FS queue returns `EBUSY` after reopening the provisional gate; a
+  response/timer admission failure likewise reopens all gates and leaves the
+  VM intact. This is an
+  execution-order and lifecycle clarification; it changes no PBLE/1 bytes.
 - **`CONSOLE_DATA` (0x30, EVT, id 0)** payload `[stream:u8][bytes]` — `stream` 0=stdout, 1=stderr (FR-CON-1/2).
 - **`CONSOLE_INPUT` (0x31, CMD, no RSP)** payload `[bytes]` — appended to the running program's `stdin` (`input()`/`sys.stdin`); fire-and-forget, no reply frame (FR-CON-3).
 - **`RUN_STATE` (0x40, EVT, id 0)** payload `[state:u8]` — 0 idle / 1 running / 2 done / 3 error (FR-RUN-7).

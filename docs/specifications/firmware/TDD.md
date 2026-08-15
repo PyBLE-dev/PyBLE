@@ -55,6 +55,11 @@ Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-08-15
 > retains a failed fragment under exclusive logical ownership, and restarts
 > from `FIRST` only after a successful single-fragment `RUN`, `STOP`, or
 > `SOFT_REBOOT` response changes the TX stream generation.
+> **VM-epoch lifecycle amendment (2026-08-15).** Native queues, workers,
+> response slots, and semaphores are explicitly isolated across MicroPython VM
+> reset. Admission closes before an accepted soft reset and reopens only after
+> the new-VM reset transaction, worker entry, final wiring, and auto-run
+> admission complete; no wire byte changes.
 
 ## 0. Naming note (acronym clash)
 
@@ -267,7 +272,7 @@ FR-SPLASH-1…9 and preserves FR-BOOT-4/6.)*
 
 1. App writes PBLE/1 fragments to **RX**; `pyble_ble` reassembles per [protocol.md §3.2](../protocol.md#3-framing) into a complete §3.1 message in the static reassembly buffer.
 2. `pyble_proto` validates CRC32, decodes the frame, and dispatches by `OPCODE` to a handler (`pyble_fs` / `pyble_runner` / `pyble_console` / `pyble_info`), or returns an error status if CRC/structure/version is bad.
-3. Before an ordinary side-effecting handler executes, `pyble_proto` reserves a complete fixed-capacity response slot bound to the live connection generation. Deferred filesystem dispatch carries that reservation and generation in its bounded worker item and revalidates them before touching VFS.
+3. Before an ordinary side-effecting handler executes, `pyble_proto` reserves a complete fixed-capacity response slot bound to the live connection generation and VM epoch. Deferred filesystem dispatch carries that reservation and both epochs in its bounded worker item and revalidates them immediately before and after every VFS operation/chunk.
 4. A pre-created NimBLE-host callout completes generic `RSP` delivery one fragment per callback. Each invocation validates ticket/session/deadline/stream generation, makes one zero-wait Notify attempt, rearms after one tick on progress or at most 15 ms on transient pressure, and returns. It retains the exact unaccepted fragment under logical ownership, so non-control/bulk traffic cannot interleave. A successful single-fragment `RUN`, `STOP`, or `SOFT_REBOOT` response changes the stream generation under the TX mutex, causing the next callback to restart from `FIRST`. Asynchronous events (`EVT`: `RUN_STATE`, `CONSOLE_DATA`, `FILE_PUT_ACK`, `FILE_GET_*`) retain their existing bounded paths; a `FILE_GET_BEGIN` response completes before its dependent data/end events.
 5. **INFO** characteristic reads are answered directly by `pyble_ble` from a `DEVICE_INFO`-equivalent payload prepared by `pyble_info`, with no subscription required.
 
@@ -399,7 +404,7 @@ class Dispatcher:
 
 **Internal state:** the registered dispatch table plus a static depth-2 response
 pool. A reserved 491-byte slot initially stores its incarnation, session-bound
-ticket, and reservation state. Only ready-FIFO publication adds the opcode/ID,
+ticket, VM epoch, and reservation state. Only ready-FIFO publication adds the opcode/ID,
 immutable encoded frame, absolute publication deadline, and completion state. Events use `ID = 0`
 (FR-PROTO-4).
 
@@ -423,6 +428,24 @@ cannot end in a silent live-session missing response. RUN keeps its existing
 specialized transactional path. STOP and SOFT_REBOOT also remain specialized
 only when their one-fragment response try is connection-bound and succeeds
 before the interrupt/reset side effect; failure suppresses generic fallback.
+
+**Completion and VM-epoch ownership:** only the exact ticket transition into
+`COMPLETE` gives its completion semaphore. Cancellation/completion of an
+already-complete incarnation is idempotent and gives nothing; reservation and
+hard recycle drain any stale signal before a new incarnation can observe it.
+Each agent initialization begins with CMD admission closed. After the previous
+VM's MicroPython threads have been deleted, one reset transaction atomically
+increments the VM epoch and the generation of any retained live connection
+while invalidating old tickets, prevents future response-callout scheduling,
+synchronizes with pool/TX ownership, hard-recycles all response slots and
+incarnations, drains their completion semaphores, and clears the dispatch
+registrations. A callback already queued on the host eventq must revalidate the
+exact epoch/incarnation and touch nothing; reset does not rely on callout
+deinitialization or queued-event removal. Admission reopens only after all
+native handlers and workers for the new VM are registered and entered, final
+boot wiring is safe, and auto-run admission has completed. Thus a dequeued
+old-epoch owner can neither act on a recycled slot nor publish into the retained
+link.
 
 **Error behaviour:** CRC fail → drop + `EVT ERROR(ECRC)` referencing opcode if known (FR-PROTO-3); structurally invalid → `EBADREQ` (FR-PROTO-8); unknown/unsupported opcode → `EUNSUPPORTED` (FR-PROTO-9); `VER != 0x01` → refuse per versioning (FR-PROTO-7).
 
@@ -449,7 +472,7 @@ class Runner:
 
 **Execution model:** a `RUN` while `state == running` returns `EBUSY` (FR-RUN-4). The ESP handler validates the request and initialized hand-off semaphore, remembers the exact prior runnable state (`idle`, `done`, or `error`), makes a provisional, non-observable reservation of `running`, and copies the request. It then encodes the matching one-fragment `RSP{OK}` in call-local storage and makes one connection-bound control submission attempt. That transport seam takes the TX mutex with zero wait, rechecks the originating connection, and makes exactly one Notify call; it never sleeps, waits for drain progress, or retries on the NimBLE host task. `PBLE_TX_OK` is the admission cut: only then does the provisional reservation become an observable lifecycle transition, the handler give the binary runner semaphore exactly once, and the handler suppress the dispatcher's generic response. The empty-semaphore give is an invariant of the single `running` reservation. Mutex contention, no connection, connection mismatch, or `PBLE_TX_AGAIN` restores the remembered state, suppresses generic response fallback, and returns without a worker wake, execution, console output, or RUN event. A disconnect after `PBLE_TX_OK` does not revoke the accepted run. The non-dispatch auto-run path remains a direct reserve/copy/give with no response.
 
-Once admitted, the worker emits `RUN_STATE(running)` (FR-RUN-1). `STOP` raises `KeyboardInterrupt` in the runner thread (using MicroPython's scheduled-exception / pending-interrupt mechanism) so it lands even against a tight loop (FR-RUN-5, NFR-SAFE-1). On normal return → `RUN_STATE(done)`; on uncaught exception → traceback to `CONSOLE_DATA(stderr)` then emit `RUN_STATE(error)` (FR-RUN-9). After `STOP`/exception, teardown is clean and the board returns to `idle` (FR-RUN-6/10). `SOFT_REBOOT` submits its one-packet `RSP{OK}`, arms one pre-created 250 ms one-shot, and only the timer callback schedules `SystemExit` on the main task. The pending flag rejects duplicate reboot requests; a TX failure cancels reset. This separates local Notify acceptance from VM teardown while keeping the handler non-blocking and bounded (FR-RUN-8).
+Once admitted, the worker emits `RUN_STATE(running)` (FR-RUN-1). `STOP` raises `KeyboardInterrupt` in the runner thread (using MicroPython's scheduled-exception / pending-interrupt mechanism) so it lands even against a tight loop (FR-RUN-5, NFR-SAFE-1). On normal return → `RUN_STATE(done)`; on uncaught exception → traceback to `CONSOLE_DATA(stderr)` then emit `RUN_STATE(error)` (FR-RUN-9). After `STOP`/exception, teardown is clean and the board returns to `idle` (FR-RUN-6/10). `SOFT_REBOOT` first takes the non-blocking FS quiescence gate described in §4.4, provisionally closes non-reboot CMD admission, submits its one-packet `RSP{OK}`, and arms one pre-created 250 ms one-shot. Only then is the admission closure committed and only the timer callback schedules `SystemExit` on the main task. A busy worker/non-empty FS queue returns `EBUSY`; a TX or timer setup failure reopens all gates and cancels reset. The pending flag rejects duplicate reboot requests. On next initialization the runner semaphore is drained and its state machine, request buffers, and worker pointer are reset before a replacement worker is registered; the old-epoch worker cannot wake or execute. This separates local Notify acceptance from VM teardown while keeping the handler non-blocking and bounded (FR-RUN-8).
 
 **Dependencies:** Layer-1 `_thread`, `asyncio`, the VM's exec primitives; `pyble_console` for stream capture; `pyble_agent` for the single-writer lock.
 
@@ -486,20 +509,29 @@ class FsBridge:
 
 **Deferred-response ownership:** every response-bearing host-to-FS item owns a
 ticket for a pre-reserved generic-response slot and the originating
-`{handle, generation}`. On queue admission failure, ownership of the ticket
-returns to the dispatcher, which performs no VFS operation and publishes
-`RSP{EBUSY}` through that same reserved slot. Before any VFS side effect, the
-FS worker revalidates the token; stale/disconnected work is
-cancelled. It builds results in worker-owned scratch, then atomically revalidates
-the still-live ticket before copying into and publishing the reserved slot.
-Disconnect increments the slot incarnation and cancels/releases its ticket
-without waiting for a VFS operation that was already validly admitted; a late
-result observes the stale incarnation and cannot touch a recycled slot or
-publish bytes. Cancellation checks run before and after each VFS operation and
-each bounded directory/CRC/read chunk. The worker waits
+`{handle, connection generation, VM epoch}`. Enqueue admission plus insertion,
+dequeue-to-busy transition, and the soft-reset quiescence close plus
+idle/queue-empty decision use the same synchronization. `worker_busy` spans the
+entire dequeued dispatch, not only individual VFS calls. A worker dequeued just
+before the gate closes either marks busy before quiescence can succeed or
+observes the closed epoch and cancels its ticket before any side effect. On
+queue admission failure, ownership of the ticket returns to the dispatcher,
+which performs no VFS operation and publishes `RSP{EBUSY}` through that same
+reserved slot. Immediately before and after every VFS operation or bounded
+directory/CRC/read/write chunk, the FS worker revalidates the token;
+stale/disconnected/old-epoch work is cancelled. It builds results in
+worker-owned scratch, then atomically revalidates the still-live ticket before
+copying into and publishing the reserved slot. Disconnect or VM reset changes
+the slot incarnation and cancels/releases its ticket; a late result observes
+the stale incarnation and cannot touch a recycled slot or publish bytes. Each
+physical `FILE_GET_DATA`, `FILE_GET_END`, or `FILE_PUT_ACK` attempt uses the
+snapshotted handle and serializes the exact connection-generation/VM-epoch
+check plus one Notify with GAP lifecycle; a worker-side check followed by a
+global current-handle send is forbidden. `FILE_PUT_DATA` queue items carry the
+same session/VM token despite having no generic response slot. The worker waits
 off-host for bounded response completion before emitting any dependent download
-events. `FILE_PUT_DATA` is protocol-defined no-response traffic and reserves no
-generic slot. No FS response or dependent event crosses sessions.
+events. No FS response, dependent event, or VFS effect crosses sessions or VM
+epochs.
 
 **Frozen-vs-native plan:** frozen for orchestration; the **chunk write + incremental CRC** inner loop is a native candidate on C3 (D1).
 
@@ -850,7 +882,7 @@ The boot-internal wrapper converts that failure to false so startup proceeds.
 Three cooperating execution contexts (D4):
 
 - **NimBLE host context** — services GAP/GATT callbacks and RX reassembly/dispatch. Its pre-created generic-response callout owns the fixed depth-2 pool's ready FIFO and one logical message at a time. Each callback validates ticket/session/publication deadline/stream generation, attempts exactly one fragment with zero wait, and rearms after one tick on progress or at most 15 ms on `AGAIN`. RUN/STOP/SOFT_REBOOT admission uses one specialized zero-wait control attempt; only a successful preemption changes the stream generation and makes the response restart at `FIRST`.
-- **Filesystem worker** — one persistent MicroPython-aware worker consuming the bounded FS queue. Response-bearing items carry a reserved response ticket and connection generation; it revalidates before VFS side effects and before publishing worker-scratch output, and orders `FILE_GET_BEGIN` response completion before data events.
+- **Filesystem worker** — one persistent MicroPython-aware worker consuming the bounded FS queue. Response-bearing items carry a reserved response ticket, connection generation, and VM epoch. One gate synchronizes enqueue+insertion, dequeue-to-busy, and soft-reset quiescence; busy covers the entire dispatch. The worker revalidates immediately before/after each VFS operation or chunk and before publishing worker-scratch output, and orders `FILE_GET_BEGIN` response completion before exact-session data events.
 - **Runner task** — launched once via `_thread` and kept persistent. It waits on the binary hand-off semaphore, then executes each admitted RUN with `sys.stdout`/`stderr` redirected to the console tee.
 
 Because the link is serviced by the NimBLE host context and user code lives on the runner task, a `while True: pass` cannot wedge BLE or block `STOP` (FR-BLE-11, FR-RUN-3, NFR-SAFE-2).
@@ -958,12 +990,18 @@ link state; later radio state may change while retained GRAM remains visible.
 re-enters `AGENT_MODE`, keeping the BLE link where the platform allows
 (FR-RUN-8). It is distinct from a hardware reset and does not re-advertise
 unless the link drops. The ESP32 reference path pre-creates one `esp_timer`
-one-shot during runner registration. After the handler successfully submits
-`RSP{OK}`, it arms that timer for 250 ms and returns without a duplicate
-dispatcher response. Only the callback schedules the main-task `SystemExit`.
-The delay spans several negotiated connection intervals without making the
-host task sleep; duplicate reboot requests are `EBUSY`, and a response or timer
-setup failure leaves the VM intact. Exact-board HIL repeats
+one-shot during runner registration. Before its response attempt, one
+non-blocking FS gate atomically closes enqueue admission and proves
+`worker_busy == false` plus an empty queue; the worker marks busy for its entire
+dequeued dispatch under the same synchronization. Failure reopens the gate and
+returns `EBUSY`. Success provisionally closes all non-reboot CMD admission.
+After the handler successfully submits `RSP{OK}`, it arms that timer for 250 ms
+and returns without a duplicate dispatcher response. Only response submission
+plus timer-arm success commits the closure through teardown; either local
+failure reopens all gates and leaves the VM intact. Only the callback schedules
+the main-task `SystemExit`. The delay spans several negotiated connection
+intervals without making the host task sleep; duplicate reboot requests are
+`EBUSY`. Exact-board HIL repeats
 acknowledgement → reconnect → fresh-import cycles so source ordering alone can
 never certify delivery. The qualification runner disconnects the acknowledged
 connection, waits at least the delivery grace, and retries reconnect plus the
@@ -981,6 +1019,31 @@ delay each receive only the current residual deadline, and polling continues
 until that deadline rather than an attempt-count ceiling. A disconnect error
 counts as an already-closed link only when the central independently reports
 `is_connected == false`.
+
+New-VM detection is exactly once per MicroPython VM: a marker rooted in
+`MP_STATE_VM` is absent after `mp_init`, and the first `init_agent` consumes it;
+repeated `init_agent` calls in the same VM are idempotent and do not rotate an
+epoch or reset live state. That first call closes admission and atomically
+rotates the VM epoch together with the generation of any retained connection,
+invalidates every old ticket under the authoritative pool/TX state, and stops
+future response-callout scheduling. Because a pinned callout stop need not
+remove an event already queued on the host eventq, every late callback must
+revalidate exact VM epoch, connection generation, and slot incarnation before
+touching bytes or state. Reset then synchronizes with response ownership as
+needed, hard-recycles every slot/incarnation and drains completion semaphores,
+drains the FS queue and resets transfer state, and resets runner semaphore/RSM/
+request buffers/worker pointer plus console buffers and BLE RX reassembly. It
+does not rely on unsafe callout deinitialization or queued-event removal.
+
+`init_agent` does not itself declare the new VM ready: `_boot.py` starts fresh
+FS and runner workers, completes dupterm/handler wiring, and completes
+`pble_boot.maybe_autorun()`, then makes one explicit final native-ready call.
+The readiness barrier opens CMD admission only after both fresh workers have
+entered, final wiring is safe, and auto-run has reserved or declined its work;
+a boot exception leaves admission closed. A worker item dequeued around
+provisional closure either makes its entire-dispatch busy state visible before
+quiescence can pass, or observes the closed epoch and cancels/releases its
+ticket without a VFS effect.
 
 ## 7. Protocol & data structures
 
@@ -2002,10 +2065,10 @@ This is where the Technical Design meets **Test-Driven Development** ([§0](#0-n
 
 | Module | unit (host) | conformance | build | size | HIL |
 |---|---|---|---|---|---|
-| `pyble_proto` | frame codec, CRC32, ID correlation, error-status mapping; whole-slot reserve-before-handler; absolute publication deadline/FIFO | full opcode round-trip; exact-fragment pressure retry and control-preemption `FIRST` restart vs fake transport | SPDX/no-leak lint | fixed depth-2 response pool | default-MTU generic RSP; no cross-session response |
+| `pyble_proto` | frame codec, CRC32, ID correlation, error-status mapping; whole-slot reserve-before-handler; absolute publication deadline/FIFO; transition-only completion wake and stale-signal drain; VM-epoch hard recycle/admission barrier | full opcode round-trip; exact-fragment pressure retry and control-preemption `FIRST` restart vs fake transport | SPDX/no-leak lint | fixed depth-2 response pool | default-MTU generic RSP; no cross-session/VM response |
 | `pyble_ble` | fragment/reassemble logic (pure), FIRST restart, slot/session/stream generations + one-fragment callout state | fragmentation/retry vs MTU matrix; reused-handle/late-ticket cancellation | NimBLE-only config; no host-context wait/loop | NimBLE buffer sizing | adv/scan-filter, MTU 247 and 23, INFO read, label shows in scan |
-| `pyble_fs` | jail resolution, CRC accumulate, temp-rename; reservation/generation ownership and stale pre-VFS cancellation | put/get window + resume + CRC vs fake; RSP-before-dependent-events | — | file-buffer + reserved-response footprint | multi-file upload, dropped-link resume; no old-session FS reply |
-| `pyble_runner` | state-machine transitions; transactional RUN admission under mutex/Notify/connection failure; exact-state rollback; auto-run bypass | response-before-wake/RUN_STATE sequence; single-fragment response at minimum MTU | — | — | STOP vs `while True: pass`, traceback→stderr; pressure/disconnect RUN remains side-effect-free |
+| `pyble_fs` | jail resolution, CRC accumulate, temp-rename; response/session/VM ownership; adjacent VFS cancellation; exact-session GET/ACK send; atomic quiescence gate | put/get window + resume + CRC vs fake; RSP-before-dependent-events | — | file-buffer + reserved-response footprint | multi-file upload, dropped-link resume; no old-session/VM FS effect or reply |
+| `pyble_runner` | state-machine transitions; transactional RUN admission under mutex/Notify/connection failure; exact-state rollback; auto-run bypass; VM-reset semaphore/state/buffer reset | response-before-wake/RUN_STATE sequence; single-fragment response at minimum MTU | — | — | STOP vs `while True: pass`, traceback→stderr; pressure/disconnect RUN remains side-effect-free |
 | `pyble_console` | tee + backpressure and control-priority logic | CONSOLE_DATA stream tagging; whole-message non-interleaving | — | staging-buffer/transport-reserve footprint | live stdout/stdin latency; C3 print-flood STOP response then idle in <500 ms |
 | `pyble_info` | caps assembly (incl. device_id/label/has_identify/identify_led), label bound→ERANGE, identify EUNSUPPORTED-when-unset, version negotiation | HELLO/DEVICE_INFO identity fields, SET_LABEL/SET_IDENTIFY_LED/IDENTIFY round-trip | — | — | real chip/mpy/free_mem/has_sd, label↔NVS persist across reboot, non-blocking blink |
 | `pyble_agent` | dispatch wiring, lock serialization | EBUSY, single-writer | frozen-manifest build | flash/heap gates | cold-boot safety, fail-safe |
