@@ -240,7 +240,41 @@ class NativeIdentifyTimerContractTests(unittest.TestCase):
             "IDENTIFY stop, incarnation mint, state publish, and periodic start "
             "must be one serialized arm cut",
         )
-        self.assertIn(incarnation, arm_sections[0])
+        arm = arm_sections[0]
+        mint = re.search(
+            rf"(?:\+\+\s*{re.escape(incarnation)}|"
+            rf"{re.escape(incarnation)}\s*\+\+|"
+            rf"{re.escape(incarnation)}\s*\+=\s*1|"
+            rf"{re.escape(incarnation)}\s*=\s*"
+            rf"{re.escape(incarnation)}\s*\+\s*1)",
+            arm,
+        )
+        self.assertIsNotNone(mint, "each IDENTIFY arm must mint a new incarnation")
+        for publication in (
+            "dc_blink_ticks",
+            "dc_blink_epoch",
+            "esp_timer_start_periodic",
+        ):
+            with self.subTest(publication=publication):
+                self.assertGreater(
+                    arm.find(publication),
+                    mint.end(),
+                    "incarnation mint must precede arm-state publication",
+                )
+        skips_zero = re.search(
+            rf"if\s*\(\s*{re.escape(incarnation)}\s*==\s*0\s*\)",
+            arm[mint.end() :],
+        )
+        fails_before_wrap = re.search(
+            rf"if\s*\(\s*{re.escape(incarnation)}\s*==\s*UINT64_MAX\s*\)"
+            rf"[^}}]*esp_restart",
+            arm[: mint.start()],
+            re.DOTALL,
+        )
+        self.assertTrue(
+            skips_zero or fails_before_wrap,
+            "arm incarnation must never publish a wrapped zero/ABA value",
+        )
 
 
 if __name__ == "__main__":
