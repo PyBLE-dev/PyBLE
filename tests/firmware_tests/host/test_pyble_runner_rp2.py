@@ -22,7 +22,10 @@
 #   RunStateMachine.on_stopped() -> int      # -> IDLE; appends IDLE to .events
 #                                            # (pble_rsm_on_stopped twin — the
 #                                            #  transition missing from the S3 twin)
-#   pyble_runner.Runner(emit_state, exec_fn) # the rp2 single-thread runner seam
+#   pyble_runner.Runner(emit_state, exec_fn, emit_terminal=None)
+#                                           # the rp2 single-thread runner seam;
+#            # emit_terminal(state, published) calls published() exactly at its
+#            # output record/send cut. Default adapts emit_state for old users.
 #       .handle_run(payload: bytes) -> int   # §8 status. Validates the §6
 #            # [mode:u8][data] payload BEFORE rsm.on_run() (a bad request can
 #            # never wedge the reservation), reserves on OK, captures the
@@ -386,14 +389,21 @@ class TerminalStateTest(unittest.TestCase):
                          "a STOP accepted before normal completion's terminal "
                          "cut MUST land idle (stopped wins over done)")
 
-    def test_kbi_after_idle_publication_does_not_duplicate_terminal(self):
+    def _exercise_terminal_publication_cut(self, interrupt_after_publish):
         emitted = []
         cell = {}
         raised = [False]
 
-        def emit_then_interrupt(state):
+        def emit_state(state):
             emitted.append(state)
-            if state == IDLE and not raised[0]:
+
+        def emit_terminal(state, published):
+            if not interrupt_after_publish and not raised[0]:
+                raised[0] = True
+                raise KeyboardInterrupt()
+            emitted.append(state)
+            published()
+            if interrupt_after_publish and not raised[0]:
                 raised[0] = True
                 raise KeyboardInterrupt()
 
@@ -402,19 +412,24 @@ class TerminalStateTest(unittest.TestCase):
 
         cls = RUNNER.attr(
             self, "Runner", "F-27/P3 terminal publication exactly once")
-        runner = cls(emit_then_interrupt, stop_then_return)
+        runner = cls(emit_state, stop_then_return, emit_terminal=emit_terminal)
         cell["runner"] = runner
         runner.handle_run(GOOD_SOURCE)
 
-        with self.assertRaises(KeyboardInterrupt,
-                               msg="oracle injects KBI after recording IDLE"):
+        with self.assertRaises(KeyboardInterrupt):
             runner.service()
         runner.service_interrupted()
 
         self.assertEqual(emitted, [RUNNING, IDLE],
-                         "recovery MUST NOT retry an already-published IDLE")
+                         "pre-send KBI retries once; post-send KBI never retries")
         self.assertEqual(runner.rsm.state, IDLE)
         self.assertFalse(runner.is_executing())
+
+    def test_kbi_before_idle_publication_retries_terminal_once(self):
+        self._exercise_terminal_publication_cut(interrupt_after_publish=False)
+
+    def test_kbi_after_idle_publication_does_not_duplicate_terminal(self):
+        self._exercise_terminal_publication_cut(interrupt_after_publish=True)
 
     def test_run_allowed_again_after_terminal(self):
         r, _, _ = make_runner(self, "F-25/§6 run-after-terminal")

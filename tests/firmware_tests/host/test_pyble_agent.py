@@ -97,6 +97,8 @@ class FakeLink:
         self.disconnect_cb = None
         self.info_payload = None
         self.adv_name = None
+        self.interrupt_terminal_before_publish = False
+        self.interrupt_terminal_after_publish = False
 
     def on_message(self, cb):
         self.message_cb = cb
@@ -107,11 +109,22 @@ class FakeLink:
     def on_disconnect(self, cb):
         self.disconnect_cb = cb
 
-    def send_message(self, msg):
+    def send_message(self, msg, on_published=None):
         msg = bytes(msg)
+        frame = pyble_proto.decode(msg)
+        terminal_idle = (frame.type == EVT and frame.opcode == 0x40
+                         and frame.payload == b"\x00")
+        if terminal_idle and self.interrupt_terminal_before_publish:
+            self.interrupt_terminal_before_publish = False
+            raise KeyboardInterrupt()
         self.sent.append(msg)
         if self.order is not None:
             self.order.append(("tx", msg))
+        if on_published is not None:
+            on_published()
+        if terminal_idle and self.interrupt_terminal_after_publish:
+            self.interrupt_terminal_after_publish = False
+            raise KeyboardInterrupt()
 
     def set_info_payload(self, payload):
         self.info_payload = bytes(payload)
@@ -762,6 +775,32 @@ class TerminalInterruptRecoveryTest(AgentTestBase):
 
     def test_interrupt_after_state_before_idle_publication_recovers_once(self):
         self._exercise_transition_cut(after_state_change=True)
+
+    def _exercise_publication_cut(self, after_publish):
+        agent, link = self.new_agent(
+            "F-27/P3 terminal send publication handshake")
+        send(self, link, 0x20, bytes((1,)) + b"x = 5", id_=118)
+
+        def stop_then_return(mode, data):
+            agent._runner.handle_stop()
+
+        agent._runner._exec_fn = stop_then_return
+        if after_publish:
+            link.interrupt_terminal_after_publish = True
+        else:
+            link.interrupt_terminal_before_publish = True
+        agent.poll()
+
+        self.assertEqual(run_states(link), [1, 0],
+                         "pre-send KBI retries; post-send KBI does not duplicate")
+        self.assertEqual(agent._runner.rsm.state, 0)
+        self.assertFalse(agent._runner.is_executing())
+
+    def test_interrupt_before_terminal_send_retries_once(self):
+        self._exercise_publication_cut(after_publish=False)
+
+    def test_interrupt_after_terminal_send_does_not_retry(self):
+        self._exercise_publication_cut(after_publish=True)
 
 
 class SoftRebootClosingTest(AgentTestBase):

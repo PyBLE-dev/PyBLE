@@ -37,6 +37,9 @@
 #   BleLink.start(info_payload=b""): after gatts_register_services and before
 #         advertising calls gatts_set_buffer(rx_handle, n>=247, append=False);
 #         after active(True) calls config(mtu=247) to pin the ceiling (P7).
+#   BleLink.send_message(msg, on_published=None): invokes on_published exactly
+#         once immediately after the final Notify is locally accepted. It does
+#         not publish a receipt while disconnected or after a Notify error.
 # ---------------------------------------------------------------------------
 
 import os
@@ -284,6 +287,44 @@ class IrqDispatchTest(_Rp2SurfaceTestCase):
     def test_irq_tolerates_unknown_event_codes(self):
         _, link = self.make_link(self.CRITERION)
         self.drive(link, 99, (11,), self.CRITERION)
+
+
+class TxPublicationCutTest(_Rp2SurfaceTestCase):
+    """P3: terminal recovery needs a receipt at the actual TX record cut."""
+
+    def test_send_message_commits_receipt_after_notify_record(self):
+        _, link = self.make_link("F-27/P3 terminal TX publication receipt")
+        link._conn_handle = 11
+        receipts = []
+
+        def published():
+            receipts.append(len(self.rec.notify_calls))
+
+        msg = b"terminal-frame" * 40
+        link.send_message(msg, on_published=published)
+        self.assertGreater(len(self.rec.notify_calls), 1)
+        self.assertEqual(
+            [call[2] for call in self.rec.notify_calls], frag_packets(msg))
+        self.assertEqual(receipts, [len(self.rec.notify_calls)],
+                         "receipt fires once, after all fragments are recorded")
+
+    def test_send_message_never_receipts_without_local_acceptance(self):
+        _, link = self.make_link("F-27/P3 no false terminal TX receipt")
+        receipts = []
+
+        link.send_message(b"offline", on_published=lambda: receipts.append(1))
+        self.assertEqual(receipts, [], "a disconnected drop is not publication")
+
+        link._conn_handle = 11
+
+        def fail_notify(*args):
+            raise OSError("BTstack refused Notify")
+
+        self.rec.gatts_notify = fail_notify
+        with self.assertRaises(OSError):
+            link.send_message(
+                b"not-accepted", on_published=lambda: receipts.append(1))
+        self.assertEqual(receipts, [], "a failed Notify is not publication")
 
 
 class StartBindingsTest(_Rp2SurfaceTestCase):
