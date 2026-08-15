@@ -115,6 +115,44 @@ class PumpOracle:
         raise AssertionError("unexpected transport result")
 
 
+class CompletionWakeOracle:
+    """Model one response-slot incarnation and its binary completion signal."""
+
+    FREE = 0
+    RESERVED = 1
+    COMPLETE = 2
+
+    def __init__(self) -> None:
+        self.state = self.FREE
+        self.incarnation = 1
+        self.signal = 0
+
+    def reserve(self) -> int:
+        if self.state != self.FREE:
+            raise AssertionError("slot is not free")
+        # A recycled static binary semaphore can retain a delayed old wake.
+        # Reservation must make the new incarnation start empty.
+        self.signal = 0
+        self.state = self.RESERVED
+        return self.incarnation
+
+    def complete(self, incarnation: int) -> None:
+        if incarnation != self.incarnation or self.state == self.COMPLETE:
+            return
+        self.state = self.COMPLETE
+        self.signal = 1
+
+    def wait_nowait(self, incarnation: int) -> bool | None:
+        if self.signal == 0:
+            return None
+        self.signal = 0
+        if incarnation != self.incarnation or self.state != self.COMPLETE:
+            return False
+        self.state = self.FREE
+        self.incarnation += 1
+        return True
+
+
 class FrozenResponsePumpOracleTests(unittest.TestCase):
     def test_largest_response_is_26_fragments_at_att_mtu_23(self):
         frame_bytes = 6 + 1 + 480 + 4
@@ -138,6 +176,22 @@ class FrozenResponsePumpOracleTests(unittest.TestCase):
         self.assertEqual(model.deadline_ms, 1000)
         model.step(model.AGAIN, 1000)
         self.assertTrue(model.terminated)
+
+    def test_duplicate_completion_cannot_wake_a_recycled_incarnation(self):
+        model = CompletionWakeOracle()
+        first = model.reserve()
+        model.complete(first)
+        model.complete(first)
+        self.assertEqual(model.signal, 1, "COMPLETE owns exactly one wake")
+        self.assertTrue(model.wait_nowait(first))
+
+        # Model the adversarial delayed-give boundary explicitly. Even if an
+        # old producer left a token after recycle, reserve must drain it before
+        # exposing the next incarnation.
+        model.signal = 1
+        second = model.reserve()
+        self.assertNotEqual(second, first)
+        self.assertIsNone(model.wait_nowait(second))
 
 
 class NativeResponsePoolContractTests(unittest.TestCase):
@@ -240,6 +294,20 @@ class NativeResponsePoolContractTests(unittest.TestCase):
                     "pble_proto_emit_rsp_status_try",
                     c_function(RUNNER, handler),
                 )
+
+    def test_completion_wakes_are_transition_only_and_reserve_drains_stale_token(self):
+        cancel_session = code_only(c_function(PROTO, "pble_rsp_cancel_session"))
+        cancel_ticket = code_only(c_function(PROTO, "pble_rsp_cancel_ticket"))
+        self.assertIn("slot->state != PBLE_RSP_COMPLETE", cancel_session)
+        self.assertIn("slot->state != PBLE_RSP_COMPLETE", cancel_ticket)
+
+        reserve = code_only(c_function(PROTO, "pble_rsp_reserve"))
+        ordered(
+            self,
+            reserve,
+            "xSemaphoreTake(s_rsp_done[i], 0)",
+            "slot->state = PBLE_RSP_RESERVED",
+        )
 
 
 class NativeDeferredResponseContractTests(unittest.TestCase):
