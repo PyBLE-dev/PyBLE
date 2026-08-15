@@ -96,6 +96,18 @@ PyBLE defines one primary GATT service with a PyBLE-owned 128-bit UUID base. The
 - `LEN` — payload length, little-endian `uint16` (≤ 65535).
 - `CRC32` — IEEE CRC-32 over `VER…PAYLOAD` (the header + payload, excluding the CRC itself), little-endian.
 
+For a response-bearing command, the connection-local correlation key is the
+originating `{OPCODE, ID}` pair and the matching frame's `TYPE` is `RSP`. A
+pending command MUST complete only from a frame with all three exact values.
+A different-opcode `RSP` that happens to carry the same reused `ID`, and a
+non-`RSP` frame that happens to carry a nonzero `ID`, are unrelated frames:
+neither may complete the command, consume or replace its matching response, or
+reset its absolute deadline. This is true in either arrival order, including
+when the unrelated frame is a delayed response for an earlier use of that ID.
+Response arrival at or before the command's §2 absolute deadline is decisive;
+later task scheduling may process that already-arrived response, but a response
+arriving after the deadline cannot complete the command.
+
 ### 3.2 Fragmentation (over GATT)
 
 A message larger than one packet is split across consecutive RX writes (or TX notifications). Each packet is:
@@ -108,6 +120,19 @@ A message larger than one packet is split across consecutive RX writes (or TX no
 ```
 
 `FRAG_HDR` bits: `bit7 = FIRST`, `bit6 = LAST`, `bits5..0 = index mod 64`. The receiver concatenates `FRAGMENT DATA` from the `FIRST` packet through the `LAST` packet (indices increasing mod 64) to reconstruct the §3.1 message, then validates the CRC. Receipt of `FIRST` always abandons any incomplete fragment run and starts a new one; a non-`FIRST` packet with no active run or with the wrong next index is dropped. This restart rule lets a sender restart an identical whole frame after its logical message ownership was preempted, without completing a stale prefix; ordinary transient pressure alone retries only the unaccepted fragment. A frame whose CRC fails is dropped and answered with `EVT ERROR(ECRC)` referencing the opcode if known.
+
+The ESP reference agent lifecycle-gates the entire RX write callback, not only
+complete-message dispatch. Before reading or copying any fragment byte, the
+host callback makes one non-blocking lifecycle-activity entry. A closed or
+not-ready refusal atomically clears the incomplete reassembly run and drops the
+fragment. A successful entry remains counted through index validation, copy,
+`LAST` completion, and any resulting CMD dispatch, then leaves once. VM reset
+first closes/invalidates admission and drains these callbacks; only afterward,
+under the same synchronization, may it clear the RX buffer/index/run state.
+Thus a callback paused after copying `FIRST` cannot resume into recycled state,
+and a `FIRST` dropped while closed cannot be completed by a `LAST` received
+after the next VM becomes ready. This adds no wire byte and never blocks the
+NimBLE host callback.
 
 **ESP reference-agent generic-response delivery (amended 2026-08-15).** The
 largest ordinary response the reference dispatcher accepts is 491 encoded
@@ -393,9 +418,10 @@ no corresponding execution, interrupt, or reset side effect.
   while running raises `KeyboardInterrupt` **in the runner task only** (the link
   stays live, FR-BLE-11) → clean teardown → `RUN_STATE(idle)` (FR-RUN-5/6/10).
   Local response-submission failure emits no fallback and performs no interrupt.
-- **`SOFT_REBOOT` (0x22)** no payload. `RSP{OK}` immediately; stops any run,
-  then soft-resets the MicroPython VM and returns to `RUN_STATE(idle)`
-  (FR-RUN-8). VM teardown MUST NOT begin merely because the local BLE stack
+- **`SOFT_REBOOT` (0x22)** no payload. On the normal successfully armed grace
+  path, `RSP{OK}` is immediate; the command stops any run, then soft-resets the
+  MicroPython VM and returns to `RUN_STATE(idle)` (FR-RUN-8). VM teardown MUST
+  NOT begin merely because the local BLE stack
   accepted the notification: the implementation MUST allow a short bounded
   delivery grace after submitting `RSP{OK}` so queued response bytes can reach
   the central. The ESP32 reference agent uses a pre-created 250 ms one-shot and
@@ -405,7 +431,9 @@ no corresponding execution, interrupt, or reset side effect.
   non-blocking FS quiescence gate succeeds and the response submission
   succeeds, all non-reboot CMD admission remains closed. The handler then arms
   the pre-created timer; arm failure immediately invokes non-returning
-  `esp_restart()` with admission still closed;
+  `esp_restart()` with admission still closed. This post-`RSP{OK}` timer-arm
+  failure is the sole hardware-restart exception to the normal delivery-grace
+  and soft-reset path;
   the next VM initialization performs the epoch/reset transaction in §3.2 and
   reopens admission only after workers have entered, final wiring is safe, and
   auto-run admission has completed. A busy FS worker or

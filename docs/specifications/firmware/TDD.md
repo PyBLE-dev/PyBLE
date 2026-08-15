@@ -275,7 +275,12 @@ FR-SPLASH-1…9 and preserves FR-BOOT-4/6.)*
 
 ### 3.3 Data flow app↔agent over RX/TX
 
-1. App writes PBLE/1 fragments to **RX**; `pyble_ble` reassembles per [protocol.md §3.2](../protocol.md#3-framing) into a complete §3.1 message in the static reassembly buffer.
+1. App writes PBLE/1 fragments to **RX**. Before touching the static
+   reassembly buffer, each NimBLE-host RX callback non-blockingly enters VM
+   lifecycle activity and stays counted through any complete-message dispatch.
+   Closed/not-ready refusal clears the incomplete run and drops the packet;
+   reset drains entered callbacks before clearing RX state. `pyble_ble` then
+   reassembles admitted fragments per [protocol.md §3.2](../protocol.md#3-framing).
 2. `pyble_proto` validates CRC32, decodes the frame, and dispatches by `OPCODE` to a handler (`pyble_fs` / `pyble_runner` / `pyble_console` / `pyble_info`), or returns an error status if CRC/structure/version is bad.
 3. Before an ordinary side-effecting handler executes, `pyble_proto` reserves a complete fixed-capacity response slot bound to the live connection generation and VM epoch. Deferred filesystem dispatch carries that reservation and both epochs in its bounded worker item and revalidates them immediately before and after every VFS operation/chunk.
 4. A pre-created NimBLE-host callout completes generic `RSP` delivery one fragment per callback. Each invocation validates ticket/session/deadline/stream generation, makes one zero-wait Notify attempt, rearms after one tick on progress or at most 15 ms on transient pressure, and returns. It retains the exact unaccepted fragment under logical ownership, so non-control/bulk traffic cannot interleave. A successful single-fragment `RUN`, `STOP`, or `SOFT_REBOOT` response changes the stream generation under the TX mutex, causing the next callback to restart from `FIRST`. Asynchronous events (`EVT`: `RUN_STATE`, `CONSOLE_DATA`, `FILE_PUT_ACK`, `FILE_GET_*`) retain their existing bounded paths; a `FILE_GET_BEGIN` response completes before its dependent data/end events.
@@ -315,6 +320,17 @@ class BleLink:
 ```
 
 **Key data structures / state:** the GATT table (Service/RX/TX/INFO UUIDs from the [protocol.md §2](../protocol.md#2-ble-transport-gatt) constants mirror); a single **reassembly buffer** (static, sized `max_message`, see [§7.3](#73-buffer-sizing)); a fragment-index tracker (`FIRST`/`LAST`/`index mod 64`); negotiated MTU; connection handle plus monotonic boot-local connection generation and `CLOSED`/`OPEN`/`CLOSING`/`CLEANING`/`RESTARTING` state; logical TX owner plus mutex-protected stream generation; a pre-created generic-response callout; a pre-created task-dispatched failed-session watchdog; the **advertised name** — the device label when set, else `PyBLE-` + `device_id` (the last two BLE-MAC bytes in uppercase hex), used for the name only, never for access control ([§4.8](#48-device-config-store--label--identify-led-nvs), CON-7/SEC-7/SEC-11).
+
+**VM-safe RX ownership:** the RX GATT callback calls the same non-blocking
+lifecycle-entry seam used by other host callbacks before it reads the fragment
+header or mutates reassembly. Entry failure clears buffer length, active-run,
+and expected-index state atomically and returns. Successful entry covers the
+whole fragment operation and, for `LAST`, the synchronous complete-CMD
+dispatch; one leave occurs afterward. Teardown closes admission and drains this
+activity before its RX reset transaction uses the same synchronization to
+clear the run. Therefore reset cannot recycle state beneath a callback paused
+after a `FIRST` copy, and a closed-epoch `FIRST` followed by a fresh-epoch
+`LAST` never dispatches. The host callback never waits.
 
 **Session-safe response callout:** GAP connect mints, and disconnect invalidates,
 a `{handle, generation}` token. The pre-created response callout runs on the
@@ -1102,10 +1118,12 @@ link state; later radio state may change while retained GRAM remains visible.
 
 ### 6.4 SOFT_REBOOT
 
-`SOFT_REBOOT` clears interpreter state (re-init the VM heap/imports) and
-re-enters `AGENT_MODE`, keeping the BLE link where the platform allows
-(FR-RUN-8). It is distinct from a hardware reset and does not re-advertise
-unless the link drops. The ESP32 reference path pre-creates one `esp_timer`
+On its normal successfully armed path, `SOFT_REBOOT` clears interpreter state
+(re-init the VM heap/imports) and re-enters `AGENT_MODE`, keeping the BLE link
+where the platform allows (FR-RUN-8). The sole post-`RSP{OK}` exception is
+timer-arm failure, which immediately hardware-restarts rather than performing
+the grace/soft-reset path. A normal soft reset is distinct from a hardware
+reset and does not re-advertise unless the link drops. The ESP32 reference path pre-creates one `esp_timer`
 one-shot during runner registration. Before its response attempt, one
 non-blocking FS gate atomically closes enqueue admission and proves
 `worker_busy == false` plus an empty queue; the worker marks busy for its entire
