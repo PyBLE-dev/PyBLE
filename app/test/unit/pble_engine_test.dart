@@ -18,6 +18,7 @@
 // do not exist yet. HAND-OFF: `lib/pble/**` → app-protocol-engineer.
 
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -450,5 +451,105 @@ void main() {
         lateResponse?.cancel();
       },
     );
+
+    test(
+      'backend TimeoutException after an on-time exact RSP is not masked',
+      () async {
+        await engine.dispose();
+        await transport.dispose();
+        const int requestId = 94;
+        var delivered = false;
+        transport = FakeByteTransport(
+          sendDelay: const Duration(milliseconds: 5),
+          sendError: TimeoutException('backend acknowledged write timeout'),
+          onSendStarted: () {
+            if (delivered) return;
+            delivered = true;
+            transport.deliverFrame(
+              PbleFrame(
+                type: Pble.typeRsp,
+                opcode: PbleOpcode.hello.code,
+                id: requestId,
+                payload: Uint8List.fromList(<int>[PbleStatus.ok.code, 0xa3]),
+              ),
+            );
+          },
+        );
+        engine = PbleEngine(transport);
+        final PbleFrame cmd = PbleFrame(
+          type: Pble.typeCmd,
+          opcode: PbleOpcode.hello.code,
+          id: requestId,
+          payload: Uint8List(0),
+        );
+
+        await expectLater(
+          engine.request(cmd, timeout: const Duration(milliseconds: 100)),
+          throwsA(
+            isA<TimeoutException>().having(
+              (TimeoutException error) => error.message,
+              'message',
+              'backend acknowledged write timeout',
+            ),
+          ),
+        );
+      },
+    );
+
+    test(
+      'backend non-timeout error after an exact RSP is not masked',
+      () async {
+        await engine.dispose();
+        await transport.dispose();
+        const int requestId = 95;
+        var delivered = false;
+        transport = FakeByteTransport(
+          sendDelay: const Duration(milliseconds: 5),
+          sendError: StateError('backend acknowledged write failed'),
+          onSendStarted: () {
+            if (delivered) return;
+            delivered = true;
+            transport.deliverFrame(
+              PbleFrame(
+                type: Pble.typeRsp,
+                opcode: PbleOpcode.hello.code,
+                id: requestId,
+                payload: Uint8List.fromList(<int>[PbleStatus.ok.code, 0xa4]),
+              ),
+            );
+          },
+        );
+        engine = PbleEngine(transport);
+        final PbleFrame cmd = PbleFrame(
+          type: Pble.typeCmd,
+          opcode: PbleOpcode.hello.code,
+          id: requestId,
+          payload: Uint8List(0),
+        );
+
+        await expectLater(
+          engine.request(cmd, timeout: const Duration(milliseconds: 100)),
+          throwsA(
+            isA<StateError>().having(
+              (StateError error) => error.message,
+              'message',
+              'backend acknowledged write failed',
+            ),
+          ),
+        );
+      },
+    );
+
+    test('the exact deadline remains inside the response window', () {
+      final String source = File('lib/pble/engine.dart').readAsStringSync();
+
+      expect(
+        source,
+        matches(
+          RegExp(r'bool get expired\s*=>\s*elapsed\.elapsed\s*>\s*timeout\s*;'),
+        ),
+        reason: 'protocol.md accepts an exact RSP recorded at the deadline',
+      );
+    });
   });
 }

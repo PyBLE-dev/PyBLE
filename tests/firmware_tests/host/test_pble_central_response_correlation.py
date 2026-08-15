@@ -208,6 +208,79 @@ class ExactResponseCorrelationTest(unittest.IsolatedAsyncioTestCase):
                 timeout=0.01,
             )
 
+    async def test_backend_timeout_after_on_time_exact_response_is_not_masked(self):
+        request_id = 108
+        exact = _rsp(wire.OP_RUN, request_id, 0xDD)
+        central = None
+
+        class BackendTimeout:
+            is_connected = True
+
+            async def write_gatt_char(self, _uuid, _packet, response):
+                self.assert_response = response
+                _deliver(central, exact)
+                raise asyncio.TimeoutError("backend acknowledged write timeout")
+
+        central = central_module.PbleCentral(BackendTimeout())
+
+        with self.assertRaisesRegex(
+            asyncio.TimeoutError,
+            "backend acknowledged write timeout",
+        ):
+            await central.send_cmd(
+                wire.OP_RUN,
+                request_id,
+                timeout=0.1,
+            )
+
+    async def test_backend_error_after_on_time_exact_response_is_not_masked(self):
+        request_id = 109
+        exact = _rsp(wire.OP_RUN, request_id, 0xEE)
+        central = None
+
+        class BackendFailure:
+            is_connected = True
+
+            async def write_gatt_char(self, _uuid, _packet, response):
+                self.assert_response = response
+                _deliver(central, exact)
+                raise OSError("backend acknowledged write failed")
+
+        central = central_module.PbleCentral(BackendFailure())
+
+        with self.assertRaisesRegex(
+            OSError,
+            "backend acknowledged write failed",
+        ):
+            await central.send_cmd(
+                wire.OP_RUN,
+                request_id,
+                timeout=0.1,
+            )
+
+    async def test_response_at_exact_deadline_is_inside_the_window(self):
+        request_id = 110
+
+        async def on_write():
+            raise AssertionError("direct response-wait test does not write")
+
+        central = central_module.PbleCentral(_FakeBleakClient(on_write))
+        loop = asyncio.get_running_loop()
+        started_at = loop.time()
+        deadline = started_at + 0.01
+        exact = _rsp(wire.OP_RUN, request_id, 0xF0)
+        central._rsp_by_key[(wire.OP_RUN, request_id)] = (exact, deadline)
+
+        observed = await central._await_rsp(
+            wire.OP_RUN,
+            request_id,
+            0.01,
+            deadline=deadline,
+            started_at=started_at,
+        )
+
+        self.assertIs(observed, exact)
+
 
 if __name__ == "__main__":
     unittest.main()
