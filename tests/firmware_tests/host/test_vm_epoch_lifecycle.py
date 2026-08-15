@@ -304,7 +304,7 @@ class VmLifecycleOracle:
     def activity_drained(self, now_ms: int) -> bool:
         if self.deadline_ms is None:
             raise AssertionError("wrapper has not begun")
-        if self.active and now_ms >= self.deadline_ms:
+        if now_ms >= self.deadline_ms:
             raise ForcedRestart("activity drain deadline")
         return not self.active
 
@@ -362,6 +362,7 @@ class VmLifecycleOracle:
         if self.tx_owner is not None:
             raise AssertionError("port init requires sole TX ownership")
         self.tx_owner = "port-init"
+        self.transitions.append("take-tx")
         self.session_cut_held = True
         try:
             if self.closing:
@@ -376,12 +377,15 @@ class VmLifecycleOracle:
                 self.generation += 1
             self.session_epoch = self.epoch
             self.session_live = True
+            self.transitions.append("rotate-session")
             self.tickets.clear()
+            self.current_response = None
+            self.transitions.append("recycle-response-pool")
             self.roots = {"runner": None, "fs": None}
             self.open = False
-            self.current_response = None
         finally:
             self.session_cut_held = False
+            self.transitions.append("release-tx")
             self.tx_owner = None
 
     def ready(self) -> None:
@@ -658,6 +662,11 @@ class FrozenLifecycleInterleavingTests(unittest.TestCase):
         with self.assertRaisesRegex(ForcedRestart, "deadline"):
             model.activity_drained(2550)
 
+        drained = VmLifecycleOracle()
+        drained.begin_wrapper(50)
+        with self.assertRaisesRegex(ForcedRestart, "deadline"):
+            drained.activity_drained(2550)
+
     def test_every_wrapper_stage_consumes_one_absolute_deadline(self):
         model = VmLifecycleOracle()
         model.begin_wrapper(100)
@@ -723,6 +732,15 @@ class FrozenLifecycleInterleavingTests(unittest.TestCase):
         self.assertFalse(model.session_token_valid(old_token))
         self.assertTrue(model.session_token_valid(new_token))
         self.assertFalse(model.tickets, "old response tickets survive rotation")
+        self.assertEqual(
+            model.transitions,
+            [
+                "take-tx",
+                "rotate-session",
+                "recycle-response-pool",
+                "release-tx",
+            ],
+        )
         self.assertIsNone(model.tx_owner)
         self.assertFalse(model.session_cut_held)
 
@@ -1172,6 +1190,79 @@ class NativeVmLifecycleContractTests(unittest.TestCase):
                     "a helper must not mint a fresh wrapper budget",
                 )
 
+    def test_tx_lock_residual_uses_one_pre_acquire_clock_sample(self):
+        tx_lock = code_only(c_function(BLE, "pble_ble_vm_tx_lock"))
+        take = tx_lock.find("xSemaphoreTakeRecursive(pble_tx_mutex")
+        self.assertGreaterEqual(take, 0)
+        before_take = tx_lock[:take]
+        now = re.search(
+            r"\bint64_t\s+(?P<name>[A-Za-z_]\w*)\s*=\s*"
+            r"esp_timer_get_time\s*\(\s*\)\s*;",
+            before_take,
+        )
+        self.assertIsNotNone(
+            now,
+            "sample one pre-acquire instant before deriving the residual",
+        )
+        now_name = now.group("name")
+        self.assertEqual(
+            before_take.count("esp_timer_get_time()"),
+            1,
+            "a second pre-acquire sample can cross into a negative residual",
+        )
+        expired = re.search(
+            rf"\b{re.escape(now_name)}\s*>=\s*deadline_us\b",
+            before_take,
+        )
+        residual = re.search(
+            rf"\bint64_t\s+[A-Za-z_]\w*\s*=\s*"
+            rf"deadline_us\s*-\s*{re.escape(now_name)}\s*;",
+            before_take,
+        )
+        self.assertIsNotNone(expired, "deadline equality is already expired")
+        self.assertIsNotNone(residual)
+        self.assertLess(now.start(), expired.start())
+        self.assertLess(expired.start(), residual.start())
+        self.assertRegex(
+            tx_lock[take:],
+            r"esp_timer_get_time\s*\(\s*\)\s*>=\s*deadline_us",
+            "a successful semaphore take still needs a post-acquire check",
+        )
+
+    def test_every_shared_deadline_helper_rejects_exact_boundary(self):
+        wait = code_only(c_function(VM_C, "pble_vm_wait_activity_idle"))
+        expired = re.search(
+            r"esp_timer_get_time\s*\(\s*\)\s*>=\s*deadline_us",
+            wait,
+        )
+        idle = re.search(r"\bif\s*\(\s*count\s*==\s*0\s*\)", wait)
+        self.assertIsNotNone(expired)
+        self.assertIsNotNone(idle)
+        self.assertLess(
+            expired.start(),
+            idle.start(),
+            "an empty activity set at the exact deadline is still expired",
+        )
+
+        for helper, helper_source in (
+            ("pble_runner_vm_timer_disarm", RUNNER),
+            ("pble_dc_vm_timer_disarm", DEVICE_CONFIG),
+            ("pble_ble_vm_stop_response_callout", BLE),
+        ):
+            body = code_only(c_function(helper_source, helper))
+            with self.subTest(inclusive_deadline_helper=helper):
+                self.assertRegex(
+                    body,
+                    r"\bif\s*\(\s*esp_timer_get_time\s*\(\s*\)\s*"
+                    r">=\s*deadline_us\s*\)",
+                )
+                self.assertRegex(
+                    body,
+                    r"\breturn\s+esp_timer_get_time\s*\(\s*\)\s*"
+                    r"<\s*deadline_us\s*;",
+                )
+                self.assertNotRegex(body, r"\breturn\b[^;]*<=\s*deadline_us")
+
     def test_wrapper_invalidates_logically_before_minting_shared_deadline(self):
         pre = code_only(c_function(VM_C, "pble_vm_epoch_pre_deinit"))
         invalidate = code_only(
@@ -1308,6 +1399,26 @@ class NativeVmLifecycleContractTests(unittest.TestCase):
             reset,
             "a separate check before the TX/session cut has a check/use race",
         )
+
+    def test_response_pool_recycles_before_port_init_releases_tx(self):
+        begin = code_only(c_function(VM_C, "pble_vm_epoch_begin"))
+        reset = code_only(c_function(BLE, "pble_ble_vm_reset"))
+        self.assertNotIn(
+            "pble_proto_vm_reset",
+            begin,
+            "lifecycle must not hard-recycle tickets after BLE releases TX",
+        )
+        tx_take = reset.find("xSemaphoreTakeRecursive(pble_tx_mutex")
+        session_exit = reset.find("taskEXIT_CRITICAL(&pble_session_mux)")
+        cancel = reset.find("pble_rsp_cancel_session", session_exit)
+        proto_reset = reset.find("pble_proto_vm_reset", cancel)
+        tx_give = reset.find("xSemaphoreGiveRecursive(pble_tx_mutex)", proto_reset)
+        positions = (tx_take, session_exit, cancel, proto_reset, tx_give)
+        self.assertTrue(
+            all(position >= 0 for position in positions),
+            "session rotation, exact-ticket cancel, and pool recycle share TX",
+        )
+        self.assertEqual(list(positions), sorted(positions))
 
     def test_lifecycle_counter_is_bounded_and_fails_closed(self):
         enter = code_only(c_function(VM_C, "pble_vm_dispatch_enter"))
@@ -1462,7 +1573,6 @@ class NativeVmLifecycleContractTests(unittest.TestCase):
             )
         for reset in (
             "pble_ble_vm_reset",
-            "pble_proto_vm_reset",
             "pble_fs_vm_reset",
             "pble_runner_vm_reset",
             "pble_console_vm_reset",

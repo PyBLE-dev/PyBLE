@@ -119,20 +119,24 @@ class CompletionWakeOracle:
     """Model transition-before-give ABA on one static binary semaphore."""
 
     FREE = 0
-    RESERVED = 1
-    READY = 2
-    COMPLETE = 3
+    CLAIMED = 1
+    RESERVED = 2
+    READY = 3
+    COMPLETE = 4
 
     def __init__(self) -> None:
         self.state = self.FREE
         self.incarnation = 1
         self.signal = 0
 
-    def reserve(self) -> int:
+    def reserve(self) -> int | None:
         if self.state != self.FREE:
-            raise AssertionError("slot is not free")
+            return None
+        # Claim under the pool mutex before touching the untagged semaphore.
+        # A live COMPLETE slot therefore keeps the wake owned by its waiter.
+        self.state = self.CLAIMED
         # A recycled static binary semaphore can retain a delayed old wake.
-        # Reservation must make the new incarnation start empty.
+        # Drain it after the claim and before RESERVED becomes observable.
         self.signal = 0
         self.state = self.RESERVED
         return self.incarnation
@@ -251,6 +255,23 @@ class FrozenResponsePumpOracleTests(unittest.TestCase):
         model.signal = 1
         second = model.reserve()
         self.assertIsNone(model.wait_nowait(second))
+
+    def test_reserve_never_steals_a_live_complete_waiter_wake(self):
+        model = CompletionWakeOracle()
+        incarnation = model.reserve()
+        give = model.transition_complete(incarnation)
+        self.assertTrue(model.deliver_give(give))
+
+        self.assertIsNone(
+            model.reserve(),
+            "a COMPLETE slot cannot be claimed by another reservation",
+        )
+        self.assertEqual(
+            model.signal,
+            1,
+            "a failed reservation must not drain the retained waiter wake",
+        )
+        self.assertTrue(model.wait_nowait(incarnation))
 
 
 class NativeResponsePoolContractTests(unittest.TestCase):
@@ -461,11 +482,47 @@ class NativeResponsePoolContractTests(unittest.TestCase):
             self.assertGreater(give, body.rfind("taskEXIT_CRITICAL", 0, give))
 
         reserve = code_only(c_function(PROTO, "pble_rsp_reserve"))
-        ordered(
-            self,
-            reserve,
-            "xSemaphoreTake(s_rsp_done[i], 0)",
-            "slot->state = PBLE_RSP_RESERVED",
+        self.assertRegex(
+            PROTO,
+            r"PBLE_RSP_FREE\s*=\s*0\s*,\s*PBLE_RSP_CLAIMED\s*,\s*"
+            r"PBLE_RSP_RESERVED\s*,",
+            "a claimed state must hide a slot while its stale wake is drained",
+        )
+        enter = reserve.find("taskENTER_CRITICAL(&s_rsp_mux)")
+        free_check = reserve.find("slot->state != PBLE_RSP_FREE", enter)
+        skip_live = reserve.find("continue;", free_check)
+        claim = reserve.find("slot->state = PBLE_RSP_CLAIMED", skip_live)
+        claim_exit = reserve.find("taskEXIT_CRITICAL(&s_rsp_mux)", claim)
+        drain = reserve.find("xSemaphoreTake(s_rsp_done[i], 0)", claim_exit)
+        reserve_enter = reserve.find("taskENTER_CRITICAL(&s_rsp_mux)", drain)
+        expose_state = reserve.find(
+            "slot->state = PBLE_RSP_RESERVED", reserve_enter
+        )
+        expose_ticket = reserve.find("*ticket = slot->ticket", expose_state)
+        reserve_exit = reserve.find(
+            "taskEXIT_CRITICAL(&s_rsp_mux)", expose_ticket
+        )
+        positions = (
+            enter,
+            free_check,
+            skip_live,
+            claim,
+            claim_exit,
+            drain,
+            reserve_enter,
+            expose_state,
+            expose_ticket,
+            reserve_exit,
+        )
+        self.assertTrue(
+            all(position >= 0 for position in positions),
+            "reserve must atomically FREE→CLAIMED, drain, then expose RESERVED",
+        )
+        self.assertEqual(list(positions), sorted(positions))
+        self.assertEqual(
+            reserve.find("xSemaphoreTake(s_rsp_done[i], 0)"),
+            drain,
+            "no slot semaphore may be drained before that slot is claimed",
         )
 
     def test_completion_wait_rechecks_tagged_state_after_every_wake(self):
