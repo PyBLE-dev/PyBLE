@@ -422,7 +422,11 @@ as pending and queues a timer-task quiescence boundary. The first callback after
 that boundary is drain-only: it consumes no tick, changes no GPIO, performs no
 terminal stop, and queues a distinct activation callback. Only that later
 callback may mint/publish the successor `{VM epoch, arm incarnation, ticks}` and
-start its periodic schedule, again without consuming a tick. Every active tick
+start its periodic schedule, again without consuming a tick. Activation first
+enters lifecycle activity for the pending epoch and then revalidates pending
+phase/epoch under the identify domain; refusal cancels the pending request and
+starts no periodic timer. Clear, reconfiguration, and VM disarm set the phase
+idle and clear both pending and active state. Every active tick
 then revalidates the exact arm before GPIO or timer-stop effects. A callback
 already dequeued from any older periodic, quiescence, or activation phase can
 therefore become only the drain callback; it cannot read/adopt, toggle, consume,
@@ -520,8 +524,8 @@ per toggle. This is an execution clarification and changes no PBLE/1 bytes.
   `SOFT_REBOOT` uses the same unresolved-control pickup gate as `STOP`. It marks
   that gate only after its provisional FS/VM closure succeeds and before its
   response attempt. `PBLE_TX_OK` publishes runner stop intent while resolving
-  the gate, before timer arm; failure resolves without stop intent while the
-  provisional FS/VM gates are aborted. Timer-arm failure remains the documented
+  the gate, before timer arm. On failure the provisional FS/VM gates are aborted
+  before pickup is released without stop intent. Timer-arm failure remains the documented
   post-acceptance non-returning restart exception.
 - **`CONSOLE_DATA` (0x30, EVT, id 0)** payload `[stream:u8][bytes]` — `stream` 0=stdout, 1=stderr (FR-CON-1/2).
 - **`CONSOLE_INPUT` (0x31, CMD, no RSP)** payload `[bytes]` — appended to the running program's `stdin` (`input()`/`sys.stdin`); fire-and-forget, no reply frame (FR-CON-3).

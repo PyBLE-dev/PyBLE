@@ -1184,9 +1184,12 @@ uses an explicit two-callback quiescence seam under the identify-timer domain:
    performs no terminal stop.
 3. Only the later `ACTIVATE` callback may mint and publish the successor exact
    `{VM epoch, arm incarnation, ticks}`, start its periodic schedule, and return
-   without consuming a tick. A newer request that overtakes an already-dequeued
-   activation resets the phase to `QUIESCE`, so that old invocation becomes the
-   drain callback instead of adopting the successor.
+   without consuming a tick. It snapshots the pending epoch, enters lifecycle
+   activity outside the identify mutex, then revalidates pending phase/epoch
+   under that mutex before publication. Entry refusal cancels the still-matching
+   pending request and starts no periodic timer. A newer request that overtakes
+   an already-dequeued activation resets the phase to `QUIESCE`, so that old
+   invocation becomes the drain callback instead of adopting the successor.
 4. Periodic callbacks revalidate the exact active ticket and phase under the
    timer-state mutex before every tick/GPIO/terminal-stop effect. Stop, start,
    phase changes, ticket mint/publication, and terminal stop retain the one
@@ -1195,7 +1198,8 @@ uses an explicit two-callback quiescence seam under the identify-timer domain:
 
 This seam is non-blocking on the NimBLE host, uses no per-toggle allocation, and
 closes both the after-entry ticket ABA and the before-entry dequeued-expiration
-race.
+race. Clear, LED reconfiguration, and VM disarm all set `IDLE`, clear pending
+and active tickets/ticks, and leave the LED off.
 
 ## 6. Boot & runtime state machine
 
@@ -1267,7 +1271,8 @@ returns `EBUSY`. Success provisionally closes all non-reboot CMD admission.
 After the handler successfully submits `RSP{OK}`, it publishes runner stop
 intent while resolving the pre-pickup control gate, then arms that timer for 250 ms
 and returns without a duplicate dispatcher response. Response submission is
-the commit cut: a TX failure reopens all gates and leaves the VM intact; after
+the commit cut: a TX failure reopens the provisional VM/FS gates before it
+releases the runner pickup gate without stop intent; after
 `PBLE_TX_OK` gates never reopen. Timer-arm failure immediately calls
 non-returning `esp_restart()`; timer success keeps pending set and stops the
 worker. The timer is not pre-armed. Only the callback schedules
