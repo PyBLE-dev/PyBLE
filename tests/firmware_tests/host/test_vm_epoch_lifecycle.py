@@ -60,6 +60,9 @@ ESP_CONFIG = source(
 MP_RUNTIME = source(
     ROOT / "firmware" / "upstream" / "micropython" / "py" / "runtime.c"
 )
+MP_MODTHREAD = source(
+    ROOT / "firmware" / "upstream" / "micropython" / "py" / "modthread.c"
+)
 
 
 def code_only(text: str) -> str:
@@ -115,6 +118,30 @@ def c_function(text: str, name: str) -> str:
                 return text[match.start() : index + 1]
         index += 1
     return ""
+
+
+def c_function_names(text: str) -> list[str]:
+    """Return source-defined C function names, excluding control keywords."""
+    names: list[str] = []
+    for match in re.finditer(
+        r"(?m)^[^\n;{}]*\b(?P<name>[A-Za-z_]\w*)\s*\([^;{}]*\)\s*\{",
+        text,
+    ):
+        name = match.group("name")
+        if name in {"if", "for", "while", "switch"} or name in names:
+            continue
+        if c_function(text, name):
+            names.append(name)
+    return names
+
+
+VFS_EFFECT_RE = re.compile(
+    r"\bmp_vfs_(?:stat|open|ilistdir|remove|rmdir|mkdir|rename)\s*\("
+    r"|\bmp_iternext\s*\("
+    r"|(?:->|\.)\s*(?:read|write)\s*\("
+    r"|\bmp_stream_close\s*\("
+)
+VFS_VALID_RE = re.compile(r"\bpble_fs_item_valid\s*\(")
 
 
 def ordered(test: unittest.TestCase, text: str, *needles: str) -> None:
@@ -207,6 +234,12 @@ class VmLifecycleOracle:
             raise ForcedRestart("activity drain deadline")
         return not self.active
 
+    def wrapper_stage(self, stage: str, now_ms: int) -> None:
+        if self.deadline_ms is None:
+            raise AssertionError("wrapper has not begun")
+        if now_ms >= self.deadline_ms:
+            raise ForcedRestart("{} exhausted shared deadline".format(stage))
+
     def disarm_timer(self, state: str) -> None:
         if state not in {"stopped", "inactive", "already-fired"}:
             raise ForcedRestart("unexpected timer disarm failure")
@@ -274,6 +307,11 @@ class RxFragmentToken:
     valid_run: bool
 
 
+@dataclass(frozen=True)
+class RxRefusalCut:
+    epoch: int
+
+
 class RxLifecycleOracle:
     """Model RX reassembly held inside one lifecycle activity."""
 
@@ -287,6 +325,7 @@ class RxLifecycleOracle:
         self.buffer = bytearray()
         self.dispatches: list[bytes] = []
         self.activity_at_dispatch: list[int] = []
+        self.refusal_cut: RxRefusalCut | None = None
 
     def _clear_run(self) -> None:
         self.active_run = False
@@ -338,6 +377,19 @@ class RxLifecycleOracle:
     def close(self) -> None:
         self.open = False
 
+    def begin_refused_fragment(self) -> RxRefusalCut:
+        if self.open or self.refusal_cut is not None:
+            raise AssertionError("refusal requires one closed lifecycle cut")
+        self.refusal_cut = RxRefusalCut(self.epoch)
+        return self.refusal_cut
+
+    def finish_refused_fragment(self, cut: RxRefusalCut) -> None:
+        if self.refusal_cut != cut:
+            raise AssertionError("refusal no longer owns the lifecycle cut")
+        if not self.open and self.epoch == cut.epoch:
+            self._clear_run()
+        self.refusal_cut = None
+
     def reset_if_drained(self) -> bool:
         if self.callbacks:
             return False
@@ -345,8 +397,11 @@ class RxLifecycleOracle:
         self.epoch += 1
         return True
 
-    def ready(self) -> None:
+    def ready(self) -> bool:
+        if self.refusal_cut is not None:
+            return False
         self.open = True
+        return True
 
 
 class FsQuiescenceOracle:
@@ -360,9 +415,10 @@ class FsQuiescenceOracle:
         self.generation = 12
         self.vfs_started = False
         self.published = False
+        self.gate_held = False
 
     def enqueue(self, opcode: str) -> bool:
-        if not self.open:
+        if self.gate_held or not self.open:
             return False
         self.queue.append((opcode, self.generation, self.epoch))
         return True
@@ -375,6 +431,8 @@ class FsQuiescenceOracle:
         return self.busy
 
     def quiesce_try(self) -> bool:
+        if self.gate_held:
+            return False
         self.open = False
         if self.busy is not None or self.queue:
             self.open = True
@@ -470,6 +528,22 @@ class FrozenLifecycleInterleavingTests(unittest.TestCase):
         self.assertFalse(model.activity_drained(2549))
         with self.assertRaisesRegex(ForcedRestart, "deadline"):
             model.activity_drained(2550)
+
+    def test_every_wrapper_stage_consumes_one_absolute_deadline(self):
+        model = VmLifecycleOracle()
+        model.begin_wrapper(100)
+        self.assertEqual(model.deadline_ms, 2600)
+        for stage, now_ms in (
+            ("activity drain", 200),
+            ("soft timer disarm", 1200),
+            ("identify timer disarm", 1800),
+            ("response callout stop", 2300),
+            ("TX lock", 2599),
+        ):
+            model.wrapper_stage(stage, now_ms)
+            self.assertEqual(model.deadline_ms, 2600)
+        with self.assertRaisesRegex(ForcedRestart, "shared deadline"):
+            model.wrapper_stage("TX lock", 2600)
 
     def test_wrapper_holds_tx_through_real_deinit(self):
         model = VmLifecycleOracle()
@@ -595,6 +669,37 @@ class FrozenLifecycleInterleavingTests(unittest.TestCase):
         self.assertFalse(rx.active_run)
         self.assertEqual(rx.buffer, b"")
 
+    def test_paused_rx_refusal_cannot_clear_a_fresh_epoch_first(self):
+        rx = RxLifecycleOracle()
+        rx.close()
+        self.assertTrue(rx.reset_if_drained())
+
+        refused = rx.begin_refused_fragment()
+        self.assertFalse(
+            rx.ready(),
+            "final readiness cannot pass a refusal holding the lifecycle cut",
+        )
+        rx.finish_refused_fragment(refused)
+        self.assertTrue(rx.ready())
+
+        first = rx.begin_fragment(
+            first=True,
+            last=False,
+            index=0,
+            data=b"fresh-prefix",
+        )
+        self.assertIsNotNone(first)
+        rx.finish_fragment(first, last=False)
+        last = rx.begin_fragment(
+            first=False,
+            last=True,
+            index=1,
+            data=b"-suffix",
+        )
+        self.assertIsNotNone(last)
+        rx.finish_fragment(last, last=True)
+        self.assertEqual(rx.dispatches, [b"fresh-prefix-suffix"])
+
     def test_rx_activity_remains_held_through_complete_dispatch(self):
         rx = RxLifecycleOracle()
         only = rx.begin_fragment(
@@ -624,6 +729,14 @@ class FrozenLifecycleInterleavingTests(unittest.TestCase):
         self.assertTrue(fs.quiesce_try())
         self.assertFalse(fs.enqueue("FILE_PUT_DATA"))
         self.assertIsNone(fs.dequeue_and_mark_busy())
+
+        contended = FsQuiescenceOracle()
+        contended.gate_held = True
+        self.assertFalse(contended.enqueue("FILE_LIST"))
+        self.assertFalse(contended.enqueue("FILE_PUT_DATA"))
+        self.assertFalse(contended.quiesce_try())
+        self.assertTrue(contended.open)
+        self.assertEqual(contended.queue, [])
 
     def test_started_vfs_may_finish_but_cannot_publish_after_invalidation(self):
         fs = FsQuiescenceOracle()
@@ -775,6 +888,36 @@ class NativeVmLifecycleContractTests(unittest.TestCase):
             VM_C,
             r"#\s*define\s+PBLE_VM_DEINIT_BUDGET_MS\s+2500(?:[uUlL]*)\b",
         )
+        ordered(
+            self,
+            pre,
+            "pble_vm_close_admission",
+            "deadline_us",
+            "pble_vm_wait_activity_idle",
+            "pble_runner_vm_timer_disarm",
+            "pble_dc_vm_timer_disarm",
+            "pble_ble_vm_stop_response_callout",
+            "pble_ble_vm_tx_lock",
+        )
+        self.assertEqual(
+            pre.count("PBLE_VM_DEINIT_BUDGET_MS"),
+            1,
+            "the wrapper must mint its 2500 ms deadline exactly once",
+        )
+        self.assertIn("esp_timer_get_time", pre)
+        for helper in (
+            "pble_vm_wait_activity_idle",
+            "pble_runner_vm_timer_disarm",
+            "pble_dc_vm_timer_disarm",
+            "pble_ble_vm_stop_response_callout",
+            "pble_ble_vm_tx_lock",
+        ):
+            with self.subTest(deadline_helper=helper):
+                self.assertRegex(
+                    pre,
+                    rf"\b{helper}\s*\([^;]*\bdeadline_us\b[^;]*\)",
+                    "every quiescence helper must consume the shared deadline",
+                )
         for token in (
             "pble_vm_close_admission",
             "pble_vm_wait_activity_idle",
@@ -802,7 +945,8 @@ class NativeVmLifecycleContractTests(unittest.TestCase):
         self.assertIn("esp_restart", enter)
         self.assertRegex(leave, r"(?:==|<=)\s*0")
         self.assertIn("esp_restart", leave)
-        self.assertIn("PBLE_VM_DEINIT_BUDGET_MS", wait)
+        self.assertIn("deadline_us", wait.partition("{")[0])
+        self.assertNotIn("PBLE_VM_DEINIT_BUDGET_MS", wait)
         self.assertIn("esp_timer_get_time", wait)
         self.assertIn("esp_restart", wait)
 
@@ -834,7 +978,7 @@ class NativeVmLifecycleContractTests(unittest.TestCase):
         ordered(
             self,
             callback,
-            "pble_vm_callback_enter",
+            "pble_vm_rx_callback_enter",
             "OS_MBUF_PKTLEN",
             "ble_hs_mbuf_to_flat",
             "pble_rx_ingest",
@@ -844,17 +988,31 @@ class NativeVmLifecycleContractTests(unittest.TestCase):
             callback.find("pble_rx_ingest"),
             "the RX activity must cover reassembly and complete-CMD dispatch",
         )
-        entry_pos = callback.find("pble_vm_callback_enter")
+        entry_pos = callback.find("pble_vm_rx_callback_enter")
         read_pos = callback.find("OS_MBUF_PKTLEN")
         refusal_cut = callback[entry_pos:read_pos]
         refused = re.search(
-            r"if\s*\([^)]*\)\s*\{(?P<body>.*?)\}",
+            r"if\s*\([^{}]*\)\s*\{(?P<body>.*?)\}",
             refusal_cut,
             re.DOTALL,
         )
         self.assertIsNotNone(refused)
-        self.assertIn("pble_ble_vm_rx_reset", refused.group("body"))
         self.assertRegex(refused.group("body"), r"\breturn\b")
+        self.assertNotIn(
+            "pble_ble_vm_rx_reset",
+            callback,
+            "refusal reset outside lifecycle synchronization can clear a fresh FIRST",
+        )
+
+        rx_enter = code_only(c_function(VM_C, "pble_vm_rx_callback_enter"))
+        self.assertTrue(rx_enter)
+        critical_enter = rx_enter.find("taskENTER_CRITICAL")
+        critical_exit = rx_enter.rfind("taskEXIT_CRITICAL")
+        self.assertGreaterEqual(critical_enter, 0)
+        self.assertGreater(critical_exit, critical_enter)
+        atomic_cut = rx_enter[critical_enter:critical_exit]
+        self.assertIn("pble_ble_vm_rx_reset", atomic_cut)
+        self.assertIn("pble_vm_activity_enter_locked", atomic_cut)
         for blocking in ("portMAX_DELAY", "vTaskDelay", "ulTaskNotifyTake"):
             with self.subTest(blocking=blocking):
                 self.assertNotIn(blocking, callback)
@@ -980,6 +1138,14 @@ class NativeVmLifecycleContractTests(unittest.TestCase):
             self.assertIn(token, proto_reset)
 
     def test_workers_enter_and_final_ready_requires_both(self):
+        thread_entry = code_only(c_function(MP_MODTHREAD, "thread_entry"))
+        ordered(
+            self,
+            thread_entry,
+            "MP_THREAD_GIL_ENTER",
+            "mp_thread_start",
+            "mp_call_function_n_kw",
+        )
         runner_worker = code_only(c_function(RUNNER, "pble_runner_worker"))
         fs_worker = code_only(c_function(FS, "pble_fs_worker"))
         self.assertIn(
@@ -990,13 +1156,33 @@ class NativeVmLifecycleContractTests(unittest.TestCase):
         self.assertIn("PBLE_VM_WORKER_RUNNER", ready)
         self.assertIn("PBLE_VM_WORKER_FS", ready)
         self.assertIn("pble_vm_open_admission", ready)
+        self.assertIn("deadline_us", ready.partition("{")[0])
+        self.assertIn("esp_timer_get_time", ready)
+        self.assertNotIn("portMAX_DELAY", ready)
+
+        self.assertRegex(
+            VM_H + VM_C + BLE,
+            r"#\s*define\s+PBLE_VM_READY_BUDGET_MS\s+2500(?:[uUlL]*)\b",
+        )
+        binding = code_only(c_function(BLE, "pble_ble_vm_ready"))
+        ordered(
+            self,
+            binding,
+            "deadline_us",
+            "MP_THREAD_GIL_EXIT",
+            "pble_vm_ready",
+            "MP_THREAD_GIL_ENTER",
+        )
+        self.assertIn("esp_timer_get_time", binding)
+        self.assertIn("PBLE_VM_READY_BUDGET_MS", binding)
+        self.assertNotIn("portMAX_DELAY", binding)
         self.assertIn("MP_QSTR_vm_ready", BLE)
 
 
 class NativeFsEpochContractTests(unittest.TestCase):
     def test_fs_items_include_put_data_session_generation_and_vm_epoch(self):
         item = re.search(
-            r"typedef\s+struct\s*\{(?P<body>.*?)\}\s*pble_fs_req_t\s*;",
+            r"typedef\s+struct\s*\{(?P<body>[^{}]*)\}\s*pble_fs_req_t\s*;",
             FS,
             re.DOTALL,
         )
@@ -1009,6 +1195,15 @@ class NativeFsEpochContractTests(unittest.TestCase):
         enqueue = code_only(c_function(FS, "fs_enqueue"))
         self.assertIn("pble_ble_session_snapshot", enqueue)
         self.assertIn("pble_vm_epoch_current", enqueue)
+        valid = code_only(c_function(FS, "pble_fs_item_valid"))
+        self.assertRegex(
+            valid,
+            r"pble_ble_session_live\s*\(\s*it->conn\s*,\s*it->generation\s*\)",
+        )
+        self.assertRegex(
+            valid,
+            r"pble_vm_epoch_\w+\s*\(\s*it->vm_epoch\s*\)",
+        )
 
     def test_fs_queue_pop_and_busy_transition_share_quiescence_lock(self):
         enqueue = code_only(c_function(FS, "fs_enqueue"))
@@ -1016,6 +1211,13 @@ class NativeFsEpochContractTests(unittest.TestCase):
         quiesce = code_only(c_function(FS, "pble_fs_quiesce_try"))
         for body in (enqueue, dequeue, quiesce):
             self.assertIn("g_fs_gate", body)
+        for name, body in (("fs_enqueue", enqueue), ("quiesce", quiesce)):
+            with self.subTest(zero_wait_host_gate=name):
+                self.assertRegex(
+                    body,
+                    r"xSemaphoreTake\s*\(\s*g_fs_gate\s*,\s*0\s*\)",
+                )
+                self.assertNotIn("portMAX_DELAY", body)
         ordered(
             self,
             dequeue,
@@ -1073,24 +1275,70 @@ class NativeFsEpochContractTests(unittest.TestCase):
         )
 
     def test_every_vfs_dispatch_revalidates_before_and_after_effect(self):
-        for name in (
-            "fs_do_list",
-            "fs_do_stat",
-            "fs_do_get",
-            "fs_do_put_begin",
-            "fs_do_put_data",
-            "fs_do_put_end",
-            "fs_do_delete",
-            "fs_do_mkdir",
-            "fs_do_rename",
-        ):
+        guarded_functions = 0
+        for name in c_function_names(FS):
             body = code_only(c_function(FS, name))
+            effects = list(VFS_EFFECT_RE.finditer(body))
+            if not effects:
+                continue
+            guarded_functions += 1
             with self.subTest(function=name):
-                self.assertGreaterEqual(
-                    body.count("pble_fs_item_valid"),
-                    2,
-                    "each VFS operation/chunk needs adjacent pre/post checks",
+                signature = body.partition("{")[0]
+                self.assertIn(
+                    "pble_fs_req_t",
+                    signature,
+                    "raw VFS helpers need the exact work-item token",
                 )
+                guards = list(VFS_VALID_RE.finditer(body))
+                self.assertTrue(guards, "raw VFS effects need token guards")
+                for effect_index, effect in enumerate(effects):
+                    previous_guard = max(
+                        (
+                            guard.start()
+                            for guard in guards
+                            if guard.end() <= effect.start()
+                        ),
+                        default=-1,
+                    )
+                    next_guard = min(
+                        (
+                            guard.start()
+                            for guard in guards
+                            if guard.start() >= effect.end()
+                        ),
+                        default=len(body) + 1,
+                    )
+                    previous_effect = max(
+                        (
+                            other.end()
+                            for other in effects[:effect_index]
+                            if other.end() <= effect.start()
+                        ),
+                        default=-1,
+                    )
+                    next_effect = min(
+                        (
+                            other.start()
+                            for other in effects[effect_index + 1 :]
+                            if other.start() >= effect.end()
+                        ),
+                        default=len(body) + 1,
+                    )
+                    self.assertGreater(
+                        previous_guard,
+                        previous_effect,
+                        "{} lacks an operation-adjacent pre-check".format(
+                            effect.group(0)
+                        ),
+                    )
+                    self.assertLess(
+                        next_guard,
+                        next_effect,
+                        "{} lacks an operation-adjacent post-check".format(
+                            effect.group(0)
+                        ),
+                    )
+        self.assertGreater(guarded_functions, 0, "no raw VFS effects were audited")
 
     def test_fs_data_end_and_ack_use_exact_session_event_submit(self):
         self.assertIn("pble_proto_emit_paced_for_session", PROTO_H)

@@ -267,13 +267,27 @@ class NativeResponsePoolContractTests(unittest.TestCase):
                     rf"#\s*define\s+{macro}\s+{value}(?:[uUlL]*)\b",
                 )
         ticket = re.search(
-            r"typedef\s+struct\s*\{(?P<body>.*?)\}\s*pble_rsp_ticket_t\s*;",
+            r"typedef\s+struct\s*\{(?P<body>[^{}]*)\}\s*pble_rsp_ticket_t\s*;",
             PROTO_H,
             re.DOTALL,
         )
         self.assertIsNotNone(ticket, "response reservations need a typed ticket")
-        for field in ("slot", "incarnation", "conn", "generation"):
+        for field in ("slot", "incarnation", "conn", "generation", "vm_epoch"):
             self.assertRegex(ticket.group("body"), rf"\b{field}\b")
+        reserve = code_only(c_function(PROTO, "pble_rsp_reserve"))
+        matches = code_only(
+            c_function(PROTO, "pble_rsp_ticket_matches_locked")
+        )
+        self.assertIn("pble_vm_epoch_current", reserve)
+        self.assertIn("slot->ticket.vm_epoch", matches)
+        self.assertIn("ticket->vm_epoch", matches)
+        session_valid = code_only(
+            c_function(PROTO, "pble_rsp_session_valid")
+        )
+        self.assertRegex(
+            session_valid,
+            r"pble_vm_epoch_\w+\s*\(\s*ticket->vm_epoch\s*\)",
+        )
 
     def test_dispatch_reserves_before_handler_and_publishes_same_slot(self):
         dispatch = code_only(c_function(PROTO, "pble_proto_dispatch"))
@@ -357,8 +371,14 @@ class NativeResponsePoolContractTests(unittest.TestCase):
     def test_completion_transitions_once_and_reserve_drains_stale_token(self):
         cancel_session = code_only(c_function(PROTO, "pble_rsp_cancel_session"))
         cancel_ticket = code_only(c_function(PROTO, "pble_rsp_cancel_ticket"))
+        tx_result = code_only(c_function(PROTO, "pble_rsp_tx_result"))
         self.assertIn("slot->state != PBLE_RSP_COMPLETE", cancel_session)
         self.assertIn("slot->state != PBLE_RSP_COMPLETE", cancel_ticket)
+        self.assertIn("slot->state == PBLE_RSP_READY", tx_result)
+
+        for body in (cancel_session, cancel_ticket, tx_result):
+            give = body.find("xSemaphoreGive")
+            self.assertGreater(give, body.rfind("taskEXIT_CRITICAL", 0, give))
 
         reserve = code_only(c_function(PROTO, "pble_rsp_reserve"))
         ordered(
@@ -396,7 +416,7 @@ class NativeResponsePoolContractTests(unittest.TestCase):
 class NativeDeferredResponseContractTests(unittest.TestCase):
     def test_fs_item_carries_ticket_and_queue_full_publishes_ebusy(self):
         item = re.search(
-            r"typedef\s+struct\s*\{(?P<body>.*?)\}\s*pble_fs_req_t\s*;",
+            r"typedef\s+struct\s*\{(?P<body>[^{}]*)\}\s*pble_fs_req_t\s*;",
             FS,
             re.DOTALL,
         )
