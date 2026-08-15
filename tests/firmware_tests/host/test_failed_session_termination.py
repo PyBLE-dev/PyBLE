@@ -431,24 +431,53 @@ class FailedSessionTerminationIntegrationTest(unittest.TestCase):
             self.assertIn("pble_session_token_t", handler_decl.group(0))
 
         dispatch = _code(_function(self.proto, "pble_proto_dispatch"))
-        _ordered(self, dispatch, "pble_ble_session_snapshot", "pble_proto_decode")
         token_var_match = re.search(
             r"\bpble_session_token_t\s+([A-Za-z_]\w*)\b", dispatch
         )
         self.assertIsNotNone(token_var_match, "dispatch must retain its entry token")
         token_var = token_var_match.group(1)
+        admitted_call = re.search(
+            r"\bpble_proto_dispatch_admitted\s*\([^;]+\)", dispatch
+        )
+        self.assertIsNotNone(
+            admitted_call,
+            "outer dispatch must pass ownership into the admitted helper",
+        )
+        _ordered(
+            self,
+            dispatch,
+            "pble_ble_session_snapshot",
+            "pble_proto_dispatch_admitted",
+        )
+        self.assertRegex(
+            admitted_call.group(0),
+            rf"\b{re.escape(token_var)}\b",
+        )
+
+        admitted = _code(_function(self.proto, "pble_proto_dispatch_admitted"))
+        admitted_signature = admitted.partition("{")[0]
+        admitted_token_match = re.search(
+            r"(?:const\s+)?pble_session_token_t\s*\*?\s*([A-Za-z_]\w*)",
+            admitted_signature,
+        )
+        self.assertIsNotNone(
+            admitted_token_match,
+            "admitted helper must receive the originating token",
+        )
+        admitted_token = admitted_token_match.group(1)
+        self.assertNotIn("pble_ble_session_snapshot", admitted)
         handler_vars = re.findall(
-            r"\bpble_(?:deferred_)?handler_t\s+([A-Za-z_]\w*)\b", dispatch
+            r"\bpble_(?:deferred_)?handler_t\s+([A-Za-z_]\w*)\b", admitted
         )
         handler_calls = []
         for handler_var in handler_vars:
             handler_calls.extend(
-                re.findall(rf"\b{re.escape(handler_var)}\s*\([^;]+\)", dispatch)
+                re.findall(rf"\b{re.escape(handler_var)}\s*\([^;]+\)", admitted)
             )
         self.assertGreaterEqual(len(handler_calls), 3)
         for call in handler_calls:
             with self.subTest(call=call[:40]):
-                self.assertRegex(call, rf"\b{re.escape(token_var)}\b")
+                self.assertRegex(call, rf"\b{re.escape(admitted_token)}\b")
         self.assertEqual(
             _code(self.all_native_c).count("pble_ble_session_snapshot("),
             2,
