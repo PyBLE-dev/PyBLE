@@ -144,8 +144,11 @@ class Runner:
             return False
         if self.rsm.state != IDLE:
             self.rsm.on_stopped()
-        self._emit_state(IDLE)
+        # Commit the one-shot publication phase before entering the callback:
+        # if it records/sends IDLE and then KBI lands, supervisor recovery must
+        # observe completion and never publish the same terminal event twice.
         self._terminal_pending = False
+        self._emit_state(IDLE)
         return True
 
     def service_interrupted(self):

@@ -119,6 +119,7 @@ def _make_hard_reset_alarm(timer_type, reset):
 
 _CONTROL_STOP = 1
 _CONTROL_SOFT_REBOOT = 2
+_NO_RSP_COMMANDS = (_OP["FILE_PUT_DATA"], _OP["CONSOLE_INPUT"])
 
 
 class Agent:
@@ -242,7 +243,40 @@ class Agent:
         self.emit(_OP["RUN_STATE"], bytes((state,)))
 
     # -- link callbacks --------------------------------------------------------
+    def _closing_admission(self, msg):
+        """Return (gated, response) for the P4 pre-dispatch closing gate.
+
+        Malformed, wrong-version, and bad-CRC frames retain Dispatcher error
+        semantics. Every valid non-SOFT command is refused before any handler;
+        protocol no-response commands are silently dropped.
+        """
+        if self._reboot_at is None:
+            return (False, None)
+        msg = bytes(msg)
+        try:
+            frame = pyble_proto.decode(msg)
+        except pyble_proto.ProtocolError:
+            return (False, None)
+        if frame.ver != pyble_proto.VER or frame.type != pyble_proto.CMD:
+            return (False, None)
+        got_crc = int.from_bytes(msg[-4:], "little")
+        if pyble_proto.crc32(msg[:-4]) != got_crc:
+            return (False, None)
+        if frame.opcode == _OP["SOFT_REBOOT"]:
+            return (False, None)       # handler returns duplicate EBUSY
+        if frame.opcode in _NO_RSP_COMMANDS:
+            return (True, None)
+        rsp = pyble_proto.encode(
+            pyble_proto.RSP, frame.opcode, frame.id, bytes((EBUSY,)))
+        return (True, rsp)
+
     def _on_message(self, msg):
+        gated, closing_rsp = self._closing_admission(msg)
+        if gated:
+            if closing_rsp is not None:
+                self._link.send_message(closing_rsp)
+            return
+
         # STOP/SOFT_REBOOT handlers only stage command-local control. The run,
         # VM, reboot deadline, and alarm remain untouched until both response
         # encoding (inside Dispatcher) and link handoff succeed. `finally`
