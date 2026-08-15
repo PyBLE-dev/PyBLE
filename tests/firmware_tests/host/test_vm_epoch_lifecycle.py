@@ -190,6 +190,7 @@ VFS_EFFECT_RE = re.compile(
     r"|\bmp_stream_close\s*\("
 )
 VFS_VALID_RE = re.compile(r"\bpble_fs_item_valid\s*\(")
+VFS_TICKET_VALID_RE = re.compile(r"\bpble_fs_ticket_valid\s*\(")
 
 
 def ordered(test: unittest.TestCase, text: str, *needles: str) -> None:
@@ -1320,6 +1321,15 @@ class NativeFsEpochContractTests(unittest.TestCase):
             valid,
             r"pble_vm_epoch_\w+\s*\(\s*it->vm_epoch\s*\)",
         )
+        ticket_valid = code_only(c_function(FS, "pble_fs_ticket_valid"))
+        self.assertRegex(
+            ticket_valid,
+            r"pble_fs_item_valid\s*\(\s*it\s*\)",
+        )
+        self.assertRegex(
+            ticket_valid,
+            r"pble_rsp_ticket_valid\s*\(\s*&\s*it->ticket\s*\)",
+        )
 
     def test_fs_queue_pop_and_busy_transition_share_quiescence_lock(self):
         enqueue = code_only(c_function(FS, "fs_enqueue"))
@@ -1392,7 +1402,16 @@ class NativeFsEpochContractTests(unittest.TestCase):
 
     def test_every_vfs_dispatch_revalidates_before_and_after_effect(self):
         function_names = c_function_names(FS)
-        self.assertIn("fs_open", function_names)
+        function_bodies = {
+            name: code_only(c_function(FS, name)) for name in function_names
+        }
+        self.assertTrue(
+            any(
+                name == "fs_open" or name.startswith("fs_open_")
+                for name in function_names
+            ),
+            "the definition scanner must retain raw open helpers",
+        )
         for nested_call in (
             "mode",
             "nlr_push",
@@ -1402,11 +1421,121 @@ class NativeFsEpochContractTests(unittest.TestCase):
             "RENAME",
         ):
             self.assertNotIn(nested_call, function_names)
+
+        def defined_calls(body: str, owner: str | None = None) -> set[str]:
+            return {
+                name
+                for name in function_names
+                if name != owner
+                and re.search(rf"\b{re.escape(name)}\s*\(", body)
+            }
+
+        def reachable(seeds: set[str]) -> set[str]:
+            seen: set[str] = set()
+            pending = [name for name in seeds if name in function_bodies]
+            while pending:
+                name = pending.pop()
+                if name in seen:
+                    continue
+                seen.add(name)
+                pending.extend(
+                    defined_calls(function_bodies[name], name) - seen
+                )
+            return seen
+
+        get = function_bodies.get("fs_do_get", "")
+        wait_call = re.search(r"\bpble_rsp_wait\s*\([^;]+\)", get)
+        self.assertIsNotNone(wait_call)
+        get_before_wait = get[: wait_call.start()]
+        get_after_wait = get[wait_call.end() :]
+        response_roots = {
+            "fs_do_list",
+            "fs_do_stat",
+            "fs_do_put_begin",
+            "fs_do_put_end",
+            "fs_do_delete",
+            "fs_do_mkdir",
+            "fs_do_rename",
+        }
+        self.assertTrue(response_roots.issubset(function_bodies))
+        ticket_context = reachable(
+            response_roots | defined_calls(get_before_wait, "fs_do_get")
+        )
+        session_context = reachable(
+            {"fs_do_put_data"} | defined_calls(get_after_wait, "fs_do_get")
+        )
+        raw_functions = {
+            name
+            for name, body in function_bodies.items()
+            if VFS_EFFECT_RE.search(body)
+        }
+        mixed_raw_helpers = (
+            ticket_context & session_context & raw_functions
+        ) - {"fs_do_get"}
+        mixed_validators: dict[str, str] = {}
+        if mixed_raw_helpers:
+            self.assertRegex(
+                FS,
+                r"typedef\s+bool\s*\(\s*\*\s*pble_fs_validator_t\s*\)\s*"
+                r"\(\s*const\s+pble_fs_req_t\s*\*[^;]*\)\s*;",
+                "a mixed raw helper needs an explicit phase validator",
+            )
+        for helper in mixed_raw_helpers:
+            signature = function_bodies[helper].partition("{")[0]
+            validator = re.search(
+                r"\bpble_fs_validator_t\s+([A-Za-z_]\w*)\b",
+                signature,
+            )
+            self.assertIsNotNone(
+                validator,
+                "{} must receive its ticket-vs-session validator".format(helper),
+            )
+            mixed_validators[helper] = validator.group(1)
+
+            observed_contexts: set[str] = set()
+            for caller, caller_body in function_bodies.items():
+                if caller == helper:
+                    continue
+                calls = list(
+                    re.finditer(
+                        rf"\b{re.escape(helper)}\s*\((?P<args>[^;]*)\)",
+                        caller_body,
+                    )
+                )
+                if not calls:
+                    continue
+                required: str | None = None
+                if caller in ticket_context and caller not in session_context:
+                    required = "pble_fs_ticket_valid"
+                    observed_contexts.add("ticket")
+                elif caller in session_context and caller not in ticket_context:
+                    required = "pble_fs_item_valid"
+                    observed_contexts.add("session")
+                if required is not None:
+                    for call in calls:
+                        self.assertRegex(call.group("args"), rf"\b{required}\b")
+
+            for context, segment, required in (
+                ("ticket", get_before_wait, "pble_fs_ticket_valid"),
+                ("session", get_after_wait, "pble_fs_item_valid"),
+            ):
+                calls = list(
+                    re.finditer(
+                        rf"\b{re.escape(helper)}\s*\((?P<args>[^;]*)\)",
+                        segment,
+                    )
+                )
+                if calls:
+                    observed_contexts.add(context)
+                    for call in calls:
+                        self.assertRegex(call.group("args"), rf"\b{required}\b")
+            self.assertEqual(observed_contexts, {"ticket", "session"})
+
         guarded_functions = 0
         for name in function_names:
-            body = code_only(c_function(FS, name))
+            body = function_bodies[name]
             effects = list(VFS_EFFECT_RE.finditer(body))
-            if not effects:
+            if not effects or name == "fs_do_get":
                 continue
             guarded_functions += 1
             with self.subTest(function=name):
@@ -1416,8 +1545,22 @@ class NativeFsEpochContractTests(unittest.TestCase):
                     signature,
                     "raw VFS helpers need the exact work-item token",
                 )
-                guards = list(VFS_VALID_RE.finditer(body))
+                requires_ticket = name in ticket_context
+                if name in mixed_validators:
+                    guard_re = re.compile(
+                        rf"\b{re.escape(mixed_validators[name])}\s*\("
+                    )
+                else:
+                    guard_re = (
+                        VFS_TICKET_VALID_RE if requires_ticket else VFS_VALID_RE
+                    )
+                guards = list(guard_re.finditer(body))
                 self.assertTrue(guards, "raw VFS effects need token guards")
+                if requires_ticket and name not in mixed_validators:
+                    self.assertTrue(
+                        VFS_TICKET_VALID_RE.search(body),
+                        "response-bearing VFS effects need the whole ticket",
+                    )
                 for effect_index, effect in enumerate(effects):
                     previous_guard = max(
                         (
@@ -1486,7 +1629,7 @@ class NativeFsEpochContractTests(unittest.TestCase):
         pre_wait_effects = list(VFS_EFFECT_RE.finditer(before_wait))
         pre_wait_effects.extend(
             re.finditer(
-                r"\bfs_(?:open|stat_path|crc_file|crc_prefix)\s*\(",
+                r"\bfs_(?:open|stat_path|crc_file|crc_prefix)[A-Za-z_]*\s*\(",
                 before_wait,
             )
         )
