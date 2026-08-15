@@ -1722,6 +1722,7 @@ class WaveshareBleDeadlineAndCleanupRedTest(unittest.IsolatedAsyncioTestCase):
         executor_type = profile_bench.WaveshareHardwareExecutor
         executor = executor_type(self._args(), object(), self._log())
         calls = []
+        hello_timeouts = []
 
         class Diagnostic:
             def __init__(self):
@@ -1736,7 +1737,8 @@ class WaveshareBleDeadlineAndCleanupRedTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(timeout, 20.0)
             return diagnostic
 
-        async def hung_hello(*_args, **_kwargs):
+        async def hung_hello(*_args, **kwargs):
+            hello_timeouts.append(kwargs["timeout_s"])
             await asyncio.Event().wait()
 
         real_wait_for = asyncio.wait_for
@@ -1756,7 +1758,8 @@ class WaveshareBleDeadlineAndCleanupRedTest(unittest.IsolatedAsyncioTestCase):
             self.assertRaisesRegex(profile_bench.BenchError, "HELLO.*deadline"),
         ):
             await executor._diagnostic_snapshot()
-        self.assertEqual(calls, [2.0])
+        self.assertEqual(calls, [5.0])
+        self.assertEqual(hello_timeouts, [5.0])
         self.assertEqual(diagnostic.disconnect_count, 1)
 
     async def test_settlement_rejects_snapshot_returned_after_outer_deadline(self):
