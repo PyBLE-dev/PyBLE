@@ -2,14 +2,16 @@
 # SPDX-License-Identifier: MIT
 # Part of PyBLE (https://pyble.dev) — see /LICENSE.
 #
-# [red] Host tests for the F-25 rpi-pico2-w agent wiring (port spec P1/P2/P4;
+# [red] Host tests for the F-25/F-27 rpi-pico2-w agent wiring (port spec
+# P1/P2/P3/P4;
 # plan PART 3 test 8). Sole [red] author: firmware-test-author. Production
 # module owner (HAND-OFF for [green]): agent-engineer ->
 # firmware/pyble/pyble_agent.py (NEW; the init_agent()-equivalent wiring).
 #
 # FROZEN references: protocol.md §3/§4/§8 (the full opcode + status sets),
 # §5 (PUT/GET wire, F-10 resume: link drop resets in-RAM transfer state but the
-# jailed <dest>.pbltmp persists), §6 (idle STOP -> RSP{OK}, no RUN_STATE);
+# jailed <dest>.pbltmp persists), §6 (STOP -> RSP{OK}, active STOP's response
+# precedes interrupt delivery, idle STOP emits no RUN_STATE);
 # ports/rpi-pico2-w.md P1 (has_identify=0 -> IDENTIFY EUNSUPPORTED), P2
 # (transfers during an active RUN -> EBUSY; *_BEGIN validation/reservation is
 # answered inline at dispatch, only streaming/window pumping is supervisor
@@ -25,7 +27,7 @@
 # ---------------------------------------------------------------------------
 # INTERFACE PINNED BY THIS [red] TEST (agent-engineer implements to it):
 #   pyble_agent.Agent(link, fs_root, unique_id=bytes, reset=callable,
-#                     clock=callable)
+#                     clock=callable, notify=callable)
 #     - the host-testable init_agent() equivalent. The constructor wires
 #       everything: builds the Dispatcher, registers a handler for EVERY §4
 #       CMD opcode, registers link.on_message(cb) so cb(msg) ->
@@ -187,7 +189,7 @@ class AgentTestBase(unittest.TestCase):
         self.now = [0]
         self.resets = []
 
-    def new_agent(self, criterion=None, order=None, reset=None):
+    def new_agent(self, criterion=None, order=None, reset=None, notify=None):
         cls = AGENT.attr(self, "Agent", criterion or self.CRIT)
         link = FakeLink(order)
         agent = cls(
@@ -195,6 +197,7 @@ class AgentTestBase(unittest.TestCase):
             unique_id=UNIQUE_ID,
             reset=reset if reset is not None else (lambda: self.resets.append(1)),
             clock=lambda: self.now[0],
+            notify=notify,
         )
         return agent, link
 
@@ -411,6 +414,106 @@ class SoftRebootOrderingTest(AgentTestBase):
         self.assertLess(rsp_idx, resets[0],
                         "the RSP{OK} MUST be handed to the link BEFORE the "
                         "reset callable runs (P4)")
+
+    def test_active_run_rsp_is_sent_before_interrupt_notify(self):
+        crit = "F-27/P4 active SOFT_REBOOT RSP-before-interrupt"
+        order = []
+        agent, link = self.new_agent(
+            crit, order=order, notify=lambda: order.append(("notify",)))
+
+        send(self, link, 0x20, bytes((1,)) + b"while True: pass", id_=10)
+        self.assertEqual(rsps(link, opcode=0x20, id_=10)[0].payload[0], OK)
+        order[:] = []
+
+        send(self, link, 0x22, id_=11)
+        answers = rsps(link, opcode=0x22, id_=11)
+        self.assertEqual(len(answers), 1, "SOFT_REBOOT MUST answer inline")
+        self.assertEqual(answers[0].payload[0], OK)
+        self.assertEqual(sum(1 for event in order if event == ("notify",)), 1,
+                         "an active SOFT_REBOOT MUST arm exactly one interrupt")
+        rsp_idx = next(
+            i for i, event in enumerate(order)
+            if event[0] == "tx"
+            and pyble_proto.decode(event[1]).type == RSP
+            and pyble_proto.decode(event[1]).opcode == 0x22
+            and pyble_proto.decode(event[1]).id == 11)
+        notify_idx = order.index(("notify",))
+        self.assertLess(
+            rsp_idx, notify_idx,
+            "active SOFT_REBOOT MUST hand RSP{OK} to BLE TX before it arms "
+            "the KeyboardInterrupt (P4)")
+
+
+class ActiveStopOrderingTest(AgentTestBase):
+    """P3: active STOP must hand RSP{OK} to BLE before arming the interrupt.
+
+    On rp2 the BLE callback is synchronous. Reversing these two actions lets the
+    pending KeyboardInterrupt unwind inside the protected BLE IRQ, losing the
+    response and disabling the IRQ handler before the user run is stopped.
+    """
+
+    def test_rsp_is_sent_before_interrupt_notify(self):
+        crit = "F-27/P3 active STOP RSP-before-interrupt"
+        order = []
+        agent, link = self.new_agent(
+            crit, order=order, notify=lambda: order.append(("notify",)))
+
+        # Reserve a tight run without polling it: RUNNING covers both reserved
+        # and executing, and keeps this host test independent of real VM IRQs.
+        send(self, link, 0x20, bytes((1,)) + b"while True: pass", id_=10)
+        self.assertEqual(rsps(link, opcode=0x20, id_=10)[0].payload[0], OK)
+        order[:] = []
+
+        send(self, link, 0x21, id_=11)
+        answers = rsps(link, opcode=0x21, id_=11)
+        self.assertEqual(len(answers), 1, "STOP MUST answer exactly once")
+        self.assertEqual(answers[0].payload[0], OK)
+        self.assertEqual(sum(1 for event in order if event == ("notify",)), 1,
+                         "an active STOP MUST arm exactly one interrupt")
+        rsp_idx = next(
+            i for i, event in enumerate(order)
+            if event[0] == "tx"
+            and pyble_proto.decode(event[1]).type == RSP
+            and pyble_proto.decode(event[1]).opcode == 0x21
+            and pyble_proto.decode(event[1]).id == 11)
+        notify_idx = order.index(("notify",))
+        self.assertLess(
+            rsp_idx, notify_idx,
+            "active STOP MUST hand RSP{OK} to BLE TX before it arms the "
+            "KeyboardInterrupt (P3)")
+
+
+class ScheduledDuptermNotifyTest(unittest.TestCase):
+    """P3: creation of the pending KBI happens after the synchronous BLE IRQ.
+
+    The zero-arg console seam must enqueue the native os.dupterm_notify callable
+    itself; it must not invoke that callable inline in the BTstack callback.
+    """
+
+    def test_native_dupterm_notify_is_enqueued_not_called_inline(self):
+        factory = AGENT.attr(
+            self, "_make_scheduled_dupterm_notify",
+            "F-27/P3 os.dupterm_notify deferred out of synchronous BLE IRQ")
+        scheduled = []
+        native_calls = []
+
+        def schedule(callback, arg):
+            scheduled.append((callback, arg))
+
+        def native_notify(arg):
+            native_calls.append(arg)
+
+        notify = factory(schedule, native_notify)
+        notify()
+        self.assertEqual(native_calls, [],
+                         "the BLE IRQ path MUST NOT call os.dupterm_notify inline")
+        self.assertEqual(scheduled, [(native_notify, None)],
+                         "enqueue the native callback directly with argument None")
+
+        callback, arg = scheduled.pop()
+        callback(arg)
+        self.assertEqual(native_calls, [None],
+                         "the scheduled native callback remains executable")
 
 
 class StopWhileIdleTest(AgentTestBase):
