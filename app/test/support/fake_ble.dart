@@ -44,7 +44,7 @@ class FakeBleLink implements BleLink {
   Stream<List<int>> get inbound => _inbound.stream;
 
   @override
-  Future<void> write(List<int> bytes, {bool withoutResponse = true}) async {
+  Future<void> write(List<int> bytes, {required bool withoutResponse}) async {
     writes.add(List<int>.of(bytes));
     writesWithoutResponse.add(withoutResponse);
   }

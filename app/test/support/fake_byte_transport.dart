@@ -59,7 +59,7 @@ class FakeByteTransport implements ByteTransport {
   ValueListenable<bool> get connected => _connected;
 
   @override
-  Future<void> send(Uint8List packet, {bool acknowledged = false}) async {
+  Future<void> send(Uint8List packet, {required bool acknowledged}) async {
     if (sendDelay > Duration.zero) await Future<void>.delayed(sendDelay);
     sentAcknowledged.add(acknowledged);
     sentPackets.add(Uint8List.fromList(packet));

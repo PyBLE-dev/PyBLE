@@ -174,5 +174,39 @@ void main() {
         );
       },
     );
+
+    test(
+      'one deadline bounds aggregate acknowledged multi-fragment writes',
+      () async {
+        await engine.dispose();
+        await transport.dispose();
+        transport = FakeByteTransport(
+          mtu: 23,
+          sendDelay: const Duration(milliseconds: 40),
+        );
+        engine = PbleEngine(transport);
+        final PbleFrame cmd = PbleFrame(
+          type: Pble.typeCmd,
+          opcode: PbleOpcode.run.code,
+          id: engine.nextId(),
+          payload: Uint8List.fromList(List<int>.filled(64, 0x78)),
+        );
+        final Stopwatch elapsed = Stopwatch()..start();
+
+        await expectLater(
+          engine.request(cmd, timeout: const Duration(milliseconds: 70)),
+          throwsA(isA<PbleTimeoutException>()),
+        );
+        elapsed.stop();
+
+        expect(transport.sentPackets, isNotEmpty);
+        expect(transport.sentPackets.length, lessThan(4));
+        expect(
+          elapsed.elapsed,
+          lessThan(const Duration(milliseconds: 110)),
+          reason: 'each fragment must consume the same absolute request budget',
+        );
+      },
+    );
   });
 }

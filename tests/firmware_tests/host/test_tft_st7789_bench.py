@@ -2042,6 +2042,112 @@ class PbleCentralConnectionTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertLess(elapsed, 0.06, "write time must consume command budget")
 
+    async def test_on_time_response_arriving_during_write_is_preserved(self):
+        request_id = 77
+        timeout = 0.05
+        arrival_times = []
+        loop = asyncio.get_running_loop()
+
+        class FakeBleakClient:
+            is_connected = True
+
+            async def write_gatt_char(self, _uuid, _packet, response):
+                self.assert_response = response
+                await asyncio.sleep(0.005)
+                arrival_times.append(loop.time())
+                encoded = wire.encode(
+                    wire.RSP,
+                    wire.OP_HELLO,
+                    request_id,
+                    bytes((wire.ST_OK,)),
+                )
+                for fragment in wire.fragment(
+                    encoded,
+                    central_module.DEFAULT_ATT_MTU,
+                ):
+                    central._on_notify(None, fragment)
+                await asyncio.sleep(0.005)
+
+        central = central_module.PbleCentral(FakeBleakClient())
+        started = loop.time()
+        response = await central.send_cmd(
+            wire.OP_HELLO,
+            request_id,
+            timeout=timeout,
+        )
+
+        self.assertEqual(response.payload, bytes((wire.ST_OK,)))
+        self.assertLess(arrival_times[0], started + timeout)
+
+    async def test_matching_response_arriving_after_deadline_is_rejected(self):
+        request_id = 78
+        timeout = 0.02
+        arrival_times = []
+        loop = asyncio.get_running_loop()
+
+        class FakeBleakClient:
+            is_connected = True
+
+            async def write_gatt_char(self, _uuid, _packet, response):
+                self.assert_response = response
+                try:
+                    await asyncio.sleep(0.08)
+                except asyncio.CancelledError:
+                    # Model a backend that completes its cancellation callback
+                    # and delivers the Notify only after the absolute deadline.
+                    await asyncio.sleep(0.01)
+                    arrival_times.append(loop.time())
+                    encoded = wire.encode(
+                        wire.RSP,
+                        wire.OP_HELLO,
+                        request_id,
+                        bytes((wire.ST_OK,)),
+                    )
+                    for fragment in wire.fragment(
+                        encoded,
+                        central_module.DEFAULT_ATT_MTU,
+                    ):
+                        central._on_notify(None, fragment)
+
+        central = central_module.PbleCentral(FakeBleakClient())
+        started = loop.time()
+        with self.assertRaises(asyncio.TimeoutError):
+            await central.send_cmd(
+                wire.OP_HELLO,
+                request_id,
+                timeout=timeout,
+            )
+
+        self.assertEqual(len(arrival_times), 1)
+        self.assertGreaterEqual(arrival_times[0], started + timeout)
+
+    async def test_one_deadline_bounds_aggregate_multi_fragment_writes(self):
+        write_attempts = 0
+
+        class FakeBleakClient:
+            is_connected = True
+
+            async def write_gatt_char(self, _uuid, _packet, response):
+                nonlocal write_attempts
+                self.assert_response = response
+                write_attempts += 1
+                await asyncio.sleep(0.03)
+
+        central = central_module.PbleCentral(FakeBleakClient())
+        loop = asyncio.get_running_loop()
+        started = loop.time()
+        with self.assertRaises(asyncio.TimeoutError):
+            await central.send_cmd(
+                wire.OP_RUN,
+                79,
+                payload=b"x" * 64,
+                timeout=0.05,
+            )
+        elapsed = loop.time() - started
+
+        self.assertEqual(write_attempts, 2)
+        self.assertLess(elapsed, 0.08, "fragments share one absolute deadline")
+
 
 class NativeSoftRebootOrderingTest(unittest.TestCase):
     def test_ok_response_has_a_bounded_delivery_grace_before_vm_reset(self):
