@@ -212,17 +212,23 @@ class Agent:
 
     # -- link callbacks --------------------------------------------------------
     def _on_message(self, msg):
-        rsp = self._dispatcher.on_message(msg)
-        # STOP/SOFT_REBOOT only arm this one-shot from their active-run handler.
-        # Snapshot+clear before TX so a failed/dead link cannot leak the intent
-        # into an unrelated later command. The actual dupterm notify is itself
-        # scheduler-deferred by main() so its KBI lands outside the BLE IRQ.
-        interrupt_after_rsp = self._interrupt_after_rsp
-        self._interrupt_after_rsp = False
-        if rsp is not None:
-            self._link.send_message(rsp)
+        # STOP/SOFT_REBOOT only arm this command-local one-shot from their
+        # executing-run handler. `finally` clears it across handler, response
+        # encode, and link-send exceptions so no later command can inherit KBI.
+        interrupt_after_rsp = False
+        try:
+            rsp = self._dispatcher.on_message(msg)
+            interrupt_after_rsp = self._interrupt_after_rsp
+            if rsp is not None:
+                self._link.send_message(rsp)
+        finally:
+            self._interrupt_after_rsp = False
         if interrupt_after_rsp:
-            self.console.inject_stop()
+            # The response is already handed to BLE. Scheduler admission is the
+            # remaining fallible step: Console rolls back its armed 0x03 first;
+            # then device `machine.reset` is the non-returning safety fallback.
+            if not self.console.inject_stop() and self._reset is not None:
+                self._reset()
 
     def _on_connect(self):
         # Refresh the INFO read for the new session (mtu/free_mem/label live).
@@ -297,20 +303,21 @@ class Agent:
         return bytes((self._runner.handle_run(frame.payload),))
 
     def _h_stop(self, frame):
-        # §6/P3: RSP{OK} always (idempotent). Only an ACTIVE run additionally
-        # requests the post-RSP console 0x03 path — an idle STOP must neither
-        # emit a RUN_STATE nor leave a stale interrupt armed for the next run.
+        # §6/P3: RSP{OK} always (idempotent). A reserved run is cancelled by
+        # Runner.service without executing. Only an EXECUTING run needs the
+        # post-RSP 0x03 path; idle STOP has no interrupt/reset side effect.
         status = self._runner.handle_stop()
-        if self._run_active():
+        if self._runner.is_executing():
             self._interrupt_after_rsp = True
         return bytes((status,))
 
     def _h_soft_reboot(self, frame):
         # P4: RSP{OK} first (the dispatcher return sends it), then stop any
-        # user code via the 0x03 path, then the injected reset runs from the
-        # supervisor once the bounded TX-flush delay has elapsed.
+        # executing user code via 0x03 (a reservation cancels at pickup), then
+        # the injected reset runs once the bounded TX-flush delay has elapsed.
         if self._run_active():
             self._runner.handle_stop()
+        if self._runner.is_executing():
             self._interrupt_after_rsp = True
         self._reboot_at = self._clock() + REBOOT_FLUSH_MS
         return bytes((OK,))

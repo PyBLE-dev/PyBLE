@@ -14,11 +14,11 @@
 #         wedge the reservation), reserves via the RSM, captures the request
 #         for the supervisor, and returns the §8 RSP status ONLY — it never
 #         emits RUN_STATE and never executes user code inline.
-#       - service() runs on the supervisor (main thread): it picks up the
-#         captured request, clears any stale stop intent (pble_runner.c worker:
-#         g_stop_requested = false at fresh-run start), emits RUN_STATE(running),
-#         calls exec_fn(mode, data), and ALWAYS emits a terminal RUN_STATE
-#         (stop wins over completion: term = stop_requested ? stopped : finished).
+#       - service() runs on the supervisor (main thread): an accepted STOP that
+#         precedes pickup consumes the captured request without executing it and
+#         emits only RUN_STATE(idle). Otherwise it marks execution active, emits
+#         RUN_STATE(running), calls exec_fn(mode, data), and ALWAYS emits a
+#         terminal RUN_STATE (stop wins over completion).
 #   * make_exec_fn() — the supervisor executor (P2/P3): compile + exec in a
 #     FRESH globals dict per run; an uncaught exception routes its traceback
 #     through the console stderr path (pble_console_stderr_print twin) and then
@@ -89,6 +89,7 @@ class Runner:
         self._exec_fn = exec_fn
         self._pending = None          # captured (mode, data) awaiting pickup
         self._stop_requested = False
+        self._executing = False       # reserved/pending is deliberately distinct
 
     def handle_run(self, payload):
         # Validate BEFORE reserving (pble_runner_run twin) — the only place the
@@ -112,25 +113,45 @@ class Runner:
         return OK                     # RSP only; RUN_STATE is supervisor work
 
     def handle_stop(self):
-        # Idempotent: STOP while idle is a no-op OK (the intent is cleared at
-        # the next fresh-run pickup). The agent additionally arms the console
-        # 0x03 channel when a run is active (P3) — that wiring lives outside
-        # this seam.
-        self._stop_requested = True
+        # Idempotent while idle/terminal. While RUNNING this intent applies to
+        # the current reservation or execution; service() consumes it before a
+        # pending source can start, or uses it for the executing terminal cut.
+        if self.rsm.state == RUNNING:
+            self._stop_requested = True
         return OK
 
+    def is_executing(self):
+        """True only while supervisor pickup is inside the execution lifecycle.
+
+        A RUN reservation with a captured `_pending` item is active for EBUSY,
+        but is not executing and therefore needs cancellation, not a VM KBI.
+        """
+        return self._executing
+
     def service(self):
-        """Supervisor pickup: run the captured request, emitting RUN_STATE
-        (running) then ALWAYS a terminal state. Returns True iff serviced."""
+        """Consume a cancelled reservation as idle, else run it to terminal.
+
+        Returns True iff a pending request was serviced.
+        """
         if self._pending is None:
             return False
         mode, data = self._pending
         self._pending = None
-        # Fresh run: a stale stop intent never bleeds into this run.
+        # A STOP/SOFT_REBOOT accepted after reservation but before this pickup
+        # owns the cut: consume the mailbox item without compiling/executing or
+        # fabricating RUN_STATE(running), then publish the idle terminal.
+        if self._stop_requested:
+            self._stop_requested = False
+            self.rsm.on_stopped()
+            self._emit_state(IDLE)
+            return True
+
+        # Idle STOP never sets intent, but keep the fresh-run invariant explicit.
         self._stop_requested = False
-        self.rsm.on_started()
-        self._emit_state(RUNNING)
+        self._executing = True
         try:
+            self.rsm.on_started()
+            self._emit_state(RUNNING)
             self._exec_fn(mode, bytes(data))
             ok = True
         except KeyboardInterrupt:
@@ -139,6 +160,8 @@ class Runner:
             ok = False
         except Exception:
             ok = False
+        finally:
+            self._executing = False
         # Terminal transition: STOP wins over completion (pble_runner.c worker:
         # term = stop_requested ? stopped : finished).
         if self._stop_requested:

@@ -18,10 +18,12 @@
 #      readinto() hands MicroPython exactly 1 byte or None — NEVER 0 and
 #      NEVER raises, because EOF/raise deactivates the dupterm slot
 #      (extmod/os_dupterm.c).
-#   3. STOP channel (P3): inject_stop() arms the 0x03 interrupt char (which
-#      preempts buffered stdin) and calls the injected os.dupterm_notify seam
-#      exactly once, so upstream converts it into a main-thread
-#      KeyboardInterrupt at the next VM back-edge.
+#   3. STOP channel (P3): inject_stop() transactionally arms the 0x03 interrupt
+#      char (which preempts buffered stdin) and calls the injected deferred
+#      os.dupterm_notify seam exactly once. Admission success returns True so
+#      upstream converts it into a main-thread KeyboardInterrupt at the next VM
+#      back-edge; a scheduling exception rolls the arm back and returns False so
+#      the agent can take its post-RSP hardware-reset fail-safe.
 #
 # The emit / notify / clock seams are INJECTED so the host suite exercises the
 # pure logic; on device the agent wires emit -> CONSOLE_DATA EVT notify,
@@ -162,10 +164,12 @@ class Console(_IOBase):
         return None
 
     def inject_stop(self):
-        # P3: arm the interrupt char, then poke the dupterm notify seam exactly
-        # once so upstream schedules the main-thread KeyboardInterrupt.
+        # P3: arm + notify is one logical transaction. A full scheduler queue
+        # must not leave 0x03 latent for an unrelated later dupterm notification.
         self._stop_armed = True
         try:
             self._notify()
         except Exception:
-            pass                              # a dead link never wedges STOP
+            self._stop_armed = False
+            return False                      # agent takes non-returning reset
+        return True
