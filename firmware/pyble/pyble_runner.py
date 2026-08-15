@@ -14,11 +14,12 @@
 #         wedge the reservation), reserves via the RSM, captures the request
 #         for the supervisor, and returns the §8 RSP status ONLY — it never
 #         emits RUN_STATE and never executes user code inline.
-#       - service() runs on the supervisor (main thread): an accepted STOP that
-#         precedes pickup consumes the captured request without executing it and
-#         emits only RUN_STATE(idle). Otherwise it marks execution active, emits
-#         RUN_STATE(running), calls exec_fn(mode, data), and ALWAYS emits a
-#         terminal RUN_STATE (stop wins over completion).
+#       - service() runs on the supervisor (main thread): publishing the
+#         executing marker is the pickup cut, immediately followed by the final
+#         cancellation check. A pre-cut STOP consumes the captured request and
+#         emits only RUN_STATE(idle); a post-cut STOP takes the VM-interrupt
+#         path. service_interrupted() idempotently closes a KBI that lands in
+#         the post-exec terminal transition, so RUNNING can never be stranded.
 #   * make_exec_fn() — the supervisor executor (P2/P3): compile + exec in a
 #     FRESH globals dict per run; an uncaught exception routes its traceback
 #     through the console stderr path (pble_console_stderr_print twin) and then
@@ -90,6 +91,7 @@ class Runner:
         self._pending = None          # captured (mode, data) awaiting pickup
         self._stop_requested = False
         self._executing = False       # reserved/pending is deliberately distinct
+        self._terminal_pending = False
 
     def handle_run(self, payload):
         # Validate BEFORE reserving (pble_runner_run twin) — the only place the
@@ -109,6 +111,7 @@ class Runner:
         status = self.rsm.on_run()
         if status != OK:
             return status             # EBUSY: no capture, no RUN_STATE
+        self._stop_requested = False  # fresh reservation owns fresh control
         self._pending = (mode, data)  # reserved -> single writer of the capture
         return OK                     # RSP only; RUN_STATE is supervisor work
 
@@ -128,6 +131,27 @@ class Runner:
         """
         return self._executing
 
+    def _terminalize_stopped(self):
+        """Publish the stopped terminal once for the current pickup.
+
+        The RSM transition and wire publication are deliberately restartable:
+        a deferred KBI can land immediately before or after `on_stopped()`.
+        """
+        self._pending = None
+        self._executing = False
+        self._stop_requested = False
+        if not self._terminal_pending:
+            return False
+        if self.rsm.state != IDLE:
+            self.rsm.on_stopped()
+        self._emit_state(IDLE)
+        self._terminal_pending = False
+        return True
+
+    def service_interrupted(self):
+        """Recover a KBI that escaped service's post-exec transition."""
+        return self._terminalize_stopped()
+
     def service(self):
         """Consume a cancelled reservation as idle, else run it to terminal.
 
@@ -137,18 +161,17 @@ class Runner:
             return False
         mode, data = self._pending
         self._pending = None
-        # A STOP/SOFT_REBOOT accepted after reservation but before this pickup
-        # owns the cut: consume the mailbox item without compiling/executing or
-        # fabricating RUN_STATE(running), then publish the idle terminal.
+        self._terminal_pending = True
+
+        # Linearization cut: a control callback before this store leaves the
+        # marker false and sets cancellation intent; one after it observes an
+        # executing lifecycle and arms KBI. The final check MUST follow the
+        # store, leaving no check-then-publish hole where source can start.
+        self._executing = True
         if self._stop_requested:
-            self._stop_requested = False
-            self.rsm.on_stopped()
-            self._emit_state(IDLE)
+            self._terminalize_stopped()
             return True
 
-        # Idle STOP never sets intent, but keep the fresh-run invariant explicit.
-        self._stop_requested = False
-        self._executing = True
         try:
             self.rsm.on_started()
             self._emit_state(RUNNING)
@@ -165,11 +188,12 @@ class Runner:
         # Terminal transition: STOP wins over completion (pble_runner.c worker:
         # term = stop_requested ? stopped : finished).
         if self._stop_requested:
-            self.rsm.on_stopped()
+            self._terminalize_stopped()
         else:
             self.rsm.on_finished(ok)
-        self._stop_requested = False
-        self._emit_state(self.rsm.state)
+            self._stop_requested = False
+            self._emit_state(self.rsm.state)
+            self._terminal_pending = False
         return True
 
 

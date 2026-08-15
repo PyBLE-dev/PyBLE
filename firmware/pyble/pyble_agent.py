@@ -14,16 +14,17 @@
 #     jailed <dest>.pbltmp persists — F-10 resume), and publishes the §7 caps
 #     via link.set_info_payload. It NEVER calls link.start() and NEVER touches
 #     os.dupterm — BLE bring-up and the dupterm tee are main()'s (device-only).
-#     poll() is ONE supervisor iteration: run-mailbox pickup (RUN_STATE(running)
-#     emit -> exec -> terminal emit), the GET transfer pump, and the deferred
-#     SOFT_REBOOT reset after a bounded TX-flush delay (P4).
+#     poll() is ONE supervisor iteration: run-mailbox pickup/terminal recovery,
+#     the GET transfer pump while not closing, and a cooperative fallback for
+#     the fixed SOFT_REBOOT deadline (P4).
 #   * main() — the device entry frozen into the image (_boot.py calls it):
 #     builds the BleLink, pins micropython.kbd_intr(3) (P3), installs the
 #     console tee via os.dupterm (guarded so a CPython import never breaks),
 #     and defers os.dupterm_notify through micropython.schedule so the pending
 #     KeyboardInterrupt is created only after the synchronous BTstack IRQ and
-#     its RSP have returned. It starts the link, runs maybe_autorun() LAST, then
-#     loops poll() forever.
+#     its RSP have returned. A hard RP2 Timer owns the SOFT_REBOOT reset even if
+#     the VM/poll path stalls. It starts the link, runs maybe_autorun() LAST,
+#     then loops poll() forever.
 #     An outer fault restart rebuilds the BleLink and re-advertises (H9): the
 #     board never needs BOOTSEL to recover from a supervisor fault.
 #
@@ -63,7 +64,7 @@ ERANGE = _ST["ERANGE"]
 EUNSUPPORTED = _ST["EUNSUPPORTED"]
 
 # P4: bounded TX-flush delay between the SOFT_REBOOT RSP{OK} handoff and the
-# injected machine.reset — long enough for the notify queue to drain, short
+# hard-alarm machine.reset — long enough for the notify queue to drain, short
 # enough that the observable behavior matches the ESP32 port (link drops,
 # board returns advertising with a fresh VM).
 REBOOT_FLUSH_MS = 250
@@ -96,22 +97,52 @@ def _make_scheduled_dupterm_notify(schedule, dupterm_notify):
     return _notify
 
 
+def _make_hard_reset_alarm(timer_type, reset):
+    """Return the RP2 hard one-shot reset admission seam (P4).
+
+    The timer object and callback are allocated once at device setup. The hard
+    alarm callback performs only the native, non-returning machine.reset call,
+    so VM scheduling, GC, filesystem pumping, and kbd_intr state cannot defer
+    an acknowledged reboot.
+    """
+    timer = timer_type()
+
+    def _reset_from_alarm(_timer):
+        reset()
+
+    def _arm(delay_ms):
+        timer.init(period=delay_ms, mode=timer.ONE_SHOT,
+                   callback=_reset_from_alarm, hard=True)
+
+    return _arm
+
+
+_CONTROL_STOP = 1
+_CONTROL_SOFT_REBOOT = 2
+
+
 class Agent:
     """The host-testable agent wiring (interface pinned by
     tests/firmware_tests/host/test_pyble_agent.py):
-    Agent(link, fs_root, unique_id=bytes, reset=callable, clock=callable).
+    Agent(link, fs_root, unique_id=bytes, reset=callable, clock=callable,
+          arm_reset=callable).
     `unique_id` is the machine.unique_id() bytes (device_id derivation, P1);
     `reset` the machine.reset seam (P4); `clock() -> int ms`; `notify` the
-    os.dupterm_notify seam handed to the console STOP channel (P3)."""
+    os.dupterm_notify seam handed to the console STOP channel (P3);
+    `arm_reset(delay_ms)` the hard RP2 alarm admission seam (P4)."""
 
     def __init__(self, link, fs_root, unique_id=b"\x00\x00", reset=None,
-                 clock=None, notify=None):
+                 clock=None, notify=None, arm_reset=None):
         self._link = link
         self._root = fs_root or "/"
         self._reset = reset
+        self._arm_reset = arm_reset
         self._clock = clock if clock is not None else _ticks_ms
         self._reboot_at = None          # ms deadline for the deferred reset
-        self._interrupt_after_rsp = False  # P3/P4: never inject inside handler
+        self._control_after_rsp = None  # P3/P4: provisional until TX succeeds
+        # Retained as a cleared compatibility sentinel for older host fixtures;
+        # control staging above supersedes the former interrupt-only one-shot.
+        self._interrupt_after_rsp = False
         self._device_id = pyble_info.device_id_from_unique_id(unique_id)
 
         # Persisted config (P5: /pyble_conf.json in the workspace jail).
@@ -212,23 +243,23 @@ class Agent:
 
     # -- link callbacks --------------------------------------------------------
     def _on_message(self, msg):
-        # STOP/SOFT_REBOOT only arm this command-local one-shot from their
-        # executing-run handler. `finally` clears it across handler, response
-        # encode, and link-send exceptions so no later command can inherit KBI.
-        interrupt_after_rsp = False
+        # STOP/SOFT_REBOOT handlers only stage command-local control. The run,
+        # VM, reboot deadline, and alarm remain untouched until both response
+        # encoding (inside Dispatcher) and link handoff succeed. `finally`
+        # discards provisional state on every exceptional exit.
+        control_after_rsp = None
+        self._control_after_rsp = None
+        self._interrupt_after_rsp = False
         try:
             rsp = self._dispatcher.on_message(msg)
-            interrupt_after_rsp = self._interrupt_after_rsp
+            control_after_rsp = self._control_after_rsp
             if rsp is not None:
                 self._link.send_message(rsp)
         finally:
+            self._control_after_rsp = None
             self._interrupt_after_rsp = False
-        if interrupt_after_rsp:
-            # The response is already handed to BLE. Scheduler admission is the
-            # remaining fallible step: Console rolls back its armed 0x03 first;
-            # then device `machine.reset` is the non-returning safety fallback.
-            if not self.console.inject_stop() and self._reset is not None:
-                self._reset()
+        if control_after_rsp is not None:
+            self._commit_control(control_after_rsp)
 
     def _on_connect(self):
         # Refresh the INFO read for the new session (mtu/free_mem/label live).
@@ -251,6 +282,29 @@ class Agent:
     def _run_active(self):
         # RUNNING covers reserved-but-not-picked-up AND executing (P2).
         return self._runner.rsm.state == _RUNNING
+
+    def _commit_control(self, action):
+        """Commit an acknowledged STOP/SOFT action after response handoff."""
+        self._runner.handle_stop()
+        executing = self._runner.is_executing()
+
+        if action == _CONTROL_SOFT_REBOOT:
+            self._reboot_at = self._clock() + REBOOT_FLUSH_MS
+            if self._arm_reset is not None:
+                try:
+                    self._arm_reset(REBOOT_FLUSH_MS)
+                except Exception:
+                    # An acknowledged reboot cannot depend on a failed alarm
+                    # admission. The device reset seam is non-returning.
+                    if self._reset is not None:
+                        self._reset()
+                    return
+
+        if executing:
+            # Scheduler admission is the remaining STOP failure: Console rolls
+            # back its armed 0x03 before the non-returning reset fail-safe.
+            if not self.console.inject_stop() and self._reset is not None:
+                self._reset()
 
     # -- §4 handlers (handler(frame) -> RSP payload bytes | None) --------------
     def _h_info(self, frame):
@@ -300,26 +354,22 @@ class Agent:
     def _h_run(self, frame):
         # Validate -> reserve -> RSP status ONLY (P2). RUN_STATE(running) is
         # supervisor work — RSP-before-RUN_STATE is structural.
+        if self._reboot_at is not None:
+            return bytes((EBUSY,))      # acknowledged SOFT closes admission
         return bytes((self._runner.handle_run(frame.payload),))
 
     def _h_stop(self, frame):
-        # §6/P3: RSP{OK} always (idempotent). A reserved run is cancelled by
-        # Runner.service without executing. Only an EXECUTING run needs the
-        # post-RSP 0x03 path; idle STOP has no interrupt/reset side effect.
-        status = self._runner.handle_stop()
-        if self._runner.is_executing():
-            self._interrupt_after_rsp = True
-        return bytes((status,))
+        # §6/P3: OK is idempotent, but cancellation/interrupt is provisional
+        # until _on_message successfully hands this response to BLE.
+        self._control_after_rsp = _CONTROL_STOP
+        return bytes((OK,))
 
     def _h_soft_reboot(self, frame):
-        # P4: RSP{OK} first (the dispatcher return sends it), then stop any
-        # executing user code via 0x03 (a reservation cancels at pickup), then
-        # the injected reset runs once the bounded TX-flush delay has elapsed.
-        if self._run_active():
-            self._runner.handle_stop()
-        if self._runner.is_executing():
-            self._interrupt_after_rsp = True
-        self._reboot_at = self._clock() + REBOOT_FLUSH_MS
+        # One acknowledged SOFT owns one immutable deadline. Like STOP, all
+        # effects remain provisional until the response handoff succeeds.
+        if self._reboot_at is not None:
+            return bytes((EBUSY,))
+        self._control_after_rsp = _CONTROL_SOFT_REBOOT
         return bytes((OK,))
 
     def _h_console_input(self, frame):
@@ -346,21 +396,47 @@ class Agent:
         return bytes((EUNSUPPORTED,))
 
     # -- supervisor ------------------------------------------------------------
+    def _service_reboot(self):
+        """Run the cooperative P4 fallback when its fixed deadline is due."""
+        if self._reboot_at is None:
+            return False
+        if _ticks_diff(self._clock(), self._reboot_at) < 0:
+            return False
+        self._reboot_at = None          # exactly once if reset seam returns
+        if self._reset is not None:
+            self._reset()
+        return True
+
     def poll(self):
         """ONE supervisor iteration (P2): run-mailbox pickup (RUN_STATE
-        (running) -> exec -> terminal RUN_STATE), the GET transfer pump, then
-        the deferred SOFT_REBOOT reset (P4). Never raises: a 0x03 landing
-        outside user code (idle STOP / SOFT_REBOOT stop step) is swallowed."""
+        lifecycle), GET pumping while not closing, and the P4 deadline
+        fallback. A hard RP2 alarm independently owns the reset guarantee."""
+        # A due reboot must not wait behind source execution or a whole GET.
+        if self._service_reboot():
+            return
         try:
-            self._runner.service()
-            self._fs.pump()
-        except KeyboardInterrupt:
-            pass                        # stray interrupt: supervisor survives
-        if self._reboot_at is not None:
-            if _ticks_diff(self._clock(), self._reboot_at) >= 0:
-                self._reboot_at = None  # exactly once (P4)
-                if self._reset is not None:
-                    self._reset()
+            try:
+                # While closing this can only consume/recover the reservation
+                # already cancelled by SOFT; it never admits new RUN source.
+                self._runner.service()
+                if self._reboot_at is None:
+                    self._fs.pump()
+            except KeyboardInterrupt:
+                # A deferred 0x03 may land after exec but before the terminal
+                # cut. Recover it idempotently instead of blindly swallowing
+                # and stranding RUNNING with no pending mailbox item.
+                self._runner.service_interrupted()
+        except Exception:
+            if self._reboot_at is None:
+                raise
+            # Do not let outer supervisor reconstruction discard an accepted
+            # reboot. Device reset is non-returning; a host seam may return.
+            if self._reset is not None:
+                self._reset()
+        finally:
+            # Covers cancellation/event/fs exceptions and the normal path. The
+            # hard alarm remains authoritative if Python never reaches here.
+            self._service_reboot()
 
 
 # -----------------------------------------------------------------------------
@@ -415,11 +491,16 @@ def _serve_forever():
     else:
         _notify = _noop                 # guarded: CPython has no dupterm/schedule
 
+    # P4: RP2 Timer uses the hardware alarm pool. `hard=True` lets this
+    # one-shot call machine.reset even when user VM work, a full GET, or a
+    # disabled keyboard interrupt prevents cooperative poll progress.
+    arm_reset = _make_hard_reset_alarm(machine.Timer, machine.reset)
     agent = Agent(link, "/",
                   unique_id=machine.unique_id(),
                   reset=machine.reset,
                   clock=_ticks_ms,
-                  notify=_notify)
+                  notify=_notify,
+                  arm_reset=arm_reset)
 
     # P3: pin the interrupt char so the armed 0x03 becomes KeyboardInterrupt.
     try:
