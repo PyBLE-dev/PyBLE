@@ -81,6 +81,7 @@ SERIAL_ENDPOINT_GONE_ERRNOS = frozenset(
 )
 PRE_CAPTURE_SESSION_END_TIMEOUT_MS = 2000
 SERIAL_POLL_INTERVAL_SECONDS = 0.01
+WAVESHARE_DIAGNOSTIC_HELLO_TIMEOUT_S = 5.0
 
 
 def _load_rp2_console_pacing():
@@ -1486,7 +1487,9 @@ class WaveshareHardwareExecutor(HardwareExecutor):
         diagnostic = await PbleCentral.connect(self.args.address, timeout=20.0)
         try:
             loop = asyncio.get_running_loop()
-            hello_deadline = loop.time() + 2.0
+            hello_deadline = (
+                loop.time() + WAVESHARE_DIAGNOSTIC_HELLO_TIMEOUT_S
+            )
             try:
                 await asyncio.wait_for(
                     hello(
@@ -1494,9 +1497,9 @@ class WaveshareHardwareExecutor(HardwareExecutor):
                         self.ids.next,
                         expected_chip=self.args.expect_chip,
                         profile_id=self.args.profile,
-                        timeout_s=2.0,
+                        timeout_s=WAVESHARE_DIAGNOSTIC_HELLO_TIMEOUT_S,
                     ),
-                    timeout=2.0,
+                    timeout=WAVESHARE_DIAGNOSTIC_HELLO_TIMEOUT_S,
                 )
             except asyncio.TimeoutError as exc:
                 raise BenchError(
