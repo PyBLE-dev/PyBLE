@@ -1968,6 +1968,80 @@ class PbleCentralConnectionTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIs(observed, expected)
 
+    async def test_response_bearing_command_acknowledges_every_fragment(self):
+        request_id = 75
+        write_modes = []
+
+        class FakeBleakClient:
+            is_connected = True
+
+            async def write_gatt_char(self, _uuid, _packet, response):
+                write_modes.append(response)
+                if len(write_modes) == 1:
+                    encoded = wire.encode(
+                        wire.RSP,
+                        wire.OP_RUN,
+                        request_id,
+                        bytes((wire.ST_OK,)),
+                    )
+                    for fragment in wire.fragment(
+                        encoded,
+                        central_module.DEFAULT_ATT_MTU,
+                    ):
+                        central._on_notify(None, fragment)
+
+        central = central_module.PbleCentral(FakeBleakClient())
+        response = await central.send_cmd(
+            wire.OP_RUN,
+            request_id,
+            payload=b"x" * 64,
+            timeout=0.1,
+        )
+
+        self.assertEqual(response.payload, bytes((wire.ST_OK,)))
+        self.assertGreater(len(write_modes), 1, "exercise a fragmented command")
+        self.assertTrue(all(write_modes), "every request fragment needs write ack")
+
+    async def test_no_response_command_keeps_write_without_response(self):
+        write_modes = []
+
+        class FakeBleakClient:
+            is_connected = True
+
+            async def write_gatt_char(self, _uuid, _packet, response):
+                write_modes.append(response)
+
+        central = central_module.PbleCentral(FakeBleakClient())
+        await central.send_cmd_no_rsp(
+            wire.OP_CONSOLE_INPUT,
+            0,
+            payload=b"x" * 64,
+        )
+
+        self.assertGreater(len(write_modes), 1, "exercise a fragmented command")
+        self.assertFalse(any(write_modes))
+
+    async def test_command_deadline_starts_before_first_acknowledged_write(self):
+        class FakeBleakClient:
+            is_connected = True
+
+            async def write_gatt_char(self, _uuid, _packet, response):
+                self.assert_response = response
+                await asyncio.sleep(0.08)
+
+        central = central_module.PbleCentral(FakeBleakClient())
+        loop = asyncio.get_running_loop()
+        started = loop.time()
+        with self.assertRaises(asyncio.TimeoutError):
+            await central.send_cmd(
+                wire.OP_HELLO,
+                76,
+                timeout=0.02,
+            )
+        elapsed = loop.time() - started
+
+        self.assertLess(elapsed, 0.06, "write time must consume command budget")
+
 
 class NativeSoftRebootOrderingTest(unittest.TestCase):
     def test_ok_response_has_a_bounded_delivery_grace_before_vm_reset(self):

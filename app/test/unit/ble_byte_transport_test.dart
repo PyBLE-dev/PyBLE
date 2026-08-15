@@ -54,6 +54,21 @@ void main() {
       );
     });
 
+    test(
+      'send maps acknowledged mode to the inverse GATT write flag',
+      () async {
+        final FakeBleLink link = FakeBleLink(mtu: 247);
+        addTearDown(link.dispose);
+        final dynamic transport = BleByteTransport(link);
+        final Uint8List packet = Uint8List.fromList(<int>[0x80, 0x01]);
+
+        await transport.send(packet, acknowledged: true);
+        await transport.send(packet, acknowledged: false);
+
+        expect(link.writesWithoutResponse, <bool>[false, true]);
+      },
+    );
+
     test('inbound surfaces TX notifications byte-for-byte', () async {
       final FakeBleLink link = FakeBleLink(mtu: 247);
       addTearDown(link.dispose);

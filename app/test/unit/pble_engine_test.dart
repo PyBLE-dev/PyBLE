@@ -106,5 +106,73 @@ void main() {
         throwsA(isA<PbleTimeoutException>()),
       );
     });
+
+    test('request acknowledges every outbound fragment', () async {
+      final PbleFrame cmd = PbleFrame(
+        type: Pble.typeCmd,
+        opcode: PbleOpcode.run.code,
+        id: engine.nextId(),
+        payload: Uint8List.fromList(List<int>.filled(500, 0x78)),
+      );
+      final Future<PbleFrame> pending = engine.request(cmd);
+      await pumpEventQueue();
+      transport.deliverFrame(
+        PbleFrame(
+          type: Pble.typeRsp,
+          opcode: cmd.opcode,
+          id: cmd.id,
+          payload: Uint8List.fromList(<int>[PbleStatus.ok.code]),
+        ),
+      );
+      await pending;
+
+      expect(transport.sentAcknowledged, hasLength(greaterThan(1)));
+      expect(transport.sentAcknowledged, everyElement(isTrue));
+    });
+
+    test('fire keeps every outbound fragment write-without-response', () async {
+      final PbleFrame cmd = PbleFrame(
+        type: Pble.typeCmd,
+        opcode: PbleOpcode.consoleInput.code,
+        id: Pble.evtId,
+        payload: Uint8List.fromList(List<int>.filled(500, 0x78)),
+      );
+      await engine.fire(cmd);
+
+      expect(transport.sentAcknowledged, hasLength(greaterThan(1)));
+      expect(transport.sentAcknowledged, everyElement(isFalse));
+    });
+
+    test(
+      'request timeout includes time spent in acknowledged writes',
+      () async {
+        await engine.dispose();
+        await transport.dispose();
+        transport = FakeByteTransport(
+          mtu: Pble.mtuRequest,
+          sendDelay: const Duration(milliseconds: 200),
+        );
+        engine = PbleEngine(transport);
+        final PbleFrame cmd = PbleFrame(
+          type: Pble.typeCmd,
+          opcode: PbleOpcode.hello.code,
+          id: engine.nextId(),
+          payload: Uint8List(0),
+        );
+        final Stopwatch elapsed = Stopwatch()..start();
+
+        await expectLater(
+          engine.request(cmd, timeout: const Duration(milliseconds: 25)),
+          throwsA(isA<PbleTimeoutException>()),
+        );
+        elapsed.stop();
+
+        expect(
+          elapsed.elapsed,
+          lessThan(const Duration(milliseconds: 100)),
+          reason: 'the command deadline begins before its first fragment write',
+        );
+      },
+    );
   });
 }

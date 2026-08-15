@@ -37,11 +37,17 @@ class FakeBleLink implements BleLink {
   /// Every payload written to RX, byte-for-byte (pass-through proof, FR-BLE-3).
   final List<List<int>> writes = <List<int>>[];
 
+  /// The low-level GATT mode paired with each payload in [writes].
+  final List<bool> writesWithoutResponse = <bool>[];
+
   @override
   Stream<List<int>> get inbound => _inbound.stream;
 
   @override
-  Future<void> write(List<int> bytes) async => writes.add(List<int>.of(bytes));
+  Future<void> write(List<int> bytes, {bool withoutResponse = true}) async {
+    writes.add(List<int>.of(bytes));
+    writesWithoutResponse.add(withoutResponse);
+  }
 
   @override
   final int mtu;
