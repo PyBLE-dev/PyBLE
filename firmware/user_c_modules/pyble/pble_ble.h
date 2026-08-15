@@ -66,10 +66,12 @@ void pble_ble_sm_config(void);
 int pble_ble_notify(const uint8_t *msg, size_t len,
                     const pble_session_token_t *session);
 
-// RUN-admission-only control submission. The encoded message MUST fit one
-// §3.2 fragment. Take the TX mutex with zero wait, recheck that expected_conn
-// still owns the transport, and make at most one Notify attempt. This never
-// waits for drain progress or retries on the NimBLE host task.
+// Specialized RUN/STOP/SOFT_REBOOT response submission. The encoded message
+// MUST fit one §3.2 fragment. Declare it pending, wait under one absolute 15 ms
+// deadline only for the current complete-message TX-mutex boundary, recheck
+// that expected_conn still owns the transport, and make exactly one local
+// Notify submission. This never waits or retries for drain, mbuf, or controller
+// capacity on the NimBLE host task.
 int pble_ble_notify_control_try_for_conn(const uint8_t *msg, size_t len,
                                          const pble_session_token_t *expected_conn);
 

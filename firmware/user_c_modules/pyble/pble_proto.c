@@ -22,7 +22,7 @@
 #include "freertos/semphr.h"
 
 #include "pble_proto.h"
-#include "pble_ble.h"   // general TX + transactional RUN-admission try
+#include "pble_ble.h"   // general TX + specialized transactional response try
 #include "pble_vm_lifecycle.h"
 
 // --- IEEE CRC-32 (protocol.md §3.1 / FR-PROTO-3) ----------------------------
@@ -720,7 +720,7 @@ int pble_proto_emit_id(uint8_t type_, uint8_t opcode, uint8_t id_,
                        const pble_session_token_t *session) {
     // Generic RSPs require a pre-reserved slot. This legacy worker-safe helper
     // remains only for EVT traffic; specialized status RSPs use the exact
-    // connection-bound zero-wait API below.
+    // connection-bound specialized API below.
     if (type_ == PBLE_TYPE_RSP || len > PBLE_RSP_MAX) {
         return -1;
     }
@@ -732,9 +732,9 @@ int pble_proto_emit_id(uint8_t type_, uint8_t opcode, uint8_t id_,
     return pble_ble_notify(buf, (size_t)n, session);
 }
 
-// RUN admission owns this narrow status-only response path. Its 11-byte frame
-// is one fragment even at ATT MTU 23; the transport independently enforces that
-// invariant before its single zero-wait Notify attempt.
+// RUN/STOP/SOFT_REBOOT own this narrow status-only response path. Its 11-byte
+// frame is one fragment even at ATT MTU 23; the transport independently
+// enforces that invariant before its bounded boundary wait and single Notify.
 int pble_proto_emit_rsp_status_try(uint8_t opcode, uint8_t id_, uint8_t status,
                                    const pble_session_token_t *expected_conn) {
     uint8_t buf[PBLE_HDR_LEN + 1 + PBLE_CRC_LEN];

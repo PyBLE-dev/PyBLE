@@ -175,8 +175,10 @@ int  pble_proto_emit_id(uint8_t type_, uint8_t opcode, uint8_t id_,
                         const uint8_t *payload, size_t len,
                         const pble_session_token_t *session);
 
-// Encode one matching status-only RSP in call-local storage and submit it once
-// through the zero-wait, connection-bound RUN-admission transport seam.
+// Encode one matching status-only RSP in call-local storage and submit it
+// through the connection-bound specialized transport seam: one absolute 15 ms
+// wait only for the current complete-message TX boundary, then exactly one
+// local Notify submission without any capacity wait or retry.
 int  pble_proto_emit_rsp_status_try(uint8_t opcode, uint8_t id_, uint8_t status,
                                     const pble_session_token_t *expected_conn);
 

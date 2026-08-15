@@ -17,8 +17,8 @@
 //     NFR-SAFE-2, NFR-REL-1).
 //   - The 0x20/0x21/0x22 handlers run on the NimBLE host task and NEVER execute
 //     user Python inline. RUN reserves (or refuses EBUSY), captures [mode][data],
-//     and wakes the worker only after one connection-bound zero-wait RSP{OK}
-//     submission succeeds. STOP writes a KeyboardInterrupt into the WORKER's OWN
+//     and wakes the worker only after the bounded specialized RSP{OK} submission
+//     succeeds. STOP writes a KeyboardInterrupt into the WORKER's OWN
 //     VM state (NOT mp_sched_keyboard_interrupt(), which targets the MAIN/REPL
 //     thread) so it lands inside the worker's tight loop. SOFT_REBOOT stops the
 //     worker then marshals a VM soft-reset to the MAIN task.
@@ -164,8 +164,8 @@ static void runner_emit_state(int st) {
 }
 
 // Mark a control response unresolved before leaving the runner domain for the
-// zero-wait TX domain. Drain a prior unused binary give first; a worker that was
-// already released always loops and rechecks the predicate under g_mux.
+// bounded TX-boundary attempt. Drain a prior unused binary give first; a worker
+// that was already released always loops and rechecks the predicate under g_mux.
 static void runner_control_attempt_begin(void) {
     configASSERT(g_control_resolution_sem != NULL);
     while (xSemaphoreTake(g_control_resolution_sem, 0) == pdTRUE) {
@@ -420,8 +420,9 @@ uint8_t pble_runner_run(const pble_frame_t *req, uint8_t *rsp, size_t *rlen,
         memcpy(g_run_buf, req->payload + 1, dlen);
     }
 
-    // The exact RSP{OK} is the admission cut. This call takes the TX mutex with
-    // zero wait, rechecks the originating connection, and attempts one Notify.
+    // The exact RSP{OK} is the admission cut. This call may wait under one
+    // absolute 15 ms deadline only for the current complete-message TX boundary,
+    // then rechecks the originating connection and attempts one local Notify.
     // Suppress generic dispatch fallback on both success and failure: a failed
     // local submission is a side-effect-free timeout, not a second response.
     int tx_rc = pble_proto_emit_rsp_status_try(req->opcode, req->id,

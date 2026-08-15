@@ -562,8 +562,9 @@ static uint32_t pble_tx_stream_generation = 1;
 static SemaphoreHandle_t pble_tx_drain_sem;
 
 // A specialized RUN/STOP/SOFT_REBOOT response owns the next complete-message
-// boundary while it waits for pble_tx_mutex. The short spinlock protects only
-// this predicate; no caller holds it while acquiring or owning the TX mutex.
+// boundary while it waits for pble_tx_mutex. The specialized path releases this
+// predicate's short spinlock before waiting for TX; ordinary senders only read
+// it briefly after TX acquisition, so there is no reverse nested wait edge.
 static portMUX_TYPE pble_control_tx_boundary_mux = portMUX_INITIALIZER_UNLOCKED;
 static bool pble_control_tx_boundary_active;
 

@@ -5,7 +5,7 @@
 // on a MicroPython _thread WORKER that is SEPARATE from both the NimBLE host task
 // and the main-task REPL, emit RUN_STATE (0x40) on every transition, enforce
 // single-active-program EBUSY, and service STOP / SOFT_REBOOT from the host task
-// without ever blocking the link (protocol.md §4/§6/§8; FR-RUN-1..10, FR-BLE-11,
+// with only bounded link work (protocol.md §4/§6/§8; FR-RUN-1..10, FR-BLE-11,
 // FR-MODE-3, NFR-SAFE-1/2, NFR-REL-1, SEC-3).
 //
 // EXECUTION MODEL (frozen by the runtime owner — VM-thread, NOT appliance):
@@ -15,7 +15,7 @@
 //     the worker — the NimBLE host task and the main-task REPL stay live.
 //   - The 0x20/0x21/0x22 handlers run on the NimBLE host task (pble_proto_dispatch)
 //     and NEVER execute user Python inline. RUN reserves + copies, admits only
-//     after one connection-bound zero-wait RSP{OK} submission, then hands off;
+//     after the bounded specialized RSP{OK} submission succeeds, then hands off;
 //     STOP stores a KeyboardInterrupt into the WORKER's own VM state; SOFT_REBOOT
 //     stops the worker then marshals a VM soft-reset to the MAIN task (the only
 //     VM-safe site for mp_deinit/mp_init).
