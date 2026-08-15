@@ -107,7 +107,11 @@ handle is not the incidental zero value.
 7. After each of the first nine measured sessions disconnects, the runner
    makes one diagnostic reconnect with separate deadlines: 20 seconds for
    `PbleCentral.connect`, 5 seconds for diagnostic HELLO, and 8 seconds for the
-   `pair` getter RUN. The returned
+   `pair` getter RUN. After HELLO completes and before that single getter RUN,
+   the runner requests one 1,000 ms same-session stabilization delay so the
+   board's bounded DLE, PHY, and connection-parameter callouts do not collide
+   with the qualification-only command write. This delay is diagnostic
+   plumbing outside every measured interval. The returned
    `last_ended` epoch must be positive and final; the returned active epoch
    must be its exact non-wrapping successor. Those facts and the diagnostic
    session itself are discarded. This replaces only the Waveshare UART
@@ -137,7 +141,11 @@ handle is not the incidental zero value.
    it is diagnostic transaction plumbing, not a measured OI threshold. Repeated
    CoreBluetooth connection churn produced valid live-link writes completing at
    about 3.23 seconds, so the former 2-second ceiling rejected healthy sessions.
-   The runner neither retries HELLO nor inserts an unmeasured quiet delay.
+   The runner never retries HELLO or the getter, never reconnects after a
+   diagnostic failure, and inserts no inter-session quiet delay. A failed
+   diagnostic disconnect replaces the one-deep `last_ended` record, so a
+   reconnect could not prove the original measured-session boundary and MUST
+   fail closed instead.
 10. The physical RESET prompts and release-to-advertisement measurement remain
    unchanged. Waveshare qualification no longer opens, reopens, reads, or
    requires a serial endpoint and never treats native-USB RTS/DTR as reset

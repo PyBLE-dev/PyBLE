@@ -1093,8 +1093,13 @@ For each exact profile and one immutable firmware/manifest candidate:
    have separate **5,000 ms** and **8,000 ms** deadlines, respectively. The
    HELLO deadline is one absolute diagnostic transaction ceiling over its
    acknowledged command write and response. It is not a measured OI threshold,
-   and the runner MUST NOT retry HELLO or insert an unmeasured quiet delay. The
-   getter-RUN bound is one absolute transport ceiling over command writes, RUN
+   and the runner MUST NOT retry HELLO. After HELLO completes, the runner MUST
+   request one **1,000 ms** same-session stabilization delay before the one
+   getter RUN so the bounded DLE, PHY, and connection-parameter callouts can
+   settle. This guard is outside every measured interval; it is not an
+   inter-session quiet delay and MUST NOT be repeated or used to extend either
+   transport deadline. The getter-RUN bound is one absolute transport ceiling
+   over command writes, RUN
    response, bounded CONSOLE_DATA pacing, and terminal RUN_STATE. This query
    uses the exact `pair` projection: the one atomic native
    `{active,last_ended}` copy is serialized unchanged. Its
@@ -1107,6 +1112,11 @@ For each exact profile and one immutable firmware/manifest candidate:
    its heap probe, and the diagnostic successor has only just connected.
    Unsettled first-nine records cannot authorize throughput and MUST NOT be
    promoted into `transfer_link_facts`.
+
+   A failed diagnostic HELLO or getter MUST end the measurement without retry
+   or reconnect. The native snapshot retains only one `last_ended` record; a
+   failed diagnostic disconnect replaces the measured record, so a successor
+   connection cannot re-establish the required measured-session boundary.
 
    On the tenth measured connection, after HELLO, every ESP path waits at most
    **5,000 ms** for the profile-exact DLE/PHY/connection-parameter facts in

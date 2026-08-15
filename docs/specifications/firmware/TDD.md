@@ -1599,7 +1599,10 @@ null ended record supplied to `pair`.
 After each of the first nine Waveshare measured disconnects, the executor
 makes a diagnostic reconnect with separate deadlines: 20 seconds for
 `PbleCentral.connect`, 5 seconds for diagnostic HELLO, and 8 seconds for the
-`pair` getter RUN. It requires a final last-ended record and its exact
+`pair` getter RUN. After HELLO and before that one getter RUN, it requests one
+1,000 ms same-session stabilization delay for the bounded DLE, PHY, and
+connection-parameter callouts. This diagnostic-only guard is outside every
+measured interval. It requires a final last-ended record and its exact
 non-wrapping active successor, disconnects, and discards both. Those two
 boundary records
 MAY be unsettled because neither the just-ended short sample nor the newly
@@ -1623,7 +1626,10 @@ all fail closed; unsettled additionally fails for the tenth transfer record,
 but is permitted only for discarded first-nine boundary records. The HELLO
 ceiling covers its acknowledged GATT command write and response under
 CoreBluetooth churn. It is a diagnostic transaction bound, not a measured OI
-threshold; it permits no retry or unmeasured inter-session quiet delay. The raw
+threshold. HELLO and the getter are each attempted exactly once; there is no
+failure reconnect or inter-session quiet delay. Because the retained native
+snapshot has only one `last_ended` record, a failed diagnostic disconnect makes
+the measured record unrecoverable and the run fails closed. The raw
 log is exclusively created mode `0600`
 before its first write,
 independent of ambient umask, and a pre-existing path is rejected. The result
