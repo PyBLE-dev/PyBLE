@@ -188,7 +188,8 @@ generic-response fragments and increments a stream generation under the same TX
 mutex; the response callout observes the change and then restarts its identical
 encoded frame from `FIRST`, which abandons the interrupted prefix. Boundary
 deadline expiry or local submission failure suppresses the specialized side
-effect and generic fallback. Deadline expiry on a
+effect and generic fallback without terminating an otherwise-live session. By
+contrast, expiry of the generic response's 1000 ms publication deadline on a
 still-live connection terminates that session rather than silently losing an
 admitted response. Disconnect stops/cancels the callout and invalidates its
 ticket before normal re-advertising; any already-queued callback revalidates and
