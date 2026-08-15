@@ -37,9 +37,11 @@
 #   BleLink.start(info_payload=b""): after gatts_register_services and before
 #         advertising calls gatts_set_buffer(rx_handle, n>=247, append=False);
 #         after active(True) calls config(mtu=247) to pin the ceiling (P7).
-#   BleLink.send_message(msg, on_published=None): invokes on_published exactly
+#   BleLink.send_message(msg, on_published=None) -> bool: invokes on_published
+#         exactly
 #         once immediately after the final Notify is locally accepted. It does
-#         not publish a receipt while disconnected or after a Notify error.
+#         not publish a receipt while disconnected or after a Notify error;
+#         returns False only for the disconnected/no-live-session omission.
 # ---------------------------------------------------------------------------
 
 import os
@@ -313,7 +315,9 @@ class TxPublicationCutTest(_Rp2SurfaceTestCase):
         _, link = self.make_link("F-27/P3 no false terminal TX receipt")
         receipts = []
 
-        link.send_message(b"offline", on_published=lambda: receipts.append(1))
+        accepted = link.send_message(
+            b"offline", on_published=lambda: receipts.append(1))
+        self.assertIs(accepted, False)
         self.assertEqual(receipts, [], "a disconnected drop is not publication")
 
         link._conn_handle = 11

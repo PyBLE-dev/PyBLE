@@ -431,6 +431,27 @@ class TerminalStateTest(unittest.TestCase):
     def test_kbi_after_idle_publication_does_not_duplicate_terminal(self):
         self._exercise_terminal_publication_cut(interrupt_after_publish=True)
 
+    def test_declined_offline_terminal_is_resolved_without_retry(self):
+        emitted = []
+
+        def omit_terminal(state, published):
+            emitted.append(state)
+            return False
+
+        cls = RUNNER.attr(
+            self, "Runner", "FR-CON-4 no-live terminal event omission")
+        runner = cls(emitted.append, lambda mode, data: runner.handle_stop(),
+                     emit_terminal=omit_terminal)
+        runner.handle_run(GOOD_SOURCE)
+        runner.service()
+        self.assertEqual(emitted, [RUNNING, IDLE])
+
+        emitted[:] = []
+        self.assertFalse(runner.service())
+        self.assertEqual(
+            emitted, [],
+            "an omitted terminal must not remain queued for a later session")
+
     def test_run_allowed_again_after_terminal(self):
         r, _, _ = make_runner(self, "F-25/§6 run-after-terminal")
         r.handle_run(GOOD_SOURCE)

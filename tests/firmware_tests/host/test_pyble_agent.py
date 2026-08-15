@@ -99,6 +99,7 @@ class FakeLink:
         self.adv_name = None
         self.interrupt_terminal_before_publish = False
         self.interrupt_terminal_after_publish = False
+        self.omit_terminal = False
 
     def on_message(self, cb):
         self.message_cb = cb
@@ -114,6 +115,8 @@ class FakeLink:
         frame = pyble_proto.decode(msg)
         terminal_idle = (frame.type == EVT and frame.opcode == 0x40
                          and frame.payload == b"\x00")
+        if terminal_idle and self.omit_terminal:
+            return False
         if terminal_idle and self.interrupt_terminal_before_publish:
             self.interrupt_terminal_before_publish = False
             raise KeyboardInterrupt()
@@ -125,6 +128,7 @@ class FakeLink:
         if terminal_idle and self.interrupt_terminal_after_publish:
             self.interrupt_terminal_after_publish = False
             raise KeyboardInterrupt()
+        return True
 
     def set_info_payload(self, payload):
         self.info_payload = bytes(payload)
@@ -801,6 +805,25 @@ class TerminalInterruptRecoveryTest(AgentTestBase):
 
     def test_interrupt_after_terminal_send_does_not_retry(self):
         self._exercise_publication_cut(after_publish=True)
+
+    def test_offline_terminal_is_omitted_not_replayed_to_successor(self):
+        agent, link = self.new_agent(
+            "FR-CON-4 no-live terminal event is never retained")
+        send(self, link, 0x20, bytes((1,)) + b"x = 5", id_=119)
+
+        def stop_then_disconnect(mode, data):
+            agent._runner.handle_stop()
+            link.omit_terminal = True
+
+        agent._runner._exec_fn = stop_then_disconnect
+        agent.poll()
+        self.assertEqual(run_states(link), [1])
+
+        link.omit_terminal = False
+        agent.poll()
+        self.assertEqual(
+            run_states(link), [1],
+            "an omitted old-session IDLE must not target a successor session")
 
 
 class SoftRebootClosingTest(AgentTestBase):
