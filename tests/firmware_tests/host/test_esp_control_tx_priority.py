@@ -78,6 +78,10 @@ def ordered(test: unittest.TestCase, text: str, *needles: str) -> None:
     test.assertEqual(positions, sorted(positions), "wrong operation order")
 
 
+def code_only(source: str) -> str:
+    return re.sub(r"/\*.*?\*/|//[^\n]*", "", source, flags=re.DOTALL)
+
+
 class FrozenCapacityModelTests(unittest.TestCase):
     """Pure model: payload is allocated before the msys_1 reserve check."""
 
@@ -99,6 +103,20 @@ class FrozenCapacityModelTests(unittest.TestCase):
             encoded_message = 6 + 1 + console_bytes + 4
             fragment_payload = mtu - 4
             self.assertLessEqual(encoded_message, fragment_payload)
+
+    def test_pending_control_owns_the_next_complete_message_boundary(self):
+        current_bulk_message_active = True
+        specialized_pending = True
+
+        later_bulk_may_start = not specialized_pending
+        self.assertFalse(later_bulk_may_start)
+
+        # The current message remains atomic; only its completion releases the
+        # physical boundary to the already-pending specialized response.
+        current_bulk_message_active = False
+        specialized_may_submit = specialized_pending and not current_bulk_message_active
+        self.assertTrue(specialized_may_submit)
+        self.assertEqual(1 if specialized_may_submit else 0, 1)
 
 
 class NativeReserveSourceContractTests(unittest.TestCase):
@@ -148,6 +166,58 @@ class NativeReserveSourceContractTests(unittest.TestCase):
         self.assertRegex(control, r"with_reserve\s*\([^;]+,\s*0\s*\)")
         self.assertIn("pble_proto_emit_control_paced", PROTO)
         self.assertIn("pble_proto_emit_control_paced", RUNNER)
+
+    def test_specialized_pending_gate_is_owned_until_after_mutex_release(self):
+        for name in (
+            "pble_control_tx_boundary_begin",
+            "pble_control_tx_boundary_pending",
+            "pble_control_tx_boundary_end",
+        ):
+            with self.subTest(helper=name):
+                helper = code_only(function(BLE, name))
+                self.assertIn("taskENTER_CRITICAL", helper)
+                self.assertIn("taskEXIT_CRITICAL", helper)
+
+        control = code_only(
+            function(BLE, "pble_ble_notify_control_try_for_conn")
+        )
+        ordered(
+            self,
+            control,
+            "pble_control_tx_boundary_begin()",
+            "xSemaphoreTakeRecursive(pble_tx_mutex",
+            "pble_notify_packet",
+            "xSemaphoreGiveRecursive(pble_tx_mutex)",
+            "pble_control_tx_boundary_end()",
+        )
+
+    def test_paced_bulk_rechecks_pending_after_lock_before_notify(self):
+        paced = code_only(function(BLE, "pble_ble_notify_paced_with_reserve"))
+        ordered(
+            self,
+            paced,
+            "xSemaphoreTakeRecursive(pble_tx_mutex",
+            "pble_control_tx_boundary_pending()",
+            "pble_notify_packet",
+            "xSemaphoreGiveRecursive(pble_tx_mutex)",
+        )
+
+    def test_general_bulk_rechecks_pending_only_at_complete_message_boundary(self):
+        general = code_only(function(BLE, "pble_ble_notify"))
+        ordered(
+            self,
+            general,
+            "xSemaphoreTakeRecursive(pble_tx_mutex",
+            "pble_control_tx_boundary_pending()",
+            "pble_notify_message",
+            "xSemaphoreGiveRecursive(pble_tx_mutex)",
+        )
+        message = code_only(function(BLE, "pble_notify_message"))
+        self.assertNotIn(
+            "pble_control_tx_boundary_pending",
+            message,
+            "a pending control must not truncate an in-progress fragment run",
+        )
 
 
 class ConsoleAndStopSourceContractTests(unittest.TestCase):

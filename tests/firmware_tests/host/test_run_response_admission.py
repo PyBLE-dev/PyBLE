@@ -152,27 +152,49 @@ class FrozenAdmissionOracleTests(unittest.TestCase):
 
 
 class NativeControlTryContractTests(unittest.TestCase):
-    def test_ble_try_is_connection_bound_single_packet_and_zero_wait(self):
+    def test_ble_try_waits_only_for_current_message_boundary_then_notifies_once(self):
         name = "pble_ble_notify_control_try_for_conn"
         self.assertIn(name, BLE_H)
         body = code_only(c_function(BLE, name))
 
+        self.assertRegex(
+            BLE,
+            r"#\s*define\s+PBLE_CONTROL_TX_BOUNDARY_BUDGET_MS\s+15u\b",
+        )
         ordered(
             self,
             body,
-            "xSemaphoreTakeRecursive(pble_tx_mutex, 0)",
+            "pble_control_tx_boundary_begin()",
+            "xTaskGetTickCount()",
+            "xSemaphoreTakeRecursive(pble_tx_mutex",
             "pble_conn_handle != expected_conn",
             "pble_notify_packet",
             "xSemaphoreGiveRecursive(pble_tx_mutex)",
+            "pble_control_tx_boundary_end()",
+        )
+        self.assertIn("PBLE_CONTROL_TX_BOUNDARY_BUDGET_MS", body)
+        self.assertRegex(body, r"\bdeadline\b")
+        self.assertRegex(body, r"\bremaining\b")
+        self.assertNotRegex(
+            body,
+            r"xSemaphoreTakeRecursive\s*\(\s*pble_tx_mutex\s*,\s*0\s*\)",
         )
         self.assertIn("PBLE_FRAG_FIRST | PBLE_FRAG_LAST", body)
         self.assertIn("PBLE_TX_OVERSIZE", body)
+        self.assertEqual(body.count("xSemaphoreTakeRecursive("), 1)
         self.assertEqual(body.count("pble_notify_packet("), 1)
         self.assertNotIn("pble_notify_message", body)
+        after_begin = body[body.index("pble_control_tx_boundary_begin()") :]
+        self.assertEqual(
+            len(re.findall(r"\breturn\b", after_begin)),
+            1,
+            "every post-claim outcome must clear pending ownership at one exit",
+        )
         for forbidden in (
             "portMAX_DELAY",
             "pble_tx_drain_sem",
             "vTaskDelay(",
+            "ble_npl_callout_reset",
             "while (",
             "for (",
         ):
