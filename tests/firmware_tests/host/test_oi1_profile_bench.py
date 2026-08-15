@@ -1414,6 +1414,9 @@ class WaveshareBleExecutorRedTest(unittest.IsolatedAsyncioTestCase):
             events.append(("hello", expected_chip, profile_id, timeout_s))
             return {}, (247, 8, 229, 0)
 
+        async def stabilize(delay):
+            events.append(("stabilize", delay))
+
         async def probe(central, _next_id, *, projection, timeout_s):
             self.assertIs(central, diagnostic)
             events.append(("probe", projection, timeout_s))
@@ -1434,6 +1437,7 @@ class WaveshareBleExecutorRedTest(unittest.IsolatedAsyncioTestCase):
                 new=connect,
             ),
             mock.patch.object(profile_bench, "hello", new=diagnostic_hello),
+            mock.patch.object(profile_bench.asyncio, "sleep", new=stabilize),
             mock.patch.object(
                 profile_bench,
                 "run_oi1_link_fact_probe",
@@ -1455,6 +1459,7 @@ class WaveshareBleExecutorRedTest(unittest.IsolatedAsyncioTestCase):
                     "waveshare-esp32-s3-lcd-147b",
                     5.0,
                 ),
+                ("stabilize", 1.0),
                 ("probe", "pair", 8.0),
                 ("disconnect", "diagnostic"),
             ],
