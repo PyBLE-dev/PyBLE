@@ -266,8 +266,11 @@ Requirement voice is MUST / SHOULD / MAY. Each line: **ID** — statement — *(
   worker idle and queue empty without blocking; failure MUST reopen the gate,
   return `EBUSY`, and perform no reboot side effect. After that quiescence cut,
   non-reboot admission is provisionally closed. Successful response submission
-  and timer arm MUST commit the closure through teardown; failure of either
-  MUST reopen all gates and leave the VM intact. On the next VM initialization, after prior
+  MUST commit the closure through teardown. Response-submission failure MUST
+  reopen all gates and leave the VM intact. After `PBLE_TX_OK`, gates MUST NOT
+  reopen: failure to arm the pre-created timer MUST immediately invoke
+  non-returning `esp_restart()` rather than leave an acknowledged reset without
+  its side effect. The timer MUST NOT be pre-armed. On the next VM initialization, after prior
   MicroPython threads have been deleted, the agent MUST atomically rotate the
   VM epoch and live connection generation with old-ticket invalidation;
   prevent future response-callout scheduling and require any already-queued

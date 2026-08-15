@@ -211,8 +211,11 @@ busy, and may proceed only if that worker is idle and its queue is empty. If
 not, the gate reopens and the command returns `RSP{EBUSY}` with no reset side
 effect. The successful quiescence check provisionally closes all non-reboot
 CMD admission. Only after the transactional `RSP{OK}` submission and reset
-timer arm both succeed does that closure become committed through teardown; if
-either local admission fails, all gates reopen and the VM remains intact. A
+timer arm both succeed does that closure proceed through the graceful path.
+Response-submission failure reopens all gates and leaves the VM intact. Local
+acceptance of `RSP{OK}` is the irreversible reset-commit cut: gates never reopen
+after it; failure to arm the already-created timer immediately invokes
+non-returning `esp_restart()` rather than strand an acknowledged reboot. A
 new VM initialization keeps admission closed while it atomically rotates the
 live connection generation and VM epoch with old-ticket invalidation, prevents
 future response-callout scheduling, synchronizes with pool/TX ownership, and
@@ -399,14 +402,16 @@ no corresponding execution, interrupt, or reset side effect.
   refuses a second reboot with `EBUSY` while that reset is pending. If the
   `SOFT_REBOOT` response attempt fails, it MUST leave the VM running and
   emit no generic fallback rather than perform an ambiguous reset. Once the
-  non-blocking FS quiescence gate succeeds and the response submission and
-  timer arm both succeed, all non-reboot CMD admission remains closed;
+  non-blocking FS quiescence gate succeeds and the response submission
+  succeeds, all non-reboot CMD admission remains closed. The handler then arms
+  the pre-created timer; arm failure immediately invokes non-returning
+  `esp_restart()` with admission still closed;
   the next VM initialization performs the epoch/reset transaction in §3.2 and
   reopens admission only after workers have entered, final wiring is safe, and
   auto-run admission has completed. A busy FS worker or
   non-empty FS queue returns `EBUSY` after reopening the provisional gate; a
-  response/timer admission failure likewise reopens all gates and leaves the
-  VM intact. This is an
+  response-submission failure likewise reopens all gates and leaves the VM
+  intact. This is an
   execution-order and lifecycle clarification; it changes no PBLE/1 bytes.
 - **`CONSOLE_DATA` (0x30, EVT, id 0)** payload `[stream:u8][bytes]` — `stream` 0=stdout, 1=stderr (FR-CON-1/2).
 - **`CONSOLE_INPUT` (0x31, CMD, no RSP)** payload `[bytes]` — appended to the running program's `stdin` (`input()`/`sys.stdin`); fire-and-forget, no reply frame (FR-CON-3).
