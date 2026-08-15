@@ -100,6 +100,8 @@ class FakeLink:
         self.interrupt_terminal_before_publish = False
         self.interrupt_terminal_after_publish = False
         self.omit_terminal = False
+        self.session = 1
+        self.replace_session_before_terminal_retry = False
 
     def on_message(self, cb):
         self.message_cb = cb
@@ -110,15 +112,23 @@ class FakeLink:
     def on_disconnect(self, cb):
         self.disconnect_cb = cb
 
-    def send_message(self, msg, on_published=None):
+    def session_token(self):
+        return self.session
+
+    def send_message(self, msg, on_published=None, expected_session=None):
         msg = bytes(msg)
         frame = pyble_proto.decode(msg)
         terminal_idle = (frame.type == EVT and frame.opcode == 0x40
                          and frame.payload == b"\x00")
+        if (expected_session is not None
+                and expected_session != self.session_token()):
+            return False
         if terminal_idle and self.omit_terminal:
             return False
         if terminal_idle and self.interrupt_terminal_before_publish:
             self.interrupt_terminal_before_publish = False
+            if self.replace_session_before_terminal_retry:
+                self.session += 1
             raise KeyboardInterrupt()
         self.sent.append(msg)
         if self.order is not None:
@@ -824,6 +834,24 @@ class TerminalInterruptRecoveryTest(AgentTestBase):
         self.assertEqual(
             run_states(link), [1],
             "an omitted old-session IDLE must not target a successor session")
+
+    def test_unpublished_terminal_never_retargets_reused_handle_session(self):
+        agent, link = self.new_agent(
+            "FR-CON-4 unpublished terminal retains its creation session")
+        send(self, link, 0x20, bytes((1,)) + b"x = 6", id_=120)
+
+        def stop_then_return(mode, data):
+            agent._runner.handle_stop()
+
+        agent._runner._exec_fn = stop_then_return
+        link.interrupt_terminal_before_publish = True
+        link.replace_session_before_terminal_retry = True
+        agent.poll()
+        agent.poll()
+
+        self.assertEqual(
+            run_states(link), [1],
+            "session A's unpublished IDLE must not be sent to session B")
 
 
 class SoftRebootClosingTest(AgentTestBase):

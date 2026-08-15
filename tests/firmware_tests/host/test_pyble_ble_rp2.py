@@ -331,6 +331,21 @@ class TxPublicationCutTest(_Rp2SurfaceTestCase):
                 b"not-accepted", on_published=lambda: receipts.append(1))
         self.assertEqual(receipts, [], "a failed Notify is not publication")
 
+    def test_reused_handle_has_new_session_and_rejects_old_event(self):
+        _, link = self.make_link("FR-CON-4 exact RP2 event session binding")
+        self.drive(link, 1, (11, 0, b"\xaa" * 6), "session A connect")
+        session_a = link.session_token()
+        self.drive(link, 2, (11, 0, b"\xaa" * 6), "session A disconnect")
+        self.drive(link, 1, (11, 0, b"\xbb" * 6), "session B handle reuse")
+        session_b = link.session_token()
+
+        self.assertNotEqual(session_a, session_b)
+        before = len(self.rec.notify_calls)
+        accepted = link.send_message(
+            b"old-session-event", expected_session=session_a)
+        self.assertIs(accepted, False)
+        self.assertEqual(len(self.rec.notify_calls), before)
+
 
 class StartBindingsTest(_Rp2SurfaceTestCase):
     """P7: start() must arm the RX attribute buffer and pin the MTU ceiling —
