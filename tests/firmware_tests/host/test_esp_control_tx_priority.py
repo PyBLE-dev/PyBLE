@@ -162,16 +162,36 @@ class ConsoleAndStopSourceContractTests(unittest.TestCase):
 
     def test_stop_submits_exact_rsp_before_interrupt_and_suppresses_duplicate(self):
         stop = function(RUNNER, "pble_runner_stop")
+        signature = stop.partition("{")[0]
+        token_param = re.search(
+            r"(?:const\s+)?pble_session_token_t\s*\*?\s*([A-Za-z_]\w*)",
+            signature,
+        )
+        self.assertIsNotNone(token_param, "STOP must receive the dispatch token")
+        response_call = re.search(
+            r"pble_proto_emit_rsp_status_try\s*\(\s*req->opcode\s*,\s*"
+            r"req->id\s*,\s*PBLE_OK\s*,\s*&?\s*"
+            rf"{re.escape(token_param.group(1))}\s*\)",
+            stop,
+        )
+        self.assertIsNotNone(
+            response_call,
+            "STOP must submit its status with the originating token",
+        )
+        self.assertEqual(stop.count("pble_proto_emit_rsp_status_try("), 1)
         ordered(
             self,
             stop,
-            "pble_proto_emit_id",
+            "pble_proto_emit_rsp_status_try",
             "g_stop_requested = true",
             "inject_worker_kbd_interrupt",
-            "return PBLE_NO_RSP",
         )
-        self.assertIn("PBLE_TYPE_RSP", stop)
-        self.assertIn("PBLE_OK", stop)
+        self.assertIn("return PBLE_NO_RSP", stop)
+        self.assertNotRegex(stop, r"return\s+PBLE_OK\s*;")
+        self.assertNotRegex(
+            stop,
+            r"pble_proto_emit_id\s*\(\s*PBLE_TYPE_RSP\b",
+        )
 
     def test_expected_stop_interrupt_does_not_emit_a_traceback(self):
         execute = function(RUNNER, "runner_exec")

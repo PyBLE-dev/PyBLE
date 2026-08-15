@@ -2150,24 +2150,56 @@ class PbleCentralConnectionTest(unittest.IsolatedAsyncioTestCase):
 
 
 class NativeSoftRebootOrderingTest(unittest.TestCase):
-    def test_ok_response_has_a_bounded_delivery_grace_before_vm_reset(self):
+    def _specialized_response_contract(self):
         source = RUNNER_SOURCE.read_text(encoding="utf-8", errors="strict")
         start = source.index("uint8_t pble_runner_soft_reboot(")
         end = source.index("// Auto-run entry", start)
         body = source[start:end]
+        signature = body.partition("{")[0]
+        token_param = re.search(
+            r"(?:const\s+)?pble_session_token_t\s*\*?\s*([A-Za-z_]\w*)",
+            signature,
+        )
+        self.assertIsNotNone(
+            token_param,
+            "SOFT_REBOOT must receive the dispatch token",
+        )
+        response_call = re.search(
+            r"pble_proto_emit_rsp_status_try\s*\(\s*req->opcode\s*,\s*"
+            r"req->id\s*,\s*PBLE_OK\s*,\s*&?\s*"
+            rf"{re.escape(token_param.group(1))}\s*\)",
+            body,
+        )
+        self.assertIsNotNone(
+            response_call,
+            "SOFT_REBOOT must submit its status with the originating token",
+        )
+        self.assertEqual(body.count("pble_proto_emit_rsp_status_try("), 1)
+        self.assertNotRegex(
+            body,
+            r"pble_proto_emit_id\s*\(\s*PBLE_TYPE_RSP\b",
+        )
+        return source, body, response_call.start()
 
-        response = "pble_proto_emit_id(PBLE_TYPE_RSP"
+    def test_ok_response_has_a_bounded_delivery_grace_before_vm_reset(self):
+        source, body, response = self._specialized_response_contract()
+
         timer_start = (
             "esp_timer_start_once(g_soft_reboot_timer, "
             "PBLE_SOFT_REBOOT_GRACE_US)"
         )
-        self.assertIn(response, body)
         self.assertIn(timer_start, body)
         self.assertLess(
-            body.index(response),
+            response,
             body.index(timer_start),
             "SOFT_REBOOT must submit RSP{OK} before arming VM teardown",
         )
+        for side_effect in (
+            "g_stop_requested = true",
+            "inject_worker_kbd_interrupt",
+        ):
+            with self.subTest(side_effect=side_effect):
+                self.assertGreater(body.index(side_effect), response)
         self.assertNotIn(
             "mp_sched_exception(",
             body,
@@ -2192,18 +2224,17 @@ class NativeSoftRebootOrderingTest(unittest.TestCase):
         self.assertIn("esp_timer_create(", register)
 
     def test_duplicate_or_unsendable_reboot_never_schedules_reset(self):
-        source = RUNNER_SOURCE.read_text(encoding="utf-8", errors="strict")
-        start = source.index("uint8_t pble_runner_soft_reboot(")
-        end = source.index("// Auto-run entry", start)
-        body = source[start:end]
+        _source, body, response = self._specialized_response_contract()
 
         self.assertIn("if (g_soft_reboot_pending)", body)
         self.assertIn("return PBLE_EBUSY;", body)
-        response = body.index("pble_proto_emit_id(PBLE_TYPE_RSP")
         timer_start = body.index("esp_timer_start_once(")
         self.assertLess(response, timer_start)
         before_response = body[:response]
         self.assertNotIn("esp_timer_start_once(", before_response)
+        failed_submit = body[response:timer_start]
+        self.assertIn("if (tx_rc != PBLE_TX_OK)", failed_submit)
+        self.assertIn("return PBLE_NO_RSP;", failed_submit)
 
     def test_cli_is_exact_profile_staged_and_never_accepts_identity_output(self):
         required = [
