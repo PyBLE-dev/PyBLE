@@ -18,6 +18,7 @@
 #ifndef PBLE_FS_H
 #define PBLE_FS_H
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -77,8 +78,6 @@ uint8_t pble_fs_errno_to_status(int mp_errno);
 // watermark, so FILE_PUT_BEGIN can rely on them afterwards. The whole-file CRC at
 // FILE_PUT_END stays the ONLY correctness gate — a bad/foreign prefix simply
 // fails CRC (ECRC) and the old file is kept byte-for-byte (FR-FS-14).
-uint32_t pble_fs_resume_prefix(const char *dest_vfs_path, uint32_t total_size);
-
 // Link-drop hook (F-10 / protocol.md §5). Clears the in-RAM single-active-transfer
 // state (flags/counters/paths) WITHOUT deleting `<dest>.pbltmp` — the temp + its
 // on-flash length (the durable watermark a resuming reconnect re-derives) persist.
@@ -88,20 +87,46 @@ uint32_t pble_fs_resume_prefix(const char *dest_vfs_path, uint32_t total_size);
 // on the worker, by the next FILE_PUT_BEGIN (never from this host-task hook).
 void pble_fs_on_disconnect(void);
 
+// Close/reopen the host-admission gate around SOFT_REBOOT. The try path never
+// blocks the NimBLE host task and succeeds only when the mailbox and worker are
+// atomically idle.
+bool pble_fs_quiesce_try(void);
+void pble_fs_quiesce_abort(void);
+
+// Hard reset of retained queue/gate bookkeeping at the start of a new VM epoch.
+void pble_fs_vm_reset(void);
+
 // Host-task dispatch handlers (registered into pble_proto). Each validates the
 // frame length, copies the payload into the mailbox, and enqueues non-blocking:
 // enqueue OK → PBLE_NO_RSP (the worker replies async by id); enqueue FULL → EBUSY,
 // EXCEPT pble_fs_put_data which returns PBLE_NO_RSP on drop (the app retransmits
 // from the last ACK).
-uint8_t pble_fs_list(const pble_frame_t *req, uint8_t *rsp, size_t *rlen, uint16_t conn);
-uint8_t pble_fs_stat(const pble_frame_t *req, uint8_t *rsp, size_t *rlen, uint16_t conn);
-uint8_t pble_fs_get_begin(const pble_frame_t *req, uint8_t *rsp, size_t *rlen, uint16_t conn);
-uint8_t pble_fs_put_begin(const pble_frame_t *req, uint8_t *rsp, size_t *rlen, uint16_t conn);
-uint8_t pble_fs_put_data(const pble_frame_t *req, uint8_t *rsp, size_t *rlen, uint16_t conn);
-uint8_t pble_fs_put_end(const pble_frame_t *req, uint8_t *rsp, size_t *rlen, uint16_t conn);
-uint8_t pble_fs_delete(const pble_frame_t *req, uint8_t *rsp, size_t *rlen, uint16_t conn);
-uint8_t pble_fs_mkdir(const pble_frame_t *req, uint8_t *rsp, size_t *rlen, uint16_t conn);
-uint8_t pble_fs_rename(const pble_frame_t *req, uint8_t *rsp, size_t *rlen, uint16_t conn);
+uint8_t pble_fs_list(const pble_frame_t *req, uint8_t *rsp, size_t *rlen,
+                     const pble_session_token_t *session,
+                     const pble_rsp_ticket_t *ticket);
+uint8_t pble_fs_stat(const pble_frame_t *req, uint8_t *rsp, size_t *rlen,
+                     const pble_session_token_t *session,
+                     const pble_rsp_ticket_t *ticket);
+uint8_t pble_fs_get_begin(const pble_frame_t *req, uint8_t *rsp, size_t *rlen,
+                          const pble_session_token_t *session,
+                          const pble_rsp_ticket_t *ticket);
+uint8_t pble_fs_put_begin(const pble_frame_t *req, uint8_t *rsp, size_t *rlen,
+                          const pble_session_token_t *session,
+                          const pble_rsp_ticket_t *ticket);
+uint8_t pble_fs_put_data(const pble_frame_t *req, uint8_t *rsp, size_t *rlen,
+                         const pble_session_token_t *session);
+uint8_t pble_fs_put_end(const pble_frame_t *req, uint8_t *rsp, size_t *rlen,
+                        const pble_session_token_t *session,
+                        const pble_rsp_ticket_t *ticket);
+uint8_t pble_fs_delete(const pble_frame_t *req, uint8_t *rsp, size_t *rlen,
+                       const pble_session_token_t *session,
+                       const pble_rsp_ticket_t *ticket);
+uint8_t pble_fs_mkdir(const pble_frame_t *req, uint8_t *rsp, size_t *rlen,
+                      const pble_session_token_t *session,
+                      const pble_rsp_ticket_t *ticket);
+uint8_t pble_fs_rename(const pble_frame_t *req, uint8_t *rsp, size_t *rlen,
+                       const pble_session_token_t *session,
+                       const pble_rsp_ticket_t *ticket);
 
 #ifdef __cplusplus
 }

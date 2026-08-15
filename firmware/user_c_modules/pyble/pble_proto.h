@@ -9,7 +9,10 @@
 #define PBLE_PROTO_H
 
 #include <stddef.h>
+#include <stdbool.h>
 #include <stdint.h>
+
+#include "pble_termination.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -75,6 +78,12 @@ extern "C" {
 // Max bytes a handler may write after the status byte (caps/DEVICE_INFO fit).
 #define PBLE_RSP_MAX 480
 
+// ESP reference-agent bounded generic-response delivery (§3.2 / FR-PROTO-6).
+#define PBLE_RSP_POOL_DEPTH       2u
+#define PBLE_RSP_FRAME_MAX        491u
+#define PBLE_RSP_TX_BUDGET_MS     1000u
+#define PBLE_RSP_RETRY_SLICE_MS   15u
+
 // Framing overhead between one FILE data chunk and the single §3.2 notify
 // packet that carries it: §3.1 header (6) + [offset:u32] (4) + CRC32 (4) +
 // FRAG_HDR (1) + ATT notify header (3). caps `chunk_size` = mtu − THIS, so a
@@ -90,10 +99,38 @@ typedef struct {
     uint16_t len;
 } pble_frame_t;
 
+// A reservation is valid only for this exact static-slot incarnation and BLE
+// session. Numeric connection handles alone are deliberately insufficient: a
+// controller may reuse one after disconnect.
+typedef struct {
+    uint8_t slot;
+    uint32_t incarnation;
+    pble_session_token_t session;
+    uint64_t vm_epoch;
+} pble_rsp_ticket_t;
+
 // Uniform handler ABI: return a §8 status; write up to PBLE_RSP_MAX extra RSP
 // bytes (after the status byte) into rsp_payload / *rsp_len.
 typedef uint8_t (*pble_handler_t)(const pble_frame_t *req, uint8_t *rsp_payload,
-                                  size_t *rsp_len, uint16_t conn);
+                                  size_t *rsp_len,
+                                  const pble_session_token_t *session);
+
+typedef uint8_t (*pble_deferred_handler_t)(const pble_frame_t *req,
+                                           uint8_t *rsp_payload,
+                                           size_t *rsp_len,
+                                           const pble_session_token_t *session,
+                                           const pble_rsp_ticket_t *ticket);
+
+// Immutable response view consumed by the NimBLE-host one-fragment callout.
+typedef struct {
+    pble_rsp_ticket_t ticket;
+    const uint8_t *frame;
+    uint16_t frame_len;
+    uint16_t offset;
+    uint8_t index;
+    uint32_t stream_generation;
+    uint32_t deadline;
+} pble_rsp_tx_t;
 
 // --- Codec + dispatch (pble_proto.c) ----------------------------------------
 uint32_t pble_proto_crc32(const uint8_t *data, size_t len);
@@ -104,34 +141,66 @@ int  pble_proto_encode(uint8_t type_, uint8_t opcode, uint8_t id_,
 int  pble_proto_decode(const uint8_t *msg, size_t len, pble_frame_t *out);
 // Bind a handler to an opcode (build the dispatch table at boot).
 void pble_proto_register(uint8_t opcode, pble_handler_t h);
+void pble_proto_register_deferred(uint8_t opcode, pble_deferred_handler_t h);
+void pble_proto_register_no_response(uint8_t opcode, pble_handler_t h);
+void pble_proto_register_special(uint8_t opcode, pble_handler_t h);
+void pble_proto_init(void);
 // Decode → §9 VER guard → CRC gate → route → RSP (via pble_ble_notify).
 void pble_proto_dispatch(const uint8_t *msg, size_t len, uint16_t conn);
+// Bounded status-only refusal for an RX run that exceeded reassembly capacity.
+void pble_proto_refuse(uint8_t opcode, uint8_t id_, uint8_t status,
+                       const pble_session_token_t *session);
 // Emit an event frame (TYPE=EVT, ID=0) — e.g. RUN_STATE. Returns pble_ble_notify rc.
-int  pble_proto_emit(uint8_t opcode, const uint8_t *payload, size_t len);
+int pble_proto_emit(uint8_t opcode, const uint8_t *payload, size_t len,
+                    const pble_session_token_t *session);
 
 // Paced event emit for STREAMING callers only (fs-worker / MP runner — never
 // the NimBLE host task): congestion blocks on the NOTIFY_TX drain event up to
 // budget_ms, retrying the SAME packet (see pble_ble_notify_paced).
 int  pble_proto_emit_paced(uint8_t opcode, const uint8_t *payload, size_t len,
-                           uint32_t budget_ms);
+                           uint32_t budget_ms,
+                           const pble_session_token_t *session);
+int pble_proto_emit_paced_for_session(
+    uint8_t opcode, const uint8_t *payload, size_t len, uint32_t budget_ms,
+    const pble_session_token_t *session);
 // Paced one-fragment CONTROL event. Unlike bulk paced traffic, this may consume
 // the exact msys_1 capacity that bulk submission preserves for control liveness.
 int  pble_proto_emit_control_paced(uint8_t opcode, const uint8_t *payload,
-                                   size_t len, uint32_t budget_ms);
-// Emit a frame with a caller-supplied TYPE + ID from a NON-dispatch context — the
-// async reply-by-ID path for the fs-worker (FILE_* RSPs replied off the host task).
-// `type_` = PBLE_TYPE_RSP echoes the originating request's `id_`; EVTs pass ID=0.
-// Encodes VER..CRC into a per-call (stack) buffer — no shared state — so it is safe
-// to call concurrently from any worker _thread; pble_ble_notify's recursive TX mutex
-// serializes the fragment+Notify. `len` ≤ PBLE_RSP_MAX. Returns pble_ble_notify rc
-// (<0 = no connection / notify failed) or -1 if `len` exceeds PBLE_RSP_MAX.
+                                   size_t len, uint32_t budget_ms,
+                                   const pble_session_token_t *session);
+// Emit a caller-supplied non-RSP frame from a worker context. Generic RSPs are
+// deliberately refused here because they require a pre-reserved pool ticket;
+// events remain worker-safe and are serialized by pble_ble.
 int  pble_proto_emit_id(uint8_t type_, uint8_t opcode, uint8_t id_,
-                        const uint8_t *payload, size_t len);
+                        const uint8_t *payload, size_t len,
+                        const pble_session_token_t *session);
 
 // Encode one matching status-only RSP in call-local storage and submit it once
 // through the zero-wait, connection-bound RUN-admission transport seam.
 int  pble_proto_emit_rsp_status_try(uint8_t opcode, uint8_t id_, uint8_t status,
-                                    uint16_t expected_conn);
+                                    const pble_session_token_t *expected_conn);
+
+// Static response-pool/ticket surface shared with the deferred FS worker and
+// the BLE-owned host callout. These are internal native-agent APIs, not wire.
+bool pble_rsp_reserve(const pble_session_token_t *session,
+                      pble_rsp_ticket_t *ticket);
+bool pble_rsp_ticket_valid(const pble_rsp_ticket_t *ticket);
+bool pble_rsp_session_valid(const pble_rsp_ticket_t *ticket);
+bool pble_rsp_publish(const pble_rsp_ticket_t *ticket, uint8_t opcode,
+                      uint8_t id_, const uint8_t *payload, size_t len);
+void pble_rsp_release(const pble_rsp_ticket_t *ticket);
+bool pble_rsp_expect_completion(const pble_rsp_ticket_t *ticket);
+bool pble_rsp_wait(const pble_rsp_ticket_t *ticket);
+void pble_rsp_cancel_session(const pble_session_token_t *session);
+void pble_rsp_cancel_ticket(const pble_rsp_ticket_t *ticket);
+bool pble_rsp_tx_peek(pble_rsp_tx_t *tx);
+void pble_rsp_tx_result(const pble_rsp_tx_t *tx, uint32_t stream_generation,
+                        uint16_t offset, uint8_t index, uint16_t accepted,
+                        int tx_result);
+bool pble_rsp_has_pending(void);
+bool pble_rsp_tx_owned(void);
+bool pble_rsp_release_owner_if_idle(void);
+void pble_proto_vm_reset(void);
 
 #ifdef __cplusplus
 }

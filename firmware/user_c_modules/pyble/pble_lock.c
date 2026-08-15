@@ -23,7 +23,7 @@
 // Weak reference: until that strong definition ships, the symbol resolves to NULL
 // and we skip the call — pble_lock links standalone (fail-safe cross-boundary
 // hand-off, never wedge the build). The strong def, once present, binds here.
-extern void pble_fs_on_disconnect(uint16_t conn) __attribute__((weak));
+extern void pble_fs_on_disconnect(void) __attribute__((weak));
 
 // --- Module state ------------------------------------------------------------
 typedef struct {
@@ -84,8 +84,9 @@ void pble_lock_on_disconnect(uint16_t conn) {
     // Reset the fs in-RAM transfer state (the jailed temp + watermark persist on
     // flash for resume). Owned by storage-engineer; weak-referenced (see above).
     if (pble_fs_on_disconnect) {
-        pble_fs_on_disconnect(conn);
+        pble_fs_on_disconnect();
     }
+    (void)conn;
 }
 
 void pble_lock_register(void) {

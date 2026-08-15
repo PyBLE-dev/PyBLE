@@ -38,6 +38,7 @@ IDF_DIR="${PYBLE_IDF_DIR:-$FW/.esp-idf}"
 BUILD_ROOT="${PYBLE_BUILD_ROOT:-$FW/build}"
 SHA_DRIFT="$REPO_ROOT/tools/ci/sha_drift.sh"
 PREPARE="$HERE/prepare.sh"
+LIFECYCLE_LINK_GATE="$HERE/verify_vm_lifecycle_linkage.py"
 
 usage() {
   echo "usage: build.sh [--plan] <esp32|esp32-s3|waveshare-esp32-s3-lcd-147b|esp32-c3>" >&2
@@ -320,6 +321,38 @@ for art in \
 do
   [ -f "$OUT/$art" ] || { echo "build.sh: expected artifact missing: $OUT/$art" >&2; exit 1; }
 done
+
+# The lifecycle wrapper is a final-link property, not something a compile-only
+# test can prove.  Select the pinned target toolchain's nm and require both the
+# linker map and ELF to expose the wrapper and per-mp_init epoch hook.
+if [ -f "$UCM" ]; then
+  if [ ! -f "$LIFECYCLE_LINK_GATE" ]; then
+    echo "build.sh: VM lifecycle linkage verifier is missing" >&2
+    exit 1
+  fi
+  case "$IDF_TARGET" in
+    esp32) NM_TOOL="xtensa-esp32-elf-nm" ;;
+    esp32s3) NM_TOOL="xtensa-esp32s3-elf-nm" ;;
+    esp32c3) NM_TOOL="riscv32-esp-elf-nm" ;;
+    *)
+      echo "build.sh: no lifecycle nm mapping for IDF target $IDF_TARGET" >&2
+      exit 1
+      ;;
+  esac
+  if ! NM_TOOL_PATH="$(command -v "$NM_TOOL")"; then
+    echo "build.sh: pinned lifecycle nm tool is unavailable: $NM_TOOL" >&2
+    exit 1
+  fi
+  if ! python "$LIFECYCLE_LINK_GATE" \
+    --target "$TARGET" \
+    --elf "$OUT/micropython.elf" \
+    --map "$OUT/micropython.map" \
+    --nm "$NM_TOOL_PATH"
+  then
+    echo "build.sh: VM lifecycle linkage verification failed for $TARGET" >&2
+    exit 1
+  fi
+fi
 
 # The application descriptor hashes the whole ELF, including debug sections.
 # Fail here if a compiler path escaped the controlled mappings: otherwise two

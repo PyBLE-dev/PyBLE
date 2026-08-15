@@ -30,17 +30,16 @@
 
 #include "py/runtime.h"
 #include "py/obj.h"
+#include "py/mpthread.h"
 #ifndef PBLE_ENABLE_SPLASH_READINESS
 #define PBLE_ENABLE_SPLASH_READINESS 0
 #endif
 #ifndef PBLE_ENABLE_OI1_LINK_FACTS
 #define PBLE_ENABLE_OI1_LINK_FACTS 0
 #endif
-#if PBLE_ENABLE_SPLASH_READINESS
-#include "py/mpthread.h"   // bounded wait_ready releases the MicroPython GIL
-#endif
-
 #include "esp_log.h"
+#include "esp_system.h"
+#include "esp_timer.h"
 // FreeRTOS: the TX path is the sole exit for PBLE/1 bytes and is now called from
 // several tasks (NimBLE host task for RSPs, the MicroPython worker _thread for
 // CONSOLE_DATA/RUN_STATE). A recursive mutex serializes whole-message
@@ -66,6 +65,8 @@
 #include "services/gatt/ble_svc_gatt.h"
 
 #include "pble_ble.h"
+#include "pble_termination.h"
+#include "pble_vm_lifecycle.h"
 
 #define PBLE_TAG "pble"
 
@@ -257,6 +258,15 @@ static bool     pble_started = false;
 static bool     pble_synced = false;
 
 static uint16_t pble_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+static uint64_t pble_conn_generation;
+static uint64_t pble_conn_generation_counter;
+static uint64_t pble_session_vm_epoch;
+static uint64_t pble_vm_epoch_seed;
+static portMUX_TYPE pble_session_mux = portMUX_INITIALIZER_UNLOCKED;
+static pble_term_state_t pble_term_state;
+static bool pble_term_initialized;
+static esp_timer_handle_t pble_term_watchdog;
+static pble_term_watchdog_ticket_t pble_term_armed_ticket;
 static uint16_t pble_mtu_val = PBLE_MTU_DEFAULT;    // negotiated ATT MTU
 static uint16_t pble_tx_val_handle;                 // cached for Notifications
 
@@ -296,6 +306,12 @@ static void pble_ready_refresh(void) {
 // submitted phase at a time. Completion events can re-arm it, but the timer is
 // the progress guarantee when a controller omits an event.
 static struct ble_npl_callout pble_link_tune_co;
+static struct ble_npl_callout pble_rsp_callout;
+static portMUX_TYPE pble_rsp_callout_mux = portMUX_INITIALIZER_UNLOCKED;
+static bool pble_rsp_callout_enabled;
+static bool pble_vm_tx_locked;
+
+static void pble_termination_watchdog_cb(void *arg);
 
 // Rung-1 (DLE) confirmation latch. NimBLE serializes LL control procedures: a
 // set_data_len issued while the central runs its OWN early procedure (a BLE-5
@@ -534,6 +550,7 @@ static void pble_oi1_invalidate_active(void) {
 // any other sender (host task RSP vs. worker-thread CONSOLE_DATA/RUN_STATE).
 // Recursive so an unforeseen same-thread nesting can never self-deadlock.
 static SemaphoreHandle_t pble_tx_mutex;
+static uint32_t pble_tx_stream_generation = 1;
 
 // TX-drain signal for the paced notify path: BLE_GAP_EVENT_NOTIFY_TX (a
 // notification actually left / controller space freed) gives this binary
@@ -583,7 +600,8 @@ static void pble_reset_reassembly(void) {
 // complete §3.1 message up to the protocol engine. CRC/structure validation is
 // pble_proto's — never done here. Gap/out-of-order fragments reset the buffer
 // (the app retransmits); an over-long message is dropped, not truncated.
-static void pble_rx_ingest(const uint8_t *pkt, size_t len, uint16_t conn) {
+static void pble_rx_ingest(const uint8_t *pkt, size_t len,
+                           const pble_session_token_t *session) {
     if (len == 0) {
         return;
     }
@@ -621,8 +639,7 @@ static void pble_rx_ingest(const uint8_t *pkt, size_t len, uint16_t conn) {
         uint8_t op = pble_rx_hdr_op, id = pble_rx_hdr_id;
         pble_reset_reassembly();
         if (answerable) {
-            uint8_t status = PBLE_ERANGE;
-            pble_proto_emit_id(PBLE_TYPE_RSP, op, id, &status, 1);
+            pble_proto_refuse(op, id, PBLE_ERANGE, session);
         }
         return;
     }
@@ -633,7 +650,7 @@ static void pble_rx_ingest(const uint8_t *pkt, size_t len, uint16_t conn) {
     if (last) {
         size_t msg_len = pble_rx_len;
         pble_reset_reassembly();
-        pble_proto_dispatch(pble_rx_buf, msg_len, conn);
+        pble_proto_dispatch(pble_rx_buf, msg_len, session->conn);
     }
 }
 
@@ -654,13 +671,31 @@ static int pble_msys1_num_free(void) {
     return 0;
 }
 
+static bool pble_tx_mutex_owned(void) {
+    return pble_tx_mutex != NULL &&
+           xSemaphoreGetMutexHolder(pble_tx_mutex) ==
+               xTaskGetCurrentTaskHandle();
+}
+
 static int pble_notify_packet(const uint8_t *pkt, size_t len,
-                              uint8_t reserve_blocks) {
-    uint16_t conn_handle = pble_conn_handle;
-    if (conn_handle == BLE_HS_CONN_HANDLE_NONE) {
+                              uint8_t reserve_blocks,
+                              const pble_session_token_t *session) {
+    if (!pble_tx_mutex_owned()) {
         return PBLE_TX_NO_CONN;
     }
-    pble_oi1_session_token_t session_token = pble_oi1_session_token(conn_handle);
+    bool admitted;
+    taskENTER_CRITICAL(&pble_session_mux);
+    admitted = session != NULL &&
+               pble_term_admits(&pble_term_state, session->conn,
+                                session->generation) &&
+               session->vm_epoch != 0 &&
+               session->vm_epoch == pble_session_vm_epoch;
+    taskEXIT_CRITICAL(&pble_session_mux);
+    if (!admitted) {
+        return PBLE_TX_NO_CONN;
+    }
+    pble_oi1_session_token_t session_token =
+        pble_oi1_session_token(session->conn);
     struct os_mbuf *om = ble_hs_mbuf_from_flat(pkt, (uint16_t)len);
     if (om == NULL) {
         pble_oi1_note_starve(session_token);  // GAP-2 pool-starve gate
@@ -677,7 +712,7 @@ static int pble_notify_packet(const uint8_t *pkt, size_t len,
         return PBLE_TX_AGAIN;
     }
     // ble_gatts_notify_custom consumes the mbuf on both success and failure.
-    int rc = ble_gatts_notify_custom(conn_handle, pble_tx_val_handle, om);
+    int rc = ble_gatts_notify_custom(session->conn, pble_tx_val_handle, om);
     if (rc == 0) {
         return PBLE_TX_OK;
     }
@@ -691,11 +726,173 @@ static int pble_notify_packet(const uint8_t *pkt, size_t len,
 
 // --- Frozen ble<->proto contract (exported, see pble_ble.h) ------------------
 
+static bool pble_session_matches_locked(const pble_session_token_t *session) {
+    return session != NULL && session->conn != BLE_HS_CONN_HANDLE_NONE &&
+           session->generation != 0 && session->vm_epoch != 0 &&
+           pble_conn_handle == session->conn &&
+           pble_conn_generation == session->generation &&
+           pble_session_vm_epoch == session->vm_epoch;
+}
+
+bool pble_ble_session_snapshot(uint16_t expected_conn,
+                               pble_session_token_t *session) {
+    bool live;
+    taskENTER_CRITICAL(&pble_session_mux);
+    live = session != NULL && expected_conn != BLE_HS_CONN_HANDLE_NONE &&
+           pble_conn_handle == expected_conn &&
+           pble_term_admits(&pble_term_state, pble_conn_handle,
+                            pble_conn_generation) &&
+           pble_session_vm_epoch != 0;
+    if (live) {
+        session->conn = pble_conn_handle;
+        session->generation = pble_conn_generation;
+        session->vm_epoch = pble_session_vm_epoch;
+    }
+    taskEXIT_CRITICAL(&pble_session_mux);
+    return live;
+}
+
+bool pble_ble_session_snapshot_current(pble_session_token_t *session) {
+    bool live;
+    taskENTER_CRITICAL(&pble_session_mux);
+    live = session != NULL &&
+           pble_conn_handle != BLE_HS_CONN_HANDLE_NONE &&
+           pble_conn_generation != 0 &&
+           pble_term_admits(&pble_term_state, pble_conn_handle,
+                            pble_conn_generation) &&
+           pble_session_vm_epoch != 0;
+    if (live) {
+        session->conn = pble_conn_handle;
+        session->generation = pble_conn_generation;
+        session->vm_epoch = pble_session_vm_epoch;
+    }
+    taskEXIT_CRITICAL(&pble_session_mux);
+    return live;
+}
+
+bool pble_ble_session_live(const pble_session_token_t *session) {
+    bool live;
+    taskENTER_CRITICAL(&pble_session_mux);
+    live = pble_session_matches_locked(session) &&
+           pble_term_admits(&pble_term_state, session->conn,
+                            session->generation);
+    taskEXIT_CRITICAL(&pble_session_mux);
+    return live;
+}
+
+bool pble_ble_session_closing(void) {
+    bool closing;
+    taskENTER_CRITICAL(&pble_session_mux);
+    closing = pble_term_state.phase == PBLE_TERM_PHASE_CLOSING ||
+              pble_term_state.phase == PBLE_TERM_PHASE_RESTARTING;
+    taskEXIT_CRITICAL(&pble_session_mux);
+    return closing;
+}
+
+void pble_ble_terminate_session(const pble_session_token_t *session) {
+    if (session == NULL || pble_tx_mutex == NULL) {
+        return;
+    }
+    int64_t begin_now_us = esp_timer_get_time();
+    pble_term_effects_t effect = PBLE_TERM_EFFECT_NONE;
+    if (xSemaphoreTakeRecursive(pble_tx_mutex, portMAX_DELAY) != pdTRUE) {
+        esp_restart();
+        return;
+    }
+    taskENTER_CRITICAL(&pble_session_mux);
+    if (pble_session_matches_locked(session)) {
+        effect = pble_term_begin(&pble_term_state, session->conn,
+                                 session->generation, begin_now_us);
+        if (effect == PBLE_TERM_EFFECT_ARM_WATCHDOG &&
+            pble_term_watchdog_ticket(&pble_term_state, session->conn,
+                                      session->generation,
+                                      &pble_term_armed_ticket)) {
+            int64_t initial_remaining_us = pble_term_remaining_us(
+                &pble_term_state, &pble_term_armed_ticket,
+                esp_timer_get_time());
+            esp_err_t arm_rc = ESP_FAIL;
+            if (initial_remaining_us <= 0) {
+                arm_rc = ESP_FAIL;
+            } else {
+                arm_rc = esp_timer_start_once(pble_term_watchdog,
+                                              initial_remaining_us);
+            }
+            effect = pble_term_watchdog_armed(
+                &pble_term_state, session->conn, session->generation,
+                arm_rc == ESP_OK);
+        }
+    }
+    taskEXIT_CRITICAL(&pble_session_mux);
+    xSemaphoreGiveRecursive(pble_tx_mutex);
+
+    if (effect == PBLE_TERM_EFFECT_RESTART) {
+        esp_restart();
+        return;
+    }
+    if (effect == PBLE_TERM_EFFECT_CALL_GAP) {
+        int rc = ble_gap_terminate(session->conn, BLE_ERR_REM_USER_CONN_TERM);
+        taskENTER_CRITICAL(&pble_session_mux);
+        effect = pble_term_gap_result(
+            &pble_term_state, session->conn, session->generation,
+            rc == 0 || rc == BLE_HS_EALREADY);
+        taskEXIT_CRITICAL(&pble_session_mux);
+        if (effect == PBLE_TERM_EFFECT_RESTART) {
+            esp_restart();
+        }
+    }
+}
+
+static void pble_termination_watchdog_cb(void *arg) {
+    const pble_term_watchdog_ticket_t *ticket =
+        (const pble_term_watchdog_ticket_t *)arg;
+    int64_t now_us = esp_timer_get_time();
+    pble_term_effects_t effect;
+    taskENTER_CRITICAL(&pble_session_mux);
+    effect = pble_term_watchdog_fired(&pble_term_state, ticket, now_us);
+    if (effect == PBLE_TERM_EFFECT_REARM_WATCHDOG) {
+        int64_t remaining_us =
+            pble_term_remaining_us(&pble_term_state, ticket, now_us);
+        esp_err_t rearm_rc = remaining_us > 0
+                                 ? esp_timer_start_once(pble_term_watchdog,
+                                                        remaining_us)
+                                 : ESP_FAIL;
+        effect = pble_term_watchdog_rearmed(&pble_term_state, ticket,
+                                            rearm_rc == ESP_OK);
+    }
+    taskEXIT_CRITICAL(&pble_session_mux);
+    if (effect == PBLE_TERM_EFFECT_RESTART) {
+        esp_restart();
+    }
+}
+
+static bool pble_rsp_owner_active(void) {
+    return pble_rsp_tx_owned();
+}
+
+static bool pble_rsp_owner_release_if_idle(void) {
+    bool owned = pble_rsp_release_owner_if_idle();
+    if (!owned && pble_tx_drain_sem != NULL) {
+        xSemaphoreGive(pble_tx_drain_sem);
+    }
+    return owned;
+}
+
+void pble_ble_rsp_kick(void) {
+    bool enabled;
+    taskENTER_CRITICAL(&pble_rsp_callout_mux);
+    enabled = pble_rsp_callout_enabled;
+    taskEXIT_CRITICAL(&pble_rsp_callout_mux);
+    if (enabled) {
+        ble_npl_callout_reset(&pble_rsp_callout, 0);
+    }
+}
+
 // Fragment + Notify one whole §3.1 message. Caller holds pble_tx_mutex so the
 // emitted §3.2 fragment run is atomic w.r.t. other senders. Returns a PBLE_TX_*
 // code: OK, NO_CONN (no link / link dropped), or AGAIN (transient backpressure).
-static int pble_notify_message(const uint8_t *msg, size_t len) {
-    if (pble_conn_handle == BLE_HS_CONN_HANDLE_NONE) {
+static int pble_notify_message(const uint8_t *msg, size_t len,
+                               const pble_session_token_t *session) {
+    if (session == NULL) {
         return PBLE_TX_NO_CONN;
     }
     size_t psize = pble_payload_size(pble_mtu_val);
@@ -703,7 +900,7 @@ static int pble_notify_message(const uint8_t *msg, size_t len) {
 
     if (len == 0) {
         pkt[0] = PBLE_FRAG_FIRST | PBLE_FRAG_LAST;  // one empty FIRST+LAST packet
-        return pble_notify_packet(pkt, 1, 0);
+        return pble_notify_packet(pkt, 1, 0, session);
     }
 
     size_t offset = 0;
@@ -722,7 +919,7 @@ static int pble_notify_message(const uint8_t *msg, size_t len) {
         }
         pkt[0] = hdr;
         memcpy(pkt + 1, msg + offset, chunk);
-        int rc = pble_notify_packet(pkt, chunk + 1, 0);
+        int rc = pble_notify_packet(pkt, chunk + 1, 0, session);
         if (rc != PBLE_TX_OK) {
             return rc;   // propagate NO_CONN (abort) vs AGAIN (retriable) verbatim
         }
@@ -737,7 +934,7 @@ static int pble_notify_message(const uint8_t *msg, size_t len) {
 // the default MTU, but retain the exact one-fragment guard at this transport
 // boundary so future callers fail closed.
 int pble_ble_notify_control_try_for_conn(const uint8_t *msg, size_t len,
-                                         uint16_t expected_conn) {
+                                         const pble_session_token_t *expected_conn) {
     if (pble_tx_mutex == NULL) {
         return PBLE_TX_NO_CONN;
     }
@@ -746,8 +943,9 @@ int pble_ble_notify_control_try_for_conn(const uint8_t *msg, size_t len,
     }
 
     int rc;
-    if (expected_conn == BLE_HS_CONN_HANDLE_NONE ||
-        pble_conn_handle != expected_conn) {
+    if (expected_conn == NULL ||
+        pble_conn_handle != expected_conn->conn ||
+        !pble_ble_session_live(expected_conn)) {
         rc = PBLE_TX_NO_CONN;
     } else if (len > pble_payload_size(pble_mtu_val)) {
         rc = PBLE_TX_OVERSIZE;
@@ -757,11 +955,133 @@ int pble_ble_notify_control_try_for_conn(const uint8_t *msg, size_t len,
         if (len > 0) {
             memcpy(pkt + 1, msg, len);
         }
-        rc = pble_notify_packet(pkt, len + 1, 0);
+        rc = pble_notify_packet(pkt, len + 1, 0, expected_conn);
+        if (rc == PBLE_TX_OK) {
+            pble_tx_stream_generation++;
+            if (pble_tx_stream_generation == 0) {
+                pble_tx_stream_generation++;
+            }
+        }
     }
 
     xSemaphoreGiveRecursive(pble_tx_mutex);
     return rc;
+}
+
+typedef struct {
+    uint32_t stream_generation;
+    uint16_t offset;
+    uint8_t index;
+    uint16_t accepted;
+} pble_rsp_attempt_t;
+
+// One response fragment attempt under the physical TX mutex. The session check,
+// stream-generation restart decision, and actual Notify share this zero-wait
+// critical path; the packet always targets the ticket's snapshotted handle.
+static int pble_rsp_submit_one(const pble_rsp_tx_t *tx,
+                               pble_rsp_attempt_t *attempt) {
+    if (tx == NULL || attempt == NULL || pble_tx_mutex == NULL) {
+        return PBLE_TX_NO_CONN;
+    }
+    if (xSemaphoreTakeRecursive(pble_tx_mutex, 0) != pdTRUE) {
+        return PBLE_TX_AGAIN;
+    }
+
+    int rc = PBLE_TX_NO_CONN;
+    if (pble_ble_session_live(&tx->ticket.session)) {
+        attempt->stream_generation = pble_tx_stream_generation;
+        attempt->offset = tx->stream_generation == pble_tx_stream_generation
+                              ? tx->offset
+                              : 0;
+        attempt->index = tx->stream_generation == pble_tx_stream_generation
+                             ? tx->index
+                             : 0;
+        if (attempt->offset < tx->frame_len) {
+            size_t payload_size = pble_payload_size(pble_mtu_val);
+            size_t chunk = (size_t)tx->frame_len - attempt->offset;
+            if (chunk > payload_size) {
+                chunk = payload_size;
+            }
+            uint8_t pkt[PBLE_FRAG_PKT_MAX];
+            uint8_t hdr = attempt->index & PBLE_FRAG_IDX_MASK;
+            if (attempt->index == 0) {
+                hdr |= PBLE_FRAG_FIRST;
+            }
+            if ((size_t)attempt->offset + chunk >= tx->frame_len) {
+                hdr |= PBLE_FRAG_LAST;
+            }
+            pkt[0] = hdr;
+            memcpy(pkt + 1, tx->frame + attempt->offset, chunk);
+            attempt->accepted = (uint16_t)chunk;
+            rc = pble_notify_packet(pkt, chunk + 1, 0,
+                                    &tx->ticket.session);
+        }
+    }
+    xSemaphoreGiveRecursive(pble_tx_mutex);
+    return rc;
+}
+
+// Pre-created NimBLE-host callout: validate and attempt exactly one fragment,
+// then rearm and return. No loop, delay, allocation, or capacity wait lives here.
+static void pble_rsp_pump_callout(struct ble_npl_event *ev) {
+    (void)ev;
+    uint64_t epoch = pble_vm_epoch_current();
+    pble_vm_activity_t activity;
+    if (!pble_vm_callback_enter(epoch, &activity)) {
+        return;
+    }
+    bool owned = false;
+    int submit_rc = PBLE_TX_AGAIN;
+    if (!pble_vm_admission_ready()) {
+        goto done;
+    }
+
+    pble_rsp_tx_t tx;
+    if (!pble_rsp_tx_peek(&tx)) {
+        (void)pble_rsp_owner_release_if_idle();
+        goto done;
+    }
+
+    uint32_t now = (uint32_t)xTaskGetTickCount();
+    uint32_t deadline = tx.deadline;
+    if (!pble_ble_session_live(&tx.ticket.session) ||
+        !pble_vm_epoch_valid(tx.ticket.vm_epoch)) {
+        pble_rsp_cancel_ticket(&tx.ticket);
+    } else if ((int32_t)(now - deadline) >= 0) {
+        pble_ble_terminate_session(&tx.ticket.session);
+        pble_rsp_cancel_ticket(&tx.ticket);
+    } else {
+        pble_rsp_attempt_t attempt = {
+            .stream_generation = tx.stream_generation,
+            .offset = tx.offset,
+            .index = tx.index,
+            .accepted = 0,
+        };
+        submit_rc = pble_rsp_submit_one(&tx, &attempt);
+        pble_rsp_tx_result(&tx, attempt.stream_generation, attempt.offset,
+                           attempt.index, attempt.accepted, submit_rc);
+        if (submit_rc != PBLE_TX_OK && submit_rc != PBLE_TX_AGAIN &&
+            pble_ble_session_live(&tx.ticket.session)) {
+            pble_ble_terminate_session(&tx.ticket.session);
+        }
+    }
+
+    owned = pble_rsp_owner_release_if_idle();
+done:
+    pble_vm_callback_leave(&activity);
+    if (owned) {
+        ble_npl_time_t delay = submit_rc == PBLE_TX_OK
+                                   ? 1
+                                   : ble_npl_time_ms_to_ticks32(
+                                         PBLE_RSP_RETRY_SLICE_MS);
+        bool enabled;
+        taskENTER_CRITICAL(&pble_rsp_callout_mux);
+        enabled = pble_rsp_callout_enabled;
+        taskEXIT_CRITICAL(&pble_rsp_callout_mux);
+        if (enabled) {
+            ble_npl_callout_reset(&pble_rsp_callout, delay ? delay : 1);
+        }
+    }
 }
 
 // Paced one-fragment TX. A retry serializes exactly one Notify attempt, releases
@@ -769,11 +1089,12 @@ int pble_ble_notify_control_try_for_conn(const uint8_t *msg, size_t len,
 // while a control sender can acquire the mutex during bulk backpressure.
 static int pble_ble_notify_paced_with_reserve(const uint8_t *msg, size_t len,
                                               uint32_t budget_ms,
+                                              const pble_session_token_t *session,
                                               uint8_t reserve_blocks) {
     if (pble_tx_mutex == NULL || pble_tx_drain_sem == NULL) {
         return PBLE_TX_NO_CONN;
     }
-    if (pble_conn_handle == BLE_HS_CONN_HANDLE_NONE) {
+    if (!pble_ble_session_live(session)) {
         return PBLE_TX_NO_CONN;
     }
     if (len > pble_payload_size(pble_mtu_val)) {
@@ -802,7 +1123,13 @@ static int pble_ble_notify_paced_with_reserve(const uint8_t *msg, size_t len,
         if (xSemaphoreTakeRecursive(pble_tx_mutex, remaining) != pdTRUE) {
             return PBLE_TX_AGAIN;
         }
-        int rc = pble_notify_packet(pkt, len + 1, reserve_blocks);
+        int rc;
+        if (pble_rsp_owner_active()) {
+            rc = PBLE_TX_AGAIN;
+        } else {
+            rc = pble_notify_packet(pkt, len + 1, reserve_blocks,
+                                    session);
+        }
         xSemaphoreGiveRecursive(pble_tx_mutex);
         if (rc != PBLE_TX_AGAIN) {
             return rc;
@@ -820,14 +1147,22 @@ static int pble_ble_notify_paced_with_reserve(const uint8_t *msg, size_t len,
     }
 }
 
-int pble_ble_notify_paced(const uint8_t *msg, size_t len, uint32_t budget_ms) {
+int pble_ble_notify_paced(const uint8_t *msg, size_t len, uint32_t budget_ms,
+                          const pble_session_token_t *session) {
     return pble_ble_notify_paced_with_reserve(
-        msg, len, budget_ms, PBLE_TX_BULK_RESERVE_BLOCKS);
+        msg, len, budget_ms, session, PBLE_TX_BULK_RESERVE_BLOCKS);
+}
+
+int pble_ble_notify_paced_for_session(
+    const uint8_t *msg, size_t len, uint32_t budget_ms,
+    const pble_session_token_t *session) {
+    return pble_ble_notify_paced(msg, len, budget_ms, session);
 }
 
 int pble_ble_notify_control_paced(const uint8_t *msg, size_t len,
-                                  uint32_t budget_ms) {
-    return pble_ble_notify_paced_with_reserve(msg, len, budget_ms, 0);
+                                  uint32_t budget_ms,
+                                  const pble_session_token_t *session) {
+    return pble_ble_notify_paced_with_reserve(msg, len, budget_ms, session, 0);
 }
 
 // General TX path (FR-BLE-3/10): fragment already-encoded PBLE/1 bytes to
@@ -846,14 +1181,177 @@ int pble_ble_notify_control_paced(const uint8_t *msg, size_t len,
 // the streaming caller paces/retries on its own task (never on the host task);
 // on an absent/dropped link it returns PBLE_TX_NO_CONN and the caller aborts.
 // Either way there is no unbounded buffering (NFR-PERF-2).
-int pble_ble_notify(const uint8_t *msg, size_t len) {
+int pble_ble_notify(const uint8_t *msg, size_t len,
+                    const pble_session_token_t *session) {
     if (pble_tx_mutex == NULL) {
         return PBLE_TX_NO_CONN;          // not brought up yet — no link to send on.
     }
     xSemaphoreTakeRecursive(pble_tx_mutex, portMAX_DELAY);
-    int rc = pble_notify_message(msg, len);
+    int rc = pble_rsp_owner_active() ? PBLE_TX_AGAIN
+                                     : pble_notify_message(msg, len, session);
     xSemaphoreGiveRecursive(pble_tx_mutex);
     return rc;
+}
+
+void pble_ble_vm_rx_reset(void) {
+    pble_reset_reassembly();
+}
+
+static void pble_ble_vm_seed_cold(uint64_t vm_epoch) {
+    taskENTER_CRITICAL(&pble_session_mux);
+    pble_vm_epoch_seed = vm_epoch;
+    pble_session_vm_epoch = 0;
+    taskEXIT_CRITICAL(&pble_session_mux);
+}
+
+void pble_ble_vm_reset(uint64_t vm_epoch) {
+    pble_ble_vm_rx_reset();
+    taskENTER_CRITICAL(&pble_rsp_callout_mux);
+    pble_rsp_callout_enabled = false;
+    taskEXIT_CRITICAL(&pble_rsp_callout_mux);
+
+    if (vm_epoch == 0) {
+        esp_restart();
+        return;
+    }
+
+    // The first port-init hook runs before cold BLE initialization.  There is
+    // no retained link or response pool to serialize in that case; seed the
+    // epoch which a later CONNECT will copy into its exact session token.
+    if (pble_tx_mutex == NULL) {
+        pble_ble_vm_seed_cold(vm_epoch);
+        pble_proto_vm_reset();
+        return;
+    }
+
+    if (xSemaphoreTakeRecursive(pble_tx_mutex, 0) != pdTRUE) {
+        esp_restart();
+        return;
+    }
+
+    pble_session_token_t old_session = {0};
+    bool restart_required = false;
+    taskENTER_CRITICAL(&pble_session_mux);
+    old_session.conn = pble_conn_handle;
+    old_session.generation = pble_conn_generation;
+    old_session.vm_epoch = pble_session_vm_epoch;
+    if (pble_term_state.phase == PBLE_TERM_PHASE_CLOSING ||
+        pble_term_state.phase == PBLE_TERM_PHASE_RESTARTING ||
+        pble_term_state.phase == PBLE_TERM_PHASE_CLEANING) {
+        restart_required = true;
+    } else if (pble_term_state.phase == PBLE_TERM_PHASE_OPEN) {
+        uint64_t old_generation = pble_conn_generation;
+        pble_conn_generation_counter++;
+        if (pble_conn_generation_counter == 0) {
+            pble_conn_generation_counter++;
+        }
+        if (!pble_term_rotate_open(&pble_term_state, pble_conn_handle,
+                                   old_generation,
+                                   pble_conn_generation_counter)) {
+            restart_required = true;
+        } else {
+            pble_conn_generation = pble_conn_generation_counter;
+            pble_session_vm_epoch = vm_epoch;
+            pble_vm_epoch_seed = vm_epoch;
+        }
+    } else if (pble_term_state.phase == PBLE_TERM_PHASE_CLOSED &&
+               pble_conn_handle == BLE_HS_CONN_HANDLE_NONE &&
+               pble_conn_generation == 0) {
+        pble_session_vm_epoch = 0;
+        pble_vm_epoch_seed = vm_epoch;
+    } else {
+        restart_required = true;
+    }
+    taskEXIT_CRITICAL(&pble_session_mux);
+
+    // Old exact tickets and every retained pool incarnation become unreachable
+    // before physical TX is exposed to the fresh VM session.
+    pble_rsp_cancel_session(&old_session);
+    pble_proto_vm_reset();
+    (void)pble_rsp_owner_release_if_idle();
+    xSemaphoreGiveRecursive(pble_tx_mutex);
+    if (restart_required) {
+        esp_restart();
+        return;
+    }
+}
+
+static bool pble_ble_vm_tx_try_nowait(void) {
+    if (pble_tx_mutex == NULL ||
+        xSemaphoreTakeRecursive(pble_tx_mutex, 0) != pdTRUE) {
+        esp_restart();
+        return false;
+    }
+    return true;
+}
+
+void pble_ble_vm_invalidate_session(void) {
+    if (!pble_ble_vm_tx_try_nowait()) {
+        return;
+    }
+    pble_session_token_t old_session = {0};
+    bool restart_required;
+    taskENTER_CRITICAL(&pble_session_mux);
+    old_session.conn = pble_conn_handle;
+    old_session.generation = pble_conn_generation;
+    old_session.vm_epoch = pble_session_vm_epoch;
+    restart_required = pble_term_state.phase == PBLE_TERM_PHASE_CLOSING ||
+                       pble_term_state.phase == PBLE_TERM_PHASE_RESTARTING ||
+                       pble_term_state.phase == PBLE_TERM_PHASE_CLEANING;
+    pble_session_vm_epoch = 0;
+    taskEXIT_CRITICAL(&pble_session_mux);
+    pble_rsp_cancel_session(&old_session);
+    (void)pble_rsp_owner_release_if_idle();
+    xSemaphoreGiveRecursive(pble_tx_mutex);
+    if (restart_required) {
+        esp_restart();
+    }
+}
+
+void pble_ble_vm_enable_response_callout(void) {
+    taskENTER_CRITICAL(&pble_rsp_callout_mux);
+    pble_rsp_callout_enabled = true;
+    taskEXIT_CRITICAL(&pble_rsp_callout_mux);
+}
+
+bool pble_ble_vm_stop_response_callout(int64_t deadline_us) {
+    if (esp_timer_get_time() >= deadline_us) {
+        return false;
+    }
+    taskENTER_CRITICAL(&pble_rsp_callout_mux);
+    pble_rsp_callout_enabled = false;
+    taskEXIT_CRITICAL(&pble_rsp_callout_mux);
+    ble_npl_callout_stop(&pble_rsp_callout);
+    return esp_timer_get_time() < deadline_us;
+}
+
+bool pble_ble_vm_tx_lock(int64_t deadline_us) {
+    int64_t now_us = esp_timer_get_time();
+    if (pble_tx_mutex == NULL || now_us >= deadline_us) {
+        return false;
+    }
+    int64_t residual_us = deadline_us - now_us;
+    TickType_t residual_ticks = pdMS_TO_TICKS(
+        (uint32_t)((residual_us + INT64_C(999)) / INT64_C(1000)));
+    if (residual_ticks == 0) {
+        residual_ticks = 1;
+    }
+    if (xSemaphoreTakeRecursive(pble_tx_mutex, residual_ticks) != pdTRUE) {
+        return false;
+    }
+    if (esp_timer_get_time() >= deadline_us) {
+        xSemaphoreGiveRecursive(pble_tx_mutex);
+        return false;
+    }
+    pble_vm_tx_locked = true;
+    return true;
+}
+
+void pble_ble_vm_tx_unlock(void) {
+    if (pble_vm_tx_locked && pble_tx_mutex != NULL) {
+        pble_vm_tx_locked = false;
+        xSemaphoreGiveRecursive(pble_tx_mutex);
+    }
 }
 
 // FR-BLE-7/8: the negotiated ATT MTU (247 once the central requests it, the BLE
@@ -891,15 +1389,37 @@ static int pble_rx_access(uint16_t conn_handle, uint16_t attr_handle,
     if (ctxt->op != BLE_GATT_ACCESS_OP_WRITE_CHR) {
         return BLE_ATT_ERR_UNLIKELY;
     }
+    pble_vm_activity_t activity;
+    if (!pble_vm_rx_callback_enter(&activity)) {
+        return BLE_ATT_ERR_UNLIKELY;
+    }
+    pble_session_token_t session;
+    bool admitted;
+    taskENTER_CRITICAL(&pble_session_mux);
+    admitted = pble_conn_handle == conn_handle &&
+               pble_term_admits(&pble_term_state, pble_conn_handle,
+                                pble_conn_generation) &&
+               pble_session_vm_epoch != 0;
+    session.conn = pble_conn_handle;
+    session.generation = pble_conn_generation;
+    session.vm_epoch = pble_session_vm_epoch;
+    taskEXIT_CRITICAL(&pble_session_mux);
+    if (!admitted) {
+        pble_vm_callback_leave(&activity);
+        return BLE_ATT_ERR_UNLIKELY;
+    }
     uint8_t frag[PBLE_FRAG_PKT_MAX];
     uint16_t copied = 0;
     if (OS_MBUF_PKTLEN(ctxt->om) > sizeof(frag)) {
+        pble_vm_callback_leave(&activity);
         return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
     }
     if (ble_hs_mbuf_to_flat(ctxt->om, frag, sizeof(frag), &copied) != 0) {
+        pble_vm_callback_leave(&activity);
         return BLE_ATT_ERR_UNLIKELY;
     }
-    pble_rx_ingest(frag, copied, conn_handle);
+    pble_rx_ingest(frag, copied, &session);
+    pble_vm_callback_leave(&activity);
     return 0;
 }
 
@@ -1070,7 +1590,26 @@ static int pble_gap_event(struct ble_gap_event *event, void *arg) {
             if (event->connect.status == 0) {
                 pble_tx_mbuf_starve = 0;        // fresh per-session GAP-2 count
                 pble_oi1_begin_session(event->connect.conn_handle);
-                pble_conn_handle = event->connect.conn_handle;
+                (void)xSemaphoreTakeRecursive(pble_tx_mutex, portMAX_DELAY);
+                taskENTER_CRITICAL(&pble_session_mux);
+                pble_conn_generation_counter++;
+                if (pble_conn_generation_counter == 0) {
+                    pble_conn_generation_counter++;
+                }
+                bool opened = pble_term_open(
+                    &pble_term_state, event->connect.conn_handle,
+                    pble_conn_generation_counter);
+                if (opened) {
+                    pble_conn_generation = pble_conn_generation_counter;
+                    pble_session_vm_epoch = pble_vm_epoch_seed;
+                    pble_conn_handle = event->connect.conn_handle;
+                }
+                taskEXIT_CRITICAL(&pble_session_mux);
+                xSemaphoreGiveRecursive(pble_tx_mutex);
+                if (!opened) {
+                    esp_restart();
+                    break;
+                }
                 pble_ready_refresh();
                 pble_reset_reassembly();
                 ble_npl_callout_stop(&pble_link_tune_co);
@@ -1100,7 +1639,7 @@ static int pble_gap_event(struct ble_gap_event *event, void *arg) {
                 pble_advertise();       // connection failed — keep advertising
             }
             break;
-        case BLE_GAP_EVENT_DISCONNECT:
+        case BLE_GAP_EVENT_DISCONNECT: {
             // Disarm any pending link-tune so no stale rung fires into the next
             // session, then clear every phase latch and submission budget.
             ble_npl_callout_stop(&pble_link_tune_co);
@@ -1123,17 +1662,60 @@ static int pble_gap_event(struct ble_gap_event *event, void *arg) {
             ESP_LOGE(PBLE_TAG, "link tune session end tx_mbuf_starve_count=%lu",
                      (unsigned long)pble_tx_mbuf_starve);
             pble_oi1_end_session(event->disconnect.conn.conn_handle);
-            pble_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+
+            pble_session_token_t ended = {0};
+            pble_term_effects_t effect = PBLE_TERM_EFFECT_NONE;
+            (void)xSemaphoreTakeRecursive(pble_tx_mutex, portMAX_DELAY);
+            taskENTER_CRITICAL(&pble_session_mux);
+            ended.conn = pble_conn_handle;
+            ended.generation = pble_conn_generation;
+            ended.vm_epoch = pble_session_vm_epoch;
+            effect = pble_term_disconnect(
+                &pble_term_state, event->disconnect.conn.conn_handle,
+                ended.generation);
+            taskEXIT_CRITICAL(&pble_session_mux);
+
+            if (effect == PBLE_TERM_EFFECT_STOP_WATCHDOG) {
+                esp_err_t stop_rc = esp_timer_stop(pble_term_watchdog);
+                taskENTER_CRITICAL(&pble_session_mux);
+                effect = pble_term_watchdog_stopped(
+                    &pble_term_state, ended.conn, ended.generation,
+                    stop_rc == ESP_OK);
+                taskEXIT_CRITICAL(&pble_session_mux);
+            }
+
+            bool cleanup_completed = false;
+            if (effect == PBLE_TERM_EFFECT_INVALIDATE) {
+                ble_npl_callout_stop(&pble_rsp_callout);
+                pble_rsp_cancel_session(&ended);
+                (void)pble_rsp_owner_release_if_idle();
+                pble_reset_reassembly();
+                pble_lock_on_disconnect(ended.conn);
+                pble_fs_on_disconnect();
+                taskENTER_CRITICAL(&pble_session_mux);
+                pble_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+                pble_conn_generation = 0;
+                pble_session_vm_epoch = 0;
+                effect = pble_term_cleanup_complete(
+                    &pble_term_state, ended.conn, ended.generation);
+                taskEXIT_CRITICAL(&pble_session_mux);
+                cleanup_completed = true;
+            }
+            bool restart_required = effect == PBLE_TERM_EFFECT_RESTART;
+            xSemaphoreGiveRecursive(pble_tx_mutex);
+            if (restart_required) {
+                esp_restart();
+                break;
+            }
+            if (!cleanup_completed) {
+                break;
+            }
             pble_ready_clear();
             pble_mtu_val = PBLE_MTU_DEFAULT;
-            pble_reset_reassembly();
-            // F-18/SEC-3: release the single-writer token(s) and finalize any
-            // in-flight file transfer BEFORE re-advertising, so a resuming
-            // reconnect is never locked out by a stale writer (FR-FS-16). These
-            // are peer-owned; we only trigger them on teardown.
-            pble_lock_on_disconnect(event->disconnect.conn.conn_handle);
-            pble_fs_on_disconnect();
             pble_advertise();           // link outlives the session (FR-BLE-11)
+            break;
+        }
+        case BLE_GAP_EVENT_TERM_FAILURE:
             break;
         case BLE_GAP_EVENT_ENC_CHANGE:
             // F-18/SEC-1: the central initiated pairing/encryption. Encryption
@@ -1313,7 +1895,50 @@ static void pble_on_sync(void) {
 static void pble_on_reset(int reason) {
     pble_synced = false;
     pble_oi1_invalidate_active();
-    pble_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+    pble_session_token_t reset_session = {0};
+    pble_term_effects_t effect = PBLE_TERM_EFFECT_NONE;
+    (void)xSemaphoreTakeRecursive(pble_tx_mutex, portMAX_DELAY);
+    taskENTER_CRITICAL(&pble_session_mux);
+    reset_session.conn = pble_conn_handle;
+    reset_session.generation = pble_conn_generation;
+    reset_session.vm_epoch = pble_session_vm_epoch;
+    effect = pble_term_reset(&pble_term_state);
+    taskEXIT_CRITICAL(&pble_session_mux);
+
+    if (effect == PBLE_TERM_EFFECT_STOP_WATCHDOG) {
+        esp_err_t stop_rc = esp_timer_stop(pble_term_watchdog);
+        taskENTER_CRITICAL(&pble_session_mux);
+        effect = pble_term_watchdog_stopped(
+            &pble_term_state, reset_session.conn, reset_session.generation,
+            stop_rc == ESP_OK);
+        taskEXIT_CRITICAL(&pble_session_mux);
+    }
+    bool cleanup_completed = false;
+    if (effect == PBLE_TERM_EFFECT_INVALIDATE) {
+        ble_npl_callout_stop(&pble_rsp_callout);
+        pble_rsp_cancel_session(&reset_session);
+        (void)pble_rsp_owner_release_if_idle();
+        pble_reset_reassembly();
+        pble_lock_on_disconnect(reset_session.conn);
+        pble_fs_on_disconnect();
+        taskENTER_CRITICAL(&pble_session_mux);
+        pble_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+        pble_conn_generation = 0;
+        pble_session_vm_epoch = 0;
+        effect = pble_term_cleanup_complete(
+            &pble_term_state, reset_session.conn, reset_session.generation);
+        taskEXIT_CRITICAL(&pble_session_mux);
+        cleanup_completed = true;
+    }
+    bool restart_required = effect == PBLE_TERM_EFFECT_RESTART;
+    xSemaphoreGiveRecursive(pble_tx_mutex);
+    if (restart_required) {
+        esp_restart();
+        return;
+    }
+    if (!cleanup_completed && reset_session.generation != 0) {
+        return;
+    }
     pble_ready_clear();
     ESP_LOGW(PBLE_TAG, "nimble reset; reason=%d", reason);
 }
@@ -1378,6 +2003,23 @@ void pble_ble_init(void) {
             mp_raise_msg(&mp_type_RuntimeError, MP_ERROR_TEXT("tx drain sem alloc failed"));
         }
     }
+    if (!pble_term_initialized) {
+        pble_term_init(&pble_term_state);
+        const esp_timer_create_args_t watchdog_args = {
+            .callback = pble_termination_watchdog_cb,
+            .arg = &pble_term_armed_ticket,
+            .dispatch_method = ESP_TIMER_TASK,
+            .name = "pble-term",
+            .skip_unhandled_events = false,
+        };
+        esp_err_t watchdog_rc = esp_timer_create(&watchdog_args,
+                                                 &pble_term_watchdog);
+        if (watchdog_rc != ESP_OK) {
+            mp_raise_msg(&mp_type_RuntimeError,
+                         MP_ERROR_TEXT("termination watchdog init failed"));
+        }
+        pble_term_initialized = true;
+    }
     if (nimble_port_init() != 0) {
         mp_raise_msg(&mp_type_RuntimeError, MP_ERROR_TEXT("nimble port init failed"));
     }
@@ -1386,6 +2028,11 @@ void pble_ble_init(void) {
     // after the settle window. The eventq exists once nimble_port_init succeeds.
     ble_npl_callout_init(&pble_link_tune_co, nimble_port_get_dflt_eventq(),
                          pble_link_tune, NULL);
+    ble_npl_callout_init(&pble_rsp_callout, nimble_port_get_dflt_eventq(),
+                         pble_rsp_pump_callout, NULL);
+    taskENTER_CRITICAL(&pble_rsp_callout_mux);
+    pble_rsp_callout_enabled = false;
+    taskEXIT_CRITICAL(&pble_rsp_callout_mux);
     ble_hs_cfg.sync_cb = pble_on_sync;
     ble_hs_cfg.reset_cb = pble_on_reset;
     pble_ble_sm_config();           // F-18 SEC-1: Just-Works pairing, non-gating
@@ -1406,6 +2053,7 @@ static mp_obj_t pble_ble_init_agent(void) {
     // Identity first (device_id + persisted label), then register the S3 opcode
     // handlers into pble_proto's dispatch, then bring up NimBLE + GATT + adv.
     pble_dc_init();
+    pble_proto_init();
     pble_lock_register();            // S6 F-18: single active-writer token (SEC-3)
     pble_proto_register(PBLE_OP_HELLO, pble_info_hello);
     pble_proto_register(PBLE_OP_DEVICE_INFO, pble_info_device_info_cmd);
@@ -1419,6 +2067,17 @@ static mp_obj_t pble_ble_init_agent(void) {
     return mp_const_none;
 }
 static MP_DEFINE_CONST_FUN_OBJ_0(pble_ble_init_agent_obj, pble_ble_init_agent);
+
+static mp_obj_t pble_ble_vm_ready(void) {
+    int64_t deadline_us = esp_timer_get_time() +
+                          (int64_t)PBLE_VM_READY_BUDGET_MS * INT64_C(1000);
+    bool ready;
+    MP_THREAD_GIL_EXIT();
+    ready = pble_vm_ready(deadline_us);
+    MP_THREAD_GIL_ENTER();
+    return mp_obj_new_bool(ready);
+}
+static MP_DEFINE_CONST_FUN_OBJ_0(pble_ble_vm_ready_obj, pble_ble_vm_ready);
 
 #if PBLE_ENABLE_OI1_LINK_FACTS
 static mp_obj_t pble_oi1_u64(uint64_t value) {
@@ -1618,6 +2277,7 @@ static MP_DEFINE_CONST_FUN_OBJ_1(pble_ble_wait_ready_obj, pble_ble_wait_ready);
 static const mp_rom_map_elem_t pble_ble_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR___name__), MP_ROM_QSTR(MP_QSTR_pble_ble) },
     { MP_ROM_QSTR(MP_QSTR_init_agent), MP_ROM_PTR(&pble_ble_init_agent_obj) },
+    { MP_ROM_QSTR(MP_QSTR_vm_ready), MP_ROM_PTR(&pble_ble_vm_ready_obj) },
 #if PBLE_ENABLE_SPLASH_READINESS
     { MP_ROM_QSTR(MP_QSTR_wait_ready), MP_ROM_PTR(&pble_ble_wait_ready_obj) },
 #endif

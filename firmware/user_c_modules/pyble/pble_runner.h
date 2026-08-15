@@ -69,13 +69,17 @@ int     pble_rsm_on_stopped(pble_rsm_t *m);            // -> IDLE (STOP terminal
 // 0x20 RUN — validate/reserve/copy, submit the matching RSP{OK} once without
 // waiting, then hand off only on local acceptance. RUN_STATE(running) follows
 // from the worker. Admission failure rolls back and suppresses response fallback.
-uint8_t pble_runner_run(const pble_frame_t *req, uint8_t *rsp, size_t *rlen, uint16_t conn);
+uint8_t pble_runner_run(const pble_frame_t *req, uint8_t *rsp, size_t *rlen,
+                        const pble_session_token_t *conn);
 // 0x21 STOP — idempotent; RSP{OK} always. If running, inject KeyboardInterrupt
 // into the WORKER's own VM state (FR-RUN-5/6/10). Link stays live (FR-BLE-11).
-uint8_t pble_runner_stop(const pble_frame_t *req, uint8_t *rsp, size_t *rlen, uint16_t conn);
+uint8_t pble_runner_stop(const pble_frame_t *req, uint8_t *rsp, size_t *rlen,
+                         const pble_session_token_t *conn);
 // 0x22 SOFT_REBOOT — RSP{OK}; stop the worker then marshal a VM soft-reset to the
 // MAIN task; terminal -> RUN_STATE(idle) (FR-RUN-8).
-uint8_t pble_runner_soft_reboot(const pble_frame_t *req, uint8_t *rsp, size_t *rlen, uint16_t conn);
+uint8_t pble_runner_soft_reboot(const pble_frame_t *req, uint8_t *rsp,
+                                size_t *rlen,
+                                const pble_session_token_t *conn);
 
 // Auto-run hand-off (F-12): run a workspace file on the WORKER from a NON-dispatch
 // caller — pble_boot's opt-in /main.py auto-run. Reserves the single run (or refuses
@@ -96,6 +100,13 @@ bool pble_runner_stop_requested(void);
 // Register 0x20/0x21/0x22 into pble_proto and provision the hand-off primitives.
 // Idempotent; call once at boot from init_agent() BEFORE the worker is launched.
 void pble_runner_register(void);
+
+// Retained-VM lifecycle hooks. Timer disarm consumes only the residual of the
+// wrapper's absolute deadline; reset drains stale hand-offs and retained state;
+// detach prevents old worker pointers surviving upstream thread deletion.
+bool pble_runner_vm_timer_disarm(int64_t deadline_us);
+void pble_runner_vm_reset(void);
+void pble_runner_vm_detach(void);
 
 // MicroPython _thread WORKER entry — launched ONCE from _boot.py via
 // `_thread.start_new_thread(pble_runner.worker, ())` AFTER init_agent(). Captures

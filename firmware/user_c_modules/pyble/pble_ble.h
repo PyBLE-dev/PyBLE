@@ -10,7 +10,10 @@
 #define PBLE_BLE_H
 
 #include <stddef.h>
+#include <stdbool.h>
 #include <stdint.h>
+
+#include "pble_termination.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -60,14 +63,29 @@ void pble_ble_sm_config(void);
 // fragments already reached the app. The file-GET DATA chunks are sized to one
 // BLE packet (caps chunk_size) precisely so each stream event is a single packet
 // and PBLE_TX_AGAIN is always a clean "nothing sent, safe to retry".
-int pble_ble_notify(const uint8_t *msg, size_t len);
+int pble_ble_notify(const uint8_t *msg, size_t len,
+                    const pble_session_token_t *session);
 
 // RUN-admission-only control submission. The encoded message MUST fit one
 // §3.2 fragment. Take the TX mutex with zero wait, recheck that expected_conn
 // still owns the transport, and make at most one Notify attempt. This never
 // waits for drain progress or retries on the NimBLE host task.
 int pble_ble_notify_control_try_for_conn(const uint8_t *msg, size_t len,
-                                         uint16_t expected_conn);
+                                         const pble_session_token_t *expected_conn);
+
+// Boot-local session identity used by the generic-response ticket pool.
+bool pble_ble_session_snapshot(uint16_t expected_conn,
+                               pble_session_token_t *session);
+// Snapshot the one currently live session for a newly-created asynchronous
+// event.  The returned token is immutable event identity: callers retain it
+// across paced retries rather than retargeting the event after reconnect.
+bool pble_ble_session_snapshot_current(pble_session_token_t *session);
+bool pble_ble_session_live(const pble_session_token_t *session);
+bool pble_ble_session_closing(void);
+void pble_ble_terminate_session(const pble_session_token_t *session);
+
+// Schedule the pre-created response callout after a slot enters the ready FIFO.
+void pble_ble_rsp_kick(void);
 
 // Paced TX for BULK streaming callers (fs-worker / console — NEVER the NimBLE
 // host task). The encoded message MUST fit one §3.2 fragment. Each retry makes
@@ -75,12 +93,27 @@ int pble_ble_notify_control_try_for_conn(const uint8_t *msg, size_t len,
 // drain event outside the mutex. The bulk path preserves enough exact msys_1
 // capacity for one immediate small control Notify. Returns PBLE_TX_OVERSIZE when
 // the one-fragment precondition is violated.
-int pble_ble_notify_paced(const uint8_t *msg, size_t len, uint32_t budget_ms);
+int pble_ble_notify_paced(const uint8_t *msg, size_t len, uint32_t budget_ms,
+                          const pble_session_token_t *session);
+int pble_ble_notify_paced_for_session(
+    const uint8_t *msg, size_t len, uint32_t budget_ms,
+    const pble_session_token_t *session);
 
 // Paced one-fragment CONTROL event. It follows the same bounded retry discipline
 // but consumes the capacity deliberately reserved from bulk traffic.
 int pble_ble_notify_control_paced(const uint8_t *msg, size_t len,
-                                  uint32_t budget_ms);
+                                  uint32_t budget_ms,
+                                  const pble_session_token_t *session);
+
+// Retained-VM lifecycle integration.  All functions are allocation-free after
+// cold BLE initialization.
+void pble_ble_vm_rx_reset(void);
+void pble_ble_vm_reset(uint64_t vm_epoch);
+void pble_ble_vm_invalidate_session(void);
+void pble_ble_vm_enable_response_callout(void);
+bool pble_ble_vm_stop_response_callout(int64_t deadline_us);
+bool pble_ble_vm_tx_lock(int64_t deadline_us);
+void pble_ble_vm_tx_unlock(void);
 
 // Replace the advertised name (label-else-`PyBLE-XXXX`) and re-advertise
 // pre-connect so the change shows in the scan list (FR-BLE-12). Display-only.

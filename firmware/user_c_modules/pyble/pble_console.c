@@ -98,6 +98,7 @@ static inline bool on_worker(void) {
 // stdout/stderr tee -> CONSOLE_DATA (0x30) — the single emit chokepoint
 // ============================================================================
 void pble_console_out(uint8_t stream_tag, const char *buf, size_t len) {
+    pble_session_token_t event_session;
     if (len == 0 || buf == NULL) {
         return;
     }
@@ -122,6 +123,10 @@ void pble_console_out(uint8_t stream_tag, const char *buf, size_t len) {
             n = max_chunk;
         }
         memcpy(g_stage + 1, buf + off, n);
+        if (!pble_ble_session_snapshot_current(&event_session)) {
+            off = off + n;
+            continue;
+        }
         // pble_proto_emit_paced encodes [stream][bytes] as an EVT (ID=0) and
         // Notifies, parking on the NOTIFY_TX drain event when NimBLE's msys pool
         // is momentarily empty instead of discarding the chunk. Still bounded —
@@ -135,7 +140,7 @@ void pble_console_out(uint8_t stream_tag, const char *buf, size_t len) {
         // the only task that ever fills or emits it.
         MP_THREAD_GIL_EXIT();
         (void)pble_proto_emit_paced(PBLE_OP_CONSOLE_DATA, g_stage, 1 + n,
-                                    PBLE_CONSOLE_TX_BUDGET_MS);
+                                    PBLE_CONSOLE_TX_BUDGET_MS, &event_session);
         MP_THREAD_GIL_ENTER();
         off += n;
     }
@@ -153,9 +158,10 @@ const mp_print_t pble_console_stderr_print = { NULL, console_stderr_strn };
 // ============================================================================
 // 0x31 host task: append bytes, dropping any overflow (bounded — never grows the
 // heap, never blocks the host task). Fire-and-forget: no RSP frame.
-uint8_t pble_console_input(const pble_frame_t *req, uint8_t *rsp, size_t *rlen, uint16_t conn) {
+uint8_t pble_console_input(const pble_frame_t *req, uint8_t *rsp, size_t *rlen,
+                           const pble_session_token_t *session) {
     (void)rsp;
-    (void)conn;
+    (void)session;
     if (rlen) {
         *rlen = 0;
     }
@@ -185,6 +191,21 @@ int pble_console_stdin_getchar(void) {
     }
     taskEXIT_CRITICAL(&g_ring_mux);
     return c;
+}
+
+void pble_console_vm_detach(void) {
+    g_worker = NULL;
+}
+
+void pble_console_vm_reset(void) {
+    taskENTER_CRITICAL(&g_ring_mux);
+    g_ring_head = 0;
+    g_ring_tail = 0;
+    g_ring_count = 0;
+    g_worker = NULL;
+    taskEXIT_CRITICAL(&g_ring_mux);
+    memset(g_ring, 0, sizeof(g_ring));
+    memset(g_stage, 0, sizeof(g_stage));
 }
 
 // ============================================================================
@@ -233,7 +254,7 @@ static const pble_tee_obj_t pble_tee_obj = { { &pble_tee_type } };
 // Registration + thin MicroPython surface (boot wiring + HIL)
 // ============================================================================
 void pble_console_register(void) {
-    pble_proto_register(PBLE_OP_CONSOLE_INPUT, pble_console_input);
+    pble_proto_register_no_response(PBLE_OP_CONSOLE_INPUT, pble_console_input);
 }
 
 static mp_obj_t mod_pble_console_register(void) {

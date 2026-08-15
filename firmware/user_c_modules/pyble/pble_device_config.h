@@ -36,7 +36,8 @@ size_t      pble_dc_adv_name(char *out, size_t cap);
 
 // 0x50 SET_LABEL dispatch handler (registered into pble_proto).
 uint8_t     pble_dc_set_label_cmd(const pble_frame_t *req, uint8_t *rsp,
-                                  size_t *rsp_len, uint16_t conn);
+                                  size_t *rsp_len,
+                                  const pble_session_token_t *session);
 
 // --- Identify LED (F-23) — the single optional status LED (CON-13, one config,
 // never user-code routing) --------------------------------------------------
@@ -48,16 +49,22 @@ bool        pble_dc_identify_led(uint8_t *gpio_out, uint8_t *active_high_out);
 // ERANGE if gpio invalid, EBADREQ if active_level ∉ {0,1} (protocol.md §4).
 uint8_t     pble_dc_set_identify_led(const uint8_t *payload, size_t len);
 uint8_t     pble_dc_set_identify_led_cmd(const pble_frame_t *req, uint8_t *rsp,
-                                         size_t *rsp_len, uint16_t conn);
+                                         size_t *rsp_len,
+                                         const pble_session_token_t *session);
 
 // 0x52 IDENTIFY: EUNSUPPORTED if unset; else start a bounded non-blocking blink
 // (5 Hz, optional `[duration_ds]` 1..50, default 20) on an esp_timer and return
 // OK immediately — never stalls BLE or user code (FR-IDENT-3, FR-BLE-11).
 uint8_t     pble_dc_identify_cmd(const pble_frame_t *req, uint8_t *rsp,
-                                 size_t *rsp_len, uint16_t conn);
+                                 size_t *rsp_len,
+                                 const pble_session_token_t *session);
 
 // Register 0x51 / 0x52 into pble_proto. Call once at boot from init_agent().
 void        pble_dc_identify_register(void);
+
+// Retained-VM teardown stops the identify timer within the wrapper's shared
+// absolute deadline and clears its armed epoch. Inactive/already-fired is OK.
+bool        pble_dc_vm_timer_disarm(int64_t deadline_us);
 
 #ifdef __cplusplus
 }

@@ -34,6 +34,7 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"   // vTaskDelay (fs-worker TX pacing)
 
 #include "py/mperrno.h"    // MP_ENOENT/EACCES/ENOSPC/EIO/ENOMEM/EEXIST/...
@@ -47,6 +48,7 @@
 #include "pble_ble.h"      // pble_ble_mtu (chunk sizing)
 #include "pble_fs.h"
 #include "pble_proto.h"
+#include "pble_vm_lifecycle.h"
 
 // Error-path logging only (the build runs at ERROR log level): an undeliverable
 // stream chunk is a genuine fault worth a console line. Never per-transfer
@@ -79,15 +81,25 @@ MP_STATIC_ASSERT(PBLE_FS_QDEPTH == PBLE_FS_PUT_WINDOW + 2);
 typedef struct {
     uint8_t  opcode;
     uint8_t  id;
-    uint16_t conn;
+    pble_session_token_t session;
+    uint64_t vm_epoch;
+    pble_rsp_ticket_t ticket;
     uint16_t len;
     uint8_t  payload[PBLE_FS_ITEM_PAYLOAD];
 } pble_fs_req_t;
+
+typedef bool (*pble_fs_validator_t)(const pble_fs_req_t *it);
 
 // --- Module state ------------------------------------------------------------
 static QueueHandle_t g_fs_q;                 // bounded host→worker mailbox
 static pble_fs_req_t g_enq;                  // host-task staging (single host task)
 static uint8_t g_scratch[PBLE_FS_SCRATCH];   // worker-only (single-thread, no lock)
+static SemaphoreHandle_t g_fs_gate;          // enqueue/dequeue/quiescence cut
+static SemaphoreHandle_t g_fs_work;          // exact queued-work wake count
+static bool g_fs_admission_open;
+static bool g_fs_worker_busy;
+static uint32_t g_fs_outstanding;
+static bool g_fs_dequeue_claim;
 
 // Worker-local single-active-transfer PUT state machine (§5 windowed upload).
 static bool     g_put_active;
@@ -101,6 +113,16 @@ static uint8_t  g_put_latched;                   // 0, or a latched write status
 
 // The open temp file object must survive GC across PUT_DATA calls → rooted.
 MP_REGISTER_ROOT_POINTER(mp_obj_t pble_fs_put_file);
+
+static bool pble_fs_item_valid(const pble_fs_req_t *it) {
+    return it != NULL && pble_ble_session_live(&it->session) &&
+           pble_vm_epoch_valid(it->vm_epoch);
+}
+
+static bool pble_fs_ticket_valid(const pble_fs_req_t *it) {
+    return pble_fs_item_valid(it) &&
+           pble_rsp_ticket_valid(&it->ticket);
+}
 
 // ============================================================================
 // Little-endian helpers + incremental CRC-32 (bit-identical to pble_proto_crc32)
@@ -269,11 +291,20 @@ static mp_obj_t fs_str(const char *s) {
 }
 
 // Open a jailed path via the VFS with the given mode ("rb"/"wb"). Raises on error.
-static mp_obj_t fs_open(const char *path, const char *mode) {
+static mp_obj_t fs_open(const pble_fs_req_t *it,
+                        pble_fs_validator_t validator,
+                        const char *path, const char *mode) {
     mp_obj_t args[2] = { fs_str(path), fs_str(mode) };
     mp_map_t kw;
     mp_map_init(&kw, 0);
-    return mp_vfs_open(2, args, &kw);
+    if (!validator(it)) {
+        return MP_OBJ_NULL;
+    }
+    mp_obj_t opened = mp_vfs_open(2, args, &kw);
+    if (!validator(it)) {
+        return MP_OBJ_NULL;
+    }
+    return opened;
 }
 
 static uint32_t fs_chunk(void) {
@@ -293,11 +324,20 @@ static uint32_t fs_chunk(void) {
 }
 
 // mp_vfs_stat under its own nlr → size + is-dir. Returns §8 status.
-static uint8_t fs_stat_path(const char *path, uint32_t *size, bool *isdir) {
+static uint8_t fs_stat_path(const pble_fs_req_t *it, const char *path,
+                            uint32_t *size, bool *isdir) {
     nlr_buf_t nlr;
     uint8_t st;
     if (nlr_push(&nlr) == 0) {
+        if (!pble_fs_ticket_valid(it)) {
+            nlr_pop();
+            return PBLE_NO_RSP;
+        }
         mp_obj_t r = mp_vfs_stat(fs_str(path));
+        if (!pble_fs_ticket_valid(it)) {
+            nlr_pop();
+            return PBLE_NO_RSP;
+        }
         mp_obj_t *f;
         size_t n;
         mp_obj_get_array(r, &n, &f);
@@ -314,17 +354,30 @@ static uint8_t fs_stat_path(const char *path, uint32_t *size, bool *isdir) {
 
 // Whole-file CRC-32 over [0, size). Opens "rb", streams into g_scratch, always
 // closes. Returns §8 status; *out set on OK.
-static uint8_t fs_crc_file(const char *path, uint32_t *out) {
+static uint8_t fs_crc_file(const pble_fs_req_t *it, const char *path,
+                           uint32_t *out) {
     nlr_buf_t nlr;
     uint8_t st;
     volatile mp_obj_t f = MP_OBJ_NULL;
     if (nlr_push(&nlr) == 0) {
-        f = fs_open(path, "rb");
+        f = fs_open(it, pble_fs_ticket_valid, path, "rb");
+        if (!pble_fs_ticket_valid(it)) {
+            nlr_pop();
+            return PBLE_NO_RSP;
+        }
         const mp_stream_p_t *sp = mp_get_stream((mp_obj_t)f);
         uint32_t crc = 0xFFFFFFFFu;
         for (;;) {
             int err;
+            if (!pble_fs_ticket_valid(it)) {
+                nlr_pop();
+                return PBLE_NO_RSP;
+            }
             mp_uint_t n = sp->read((mp_obj_t)f, g_scratch, PBLE_FS_SCRATCH, &err);
+            if (!pble_fs_ticket_valid(it)) {
+                nlr_pop();
+                return PBLE_NO_RSP;
+            }
             if (n == MP_STREAM_ERROR) {
                 mp_raise_OSError(err);
             }
@@ -333,7 +386,15 @@ static uint8_t fs_crc_file(const char *path, uint32_t *out) {
             }
             crc = crc32_update(crc, g_scratch, n);
         }
+        if (!pble_fs_ticket_valid(it)) {
+            nlr_pop();
+            return PBLE_NO_RSP;
+        }
         mp_stream_close((mp_obj_t)f);
+        if (!pble_fs_ticket_valid(it)) {
+            nlr_pop();
+            return PBLE_NO_RSP;
+        }
         f = MP_OBJ_NULL;
         *out = crc ^ 0xFFFFFFFFu;
         nlr_pop();
@@ -341,7 +402,18 @@ static uint8_t fs_crc_file(const char *path, uint32_t *out) {
     } else {
         if (f != MP_OBJ_NULL) {
             nlr_buf_t n2;
-            if (nlr_push(&n2) == 0) { mp_stream_close((mp_obj_t)f); nlr_pop(); }
+            if (nlr_push(&n2) == 0) {
+                if (!pble_fs_ticket_valid(it)) {
+                    nlr_pop();
+                    return PBLE_NO_RSP;
+                }
+                mp_stream_close((mp_obj_t)f);
+                if (!pble_fs_ticket_valid(it)) {
+                    nlr_pop();
+                    return PBLE_NO_RSP;
+                }
+                nlr_pop();
+            }
         }
         st = fs_exc_to_status(MP_OBJ_FROM_PTR(nlr.ret_val));
     }
@@ -352,19 +424,32 @@ static uint8_t fs_crc_file(const char *path, uint32_t *out) {
 // whole-file CRC on a resume (F-10). Opens "rb", streams up to `len` bytes into
 // g_scratch, always closes. Returns §8 status; *running set (feed 0xFFFFFFFF form)
 // on OK — the caller continues it with crc32_update and finalizes `^ 0xFFFFFFFF`.
-static uint8_t fs_crc_prefix(const char *path, uint32_t len, uint32_t *running) {
+static uint8_t fs_crc_prefix(const pble_fs_req_t *it, const char *path,
+                             uint32_t len, uint32_t *running) {
     nlr_buf_t nlr;
     uint8_t st;
     volatile mp_obj_t f = MP_OBJ_NULL;
     if (nlr_push(&nlr) == 0) {
-        f = fs_open(path, "rb");
+        f = fs_open(it, pble_fs_ticket_valid, path, "rb");
+        if (!pble_fs_ticket_valid(it)) {
+            nlr_pop();
+            return PBLE_NO_RSP;
+        }
         const mp_stream_p_t *sp = mp_get_stream((mp_obj_t)f);
         uint32_t crc = 0xFFFFFFFFu;
         uint32_t remaining = len;
         while (remaining > 0) {
             uint32_t want = (remaining < PBLE_FS_SCRATCH) ? remaining : PBLE_FS_SCRATCH;
             int err;
+            if (!pble_fs_ticket_valid(it)) {
+                nlr_pop();
+                return PBLE_NO_RSP;
+            }
             mp_uint_t n = sp->read((mp_obj_t)f, g_scratch, want, &err);
+            if (!pble_fs_ticket_valid(it)) {
+                nlr_pop();
+                return PBLE_NO_RSP;
+            }
             if (n == MP_STREAM_ERROR) {
                 mp_raise_OSError(err);
             }
@@ -374,7 +459,15 @@ static uint8_t fs_crc_prefix(const char *path, uint32_t len, uint32_t *running) 
             crc = crc32_update(crc, g_scratch, n);
             remaining -= (uint32_t)n;
         }
+        if (!pble_fs_ticket_valid(it)) {
+            nlr_pop();
+            return PBLE_NO_RSP;
+        }
         mp_stream_close((mp_obj_t)f);
+        if (!pble_fs_ticket_valid(it)) {
+            nlr_pop();
+            return PBLE_NO_RSP;
+        }
         f = MP_OBJ_NULL;
         *running = crc;               // NOT finalized — continued by PUT_DATA
         nlr_pop();
@@ -382,7 +475,18 @@ static uint8_t fs_crc_prefix(const char *path, uint32_t len, uint32_t *running) 
     } else {
         if (f != MP_OBJ_NULL) {
             nlr_buf_t n2;
-            if (nlr_push(&n2) == 0) { mp_stream_close((mp_obj_t)f); nlr_pop(); }
+            if (nlr_push(&n2) == 0) {
+                if (!pble_fs_ticket_valid(it)) {
+                    nlr_pop();
+                    return PBLE_NO_RSP;
+                }
+                mp_stream_close((mp_obj_t)f);
+                if (!pble_fs_ticket_valid(it)) {
+                    nlr_pop();
+                    return PBLE_NO_RSP;
+                }
+                nlr_pop();
+            }
         }
         st = fs_exc_to_status(MP_OBJ_FROM_PTR(nlr.ret_val));
     }
@@ -414,7 +518,15 @@ static uint8_t fs_do_list(const pble_fs_req_t *it, size_t *extra) {
     uint8_t st;
     if (nlr_push(&nlr) == 0) {
         mp_obj_t args1[1] = { fs_str(path) };
+        if (!pble_fs_ticket_valid(it)) {
+            nlr_pop();
+            return PBLE_NO_RSP;
+        }
         mp_obj_t iter = mp_vfs_ilistdir(1, args1);
+        if (!pble_fs_ticket_valid(it)) {
+            nlr_pop();
+            return PBLE_NO_RSP;
+        }
         mp_obj_iter_buf_t ibuf;
         mp_obj_t iterable = mp_getiter(iter, &ibuf);
 
@@ -422,7 +534,19 @@ static uint8_t fs_do_list(const pble_fs_req_t *it, size_t *extra) {
         uint16_t count = 0;
         uint8_t more = 0;
         mp_obj_t item;
-        while ((item = mp_iternext(iterable)) != MP_OBJ_STOP_ITERATION) {
+        for (;;) {
+            if (!pble_fs_ticket_valid(it)) {
+                nlr_pop();
+                return PBLE_NO_RSP;
+            }
+            item = mp_iternext(iterable);
+            if (!pble_fs_ticket_valid(it)) {
+                nlr_pop();
+                return PBLE_NO_RSP;
+            }
+            if (item == MP_OBJ_STOP_ITERATION) {
+                break;
+            }
             mp_obj_t *fld;
             size_t nf;
             mp_obj_get_array(item, &nf, &fld);
@@ -453,7 +577,12 @@ static uint8_t fs_do_list(const pble_fs_req_t *it, size_t *extra) {
                     child[cl] = '\0';
                     uint32_t sz;
                     bool d;
-                    if (fs_stat_path(child, &sz, &d) == PBLE_OK) {
+                    uint8_t child_st = fs_stat_path(it, child, &sz, &d);
+                    if (child_st == PBLE_NO_RSP) {
+                        nlr_pop();
+                        return PBLE_NO_RSP;
+                    }
+                    if (child_st == PBLE_OK) {
                         esize = sz;
                     }
                 }
@@ -500,13 +629,13 @@ static uint8_t fs_do_stat(const pble_fs_req_t *it, size_t *extra) {
     }
     uint32_t size;
     bool isdir;
-    uint8_t st = fs_stat_path(path, &size, &isdir);
+    uint8_t st = fs_stat_path(it, path, &size, &isdir);
     if (st != PBLE_OK) {
         return st;      // ENOENT for a missing path (FR-FS-2)
     }
     uint32_t crc = 0;
     if (!isdir) {
-        st = fs_crc_file(path, &crc);
+        st = fs_crc_file(it, path, &crc);
         if (st != PBLE_OK) {
             return st;
         }
@@ -527,8 +656,13 @@ static uint8_t fs_do_stat(const pble_fs_req_t *it, size_t *extra) {
 // per-message budget. Runs ONLY on the fs-worker, never the host task.
 #define FS_TX_BUDGET_MS 2000u
 
-static int fs_emit_paced(uint8_t opcode, const uint8_t *payload, size_t len) {
-    int rc = pble_proto_emit_paced(opcode, payload, len, FS_TX_BUDGET_MS);
+static int fs_emit_paced(const pble_fs_req_t *it, uint8_t opcode,
+                         const uint8_t *payload, size_t len) {
+    if (!pble_fs_item_valid(it)) {
+        return PBLE_TX_NO_CONN;
+    }
+    int rc = pble_proto_emit_paced_for_session(opcode, payload, len,
+                                               FS_TX_BUDGET_MS, &it->session);
     if (rc != PBLE_TX_OK) {
         // A stream chunk undeliverable within its budget (link gone or
         // pathologically congested) — the transfer aborts; the app's stall
@@ -567,7 +701,13 @@ static uint8_t fs_do_get(const pble_fs_req_t *it) {
 
     uint32_t total;
     bool isdir;
-    uint8_t st = fs_stat_path(path, &total, &isdir);
+    if (!pble_rsp_ticket_valid(&it->ticket) || !pble_fs_ticket_valid(it)) {
+        return PBLE_NO_RSP;
+    }
+    uint8_t st = fs_stat_path(it, path, &total, &isdir);
+    if (!pble_rsp_ticket_valid(&it->ticket) || !pble_fs_ticket_valid(it)) {
+        return PBLE_NO_RSP;
+    }
     if (st != PBLE_OK) {
         return st;                    // ENOENT
     }
@@ -578,10 +718,22 @@ static uint8_t fs_do_get(const pble_fs_req_t *it) {
         return PBLE_ERANGE;
     }
 
-    // RSP{OK}[total_size:u32] by id — the stream follows as events.
+    // RSP{OK}[total_size:u32] must fully complete before dependent events.
     g_scratch[0] = PBLE_OK;
     le32(g_scratch + 1, total);
-    pble_proto_emit_id(PBLE_TYPE_RSP, PBLE_OP_FILE_GET_BEGIN, it->id, g_scratch, 5);
+    if (!pble_rsp_expect_completion(&it->ticket)) {
+        return PBLE_NO_RSP;
+    }
+    if (!pble_rsp_publish(&it->ticket, PBLE_OP_FILE_GET_BEGIN, it->id,
+                          g_scratch, 5)) {
+        pble_rsp_cancel_ticket(&it->ticket);
+    }
+    MP_THREAD_GIL_EXIT();
+    bool rsp_delivered = pble_rsp_wait(&it->ticket);
+    MP_THREAD_GIL_ENTER();
+    if (!rsp_delivered || !pble_fs_item_valid(it)) {
+        return PBLE_NO_RSP;
+    }
 
     uint32_t chunk = fs_chunk();
     uint32_t crc = 0xFFFFFFFFu;
@@ -589,14 +741,34 @@ static uint8_t fs_do_get(const pble_fs_req_t *it) {
     volatile mp_obj_t f = MP_OBJ_NULL;
     volatile int tx_dead = 0;   // link gone / backpressure budget exhausted
     if (nlr_push(&nlr) == 0) {
-        f = fs_open(path, "rb");
+        if (!pble_fs_item_valid(it)) {
+            nlr_pop();
+            return PBLE_NO_RSP;
+        }
+        f = fs_open(it, pble_fs_item_valid, path, "rb");
+        if (!pble_fs_item_valid(it)) {
+            nlr_pop();
+            return PBLE_NO_RSP;
+        }
         const mp_stream_p_t *sp = mp_get_stream((mp_obj_t)f);
         uint32_t pos = 0;
         for (;;) {
+            if (!pble_fs_item_valid(it)) {
+                tx_dead = 1;
+                break;
+            }
             int err;
             // Read into g_scratch+4 so a [offset:u32] header can sit contiguously
             // in front of the emitted slice.
+            if (!pble_fs_item_valid(it)) {
+                nlr_pop();
+                return PBLE_NO_RSP;
+            }
             mp_uint_t n = sp->read((mp_obj_t)f, g_scratch + 4, chunk, &err);
+            if (!pble_fs_item_valid(it)) {
+                nlr_pop();
+                return PBLE_NO_RSP;
+            }
             if (n == MP_STREAM_ERROR) {
                 mp_raise_OSError(err);
             }
@@ -613,29 +785,63 @@ static uint8_t fs_do_get(const pble_fs_req_t *it) {
                 // Paced + CHECKED: a chunk that cannot be sent aborts the
                 // stream — never silently dropped (the app's stall watchdog
                 // then surfaces a typed timeout instead of hanging).
-                if (fs_emit_paced(PBLE_OP_FILE_GET_DATA, dp - 4,
-                                  (size_t)(4 + elen)) != PBLE_TX_OK) {
+                if (!pble_fs_item_valid(it)) {
+                    nlr_pop();
+                    return PBLE_NO_RSP;
+                }
+                int emit_rc = fs_emit_paced(it, PBLE_OP_FILE_GET_DATA, dp - 4,
+                                            (size_t)(4 + elen));
+                if (!pble_fs_item_valid(it)) {
+                    nlr_pop();
+                    return PBLE_NO_RSP;
+                }
+                if (emit_rc != PBLE_TX_OK) {
                     tx_dead = 1;
                     break;
                 }
             }
             pos = blk_end;
         }
+        if (!pble_fs_item_valid(it)) {
+            nlr_pop();
+            return PBLE_NO_RSP;
+        }
         mp_stream_close((mp_obj_t)f);
+        if (!pble_fs_item_valid(it)) {
+            nlr_pop();
+            return PBLE_NO_RSP;
+        }
         f = MP_OBJ_NULL;
         nlr_pop();
     } else {
         if (f != MP_OBJ_NULL) {
             nlr_buf_t n2;
-            if (nlr_push(&n2) == 0) { mp_stream_close((mp_obj_t)f); nlr_pop(); }
+            if (nlr_push(&n2) == 0) {
+                if (!pble_fs_item_valid(it)) {
+                    nlr_pop();
+                    return PBLE_NO_RSP;
+                }
+                mp_stream_close((mp_obj_t)f);
+                if (!pble_fs_item_valid(it)) {
+                    nlr_pop();
+                    return PBLE_NO_RSP;
+                }
+                nlr_pop();
+            }
         }
         // RSP{OK} already went out; a mid-stream fault cannot retract it. Emit END
         // with the partial CRC so the app detects the mismatch (HIL-verified).
     }
-    if (!tx_dead) {
+    if (!tx_dead && pble_fs_item_valid(it)) {
         uint32_t fcrc = crc ^ 0xFFFFFFFFu;
         le32(g_scratch, fcrc);
-        fs_emit_paced(PBLE_OP_FILE_GET_END, g_scratch, 4);
+        if (!pble_fs_item_valid(it)) {
+            return PBLE_NO_RSP;
+        }
+        (void)fs_emit_paced(it, PBLE_OP_FILE_GET_END, g_scratch, 4);
+        if (!pble_fs_item_valid(it)) {
+            return PBLE_NO_RSP;
+        }
     }
     // tx_dead: the link is gone or saturated beyond the retry budget — an END
     // cannot usefully be delivered; the app recovers via its data timeout.
@@ -645,19 +851,33 @@ static uint8_t fs_do_get(const pble_fs_req_t *it) {
 // ============================================================================
 // Worker op: windowed upload PUT_BEGIN/DATA/END (0x15/0x16/0x41/0x17)
 // ============================================================================
-static void fs_put_ack(void) {
+static void fs_put_ack(const pble_fs_req_t *it) {
+    if (!pble_fs_item_valid(it)) {
+        return;
+    }
     uint8_t b[4];
     le32(b, g_put_watermark);        // ack_offset = next expected = highest contiguous
     // Paced: a dropped ACK stalls the (client-paced) upload for a full client
     // timeout; under backpressure wait for the pool rather than dropping.
-    fs_emit_paced(PBLE_OP_FILE_PUT_ACK, b, 4);
+    (void)fs_emit_paced(it, PBLE_OP_FILE_PUT_ACK, b, 4);
 }
 
-static void fs_put_close(void) {
+static void fs_put_close(const pble_fs_req_t *it) {
     mp_obj_t f = MP_STATE_VM(pble_fs_put_file);
     if (f != MP_OBJ_NULL) {
         nlr_buf_t nlr;
-        if (nlr_push(&nlr) == 0) { mp_stream_close(f); nlr_pop(); }  // fsync on LittleFS
+        if (nlr_push(&nlr) == 0) {
+            if (!pble_fs_ticket_valid(it)) {
+                nlr_pop();
+                return;
+            }
+            mp_stream_close(f);
+            if (!pble_fs_ticket_valid(it)) {
+                nlr_pop();
+                return;
+            }
+            nlr_pop();
+        }
         MP_STATE_VM(pble_fs_put_file) = MP_OBJ_NULL;
     }
 }
@@ -684,7 +904,9 @@ void pble_fs_on_disconnect(void) {
 
 // F-10 resume-offset — see pble_fs.h. WORKER-ONLY (mp_vfs_* under nlr). Always
 // (re)initializes the worker-local running whole-file CRC + watermark.
-uint32_t pble_fs_resume_prefix(const char *dest_vfs_path, uint32_t total_size) {
+static uint32_t pble_fs_resume_prefix(const pble_fs_req_t *it,
+                                      const char *dest_vfs_path,
+                                      uint32_t total_size) {
     g_put_watermark = 0;
     g_put_crc_running = 0xFFFFFFFFu;      // fresh-upload default
 
@@ -699,7 +921,7 @@ uint32_t pble_fs_resume_prefix(const char *dest_vfs_path, uint32_t total_size) {
 
     uint32_t len;
     bool isdir;
-    if (fs_stat_path(temp, &len, &isdir) != PBLE_OK) {
+    if (fs_stat_path(it, temp, &len, &isdir) != PBLE_OK) {
         return 0;                        // no temp / unreadable → fresh
     }
     if (isdir || len == 0 || len > total_size) {
@@ -707,7 +929,7 @@ uint32_t pble_fs_resume_prefix(const char *dest_vfs_path, uint32_t total_size) {
                                          // caller's "wb" open truncates to 0
     }
     uint32_t running;
-    if (fs_crc_prefix(temp, len, &running) != PBLE_OK) {
+    if (fs_crc_prefix(it, temp, len, &running) != PBLE_OK) {
         return 0;                        // unreadable prefix → fresh (wb truncates)
     }
     g_put_crc_running = running;          // re-seed the streaming whole-file CRC
@@ -716,11 +938,24 @@ uint32_t pble_fs_resume_prefix(const char *dest_vfs_path, uint32_t total_size) {
 }
 
 // Abort a transfer: close the temp, delete it (KEEP the old target), reset state.
-static void fs_put_abort(void) {
-    fs_put_close();
+static void fs_put_abort(const pble_fs_req_t *it) {
+    fs_put_close(it);
     if (g_put_temp[0] != '\0') {
         nlr_buf_t nlr;
-        if (nlr_push(&nlr) == 0) { mp_vfs_remove(fs_str(g_put_temp)); nlr_pop(); }
+        if (nlr_push(&nlr) == 0) {
+            if (!pble_fs_ticket_valid(it)) {
+                nlr_pop();
+                fs_put_reset();
+                return;
+            }
+            mp_vfs_remove(fs_str(g_put_temp));
+            if (!pble_fs_ticket_valid(it)) {
+                nlr_pop();
+                fs_put_reset();
+                return;
+            }
+            nlr_pop();
+        }
     }
     fs_put_reset();
 }
@@ -752,7 +987,10 @@ static uint8_t fs_do_put_begin(const pble_fs_req_t *it, size_t *extra) {
     // (pble_fs_on_disconnect resets the flags on the host task but cannot touch
     // MP objects). This is worker-side + VM-safe and syncs the last buffered block
     // to flash so resume_prefix below sees the full verified prefix length (F-10).
-    fs_put_close();
+    fs_put_close(it);
+    if (!pble_fs_ticket_valid(it)) {
+        return PBLE_NO_RSP;
+    }
 
     // temp = "<dest>.pbltmp" (same jailed directory; never routed through resolve,
     // which forbids the reserved suffix by design).
@@ -768,14 +1006,21 @@ static uint8_t fs_do_put_begin(const pble_fs_req_t *it, size_t *extra) {
     // sets g_put_watermark + re-seeds g_put_crc_running (or leaves them fresh).
     // resume>0 → append to the existing prefix; resume==0 → "wb" truncates any
     // stale/over-size temp to 0 (the frozen over-size guard).
-    uint32_t resume = pble_fs_resume_prefix(g_put_dest, total);
+    uint32_t resume = pble_fs_resume_prefix(it, g_put_dest, total);
+    if (!pble_fs_ticket_valid(it)) {
+        return PBLE_NO_RSP;
+    }
     const char *mode = (resume > 0) ? "ab" : "wb";
 
     // Open the temp under nlr.
     nlr_buf_t nlr;
     uint8_t st;
     if (nlr_push(&nlr) == 0) {
-        mp_obj_t f = fs_open(g_put_temp, mode);
+        mp_obj_t f = fs_open(it, pble_fs_ticket_valid, g_put_temp, mode);
+        if (!pble_fs_ticket_valid(it)) {
+            nlr_pop();
+            return PBLE_NO_RSP;
+        }
         MP_STATE_VM(pble_fs_put_file) = f;
         nlr_pop();
         st = PBLE_OK;
@@ -805,7 +1050,7 @@ static void fs_do_put_data(const pble_fs_req_t *it) {
         return;                      // no transfer → nothing to ack
     }
     if (it->len < 4) {
-        fs_put_ack();                // malformed → re-ack (idempotent)
+        fs_put_ack(it);              // malformed → re-ack (idempotent)
         return;
     }
     uint32_t offset = rd32(it->payload);
@@ -813,7 +1058,7 @@ static void fs_do_put_data(const pble_fs_req_t *it) {
     uint32_t n = it->len - 4;
 
     if (g_put_latched) {
-        fs_put_ack();                // latched write error → keep acking; END reports
+        fs_put_ack(it);              // latched write error → keep acking; END reports
         return;
     }
     if (offset == g_put_watermark && n > 0) {
@@ -824,7 +1069,15 @@ static void fs_do_put_data(const pble_fs_req_t *it) {
             uint32_t done = 0;
             while (done < n) {
                 int err;
+                if (!pble_fs_item_valid(it)) {
+                    nlr_pop();
+                    return;
+                }
                 mp_uint_t w = sp->write(f, bytes + done, n - done, &err);
+                if (!pble_fs_item_valid(it)) {
+                    nlr_pop();
+                    return;
+                }
                 if (w == MP_STREAM_ERROR) {
                     g_put_latched = pble_fs_errno_to_status(err);
                     break;
@@ -845,7 +1098,7 @@ static void fs_do_put_data(const pble_fs_req_t *it) {
     }
     // offset < watermark (duplicate) and offset > watermark (gap) both re-ACK the
     // watermark so the app retransmits from there (Go-Back-N).
-    fs_put_ack();
+    fs_put_ack(it);
 }
 
 // PUT_END: [crc32:u32] → RSP [status]. Verify watermark==total + whole-file CRC,
@@ -856,22 +1109,25 @@ static uint8_t fs_do_put_end(const pble_fs_req_t *it, size_t *extra) {
         return PBLE_EBADREQ;         // END without an active BEGIN
     }
     if (it->len < 4) {
-        fs_put_abort();
+        fs_put_abort(it);
         return PBLE_EBADREQ;
     }
     uint32_t declared = rd32(it->payload);
 
     if (g_put_latched) {
         uint8_t st = g_put_latched;  // ENOSPC / EIO latched during DATA
-        fs_put_abort();
+        fs_put_abort(it);
         return st;
     }
     if (g_put_watermark != g_put_total) {
-        fs_put_abort();
+        fs_put_abort(it);
         return PBLE_ERANGE;          // short/over transfer
     }
 
-    fs_put_close();                  // flush the temp to storage
+    fs_put_close(it);                // flush the temp to storage
+    if (!pble_fs_ticket_valid(it)) {
+        return PBLE_NO_RSP;
+    }
 
     // Finalize the streaming whole-file CRC (maintained across PUT_DATA + re-seeded
     // over any resumed prefix by pble_fs_resume_prefix) — no temp re-scan needed
@@ -880,21 +1136,29 @@ static uint8_t fs_do_put_end(const pble_fs_req_t *it, size_t *extra) {
     uint32_t crc = g_put_crc_running ^ 0xFFFFFFFFu;
     uint8_t st;
     if (crc != g_put_crc_target || crc != declared) {
-        fs_put_abort();
+        fs_put_abort(it);
         return PBLE_ECRC;            // mismatch → target untouched (FR-FS-14)
     }
 
     // Atomic replace on LittleFS.
     nlr_buf_t nlr;
     if (nlr_push(&nlr) == 0) {
+        if (!pble_fs_ticket_valid(it)) {
+            nlr_pop();
+            return PBLE_NO_RSP;
+        }
         mp_vfs_rename(fs_str(g_put_temp), fs_str(g_put_dest));
+        if (!pble_fs_ticket_valid(it)) {
+            nlr_pop();
+            return PBLE_NO_RSP;
+        }
         nlr_pop();
         st = PBLE_OK;
     } else {
         st = fs_exc_to_status(MP_OBJ_FROM_PTR(nlr.ret_val));
     }
     if (st != PBLE_OK) {
-        fs_put_abort();
+        fs_put_abort(it);
         return st;
     }
     fs_put_reset();                  // temp is gone (renamed) — clear, do not delete
@@ -920,7 +1184,7 @@ static uint8_t fs_do_delete(const pble_fs_req_t *it, size_t *extra) {
     }
     uint32_t sz;
     bool isdir;
-    uint8_t st = fs_stat_path(path, &sz, &isdir);
+    uint8_t st = fs_stat_path(it, path, &sz, &isdir);
     if (st != PBLE_OK) {
         return st;                   // missing → ENOENT
     }
@@ -928,9 +1192,25 @@ static uint8_t fs_do_delete(const pble_fs_req_t *it, size_t *extra) {
     if (nlr_push(&nlr) == 0) {
         mp_obj_t po = fs_str(path);
         if (isdir) {
+            if (!pble_fs_ticket_valid(it)) {
+                nlr_pop();
+                return PBLE_NO_RSP;
+            }
             mp_vfs_rmdir(po);        // non-empty → ENOTEMPTY → EACCES
+            if (!pble_fs_ticket_valid(it)) {
+                nlr_pop();
+                return PBLE_NO_RSP;
+            }
         } else {
+            if (!pble_fs_ticket_valid(it)) {
+                nlr_pop();
+                return PBLE_NO_RSP;
+            }
             mp_vfs_remove(po);
+            if (!pble_fs_ticket_valid(it)) {
+                nlr_pop();
+                return PBLE_NO_RSP;
+            }
         }
         nlr_pop();
         st = PBLE_OK;
@@ -956,14 +1236,22 @@ static uint8_t fs_do_mkdir(const pble_fs_req_t *it, size_t *extra) {
     }
     uint32_t sz;
     bool isdir;
-    uint8_t s = fs_stat_path(path, &sz, &isdir);
+    uint8_t s = fs_stat_path(it, path, &sz, &isdir);
     if (s == PBLE_OK) {
         return isdir ? PBLE_OK : PBLE_EBADREQ;   // already-a-dir idempotent; file → EBADREQ
     }
     nlr_buf_t nlr;
     uint8_t st;
     if (nlr_push(&nlr) == 0) {
+        if (!pble_fs_ticket_valid(it)) {
+            nlr_pop();
+            return PBLE_NO_RSP;
+        }
         mp_vfs_mkdir(fs_str(path));  // missing parent → ENOENT
+        if (!pble_fs_ticket_valid(it)) {
+            nlr_pop();
+            return PBLE_NO_RSP;
+        }
         nlr_pop();
         st = PBLE_OK;
     } else {
@@ -998,13 +1286,21 @@ static uint8_t fs_do_rename(const pble_fs_req_t *it, size_t *extra) {
     }
     uint32_t sz;
     bool isdir;
-    uint8_t st = fs_stat_path(spath, &sz, &isdir);
+    uint8_t st = fs_stat_path(it, spath, &sz, &isdir);
     if (st != PBLE_OK) {
         return st;                   // src missing → ENOENT
     }
     nlr_buf_t nlr;
     if (nlr_push(&nlr) == 0) {
+        if (!pble_fs_ticket_valid(it)) {
+            nlr_pop();
+            return PBLE_NO_RSP;
+        }
         mp_vfs_rename(fs_str(spath), fs_str(dpath));  // dst non-empty dir → EACCES
+        if (!pble_fs_ticket_valid(it)) {
+            nlr_pop();
+            return PBLE_NO_RSP;
+        }
         nlr_pop();
         st = PBLE_OK;
     } else {
@@ -1017,6 +1313,14 @@ static uint8_t fs_do_rename(const pble_fs_req_t *it, size_t *extra) {
 // Worker dispatch + loop
 // ============================================================================
 static void fs_dispatch(const pble_fs_req_t *it) {
+    bool response_bearing = it->opcode != PBLE_OP_FILE_PUT_DATA;
+    if (response_bearing &&
+        (!pble_rsp_ticket_valid(&it->ticket) || !pble_fs_ticket_valid(it))) {
+        return;
+    }
+    if (!response_bearing && !pble_fs_item_valid(it)) {
+        return;
+    }
     size_t extra = 0;
     uint8_t st;
     switch (it->opcode) {
@@ -1034,92 +1338,233 @@ static void fs_dispatch(const pble_fs_req_t *it) {
     if (st == PBLE_NO_RSP) {
         return;                      // handler already emitted its reply
     }
+    if (!pble_rsp_ticket_valid(&it->ticket) || !pble_fs_ticket_valid(it)) {
+        return;
+    }
     g_scratch[0] = st;
-    pble_proto_emit_id(PBLE_TYPE_RSP, it->opcode, it->id, g_scratch, 1 + extra);
+    pble_rsp_publish(&it->ticket, it->opcode, it->id, g_scratch, 1 + extra);
+}
+
+static bool pble_fs_dequeue_begin(pble_fs_req_t *item) {
+    if (item == NULL || g_fs_work == NULL || g_fs_gate == NULL ||
+        g_fs_q == NULL) {
+        return false;
+    }
+    if (xSemaphoreTake(g_fs_work, portMAX_DELAY) != pdTRUE) {
+        return false;
+    }
+    if (xSemaphoreTake(g_fs_gate, portMAX_DELAY) != pdTRUE) {
+        (void)xSemaphoreGive(g_fs_work);
+        return false;
+    }
+    if (xQueueReceive(g_fs_q, item, 0) != pdTRUE) {
+        (void)xSemaphoreGive((SemaphoreHandle_t)g_fs_gate);
+        return false;
+    }
+    g_fs_dequeue_claim = true;
+    g_fs_worker_busy = true;
+    if (g_fs_outstanding > 0) {
+        g_fs_outstanding--;
+    }
+    g_fs_dequeue_claim = false;
+    (void)xSemaphoreGive(g_fs_gate);
+    return true;
+}
+
+static void pble_fs_dequeue_end(void) {
+    if (g_fs_gate == NULL) {
+        return;
+    }
+    if (xSemaphoreTake(g_fs_gate, portMAX_DELAY) == pdTRUE) {
+        g_fs_worker_busy = false;
+        g_fs_dequeue_claim = false;
+        (void)xSemaphoreGive(g_fs_gate);
+    }
+}
+
+bool pble_fs_quiesce_try(void) {
+    if (g_fs_gate == NULL || g_fs_q == NULL ||
+        xSemaphoreTake(g_fs_gate, 0) != pdTRUE) {
+        return false;
+    }
+    g_fs_admission_open = false;
+    bool idle = !g_fs_worker_busy && !g_fs_dequeue_claim &&
+                g_fs_outstanding == 0 &&
+                uxQueueMessagesWaiting(g_fs_q) == 0;
+    if (!idle) {
+        g_fs_admission_open = true;
+    }
+    (void)xSemaphoreGive(g_fs_gate);
+    return idle;
+}
+
+void pble_fs_quiesce_abort(void) {
+    if (g_fs_gate != NULL && xSemaphoreTake(g_fs_gate, 0) == pdTRUE) {
+        g_fs_admission_open = true;
+        (void)xSemaphoreGive(g_fs_gate);
+    }
+}
+
+void pble_fs_vm_reset(void) {
+    g_fs_admission_open = false;
+    g_fs_worker_busy = false;
+    g_fs_outstanding = 0;
+    g_fs_dequeue_claim = false;
+    if (g_fs_q != NULL) {
+        (void)xQueueReset(g_fs_q);
+    }
+    if (g_fs_work != NULL) {
+        while (xSemaphoreTake(g_fs_work, 0) == pdTRUE) {
+        }
+    }
+    fs_put_reset();
+    MP_STATE_VM(pble_fs_put_file) = MP_OBJ_NULL;
 }
 
 void pble_fs_worker(void) {
+    pble_vm_worker_ready(PBLE_VM_WORKER_FS);
     for (;;) {
         pble_fs_req_t item;
         // Release the GIL while blocked so the main-task REPL + runner run freely;
         // re-acquire before touching VM/vfs state.
         MP_THREAD_GIL_EXIT();
-        xQueueReceive(g_fs_q, &item, portMAX_DELAY);
+        bool dequeued = pble_fs_dequeue_begin(&item);
         MP_THREAD_GIL_ENTER();
-        fs_dispatch(&item);
+        if (dequeued) {
+            fs_dispatch(&item);
+            pble_fs_dequeue_end();
+        }
     }
 }
 
 // ============================================================================
 // Host-task dispatch surface — validate + enqueue (NEVER call mp_vfs_* here)
 // ============================================================================
-static uint8_t fs_enqueue(const pble_frame_t *req, uint16_t conn, bool put_data) {
+static uint8_t fs_enqueue(const pble_frame_t *req,
+                          const pble_session_token_t *session, bool put_data,
+                          const pble_rsp_ticket_t *ticket) {
     if (req == NULL) {
         return put_data ? PBLE_NO_RSP : PBLE_EBADREQ;
     }
-    if (g_fs_q == NULL) {
+    if (g_fs_q == NULL || g_fs_gate == NULL || g_fs_work == NULL) {
         return put_data ? PBLE_NO_RSP : PBLE_EINTERNAL;
     }
     if (req->len > PBLE_FS_ITEM_PAYLOAD) {
         return put_data ? PBLE_NO_RSP : PBLE_ERANGE;
     }
-    g_enq.opcode = req->opcode;
-    g_enq.id = req->id;
-    g_enq.conn = conn;
-    g_enq.len = req->len;
-    if (req->len > 0 && req->payload != NULL) {
-        memcpy(g_enq.payload, req->payload, req->len);
+    if (!put_data && (ticket == NULL || !pble_rsp_ticket_valid(ticket))) {
+        return PBLE_NO_RSP;
     }
-    if (xQueueSend(g_fs_q, &g_enq, 0) == pdTRUE) {
+    bool queued = false;
+    if (session != NULL && pble_ble_session_live(session) &&
+        xSemaphoreTake(g_fs_gate, 0) == pdTRUE) {
+        if (g_fs_admission_open) {
+            g_enq.opcode = req->opcode;
+            g_enq.id = req->id;
+            g_enq.session = *session;
+            g_enq.vm_epoch = pble_vm_epoch_current();
+            if (ticket != NULL) {
+                g_enq.ticket = *ticket;
+            } else {
+                memset(&g_enq.ticket, 0, sizeof(g_enq.ticket));
+            }
+            g_enq.len = req->len;
+            if (req->len > 0 && req->payload != NULL) {
+                memcpy(g_enq.payload, req->payload, req->len);
+            }
+            if (xQueueSend(g_fs_q, &g_enq, 0) == pdTRUE) {
+                g_fs_outstanding++;
+                queued = true;
+            }
+        }
+        (void)xSemaphoreGive(g_fs_gate);
+    }
+    if (queued) {
+        (void)xSemaphoreGive(g_fs_work);
         return PBLE_NO_RSP;          // worker replies async by id
     }
-    // Mailbox full: PUT_DATA drops silently (app retransmits from last ACK); every
-    // other op is refused EBUSY so the app can back off.
-    return put_data ? PBLE_NO_RSP : PBLE_EBUSY;
+    // Mailbox full: PUT_DATA drops silently (app retransmits from last ACK). A
+    // response-bearing command publishes EBUSY through its existing reservation.
+    if (!put_data) {
+        uint8_t status = PBLE_EBUSY;
+        pble_rsp_publish(ticket, req->opcode, req->id, &status, 1);
+    }
+    return PBLE_NO_RSP;
 }
 
-uint8_t pble_fs_list(const pble_frame_t *req, uint8_t *rsp, size_t *rlen, uint16_t conn) {
-    (void)rsp; if (rlen) { *rlen = 0; } return fs_enqueue(req, conn, false);
+uint8_t pble_fs_list(const pble_frame_t *req, uint8_t *rsp, size_t *rlen,
+                     const pble_session_token_t *session,
+                     const pble_rsp_ticket_t *ticket) {
+    (void)rsp; if (rlen) { *rlen = 0; } return fs_enqueue(req, session, false, ticket);
 }
-uint8_t pble_fs_stat(const pble_frame_t *req, uint8_t *rsp, size_t *rlen, uint16_t conn) {
-    (void)rsp; if (rlen) { *rlen = 0; } return fs_enqueue(req, conn, false);
+uint8_t pble_fs_stat(const pble_frame_t *req, uint8_t *rsp, size_t *rlen,
+                     const pble_session_token_t *session,
+                     const pble_rsp_ticket_t *ticket) {
+    (void)rsp; if (rlen) { *rlen = 0; } return fs_enqueue(req, session, false, ticket);
 }
-uint8_t pble_fs_get_begin(const pble_frame_t *req, uint8_t *rsp, size_t *rlen, uint16_t conn) {
-    (void)rsp; if (rlen) { *rlen = 0; } return fs_enqueue(req, conn, false);
+uint8_t pble_fs_get_begin(const pble_frame_t *req, uint8_t *rsp, size_t *rlen,
+                          const pble_session_token_t *session,
+                          const pble_rsp_ticket_t *ticket) {
+    (void)rsp; if (rlen) { *rlen = 0; } return fs_enqueue(req, session, false, ticket);
 }
-uint8_t pble_fs_put_begin(const pble_frame_t *req, uint8_t *rsp, size_t *rlen, uint16_t conn) {
-    (void)rsp; if (rlen) { *rlen = 0; } return fs_enqueue(req, conn, false);
+uint8_t pble_fs_put_begin(const pble_frame_t *req, uint8_t *rsp, size_t *rlen,
+                          const pble_session_token_t *session,
+                          const pble_rsp_ticket_t *ticket) {
+    (void)rsp; if (rlen) { *rlen = 0; } return fs_enqueue(req, session, false, ticket);
 }
-uint8_t pble_fs_put_data(const pble_frame_t *req, uint8_t *rsp, size_t *rlen, uint16_t conn) {
-    (void)rsp; if (rlen) { *rlen = 0; } return fs_enqueue(req, conn, true);
+uint8_t pble_fs_put_data(const pble_frame_t *req, uint8_t *rsp, size_t *rlen,
+                         const pble_session_token_t *session) {
+    (void)rsp; if (rlen) { *rlen = 0; } return fs_enqueue(req, session, true, NULL);
 }
-uint8_t pble_fs_put_end(const pble_frame_t *req, uint8_t *rsp, size_t *rlen, uint16_t conn) {
-    (void)rsp; if (rlen) { *rlen = 0; } return fs_enqueue(req, conn, false);
+uint8_t pble_fs_put_end(const pble_frame_t *req, uint8_t *rsp, size_t *rlen,
+                        const pble_session_token_t *session,
+                        const pble_rsp_ticket_t *ticket) {
+    (void)rsp; if (rlen) { *rlen = 0; } return fs_enqueue(req, session, false, ticket);
 }
-uint8_t pble_fs_delete(const pble_frame_t *req, uint8_t *rsp, size_t *rlen, uint16_t conn) {
-    (void)rsp; if (rlen) { *rlen = 0; } return fs_enqueue(req, conn, false);
+uint8_t pble_fs_delete(const pble_frame_t *req, uint8_t *rsp, size_t *rlen,
+                       const pble_session_token_t *session,
+                       const pble_rsp_ticket_t *ticket) {
+    (void)rsp; if (rlen) { *rlen = 0; } return fs_enqueue(req, session, false, ticket);
 }
-uint8_t pble_fs_mkdir(const pble_frame_t *req, uint8_t *rsp, size_t *rlen, uint16_t conn) {
-    (void)rsp; if (rlen) { *rlen = 0; } return fs_enqueue(req, conn, false);
+uint8_t pble_fs_mkdir(const pble_frame_t *req, uint8_t *rsp, size_t *rlen,
+                      const pble_session_token_t *session,
+                      const pble_rsp_ticket_t *ticket) {
+    (void)rsp; if (rlen) { *rlen = 0; } return fs_enqueue(req, session, false, ticket);
 }
-uint8_t pble_fs_rename(const pble_frame_t *req, uint8_t *rsp, size_t *rlen, uint16_t conn) {
-    (void)rsp; if (rlen) { *rlen = 0; } return fs_enqueue(req, conn, false);
+uint8_t pble_fs_rename(const pble_frame_t *req, uint8_t *rsp, size_t *rlen,
+                       const pble_session_token_t *session,
+                       const pble_rsp_ticket_t *ticket) {
+    (void)rsp; if (rlen) { *rlen = 0; } return fs_enqueue(req, session, false, ticket);
 }
 
 void pble_fs_register(void) {
     if (g_fs_q == NULL) {
         g_fs_q = xQueueCreate(PBLE_FS_QDEPTH, sizeof(pble_fs_req_t));
     }
+    if (g_fs_gate == NULL) {
+        g_fs_gate = xSemaphoreCreateMutex();
+    }
+    if (g_fs_work == NULL) {
+        g_fs_work = xSemaphoreCreateCounting(PBLE_FS_QDEPTH, 0);
+    }
+    if (g_fs_q == NULL || g_fs_gate == NULL || g_fs_work == NULL) {
+        mp_raise_msg(&mp_type_RuntimeError,
+                     MP_ERROR_TEXT("filesystem mailbox alloc failed"));
+    }
+    if (xSemaphoreTake(g_fs_gate, portMAX_DELAY) == pdTRUE) {
+        g_fs_admission_open = true;
+        (void)xSemaphoreGive(g_fs_gate);
+    }
     fs_put_reset();
-    pble_proto_register(PBLE_OP_FILE_LIST, pble_fs_list);
-    pble_proto_register(PBLE_OP_FILE_STAT, pble_fs_stat);
-    pble_proto_register(PBLE_OP_FILE_GET_BEGIN, pble_fs_get_begin);
-    pble_proto_register(PBLE_OP_FILE_PUT_BEGIN, pble_fs_put_begin);
-    pble_proto_register(PBLE_OP_FILE_PUT_DATA, pble_fs_put_data);
-    pble_proto_register(PBLE_OP_FILE_PUT_END, pble_fs_put_end);
-    pble_proto_register(PBLE_OP_FILE_DELETE, pble_fs_delete);
-    pble_proto_register(PBLE_OP_MKDIR, pble_fs_mkdir);
-    pble_proto_register(PBLE_OP_FILE_RENAME, pble_fs_rename);
+    pble_proto_register_deferred(PBLE_OP_FILE_LIST, pble_fs_list);
+    pble_proto_register_deferred(PBLE_OP_FILE_STAT, pble_fs_stat);
+    pble_proto_register_deferred(PBLE_OP_FILE_GET_BEGIN, pble_fs_get_begin);
+    pble_proto_register_deferred(PBLE_OP_FILE_PUT_BEGIN, pble_fs_put_begin);
+    pble_proto_register_no_response(PBLE_OP_FILE_PUT_DATA, pble_fs_put_data);
+    pble_proto_register_deferred(PBLE_OP_FILE_PUT_END, pble_fs_put_end);
+    pble_proto_register_deferred(PBLE_OP_FILE_DELETE, pble_fs_delete);
+    pble_proto_register_deferred(PBLE_OP_MKDIR, pble_fs_mkdir);
+    pble_proto_register_deferred(PBLE_OP_FILE_RENAME, pble_fs_rename);
 }
 
 // ============================================================================

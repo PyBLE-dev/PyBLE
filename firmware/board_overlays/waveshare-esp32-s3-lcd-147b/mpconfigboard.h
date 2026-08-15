@@ -10,6 +10,15 @@
 #define PBLE_AGENT_VERSION "0.0.0-dev"
 #endif
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+void pble_vm_epoch_begin(void);
+#ifdef __cplusplus
+}
+#endif
+#define MICROPY_PORT_INIT_FUNC pble_vm_epoch_begin()
+
 // Provisioning identity is exact-board; PBLE/1 runtime identity remains chip-level.
 #define PBLE_TARGET_ID                   "esp32-s3"
 #define PBLE_ENABLE_SPLASH_READINESS     (1)

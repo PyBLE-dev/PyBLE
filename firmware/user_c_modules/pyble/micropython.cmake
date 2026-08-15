@@ -18,10 +18,20 @@ target_sources(usermod_pyble INTERFACE
     ${CMAKE_CURRENT_LIST_DIR}/pble_fs.c
     ${CMAKE_CURRENT_LIST_DIR}/pble_lock.c
     ${CMAKE_CURRENT_LIST_DIR}/pble_boot.c
+    ${CMAKE_CURRENT_LIST_DIR}/pble_vm_lifecycle.c
+    ${CMAKE_CURRENT_LIST_DIR}/pble_termination.c
 )
 
 target_include_directories(usermod_pyble INTERFACE
     ${CMAKE_CURRENT_LIST_DIR}
+)
+
+# The pinned ESP runtime funnels every VM teardown through this allocation-free
+# lifecycle wrapper.  Keep the wrapper live even when LTO sees no ordinary
+# reference to it; GNU ld then rewrites the upstream call at final link time.
+target_link_options(usermod_pyble INTERFACE
+    -Wl,--wrap=mp_thread_deinit
+    -Wl,--undefined=__wrap_mp_thread_deinit
 )
 
 # NOTE: the NimBLE headers are already on the include path (the esp32 port's main

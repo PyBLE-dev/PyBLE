@@ -51,6 +51,10 @@ try:
     import pble_boot
 
     pble_boot.maybe_autorun()
+
+    # Open VM command admission only after every worker and boot-time binding
+    # above is complete. A preceding exception intentionally leaves it closed.
+    pble_ble.vm_ready()
 except Exception:
     pass
 
