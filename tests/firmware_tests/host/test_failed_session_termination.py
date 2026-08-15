@@ -92,6 +92,26 @@ def _ordered(test: unittest.TestCase, source: str, *needles: str) -> None:
     test.assertEqual(positions, sorted(positions), "wrong operation order")
 
 
+def _assert_between(
+    test: unittest.TestCase,
+    source: str,
+    start_needle: str,
+    end_needle: str,
+    *needles: str,
+) -> None:
+    start = source.find(start_needle)
+    end = source.find(end_needle, start + len(start_needle))
+    test.assertGreaterEqual(start, 0, f"missing {start_needle!r}")
+    test.assertGreater(end, start, f"missing ordered {end_needle!r}")
+    for needle in needles:
+        position = source.find(needle, start + len(start_needle), end)
+        test.assertGreaterEqual(
+            position,
+            0,
+            f"{needle!r} is not between {start_needle!r} and {end_needle!r}",
+        )
+
+
 def _case_branch(source: str, label: str) -> str:
     start = source.find(f"case {label}")
     if start < 0:
@@ -105,12 +125,68 @@ def _case_branch(source: str, label: str) -> str:
 def _assert_inside_session_critical(
     test: unittest.TestCase, source: str, needle: str
 ) -> None:
+    enter_needle = "taskENTER_CRITICAL(&pble_session_mux)"
+    leave_needle = "taskEXIT_CRITICAL(&pble_session_mux)"
     position = source.find(needle)
     test.assertGreaterEqual(position, 0, f"missing {needle!r}")
+    enter = source.rfind(enter_needle, 0, position)
+    prior_leave = source.rfind(leave_needle, 0, position)
+    leave = source.find(leave_needle, position)
+    test.assertGreaterEqual(enter, 0, f"{needle!r} is not after the session lock")
+    test.assertGreater(
+        enter,
+        prior_leave,
+        f"{needle!r} follows an intervening session unlock",
+    )
+    test.assertGreaterEqual(leave, 0, f"{needle!r} is not before session unlock")
+
+
+def _assert_same_session_critical(
+    test: unittest.TestCase, source: str, first: str, last: str
+) -> None:
+    enter_needle = "taskENTER_CRITICAL(&pble_session_mux)"
+    leave_needle = "taskEXIT_CRITICAL(&pble_session_mux)"
+    first_position = source.find(first)
+    test.assertGreaterEqual(first_position, 0, f"missing {first!r}")
+    last_position = source.find(last, first_position + len(first))
+    test.assertGreater(last_position, first_position, f"missing ordered {last!r}")
+    enter = source.rfind(enter_needle, 0, first_position)
+    test.assertGreaterEqual(enter, 0, f"{first!r} is outside the session lock")
+    intervening_leave = source.find(leave_needle, enter, last_position)
+    test.assertEqual(
+        intervening_leave,
+        -1,
+        f"session lock is released between {first!r} and {last!r}",
+    )
+    test.assertGreaterEqual(
+        source.find(leave_needle, last_position),
+        0,
+        f"{last!r} has no following session unlock",
+    )
+
+
+def _assert_tx_serialized_session_call(
+    test: unittest.TestCase, source: str, needle: str
+) -> None:
+    position = source.find(needle)
+    test.assertGreaterEqual(position, 0, f"missing {needle!r}")
+    take_needle = "xSemaphoreTakeRecursive(pble_tx_mutex"
+    give_needle = "xSemaphoreGiveRecursive(pble_tx_mutex)"
+    take = source.rfind(take_needle, 0, position)
+    prior_give = source.rfind(give_needle, 0, position)
     enter = source.rfind("taskENTER_CRITICAL(&pble_session_mux)", 0, position)
     leave = source.find("taskEXIT_CRITICAL(&pble_session_mux)", position)
-    test.assertGreaterEqual(enter, 0, f"{needle!r} is not after the session lock")
-    test.assertGreaterEqual(leave, 0, f"{needle!r} is not before session unlock")
+    give = source.find(give_needle, position)
+    test.assertGreaterEqual(take, 0, f"{needle!r} is not under the TX mutex")
+    test.assertGreater(
+        take,
+        prior_give,
+        f"{needle!r} follows an intervening TX-mutex unlock",
+    )
+    test.assertGreater(enter, take, "session lock must follow TX-mutex acquisition")
+    test.assertGreaterEqual(leave, 0, f"{needle!r} has no session unlock")
+    test.assertGreaterEqual(give, 0, f"{needle!r} has no following TX unlock")
+    test.assertLess(leave, give, "session lock must be released before the TX mutex")
 
 
 class FailedSessionTerminationReducerTest(unittest.TestCase):
@@ -178,18 +254,39 @@ class FailedSessionTerminationIntegrationTest(unittest.TestCase):
             sorted(NATIVE.glob("*.h"))
         )
         cls.all_native = "\n".join(_source(path) for path in cls.native_files)
+        cls.all_native_c = "\n".join(
+            _source(path) for path in sorted(NATIVE.glob("*.c"))
+        )
 
     def test_cold_init_creates_one_task_watchdog_before_nimble(self) -> None:
         self.assertIn('#include "esp_timer.h"', self.ble)
         self.assertIn('#include "esp_system.h"', self.ble)
         self.assertIn('#include "pble_termination.h"', self.ble)
         self.assertRegex(self.ble, r"static\s+bool\s+pble_term_initialized\b")
+        self.assertRegex(
+            self.ble,
+            r"static\s+pble_term_watchdog_ticket_t\s+"
+            r"pble_term_armed_ticket\b",
+        )
         init = _code(_function(self.ble, "pble_ble_init"))
         self.assertRegex(init, r"if\s*\(\s*!pble_term_initialized\s*\)")
         self.assertEqual(init.count("pble_term_init("), 1)
         self.assertEqual(self.ble.count("pble_term_init("), 1)
-        self.assertEqual(self.ble.count("esp_timer_create("), 1)
+        self.assertEqual(_code(self.all_native_c).count("pble_term_init("), 2)
+        self.assertEqual(_code(self.all_native_c).count("esp_timer_create("), 1)
+        self.assertNotRegex(
+            _code(self.all_native_c),
+            r"pble_term_initialized\s*=\s*(?:false|0)\b",
+        )
+        self.assertEqual(
+            len(re.findall(r"pble_term_initialized\s*=\s*true\b", self.ble)),
+            1,
+        )
         self.assertIn(".dispatch_method = ESP_TIMER_TASK", init)
+        self.assertRegex(
+            init,
+            r"\.arg\s*=\s*(?:\(void\s*\*\)\s*)?&pble_term_armed_ticket",
+        )
         _ordered(
             self,
             init,
@@ -202,7 +299,10 @@ class FailedSessionTerminationIntegrationTest(unittest.TestCase):
         create_to_nimble = init[
             init.index("esp_timer_create") : init.index("nimble_port_init")
         ]
-        self.assertIn("ESP_OK", create_to_nimble)
+        self.assertRegex(
+            create_to_nimble,
+            r"if\s*\([^)]*(?:!=\s*ESP_OK|==\s*ESP_OK)[^)]*\)\s*\{",
+        )
         self.assertRegex(create_to_nimble, r"mp_raise|esp_restart|return\s*;")
         self.assertNotIn("pble_term_init", _function(self.ble, "pble_ble_init_agent"))
 
@@ -213,6 +313,14 @@ class FailedSessionTerminationIntegrationTest(unittest.TestCase):
         self.assertRegex(connect, r"if\s*\(\s*!\s*[A-Za-z_]\w*\s*\)")
         self.assertIn("esp_restart", connect)
         _assert_inside_session_critical(self, connect, "pble_term_open")
+        _assert_tx_serialized_session_call(self, connect, "pble_term_open")
+        _assert_same_session_critical(
+            self, connect, "pble_term_open", "pble_conn_handle ="
+        )
+        self.assertRegex(
+            connect,
+            r"pble_conn_generation_counter\s*==\s*0",
+        )
         _ordered(
             self,
             connect,
@@ -229,17 +337,49 @@ class FailedSessionTerminationIntegrationTest(unittest.TestCase):
         _assert_inside_session_critical(self, close, "pble_term_begin")
         _assert_inside_session_critical(self, close, "pble_term_watchdog_armed")
         _assert_inside_session_critical(self, close, "pble_term_gap_result")
+        _assert_tx_serialized_session_call(self, close, "pble_term_begin")
+        _assert_same_session_critical(
+            self, close, "pble_term_begin", "pble_term_watchdog_armed"
+        )
         _ordered(
             self,
             close,
             "esp_timer_get_time",
             "pble_term_begin",
             "PBLE_TERM_EFFECT_ARM_WATCHDOG",
+            "pble_term_watchdog_ticket",
+            "pble_term_remaining_us",
             "esp_timer_start_once",
             "pble_term_watchdog_armed",
             "PBLE_TERM_EFFECT_CALL_GAP",
             "ble_gap_terminate",
             "pble_term_gap_result",
+        )
+        arm_ack = close.find("pble_term_watchdog_armed")
+        arm_unlock = close.find(
+            "taskEXIT_CRITICAL(&pble_session_mux)", arm_ack
+        )
+        tx_unlock = close.find("xSemaphoreGiveRecursive(pble_tx_mutex)", arm_unlock)
+        gap_effect = close.find("PBLE_TERM_EFFECT_CALL_GAP", tx_unlock)
+        gap_call = close.find("ble_gap_terminate", gap_effect)
+        positions = [arm_ack, arm_unlock, tx_unlock, gap_effect, gap_call]
+        self.assertTrue(all(position >= 0 for position in positions))
+        self.assertEqual(
+            positions,
+            sorted(positions),
+        )
+        self.assertGreaterEqual(close.count("esp_timer_get_time("), 2)
+        self.assertRegex(
+            close,
+            r"(?:initial_)?remaining_us\s*=\s*pble_term_remaining_us\s*\(",
+        )
+        self.assertRegex(
+            close,
+            r"esp_timer_start_once\s*\([^;]*\b(?:initial_)?remaining_us\b[^;]*\)",
+        )
+        self.assertRegex(
+            close,
+            r"if\s*\(\s*(?:initial_)?remaining_us\s*(?:==\s*0|<=\s*0)\s*\)",
         )
         self.assertIn("PBLE_TERM_EFFECT_RESTART", close)
         self.assertIn("esp_restart", close)
@@ -273,15 +413,72 @@ class FailedSessionTerminationIntegrationTest(unittest.TestCase):
         self.assertRegex(token.group("body"), r"\bconn\b")
         self.assertRegex(token.group("body"), r"\bgeneration\b")
 
+        snapshot_decl = re.search(
+            r"\bpble_ble_session_snapshot\s*\([^;]+\)\s*;", self.ble_h
+        )
+        self.assertIsNotNone(snapshot_decl)
+        self.assertIn("pble_session_token_t", snapshot_decl.group(0))
+
+        for handler_type in ("pble_handler_t", "pble_deferred_handler_t"):
+            handler_decl = re.search(
+                rf"typedef\s+[^;]+\(\s*\*\s*{handler_type}\s*\)\s*"
+                r"\([^;]+\)\s*;",
+                self.proto_h,
+                re.DOTALL,
+            )
+            self.assertIsNotNone(handler_decl, f"missing {handler_type} ABI")
+            self.assertIn("pble_session_token_t", handler_decl.group(0))
+
         dispatch = _code(_function(self.proto, "pble_proto_dispatch"))
         _ordered(self, dispatch, "pble_ble_session_snapshot", "pble_proto_decode")
+        token_var_match = re.search(
+            r"\bpble_session_token_t\s+([A-Za-z_]\w*)\b", dispatch
+        )
+        self.assertIsNotNone(token_var_match, "dispatch must retain its entry token")
+        token_var = token_var_match.group(1)
+        handler_vars = re.findall(
+            r"\bpble_(?:deferred_)?handler_t\s+([A-Za-z_]\w*)\b", dispatch
+        )
+        handler_calls = []
+        for handler_var in handler_vars:
+            handler_calls.extend(
+                re.findall(rf"\b{re.escape(handler_var)}\s*\([^;]+\)", dispatch)
+            )
+        self.assertGreaterEqual(len(handler_calls), 3)
+        for call in handler_calls:
+            with self.subTest(call=call[:40]):
+                self.assertRegex(call, rf"\b{re.escape(token_var)}\b")
+        self.assertEqual(
+            _code(self.all_native_c).count("pble_ble_session_snapshot("),
+            2,
+            "only the snapshot definition and dispatch entry may snapshot",
+        )
 
         packet = _code(_function(self.ble, "pble_notify_packet"))
         self.assertIn("pble_session_token_t", packet)
         self.assertIn("pble_term_admits", packet)
         self.assertNotIn("pble_ble_session_snapshot", packet)
-        _ordered(self, packet, "pble_term_admits", "ble_gatts_notify_custom")
+        self.assertRegex(packet, r"if\s*\(\s*!\s*pble_tx_mutex_owned\s*\(\s*\)")
+        self.assertNotIn("xSemaphoreGiveRecursive", packet)
+        _assert_inside_session_critical(self, packet, "pble_term_admits")
+        _ordered(
+            self,
+            packet,
+            "pble_tx_mutex_owned",
+            "pble_term_admits",
+            "ble_hs_mbuf_from_flat",
+            "ble_gatts_notify_custom",
+        )
+        owner_check = _code(_function(self.ble, "pble_tx_mutex_owned"))
+        self.assertIn("xSemaphoreGetMutexHolder", owner_check)
+        self.assertIn("xTaskGetCurrentTaskHandle", owner_check)
         self.assertEqual(_code(self.all_native).count("ble_gatts_notify_custom("), 1)
+
+        tx_region = self.ble[
+            self.ble.index("static int pble_notify_message") :
+            self.ble.index("uint16_t pble_ble_mtu")
+        ]
+        self.assertNotIn("pble_ble_session_snapshot(", _code(tx_region))
 
     def test_all_public_tx_shapes_carry_the_originating_token(self) -> None:
         for name in (
@@ -297,6 +494,8 @@ class FailedSessionTerminationIntegrationTest(unittest.TestCase):
                 self.assertIsNotNone(declaration, f"missing declaration {name}")
                 self.assertIn("pble_session_token_t", declaration.group(0))
         for name in (
+            "pble_proto_refuse",
+            "pble_proto_emit",
             "pble_proto_emit_id",
             "pble_proto_emit_rsp_status_try",
             "pble_proto_emit_paced",
@@ -309,10 +508,34 @@ class FailedSessionTerminationIntegrationTest(unittest.TestCase):
                 self.assertIsNotNone(declaration, f"missing declaration {name}")
                 self.assertIn("pble_session_token_t", declaration.group(0))
 
+        for name in (
+            "pble_proto_refuse",
+            "pble_proto_emit",
+            "pble_proto_emit_id",
+            "pble_proto_emit_rsp_status_try",
+            "pble_proto_emit_paced",
+            "pble_proto_emit_control_paced",
+        ):
+            with self.subTest(body=name):
+                body = _code(_function(self.proto, name))
+                self.assertNotIn("pble_ble_session_snapshot", body)
+
     def test_disconnect_claims_exact_cleanup_before_timer_or_invalidation(self) -> None:
         gap = _code(_function(self.ble, "pble_gap_event"))
         disconnect = _case_branch(gap, "BLE_GAP_EVENT_DISCONNECT")
         _assert_inside_session_critical(self, disconnect, "pble_term_disconnect")
+        _assert_inside_session_critical(
+            self, disconnect, "pble_term_watchdog_stopped"
+        )
+        _assert_inside_session_critical(
+            self, disconnect, "pble_term_cleanup_complete"
+        )
+        _assert_tx_serialized_session_call(
+            self, disconnect, "pble_term_disconnect"
+        )
+        _assert_tx_serialized_session_call(
+            self, disconnect, "pble_term_cleanup_complete"
+        )
         _ordered(
             self,
             disconnect,
@@ -320,21 +543,34 @@ class FailedSessionTerminationIntegrationTest(unittest.TestCase):
             "PBLE_TERM_EFFECT_STOP_WATCHDOG",
             "esp_timer_stop",
             "pble_term_watchdog_stopped",
+            "pble_term_cleanup_complete",
+            "pble_advertise",
+        )
+        _assert_between(
+            self,
+            disconnect,
+            "pble_term_watchdog_stopped",
+            "pble_term_cleanup_complete",
             "pble_rsp_cancel_session",
             "pble_rsp_owner_release_if_idle",
             "pble_reset_reassembly",
             "pble_lock_on_disconnect",
             "pble_fs_on_disconnect",
-            "pble_term_cleanup_complete",
-            "pble_advertise",
         )
         self.assertIn("ESP_OK", disconnect)
         self.assertIn("PBLE_TERM_EFFECT_RESTART", disconnect)
         self.assertIn("esp_restart", disconnect)
+        self.assertEqual(disconnect.count("esp_timer_stop("), 1)
 
     def test_reset_claims_cleanup_before_timer_and_bound_work(self) -> None:
         reset = _code(_function(self.ble, "pble_on_reset"))
         _assert_inside_session_critical(self, reset, "pble_term_reset")
+        _assert_inside_session_critical(self, reset, "pble_term_watchdog_stopped")
+        _assert_inside_session_critical(self, reset, "pble_term_cleanup_complete")
+        _assert_tx_serialized_session_call(self, reset, "pble_term_reset")
+        _assert_tx_serialized_session_call(
+            self, reset, "pble_term_cleanup_complete"
+        )
         _ordered(
             self,
             reset,
@@ -342,20 +578,33 @@ class FailedSessionTerminationIntegrationTest(unittest.TestCase):
             "PBLE_TERM_EFFECT_STOP_WATCHDOG",
             "esp_timer_stop",
             "pble_term_watchdog_stopped",
+            "pble_term_cleanup_complete",
+        )
+        _assert_between(
+            self,
+            reset,
+            "pble_term_watchdog_stopped",
+            "pble_term_cleanup_complete",
             "pble_rsp_cancel_session",
             "pble_rsp_owner_release_if_idle",
             "pble_reset_reassembly",
             "pble_lock_on_disconnect",
             "pble_fs_on_disconnect",
-            "pble_term_cleanup_complete",
         )
         self.assertIn("ESP_OK", reset)
         self.assertIn("PBLE_TERM_EFFECT_RESTART", reset)
         self.assertIn("esp_restart", reset)
+        self.assertEqual(reset.count("esp_timer_stop("), 1)
 
     def test_watchdog_uses_immutable_ticket_and_residual_rearm(self) -> None:
         watchdog = _code(_function(self.ble, "pble_termination_watchdog_cb"))
-        self.assertIn("pble_term_watchdog_ticket", watchdog)
+        self.assertIn("pble_term_watchdog_ticket_t", watchdog)
+        self.assertRegex(
+            watchdog,
+            r"\(\s*const\s+pble_term_watchdog_ticket_t\s*\*\s*\)\s*arg",
+        )
+        self.assertNotIn("pble_term_watchdog_ticket(", watchdog)
+        self.assertNotIn("pble_ble_session_snapshot", watchdog)
         _assert_inside_session_critical(self, watchdog, "pble_term_watchdog_fired")
         _assert_inside_session_critical(self, watchdog, "pble_term_watchdog_rearmed")
         _ordered(
@@ -379,19 +628,8 @@ class FailedSessionTerminationIntegrationTest(unittest.TestCase):
     def test_term_failure_is_an_explicit_no_op_without_fallthrough(self) -> None:
         gap = _code(_function(self.ble, "pble_gap_event"))
         branch = _case_branch(gap, "BLE_GAP_EVENT_TERM_FAILURE")
-        self.assertRegex(branch, r"\bbreak\s*;\s*$")
-        for forbidden in (
-            "pble_term_",
-            "esp_timer_",
-            "esp_restart",
-            "pble_advertise",
-            "pble_rsp_",
-            "pble_fs_",
-            "pble_lock_",
-            "ble_gap_terminate",
-        ):
-            with self.subTest(forbidden=forbidden):
-                self.assertNotIn(forbidden, branch)
+        body = branch.split(":", 1)[1]
+        self.assertRegex(body, r"^\s*break\s*;\s*$")
 
     def test_no_unsafe_host_or_controller_reset_fallback_exists(self) -> None:
         native = _code(self.all_native)
@@ -399,6 +637,9 @@ class FailedSessionTerminationIntegrationTest(unittest.TestCase):
             "ble_hs_sched_reset",
             "nimble_port_stop(",
             "nimble_port_deinit(",
+            "nimble_port_freertos_deinit(",
+            "esp_nimble_deinit(",
+            "esp_nimble_hci_deinit(",
             "esp_nimble_hci_and_controller_deinit",
             "esp_bt_controller_disable",
             "esp_bt_controller_deinit",
