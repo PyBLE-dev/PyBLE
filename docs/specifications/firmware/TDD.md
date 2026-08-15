@@ -516,7 +516,11 @@ and leaves after all handler effects. Exact-epoch callbacks that can touch
 VM/rooted or epoch-owned state use the same enter/leave barrier. Persistent
 runner and FS worker tasks are excluded from this wrapper counter; the FS
 worker's entire-dispatch busy state belongs only to the pre-acceptance
-`SOFT_REBOOT` quiescence gate. The same deadline covers this
+`SOFT_REBOOT` quiescence gate. The pinned ESP main task owns the MicroPython GIL
+when it calls `mp_thread_deinit`, and the wrapper never releases that GIL.
+Therefore another MP worker cannot be executing VFS/rooted-VM work; only
+workers parked in explicit off-GIL queue/TX waits remain for upstream deinit to
+reclaim. The same deadline covers this
 drain, soft-reboot/identify timer disarm, prevention of future response-callout
 scheduling, and acquisition of the physical recursive TX mutex. An inactive or
 already-fired lifecycle timer is idempotent disarm success. Timeout, counter
@@ -542,6 +546,12 @@ paused after that peek keeps reset from recycling state until it leaves. Reset
 does not rely on callout deinitialization or queued-event removal. If wrapper or
 port init observes the connection already `CLOSING`, it immediately restarts
 instead of rotating it open or losing its independent termination watchdog.
+Hard reset clears the FS admission gate, busy/outstanding state, and dequeue
+claim; runner stop-requested, soft-reboot-pending, timer armed epoch,
+semaphore/RSM/buffers/worker pointer; console ring indices/count and worker
+pointer; and response scheduling/active/logical-owner flags. Wrapper disarm
+clears soft-reboot-pending and its armed epoch even for an inactive/already-fired
+timer. None reopen before final readiness.
 Admission reopens only after all
 native handlers and workers for the new VM are registered and entered, final
 boot wiring is safe, and auto-run admission has completed. Thus a dequeued
@@ -1132,7 +1142,10 @@ authoritative lifecycle lock, every complete CMD enters only while open and
 leaves after all handler effects; exact-epoch callbacks that can touch rooted
 or epoch-owned state use the same activity counter. Persistent runner/FS worker
 tasks do not enter it; FS entire-dispatch busy is only the `SOFT_REBOOT`
-quiescence predicate. The wrapper closes and invalidates, then under one
+quiescence predicate. The pinned ESP main task owns the MicroPython GIL at this
+call and the wrapper never releases it, so no other MP worker can be executing
+VFS/rooted-VM work; off-GIL queue/TX waiters are reclaimed by upstream deinit.
+The wrapper closes and invalidates, then under one
 absolute 2500 ms deadline drains activity, disarms soft-reboot/identify timers,
 prevents response-callout rearm, and acquires the physical recursive TX mutex.
 Inactive/already-fired lifecycle timers are idempotent success; timeout,
@@ -1164,6 +1177,12 @@ The soft-reboot timer stores its armed epoch and enters/leaves lifecycle
 activity before reading the rooted `SystemExit` or scheduling; the identify
 timer revalidates its epoch before every GPIO transition. Wrapper invalidation
 prevents either from starting new old-epoch work.
+Wrapper disarm also clears soft-reboot-pending and its armed epoch when the
+timer is inactive/already fired. Port-init reset clears FS admission,
+busy/outstanding/dequeue state; runner stop/pending/timer-epoch plus semaphore,
+RSM, buffers, and pointer; console ring indices/count and pointer; and response
+scheduling/active/logical-owner flags. These remain closed/reset until final
+readiness.
 Repeated `init_agent` calls within that VM are idempotent. The CMake linker
 option includes both `--wrap=mp_thread_deinit` and
 `--undefined=__wrap_mp_thread_deinit`; release map/nm/build gates prove wrapper resolution and the

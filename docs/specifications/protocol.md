@@ -220,6 +220,11 @@ hard-recycles every response-slot incarnation. It drains response-completion
 signals, resets filesystem queues and transfer state, and resets the runner
 hand-off semaphore, run-state machine,
 request buffers, worker pointer, console buffers, and BLE RX reassembly state.
+The reset clears the FS gate, busy/outstanding state, and dequeue claim; runner
+`stop_requested`, `soft_reboot_pending`, timer armed epoch, semaphore, state,
+buffers, and worker pointer; console ring indices/count and worker pointer; and
+response scheduling/active/logical-owner flags. None reopen before final
+readiness.
 It explicitly sets both custom VM roots, `pble_runner_sysexit` and
 `pble_fs_put_file`, to `MP_OBJ_NULL` before new-VM registration allocates or
 opens either.
@@ -235,7 +240,12 @@ its handler effects, while every off-MP callback that can touch VM/rooted or
 epoch-owned state enters with its exact armed epoch. Persistent runner and
 filesystem worker tasks are not members of this wrapper activity counter: the
 FS worker's entire-dispatch `busy` state belongs only to the earlier
-`SOFT_REBOOT` quiescence gate. The wrapper atomically closes and invalidates,
+`SOFT_REBOOT` quiescence gate. This exclusion relies on the pinned ESP runtime:
+the main task owns the MicroPython GIL when it reaches `mp_thread_deinit`, and
+the wrapper MUST NOT release that GIL. Consequently another MP worker cannot
+still be executing a VFS or rooted-VM operation; an old worker parked in an
+explicitly off-GIL queue/TX wait is reclaimed by the exact upstream deinit.
+The wrapper atomically closes and invalidates,
 then uses one absolute 2500 ms deadline to drain activity, disarm
 the soft-reboot and identify timers, prevent future callout scheduling, and
 acquire the physical recursive TX mutex. An inactive or already-fired lifecycle
@@ -250,7 +260,8 @@ sender cannot reacquire the mutex and then be deleted while owning it.
 The soft-reboot timer carries its armed VM epoch and must enter/leave lifecycle
 activity before reading a rooted `SystemExit` or calling the scheduler. The
 identify timer likewise carries/revalidates its epoch and stops without another
-GPIO transition once invalidated. This closes passed-gate races for
+GPIO transition once invalidated. Wrapper disarm clears soft-reboot pending and
+the armed epoch even when the timer is inactive/already fired. This closes passed-gate races for
 `RUN`/`STOP`/`SOFT_REBOOT`, console input, and filesystem enqueue as well as
 timer races. Each PyBLE ESP board overlay then uses `MICROPY_PORT_INIT_FUNC` to
 rotate the VM epoch and retained connection generation and perform the hard

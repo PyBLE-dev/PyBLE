@@ -214,7 +214,10 @@ Requirement voice is MUST / SHOULD / MAY. Each line: **ID** — statement — *(
   already-fired lifecycle timer is idempotent disarm success and any other
   failure restarts. Persistent FS/runner workers are excluded from this wrapper
   activity count; the FS worker's entire-dispatch busy state is used only by
-  the pre-acceptance `SOFT_REBOOT` quiescence gate. The
+  the pre-acceptance `SOFT_REBOOT` quiescence gate. This is valid only because
+  the pinned ESP main task owns the MicroPython GIL on entry to
+  `mp_thread_deinit`; the wrapper MUST NOT release it, so no other MP worker can
+  be inside VFS/rooted-VM work while old off-GIL waiters are deleted. The
   wrapper MUST retain TX-mutex ownership while it detaches pointers, sets both
   `pble_runner_sysexit` and `pble_fs_put_file` to `MP_OBJ_NULL`, and calls
   `__real_mp_thread_deinit`, releasing only after old tasks have been deleted.
@@ -233,6 +236,13 @@ Requirement voice is MUST / SHOULD / MAY. Each line: **ID** — statement — *(
   incarnation mismatch cancels. The physical give remains outside that mutex,
   including when an old give is delayed across hard recycle/reserve or races a
   new completion.
+  Hard reset MUST also clear the FS admission gate, busy/outstanding state, and
+  dequeue claim; runner stop-requested, soft-reboot-pending, timer armed epoch,
+  semaphore/RSM/buffers/worker pointer; console ring indices/count and worker
+  pointer; and response scheduling/active/logical-owner flags. Wrapper timer
+  disarm clears soft-reboot-pending and its armed epoch even when the timer is
+  inactive or has already fired. None of these gates reopen before final boot
+  readiness.
 - **FR-PROTO-7** — The agent MUST emit and accept only `VER = 0x01` frames for PBLE/1 and MUST reject/refuse other versions per the versioning policy. — *(source: PRD §18.1, [protocol.md §3.1](../protocol.md#3-framing), [§9](../protocol.md#9-versioning-policy); verify: conformance; story: F-02, P-03)*
 - **FR-PROTO-8** — An admitted malformed or structurally invalid request MUST be answered with `EBADREQ` through the same bounded, session-bound response path; local response-capacity refusal follows FR-PROTO-6's no-handler, session-termination outcome. — *(source: [protocol.md §8](../protocol.md#8-status--error-codes-1-byte-status-in-rsp); verify: conformance; story: F-02)*
 - **FR-PROTO-9** — A well-formed request for an opcode/feature the agent does not support MUST be answered with `EUNSUPPORTED`. — *(source: PRD §10.8, [protocol.md §8](../protocol.md#8-status--error-codes-1-byte-status-in-rsp); verify: conformance; story: F-02)*
