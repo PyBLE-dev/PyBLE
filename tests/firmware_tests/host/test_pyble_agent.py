@@ -913,10 +913,10 @@ class SoftRebootClosingTest(AgentTestBase):
         send(self, link, 0x20, bytes((1,)) + b"x = 4", id_=100)
         send(self, link, 0x22, id_=101)
 
-        def fail_idle_emit(state):
+        def fail_idle_emit(state, published):
             raise RuntimeError("deterministic terminal send failure")
 
-        agent._runner._emit_state = fail_idle_emit
+        agent._runner._emit_terminal = fail_idle_emit
         with self.assertRaises(_ResetNow,
                                msg="closing exception MUST reset, not rebuild"):
             agent.poll()

@@ -295,6 +295,7 @@ class TxPublicationCutTest(_Rp2SurfaceTestCase):
     def test_send_message_commits_receipt_after_notify_record(self):
         _, link = self.make_link("F-27/P3 terminal TX publication receipt")
         link._conn_handle = 11
+        link._mtu = 247
         receipts = []
 
         def published():
