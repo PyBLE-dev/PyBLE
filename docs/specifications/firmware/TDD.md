@@ -60,6 +60,11 @@ Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-08-15
 > reset. Admission closes before an accepted soft reset and reopens only after
 > the new-VM reset transaction, worker entry, final wiring, and auto-run
 > admission complete; no wire byte changes.
+> **Bounded failed-session amendment (2026-08-15).** A required termination
+> first makes the exact connection token logically closing, arms an independent
+> 2500 ms watchdog, and then calls GAP termination exactly once. Only success or
+> already-terminating awaits disconnect/reset; every other return or watchdog
+> failure/expiry uses a whole-board restart. No wire byte changes.
 
 ## 0. Naming note (acronym clash)
 
@@ -309,7 +314,7 @@ class BleLink:
     def on_disconnect(self, cb) -> None
 ```
 
-**Key data structures / state:** the GATT table (Service/RX/TX/INFO UUIDs from the [protocol.md §2](../protocol.md#2-ble-transport-gatt) constants mirror); a single **reassembly buffer** (static, sized `max_message`, see [§7.3](#73-buffer-sizing)); a fragment-index tracker (`FIRST`/`LAST`/`index mod 64`); negotiated MTU; connection handle plus monotonic boot-local connection generation; logical TX owner plus mutex-protected stream generation; a pre-created generic-response callout; the **advertised name** — the device label when set, else `PyBLE-` + `device_id` (the last two BLE-MAC bytes in uppercase hex), used for the name only, never for access control ([§4.8](#48-device-config-store--label--identify-led-nvs), CON-7/SEC-7/SEC-11).
+**Key data structures / state:** the GATT table (Service/RX/TX/INFO UUIDs from the [protocol.md §2](../protocol.md#2-ble-transport-gatt) constants mirror); a single **reassembly buffer** (static, sized `max_message`, see [§7.3](#73-buffer-sizing)); a fragment-index tracker (`FIRST`/`LAST`/`index mod 64`); negotiated MTU; connection handle plus monotonic boot-local connection generation and `OPEN`/`CLOSING` state; logical TX owner plus mutex-protected stream generation; a pre-created generic-response callout; a pre-created task-dispatched failed-session watchdog; the **advertised name** — the device label when set, else `PyBLE-` + `device_id` (the last two BLE-MAC bytes in uppercase hex), used for the name only, never for access control ([§4.8](#48-device-config-store--label--identify-led-nvs), CON-7/SEC-7/SEC-11).
 
 **Session-safe response callout:** GAP connect mints, and disconnect invalidates,
 a `{handle, generation}` token. The pre-created response callout runs on the
@@ -322,6 +327,39 @@ with disconnect/connect on the host context, numeric handle reuse has no
 check-to-Notify gap. Disconnect stops/cancels the callout and invalidates its
 ticket before normal re-advertising. A callback already queued after stop still
 revalidates inactive/token state and emits nothing.
+
+**Bounded failed-session teardown:** response-capacity refusal and publication
+expiry enter one shared exact-token state machine. Under the session critical
+section, `OPEN → CLOSING` happens first and repeated requests against the same
+token are no-ops. Public snapshot/live-for-admission checks return false for
+`CLOSING`; GATT dispatch, ticket reserve/validate, all response/event/control
+TX, and specialized `RUN`/`STOP`/`SOFT_REBOOT` paths therefore admit no later
+work or byte. Lifecycle cleanup uses an internal exact-token match that can
+still recognize `CLOSING`; it does not make the token live again.
+
+Initialization pre-creates an `ESP_TIMER_TASK` one-shot and fails before
+advertising if that resource cannot be created. On `OPEN → CLOSING`, the host
+stores an `esp_timer_get_time()`-based absolute deadline 2500 ms ahead and arms
+the watchdog before exactly one `ble_gap_terminate` call. This order matters:
+the pinned HCI command wait can occupy the NimBLE host task for 2000 ms, while
+the ESP timer callback runs independently. Return `0` and
+`BLE_HS_EALREADY` leave `CLOSING` and the watchdog intact pending exact GAP
+disconnect or `ble_hs_cfg.reset_cb`. Any other return or arm failure calls
+public non-returning `esp_restart()` immediately. There is no termination
+retry and no PyBLE call to `ble_hs_sched_reset`: HCI wait/ack failures may have
+already queued the host reset whose callback is the success signal. A
+`BLE_GAP_EVENT_TERM_FAILURE` is not a teardown signal and leaves the watchdog
+to enforce the same bound.
+
+Exact disconnect/reset atomically claims idempotent cleanup, stops the
+watchdog, cancels all token-bound responses/work, invalidates the token, and
+only then allows subsequent advertising/admission. The watchdog callback
+rechecks `CLOSING`, the full token, and the unchanged absolute deadline before
+calling `esp_restart()`, so a stopped-but-already-queued callback cannot restart
+a later generation that reused the numeric handle. The whole-board fallback is
+deliberate: `nimble_port_stop()` waits on the host event queue and is not a
+bounded host-context fallback, while direct controller deinitialization has an
+ordered stop prerequisite.
 
 **Advertised-name assembly:** at boot the name is `PyBLE-` + `device_id`; when `SET_LABEL` sets a non-empty label, `pyble_ble.set_adv_name(label)` updates the advertisement so the label shows in the scan list pre-connect; clearing the label restores `PyBLE-` + `device_id` (FR-BLE-12). Length bounding/validation happens in the device-config store before the value reaches the air ([§4.8](#48-device-config-store--label--identify-led-nvs), SEC-10).
 
@@ -423,8 +461,9 @@ is active. A successful single-fragment `RUN`, `STOP`, or `SOFT_REBOOT`
 response increments the stream generation under the same mutex; on observing that change, the
 callout restarts its identical frame at `FIRST`. `NO_CONN`, token mismatch, or
 disconnect cancels the slot. Publication expiry on a still-live originating
-session requests termination before releasing it, so an admitted side effect
-cannot end in a silent live-session missing response. RUN keeps its existing
+session enters the bounded failed-session teardown above before releasing it,
+so an admitted side effect cannot end in a silent live-session missing
+response. RUN keeps its existing
 specialized transactional path. STOP and SOFT_REBOOT also remain specialized
 only when their one-fragment response try is connection-bound and succeeds
 before the interrupt/reset side effect; failure suppresses generic fallback.
@@ -883,7 +922,7 @@ The boot-internal wrapper converts that failure to false so startup proceeds.
 
 Three cooperating execution contexts (D4):
 
-- **NimBLE host context** — services GAP/GATT callbacks and RX reassembly/dispatch. Its pre-created generic-response callout owns the fixed depth-2 pool's ready FIFO and one logical message at a time. Each callback validates ticket/session/publication deadline/stream generation, attempts exactly one fragment with zero wait, and rearms after one tick on progress or at most 15 ms on `AGAIN`. RUN/STOP/SOFT_REBOOT admission uses one specialized zero-wait control attempt; only a successful preemption changes the stream generation and makes the response restart at `FIRST`.
+- **NimBLE host context** — services GAP/GATT callbacks and RX reassembly/dispatch. Its pre-created generic-response callout owns the fixed depth-2 pool's ready FIFO and one logical message at a time. Each callback validates ticket/session/publication deadline/stream generation, attempts exactly one fragment with zero wait, and rearms after one tick on progress or at most 15 ms on `AGAIN`. RUN/STOP/SOFT_REBOOT admission uses one specialized zero-wait control attempt; only a successful preemption changes the stream generation and makes the response restart at `FIRST`. Required session teardown closes logical admission and arms its independent watchdog before making one potentially blocking GAP termination call; it does not retry on this context.
 - **Filesystem worker** — one persistent MicroPython-aware worker consuming the bounded FS queue. Response-bearing items carry a reserved response ticket, connection generation, and VM epoch. One gate synchronizes enqueue+insertion, dequeue-to-busy, and soft-reset quiescence; busy covers the entire dispatch. The worker revalidates immediately before/after each VFS operation or chunk and before publishing worker-scratch output, and orders `FILE_GET_BEGIN` response completion before exact-session data events.
 - **Runner task** — launched once via `_thread` and kept persistent. It waits on the binary hand-off semaphore, then executes each admitted RUN with `sys.stdout`/`stderr` redirected to the console tee.
 
@@ -2068,7 +2107,7 @@ This is where the Technical Design meets **Test-Driven Development** ([§0](#0-n
 | Module | unit (host) | conformance | build | size | HIL |
 |---|---|---|---|---|---|
 | `pyble_proto` | frame codec, CRC32, ID correlation, error-status mapping; whole-slot reserve-before-handler; absolute publication deadline/FIFO; transition-only completion wake and stale-signal drain; VM-epoch hard recycle/admission barrier | full opcode round-trip; exact-fragment pressure retry and control-preemption `FIRST` restart vs fake transport | SPDX/no-leak lint | fixed depth-2 response pool | default-MTU generic RSP; no cross-session/VM response |
-| `pyble_ble` | fragment/reassemble logic (pure), FIRST restart, slot/session/stream generations + one-fragment callout state | fragmentation/retry vs MTU matrix; reused-handle/late-ticket cancellation | NimBLE-only config; no host-context wait/loop | NimBLE buffer sizing | adv/scan-filter, MTU 247 and 23, INFO read, label shows in scan |
+| `pyble_ble` | fragment/reassemble logic (pure), FIRST restart, slot/session/stream generations + one-fragment callout state; OPEN/CLOSING reducer; watchdog-before-GAP order; rc/reset/disconnect/expiry matrix | fragmentation/retry vs MTU matrix; reused-handle/late-ticket/watchdog cancellation | NimBLE-only config; public `esp_timer`/`esp_restart`; no termination retry or `ble_hs_sched_reset` | NimBLE buffer sizing plus one pre-created watchdog | adv/scan-filter, MTU 247 and 23, INFO read, label shows in scan; forced response refusal yields bounded link loss |
 | `pyble_fs` | jail resolution, CRC accumulate, temp-rename; response/session/VM ownership; adjacent VFS cancellation; exact-session GET/ACK send; atomic quiescence gate | put/get window + resume + CRC vs fake; RSP-before-dependent-events | — | file-buffer + reserved-response footprint | multi-file upload, dropped-link resume; no old-session/VM FS effect or reply |
 | `pyble_runner` | state-machine transitions; transactional RUN admission under mutex/Notify/connection failure; exact-state rollback; auto-run bypass; VM-reset semaphore/state/buffer reset | response-before-wake/RUN_STATE sequence; single-fragment response at minimum MTU | — | — | STOP vs `while True: pass`, traceback→stderr; pressure/disconnect RUN remains side-effect-free |
 | `pyble_console` | tee + backpressure and control-priority logic | CONSOLE_DATA stream tagging; whole-message non-interleaving | — | staging-buffer/transport-reserve footprint | live stdout/stdin latency; C3 print-flood STOP response then idle in <500 ms |

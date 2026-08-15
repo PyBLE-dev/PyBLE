@@ -148,6 +148,37 @@ ticket before normal re-advertising; any already-queued callback revalidates and
 emits nothing. No queued or late response byte may cross into a later
 connection session.
 
+**ESP reference-agent bounded failed-session termination (amended
+2026-08-15).** A response-capacity refusal or publication-deadline expiry first
+atomically changes the exact `{handle, connection generation}` from `OPEN` to
+`CLOSING`. A closing token is retained only for exact GAP lifecycle matching:
+it is not live for CMD admission, response-ticket reservation or validation,
+ordinary/event/control TX, or the specialized `RUN`, `STOP`, and `SOFT_REBOOT`
+paths. Existing work for that token is invalidated and cannot begin another
+side effect or publish a byte. Repeated close requests for the same token are
+idempotent, and numeric handle reuse cannot reopen it.
+
+The reference agent pre-creates a task-dispatched ESP timer before advertising.
+After entering `CLOSING`, it arms that independent watchdog for one absolute
+2500 ms termination deadline **before** making exactly one host-context
+`ble_gap_terminate` call. The deadline never moves. Return `0` and
+`BLE_HS_EALREADY` mean only that GAP teardown is already pending; the agent
+waits for the exact disconnect or NimBLE reset while the watchdog remains
+armed. Any other return, watchdog-arm failure, or watchdog expiry invokes the
+public non-returning `esp_restart()` immediately. A termination-failure GAP
+event is not teardown completion and therefore cannot reopen admission or
+cancel the watchdog. The agent never retries termination and never calls
+`ble_hs_sched_reset`, because the pinned host may already have scheduled its
+own reset before returning an error.
+
+Exact disconnect or NimBLE reset performs one idempotent cleanup: cancel the
+watchdog, invalidate the closing token and all work/tickets bound to it, and
+only then permit later advertising or admission. An already-queued watchdog
+callback revalidates the closing token and its absolute deadline, so it cannot
+restart a later session. Thus every requested termination produces either GAP
+teardown or a whole-board restart within the fixed bound rather than leaving a
+live session that silently lost an admitted response.
+
 **ESP reference-agent VM boundary (amended 2026-08-15).** Static native
 workers, queues, semaphores, and response slots can outlive one MicroPython VM,
 so VM reset is an explicit admission boundary even when the BLE link and its
