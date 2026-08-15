@@ -272,13 +272,31 @@ class NativeResponsePoolContractTests(unittest.TestCase):
             re.DOTALL,
         )
         self.assertIsNotNone(ticket, "response reservations need a typed ticket")
-        for field in ("slot", "incarnation", "conn", "generation", "vm_epoch"):
+        for field in ("slot", "incarnation", "vm_epoch"):
             self.assertRegex(ticket.group("body"), rf"\b{field}\b")
+        self.assertRegex(
+            ticket.group("body"),
+            r"\bpble_session_token_t\s+session\b",
+        )
         reserve = code_only(c_function(PROTO, "pble_rsp_reserve"))
+        reserve_signature = reserve.partition("{")[0]
+        self.assertIn("pble_session_token_t", reserve_signature)
+        self.assertNotIn("pble_ble_session_snapshot", reserve)
+        token_param = re.search(
+            r"(?:const\s+)?pble_session_token_t\s*\*?\s*([A-Za-z_]\w*)",
+            reserve_signature,
+        )
+        self.assertIsNotNone(token_param)
+        self.assertRegex(
+            reserve,
+            rf"slot->ticket\.session\s*=\s*\*?{re.escape(token_param.group(1))}\b",
+        )
         matches = code_only(
             c_function(PROTO, "pble_rsp_ticket_matches_locked")
         )
         self.assertIn("pble_vm_epoch_current", reserve)
+        self.assertIn("slot->ticket.session", matches)
+        self.assertIn("ticket->session", matches)
         self.assertIn("slot->ticket.vm_epoch", matches)
         self.assertIn("ticket->vm_epoch", matches)
         session_valid = code_only(
@@ -286,17 +304,36 @@ class NativeResponsePoolContractTests(unittest.TestCase):
         )
         self.assertRegex(
             session_valid,
+            r"pble_ble_session_live\s*\(\s*&\s*ticket->session\s*\)",
+        )
+        self.assertRegex(
+            session_valid,
             r"pble_vm_epoch_\w+\s*\(\s*ticket->vm_epoch\s*\)",
         )
 
     def test_dispatch_reserves_before_handler_and_publishes_same_slot(self):
-        dispatch = code_only(c_function(PROTO, "pble_proto_dispatch"))
+        dispatch = code_only(
+            c_function(PROTO, "pble_proto_dispatch_admitted")
+        )
+        dispatch_signature = dispatch.partition("{")[0]
+        self.assertIn("pble_session_token_t", dispatch_signature)
+        token_param = re.search(
+            r"(?:const\s+)?pble_session_token_t\s*\*?\s*([A-Za-z_]\w*)",
+            dispatch_signature,
+        )
+        self.assertIsNotNone(token_param)
         ordered(
             self,
             dispatch,
             "pble_rsp_reserve",
             "status = h(",
             "pble_rsp_publish",
+        )
+        reserve_call = re.search(r"pble_rsp_reserve\s*\([^;]+\)", dispatch)
+        self.assertIsNotNone(reserve_call)
+        self.assertRegex(
+            reserve_call.group(0),
+            rf"\b{re.escape(token_param.group(1))}\b",
         )
         self.assertIn("pble_ble_terminate_session", dispatch)
         self.assertNotIn("pble_ble_notify(s_out", PROTO)

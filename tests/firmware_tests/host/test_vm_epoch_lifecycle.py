@@ -1236,17 +1236,51 @@ class NativeFsEpochContractTests(unittest.TestCase):
         )
         self.assertIsNotNone(item)
         body = item.group("body")
-        for field in ("conn", "generation", "vm_epoch"):
-            self.assertRegex(body, rf"\b{field}\b")
-        put_data = code_only(c_function(FS, "pble_fs_put_data"))
-        self.assertIn("fs_enqueue", put_data)
+        self.assertRegex(body, r"\bpble_session_token_t\s+session\b")
+        self.assertRegex(body, r"\bvm_epoch\b")
+        for name in (
+            "pble_fs_list",
+            "pble_fs_stat",
+            "pble_fs_get_begin",
+            "pble_fs_put_begin",
+            "pble_fs_put_data",
+            "pble_fs_put_end",
+            "pble_fs_delete",
+            "pble_fs_mkdir",
+            "pble_fs_rename",
+        ):
+            handler = code_only(c_function(FS, name))
+            handler_signature = handler.partition("{")[0]
+            token_param = re.search(
+                r"(?:const\s+)?pble_session_token_t\s*\*?\s*([A-Za-z_]\w*)",
+                handler_signature,
+            )
+            with self.subTest(handler=name):
+                self.assertIsNotNone(token_param)
+                enqueue_call = re.search(r"fs_enqueue\s*\([^;]+\)", handler)
+                self.assertIsNotNone(enqueue_call)
+                self.assertRegex(
+                    enqueue_call.group(0),
+                    rf"\b{re.escape(token_param.group(1))}\b",
+                )
         enqueue = code_only(c_function(FS, "fs_enqueue"))
-        self.assertIn("pble_ble_session_snapshot", enqueue)
+        enqueue_signature = enqueue.partition("{")[0]
+        self.assertIn("pble_session_token_t", enqueue_signature)
+        self.assertNotIn("pble_ble_session_snapshot", enqueue)
+        token_param = re.search(
+            r"(?:const\s+)?pble_session_token_t\s*\*?\s*([A-Za-z_]\w*)",
+            enqueue_signature,
+        )
+        self.assertIsNotNone(token_param)
+        self.assertRegex(
+            enqueue,
+            rf"g_enq\.session\s*=\s*\*?{re.escape(token_param.group(1))}\b",
+        )
         self.assertIn("pble_vm_epoch_current", enqueue)
         valid = code_only(c_function(FS, "pble_fs_item_valid"))
         self.assertRegex(
             valid,
-            r"pble_ble_session_live\s*\(\s*it->conn\s*,\s*it->generation\s*\)",
+            r"pble_ble_session_live\s*\(\s*&\s*it->session\s*\)",
         )
         self.assertRegex(
             valid,
