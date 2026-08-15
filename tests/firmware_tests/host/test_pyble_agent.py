@@ -170,6 +170,10 @@ def evts(link, opcode=None):
             if f.type == EVT and (opcode is None or f.opcode == opcode)]
 
 
+def run_states(link):
+    return [f.payload[0] for f in evts(link, opcode=0x40) if f.payload]
+
+
 def p_put_begin(total, crc, path):
     p = path.encode("utf-8")
     return struct.pack("<II", total, crc) + struct.pack("<H", len(p)) + p
@@ -423,6 +427,9 @@ class SoftRebootOrderingTest(AgentTestBase):
 
         send(self, link, 0x20, bytes((1,)) + b"while True: pass", id_=10)
         self.assertEqual(rsps(link, opcode=0x20, id_=10)[0].payload[0], OK)
+        # The host cannot run Agent.poll concurrently with a command. Mark the
+        # already-reserved runner at the exact executing seam this test targets.
+        agent._runner._executing = True
         order[:] = []
 
         send(self, link, 0x22, id_=11)
@@ -458,10 +465,11 @@ class ActiveStopOrderingTest(AgentTestBase):
         agent, link = self.new_agent(
             crit, order=order, notify=lambda: order.append(("notify",)))
 
-        # Reserve a tight run without polling it: RUNNING covers both reserved
-        # and executing, and keeps this host test independent of real VM IRQs.
+        # Reserve a tight run, then mark the exact executing seam: the host
+        # cannot call Agent.poll concurrently with delivery of this command.
         send(self, link, 0x20, bytes((1,)) + b"while True: pass", id_=10)
         self.assertEqual(rsps(link, opcode=0x20, id_=10)[0].payload[0], OK)
+        agent._runner._executing = True
         order[:] = []
 
         send(self, link, 0x21, id_=11)
@@ -516,12 +524,189 @@ class ScheduledDuptermNotifyTest(unittest.TestCase):
                          "the scheduled native callback remains executable")
 
 
+class PrePickupControlCancellationTest(AgentTestBase):
+    """P2/P3/P4: accepted control between RUN RSP and supervisor pickup
+    cancels the mailbox item without scheduling a VM interrupt or touching the
+    source. SOFT_REBOOT's normal deferred reset remains serviceable."""
+
+    SOURCE = bytes((1,)) + b"raise RuntimeError('reserved source executed')"
+
+    def test_stop_before_pickup_emits_only_idle_without_notify(self):
+        order = []
+        agent, link = self.new_agent(
+            "F-27/P2 STOP before pickup", order=order,
+            notify=lambda: order.append(("notify",)))
+        send(self, link, 0x20, self.SOURCE, id_=60)
+        order[:] = []
+
+        send(self, link, 0x21, id_=61)
+        agent.poll()
+
+        self.assertNotIn(("notify",), order,
+                         "reserved source needs cancellation, not a VM interrupt")
+        self.assertEqual(run_states(link), [0],
+                         "pre-pickup STOP emits idle only; source never starts")
+
+    def test_soft_reboot_before_pickup_cancels_then_services_reset(self):
+        order = []
+        agent, link = self.new_agent(
+            "F-27/P4 SOFT_REBOOT before pickup", order=order,
+            notify=lambda: order.append(("notify",)),
+            reset=lambda: order.append(("reset",)))
+        send(self, link, 0x20, self.SOURCE, id_=62)
+        order[:] = []
+
+        send(self, link, 0x22, id_=63)
+        agent.poll()                    # consume cancelled RUN; deadline not due
+        self.now[0] = 250
+        agent.poll()                    # service the deferred reset
+
+        self.assertNotIn(("notify",), order,
+                         "reserved source needs cancellation, not a VM interrupt")
+        self.assertEqual(run_states(link), [0],
+                         "pre-pickup SOFT_REBOOT emits idle only")
+        self.assertEqual(order.count(("reset",)), 1,
+                         "cancelled pickup MUST NOT strand the reboot deadline")
+
+
+class InterruptIntentExceptionSafetyTest(AgentTestBase):
+    """P3: the command-local post-RSP intent is cleared on every exceptional
+    dispatch/encode/send exit and can never fire on a later command."""
+
+    def test_dispatch_exception_clears_preexisting_intent(self):
+        notifies = []
+        agent, link = self.new_agent(
+            "F-27/P3 dispatcher exception clears intent",
+            notify=lambda: notifies.append(1))
+        real_dispatch = agent._dispatcher.on_message
+        agent._interrupt_after_rsp = True
+
+        def fail_dispatch(msg):
+            raise RuntimeError("deterministic dispatch failure")
+
+        agent._dispatcher.on_message = fail_dispatch
+        try:
+            with self.assertRaisesRegex(RuntimeError, "dispatch failure"):
+                send(self, link, 0x01, id_=70)
+        finally:
+            agent._dispatcher.on_message = real_dispatch
+
+        send(self, link, 0x01, id_=71)
+        self.assertEqual(notifies, [],
+                         "a later HELLO MUST NOT inherit stale interrupt intent")
+
+    def test_response_encode_exception_clears_stop_intent(self):
+        notifies = []
+        agent, link = self.new_agent(
+            "F-27/P3 encode exception clears STOP intent",
+            notify=lambda: notifies.append(1))
+        send(self, link, 0x20, bytes((1,)) + b"x = 1", id_=72)
+        agent._runner._executing = True
+        real_encode = pyble_proto.encode
+
+        def fail_stop_rsp(type_, opcode, id_, payload=b""):
+            if type_ == RSP and opcode == 0x21 and id_ == 73:
+                raise RuntimeError("deterministic encode failure")
+            return real_encode(type_, opcode, id_, payload)
+
+        pyble_proto.encode = fail_stop_rsp
+        try:
+            with self.assertRaisesRegex(RuntimeError, "encode failure"):
+                send(self, link, 0x21, id_=73)
+        finally:
+            pyble_proto.encode = real_encode
+        agent._runner._executing = False
+
+        send(self, link, 0x01, id_=74)
+        self.assertEqual(notifies, [],
+                         "encode failure MUST clear the STOP post-RSP intent")
+
+    def test_response_send_exception_clears_stop_intent(self):
+        notifies = []
+        agent, link = self.new_agent(
+            "F-27/P3 send exception clears STOP intent",
+            notify=lambda: notifies.append(1))
+        send(self, link, 0x20, bytes((1,)) + b"x = 1", id_=75)
+        agent._runner._executing = True
+        real_send = link.send_message
+
+        def fail_stop_send(msg):
+            frame = pyble_proto.decode(msg)
+            if frame.type == RSP and frame.opcode == 0x21 and frame.id == 76:
+                raise RuntimeError("deterministic send failure")
+            real_send(msg)
+
+        link.send_message = fail_stop_send
+        try:
+            with self.assertRaisesRegex(RuntimeError, "send failure"):
+                send(self, link, 0x21, id_=76)
+        finally:
+            link.send_message = real_send
+        agent._runner._executing = False
+
+        send(self, link, 0x01, id_=77)
+        self.assertEqual(notifies, [],
+                         "send failure MUST clear the STOP post-RSP intent")
+
+
+class _ResetNow(BaseException):
+    """Host sentinel for the device's non-returning machine.reset seam."""
+
+
+class SchedulerFailureFailSafeTest(AgentTestBase):
+    """P3/P4: after RSP handoff, scheduler-full rolls back 0x03 and invokes
+    the injected non-returning hardware reset for STOP and SOFT_REBOOT."""
+
+    def _exercise(self, opcode, id_):
+        order = []
+
+        def queue_full():
+            order.append(("notify-attempt",))
+            raise RuntimeError("schedule queue full")
+
+        def reset_now():
+            order.append(("reset",))
+            raise _ResetNow()
+
+        agent, link = self.new_agent(
+            "F-27/P3 scheduler-full reset fail-safe", order=order,
+            notify=queue_full, reset=reset_now)
+        send(self, link, 0x20, bytes((1,)) + b"while True: pass", id_=id_ - 1)
+        agent._runner._executing = True
+        order[:] = []
+
+        with self.assertRaises(_ResetNow,
+                               msg="scheduler-full MUST enter non-returning reset"):
+            send(self, link, opcode, id_=id_)
+
+        rsp_idx = next(
+            i for i, event in enumerate(order)
+            if event[0] == "tx"
+            and pyble_proto.decode(event[1]).type == RSP
+            and pyble_proto.decode(event[1]).opcode == opcode
+            and pyble_proto.decode(event[1]).id == id_)
+        self.assertLess(rsp_idx, order.index(("notify-attempt",)))
+        self.assertLess(order.index(("notify-attempt",)), order.index(("reset",)))
+        self.assertIsNone(agent.console.readinto(bytearray(1)),
+                          "failed schedule MUST leave no latent armed 0x03")
+
+    def test_stop_scheduler_full_resets_after_rsp(self):
+        self._exercise(0x21, 81)
+
+    def test_soft_reboot_scheduler_full_resets_after_rsp(self):
+        self._exercise(0x22, 83)
+
+
 class StopWhileIdleTest(AgentTestBase):
     """§6/P3: STOP while idle is a no-op RSP{OK} — and NO RUN_STATE is emitted
     (idle STOP must not fabricate a lifecycle transition)."""
 
     def test_idle_stop_is_ok_with_no_run_state(self):
-        agent, link = self.new_agent("F-25/§6 idle STOP: OK, no RUN_STATE")
+        side_effects = []
+        agent, link = self.new_agent(
+            "F-25/§6 idle STOP: OK, no RUN_STATE",
+            notify=lambda: side_effects.append("notify"),
+            reset=lambda: side_effects.append("reset"))
         send(self, link, 0x21, id_=4)
         pump(agent, 3, self.now)
         answers = rsps(link, opcode=0x21, id_=4)
@@ -530,6 +715,8 @@ class StopWhileIdleTest(AgentTestBase):
                          "STOP is idempotent: RSP{OK} even while idle (§6)")
         self.assertEqual(evts(link, opcode=0x40), [],
                          "an idle STOP MUST NOT emit any RUN_STATE EVT")
+        self.assertEqual(side_effects, [],
+                         "idle STOP arms no interrupt and no reset fail-safe")
 
 
 class UsbActivationTest(unittest.TestCase):

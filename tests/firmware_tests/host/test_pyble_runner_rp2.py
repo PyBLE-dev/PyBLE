@@ -28,11 +28,12 @@
 #            # never wedge the reservation), reserves on OK, captures the
 #            # request for the supervisor, and NEVER emits or executes inline.
 #       .handle_stop() -> int                # always OK (0x00); arms stop intent
-#       .service() -> bool                   # supervisor pickup: if a run is
-#            # pending, clear any stale stop intent (fresh run — pble_runner.c
-#            # worker loop: g_stop_requested = false), emit RUN_STATE(running)
-#            # via emit_state, call exec_fn(mode:int, data:bytes) and emit the
-#            # terminal state:
+#       .is_executing() -> bool              # false while only reserved/pending
+#       .service() -> bool                   # supervisor pickup: if a STOP was
+#            # accepted after reservation, consume the request without executing
+#            # or emitting running, and emit IDLE. Otherwise clear only stale
+#            # idle intent, emit RUN_STATE(running) via emit_state, call
+#            # exec_fn(mode:int, data:bytes), and emit the terminal state:
 #            # normal return -> DONE; KeyboardInterrupt -> IDLE; any other
 #            # uncaught exception -> ERROR; stop requested during the run ->
 #            # IDLE (term = stop_requested ? stopped : finished). Returns True
@@ -243,6 +244,54 @@ class RspPrecedesRunStateTest(unittest.TestCase):
         r, emitted, _ = make_runner(self, self.CRIT)
         self.assertFalse(r.service(), "no pending run -> service() returns False")
         self.assertEqual(emitted, [], "an idle service MUST NOT emit")
+
+
+class PrePickupCancellationTest(unittest.TestCase):
+    """P2/P3: accepted STOP between RUN reservation and supervisor pickup
+    cancels the captured request. User source is never touched and the sole
+    lifecycle event is the terminal idle state."""
+
+    CRIT = "F-27/P2 pre-pickup STOP cancellation"
+
+    def test_stop_before_pickup_skips_source_and_emits_only_idle(self):
+        r, emitted, calls = make_runner(self, self.CRIT)
+        self.assertEqual(r.handle_run(GOOD_SOURCE), OK)
+        self.assertEqual(r.handle_stop(), OK)
+
+        self.assertTrue(r.service(), "the cancelled mailbox item must be consumed")
+        self.assertEqual(calls, [], "accepted STOP MUST prevent source execution")
+        self.assertEqual(emitted, [IDLE],
+                         "cancel-before-start emits idle, never running/done/error")
+        self.assertEqual(r.rsm.state, IDLE)
+
+    def test_cancelled_reservation_releases_the_next_run(self):
+        r, emitted, calls = make_runner(self, self.CRIT)
+        r.handle_run(GOOD_SOURCE)
+        r.handle_stop()
+        r.service()
+
+        self.assertEqual(r.handle_run(GOOD_SOURCE), OK,
+                         "pre-pickup cancellation MUST release the reservation")
+        r.service()
+        self.assertEqual(calls, [(1, b"x = 1")])
+        self.assertEqual(emitted, [IDLE, RUNNING, DONE])
+
+    def test_executing_flag_is_true_only_inside_exec(self):
+        cell = {}
+        inside = []
+
+        def observe(mode, data):
+            inside.append(cell["runner"].is_executing())
+
+        r, emitted, _ = make_runner(self, self.CRIT, observe)
+        cell["runner"] = r
+        self.assertFalse(r.is_executing(), "a new runner is not executing")
+        r.handle_run(GOOD_SOURCE)
+        self.assertFalse(r.is_executing(), "reservation alone is not execution")
+        r.service()
+        self.assertEqual(inside, [True])
+        self.assertFalse(r.is_executing(), "terminal cleanup clears executing")
+        self.assertEqual(emitted, [RUNNING, DONE])
 
 
 class TerminalStateTest(unittest.TestCase):

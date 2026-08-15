@@ -45,7 +45,8 @@
 #                                       # armed STOP_CHAR preempts buffered stdin
 #     .feed_input(b) -> None            # CONSOLE_INPUT: bounded ring; on
 #                                       # overflow the EXCESS TAIL is dropped
-#     .inject_stop()                    # arm 0x03 + call notify() EXACTLY once
+#     .inject_stop() -> bool            # atomically arm 0x03 + call notify once;
+#                                       # False rolls the arm back on notify error
 # ---------------------------------------------------------------------------
 
 import io
@@ -72,7 +73,8 @@ CONSOLE = _support.RedReason("pyble_console", owner="agent-engineer")
 BIG = 1 << 30  # an effectively-unlimited bucket for non-budget tests
 
 
-def make_console(testcase, criterion, emit=None, clock=None, cap=BIG, refill=BIG):
+def make_console(testcase, criterion, emit=None, notify=None, clock=None,
+                 cap=BIG, refill=BIG):
     """Build a Console with recording emit/notify seams and an injected clock.
     Returns (console, chunks, notifies): chunks = [(stream, bytes), ...]."""
     cls = CONSOLE.attr(testcase, "Console", criterion)
@@ -84,7 +86,7 @@ def make_console(testcase, criterion, emit=None, clock=None, cap=BIG, refill=BIG
 
     con = cls(
         emit if emit is not None else default_emit,
-        lambda: notifies.append(1),
+        notify if notify is not None else (lambda: notifies.append(1)),
         clock=clock if clock is not None else (lambda: 0),
         tx_capacity=cap,
         tx_refill_per_ms=refill,
@@ -306,7 +308,8 @@ class InjectStopTest(unittest.TestCase):
 
     def test_arms_stop_char_and_notifies_once(self):
         con, _, notifies = make_console(self, self.CRIT)
-        con.inject_stop()
+        self.assertTrue(con.inject_stop(),
+                        "successful notify admission MUST report True")
         self.assertEqual(len(notifies), 1,
                          "inject_stop MUST call the notify seam exactly once")
         buf = bytearray(1)
@@ -318,11 +321,26 @@ class InjectStopTest(unittest.TestCase):
     def test_stop_preempts_buffered_stdin(self):
         con, _, notifies = make_console(self, self.CRIT)
         con.feed_input(b"xy")
-        con.inject_stop()
+        self.assertTrue(con.inject_stop())
         self.assertEqual(drain(self, con), b"\x03xy",
                          "the STOP char MUST jump ahead of buffered stdin so "
                          "the KeyboardInterrupt lands promptly (P3 <500 ms)")
         self.assertEqual(len(notifies), 1)
+
+    def test_notify_failure_rolls_back_stop_char_and_reports_false(self):
+        def queue_full():
+            raise RuntimeError("schedule queue full")
+
+        con, _, _ = make_console(self, self.CRIT, notify=queue_full)
+        con.feed_input(b"xy")
+
+        self.assertFalse(
+            con.inject_stop(),
+            "failed scheduler admission MUST be reported to the agent")
+        self.assertEqual(
+            drain(self, con), b"xy",
+            "failed admission MUST clear the armed 0x03; no latent interrupt "
+            "may preempt later stdin")
 
 
 if __name__ == "__main__":
