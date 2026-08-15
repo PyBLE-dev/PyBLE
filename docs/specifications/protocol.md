@@ -157,7 +157,11 @@ reuse), and the current MicroPython VM epoch. The native ticket stores that VM
 epoch; reserve captures it, and every match, publish, completion, and cancel
 operation compares it rather than consulting only the current global epoch. A deferred worker builds its
 result in private scratch and revalidates the whole ticket before and after
-each VFS operation and before copying into that slot.
+each VFS operation and before copying into that slot until response completion.
+`FILE_GET_BEGIN` then waits for that response to complete and recycle its slot
+before streaming dependent data. From that cut onward, each VFS read and event
+revalidates the queue item's immutable `{handle, connection generation, VM
+epoch}` token; it MUST NOT inspect or touch the recycled response slot.
 
 When a fully encoded response enters the ready FIFO, one absolute 1000 ms
 publication deadline begins. One pre-created NimBLE-host callout owns the

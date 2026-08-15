@@ -686,7 +686,11 @@ Stale/disconnected/old-epoch work is cancelled. It builds results in
 worker-owned scratch, then atomically revalidates the still-live ticket before
 copying into and publishing the reserved slot. Disconnect or VM reset changes
 the slot incarnation and cancels/releases its ticket; a late result observes
-the stale incarnation and cannot touch a recycled slot or publish bytes. Each
+the stale incarnation and cannot touch a recycled slot or publish bytes.
+`FILE_GET_BEGIN` completion wait recycles that response slot before dependent
+streaming begins. Later GET reads therefore validate the item's immutable
+`{handle, connection generation, VM epoch}` rather than the completed ticket
+and never inspect or touch its recycled slot. Each
 physical `FILE_GET_DATA`, `FILE_GET_END`, or `FILE_PUT_ACK` attempt uses the
 snapshotted handle and serializes the exact connection-generation/VM-epoch
 check plus one Notify with GAP lifecycle; a worker-side check followed by a
