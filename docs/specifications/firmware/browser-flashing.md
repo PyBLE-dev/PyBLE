@@ -844,6 +844,17 @@ frontend is a regular, symlink-free, hash-bound input below the one selected
 ARM GNU root. Missing, additional, mixed-root, PATH-selected, basename-only,
 or disagreeing CMake/Pico compiler identities are fatal.
 
+An absolute build path recorded by CMake MAY use the operating system's
+canonical spelling of the caller-selected build root, including macOS
+`/private/tmp` for `/tmp` and `/private/var` for `/var`. The observer admits
+that spelling only when the existing caller root and recorded path resolve to
+the same root and exact descendant. It MUST preserve the descendant's lexical
+components while checking the canonical root: a symlink at or below the
+selected root, an escaped or near-match path, a missing component, or any
+other merely resolving alias remains fatal. Canonicalizing the platform root
+therefore does not authorize a symlink traversal or weaken the final
+resolved-root containment check.
+
 An installed ARM GNU version string is not distribution provenance. The
 `[arm_gnu_toolchain]` lock binds the official binary-distribution HTTPS URL,
 URL-basename filename, size, SHA-256, archive format/root, the exact installed
@@ -991,8 +1002,8 @@ The following ESP-IDF resolution rules are part of that fail-closed mapping:
    file, an admitted described directory marker, or a `CONFIG_ONLY` component
    root, except for these pinned application-`main` inputs:
 
-   - the nine repository-owned files
-     `firmware/user_c_modules/pyble/{pble_proto,pble_ble,pble_info,pble_device_config,pble_runner,pble_console,pble_fs,pble_lock,pble_boot}.c`;
+   - the eleven repository-owned files
+     `firmware/user_c_modules/pyble/{pble_proto,pble_ble,pble_info,pble_device_config,pble_runner,pble_console,pble_fs,pble_lock,pble_boot,pble_vm_lifecycle,pble_termination}.c`;
    - the fourteen files in the selected target's immutable retained
      `.sources/<target>/micropython/lib/berkeley-db-1.xx` tree:
      `btree/{bt_close,bt_conv,bt_debug,bt_delete,bt_get,bt_open,bt_overflow,bt_page,bt_put,bt_search,bt_seq,bt_split,bt_utils}.c`
@@ -1030,7 +1041,7 @@ The following ESP-IDF resolution rules are part of that fail-closed mapping:
    into the application ELF. The selected output-basename multiset MUST equal
    the parsed archive-member multiset exactly. Each selected source MUST also
    belong to that same component's exact described file or directory marker;
-   an application `main` archive may additionally own the exact nine pinned
+   an application `main` archive may additionally own the exact eleven pinned
    PyBLE sources above. A file or root described by one component MUST NOT
    authorize a linked output owned by another component, and the pinned
    Berkeley DB sources remain direct-object-only.
@@ -1067,7 +1078,7 @@ The following ESP-IDF resolution rules are part of that fail-closed mapping:
    - `CMakeFiles/<app-elf>.dir/project_elf_src_<idf-target>.c.obj` for the
      zero-byte role-root ELF anchor;
    - application `CMakeFiles/micropython.elf.dir/<absolute-PyBLE-source>.obj`
-     for the nine repository-owned PyBLE C sources; and
+     for the eleven repository-owned PyBLE C sources; and
    - application
      `esp-idf/main/CMakeFiles/micropy_extmod_btree.dir/<absolute-retained-source>.obj`
      for the fourteen retained Berkeley DB sources.
