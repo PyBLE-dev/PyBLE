@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import ast
 import re
+import shutil
+import subprocess
 import unittest
 from dataclasses import dataclass
 from pathlib import Path
@@ -1043,12 +1045,47 @@ class NativeVmLifecycleContractTests(unittest.TestCase):
         for target in ESP_TARGETS:
             header = source(OVERLAYS / target / "mpconfigboard.h")
             with self.subTest(target=target):
-                self.assertIn('#include "pble_vm_lifecycle.h"', header)
+                self.assertNotIn('#include "pble_vm_lifecycle.h"', header)
+                self.assertRegex(
+                    header,
+                    r"(?m)^void\s+pble_vm_epoch_begin\s*\(\s*void\s*\)\s*;",
+                )
                 self.assertRegex(
                     header,
                     r"#define\s+MICROPY_PORT_INIT_FUNC\s+"
                     r"pble_vm_epoch_begin\s*\(\s*\)",
                 )
+
+    def test_every_esp_overlay_header_preprocesses_without_usermod_include_path(self):
+        compiler = shutil.which("cc")
+        self.assertIsNotNone(compiler, "host C preprocessor is required")
+        probe = '#include "mpconfigboard.h"\n'
+        for target in ESP_TARGETS:
+            with self.subTest(target=target):
+                completed = subprocess.run(
+                    [
+                        compiler,
+                        "-E",
+                        "-P",
+                        "-I",
+                        str(OVERLAYS / target),
+                        "-x",
+                        "c",
+                        "-",
+                    ],
+                    input=probe,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    check=False,
+                )
+                self.assertEqual(
+                    completed.returncode,
+                    0,
+                    "sibling IDF component preprocessing failed:\n"
+                    + completed.stderr,
+                )
+                self.assertIn("void pble_vm_epoch_begin(void);", completed.stdout)
 
     def test_boot_opens_ready_last_after_workers_dupterm_and_autorun(self):
         for target in ESP_TARGETS:
