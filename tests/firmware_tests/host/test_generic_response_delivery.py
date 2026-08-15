@@ -128,18 +128,58 @@ class CompletionWakeOracle:
         self.state = self.FREE
         self.incarnation = 1
         self.signal = 0
+        self.claim: tuple[int, int] | None = None
+        self.handler_admissions = 0
 
-    def reserve(self) -> int | None:
+    def claim_free(self, session: int = 17) -> tuple[int, int] | None:
         if self.state != self.FREE:
             return None
-        # Claim under the pool mutex before touching the untagged semaphore.
-        # A live COMPLETE slot therefore keeps the wake owned by its waiter.
+        # Publish the exact claim identity/session under the pool mutex before
+        # touching the untagged semaphore.
+        self.claim = (self.incarnation, session)
         self.state = self.CLAIMED
+        return self.claim
+
+    def resume_reserve(
+        self, claim: tuple[int, int], *, session_live: bool = True
+    ) -> int | None:
         # A recycled static binary semaphore can retain a delayed old wake.
         # Drain it after the claim and before RESERVED becomes observable.
         self.signal = 0
+        exact = self.state == self.CLAIMED and self.claim == claim
+        if not session_live or not exact:
+            if exact:
+                self.recycle_metadata()
+            return None
         self.state = self.RESERVED
         return self.incarnation
+
+    def reserve(self, session: int = 17) -> int | None:
+        claim = self.claim_free(session)
+        if claim is None:
+            return None
+        return self.resume_reserve(claim)
+
+    def resume_and_dispatch(
+        self, claim: tuple[int, int], *, session_live: bool
+    ) -> bool:
+        if self.resume_reserve(claim, session_live=session_live) is None:
+            return False
+        self.handler_admissions += 1
+        return True
+
+    def recycle_metadata(self) -> None:
+        self.state = self.FREE
+        self.claim = None
+        self.incarnation += 1
+
+    def cancel_session(self, session: int) -> bool:
+        if self.state == self.FREE or self.claim is None:
+            return False
+        if self.claim[1] != session:
+            return False
+        self.recycle_metadata()
+        return True
 
     def transition_complete(self, incarnation: int) -> int | None:
         """Commit COMPLETE, but return a give that the test may delay."""
@@ -161,8 +201,7 @@ class CompletionWakeOracle:
 
     def hard_recycle(self) -> None:
         self.signal = 0
-        self.state = self.FREE
-        self.incarnation += 1
+        self.recycle_metadata()
 
     def wait_nowait(self, incarnation: int) -> bool | None:
         if self.signal == 0:
@@ -174,8 +213,7 @@ class CompletionWakeOracle:
             return None
         if self.state != self.COMPLETE:
             return False
-        self.state = self.FREE
-        self.incarnation += 1
+        self.recycle_metadata()
         return True
 
 
@@ -272,6 +310,28 @@ class FrozenResponsePumpOracleTests(unittest.TestCase):
             "a failed reservation must not drain the retained waiter wake",
         )
         self.assertTrue(model.wait_nowait(incarnation))
+
+    def test_cancel_between_claim_and_drain_cannot_expose_reserved(self):
+        model = CompletionWakeOracle()
+        model.signal = 1
+        claim = model.claim_free(session=23)
+        self.assertIsNotNone(claim)
+        self.assertEqual(model.state, model.CLAIMED)
+
+        self.assertTrue(model.cancel_session(23))
+        recycled_incarnation = model.incarnation
+        self.assertFalse(
+            model.resume_and_dispatch(claim, session_live=False),
+            "a canceled exact claim must not be blindly exposed as RESERVED",
+        )
+        self.assertEqual(model.handler_admissions, 0)
+        self.assertEqual(model.state, model.FREE)
+        self.assertEqual(model.incarnation, recycled_incarnation)
+        self.assertIsNone(model.claim)
+
+        fresh = model.reserve(session=24)
+        self.assertIsNotNone(fresh, "the abandoned claim must not leak the slot")
+        self.assertNotEqual(fresh, claim[0])
 
 
 class NativeResponsePoolContractTests(unittest.TestCase):
@@ -491,14 +551,34 @@ class NativeResponsePoolContractTests(unittest.TestCase):
         enter = reserve.find("taskENTER_CRITICAL(&s_rsp_mux)")
         free_check = reserve.find("slot->state != PBLE_RSP_FREE", enter)
         skip_live = reserve.find("continue;", free_check)
-        claim = reserve.find("slot->state = PBLE_RSP_CLAIMED", skip_live)
+        claim_slot = reserve.find("slot->ticket.slot = i", skip_live)
+        claim_incarnation = reserve.find(
+            "slot->ticket.incarnation = slot->incarnation", claim_slot
+        )
+        claim_session = reserve.find(
+            "slot->ticket.session = *session", claim_incarnation
+        )
+        claim_epoch = reserve.find("slot->ticket.vm_epoch = vm_epoch", claim_session)
+        claim = reserve.find("slot->state = PBLE_RSP_CLAIMED", claim_epoch)
+        claim_copy = reserve.find(
+            "pble_rsp_ticket_t claim_ticket = slot->ticket", claim
+        )
         claim_exit = reserve.find("taskEXIT_CRITICAL(&s_rsp_mux)", claim)
         drain = reserve.find("xSemaphoreTake(s_rsp_done[i], 0)", claim_exit)
-        reserve_enter = reserve.find("taskENTER_CRITICAL(&s_rsp_mux)", drain)
-        expose_state = reserve.find(
-            "slot->state = PBLE_RSP_RESERVED", reserve_enter
+        claim_live = reserve.find(
+            "pble_rsp_session_valid(&claim_ticket)", drain
         )
-        expose_ticket = reserve.find("*ticket = slot->ticket", expose_state)
+        reserve_enter = reserve.find("taskENTER_CRITICAL(&s_rsp_mux)", claim_live)
+        claim_recheck = reserve.find(
+            "pble_rsp_claim_matches_locked(slot, &claim_ticket)",
+            reserve_enter,
+        )
+        failure_recycle = reserve.find("pble_rsp_recycle_locked(slot)", claim_recheck)
+        failure_continue = reserve.find("continue;", failure_recycle)
+        expose_state = reserve.find(
+            "slot->state = PBLE_RSP_RESERVED", failure_continue
+        )
+        expose_ticket = reserve.find("*ticket = claim_ticket", expose_state)
         reserve_exit = reserve.find(
             "taskEXIT_CRITICAL(&s_rsp_mux)", expose_ticket
         )
@@ -506,10 +586,19 @@ class NativeResponsePoolContractTests(unittest.TestCase):
             enter,
             free_check,
             skip_live,
+            claim_slot,
+            claim_incarnation,
+            claim_session,
+            claim_epoch,
             claim,
+            claim_copy,
             claim_exit,
             drain,
+            claim_live,
             reserve_enter,
+            claim_recheck,
+            failure_recycle,
+            failure_continue,
             expose_state,
             expose_ticket,
             reserve_exit,
@@ -523,6 +612,25 @@ class NativeResponsePoolContractTests(unittest.TestCase):
             reserve.find("xSemaphoreTake(s_rsp_done[i], 0)"),
             drain,
             "no slot semaphore may be drained before that slot is claimed",
+        )
+        claim_matches = code_only(
+            c_function(PROTO, "pble_rsp_claim_matches_locked")
+        )
+        self.assertIn("slot->state == PBLE_RSP_CLAIMED", claim_matches)
+        self.assertRegex(
+            claim_matches,
+            r"pble_rsp_ticket_matches_locked\s*\(\s*slot\s*,\s*claim\s*\)",
+        )
+        failure = reserve[claim_recheck:expose_state]
+        self.assertRegex(
+            failure,
+            r"\bif\s*\(\s*!\s*claim_live\s*\|\|\s*!\s*claim_matches\s*\)",
+        )
+        self.assertRegex(
+            failure,
+            r"\bif\s*\(\s*claim_matches\s*\)[\s\S]*"
+            r"pble_rsp_recycle_locked\s*\(\s*slot\s*\)",
+            "only the still-exact abandoned claim may be recycled",
         )
 
     def test_completion_wait_rechecks_tagged_state_after_every_wake(self):
