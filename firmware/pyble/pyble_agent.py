@@ -20,7 +20,10 @@
 #   * main() — the device entry frozen into the image (_boot.py calls it):
 #     builds the BleLink, pins micropython.kbd_intr(3) (P3), installs the
 #     console tee via os.dupterm (guarded so a CPython import never breaks),
-#     starts the link, runs maybe_autorun() LAST, then loops poll() forever.
+#     and defers os.dupterm_notify through micropython.schedule so the pending
+#     KeyboardInterrupt is created only after the synchronous BTstack IRQ and
+#     its RSP have returned. It starts the link, runs maybe_autorun() LAST, then
+#     loops poll() forever.
 #     An outer fault restart rebuilds the BleLink and re-advertises (H9): the
 #     board never needs BOOTSEL to recover from a supervisor fault.
 #
@@ -77,6 +80,22 @@ def _noop():
     return None
 
 
+def _make_scheduled_dupterm_notify(schedule, dupterm_notify):
+    """Return the zero-arg console notify seam used on rp2 (P3/P4).
+
+    BTstack delivers GATTS writes from a synchronous scheduler node. Calling
+    os.dupterm_notify inline there creates a pending KeyboardInterrupt inside
+    the protected BLE IRQ callback: that loses the command RSP and upstream
+    disables the IRQ handler. Enqueue the native callable itself so the current
+    BTstack node can finish; the pending interrupt is then raised back in the
+    supervisor's user-code frame at its next VM back-edge.
+    """
+    def _notify():
+        schedule(dupterm_notify, None)
+
+    return _notify
+
+
 class Agent:
     """The host-testable agent wiring (interface pinned by
     tests/firmware_tests/host/test_pyble_agent.py):
@@ -92,6 +111,7 @@ class Agent:
         self._reset = reset
         self._clock = clock if clock is not None else _ticks_ms
         self._reboot_at = None          # ms deadline for the deferred reset
+        self._interrupt_after_rsp = False  # P3/P4: never inject inside handler
         self._device_id = pyble_info.device_id_from_unique_id(unique_id)
 
         # Persisted config (P5: /pyble_conf.json in the workspace jail).
@@ -193,8 +213,16 @@ class Agent:
     # -- link callbacks --------------------------------------------------------
     def _on_message(self, msg):
         rsp = self._dispatcher.on_message(msg)
+        # STOP/SOFT_REBOOT only arm this one-shot from their active-run handler.
+        # Snapshot+clear before TX so a failed/dead link cannot leak the intent
+        # into an unrelated later command. The actual dupterm notify is itself
+        # scheduler-deferred by main() so its KBI lands outside the BLE IRQ.
+        interrupt_after_rsp = self._interrupt_after_rsp
+        self._interrupt_after_rsp = False
         if rsp is not None:
             self._link.send_message(rsp)
+        if interrupt_after_rsp:
+            self.console.inject_stop()
 
     def _on_connect(self):
         # Refresh the INFO read for the new session (mtu/free_mem/label live).
@@ -270,11 +298,11 @@ class Agent:
 
     def _h_stop(self, frame):
         # §6/P3: RSP{OK} always (idempotent). Only an ACTIVE run additionally
-        # arms the console 0x03 channel — an idle STOP must neither emit a
-        # RUN_STATE nor leave a stale interrupt armed for the next run.
+        # requests the post-RSP console 0x03 path — an idle STOP must neither
+        # emit a RUN_STATE nor leave a stale interrupt armed for the next run.
         status = self._runner.handle_stop()
         if self._run_active():
-            self.console.inject_stop()
+            self._interrupt_after_rsp = True
         return bytes((status,))
 
     def _h_soft_reboot(self, frame):
@@ -283,7 +311,7 @@ class Agent:
         # supervisor once the bounded TX-flush delay has elapsed.
         if self._run_active():
             self._runner.handle_stop()
-            self.console.inject_stop()
+            self._interrupt_after_rsp = True
         self._reboot_at = self._clock() + REBOOT_FLUSH_MS
         return bytes((OK,))
 
@@ -367,11 +395,18 @@ def _serve_forever():
     _activate_usb(machine)
     link = pyble_ble.BleLink()
     dupterm_notify = getattr(os, "dupterm_notify", None)
-    if dupterm_notify is not None:
-        def _notify():
-            dupterm_notify(None)        # P3: schedule the 0x03 delivery
+    try:
+        import micropython
+    except ImportError:
+        micropython = None
+    schedule = getattr(micropython, "schedule", None)
+    if dupterm_notify is not None and schedule is not None:
+        # P3/P4: schedule the NATIVE callable (not a Python wrapper) so it runs
+        # only after the current BTstack scheduler node has returned. It then
+        # creates the pending KBI that unwinds the supervisor's user-code frame.
+        _notify = _make_scheduled_dupterm_notify(schedule, dupterm_notify)
     else:
-        _notify = _noop                 # guarded: CPython has no dupterm
+        _notify = _noop                 # guarded: CPython has no dupterm/schedule
 
     agent = Agent(link, "/",
                   unique_id=machine.unique_id(),
@@ -381,9 +416,10 @@ def _serve_forever():
 
     # P3: pin the interrupt char so the armed 0x03 becomes KeyboardInterrupt.
     try:
-        import micropython
+        if micropython is None:
+            raise AttributeError
         micropython.kbd_intr(3)
-    except (ImportError, AttributeError):
+    except AttributeError:
         pass
 
     # The console tee replaces the local REPL stdio (guarded for CPython).
