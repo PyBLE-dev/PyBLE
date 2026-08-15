@@ -177,8 +177,10 @@ callback already queued when reset begins MUST revalidate the exact
 epoch/incarnation and touch nothing;
 reset MUST NOT depend on callout deinitialization or removal of a queued host
 event. Work dequeued under an older epoch MUST fail its token checks and MUST
-NOT perform a VFS operation,
-publish a response, emit an event, wake the runner, or touch a recycled slot.
+NOT start a VFS operation, publish a response, emit an event, wake the runner,
+or touch a recycled slot. An indivisible VFS operation that validly started
+before invalidation MAY finish, but its owner MUST revalidate afterward and
+MUST start or publish nothing further.
 
 Response completion has transition ownership: an exact live ticket may move
 to complete and signal its waiter once. Repeated cancellation or completion of

@@ -530,8 +530,10 @@ check plus one Notify with GAP lifecycle; a worker-side check followed by a
 global current-handle send is forbidden. `FILE_PUT_DATA` queue items carry the
 same session/VM token despite having no generic response slot. The worker waits
 off-host for bounded response completion before emitting any dependent download
-events. No FS response, dependent event, or VFS effect crosses sessions or VM
-epochs.
+events. No VFS operation or bounded chunk starts after token invalidation. An
+indivisible operation validly started before invalidation may finish, but the
+mandatory post-operation check suppresses every later VFS operation, response,
+or dependent event.
 
 **Frozen-vs-native plan:** frozen for orchestration; the **chunk write + incremental CRC** inner loop is a native candidate on C3 (D1).
 
@@ -1043,7 +1045,7 @@ entered, final wiring is safe, and auto-run has reserved or declined its work;
 a boot exception leaves admission closed. A worker item dequeued around
 provisional closure either makes its entire-dispatch busy state visible before
 quiescence can pass, or observes the closed epoch and cancels/releases its
-ticket without a VFS effect.
+ticket before starting a VFS operation.
 
 ## 7. Protocol & data structures
 
