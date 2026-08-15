@@ -197,22 +197,54 @@ hard-recycles every response-slot incarnation. It drains response-completion
 signals, resets filesystem queues and transfer state, and resets the runner
 hand-off semaphore, run-state machine,
 request buffers, worker pointer, console buffers, and BLE RX reassembly state.
+It explicitly sets both custom VM roots, `pble_runner_sysexit` and
+`pble_fs_put_file`, to `MP_OBJ_NULL` before new-VM registration allocates or
+opens either.
 It reopens admission only after all native handlers and new-VM workers are
 registered, entered, and safe. The reference ESP port binds this lifecycle to
 two pinned port seams without editing upstream MicroPython. An allocation-free,
 idempotent linker wrapper around `mp_thread_deinit` closes all admission,
 invalidates old tickets/session work, and detaches runner/console worker
 pointers before calling the exact upstream function that deletes old VM
-threads. Each PyBLE ESP board overlay then uses `MICROPY_PORT_INIT_FUNC` to
+threads. Admission and lifecycle activity share one authoritative lock and
+counter: every complete CMD enters only while open and leaves only after all of
+its handler effects, while every off-MP callback that can touch VM/rooted or
+epoch-owned state enters with its exact armed epoch. Persistent runner and
+filesystem worker tasks are not members of this wrapper activity counter: the
+FS worker's entire-dispatch `busy` state belongs only to the earlier
+`SOFT_REBOOT` quiescence gate. The wrapper atomically closes and invalidates,
+then uses one absolute 2500 ms deadline to drain activity, disarm
+the soft-reboot and identify timers, prevent future callout scheduling, and
+acquire the physical recursive TX mutex. An inactive or already-fired lifecycle
+timer is idempotent disarm success. Timeout, counter invariant failure,
+unexpected timer-disarm failure, or TX-quiescence failure invokes non-returning
+`esp_restart()`; the host callback is never made to wait. The wrapper owns the
+physical TX mutex while it detaches worker pointers, sets both custom VM roots
+to `MP_OBJ_NULL`, and calls `__real_mp_thread_deinit`; it releases the mutex only
+after that function has deleted the old VM tasks and returned. Thus a paced
+sender cannot reacquire the mutex and then be deleted while owning it.
+
+The soft-reboot timer carries its armed VM epoch and must enter/leave lifecycle
+activity before reading a rooted `SystemExit` or calling the scheduler. The
+identify timer likewise carries/revalidates its epoch and stops without another
+GPIO transition once invalidated. This closes passed-gate races for
+`RUN`/`STOP`/`SOFT_REBOOT`, console input, and filesystem enqueue as well as
+timer races. Each PyBLE ESP board overlay then uses `MICROPY_PORT_INIT_FUNC` to
 rotate the VM epoch and retained connection generation and perform the hard
 reset exactly once per subsequent `mp_init`. Repeating agent initialization in
 one VM is idempotent. Agent initialization does not itself open the gate: final boot wiring explicitly crosses the
 readiness barrier only after both workers have entered and auto-run admission
 has completed. A boot-wiring failure leaves admission closed. A response
-callback already queued when reset begins MUST revalidate the exact
-epoch/incarnation and touch nothing;
-reset MUST NOT depend on callout deinitialization or removal of a queued host
-event. The release build and link map MUST prove that every ESP target resolves
+callback is a static event with no captured epoch or frame pointer. It first
+enters lifecycle activity and, while reset/not-ready admission is closed, does
+nothing. Once ready it can act only as a fresh kick that peeks the current
+ticket, incarnation, epoch, and connection token under their locks. A callback
+preempted after that peek remains counted, so wrapper reset cannot recycle its
+state until it leaves. Reset MUST NOT depend on callout deinitialization or
+removal of a queued host event. If either lifecycle seam observes the retained
+connection already in `CLOSING`, it immediately invokes `esp_restart()` rather
+than rotate to an `OPEN` generation or disarm the independent termination
+watchdog. The release build and link map MUST prove that every ESP target resolves
 `mp_thread_deinit` through the wrapper and includes the per-`mp_init` hook; no
 upstream source is edited. Work dequeued under an older epoch MUST fail its token checks and MUST
 NOT start a VFS operation, publish a response, emit an event, wake the runner,
@@ -223,8 +255,14 @@ MUST start or publish nothing further.
 Response completion has transition ownership: an exact live ticket may move
 to complete and signal its waiter once. Repeated cancellation or completion of
 an already-complete incarnation is idempotent and emits no second wake; slot
-recycle drains any stale completion signal before a later incarnation can be
-reserved. Filesystem no-response `FILE_PUT_DATA` work and
+reserve drains any stale completion signal before exposing a later incarnation.
+The physical semaphore give remains outside the pool mutex. After every wake,
+the waiter rechecks the exact slot incarnation and authoritative state under
+that mutex: a matching `RESERVED`/`READY` slot treats the wake as stale and
+continues waiting; exact `COMPLETE` returns its result; an incarnation mismatch
+returns cancelled. This remains correct when an old give is delayed across hard
+recycle/reserve and when a new completion fills the binary semaphore before the
+old give. Filesystem no-response `FILE_PUT_DATA` work and
 `FILE_GET_DATA`, `FILE_GET_END`, and `FILE_PUT_ACK` event
 attempts are bound to the exact `{handle, connection generation, VM epoch}` and
 serialize their final token check plus Notify with connection lifecycle. An
