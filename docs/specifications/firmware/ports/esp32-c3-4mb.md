@@ -148,11 +148,23 @@ capacity reserve. Pre-emption occurs only at a
 complete PBLE/1 message boundary: fragments of the current message remain
 contiguous, no control fragment is inserted into a bulk message, and the app's
 single reassembly buffer never sees interleaved messages. The implementation
-MAY use reserved credits, priority queues, bounded backpressure, or another
-proved mechanism; the required result is the observable reserve, ordering,
-integrity, and deadline rather than a particular lock design. Retaining every
-deliberate flood byte is not a gate; preserving bounded memory, STOP
-delivery/order, valid reassembly, and a live control plane is.
+MUST also bound console notifications already accepted into the ESP
+host/controller path, because local Notify acceptance is not proof of delivery
+to the central. The console tee admits its first notification immediately and
+then admits at most one notification every **40 ms**. Each interval begins from
+the completion time of the preceding paced attempt, never from an older
+schedule, so delayed attempts cannot produce a catch-up burst. The interval
+wait releases the MicroPython GIL and holds no physical TX mutex. A newly
+staged chunk captures its exact live session once before that wait; immediately
+after the wait the worker rechecks STOP before submission, and neither a retry
+nor a disconnect/reconnect may refresh or retarget the captured session. An
+offline chunk is omitted without waiting, and VM reset clears the pacing
+deadline. The implementation MAY additionally discard bounded bulk output
+during a deliberate flood. Retaining every flood byte is not a gate;
+preserving bounded memory, the four-block reserve, STOP delivery/order, valid
+reassembly, and a live control plane is. The 40 ms limit is console-only and
+does not pace control or filesystem traffic, weaken the strict 500 ms gate, or
+change the specialized response's single 15 ms boundary budget.
 
 ## C3-G3 — Files, reliability, and resume (FROZEN)
 

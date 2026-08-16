@@ -1177,6 +1177,22 @@ response fragments, followed by `RUN_STATE(idle)`. Tests bind capacity,
 ordering, valid reassembly/restart, and the 500 ms terminal deadline.
 The 15 ms budget covers only physical boundary ownership; it never substitutes
 for the four-block reserve or permits a capacity wait/retry.
+
+The reserve bounds local admission but cannot retract console notifications
+that NimBLE or the controller has already accepted FIFO-ahead of STOP. The ESP
+console chokepoint therefore has a second, console-only invariant: the first
+notification is immediate and successive paced attempts complete at least
+**40 ms** apart. The next deadline is minted from monotonic time only after the
+preceding paced attempt returns; an oversleep, capacity retry, or scheduler
+delay never accrues credit and never permits a catch-up burst. Before waiting,
+the staged chunk snapshots one exact live session. The bounded interval wait
+runs with the MicroPython GIL released and before the BLE helper can acquire
+the TX mutex. The worker reacquires the GIL and rechecks STOP after the wait,
+before releasing it for submission. A retry retains that same token, so a
+disconnect/reconnect never retargets old output; absence omits the chunk
+without consuming an interval. VM reset clears the deadline. This pacing does
+not apply to control or filesystem notifications and does not alter the
+four-block reserve or the 15 ms specialized boundary contract.
 This is required for both a quiet tight loop and a loop continuously printing
 to stdout
 ([C3-G2](ports/esp32-c3-4mb.md#c3-g2--run-console-and-authoritative-stop-frozen)).

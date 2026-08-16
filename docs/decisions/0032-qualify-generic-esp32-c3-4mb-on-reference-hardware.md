@@ -82,6 +82,17 @@ defines the required regression; it is not a passing qualification result.
    than 500 ms after the STOP command is submitted. Console completeness under
    deliberate overload is subordinate to that bounded control-plane behavior;
    malformed frames, a lost control event, or a wedged link are never allowed.
+   Local Notify acceptance is not central-observed delivery, so the reserve
+   alone is insufficient: already accepted console notifications can remain
+   FIFO-ahead of STOP in the host/controller path. The shared ESP console path
+   therefore also admits at most one notification every **40 ms**, with the
+   first notification immediate and no catch-up burst after a delayed attempt.
+   It waits outside both the MicroPython GIL and the physical TX mutex, checks
+   STOP again after the wait and before submission, and never refreshes the
+   exact session token captured for that chunk. VM reset clears the pacing
+   deadline. This console-only bound does not change the four-block reserve,
+   the specialized response's 15 ms complete-message-boundary budget, or the
+   strict host-observed 500 ms STOP gate.
 
 5. **Keep GPIO8 strictly reference-carrier evidence.** The operator may
    confirm this particular connected carrier's onboard NeoPixel is wired to
@@ -108,9 +119,10 @@ defines the required regression; it is not a passing qualification result.
 - The same app and PBLE/1 contract used by classic ESP32 and ESP32-S3 remains
   the cross-target proof; target or carrier conditionals are a failure.
 - The console path gains a small, testable control-priority invariant. Its
-  implementation may apply backpressure or discard bounded bulk output during
-  a deliberate flood, but it cannot spend the capacity needed to acknowledge
-  and finish STOP or corrupt PBLE/1 reassembly through fragment interleaving.
+  implementation applies no-burst backpressure and may discard bounded bulk
+  output during a deliberate flood, but it cannot spend the capacity needed to
+  acknowledge and finish STOP, build an unbounded delivery queue ahead of
+  control, or corrupt PBLE/1 reassembly through fragment interleaving.
 - OI-1 obtains a C3-only engineering baseline before a future release policy
   admits C3. Measurements from another profile never fill the C3 row.
 - GPIO8 remains an operator-owned wiring fact rather than product routing
