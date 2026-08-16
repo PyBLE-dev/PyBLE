@@ -25,11 +25,13 @@
 #   pyble_console.STDIN_RING == 256     (pble_console.c PBLE_STDIN_RING)
 #   pyble_console.STOP_CHAR == 0x03     (P3 interrupt char)
 #   pyble_console.Console(emit, notify, clock=None, tx_capacity=None,
-#                         tx_refill_per_ms=None)
+#                         tx_refill_per_ms=None, stop_fail=None)
 #     - an io.IOBase subclass (P8: ONE object serves tee + stdin + STOP).
 #     - emit(stream:int, data:bytes) is called once per emitted chunk,
 #       len(data) <= CHUNK; notify() (zero-arg) is the injected
-#       os.dupterm_notify seam; clock() -> int milliseconds.
+#       os.dupterm_notify seam; clock() -> int milliseconds; stop_fail() is
+#       the non-returning reset seam if re-notifying a STOP consumed inside
+#       dupterm write cannot be admitted.
 #     - tx_capacity / tx_refill_per_ms configure the token bucket (defaults =
 #       the HIL-tuned OI-P3 constants). Semantics: tokens start at capacity;
 #       tokens = min(capacity, tokens + elapsed_ms * refill) at each attempt;
@@ -74,7 +76,7 @@ BIG = 1 << 30  # an effectively-unlimited bucket for non-budget tests
 
 
 def make_console(testcase, criterion, emit=None, notify=None, clock=None,
-                 cap=BIG, refill=BIG):
+                 cap=BIG, refill=BIG, stop_fail=None):
     """Build a Console with recording emit/notify seams and an injected clock.
     Returns (console, chunks, notifies): chunks = [(stream, bytes), ...]."""
     cls = CONSOLE.attr(testcase, "Console", criterion)
@@ -84,12 +86,17 @@ def make_console(testcase, criterion, emit=None, notify=None, clock=None,
     def default_emit(stream, data):
         chunks.append((stream, bytes(data)))
 
+    kwargs = {
+        "clock": clock if clock is not None else (lambda: 0),
+        "tx_capacity": cap,
+        "tx_refill_per_ms": refill,
+    }
+    if stop_fail is not None:
+        kwargs["stop_fail"] = stop_fail
     con = cls(
         emit if emit is not None else default_emit,
         notify if notify is not None else (lambda: notifies.append(1)),
-        clock=clock if clock is not None else (lambda: 0),
-        tx_capacity=cap,
-        tx_refill_per_ms=refill,
+        **kwargs
     )
     return con, chunks, notifies
 
@@ -250,6 +257,96 @@ class NeverWedgeTest(unittest.TestCase):
         except Exception as exc:  # noqa: BLE001
             self.fail("write() MUST NOT propagate an emit failure into the "
                       "running program (got {!r})".format(exc))
+
+
+class PrintFloodStopRecoveryTest(unittest.TestCase):
+    """P3: upstream mp_os_dupterm_tx_strn catches every exception escaping a
+    Python dupterm write.  A STOP KBI delivered inside the tee must therefore
+    be re-armed/re-notified before write returns, or print flood silently
+    consumes the acknowledged STOP and leaves the runner permanently busy."""
+
+    CRIT = "F-27/P3 print-flood dupterm-write STOP recovery"
+
+    def test_consumed_stop_kbi_is_retried_before_write_returns(self):
+        def pending_stop_lands(stream, data):
+            raise KeyboardInterrupt()
+
+        con, _, notifies = make_console(
+            self, self.CRIT, emit=pending_stop_lands)
+        con.set_run_active(True)
+        self.assertTrue(con.inject_stop())
+
+        # Model the scheduled native os.dupterm_notify consuming 0x03 and
+        # setting the main-thread pending KBI.  Under print flood its next VM
+        # back-edge is still inside this dupterm write.
+        buf = bytearray(1)
+        self.assertEqual(con.readinto(buf), 1)
+        self.assertEqual(buf[0], 0x03)
+
+        try:
+            written = con.write(b"flood")
+        except KeyboardInterrupt:
+            self.fail(
+                "the exact delivered STOP KBI escaped into upstream's "
+                "catch-all dupterm wrapper")
+        self.assertEqual(written, 5)
+        self.assertEqual(
+            len(notifies), 2,
+            "the tee must enqueue native dupterm_notify exactly once more")
+        self.assertEqual(con.readinto(buf), 1,
+                         "the retry must re-arm the STOP interrupt char")
+        self.assertEqual(buf[0], 0x03)
+
+        # A terminal transition invalidates any not-yet-consumed retry.
+        con.inject_stop()
+        con.set_run_active(False)
+        self.assertIsNone(con.readinto(buf),
+                          "terminal cleanup must leave no latent STOP byte")
+
+    def test_unmarked_keyboard_interrupt_still_propagates(self):
+        def unrelated_kbi(stream, data):
+            raise KeyboardInterrupt()
+
+        con, _, _ = make_console(self, self.CRIT, emit=unrelated_kbi)
+        con.set_run_active(True)
+        with self.assertRaises(
+                KeyboardInterrupt,
+                msg="only a consumed PyBLE STOP may use dupterm-write retry"):
+            con.write(b"x")
+
+    def test_retry_schedule_failure_clears_state_then_resets(self):
+        calls = []
+
+        def notify():
+            calls.append("notify")
+            if len(calls) == 2:
+                raise RuntimeError("schedule queue full on retry")
+
+        class ResetNow(BaseException):
+            pass
+
+        def stop_fail():
+            calls.append("reset")
+            raise ResetNow()
+
+        def pending_stop_lands(stream, data):
+            raise KeyboardInterrupt()
+
+        con, _, _ = make_console(
+            self, self.CRIT, emit=pending_stop_lands, notify=notify,
+            stop_fail=stop_fail)
+        con.set_run_active(True)
+        self.assertTrue(con.inject_stop())
+        buf = bytearray(1)
+        self.assertEqual(con.readinto(buf), 1)
+
+        with self.assertRaises(
+                ResetNow,
+                msg="failed post-RSP retry admission must reset, not wedge"):
+            con.write(b"flood")
+        self.assertEqual(calls, ["notify", "notify", "reset"])
+        self.assertIsNone(con.readinto(buf),
+                          "reset fail-safe must first clear the retry byte")
 
 
 class ReadIntoTest(unittest.TestCase):

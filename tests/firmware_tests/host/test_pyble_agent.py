@@ -1097,6 +1097,61 @@ class SchedulerFailureFailSafeTest(AgentTestBase):
     def test_soft_reboot_scheduler_full_resets_after_rsp(self):
         self._exercise(0x22, 83)
 
+    def test_print_flood_retry_scheduler_full_uses_agent_reset(self):
+        """A schedule failure after dupterm-write swallowed the first KBI is
+        later than Agent._commit_control, so the console must retain the
+        Agent's injected reset seam for that acknowledged-STOP fail-safe."""
+        order = []
+        notify_calls = [0]
+
+        def notify():
+            notify_calls[0] += 1
+            order.append(("notify", notify_calls[0]))
+            if notify_calls[0] == 2:
+                raise RuntimeError("schedule queue full on print retry")
+
+        def reset_now():
+            order.append(("reset",))
+            raise _ResetNow()
+
+        agent, link = self.new_agent(
+            "F-27/P3 print-flood retry reset wiring", order=order,
+            notify=notify, reset=reset_now)
+        send(self, link, 0x20,
+             bytes((1,)) + b"while True: print('flood')", id_=84)
+        agent._runner._executing = True
+        order[:] = []
+
+        send(self, link, 0x21, id_=85)
+        buf = bytearray(1)
+        self.assertEqual(agent.console.readinto(buf), 1)
+        self.assertEqual(buf[0], 0x03)
+        agent.console.set_run_active(True)
+
+        def pending_stop_lands(stream, data):
+            raise KeyboardInterrupt()
+
+        agent.console._emit = pending_stop_lands
+        try:
+            with self.assertRaises(
+                    _ResetNow,
+                    msg="retry admission failure must use Agent's reset seam"):
+                agent.console.write(b"flood")
+        except KeyboardInterrupt:
+            self.fail("delivered STOP escaped into upstream's dupterm catch "
+                      "instead of reaching retry/reset recovery")
+
+        rsp_idx = next(
+            i for i, event in enumerate(order)
+            if event[0] == "tx"
+            and pyble_proto.decode(event[1]).type == RSP
+            and pyble_proto.decode(event[1]).opcode == 0x21
+            and pyble_proto.decode(event[1]).id == 85)
+        self.assertLess(rsp_idx, order.index(("notify", 1)))
+        self.assertLess(order.index(("notify", 2)), order.index(("reset",)))
+        self.assertIsNone(agent.console.readinto(buf),
+                          "failed retry must leave no latent armed 0x03")
+
 
 class StopWhileIdleTest(AgentTestBase):
     """§6/P3: STOP while idle is a no-op RSP{OK} — and NO RUN_STATE is emitted
