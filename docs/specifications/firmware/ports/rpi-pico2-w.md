@@ -28,10 +28,16 @@ Status: **P1–P9 FROZEN for the F-25/F-26/F-27/X-13 stories (`[docs]` 2026-08-1
   MUST NOT escape the console tee's `write()` frame into that upstream catch.
   The tee tracks whether its armed `0x03` was consumed. If that exact in-flight
   STOP lands inside `write()`, the tee consumes it locally, re-arms `0x03`,
-  enqueues the same native `os.dupterm_notify` once more, and immediately
-  returns the full write count. The retried interrupt then lands after the
-  native dupterm wrapper returns, so the runner performs the ordinary clean
-  teardown and publishes `RUN_STATE(idle)` on the same connection. A
+  temporarily detaches only itself from the dupterm slot, enqueues one recovery
+  callback, and immediately returns the full write count. After the native
+  dupterm wrapper returns, that callback temporarily reattaches the tee, calls
+  native `os.dupterm_notify(None)` to consume the re-armed byte, and detaches
+  the tee again before the pending exception can be raised. The callback MUST
+  contain no Python branch or further scheduled hop after the native notify.
+  The retried interrupt therefore lands outside every dupterm write; runner
+  terminalization reattaches the tee and publishes `RUN_STATE(idle)` on the
+  same connection. A stale recovery callback after terminalization MUST be an
+  inert no-op and MUST NOT detach the restored tee. A
   `KeyboardInterrupt` without the consumed-STOP marker MUST propagate
   unchanged. Terminal transition clears both the marker and any armed byte.
   Retry scheduler-admission failure MUST clear both before invoking the
