@@ -75,9 +75,25 @@ Reassembled RX message cap **4096 bytes** (covers RUN source ≤ 2048 + headers)
 
 One `io.IOBase` object serving three roles: stdout tee (gated on the run-active flag — the main-thread equivalent of the ESP32 worker-origin gate) emitting `CONSOLE_DATA` `[stream:u8][bytes ≤200]` chunks; a 256-byte stdin ring (drop-on-overflow) for `CONSOLE_INPUT`; and the `0x03` STOP channel (P3). BTstack queues congested notifies on the heap rather than dropping (the inverse of the ESP32 mbuf-starve loss mode): emission uses the bounded token bucket below; a dead link degrades to drop-and-continue, never a wedge.
 
-The portable token bucket has exact capacity `TX_CAPACITY = 2048` bytes and
-exact refill rate `TX_REFILL_PER_MS = 20` bytes per millisecond. Its
-source-derived maximum empty-to-full refill horizon is therefore frozen as:
+The portable token bucket has exact capacity `TX_CAPACITY = 2048` tokens,
+exact refill rate `TX_REFILL_PER_MS = 20` tokens per millisecond, and exact
+minimum debit `TX_NOTIFY_COST = 80` tokens for every attempted Notify. A chunk
+costs `max(len(chunk), TX_NOTIFY_COST)`: full 200-byte chunks retain their
+byte-proportional cost, while tiny writes cannot create an effectively
+unbounded notification count from a byte-only budget. The initial capacity
+therefore admits at most 25 tiny notifications and sustained tiny-write output
+at most 250 notifications/s.
+
+This notification floor is required by final-candidate HIL: one-byte/two-byte
+`print()` writes charged only by payload admitted 393 queued `CONSOLE_DATA`
+frames ahead of STOP and delayed both the already-correct STOP response and
+terminal idle by 1,169 ms. The 80-token floor keeps sustained admission below
+that observed link's approximately 336 notifications/s drain rate, with the
+initial burst bounded independently. It drops flood output rather than
+blocking and does not alter PBLE/1 control ordering or the strict `<500 ms`
+STOP gate.
+
+The source-derived maximum empty-to-full refill horizon remains frozen as:
 
 ```text
 TX_BUDGET_MS = ceil(TX_CAPACITY / TX_REFILL_PER_MS)
@@ -87,7 +103,7 @@ TX_BUDGET_MS = ceil(TX_CAPACITY / TX_REFILL_PER_MS)
 
 `TX_BUDGET_MS` and the release-evidence field `console_tx_budget_ms` mean only
 that refill horizon. They are not a blocking Notify timeout, per-chunk sleep,
-or promise to retain every flood byte. The runtime MUST define all three
+or promise to retain every flood byte. The runtime MUST define all four
 positive integer constants and MUST derive `TX_BUDGET_MS` with the exact
 ceiling formula above. The OI bench MUST import that runtime value, verify the
 same formula, record exactly `103`, and expose no operator-selectable pacing
