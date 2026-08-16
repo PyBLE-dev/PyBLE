@@ -72,6 +72,32 @@ def operator_input(profile_id: str = "esp32-4mb") -> dict[str, object]:
 
 
 class CompletionInputValidationTests(unittest.TestCase):
+    def test_c3_requires_the_strict_2m_transfer_shape(self) -> None:
+        facts = {
+            "dle": {
+                "request_attempts": 1,
+                "max_tx_octets": 251,
+                "max_tx_time_us": 17_040,
+            },
+            "phy": {
+                "required_2m": True,
+                "request_attempts": 1,
+                "updates": [{"status": 0, "tx": 2, "rx": 2}],
+                "settled_tx": 2,
+                "settled_rx": 2,
+            },
+            "connection_parameters": {
+                "request_return_codes": [0],
+                "updates": [{"status": 0, "interval_units": 23}],
+                "settled_interval_units": 23,
+            },
+            "tx_mbuf_starve_count": 0,
+        }
+        self.assertEqual(
+            RELEASE._validate_transfer_link_facts(facts, "esp32-c3-4mb"),
+            facts,
+        )
+
     def test_pico_budget_is_exact_and_zero_capacity_rejects_bool(self) -> None:
         facts = {
             "ble_host": "btstack",
