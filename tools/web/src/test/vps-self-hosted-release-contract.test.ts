@@ -14,6 +14,43 @@ beforeAll(async () => {
 });
 
 describe("self-hosted firmware activation", () => {
+  it("derives preserved build validation only after authenticated carry-forward", () => {
+    const mode = "PYBLE_FIRMWARE_VALIDATION_MODE";
+    const callerGuard = script.indexOf(`if [[ -v ${mode} ]]`);
+    const stagedBranch = script.indexOf(
+      "if [[ -n ${PYBLE_FIRMWARE_STAGED_ROOT:-} ]]; then",
+    );
+    const retrieval = script.search(
+      /\b(?:ssh|rsync)\b[\s\S]{0,2400}\.pyble-firmware-release-selection\.json/,
+    );
+    const firstPreservedValidation = script.indexOf(
+      "--verify-preserved-staged",
+      retrieval,
+    );
+    const secondPreservedValidation = script.indexOf(
+      "--verify-preserved-staged",
+      firstPreservedValidation + 1,
+    );
+    const derivedExport = script.indexOf(
+      `export ${mode}=preserved-public`,
+      secondPreservedValidation,
+    );
+    const build = script.indexOf("NEXT_TELEMETRY_DISABLED=1 npm run check");
+
+    expect.soft(callerGuard).toBeGreaterThan(-1);
+    expect.soft(callerGuard).toBeLessThan(stagedBranch);
+    expect
+      .soft(script.slice(callerGuard, stagedBranch))
+      .toMatch(/(?:Refusing|exit\s+65)/);
+    expect.soft(retrieval).toBeGreaterThan(stagedBranch);
+    expect.soft(firstPreservedValidation).toBeGreaterThan(retrieval);
+    expect
+      .soft(secondPreservedValidation)
+      .toBeGreaterThan(firstPreservedValidation);
+    expect.soft(derivedExport).toBeGreaterThan(secondPreservedValidation);
+    expect.soft(derivedExport).toBeLessThan(build);
+  });
+
   it("carries an active public installer through later website-only deployments", () => {
     const stagedBranch = script.indexOf(
       "if [[ -n ${PYBLE_FIRMWARE_STAGED_ROOT:-} ]]; then",

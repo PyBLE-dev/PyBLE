@@ -10,7 +10,7 @@ import { promisify } from "node:util";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { prepareSitesOutput } from "../../scripts/prepare-sites-output";
+import * as sitesOutput from "../../scripts/prepare-sites-output";
 import { stageFirmwareRelease } from "../../scripts/stage-firmware-release";
 import {
   bundleFiles,
@@ -20,6 +20,7 @@ import {
 const temporaryDirectories: string[] = [];
 const execFile = promisify(execFileCallback);
 const acceptSyntheticFixture = async () => undefined;
+const { prepareSitesOutput } = sitesOutput;
 
 afterEach(async () => {
   await Promise.all(
@@ -68,6 +69,45 @@ async function writeSitesSkeleton(root: string) {
 }
 
 describe("Sites vinext-output adapter", () => {
+  it("selects preserved validation only for the exact deploy-derived mode", () => {
+    const resolveReleaseValidator = (
+      sitesOutput as typeof sitesOutput & {
+        sitesFirmwareReleaseValidator?: () => {
+          name: string;
+        };
+      }
+    ).sitesFirmwareReleaseValidator;
+    const mode = "PYBLE_FIRMWARE_VALIDATION_MODE";
+    const previousMode = process.env[mode];
+
+    expect(resolveReleaseValidator).toBeTypeOf("function");
+    if (!resolveReleaseValidator) {
+      return;
+    }
+    try {
+      delete process.env[mode];
+      expect(resolveReleaseValidator().name).toBe(
+        "validateFreshDeploymentBundle",
+      );
+
+      process.env[mode] = "preserved-public";
+      expect(resolveReleaseValidator().name).toBe(
+        "validatePreservedDeploymentBundle",
+      );
+
+      process.env[mode] = "preserved";
+      expect(() => resolveReleaseValidator()).toThrow(
+        "PYBLE_FIRMWARE_VALIDATION_MODE",
+      );
+    } finally {
+      if (previousMode === undefined) {
+        delete process.env[mode];
+      } else {
+        process.env[mode] = previousMode;
+      }
+    }
+  });
+
   it("wraps vinext with a static 404 boundary and copies the exact project binding", async () => {
     const root = await mkdtemp(join(tmpdir(), "pyble-web-output-"));
     temporaryDirectories.push(root);
