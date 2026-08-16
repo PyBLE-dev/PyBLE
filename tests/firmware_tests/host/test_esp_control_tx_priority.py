@@ -183,6 +183,40 @@ class FrozenCapacityModelTests(unittest.TestCase):
         self.assertEqual(1 if specialized_may_submit else 0, 1)
 
 
+class FrozenConsolePacingModelTests(unittest.TestCase):
+    """Pure model for the ESP console-only no-catch-up admission clock."""
+
+    INTERVAL_US = 40_000
+
+    @classmethod
+    def attempt_starts(cls, durations_us: list[int]) -> list[int]:
+        now_us = 0
+        next_us = 0
+        starts = []
+        for duration_us in durations_us:
+            now_us = max(now_us, next_us)
+            starts.append(now_us)
+            now_us += duration_us
+            # Mint from actual completion, never advance an old schedule.
+            next_us = now_us + cls.INTERVAL_US
+        return starts
+
+    def test_first_is_immediate_and_five_hundred_ms_has_no_burst(self):
+        starts = self.attempt_starts([0] * 60)
+        self.assertEqual(starts[0], 0)
+        self.assertEqual(starts[:4], [0, 40_000, 80_000, 120_000])
+        self.assertEqual(len([value for value in starts if value < 500_000]), 13)
+        self.assertLessEqual(
+            len([value for value in starts if value <= 2_000_000]),
+            51,
+        )
+
+    def test_delayed_attempt_mints_from_completion_without_catch_up(self):
+        starts = self.attempt_starts([0, 250_000, 0])
+        self.assertEqual(starts, [0, 40_000, 330_000])
+        self.assertEqual(starts[2] - (starts[1] + 250_000), self.INTERVAL_US)
+
+
 class NativeReserveSourceContractTests(unittest.TestCase):
     def test_bulk_reserve_uses_the_exact_msys1_pool(self):
         self.assertRegex(BLE, r"#\s*define\s+PBLE_TX_BULK_RESERVE_BLOCKS\s+4\b")
@@ -346,6 +380,69 @@ class NativeReserveSourceContractTests(unittest.TestCase):
 
 
 class ConsoleAndStopSourceContractTests(unittest.TestCase):
+    def test_console_has_exact_completion_based_no_burst_pacer(self):
+        self.assertRegex(
+            CONSOLE,
+            r"#\s*define\s+PBLE_CONSOLE_NOTIFY_INTERVAL_MS\s+40u\b",
+        )
+        self.assertIn('"esp_timer.h"', CONSOLE)
+
+        wait = code_only(function(CONSOLE, "console_wait_notify_interval"))
+        self.assertIn("esp_timer_get_time()", wait)
+        self.assertIn("vTaskDelay", wait)
+        self.assertRegex(wait, r"while\s*\([^)]*deadline_us[^)]*\)")
+        self.assertNotIn("pble_tx_mutex", wait)
+        self.assertNotIn("xSemaphore", wait)
+
+        complete = code_only(
+            function(CONSOLE, "console_complete_notify_attempt")
+        )
+        self.assertIn("esp_timer_get_time()", complete)
+        self.assertIn("PBLE_CONSOLE_NOTIFY_INTERVAL_MS", complete)
+        self.assertNotIn("+=", complete)
+        self.assertRegex(
+            complete,
+            r"g_console_next_notify_us\s*=\s*[^;]*esp_timer_get_time\s*\(\s*\)"
+            r"[^;]*PBLE_CONSOLE_NOTIFY_INTERVAL_MS[^;]*;",
+        )
+
+    def test_console_wait_is_off_gil_then_rechecks_stop_before_submit(self):
+        out = code_only(function(CONSOLE, "pble_console_out"))
+        snapshot_at = out.index("pble_ble_session_snapshot_current")
+        wait_at = out.index("console_wait_notify_interval", snapshot_at)
+        stop_at = out.index("pble_runner_stop_requested()", wait_at)
+        emit_at = out.index("pble_proto_emit_paced", stop_at)
+        complete_at = out.index("console_complete_notify_attempt", emit_at)
+
+        self.assertLess(snapshot_at, wait_at)
+        self.assertLess(wait_at, stop_at)
+        self.assertLess(stop_at, emit_at)
+        self.assertLess(emit_at, complete_at)
+        self.assertIn("MP_THREAD_GIL_EXIT()", out[snapshot_at:wait_at])
+        self.assertIn("MP_THREAD_GIL_ENTER()", out[wait_at:stop_at])
+        self.assertIn("MP_THREAD_GIL_EXIT()", out[stop_at:emit_at])
+        self.assertIn("MP_THREAD_GIL_ENTER()", out[complete_at:])
+
+    def test_console_pacer_omits_offline_without_wait_and_keeps_one_session(self):
+        out = code_only(function(CONSOLE, "pble_console_out"))
+        self.assertEqual(out.count("pble_ble_session_snapshot_current("), 1)
+        offline = re.search(
+            r"if\s*\(\s*!\s*pble_ble_session_snapshot_current\s*\("
+            r"\s*&event_session\s*\)\s*\)\s*\{(?P<body>.*?)\}",
+            out,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(offline)
+        self.assertIn("continue", offline.group("body"))
+        self.assertNotIn("console_wait_notify_interval", offline.group("body"))
+        self.assertRegex(
+            out,
+            r"pble_proto_emit_paced\s*\([^;]+&event_session\s*\)",
+        )
+
+        reset = code_only(function(CONSOLE, "pble_console_vm_reset"))
+        self.assertRegex(reset, r"g_console_next_notify_us\s*=\s*0\s*;")
+
     def test_console_chunk_is_dynamic_and_stops_emitting_after_stop(self):
         out = function(CONSOLE, "pble_console_out")
         self.assertIn("pble_ble_mtu()", out)
