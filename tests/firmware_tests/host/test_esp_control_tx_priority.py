@@ -391,8 +391,22 @@ class ConsoleAndStopSourceContractTests(unittest.TestCase):
         self.assertIn("esp_timer_get_time()", wait)
         self.assertIn("vTaskDelay", wait)
         self.assertRegex(wait, r"while\s*\([^)]*deadline_us[^)]*\)")
+        self.assertRegex(
+            wait,
+            r"if\s*\(\s*delay_ticks\s*==\s*0\s*\)\s*\{[^}]*"
+            r"delay_ticks\s*=\s*1\s*;",
+        )
         self.assertNotIn("pble_tx_mutex", wait)
         self.assertNotIn("xSemaphore", wait)
+
+        deadline = code_only(function(CONSOLE, "console_notify_deadline"))
+        ordered(
+            self,
+            deadline,
+            "taskENTER_CRITICAL(&g_ring_mux)",
+            "deadline_us = g_console_next_notify_us",
+            "taskEXIT_CRITICAL(&g_ring_mux)",
+        )
 
         complete = code_only(
             function(CONSOLE, "console_complete_notify_attempt")
@@ -404,6 +418,24 @@ class ConsoleAndStopSourceContractTests(unittest.TestCase):
             complete,
             r"g_console_next_notify_us\s*=\s*[^;]*esp_timer_get_time\s*\(\s*\)"
             r"[^;]*PBLE_CONSOLE_NOTIFY_INTERVAL_MS[^;]*;",
+        )
+        ordered(
+            self,
+            complete,
+            "taskENTER_CRITICAL(&g_ring_mux)",
+            "g_console_next_notify_us =",
+            "taskEXIT_CRITICAL(&g_ring_mux)",
+        )
+
+        reset_interval = code_only(
+            function(CONSOLE, "console_reset_notify_interval")
+        )
+        ordered(
+            self,
+            reset_interval,
+            "taskENTER_CRITICAL(&g_ring_mux)",
+            "g_console_next_notify_us = 0",
+            "taskEXIT_CRITICAL(&g_ring_mux)",
         )
 
     def test_console_wait_is_off_gil_then_rechecks_stop_before_submit(self):
@@ -418,6 +450,11 @@ class ConsoleAndStopSourceContractTests(unittest.TestCase):
         self.assertLess(wait_at, stop_at)
         self.assertLess(stop_at, emit_at)
         self.assertLess(emit_at, complete_at)
+        self.assertNotRegex(
+            out[emit_at:complete_at],
+            r"\b(?:if|return|break|continue)\b",
+            "every paced emit outcome must complete the no-burst interval",
+        )
         self.assertIn("MP_THREAD_GIL_EXIT()", out[snapshot_at:wait_at])
         self.assertIn("MP_THREAD_GIL_ENTER()", out[wait_at:stop_at])
         self.assertIn("MP_THREAD_GIL_EXIT()", out[stop_at:emit_at])
@@ -434,6 +471,7 @@ class ConsoleAndStopSourceContractTests(unittest.TestCase):
         )
         self.assertIsNotNone(offline)
         self.assertIn("continue", offline.group("body"))
+        self.assertIn("console_reset_notify_interval()", offline.group("body"))
         self.assertNotIn("console_wait_notify_interval", offline.group("body"))
         self.assertRegex(
             out,
@@ -441,7 +479,7 @@ class ConsoleAndStopSourceContractTests(unittest.TestCase):
         )
 
         reset = code_only(function(CONSOLE, "pble_console_vm_reset"))
-        self.assertRegex(reset, r"g_console_next_notify_us\s*=\s*0\s*;")
+        self.assertIn("console_reset_notify_interval()", reset)
 
     def test_console_chunk_is_dynamic_and_stops_emitting_after_stop(self):
         out = function(CONSOLE, "pble_console_out")
