@@ -228,29 +228,30 @@ class HistoricalReplayTests(unittest.TestCase):
         self.assertEqual(RELEASE._hil_schema_version_for_version("0.5.1"), 4)
 
 
-class CheckedInHistoricalV042QualificationPolicyTests(unittest.TestCase):
-    def test_checked_in_policy_is_retained_schema_1_in_v042_order(self):
+class CheckedInCurrentV060QualificationPolicyTests(unittest.TestCase):
+    def test_checked_in_policy_is_schema_3_in_v060_order(self):
         policy = json.loads(
             QUALIFICATION_POLICY_PATH.read_text(encoding="utf-8")
         )
-        self.assertEqual(policy["schema_version"], 1)
+        self.assertEqual(policy["schema_version"], 3)
         self.assertEqual(
             policy["profile_order"],
-            list(HISTORICAL_V042_PROFILES),
+            list(RELEASE.V060_RELEASE_PROFILE_ORDER),
         )
         self.assertEqual(
             [entry["profile_id"] for entry in policy["profiles"]],
-            list(HISTORICAL_V042_PROFILES),
+            list(RELEASE.V060_RELEASE_PROFILE_ORDER),
         )
+        self.assertNotIn("deferred_profiles", policy)
         self.assertIs(
             RELEASE._validate_qualification_policy(
                 policy,
-                firmware_version="0.4.2",
+                firmware_version="0.6.0",
             ),
             policy,
         )
 
-    def test_checked_in_policy_does_not_claim_waveshare_qualification(self):
+    def test_checked_in_policy_claims_the_exact_v060_profile_targets(self):
         policy = json.loads(
             QUALIFICATION_POLICY_PATH.read_text(encoding="utf-8")
         )
@@ -263,9 +264,11 @@ class CheckedInHistoricalV042QualificationPolicyTests(unittest.TestCase):
             {
                 "esp32-4mb": "esp32",
                 "esp32-s3-n16r8": "esp32-s3",
+                EXACT_PROFILE: EXACT_PROFILE,
+                "esp32-c3-4mb": "esp32-c3",
+                "rpi-pico2-w": "rpi-pico2-w",
             },
         )
-        self.assertNotIn(EXACT_PROFILE, targets)
 
 
 class ProspectiveV051AdmissionTests(unittest.TestCase):

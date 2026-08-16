@@ -445,6 +445,32 @@ class QualificationPolicySourceEraTests(unittest.TestCase):
             % (PUBLIC_BASELINE_PREFIX, HISTORICAL_SOURCE_COMMIT),
         )
 
+    def test_pre_v1_fixtures_are_independent_of_checked_in_policy_schema(self):
+        for version, source_commit, schema_version, profile_order in (
+            (
+                "0.4.2",
+                HISTORICAL_SOURCE_COMMIT,
+                1,
+                HISTORICAL_V042_PROFILE_ORDER,
+            ),
+            ("0.5.0", CURRENT_SOURCE_COMMIT, 2, CURRENT_PROFILE_ORDER),
+        ):
+            with self.subTest(version=version):
+                policy = self._load(version, source_commit)
+                self.assertEqual(policy["schema_version"], schema_version)
+                self.assertEqual(policy["qualification_scope"], "pre-v1")
+                self.assertEqual(policy["profile_order"], list(profile_order))
+                self.assertEqual(
+                    policy["deferred_profiles"],
+                    ["esp32-c3-4mb"],
+                )
+                self.assertTrue(
+                    all(
+                        set(entry) == {"profile_id", "target", "thresholds"}
+                        for entry in policy["profiles"]
+                    )
+                )
+
     def test_v050_uses_its_current_source_scoped_public_baseline_path(self):
         policy = self._load("0.5.0", CURRENT_SOURCE_COMMIT)
         self.assertEqual(policy["schema_version"], 2)
