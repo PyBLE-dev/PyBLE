@@ -151,6 +151,8 @@ def _install_policy(
     baseline = repo / baseline_relative
     baseline.parent.mkdir(parents=True, exist_ok=True)
     baseline_document = json.loads(source_baseline.read_text(encoding="utf-8"))
+    baseline_document["schema_version"] = 1
+    baseline_document["measurement_contract"] = "oi1-pre-v1-v1"
     baseline_document["source_commit"] = source_commit
     baseline_document["firmware_version"] = (
         "0.5.0" if current_era
@@ -180,6 +182,9 @@ def _install_policy(
         baseline_by_id[profile_id] for profile_id in profile_order
     ]
     for profile in baseline_document["profiles"]:
+        profile.pop("resource_kind", None)
+        profile["firmware_sha256"] = profile.pop("install_sha256")
+        profile.pop("resource_image_sha256", None)
         observation = profile["oi1_observation"]
         if current_era:
             observation["transfer_link_facts"] = (
@@ -192,6 +197,9 @@ def _install_policy(
         "path": baseline_relative,
         "sha256": hashlib.sha256(baseline.read_bytes()).hexdigest(),
     }
+    policy["qualification_scope"] = "pre-v1"
+    policy["deferred_profiles"] = ["esp32-c3-4mb"]
+    policy["workload"] = copy.deepcopy(RELEASE.QUALIFICATION_WORKLOAD)
     selected_version = derivation_version or version
     selected_core = RELEASE._firmware_release_core(
         selected_version,
@@ -214,6 +222,9 @@ def _install_policy(
     policy["schema_version"] = 2 if current_era else 1
     policy["profile_order"] = list(profile_order)
     policy["profiles"] = [policy_by_id[profile_id] for profile_id in profile_order]
+    for entry in policy["profiles"]:
+        entry.pop("resource_kind", None)
+        entry.pop("transport", None)
     baseline_by_id = {
         item["profile_id"]: item for item in baseline_document["profiles"]
     }
