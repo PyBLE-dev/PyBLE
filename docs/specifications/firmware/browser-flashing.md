@@ -2252,6 +2252,35 @@ rows, and the redacted console log. It cannot contain status, release/source
 identity, artifact digests, policy, build measurements, OI thresholds,
 `footprint_reliability`, or `profile_gate_summary`.
 
+One narrowly scoped alternative may supply the verify-mode OI observation: a
+canonical `physical-fact-lineage-v1` record may carry forward only the boolean
+`physical_power_cycle_advertising: "passed"` fact from the real, retained
+engineering-baseline observation when the baseline and final candidate install
+artifacts are byte-for-byte identical. The record MUST state
+`claims_new_observation: false` and exactly
+`reuse_scope: ["physical_power_cycle_advertising"]`. It MUST bind the original
+baseline evidence, private fragment, and raw log by source commit, SHA-256,
+mode, and profile; bind the final candidate by release digest, source commit,
+profile, every install artifact's size and SHA-256, each ESP manifest component
+or the Pico raw BIN as applicable; and bind the fresh candidate automatic raw
+log and every reset, heap, transfer, reliability, and link fact reconstructed
+from it. The qualification checkout MUST prove that all source changes between
+the two commits are an exact frozen, non-install-affecting set and that every
+bound candidate artifact equals its baseline counterpart.
+
+Lineage never promotes a baseline observation wholesale and never claims that
+the inherited fact was observed again. `create-hil-completion` MUST reconstruct
+all numeric, reset, heap, transfer, reliability, and link fields from the fresh
+candidate raw log, merge only the retained physical-power boolean, and include
+a digest-bound lineage summary in the completed observation. It MUST reject a
+baseline fragment supplied directly as verification, a fresh log missing any
+automatic phase, a changed or additional reuse scope, any identity, mode,
+permission, digest, size, component, policy, source-diff, sequence, or
+measurement mismatch, and every pre-existing output. Lineage records and
+completed fragments are exclusive canonical mode-`0600` files. This exception
+does not weaken, replace, or infer the operator inputs, both-platform `app_hil`,
+C3/Pico private results, profile gate maps, or any other finalization gate.
+
 For C3 and Pico the operation additionally requires that profile's exclusive
 mode-`0600` private qualification result. It validates the result against the
 candidate's exact `release.json` and install bytes and copies only the

@@ -465,6 +465,15 @@ final-candidate HIL qualifies a release. The v0.6.0 policy derives five
 independent rows; C3 and Pico remain pending rather than deferred or inferred
 from another target.
 
+The sole permitted cross-commit physical-fact lineage is specified by
+[browser-flashing.md](firmware/browser-flashing.md): it may reuse only the
+retained baseline's passed physical-power-cycle boolean when all shipped bytes
+are identical. Every quantitative and automatic OI field still comes from a
+fresh hash-bound final-candidate run, the record explicitly claims no new
+physical observation, and every app, operator, private, and profile gate
+remains mandatory. No complete baseline row may be relabelled as final-candidate
+verification.
+
 Published v0.4.2 metadata and HIL evidence retain their historical exact
 two-profile contract. The unqualified v0.5.1 source candidate retains its
 three-profile source-era contract. Neither is expanded or reinterpreted as the
