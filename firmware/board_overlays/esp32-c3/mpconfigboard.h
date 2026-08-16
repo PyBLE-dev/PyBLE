@@ -26,6 +26,7 @@ void pble_vm_epoch_begin(void);
 #define MICROPY_PORT_INIT_FUNC pble_vm_epoch_begin()
 
 #define PBLE_TARGET_ID                "esp32-c3"
+#define PBLE_ENABLE_OI1_LINK_FACTS    (1)
 #define MICROPY_HW_BOARD_NAME       "PyBLE v" PBLE_AGENT_VERSION " esp32-c3"
 #define MICROPY_HW_MCU_NAME         "ESP32-C3"
 #define MICROPY_HW_ENABLE_UART_REPL (1)

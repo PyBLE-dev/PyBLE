@@ -81,8 +81,14 @@ SERIAL_ENDPOINT_GONE_ERRNOS = frozenset(
 )
 PRE_CAPTURE_SESSION_END_TIMEOUT_MS = 2000
 SERIAL_POLL_INTERVAL_SECONDS = 0.01
-WAVESHARE_DIAGNOSTIC_HELLO_TIMEOUT_S = 5.0
-WAVESHARE_DIAGNOSTIC_SETTLE_GUARD_S = 1.0
+RETAINED_LINK_FACT_PROFILES = frozenset(
+    ("waveshare-esp32-s3-lcd-147b", "esp32-c3-4mb")
+)
+RETAINED_DIAGNOSTIC_HELLO_TIMEOUT_S = 5.0
+RETAINED_DIAGNOSTIC_SETTLE_GUARD_S = 1.0
+# Compatibility names for callers of the original ADR-0034 Wave-only seam.
+WAVESHARE_DIAGNOSTIC_HELLO_TIMEOUT_S = RETAINED_DIAGNOSTIC_HELLO_TIMEOUT_S
+WAVESHARE_DIAGNOSTIC_SETTLE_GUARD_S = RETAINED_DIAGNOSTIC_SETTLE_GUARD_S
 
 
 def _load_rp2_console_pacing():
@@ -1402,14 +1408,14 @@ class HardwareExecutor:
         return self.log.sha256()
 
 
-def validate_waveshare_link_fact_pair(snapshot, *, expected_ended_epoch=None):
-    """Validate an ended Wave session and its exact active successor."""
+def validate_retained_link_fact_pair(snapshot, *, expected_ended_epoch=None):
+    """Validate an ended retained-profile session and its active successor."""
     if not isinstance(snapshot, dict):
-        raise BenchError("Waveshare link snapshot must be an object")
+        raise BenchError("retained link snapshot must be an object")
     ended = snapshot.get("last_ended")
     active = snapshot.get("active")
     if not isinstance(ended, dict) or not isinstance(active, dict):
-        raise BenchError("Waveshare link snapshot requires active and last-ended records")
+        raise BenchError("retained link snapshot requires active and last-ended records")
     ended_epoch = ended.get("epoch")
     active_epoch = active.get("epoch")
     if (
@@ -1417,20 +1423,28 @@ def validate_waveshare_link_fact_pair(snapshot, *, expected_ended_epoch=None):
         or not isinstance(ended_epoch, int)
         or ended_epoch <= 0
     ):
-        raise BenchError("Waveshare ended epoch must be positive")
+        raise BenchError("retained ended epoch must be positive")
     if expected_ended_epoch is not None and ended_epoch != expected_ended_epoch:
-        raise BenchError("Waveshare last-ended epoch is stale")
+        raise BenchError("retained last-ended epoch is stale")
     if ended.get("final") is not True or active.get("final") is not False:
-        raise BenchError("Waveshare link record finality is invalid")
+        raise BenchError("retained link record finality is invalid")
     if ended.get("overflow") is not False or active.get("overflow") is not False:
-        raise BenchError("Waveshare link record overflowed")
+        raise BenchError("retained link record overflowed")
     if ended_epoch == (1 << 64) - 1 or active_epoch != ended_epoch + 1:
-        raise BenchError("Waveshare active epoch is not the exact successor")
+        raise BenchError("retained active epoch is not the exact successor")
     return ended, active
 
 
-class WaveshareHardwareExecutor(HardwareExecutor):
-    """Exact-board executor: physical reset plus BLE-retained link facts."""
+def validate_waveshare_link_fact_pair(snapshot, *, expected_ended_epoch=None):
+    """Compatibility wrapper for the original ADR-0034 helper name."""
+    return validate_retained_link_fact_pair(
+        snapshot,
+        expected_ended_epoch=expected_ended_epoch,
+    )
+
+
+class RetainedLinkFactHardwareExecutor(HardwareExecutor):
+    """ESP executor with profile-specific reset and BLE-retained link facts."""
 
     def __init__(self, args, reset, raw_log):
         super().__init__(args, reset, raw_log)
@@ -1443,10 +1457,13 @@ class WaveshareHardwareExecutor(HardwareExecutor):
         self._disconnected_connection = None
 
     async def begin_transfer_link_capture(self, profile_id):
-        if profile_id != "waveshare-esp32-s3-lcd-147b":
-            raise BenchError("Waveshare executor requires its exact profile")
+        if (
+            self.args.profile not in RETAINED_LINK_FACT_PROFILES
+            or profile_id != self.args.profile
+        ):
+            raise BenchError("retained link-fact executor requires its exact profile")
         if self._capture_started:
-            raise BenchError("Waveshare transfer link capture already started")
+            raise BenchError("retained transfer link capture already started")
         self._capture_started = True
         self.log.write("transfer_link_capture_started", profile_id=profile_id)
 
@@ -1478,7 +1495,7 @@ class WaveshareHardwareExecutor(HardwareExecutor):
         )
         if self._measured_connection is not None:
             await central.disconnect()
-            raise BenchError("Waveshare measured connection was not cleared")
+            raise BenchError("retained measured connection was not cleared")
         self._disconnect_probe_connection = None
         self._disconnected_connection = None
         self._measured_connection = central
@@ -1489,7 +1506,7 @@ class WaveshareHardwareExecutor(HardwareExecutor):
         try:
             loop = asyncio.get_running_loop()
             hello_deadline = (
-                loop.time() + WAVESHARE_DIAGNOSTIC_HELLO_TIMEOUT_S
+                loop.time() + RETAINED_DIAGNOSTIC_HELLO_TIMEOUT_S
             )
             try:
                 await asyncio.wait_for(
@@ -1498,19 +1515,19 @@ class WaveshareHardwareExecutor(HardwareExecutor):
                         self.ids.next,
                         expected_chip=self.args.expect_chip,
                         profile_id=self.args.profile,
-                        timeout_s=WAVESHARE_DIAGNOSTIC_HELLO_TIMEOUT_S,
+                        timeout_s=RETAINED_DIAGNOSTIC_HELLO_TIMEOUT_S,
                     ),
-                    timeout=WAVESHARE_DIAGNOSTIC_HELLO_TIMEOUT_S,
+                    timeout=RETAINED_DIAGNOSTIC_HELLO_TIMEOUT_S,
                 )
             except asyncio.TimeoutError as exc:
                 raise BenchError(
-                    "Waveshare diagnostic HELLO exhausted its deadline"
+                    "retained diagnostic HELLO exhausted its deadline"
                 ) from exc
             if loop.time() >= hello_deadline:
                 raise BenchError(
-                    "Waveshare diagnostic HELLO exhausted its deadline"
+                    "retained diagnostic HELLO exhausted its deadline"
                 )
-            await asyncio.sleep(WAVESHARE_DIAGNOSTIC_SETTLE_GUARD_S)
+            await asyncio.sleep(RETAINED_DIAGNOSTIC_SETTLE_GUARD_S)
             snapshot = await run_oi1_link_fact_probe(
                 diagnostic,
                 self.ids.next,
@@ -1524,7 +1541,7 @@ class WaveshareHardwareExecutor(HardwareExecutor):
                 # Raising while the primary exception is active preserves it
                 # as context; the explicit cause preserves cleanup failure.
                 raise BenchError(
-                    "Waveshare diagnostic and disconnect both failed"
+                    "retained diagnostic and disconnect both failed"
                 ) from disconnect_error
             raise
         await diagnostic.disconnect()
@@ -1562,7 +1579,7 @@ class WaveshareHardwareExecutor(HardwareExecutor):
                     or active["settled"] is not True
                     or active["overflow"] is not False
                 ):
-                    raise BenchError("Waveshare pre-disconnect transfer record changed")
+                    raise BenchError("retained pre-disconnect transfer record changed")
                 validate_transfer_link_facts(
                     active["facts"], profile_id=self.args.profile
                 )
@@ -1571,7 +1588,7 @@ class WaveshareHardwareExecutor(HardwareExecutor):
                     active["facts"][key] != self._transfer_facts[key]
                     for key in ladder_keys
                 ):
-                    raise BenchError("Waveshare transfer tuning facts changed")
+                    raise BenchError("retained transfer tuning facts changed")
             except BaseException as exc:
                 probe_error = exc
         disconnect_error = None
@@ -1582,7 +1599,7 @@ class WaveshareHardwareExecutor(HardwareExecutor):
         if disconnect_error is not None:
             if probe_error is not None:
                 raise BenchError(
-                    "Waveshare transfer probe and disconnect both failed"
+                    "retained transfer probe and disconnect both failed"
                 ) from disconnect_error
             raise disconnect_error
         self._disconnected_connection = connection
@@ -1593,7 +1610,7 @@ class WaveshareHardwareExecutor(HardwareExecutor):
             self._transfer_disconnected = True
         elif is_measured and not self._capture_started:
             snapshot = await self._diagnostic_snapshot()
-            validate_waveshare_link_fact_pair(snapshot)
+            validate_retained_link_fact_pair(snapshot)
         if probe_error is not None:
             raise probe_error
 
@@ -1604,13 +1621,13 @@ class WaveshareHardwareExecutor(HardwareExecutor):
             or timeout_ms <= 0
             or timeout_ms > 5000
         ):
-            raise BenchError("Waveshare link settlement timeout must be 1..5000 ms")
+            raise BenchError("retained link settlement timeout must be 1..5000 ms")
         loop = asyncio.get_running_loop()
         remaining = timeout_ms / 1000.0
         deadline = loop.time() + remaining
         while True:
             if remaining <= 0:
-                raise BenchError("settled Waveshare transfer link was not observed")
+                raise BenchError("settled retained transfer link was not observed")
             snapshot = await run_oi1_link_fact_probe(
                 self._measured_connection,
                 self.ids.next,
@@ -1618,7 +1635,7 @@ class WaveshareHardwareExecutor(HardwareExecutor):
                 timeout_s=min(OI1_LINK_FACT_ACTIVE_TIMEOUT_S, remaining),
             )
             if loop.time() >= deadline:
-                raise BenchError("settled Waveshare transfer link was not observed")
+                raise BenchError("settled retained transfer link was not observed")
             active = snapshot["active"]
             if (
                 active is not None
@@ -1634,27 +1651,32 @@ class WaveshareHardwareExecutor(HardwareExecutor):
                 self.log.write("transfer_link_settled")
                 return
             if loop.time() >= deadline:
-                raise BenchError("settled Waveshare transfer link was not observed")
+                raise BenchError("settled retained transfer link was not observed")
             remaining = deadline - loop.time()
             if remaining <= 0:
-                raise BenchError("settled Waveshare transfer link was not observed")
+                raise BenchError("settled retained transfer link was not observed")
             await asyncio.sleep(min(0.05, remaining))
             remaining = deadline - loop.time()
 
     async def seal_transfer_link_facts(self, timeout_ms):
         if self._transfer_epoch is None:
-            raise BenchError("Waveshare transfer link has not settled")
+            raise BenchError("retained transfer link has not settled")
         if not self._transfer_disconnected:
-            raise BenchError("Waveshare transfer link has not disconnected")
+            raise BenchError("retained transfer link has not disconnected")
         snapshot = await self._diagnostic_snapshot()
-        ended, _active = validate_waveshare_link_fact_pair(
+        ended, _active = validate_retained_link_fact_pair(
             snapshot, expected_ended_epoch=self._transfer_epoch
         )
         if ended["settled"] is not True:
-            raise BenchError("Waveshare ended transfer record is unsettled")
+            raise BenchError("retained ended transfer record is unsettled")
         validate_transfer_link_facts(ended["facts"], profile_id=self.args.profile)
         self.log.write("transfer_link_facts", facts=ended["facts"])
         return ended["facts"]
+
+
+# Preserve the ADR-0034 internal name while both exact retained profiles share
+# one implementation.
+WaveshareHardwareExecutor = RetainedLinkFactHardwareExecutor
 
 
 class Rp2HardwareExecutor(HardwareExecutor):
@@ -2028,7 +2050,10 @@ async def _run(args):
             executor = WaveshareHardwareExecutor(args, reset, raw_log)
         else:
             reset = SerialResetController(args.reset_port, args.reset_baud)
-            executor = HardwareExecutor(args, reset, raw_log)
+            if args.profile == "esp32-c3-4mb":
+                executor = RetainedLinkFactHardwareExecutor(args, reset, raw_log)
+            else:
+                executor = HardwareExecutor(args, reset, raw_log)
         try:
             observation = await collect_observation(args.profile, executor)
         except Exception as exc:

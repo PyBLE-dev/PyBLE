@@ -1019,7 +1019,7 @@ def _validated_oi1_link_fact_projection(projection):
 
 
 def oi1_link_fact_probe_source(nonce, *, projection):
-    """Return the Wave-only RUN source for the hidden native snapshot."""
+    """Return the retained-profile RUN source for the hidden native snapshot."""
     marker = OI1_LINK_FACT_MARKER_PREFIX + _validated_probe_nonce(nonce)
     projection = _validated_oi1_link_fact_projection(projection)
     source = (
@@ -1237,7 +1237,7 @@ async def run_oi1_link_fact_probe(
         nonce=None,
         timeout_s,
         sleep=asyncio.sleep):
-    """Read one strict Wave-only link snapshot through an ordinary RUN."""
+    """Read one strict retained-profile snapshot through an ordinary RUN."""
     projection = _validated_oi1_link_fact_projection(projection)
     if nonce is None:
         nonce = hashlib.sha256(
