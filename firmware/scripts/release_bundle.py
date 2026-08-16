@@ -516,6 +516,11 @@ HIL_MARKER_RE = re.compile(
     re.DOTALL,
 )
 HIL_ANY_MARKER_RE = re.compile(r"<!--\s*PYBLE_HIL_RECORDS_V[0-9]+\b")
+LEGACY_PRESERVED_V051_DIGESTS = {
+    "release.json": "3d845ed231173b5917dfe70f301cf08c3ff870a3d15155ec64c7e7fe93e91fbc",
+    "HIL_REPORT.md": "f10f4fb67e8ec22a000017daa62bf58bd45d9f47f30481905c0844813be905aa",
+    "SHA256SUMS": "aeeb1fbdf5be0e66f003a96197fb9fd884c4adce9da088249c04b23a02c8e815",
+}
 HIL_REPORT_SHELL_PREFIX = (
     "# PyBLE firmware HIL report\n\n"
     "This access-controlled candidate is pending real-board browser install "
@@ -20869,6 +20874,25 @@ def _validate_sha256sums(bundle: Path) -> None:
     _require(actual_paths == expected, "SHA256SUMS coverage/order is not exact")
 
 
+def _is_exact_legacy_preserved_v051_replay(
+    bundle: Path,
+    *,
+    version: str,
+    previously_activated_public: bool,
+) -> bool:
+    """Recognize the one immutable prose-HIL tree allowed only for replay."""
+
+    if not previously_activated_public or version != "0.5.1":
+        return False
+    try:
+        return all(
+            _sha256_path(bundle / filename) == expected_digest
+            for filename, expected_digest in LEGACY_PRESERVED_V051_DIGESTS.items()
+        )
+    except ReleaseError:
+        return False
+
+
 def _qualification_integer(
     value: Any,
     label: str,
@@ -23330,14 +23354,20 @@ def validate_bundle(
         document_paths[key] = _verify_artifact(bundle, record, "document %s" % key)
 
     _validate_sha256sums(bundle)
-    _validate_hil(
+    legacy_preserved_v051 = _is_exact_legacy_preserved_v051_replay(
         bundle,
-        document_paths["hil_report"],
-        profiles,
-        identity_with_source,
-        public_bundle,
-        repo_root=effective_qualification_root,
+        version=identity_with_source["version"],
+        previously_activated_public=previously_activated_public,
     )
+    if not legacy_preserved_v051:
+        _validate_hil(
+            bundle,
+            document_paths["hil_report"],
+            profiles,
+            identity_with_source,
+            public_bundle,
+            repo_root=effective_qualification_root,
+        )
     if public_bundle or audited_candidate:
         notices = document_paths["third_party_licenses"].read_text(
             encoding="utf-8", errors="strict"
