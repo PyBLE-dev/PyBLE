@@ -82,7 +82,11 @@ SERIAL_ENDPOINT_GONE_ERRNOS = frozenset(
 PRE_CAPTURE_SESSION_END_TIMEOUT_MS = 2000
 SERIAL_POLL_INTERVAL_SECONDS = 0.01
 RETAINED_LINK_FACT_PROFILES = frozenset(
-    ("waveshare-esp32-s3-lcd-147b", "esp32-c3-4mb")
+    (
+        "esp32-s3-n16r8",
+        "waveshare-esp32-s3-lcd-147b",
+        "esp32-c3-4mb",
+    )
 )
 RETAINED_DIAGNOSTIC_HELLO_TIMEOUT_S = 5.0
 RETAINED_DIAGNOSTIC_SETTLE_GUARD_S = 1.0
@@ -2050,7 +2054,7 @@ async def _run(args):
             executor = WaveshareHardwareExecutor(args, reset, raw_log)
         else:
             reset = SerialResetController(args.reset_port, args.reset_baud)
-            if args.profile == "esp32-c3-4mb":
+            if args.profile in RETAINED_LINK_FACT_PROFILES:
                 executor = RetainedLinkFactHardwareExecutor(args, reset, raw_log)
             else:
                 executor = HardwareExecutor(args, reset, raw_log)
