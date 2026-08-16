@@ -1264,9 +1264,11 @@ firmware_not_found_paths=(
 if [[ "${expected_installer_state}" == active ]]; then
     selected_firmware_root=${firmware_release_json_path%/release.json}
     test "${selected_firmware_root}" != "${firmware_release_json_path}"
-    firmware_not_found_paths+=(
-        "${selected_firmware_root}/esp32-c3-4mb/manifest.json"
-    )
+    if [[ "${firmware_deployment}" == public-beta ]]; then
+        firmware_not_found_paths+=(
+            "${selected_firmware_root}/esp32-c3-4mb/manifest.json"
+        )
+    fi
 fi
 firmware_not_found_methods=( GET HEAD )
 firmware_not_found_index=0
