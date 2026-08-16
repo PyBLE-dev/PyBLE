@@ -89,10 +89,11 @@ defines the required regression; it is not a passing qualification result.
    first notification immediate and no catch-up burst after a delayed attempt.
    It waits outside both the MicroPython GIL and the physical TX mutex, checks
    STOP again after the wait and before submission, and never refreshes the
-   exact session token captured for that chunk. VM reset clears the pacing
-   deadline. This console-only bound does not change the four-block reserve,
-   the specialized response's 15 ms complete-message-boundary budget, or the
-   strict host-observed 500 ms STOP gate.
+   exact session token captured for that chunk. VM reset or an offline session
+   snapshot clears the pacing deadline, whose 64-bit access is synchronized on
+   32-bit ESP targets. This console-only bound does not change the four-block
+   reserve, the specialized response's 15 ms complete-message-boundary budget,
+   or the strict host-observed 500 ms STOP gate.
 
 5. **Keep GPIO8 strictly reference-carrier evidence.** The operator may
    confirm this particular connected carrier's onboard NeoPixel is wired to

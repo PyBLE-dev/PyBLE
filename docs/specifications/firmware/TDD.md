@@ -1190,9 +1190,10 @@ runs with the MicroPython GIL released and before the BLE helper can acquire
 the TX mutex. The worker reacquires the GIL and rechecks STOP after the wait,
 before releasing it for submission. A retry retains that same token, so a
 disconnect/reconnect never retargets old output; absence omits the chunk
-without consuming an interval. VM reset clears the deadline. This pacing does
-not apply to control or filesystem notifications and does not alter the
-four-block reserve or the 15 ms specialized boundary contract.
+without waiting and clears the deadline. VM reset also clears it, and all
+access to the 64-bit deadline is synchronized on 32-bit ESP targets. This
+pacing does not apply to control or filesystem notifications and does not alter
+the four-block reserve or the 15 ms specialized boundary contract.
 This is required for both a quiet tight loop and a loop continuously printing
 to stdout
 ([C3-G2](ports/esp32-c3-4mb.md#c3-g2--run-console-and-authoritative-stop-frozen)).
