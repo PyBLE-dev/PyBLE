@@ -23,7 +23,10 @@ import {
   navigation,
   siteConfig,
 } from "@/lib/site";
-import type { FirmwareReleaseDescriptor } from "@/lib/firmware-release";
+import {
+  firmwareProfileDescriptors,
+  type FirmwareReleaseDescriptor,
+} from "@/lib/firmware-release";
 import * as firmwareSelection from "@/lib/firmware-release-selection";
 import { localFirmwareProfileTable } from "@/lib/local-firmware-preview";
 import {
@@ -62,6 +65,14 @@ function hypotheticalQualifiedReleaseAtVersion(
     );
   }
   return release as unknown as FirmwareReleaseDescriptor;
+}
+
+function hypotheticalQualifiedV060Release(): FirmwareReleaseDescriptor {
+  const release = hypotheticalQualifiedReleaseAtVersion("0.6.0") as unknown as {
+    profiles: FirmwareReleaseDescriptor["profiles"];
+  };
+  release.profiles = firmwareProfileDescriptors("0.6.0");
+  return release as FirmwareReleaseDescriptor;
 }
 
 function jpegDimensions(bytes: Buffer): { width: number; height: number } {
@@ -934,6 +945,48 @@ describe("public-site contract", () => {
       expect(
         screen.getByText(/firmware installer is currently unavailable/i),
       ).toBeInTheDocument();
+    } finally {
+      if (previousSelection === undefined) {
+        delete process.env.PYBLE_FLASH_SELECTION_FILE;
+      } else {
+        process.env.PYBLE_FLASH_SELECTION_FILE = previousSelection;
+      }
+      await rm(selectionRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("derives qualified v0.6 copy from all five selected profiles", async () => {
+    const selectionRoot = await mkdtemp(
+      join(tmpdir(), "pyble-site-v060-qualified-selection-"),
+    );
+    const selectionFile = join(selectionRoot, "selection.json");
+    const previousSelection = process.env.PYBLE_FLASH_SELECTION_FILE;
+    process.env.PYBLE_FLASH_SELECTION_FILE = selectionFile;
+
+    try {
+      await writeFile(
+        selectionFile,
+        JSON.stringify(hypotheticalQualifiedV060Release()),
+        "utf8",
+      );
+      const flash = render(<FlashPage />);
+      expect(
+        screen.getByText(
+          /qualified v0\.6\.0 firmware is available for all five exact release profiles/i,
+        ),
+      ).toBeInTheDocument();
+      flash.unmount();
+
+      render(<SupportPage />);
+      const qualifiedCopy = screen.getByText(
+        /qualified v0\.6\.0 firmware is available/i,
+      );
+      expect(qualifiedCopy).toHaveTextContent(/five exact profiles/i);
+      expect(qualifiedCopy).toHaveTextContent(/esp32-c3-4mb/i);
+      expect(qualifiedCopy).toHaveTextContent(/rpi-pico2-w/i);
+      expect(
+        screen.queryByText(/ESP32-C3 is not currently available/i),
+      ).toBeNull();
     } finally {
       if (previousSelection === undefined) {
         delete process.env.PYBLE_FLASH_SELECTION_FILE;
