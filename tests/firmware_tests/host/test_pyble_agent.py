@@ -555,6 +555,69 @@ class ScheduledDuptermNotifyTest(unittest.TestCase):
                          "the scheduled native callback remains executable")
 
 
+class ScheduledDuptermRetryTest(unittest.TestCase):
+    """P3 print-flood recovery is deliberately two scheduler checkpoints:
+    cp1 runs a locked trampoline; cp2 runs native dupterm_notify."""
+
+    def test_retry_enqueues_trampoline_then_native_notify(self):
+        factory = AGENT.attr(
+            self, "_make_scheduled_dupterm_retry",
+            "F-27/P3 two-stage dupterm STOP retry")
+        scheduled = []
+        native_calls = []
+        failures = []
+
+        def schedule(callback, arg):
+            scheduled.append((callback, arg))
+
+        def native_notify(arg):
+            native_calls.append(arg)
+
+        retry = factory(schedule, native_notify,
+                        lambda: failures.append("failure"))
+        retry()
+        self.assertEqual(len(scheduled), 1)
+        trampoline, arg = scheduled.pop(0)
+        self.assertIsNot(trampoline, native_notify,
+                         "cp1 must not create the pending KBI")
+        trampoline(arg)
+        self.assertEqual(native_calls, [])
+        self.assertEqual(scheduled, [(native_notify, None)],
+                         "locked cp1 queues native notify for cp2")
+        callback, arg = scheduled.pop(0)
+        callback(arg)
+        self.assertEqual(native_calls, [None])
+        self.assertEqual(failures, [])
+
+    def test_native_admission_failure_inside_trampoline_uses_fail_safe(self):
+        factory = AGENT.attr(
+            self, "_make_scheduled_dupterm_retry",
+            "F-27/P3 retry second-stage admission fail-safe")
+        scheduled = []
+        attempts = [0]
+        failures = []
+
+        class ResetNow(BaseException):
+            pass
+
+        def schedule(callback, arg):
+            attempts[0] += 1
+            if attempts[0] == 2:
+                raise RuntimeError("queue filled before native stage")
+            scheduled.append((callback, arg))
+
+        def fail():
+            failures.append("reset")
+            raise ResetNow()
+
+        retry = factory(schedule, lambda _arg: None, fail)
+        retry()
+        trampoline, arg = scheduled.pop(0)
+        with self.assertRaises(ResetNow):
+            trampoline(arg)
+        self.assertEqual(failures, ["reset"])
+
+
 class PrePickupControlCancellationTest(AgentTestBase):
     """P2/P3/P4: accepted control between RUN RSP and supervisor pickup
     cancels the mailbox item without scheduling a VM interrupt or touching the
@@ -1102,13 +1165,13 @@ class SchedulerFailureFailSafeTest(AgentTestBase):
         later than Agent._commit_control, so the console must retain the
         Agent's injected reset seam for that acknowledged-STOP fail-safe."""
         order = []
-        notify_calls = [0]
 
         def notify():
-            notify_calls[0] += 1
-            order.append(("notify", notify_calls[0]))
-            if notify_calls[0] == 2:
-                raise RuntimeError("schedule queue full on print retry")
+            order.append(("notify",))
+
+        def retry():
+            order.append(("retry",))
+            raise RuntimeError("schedule queue full on print retry")
 
         def reset_now():
             order.append(("reset",))
@@ -1117,6 +1180,7 @@ class SchedulerFailureFailSafeTest(AgentTestBase):
         agent, link = self.new_agent(
             "F-27/P3 print-flood retry reset wiring", order=order,
             notify=notify, reset=reset_now)
+        agent.console.set_stop_retry(retry)
         send(self, link, 0x20,
              bytes((1,)) + b"while True: print('flood')", id_=84)
         agent._runner._executing = True
@@ -1147,8 +1211,8 @@ class SchedulerFailureFailSafeTest(AgentTestBase):
             and pyble_proto.decode(event[1]).type == RSP
             and pyble_proto.decode(event[1]).opcode == 0x21
             and pyble_proto.decode(event[1]).id == 85)
-        self.assertLess(rsp_idx, order.index(("notify", 1)))
-        self.assertLess(order.index(("notify", 2)), order.index(("reset",)))
+        self.assertLess(rsp_idx, order.index(("notify",)))
+        self.assertLess(order.index(("retry",)), order.index(("reset",)))
         self.assertIsNone(agent.console.readinto(buf),
                           "failed retry must leave no latent armed 0x03")
 

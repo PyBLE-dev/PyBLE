@@ -49,11 +49,17 @@
 #                                       # overflow the EXCESS TAIL is dropped
 #     .inject_stop() -> bool            # atomically arm 0x03 + call notify once;
 #                                       # False rolls the arm back on notify error
+#     .set_stop_retry(retry)            # install two-stage scheduled recovery
+#     .stop_retry_failed()              # clear retry state, then invoke reset
 # ---------------------------------------------------------------------------
 
 import io
 import os
+from pathlib import Path
+import re
+import subprocess
 import sys
+import tempfile
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -73,10 +79,11 @@ except ImportError:
 CONSOLE = _support.RedReason("pyble_console", owner="agent-engineer")
 
 BIG = 1 << 30  # an effectively-unlimited bucket for non-budget tests
+ROOT = Path(__file__).resolve().parents[3]
 
 
 def make_console(testcase, criterion, emit=None, notify=None, clock=None,
-                 cap=BIG, refill=BIG, stop_fail=None):
+                 cap=BIG, refill=BIG, stop_fail=None, stop_retry=None):
     """Build a Console with recording emit/notify seams and an injected clock.
     Returns (console, chunks, notifies): chunks = [(stream, bytes), ...]."""
     cls = CONSOLE.attr(testcase, "Console", criterion)
@@ -98,6 +105,8 @@ def make_console(testcase, criterion, emit=None, notify=None, clock=None,
         notify if notify is not None else (lambda: notifies.append(1)),
         **kwargs
     )
+    if stop_retry is not None:
+        con.set_stop_retry(stop_retry)
     return con, chunks, notifies
 
 
@@ -268,11 +277,16 @@ class PrintFloodStopRecoveryTest(unittest.TestCase):
     CRIT = "F-27/P3 print-flood dupterm-write STOP recovery"
 
     def test_consumed_stop_kbi_is_retried_before_write_returns(self):
+        retries = []
+
+        def retry():
+            retries.append("retry")
+
         def pending_stop_lands(stream, data):
             raise KeyboardInterrupt()
 
         con, _, notifies = make_console(
-            self, self.CRIT, emit=pending_stop_lands)
+            self, self.CRIT, emit=pending_stop_lands, stop_retry=retry)
         con.set_run_active(True)
         self.assertTrue(con.inject_stop())
 
@@ -290,9 +304,10 @@ class PrintFloodStopRecoveryTest(unittest.TestCase):
                 "the exact delivered STOP KBI escaped into upstream's "
                 "catch-all dupterm wrapper")
         self.assertEqual(written, 5)
-        self.assertEqual(
-            len(notifies), 2,
-            "the tee must enqueue native dupterm_notify exactly once more")
+        self.assertEqual(len(notifies), 1,
+                         "initial STOP still owns one direct native notify")
+        self.assertEqual(retries, ["retry"],
+                         "write-swallowed KBI must use two-stage recovery")
         self.assertEqual(con.readinto(buf), 1,
                          "the retry must re-arm the STOP interrupt char")
         self.assertEqual(buf[0], 0x03)
@@ -319,8 +334,10 @@ class PrintFloodStopRecoveryTest(unittest.TestCase):
 
         def notify():
             calls.append("notify")
-            if len(calls) == 2:
-                raise RuntimeError("schedule queue full on retry")
+
+        def retry():
+            calls.append("retry")
+            raise RuntimeError("schedule queue full on retry")
 
         class ResetNow(BaseException):
             pass
@@ -334,7 +351,7 @@ class PrintFloodStopRecoveryTest(unittest.TestCase):
 
         con, _, _ = make_console(
             self, self.CRIT, emit=pending_stop_lands, notify=notify,
-            stop_fail=stop_fail)
+            stop_fail=stop_fail, stop_retry=retry)
         con.set_run_active(True)
         self.assertTrue(con.inject_stop())
         buf = bytearray(1)
@@ -344,9 +361,150 @@ class PrintFloodStopRecoveryTest(unittest.TestCase):
                 ResetNow,
                 msg="failed post-RSP retry admission must reset, not wedge"):
             con.write(b"flood")
-        self.assertEqual(calls, ["notify", "notify", "reset"])
+        self.assertEqual(calls, ["notify", "retry", "reset"])
         self.assertIsNone(con.readinto(buf),
                           "reset fail-safe must first clear the retry byte")
+
+
+class StopRetrySchedulerSourceContractTest(unittest.TestCase):
+    """Pin the three exact upstream v1.28 scheduler facts consumed by P3."""
+
+    def test_exception_order_one_item_and_callback_lock_are_pinned(self):
+        source = (
+            ROOT / "firmware/upstream/micropython/py/scheduler.c"
+        ).read_text(encoding="utf-8")
+        handle_start = source.index("void mp_handle_pending(")
+        handle = source[handle_start:source.index(
+            "void mp_event_handle_nowait(", handle_start)]
+        self.assertLess(
+            handle.index("// Handle any pending exception."),
+            handle.index("// Handle any pending callbacks."),
+            "cp2 must check exceptions before it runs native dupterm_notify")
+
+        run_start = source.index("static inline void mp_sched_run_pending(")
+        run = source[run_start:source.index(
+            "bool MICROPY_WRAP_MP_SCHED_SCHEDULE", run_start)]
+        self.assertIn("// Run at most one pending Python callback.", run)
+        locked = run.index("MP_STATE_VM(sched_state) = MP_SCHED_LOCKED;")
+        callback = run.index("mp_call_function_1_protected(")
+        restored = run.index(
+            "// Restore MP_STATE_VM(sched_state) to idle", callback)
+        self.assertLess(locked, callback)
+        self.assertLess(callback, restored,
+                        "the trampoline must stay scheduler-locked while it "
+                        "queues native dupterm_notify")
+
+
+class StopRetryCheckpointOracleTest(unittest.TestCase):
+    """Deterministic cp1/cp2/NLR model of the pinned scheduler contract."""
+
+    def test_native_kbi_is_not_checked_until_after_nlr_pop(self):
+        queue = []
+        events = []
+        state = {"locked": False, "pending": False, "nlr": True}
+
+        def schedule(callback, arg):
+            queue.append((callback, arg))
+
+        def checkpoint(name):
+            events.append(("check", name))
+            if state["pending"]:
+                events.append(("raise", name, state["nlr"]))
+                raise KeyboardInterrupt()
+            if queue and not state["locked"]:
+                callback, arg = queue.pop(0)
+                state["locked"] = True
+                try:
+                    callback(arg)
+                finally:
+                    state["locked"] = False
+
+        def native_notify(_arg):
+            events.append(("native",))
+            state["pending"] = True
+
+        def trampoline(_arg):
+            events.append(("trampoline",))
+            schedule(native_notify, None)
+            checkpoint("locked-trampoline")
+
+        schedule(trampoline, None)
+        checkpoint("cp1")
+        self.assertEqual([item[0] for item in queue], [native_notify])
+        checkpoint("cp2")
+        self.assertTrue(state["pending"])
+        state["nlr"] = False
+        events.append(("nlr-pop",))
+        with self.assertRaises(KeyboardInterrupt):
+            checkpoint("outer")
+        self.assertEqual(
+            events,
+            [("check", "cp1"), ("trampoline",),
+             ("check", "locked-trampoline"), ("check", "cp2"),
+             ("native",), ("nlr-pop",), ("check", "outer"),
+             ("raise", "outer", False)])
+
+
+class StopRetryMpyBytecodeContractTest(unittest.TestCase):
+    """Compile exact RP2350 Arm frozen bytecode and prove cp1/cp2/return."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls._tmp = tempfile.TemporaryDirectory(prefix="pyble-stop-mpy-")
+        build = Path(cls._tmp.name) / "build"
+        source = ROOT / "firmware/upstream/micropython/mpy-cross"
+        subprocess.run(
+            ["make", "-C", str(source), "BUILD={}".format(build), "-j2"],
+            check=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, timeout=120)
+        compiler = build / "mpy-cross"
+        output = Path(cls._tmp.name) / "pyble_console.mpy"
+        subprocess.run(
+            [str(compiler), "-O3", "-march=armv7m", "-o", str(output),
+             str(ROOT / "firmware/pyble/pyble_console.py")],
+            check=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, timeout=30)
+        tool = ROOT / "firmware/upstream/micropython/tools/mpy-tool.py"
+        cls.disassembly = subprocess.run(
+            [sys.executable, str(tool), "-d", str(output)],
+            check=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, timeout=30).stdout
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._tmp.cleanup()
+
+    def test_write_has_exactly_two_retry_checkpoints_then_return(self):
+        start = self.disassembly.index("simple_name: write\n")
+        block = self.disassembly[start:self.disassembly.index(
+            "  children:", start)]
+        instructions = []
+        for line in block.splitlines():
+            match = re.match(r"^\s+[0-9a-f:]+\s+([A-Z_]+)(?:\s|$)", line)
+            if match:
+                instructions.append((match.group(1), line.strip()))
+
+        retry = next(
+            i for i, (_op, line) in enumerate(instructions)
+            if "LOAD_METHOD _stop_retry" in line)
+        call = next(
+            i for i in range(retry + 1, len(instructions))
+            if instructions[i][0] == "CALL_METHOD")
+        end = max(
+            i for i, (op, _line) in enumerate(instructions)
+            if op == "RETURN_VALUE")
+        checkpoints = [
+            i for i in range(call + 1, end)
+            if instructions[i][0] == "POP_EXCEPT_JUMP"]
+        self.assertEqual(
+            len(checkpoints), 2,
+            "retry admission must be followed by cp1 trampoline and cp2 "
+            "native notify, with no third pending checkpoint")
+        tail = [op for op, _line in instructions[checkpoints[-1] + 1:end + 1]]
+        self.assertEqual(
+            tail, ["END_FINALLY", "LOAD_FAST", "RETURN_VALUE"],
+            "after cp2 sets KBI, write must return without another pending "
+            "checkpoint inside upstream's NLR catch")
 
 
 class ReadIntoTest(unittest.TestCase):
