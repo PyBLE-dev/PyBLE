@@ -137,15 +137,29 @@ class FrozenCapacityModelTests(unittest.TestCase):
 
     @staticmethod
     def bulk_can_submit(msys1_free_after_payload: int) -> bool:
-        wrapper_blocks = 1
-        control_reserve_blocks = 2
-        return msys1_free_after_payload >= wrapper_blocks + control_reserve_blocks
+        bulk_wrapper_blocks = 1
+        acknowledged_stop_blocks = 4
+        return (
+            msys1_free_after_payload
+            >= bulk_wrapper_blocks + acknowledged_stop_blocks
+        )
 
-    def test_bulk_never_consumes_the_two_control_blocks(self):
-        for free in (0, 1, 2):
+    def test_bulk_preserves_the_full_acknowledged_stop_transaction(self):
+        for free in range(5):
             self.assertFalse(self.bulk_can_submit(free))
-        self.assertTrue(self.bulk_can_submit(3))
-        self.assertEqual(3 - 1, 2, "ATT wrapper submission leaves the reserve")
+        self.assertTrue(self.bulk_can_submit(5))
+
+        free = 5 - 1  # the admitted bulk notification's ATT wrapper
+        self.assertEqual(free, 4, "bulk submission must leave the exact reserve")
+        for owner in (
+            "incoming acknowledged-write request",
+            "preallocated ATT write response",
+            "PBLE/1 response data",
+            "ATT notification wrapper",
+        ):
+            self.assertGreater(free, 0, owner)
+            free -= 1
+        self.assertEqual(free, 0)
 
     def test_console_payload_bound_is_one_fragment_at_every_valid_mtu(self):
         for mtu in range(23, 248):
@@ -171,7 +185,7 @@ class FrozenCapacityModelTests(unittest.TestCase):
 
 class NativeReserveSourceContractTests(unittest.TestCase):
     def test_bulk_reserve_uses_the_exact_msys1_pool(self):
-        self.assertRegex(BLE, r"#\s*define\s+PBLE_TX_BULK_RESERVE_BLOCKS\s+2\b")
+        self.assertRegex(BLE, r"#\s*define\s+PBLE_TX_BULK_RESERVE_BLOCKS\s+4\b")
         self.assertIn('"os/os_mempool.h"', BLE)
         pool = function(BLE, "pble_msys1_num_free")
         self.assertIn("os_mempool_info_get_next", pool)
