@@ -17,7 +17,7 @@ import {
 } from "@/lib/local-firmware-preview";
 
 // The public source tree deliberately selects no release. A qualified public
-// descriptor is reviewed and added only after all three final-byte HIL rows
+// descriptor is reviewed and added only after every final-byte HIL row
 // pass. Protected candidates are supplied explicitly at build time by the
 // external staging workflow; they are never selected by browser state.
 export const selectedFirmwareRelease: FirmwareReleaseDescriptor | null = null;

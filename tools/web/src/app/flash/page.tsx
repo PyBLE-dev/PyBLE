@@ -12,6 +12,12 @@ import {
 } from "@/lib/firmware-release-selection";
 import { pageMetadata } from "@/lib/site";
 
+function exactProfileCountLabel(profileCount: number) {
+  if (profileCount === 3) return "three";
+  if (profileCount === 5) return "five";
+  return String(profileCount);
+}
+
 export const metadata = pageMetadata({
   title: "Firmware installer",
   description:
@@ -42,7 +48,7 @@ export default function FlashPage() {
             : publicBeta
               ? " The current v0.4.2 installer is a hardware-tested firmware beta. Production Chrome erase/install and deliberately interrupted-flash recovery passed on both exact profiles. Complete release qualification is still pending; this is not a qualified release."
               : qualifiedPublic
-                ? ` Qualified v${release.version} firmware is available for all three exact release profiles.`
+                ? ` Qualified v${release.version} firmware is available for all ${exactProfileCountLabel(release.profiles.length)} exact release profiles.`
                 : " The public install action remains unavailable until the final v0.6.0-derived bytes pass hardware validation on every included profile."}
         </p>
       </PageIntro>

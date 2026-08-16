@@ -26,12 +26,35 @@ const diagnosticItems = [
   "The exact steps that caused the problem",
 ] as const;
 
+function exactProfileCountLabel(profileCount: number) {
+  if (profileCount === 3) return "three";
+  if (profileCount === 5) return "five";
+  return String(profileCount);
+}
+
+function qualifiedProfileList(profileIds: readonly string[]) {
+  const names = profileIds.map((profileId) => {
+    if (profileId === "esp32-s3-n16r8") {
+      return `lean generic ${profileId}`;
+    }
+    if (profileId === "waveshare-esp32-s3-lcd-147b") {
+      return `separate ${profileId}`;
+    }
+    return profileId;
+  });
+  if (names.length < 2) return names.join("");
+  return `${names.slice(0, -1).join(", ")}, and ${names.at(-1)}`;
+}
+
 export default function SupportPage() {
   const firmwareRelease = firmwareReleaseSelectedAtBuild();
   const publicBeta = firmwareRelease?.deployment === "public-beta";
   const qualifiedPublic =
     firmwareRelease !== null &&
     releaseIncludesWaveshareLcd147b(firmwareRelease);
+  const esp32C3Available =
+    qualifiedPublic &&
+    firmwareRelease.profiles.some(({ id }) => id === "esp32-c3-4mb");
 
   return (
     <main id="main-content">
@@ -63,10 +86,16 @@ export default function SupportPage() {
                     ) : qualifiedPublic ? (
                       <>
                         Qualified v{firmwareRelease.version} firmware is
-                        available for three exact profiles: esp32-4mb, lean
-                        generic esp32-s3-n16r8, and separate
-                        waveshare-esp32-s3-lcd-147b. The Waveshare image alone
-                        includes its TFT runtime and fresh-install splash.
+                        available for{" "}
+                        {exactProfileCountLabel(
+                          firmwareRelease.profiles.length,
+                        )}{" "}
+                        exact profiles:{" "}
+                        {qualifiedProfileList(
+                          firmwareRelease.profiles.map(({ id }) => id),
+                        )}
+                        . The Waveshare image alone includes its TFT runtime and
+                        fresh-install splash.
                       </>
                     ) : (
                       <>
@@ -74,9 +103,11 @@ export default function SupportPage() {
                         this status again before provisioning a board.
                       </>
                     )}{" "}
-                    ESP32-C3 is not currently available. Confirm the active
-                    release, exact profile, and enabled action; this initial
-                    step uses a cable.
+                    {!esp32C3Available
+                      ? "ESP32-C3 is not currently available. "
+                      : null}
+                    Confirm the active release, exact profile, and enabled
+                    action; this initial step uses a cable.
                   </p>
                 </div>
               </li>
