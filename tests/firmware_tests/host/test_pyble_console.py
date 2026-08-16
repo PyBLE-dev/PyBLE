@@ -142,8 +142,8 @@ class ConstantsAndShapeTest(unittest.TestCase):
         self.assertEqual(CONSOLE.attr(self, "STDIN_RING", "F-25/P8 ring=256"), 256)
         self.assertEqual(CONSOLE.attr(self, "STOP_CHAR", "F-25/P3 stop=0x03"), 0x03)
         self.assertEqual(
-            CONSOLE.attr(self, "TX_NOTIFY_COST", "F-27/P8 notify-cost=80"),
-            80,
+            CONSOLE.attr(self, "TX_NOTIFY_COST", "F-27/P8 notify-cost=chunk"),
+            CONSOLE.attr(self, "CHUNK", "F-27/P8 notify-cost=chunk"),
         )
 
     def test_console_is_an_iobase(self):
@@ -254,25 +254,67 @@ class TokenBucketTest(unittest.TestCase):
                          "tokens clamp at tx_capacity: the second burst still "
                          "affords exactly 400 bytes")
 
-    def test_tiny_writes_pay_the_minimum_notify_cost(self):
+    def test_tiny_write_burst_is_exactly_ten_notifications(self):
         con, chunks, _ = make_console(
-            self, self.CRIT, clock=lambda: self.now[0], cap=160, refill=20)
+            self, self.CRIT, clock=lambda: self.now[0], cap=2048, refill=20)
         con.set_run_active(True)
 
-        con.write(b"a")
-        con.write(b"b")
-        con.write(b"c")
+        for value in range(11):
+            con.write(bytes((value,)))
         self.assertEqual(
-            chunks,
-            [(0, b"a"), (0, b"b")],
-            "the 80-token floor must bound tiny print writes by Notify count, "
-            "not only by their one-byte payload",
+            len(chunks),
+            10,
+            "2048 tokens with a 200-token floor must bound the initial tiny "
+            "print burst to exactly ten notifications",
         )
 
-        self.now[0] = 4                         # +80 tokens -> one Notify
-        con.write(b"d")
-        self.assertEqual(chunks[-1], (0, b"d"))
-        self.assertEqual(len(chunks), 3)
+    def test_empty_bucket_refills_one_tiny_notify_in_exactly_ten_ms(self):
+        con, chunks, _ = make_console(
+            self, self.CRIT, clock=lambda: self.now[0], cap=2000, refill=20)
+        con.set_run_active(True)
+        for value in range(10):
+            con.write(bytes((value,)))          # exact 2000-token drain
+        con.write(b"x")                         # empty: drop
+        self.now[0] = 9
+        con.write(b"y")                         # 180 tokens: still drop
+        self.now[0] = 10
+        con.write(b"z")                         # 200 tokens: one Notify
+        self.assertEqual(len(chunks), 11)
+        self.assertEqual(chunks[-1], (0, b"z"))
+
+    def test_refill_crosses_micropython_tick_wrap(self):
+        module = CONSOLE.obj(self, self.CRIT)
+        original_ticks_diff = module._ticks_diff
+        period = 1 << 30
+        self.now[0] = period - 5
+        module._ticks_diff = lambda a, b: (
+            (a - b + period // 2) % period - period // 2)
+        try:
+            con, chunks, _ = make_console(
+                self, self.CRIT, clock=lambda: self.now[0], cap=200, refill=20)
+            con.set_run_active(True)
+            con.write(b"a")                     # drain the one-Notify bucket
+            con.write(b"b")                     # no elapsed time: drop
+            self.now[0] = 5                      # +10 ms across wrap
+            con.write(b"c")
+            self.assertEqual(chunks, [(0, b"a"), (0, b"c")])
+        finally:
+            module._ticks_diff = original_ticks_diff
+
+    def test_normal_print_and_traceback_payloads_are_preserved(self):
+        con, chunks, _ = make_console(
+            self, self.CRIT, clock=lambda: self.now[0], cap=2048, refill=20)
+        con.set_run_active(True)
+        con.write(b"temperature=23.5")
+        con.write(b"\r\n")
+        traceback = b"Traceback (most recent call last):\nValueError: sample\n"
+        con.out(1, traceback)
+        self.assertEqual(
+            chunks,
+            [(0, b"temperature=23.5"), (0, b"\r\n"), (1, traceback)],
+            "the control-safe floor must preserve representative normal "
+            "stdout and stderr traceback output within the bounded burst",
+        )
 
 
 class NeverWedgeTest(unittest.TestCase):

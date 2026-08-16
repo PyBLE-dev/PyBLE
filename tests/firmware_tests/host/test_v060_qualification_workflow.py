@@ -333,7 +333,7 @@ class PicoPacingSourceBindingTests(unittest.TestCase):
         runtime_budget = getattr(CONSOLE, "TX_BUDGET_MS", None)
         self.assertEqual(
             (capacity, refill_per_ms, notify_cost, runtime_budget),
-            (2048, 20, 80, 103),
+            (2048, 20, 200, 103),
             "Pico pacing must use the frozen token capacity, token/ms refill, "
             "per-Notify floor, and empty-to-full horizon; ESP's 250 ms wait "
             "is unrelated",
