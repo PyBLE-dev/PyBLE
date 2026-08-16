@@ -2043,17 +2043,20 @@ observation MUST reject its absence. Candidate observations remain JSON null.
 The abandoned two-profile V3 shared-image shape is retained only as rejected
 engineering history: it MUST NOT validate, finalize, or activate any release.
 
-The tenth reset owns the transfer session. Classic ESP32, generic S3, and C3
-retain the ADR-0027 private-UART lifecycle: exact first-nine terminal drains,
-buffer isolation before reset ten, settlement before timing, and the final
+The tenth reset owns the transfer session. Classic ESP32 and generic S3 retain
+the ADR-0027 private-UART lifecycle: exact first-nine terminal drains, buffer
+isolation before reset ten, settlement before timing, and the final
 post-disconnect starvation record. Missing or duplicate termination fails
-closed.
+closed. C3 retains its WCH endpoint only as the mandatory RTS-to-EN reset and
+release adapter; received WCH bytes are private diagnostics and never
+qualification authority.
 
-The exact Waveshare profile instead uses the ADR-0034 diagnostic compiled only
-into its image. Through ordinary PBLE/1 RUN, a nonce-bound strict marker reads
+The exact Waveshare and C3 profiles instead use the ADR-0034/ADR-0035 retained
+diagnostic compiled only into those images. Through ordinary PBLE/1 RUN, a
+nonce-bound strict marker reads
 one atomic `{active,last_ended}` snapshot from
 `pble_ble._oi1_link_facts()`. Each of the first nine measured disconnects is
-followed by a diagnostic reconnect with separate 20-second connect, 2-second
+followed by a diagnostic reconnect with separate 20-second connect, 5-second
 diagnostic-HELLO, and 8-second `pair` getter-RUN deadlines. The getter bound is
 one absolute transport ceiling over its command writes, response, bounded
 console pacing, and terminal state. It must show
@@ -2074,7 +2077,7 @@ duplicate, stderr, RUN-error, and timeout results, and discards arbitrary
 console output; `unsettled` applies to the reset-ten transfer record, not the
 discarded first-nine boundary pair. No serial endpoint, new opcode, public
 capability, BLE identifier, connection handle, path, label, user source, or
-console text enters the Waveshare report.
+console text enters either retained-link-fact report.
 
 Its DLE fact is independent of controller-handle allocation or connection
 history: DATA_LEN_CHG takes one cached live PBLE-handle snapshot, rejects NONE

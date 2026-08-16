@@ -208,6 +208,21 @@ are `1..4`, at least one update is retained, and settled TX/RX are exactly
 `2`/`2`; DLE and connection interval use the frozen §5.3.1 bounds. A failed or
 unsettled rung produces no baseline result.
 
+**Retained session evidence — FROZEN (2026-08-16 · `[docs]`,
+[ADR-0035](../../decisions/0035-read-c3-link-facts-through-run.md)).** The C3
+image enables the same bounded, hidden `pble_ble._oi1_link_facts()` state as
+the exact Waveshare profile. The WCH bridge remains the mandatory RTS-to-EN
+reset/release adapter, but its received bytes are private diagnostics only and
+MUST NOT authorize a C3 session boundary or link fact. After each of reset
+samples 1–9 disconnects, one diagnostic BLE successor must expose the ended
+session and its exact non-wrapping active successor through the strict `pair`
+RUN projection. Reset ten uses the strict `active` projection to bind settled
+facts before timing and again before disconnect; one final diagnostic `pair`
+must expose that exact transfer epoch as immutable `last_ended`. Null, stale,
+wrapped, non-successor, malformed, overflowed, or wrong-epoch state fails
+closed with no retry. Classic ESP32 and generic S3 retain the unchanged
+2,000 ms UART terminal gate; C3 neither lengthens nor consumes that gate.
+
 The output is a redacted, canonical **C3 engineering profile fragment** bound
 to the source and exact firmware/manifest bytes, plus mechanically derived C3
 thresholds. It is not inserted into the historical schema-2 three-profile
