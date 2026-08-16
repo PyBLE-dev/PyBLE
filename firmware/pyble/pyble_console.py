@@ -66,7 +66,7 @@ STOP_CHAR = 0x03
 # block, sleep, or change the token arithmetic below.
 TX_CAPACITY = 2048
 TX_REFILL_PER_MS = 20
-TX_NOTIFY_COST = 80
+TX_NOTIFY_COST = CHUNK
 TX_BUDGET_MS = (TX_CAPACITY + TX_REFILL_PER_MS - 1) // TX_REFILL_PER_MS
 
 
