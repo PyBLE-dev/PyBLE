@@ -21463,6 +21463,7 @@ def _validate_transfer_link_facts(
     required_2m = profile_id in (
         "esp32-s3-n16r8",
         "waveshare-esp32-s3-lcd-147b",
+        "esp32-c3-4mb",
     )
     _require(
         profile_id in RELEASE_PROFILE_ORDER

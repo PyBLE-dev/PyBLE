@@ -200,7 +200,7 @@ def transfer_link_facts(profile_id: str) -> dict:
             "observed_chunk_bytes": 229,
             "console_tx_budget_ms": 103,
         }
-    if profile_id in ("esp32-4mb", C3_PROFILE_ID):
+    if profile_id == "esp32-4mb":
         phy = {
             "required_2m": False,
             "request_attempts": 0,
@@ -211,6 +211,7 @@ def transfer_link_facts(profile_id: str) -> dict:
     elif profile_id in (
         "esp32-s3-n16r8",
         WAVESHARE_PROFILE_ID,
+        C3_PROFILE_ID,
     ):
         phy = {
             "required_2m": True,
