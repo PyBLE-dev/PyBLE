@@ -97,6 +97,27 @@ def _make_scheduled_dupterm_notify(schedule, dupterm_notify):
     return _notify
 
 
+def _make_scheduled_dupterm_retry(schedule, dupterm_notify, retry_failed):
+    """Return the P3 two-checkpoint print-flood STOP recovery seam.
+
+    Console.write's first pending checkpoint runs `_trampoline` under
+    MP_SCHED_LOCKED. It queues the native callable without recursively running
+    it; the write frame's second and final checkpoint runs that native callable
+    and creates the pending KBI. With no third checkpoint before RETURN_VALUE,
+    upstream removes its dupterm NLR catch before the exception is examined.
+    """
+    def _trampoline(_arg):
+        try:
+            schedule(dupterm_notify, None)
+        except Exception:
+            retry_failed()
+
+    def _retry():
+        schedule(_trampoline, None)
+
+    return _retry
+
+
 def _make_hard_reset_alarm(timer_type, reset):
     """Return the RP2 hard one-shot reset admission seam (P4).
 
@@ -155,7 +176,7 @@ class Agent:
         # it to os.dupterm; the notify seam pokes os.dupterm_notify on device.
         self.console = pyble_console.Console(
             self._console_emit, notify if notify is not None else _noop,
-            clock=self._clock)
+            clock=self._clock, stop_fail=self._reset)
         self._terminal_session = _NO_TERMINAL_SESSION
 
         # Filesystem bridge (F-08/F-09/F-17): EVT emission via emit().
@@ -561,6 +582,10 @@ def _serve_forever():
                   clock=_ticks_ms,
                   notify=_notify,
                   arm_reset=arm_reset)
+
+    if dupterm_notify is not None and schedule is not None:
+        agent.console.set_stop_retry(_make_scheduled_dupterm_retry(
+            schedule, dupterm_notify, agent.console.stop_retry_failed))
 
     # P3: pin the interrupt char so the armed 0x03 becomes KeyboardInterrupt.
     try:
