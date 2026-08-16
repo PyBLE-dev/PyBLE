@@ -52,6 +52,100 @@ export default function FlashPage() {
           <FlashStatus preview={preview} release={release} />
 
           <div className="flash-explainer">
+            {showWaveshareBoard ? (
+              <section
+                className="flash-board-spotlight"
+                aria-labelledby="waveshare-lcd147b"
+              >
+                <p className="eyebrow">
+                  {preview
+                    ? "Exact-board reference"
+                    : "Validated display board"}
+                </p>
+                <h2 id="waveshare-lcd147b">Waveshare ESP32-S3-LCD-1.47B</h2>
+                {preview ? (
+                  <>
+                    <p className="flash-board-spotlight__intro">
+                      This is a real PyBLE board, not a render. The photograph
+                      shows the exact B-version running PyBLE firmware v0.5.0,
+                      so you can recognize it before choosing a profile.
+                    </p>
+                    <WaveshareBoardPhoto eager />
+                    <p>
+                      This is a historical identification reference. It does not
+                      qualify the local v{preview.version} firmware bytes or
+                      turn this engineering preview into a supported release.
+                    </p>
+                    <p>
+                      Select <strong>waveshare-esp32-s3-lcd-147b</strong> only
+                      for the exact B-version board with 16 MiB flash and 8 MiB
+                      Octal PSRAM. Non-B display wiring differs.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="flash-board-spotlight__intro">
+                      PyBLE on real hardware, not a render. Match your board to
+                      this exact B-version before choosing its firmware.
+                    </p>
+                    <WaveshareBoardPhoto eager />
+                    <p>
+                      This board uses the separate{" "}
+                      <strong>waveshare-esp32-s3-lcd-147b</strong> image. Its
+                      own manifest and immutable firmware bytes are never
+                      aliased to the lean generic S3 image. It requires the
+                      exact B-version board with 16 MiB flash and 8 MiB Octal
+                      PSRAM.
+                    </p>
+                    <p>
+                      The lean <strong>esp32-s3-n16r8</strong> image does not
+                      bundle this board&apos;s display driver, companion module,
+                      pin constants, boot hook, or splash machinery.
+                    </p>
+                    <p>
+                      Use the <strong>B version</strong> shown here. Non-B
+                      display wiring differs and is not covered by this
+                      installer claim.
+                    </p>
+                    <ul className="requirement-list">
+                      <li>
+                        <strong>Integrated display</strong>
+                        <span>
+                          172 × 320 ST7789V3 TFT with the board&apos;s published
+                          SPI wiring.
+                        </span>
+                      </li>
+                      <li>
+                        <strong>Explicit MicroPython runtime</strong>
+                        <span>
+                          Firmware includes the inert <code>pyble_st7789</code>{" "}
+                          user library and <code>pyble_waveshare_lcd147b</code>{" "}
+                          companion for ordinary Python and Blocky TFT programs.
+                        </span>
+                      </li>
+                      <li>
+                        <strong>Fresh-install boot splash</strong>
+                        <span>
+                          After a fresh erased installation, the PyBLE/app-QR
+                          boot splash is shown by default. You can persistently
+                          disable or re-enable it; it never detects or selects
+                          the board automatically.
+                        </span>
+                      </li>
+                    </ul>
+                    <p>
+                      In the installer, select{" "}
+                      <strong>waveshare-esp32-s3-lcd-147b</strong>, confirm the
+                      exact B-version board and N16R8 memory topology, and
+                      verify that profile&apos;s own release bytes. Use the same
+                      BOOT/RESET recovery sequence documented below if automatic
+                      reset does not enter the ROM loader.
+                    </p>
+                  </>
+                )}
+              </section>
+            ) : null}
+
             <section aria-labelledby="why-wired">
               <p className="eyebrow">Why a cable here?</p>
               <h2 id="why-wired">Provision over USB. Develop over BLE.</h2>
@@ -94,97 +188,6 @@ export default function FlashPage() {
                 ) : null}
               </ul>
             </section>
-
-            {showWaveshareBoard ? (
-              <section aria-labelledby="waveshare-lcd147b">
-                <p className="eyebrow">
-                  {preview
-                    ? "Exact-board reference"
-                    : "Validated display board"}
-                </p>
-                <h2 id="waveshare-lcd147b">Waveshare ESP32-S3-LCD-1.47B</h2>
-                {preview ? (
-                  <>
-                    <p>
-                      This reviewed photograph shows the exact B-version board
-                      as recorded with PyBLE firmware v0.5.0. Use it to
-                      distinguish the Waveshare profile from the lean generic
-                      ESP32-S3 profile.
-                    </p>
-                    <p>
-                      This is a historical identification reference. It does not
-                      qualify the local v{preview.version} firmware bytes or
-                      turn this engineering preview into a supported release.
-                    </p>
-                    <p>
-                      Select <strong>waveshare-esp32-s3-lcd-147b</strong> only
-                      for the exact B-version board with 16 MiB flash and 8 MiB
-                      Octal PSRAM. Non-B display wiring differs.
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <p>
-                      This board uses the separate{" "}
-                      <strong>waveshare-esp32-s3-lcd-147b</strong> image. Its
-                      own manifest and immutable firmware bytes are never
-                      aliased to the lean generic S3 image. It requires the
-                      exact B-version board with 16 MiB flash and 8 MiB Octal
-                      PSRAM.
-                    </p>
-                    <p>
-                      The lean <strong>esp32-s3-n16r8</strong> image does not
-                      bundle this board&apos;s display driver, companion module,
-                      pin constants, boot hook, or splash machinery.
-                    </p>
-                    <p>
-                      Use the <strong>B version</strong> shown here. Non-B
-                      display wiring differs and is not covered by this
-                      installer claim.
-                    </p>
-                  </>
-                )}
-                <WaveshareBoardPhoto />
-                {!preview ? (
-                  <>
-                    <ul className="requirement-list">
-                      <li>
-                        <strong>Integrated display</strong>
-                        <span>
-                          172 × 320 ST7789V3 TFT with the board&apos;s published
-                          SPI wiring.
-                        </span>
-                      </li>
-                      <li>
-                        <strong>Explicit MicroPython runtime</strong>
-                        <span>
-                          Firmware includes the inert <code>pyble_st7789</code>{" "}
-                          user library and <code>pyble_waveshare_lcd147b</code>{" "}
-                          companion for ordinary Python and Blocky TFT programs.
-                        </span>
-                      </li>
-                      <li>
-                        <strong>Fresh-install boot splash</strong>
-                        <span>
-                          After a fresh erased installation, the PyBLE/app-QR
-                          boot splash is shown by default. You can persistently
-                          disable or re-enable it; it never detects or selects
-                          the board automatically.
-                        </span>
-                      </li>
-                    </ul>
-                    <p>
-                      In the installer, select{" "}
-                      <strong>waveshare-esp32-s3-lcd-147b</strong>, confirm the
-                      exact B-version board and N16R8 memory topology, and
-                      verify that profile&apos;s own release bytes. Use the same
-                      BOOT/RESET recovery sequence documented below if automatic
-                      reset does not enter the ROM loader.
-                    </p>
-                  </>
-                ) : null}
-              </section>
-            ) : null}
 
             {preview ? (
               <section aria-labelledby="preview-methods">

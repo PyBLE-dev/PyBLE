@@ -10,10 +10,12 @@ const photoAlt =
   "Actual Waveshare ESP32-S3-LCD-1.47B displaying the PyBLE v0.5.0 boot splash and app QR";
 
 interface WaveshareBoardPhotoProps {
+  eager?: boolean;
   showInstallerLink?: boolean;
 }
 
 export function WaveshareBoardPhoto({
+  eager = false,
   showInstallerLink = false,
 }: WaveshareBoardPhotoProps) {
   return (
@@ -26,6 +28,8 @@ export function WaveshareBoardPhoto({
           width={1600}
           height={1116}
           sizes="(max-width: 680px) calc(100vw - 28px), (max-width: 880px) calc(100vw - 36px), 920px"
+          loading={eager ? "eager" : "lazy"}
+          fetchPriority={eager ? "high" : undefined}
           unoptimized
         />
         <span className="waveshare-board-photo__badge">

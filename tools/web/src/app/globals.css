@@ -2271,6 +2271,15 @@ h3 {
   border-top: 1px solid var(--line);
 }
 
+.flash-board-spotlight__intro {
+  max-width: 42rem;
+  margin-bottom: 0;
+  color: var(--navy-900) !important;
+  font-size: 1.02rem;
+  font-weight: 650;
+  line-height: 1.7;
+}
+
 .flash-explainer h2 {
   margin-bottom: 20px;
   font-size: clamp(1.65rem, 3vw, 2.5rem);
