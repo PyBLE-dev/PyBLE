@@ -54,6 +54,7 @@ import subprocess
 import tempfile
 import tomllib
 import unittest
+from unittest import mock
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -70,6 +71,11 @@ HIL_MARKER = re.compile(
 
 HISTORICAL_V042_PROFILE_ORDER = ("esp32-4mb", "esp32-s3-n16r8")
 PROSPECTIVE_FIRMWARE_VERSION = "0.5.1"
+LEGACY_PRESERVED_V051_DIGESTS = {
+    "release.json": "3d845ed231173b5917dfe70f301cf08c3ff870a3d15155ec64c7e7fe93e91fbc",
+    "HIL_REPORT.md": "f10f4fb67e8ec22a000017daa62bf58bd45d9f47f30481905c0844813be905aa",
+    "SHA256SUMS": "aeeb1fbdf5be0e66f003a96197fb9fd884c4adce9da088249c04b23a02c8e815",
+}
 RELEASE_PROFILE_ORDER = (
     "esp32-4mb",
     "esp32-s3-n16r8",
@@ -2899,6 +2905,106 @@ class BundleValidationTests(FixtureCase):
                 previously_activated_public=True,
                 qualification_repo_root=self.fixture.repo,
             )
+
+    def _make_legacy_preserved_public_fixture(self):
+        bundle = self.fixture.make_bundle(public=True)
+        (bundle / "HIL_REPORT.md").write_text(
+            "# Legacy PyBLE v0.5.1 hardware validation\n\n"
+            "The exact already-active bytes retain their reviewed report.\n",
+            encoding="utf-8",
+        )
+        self.fixture.refresh_declared_hashes()
+        digests = {
+            filename: sha256_path(bundle / filename)
+            for filename in LEGACY_PRESERVED_V051_DIGESTS
+        }
+        return bundle, digests
+
+    def test_legacy_preserved_v051_replay_digests_are_frozen(self):
+        self.assertEqual(
+            RELEASE.LEGACY_PRESERVED_V051_DIGESTS,
+            LEGACY_PRESERVED_V051_DIGESTS,
+        )
+
+    def test_exact_legacy_v051_metadata_requires_preserved_public_mode_and_version(self):
+        bundle, fixture_digests = self._make_legacy_preserved_public_fixture()
+        with mock.patch.object(
+            RELEASE,
+            "LEGACY_PRESERVED_V051_DIGESTS",
+            fixture_digests,
+        ):
+            self.assertTrue(
+                RELEASE._is_exact_legacy_preserved_v051_replay(
+                    bundle,
+                    version="0.5.1",
+                    previously_activated_public=True,
+                )
+            )
+            for wrong_mode in ("candidate", "fresh-public", "audited-candidate"):
+                with self.subTest(wrong_mode=wrong_mode):
+                    self.assertFalse(
+                        RELEASE._is_exact_legacy_preserved_v051_replay(
+                            bundle,
+                            version="0.5.1",
+                            previously_activated_public=False,
+                        )
+                    )
+            for wrong_version in ("0.5.0", "0.6.0"):
+                with self.subTest(wrong_version=wrong_version):
+                    self.assertFalse(
+                        RELEASE._is_exact_legacy_preserved_v051_replay(
+                            bundle,
+                            version=wrong_version,
+                            previously_activated_public=True,
+                        )
+                    )
+
+    def test_legacy_v051_replay_rejects_one_byte_drift_in_each_pinned_file(self):
+        bundle, fixture_digests = self._make_legacy_preserved_public_fixture()
+        with mock.patch.object(
+            RELEASE,
+            "LEGACY_PRESERVED_V051_DIGESTS",
+            fixture_digests,
+        ):
+            for filename in fixture_digests:
+                with self.subTest(filename=filename):
+                    path = bundle / filename
+                    original = path.read_bytes()
+                    path.write_bytes(original + b"x")
+                    try:
+                        self.assertFalse(
+                            RELEASE._is_exact_legacy_preserved_v051_replay(
+                                bundle,
+                                version="0.5.1",
+                                previously_activated_public=True,
+                            )
+                        )
+                    finally:
+                        path.write_bytes(original)
+
+    def test_previously_activated_public_accepts_only_exact_legacy_v051_report(self):
+        bundle, fixture_digests = self._make_legacy_preserved_public_fixture()
+        with mock.patch.object(
+            RELEASE,
+            "LEGACY_PRESERVED_V051_DIGESTS",
+            fixture_digests,
+        ):
+            result = RELEASE.validate_bundle(
+                bundle,
+                previously_activated_public=True,
+                qualification_repo_root=self.fixture.repo,
+            )
+            self.assertEqual(result["identity"]["version"], "0.5.1")
+
+            with self.assertRaisesRegex(
+                RELEASE.ReleaseError,
+                "PYBLE_HIL_RECORDS",
+            ):
+                RELEASE.validate_bundle(
+                    bundle,
+                    public=False,
+                    qualification_repo_root=self.fixture.repo,
+                )
 
     def test_corrupt_truncated_missing_and_swapped_parts_fail_closed(self):
         mutations = {
