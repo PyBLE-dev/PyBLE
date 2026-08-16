@@ -77,21 +77,24 @@ One `io.IOBase` object serving three roles: stdout tee (gated on the run-active 
 
 The portable token bucket has exact capacity `TX_CAPACITY = 2048` tokens,
 exact refill rate `TX_REFILL_PER_MS = 20` tokens per millisecond, and exact
-minimum debit `TX_NOTIFY_COST = 80` tokens for every attempted Notify. A chunk
+minimum debit `TX_NOTIFY_COST = CHUNK = 200` tokens for every attempted Notify. A chunk
 costs `max(len(chunk), TX_NOTIFY_COST)`: full 200-byte chunks retain their
 byte-proportional cost, while tiny writes cannot create an effectively
 unbounded notification count from a byte-only budget. The initial capacity
-therefore admits at most 25 tiny notifications and sustained tiny-write output
-at most 250 notifications/s.
+therefore admits at most 10 tiny notifications and sustained tiny-write output
+at most 100 notifications/s; one minimum Notify costs exactly 10 ms of refill.
+Full 200-byte chunks retain the existing maximum 20,000-byte/s throughput.
 
 This notification floor is required by final-candidate HIL: one-byte/two-byte
 `print()` writes charged only by payload admitted 393 queued `CONSOLE_DATA`
 frames ahead of STOP and delayed both the already-correct STOP response and
-terminal idle by 1,169 ms. The 80-token floor keeps sustained admission below
-that observed link's approximately 336 notifications/s drain rate, with the
-initial burst bounded independently. It drops flood output rather than
-blocking and does not alter PBLE/1 control ordering or the strict `<500 ms`
-STOP gate.
+terminal idle by 1,169 ms. Repeated tracing observed 318–336 notifications/s
+drain. The 200-token floor admits at most 10 initial plus 50 refilled tiny
+notifications in any following 500 ms, leaving a conservative control-latency
+margin instead of tuning at the observed link boundary. It drops flood output
+rather than blocking and does not alter PBLE/1 control ordering or the strict
+`<500 ms` STOP gate. Tick-difference refill arithmetic MUST remain correct
+across the platform tick-counter wrap.
 
 The source-derived maximum empty-to-full refill horizon remains frozen as:
 
