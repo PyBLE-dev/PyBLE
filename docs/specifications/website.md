@@ -602,6 +602,11 @@ qualified release is `v0.6.0`, the page MUST:
   than deferred as below-the-fold media; and
 - label the home-page target group **Qualified public firmware targets** in
   both visible copy and its accessible name, with no stale beta wording; and
+- derive the qualified profile count and profile availability copy on
+  `/flash` and `/support` from the build-selected release descriptor. A
+  five-profile v0.6.0 release MUST name all five selected profiles and MUST NOT
+  retain the three-profile count or the historical statement that ESP32-C3 is
+  unavailable; and
 - keep the generic S3 warning, destructive-flash acknowledgements, integrity
   verification, recovery command, and all release gates unchanged.
 
