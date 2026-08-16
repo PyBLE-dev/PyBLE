@@ -59,19 +59,19 @@ The orchestrator always runs the frozen workload:
   discovery timeout, then HELLO and one GC/internal-IDF heap probe each;
 - HELLO `mtu=247` and `chunk=229`, with `window=8` for ESP and `window=4` for
   Pico, and with a real backend MTU required to agree when exposed;
-- on classic ESP32 and generic S3, after each of the first nine disconnects,
-  wait at most 2,000 ms for
+- on classic ESP32, after each of the first nine disconnects, wait at most
+  2,000 ms for
   exactly one parser-owned session-end line, discard every private UART byte
   and the terminal count, and clear residual state; missing or duplicate
   termination fails closed; before the tenth reset, clear the private UART
   input buffer; after that connection's HELLO, wait at most 5,000 ms for strict
   DLE, profile-specific PHY, and connection-interval settlement facts before
-  any timed transfer; Waveshare and C3 instead read the exact ended/active epoch
-  pair through a bounded diagnostic PBLE/1 RUN after each first-nine
+  any timed transfer; generic S3, Waveshare, and C3 instead read the exact
+  ended/active epoch pair through a bounded diagnostic PBLE/1 RUN after each first-nine
   disconnect, bind and recheck reset ten's active epoch, and seal only that
-  epoch's final ended facts after one last diagnostic reconnect; C3's WCH
-  endpoint remains reset/release plumbing and its received bytes are never
-  qualification authority; Pico instead retains only the exact BTstack
+  epoch's final ended facts after one last diagnostic reconnect; generic S3
+  and C3 serial endpoints remain reset/release plumbing and their received
+  bytes are never qualification authority; Pico instead retains only the exact BTstack
   transport facts and forbids those ESP-only fields;
 - five deterministic 65,536-byte PUT/GET round trips with exact nanosecond
   timer boundaries, strict offsets/bytes/size/CRC, then one heap probe each;
@@ -84,9 +84,9 @@ It creates the raw log with exclusive-create semantics. Use a new,
 access-controlled path for every attempt; the log deliberately excludes the
 BLE address, serial path, device ID, and personal label. The output is written
 atomically as sorted, two-space-indented UTF-8 JSON with one final LF.
-Only classic ESP32 and generic S3 retain parser-owned structured link facts
-from UART; arbitrary serial or console lines are discarded rather than copied
-into evidence.
+Only classic ESP32 retains parser-owned structured link facts from UART;
+arbitrary serial or console lines are discarded rather than copied into
+evidence.
 
 Before the first policy exists, stage the exact measurement inputs from two
 fresh clean build roots:

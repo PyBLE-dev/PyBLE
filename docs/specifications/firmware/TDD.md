@@ -1575,18 +1575,19 @@ and adapter, Python/bench identity, board/module description, candidate
 identity and hashes, every integer sample, retransmit/rewind counts,
 disconnects, integrity results, the target-specific transport-facts object
 from specs.md §5.3.1/§5.3.5, and a SHA-256 of the retained redacted raw log.
-For classic ESP32 and generic S3, after each of the first nine disconnects the
-bench waits at most 2,000 ms for exactly one complete parser-owned UART
+For classic ESP32, after each of the first nine disconnects the bench waits at
+most 2,000 ms for exactly one complete parser-owned UART
 session-end record, discards every private byte and terminal count, and clears
-residual state. Their tenth sessions retain the ADR-0027 UART settlement and
-post-disconnect seal path unchanged. C3 retains `SerialResetController` for its
-mandatory RTS-to-EN reset/release edge, but neither reads nor clears WCH receive
-bytes as qualification authority.
+residual state. Its tenth session retains the ADR-0027 UART settlement and
+post-disconnect seal path unchanged. Generic S3 and C3 retain
+`SerialResetController` for their mandatory RTS-to-EN reset/release edges, but
+neither reads nor clears serial receive bytes as qualification authority.
 
-Waveshare and C3 use `RetainedLinkFactHardwareExecutor`. Waveshare retains its
-operator-only reset controller with no serial dependency; C3 supplies its
-serial reset controller only as a reset adapter. Those two exact images expose
-the hidden `pble_ble._oi1_link_facts()` native getter.
+Generic S3, Waveshare, and C3 use `RetainedLinkFactHardwareExecutor`.
+Waveshare retains its operator-only reset controller with no serial dependency;
+generic S3 and C3 supply their serial reset controllers only as reset adapters.
+Those three exact images expose the hidden `pble_ble._oi1_link_facts()` native
+getter.
 `oi1_link_fact_probe_source(nonce, projection=...)` invokes that getter through
 ordinary PBLE/1 RUN and emits one
 `__PYBLE_OI1_LINK_FACTS_<nonce>=<json>` stdout line.
@@ -1620,7 +1621,7 @@ records with active non-final, ended final, and neither overflowed. It never
 silently discards a non-null ended record supplied to `active`, or admits a
 null ended record supplied to `pair`.
 
-After each of the first nine Waveshare or C3 measured disconnects, the executor
+After each of the first nine generic S3, Waveshare, or C3 measured disconnects, the executor
 makes a diagnostic reconnect with separate deadlines: 20 seconds for
 `PbleCentral.connect`, 5 seconds for diagnostic HELLO, and 8 seconds for the
 `pair` getter RUN. After HELLO and before that one getter RUN, it requests one

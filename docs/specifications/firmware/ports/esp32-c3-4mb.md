@@ -220,8 +220,10 @@ RUN projection. Reset ten uses the strict `active` projection to bind settled
 facts before timing and again before disconnect; one final diagnostic `pair`
 must expose that exact transfer epoch as immutable `last_ended`. Null, stale,
 wrapped, non-successor, malformed, overflowed, or wrong-epoch state fails
-closed with no retry. Classic ESP32 and generic S3 retain the unchanged
-2,000 ms UART terminal gate; C3 neither lengthens nor consumes that gate.
+closed with no retry. Classic ESP32 retains the unchanged 2,000 ms UART
+terminal gate; generic S3 follows
+[ADR-0036](../../decisions/0036-read-generic-s3-link-facts-through-run.md), and
+C3 neither lengthens nor consumes the classic gate.
 
 The output is a redacted, canonical **C3 engineering profile fragment** bound
 to the source and exact firmware/manifest bytes, plus mechanically derived C3

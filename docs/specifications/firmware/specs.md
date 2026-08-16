@@ -817,7 +817,8 @@ upstream package and required runtime primitive for that target.
 
 > **FROZEN measurement contract (2026-07-30 · `[docs]`); exact-Waveshare
 > operator-reset and retained BLE link-fact amendments (2026-08-13 ·
-> `[docs]`); C3 retained-link-fact amendment (2026-08-16 · `[docs]`).** This contract freezes
+> `[docs]`); C3 and generic-S3 retained-link-fact amendments (2026-08-16 ·
+> `[docs]`).** This contract freezes
 > the release scope, metric meanings, workload, derivation formulas, and
 > evidence schema before any threshold is selected. It does not invent or
 > claim a numeric threshold.
@@ -947,9 +948,9 @@ in `12..24` (1.25 ms units). `tx_mbuf_starve_count` is captured from the same
 session's disconnect line and is report-only; it does not replace the
 goodput, integrity, or reliability gates.
 
-For `esp32-4mb` and `esp32-s3-n16r8`, "captured from the same session's
-disconnect line" retains the strict ADR-0027 UART meaning. The exact Waveshare
-and C3 images instead compile the qualification-only
+For `esp32-4mb`, "captured from the same session's disconnect line" retains
+the strict ADR-0027 UART meaning. The generic S3, exact Waveshare, and C3
+images instead compile the qualification-only
 `pble_ble._oi1_link_facts()` getter specified below. The getter is absent from
 every other image and adds no opcode, characteristic, INFO/HELLO field, or
 dynamic capability.
@@ -1072,15 +1073,15 @@ For each exact profile and one immutable firmware/manifest candidate:
 
    The operator seam is forbidden for `esp32-4mb`, `esp32-s3-n16r8`, and
    `esp32-c3-4mb`; those ESP profiles retain the explicit UART RTS-to-EN
-   controller and release-edge timing. For C3 that WCH bridge is reset and
-   private diagnostic plumbing only; no received UART byte is qualification
-   authority. Pico retains its separately specified
+   controller and release-edge timing. For generic S3 and C3, the serial bridge
+   is reset and private diagnostic plumbing only; no received UART byte is
+   qualification authority. Pico retains its separately specified
    power-disconnect seam. The one final physical power-cycle check in step 7
    remains separate and unchanged for every profile.
 2. Record one `heap_default_free_bytes` diagnostic and one gated heap snapshot
    (`gc_free_bytes`, `gc_allocated_bytes`, and the three internal-heap
    quantities) after each of those 10 HELLO exchanges.
-3. For `esp32-4mb` and `esp32-s3-n16r8`, after disconnecting
+3. For `esp32-4mb`, after disconnecting
    each of the first nine sessions, poll the runner's private serial input for
    at most **2,000 ms** until exactly one complete, parser-owned `link tune
    session end` record for that just-ended session is observed. Discard every
@@ -1090,8 +1091,8 @@ For each exact profile and one immutable firmware/manifest candidate:
    the following session's parser. Before releasing the tenth controlled reset,
    clear that same private serial-input buffer and begin link-fact capture.
 
-   Waveshare and C3 instead make one diagnostic reconnect after each of the
-   first nine measured disconnects. `PbleCentral.connect` has its existing
+   Generic S3, Waveshare, and C3 instead make one diagnostic reconnect after
+   each of the first nine measured disconnects. `PbleCentral.connect` has its existing
    **20,000 ms** deadline; diagnostic HELLO and the nonce-bound getter RUN each
    have separate **5,000 ms** and **8,000 ms** deadlines, respectively. The
    HELLO deadline is one absolute diagnostic transaction ceiling over its
@@ -1133,7 +1134,7 @@ For each exact profile and one immutable firmware/manifest candidate:
    snapshot returned at or after the outer deadline fails. The executor retains
    the active epoch only after
    `final: false`, `settled: true`, `overflow: false`, and exact fact
-   validation; classic ESP32 and generic S3 retain their existing UART parser.
+   validation; classic ESP32 retains its existing UART parser.
    Arbitrary or
    identifying serial or console text MUST be discarded rather than retained.
 4. On that same settled connection, which reports HELLO `mtu=247`, `window=8`,
@@ -1152,7 +1153,7 @@ For each exact profile and one immutable firmware/manifest candidate:
    zero. Retransmitted chunks/bytes and rewinds MAY be non-zero but MUST be
    counted. Record one final gated heap snapshot after this workload.
 
-   Before a Waveshare or C3 transfer connection disconnects, run one more bounded
+   Before a generic S3, Waveshare, or C3 transfer connection disconnects, run one more bounded
    **5,000 ms** `active` getter probe and require the same active epoch, a
    settled non-final, non-overflowed record, and the same validated ladder
    facts; its provisional starvation count is not evidence. Then disconnect,
@@ -1167,7 +1168,7 @@ For each exact profile and one immutable firmware/manifest candidate:
    bounds, respectively. The harness MUST NOT compress the whole reconnect
    transaction into either shorter deadline.
 
-   Classic ESP32 and generic S3 instead disconnect and wait at most **2,000 ms** for
+   Classic ESP32 instead disconnects and waits at most **2,000 ms** for
    the same UART session's final TX-mbuf-starvation fact before sealing
    `transfer_link_facts`. Pico retains its §5.3.5 observation path.
 7. Perform one real physical power-cycle check and require a fresh PyBLE
