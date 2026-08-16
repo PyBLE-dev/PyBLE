@@ -2268,6 +2268,22 @@ from it. The qualification checkout MUST prove that all source changes between
 the two commits are an exact frozen, non-install-affecting set and that every
 bound candidate artifact equals its baseline counterpart.
 
+For `waveshare-esp32-s3-lcd-147b` and `rpi-pico2-w`, the fresh automatic reset
+samples use the frozen `pble-machine-reset` mechanism: PBLE RUN invokes the
+real `machine.reset()`, the central observes the expected link loss, and timing
+ends at the subsequent fresh service advertisement. This is a candidate reset
+measurement only. It is explicitly distinct from, and cannot replace, the
+retained physical all-power-off fact. Other profiles retain their frozen reset
+mechanisms.
+
+The lineage creator and finalizer are qualification executables, not candidate
+firmware inputs. A reviewed post-tag qualification checkout MAY process the
+immutable tagged candidate without rebuilding or retagging it, but the lineage
+record MUST bind that checkout's source commit and the SHA-256 of every loaded
+qualification executable. Candidate source identity and all shipped artifact
+bytes remain those in the protected candidate; changing either invalidates the
+record.
+
 Lineage never promotes a baseline observation wholesale and never claims that
 the inherited fact was observed again. `create-hil-completion` MUST reconstruct
 all numeric, reset, heap, transfer, reliability, and link fields from the fresh

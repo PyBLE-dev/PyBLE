@@ -474,6 +474,11 @@ physical observation, and every app, operator, private, and profile gate
 remains mandatory. No complete baseline row may be relabelled as final-candidate
 verification.
 
+Fresh Waveshare and Pico reset arrays use PBLE RUN of `machine.reset()`, the
+expected link drop, and the following fresh advertisement. That automatic
+candidate-reset mechanism is not a physical power-cycle observation and does
+not enlarge the one-field lineage scope.
+
 Published v0.4.2 metadata and HIL evidence retain their historical exact
 two-profile contract. The unqualified v0.5.1 source candidate retains its
 three-profile source-era contract. Neither is expanded or reinterpreted as the
