@@ -845,6 +845,13 @@ The v1 site is releasable when:
   static export makes no remote image request;
 - all versioned firmware files are same-origin, immutable, byte-identical to
   the reviewed release, and retrievable from the public production origin;
+- post-activation firmware-negative smoke requires both `GET` and `HEAD` to
+  return `404` with `Cache-Control: no-store` for universally nonexistent or
+  retired paths, and checks the selected release's
+  `esp32-c3-4mb/manifest.json` only for the exact `v0.4.2` `public-beta`
+  selector where that profile is deferred; a qualified `public` selector MUST
+  NOT classify a descriptor-declared profile as absent, because canonical
+  release validation and retrieval instead verify those published bytes;
 - browser verification and the subsequent ESP Web Tools fetches use the same
   deterministic release-root cache key, while retaining exact-path,
   no-redirect, size, and SHA-256 validation;

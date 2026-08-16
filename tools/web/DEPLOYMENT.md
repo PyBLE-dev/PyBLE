@@ -343,6 +343,10 @@ Confirm:
   `/_next/static/` assets are immutable;
 - versioned `/firmware/` assets, when present, are immutable and serve JSON and
   binary files with their explicit safe MIME types;
+- the helper tests the selected release's deferred C3 manifest as a `404`
+  `no-store` path only for the exact `v0.4.2` `public-beta`; a qualified
+  `public` release instead validates and retrieves every descriptor-declared
+  profile, including C3;
 - the manifest uses `application/manifest+json`;
 - the reviewed security headers are present;
 - no third-party runtime request appears; and
