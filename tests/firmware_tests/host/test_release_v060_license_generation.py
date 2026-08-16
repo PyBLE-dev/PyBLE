@@ -23,6 +23,8 @@ import inspect
 import json
 from pathlib import Path
 import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -52,6 +54,12 @@ def canonical_json_bytes(value: object) -> bytes:
 def write_canonical_json(path: Path, value: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(canonical_json_bytes(value))
+
+
+def schema1_review_json_bytes(value: object) -> bytes:
+    """Match the exact normalized serializer used by the ESP audit."""
+
+    return (json.dumps(value, indent=2, sort_keys=False) + "\n").encode("utf-8")
 
 
 def sha256_bytes(value: bytes) -> str:
@@ -109,6 +117,7 @@ class GenerationFixture:
         )
         self.policy = {"schema_version": 2}
         self.esp_generation_calls: list[Path] = []
+        self.esp_review_sha256: dict[str, str] = {}
 
     def close(self) -> None:
         self.base.close()
@@ -134,13 +143,17 @@ class GenerationFixture:
                     "DocumentName: synthetic-%s-%s\n" % (profile_id, role),
                     encoding="utf-8",
                 )
-                write_canonical_json(
-                    reviewed,
-                    {
-                        "name": "synthetic-%s-%s" % (profile_id, role),
-                        "spdxVersion": "SPDX-2.2",
-                    },
+                reviewed.write_bytes(
+                    schema1_review_json_bytes(
+                        {
+                            "spdxVersion": "SPDX-2.3",
+                            "name": "synthetic-%s-%s" % (profile_id, role),
+                            "reviewNote": "Kungliga Tekniska Högskolan",
+                        }
+                    )
                 )
+                relative = reviewed.relative_to(evidence).as_posix()
+                self.esp_review_sha256[relative] = sha256_path(reviewed)
         evidence_hashes = {
             path.relative_to(evidence).as_posix(): sha256_path(path)
             for path in sorted(evidence.rglob("*"))
@@ -334,7 +347,13 @@ class V060LicenseGenerationTests(unittest.TestCase):
             path = self.fixture.evidence / relative
             self.assertTrue(path.is_file(), relative)
             self.assertEqual(digest, sha256_path(path))
-            if path.suffix == ".json":
+            if relative in self.fixture.esp_review_sha256:
+                self.assertEqual(
+                    digest,
+                    self.fixture.esp_review_sha256[relative],
+                    "%s was reserialized during v0.6 composition" % relative,
+                )
+            elif path.suffix == ".json":
                 self.assert_canonical(path)
 
         self.assertEqual(len(inventory["profiles"]), 5)
@@ -396,6 +415,65 @@ class V060LicenseGenerationTests(unittest.TestCase):
                 firmware_version="0.6.0",
             )
         self.assertEqual(verified, inventory)
+
+    def test_exact_esp_review_bytes_survive_cross_process_semantic_replay(self) -> None:
+        self.fixture.audit(verifier_side_effect=self.semantic_replay)
+        expected_path = self.fixture.root / "expected-esp-review-sha256.json"
+        write_canonical_json(expected_path, self.fixture.esp_review_sha256)
+        probe = r'''
+import hashlib
+import importlib.util
+import json
+from pathlib import Path
+import sys
+
+script, evidence, build, repo, notice, expected_path = sys.argv[1:]
+spec = importlib.util.spec_from_file_location("pyble_v060_replay_probe", script)
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+expected = json.loads(Path(expected_path).read_text(encoding="utf-8"))
+
+def verify_exact_esp_bytes(**kwargs):
+    replay = Path(kwargs["evidence_dir"])
+    for relative, digest in sorted(expected.items()):
+        actual = hashlib.sha256((replay / relative).read_bytes()).hexdigest()
+        module._require(
+            actual == digest,
+            "%s changed across v0.6 composition/replay" % relative,
+        )
+
+module._audit_verify_esp_release_evidence = verify_exact_esp_bytes
+module._audit_verify_v060_esp_semantic_replay(
+    notice=notice,
+    evidence_dir=Path(evidence),
+    build_root=Path(build),
+    repo_root=Path(repo),
+)
+'''
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                probe,
+                str(inventory_fixture.RELEASE_SCRIPT),
+                str(self.fixture.evidence),
+                str(self.fixture.build),
+                str(self.fixture.repo),
+                FINAL_NOTICE,
+                str(expected_path),
+            ],
+            check=False,
+            cwd=inventory_fixture.REPO_ROOT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            "separate-process ESP semantic replay failed:\n%s"
+            % completed.stderr,
+        )
 
     def test_semantic_replay_failure_publishes_no_partial_evidence(self) -> None:
         sentinel = RELEASE.ReleaseError("full ESP semantic replay sentinel")
