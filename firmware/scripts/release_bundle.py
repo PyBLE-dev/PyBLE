@@ -12025,12 +12025,9 @@ def _audit_compose_v060_license_evidence(
             )
             shutil.copyfile(selected[0], destination / "raw" / selected[0].name)
             reviewed_name = "%s--%s.spdx.json" % (profile_id, role)
-            reviewed = _read_json(
+            shutil.copyfile(
                 esp_evidence / "spdx" / reviewed_name,
-                "reviewed ESP SPDX evidence",
-            )
-            (destination / "spdx" / reviewed_name).write_bytes(
-                _canonical_json_bytes(reviewed)
+                destination / "spdx" / reviewed_name,
             )
     rp2_dir = destination / "rp2"
     rp2_dir.mkdir()
@@ -15391,9 +15388,14 @@ def _audit_verify_release_inventory_evidence(
                         and _sha256_path(actual_evidence[relative]) == digest,
                         "%s/%s ESP evidence changed" % (profile_id, role),
                     )
-                _audit_v060_canonical_json(
+                reviewed_document = _read_json(
                     actual_evidence[expected_reviewed],
                     "%s/%s reviewed ESP evidence" % (profile_id, role),
+                )
+                _require(
+                    isinstance(reviewed_document, dict),
+                    "%s/%s reviewed ESP evidence is not a JSON object"
+                    % (profile_id, role),
                 )
                 expected_identities.append(
                     {"profile_id": profile_id, "role": role}
