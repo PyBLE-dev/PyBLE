@@ -560,7 +560,14 @@ qualified release is `v0.6.0`, the page MUST:
   `/boards/esp32-s3-lcd-1.47b-pyble-v0.5.0.jpg`, with SHA-256
   `b939abb9b7ac19c7be8f429faaa61d08aadc7f027eac181582e036fd22949d12`.
   Its useful alternative text and visible caption MUST identify an actual
-  ESP32-S3-LCD-1.47B displaying the PyBLE v0.5.0 splash and app QR; and
+  ESP32-S3-LCD-1.47B displaying the PyBLE v0.5.0 splash and app QR. On
+  `/flash`, this exact-board section MUST be the first explanatory section:
+  it sits beside the installer controls on wide viewports and immediately
+  after them in the single-column flow. A short, plain-language introduction
+  and the photograph MUST precede the long profile requirements so a human
+  can recognize the finished hardware before reading technical detail. The
+  `/flash` instance MUST be requested eagerly at high fetch priority rather
+  than deferred as below-the-fold media; and
 - label the home-page target group **Qualified public firmware targets** in
   both visible copy and its accessible name, with no stale beta wording; and
 - keep the generic S3 warning, destructive-flash acknowledgements, integrity
