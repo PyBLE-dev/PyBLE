@@ -9,9 +9,11 @@
 #      gate: REPL/supervisor output NEVER reaches BLE), chunked to CONSOLE_DATA
 #      [stream:u8][bytes <= CHUNK] payloads (§6), and budgeted by a token
 #      bucket (BTstack heap-queues congested notifies — the budget bounds the
-#      queue; a dead link degrades to drop-and-continue, NEVER a wedge; the
-#      PBLE_CONSOLE_TX_BUDGET_MS twin). write() always reports full
-#      consumption — dropping is invisible to the running program.
+#      queue; every Notify pays a minimum token cost so tiny print writes
+#      cannot create unbounded frame debt; a dead link degrades to
+#      drop-and-continue, NEVER a wedge; the PBLE_CONSOLE_TX_BUDGET_MS twin).
+#      write() always reports full consumption — dropping is invisible to the
+#      running program.
 #   2. stdin: feed_input() (CONSOLE_INPUT 0x31, fire-and-forget: returns None,
 #      no RSP frame) into a 256-byte ring, drop-on-overflow (append until
 #      full, drop the excess tail — bounded, never grows the heap);
@@ -64,6 +66,7 @@ STOP_CHAR = 0x03
 # block, sleep, or change the token arithmetic below.
 TX_CAPACITY = 2048
 TX_REFILL_PER_MS = 20
+TX_NOTIFY_COST = 80
 TX_BUDGET_MS = (TX_CAPACITY + TX_REFILL_PER_MS - 1) // TX_REFILL_PER_MS
 
 
@@ -71,7 +74,7 @@ class Console(_IOBase):
     """The single tee/stdin/STOP object handed to os.dupterm (P8)."""
 
     def __init__(self, emit, notify, clock=None, tx_capacity=None,
-                 tx_refill_per_ms=None, stop_fail=None):
+                 tx_refill_per_ms=None, stop_fail=None, tx_notify_cost=None):
         self._emit = emit
         self._notify = notify
         self._stop_fail = stop_fail
@@ -79,6 +82,8 @@ class Console(_IOBase):
         self._clock = clock if clock is not None else _ticks_ms
         self._cap = TX_CAPACITY if tx_capacity is None else tx_capacity
         self._refill = TX_REFILL_PER_MS if tx_refill_per_ms is None else tx_refill_per_ms
+        self._notify_cost = (TX_NOTIFY_COST if tx_notify_cost is None
+                             else tx_notify_cost)
         self._tokens = self._cap              # bucket starts at capacity
         self._last_ms = self._clock()
         self._run_active = False              # gate starts INACTIVE
@@ -170,8 +175,9 @@ class Console(_IOBase):
         tokens = self._tokens + elapsed * self._refill
         if tokens > self._cap:
             tokens = self._cap                # a long idle NEVER over-fills
-        if tokens >= n:
-            self._tokens = tokens - n
+        debit = n if n >= self._notify_cost else self._notify_cost
+        if tokens >= debit:
+            self._tokens = tokens - debit
             return True
         self._tokens = tokens
         return False
