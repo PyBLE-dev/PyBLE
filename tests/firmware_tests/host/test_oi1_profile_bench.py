@@ -387,7 +387,7 @@ class FrozenConstantsTest(unittest.TestCase):
             },
         )
 
-    def test_committed_v042_policy_remains_immutable_two_profile_evidence(self):
+    def test_committed_v060_policy_is_immutable_five_profile_evidence(self):
         policy_path = (
             REPO_ROOT / "firmware" / "qualification" / "oi1-gates.json"
         )
@@ -396,37 +396,35 @@ class FrozenConstantsTest(unittest.TestCase):
 
         self.assertEqual(
             hashlib.sha256(payload).hexdigest(),
-            "635c484501bc0b81806f9f582de4b482d30283a72f5f95eb0b892652f7575629",
+            "2a78209a78ac64f8f051975c95e5238514d085e31cc84cf3dc6fe5832f7e8097",
         )
-        self.assertEqual(policy["schema_version"], 1)
+        self.assertEqual(policy["schema_version"], 3)
         self.assertEqual(
             policy["profile_order"],
-            list(HISTORICAL_V042_PROFILE_ORDER),
+            list(CURRENT_PROFILE_ORDER),
         )
         self.assertEqual(
             [entry["profile_id"] for entry in policy["profiles"]],
-            list(HISTORICAL_V042_PROFILE_ORDER),
+            list(CURRENT_PROFILE_ORDER),
         )
         self.assertEqual(
             {
                 entry["profile_id"]: entry["target"]
                 for entry in policy["profiles"]
             },
-            {
-                "esp32-4mb": "esp32",
-                "esp32-s3-n16r8": "esp32-s3",
-            },
+            PROFILE_TARGETS,
         )
+        self.assertNotIn("deferred_profiles", policy)
         self.assertEqual(
             policy["baseline_evidence"],
             {
                 "path": (
                     "docs/validation/firmware/oi1/"
-                    "2f38c43838b0f8cfbd10fab8e6561ae523927968.json"
+                    "7441a762b0bc2a6bb5692236d5894281ddf0dca6.json"
                 ),
                 "sha256": (
-                    "deee0f1630c781ee38a9887a5df5388f2d1ec8879fdb8570"
-                    "886555bf5f4f8be5"
+                    "f0ccc6496dcd60ad01b848fbaf799455d8ffd29d6033cc1f"
+                    "132608c9dbd8970f"
                 ),
             },
         )
