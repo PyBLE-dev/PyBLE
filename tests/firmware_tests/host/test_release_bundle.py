@@ -518,6 +518,7 @@ def fixture_transfer_link_facts(profile_id: str) -> dict:
     elif profile_id in (
         "esp32-s3-n16r8",
         "waveshare-esp32-s3-lcd-147b",
+        "esp32-c3-4mb",
     ):
         phy = {
             "required_2m": True,

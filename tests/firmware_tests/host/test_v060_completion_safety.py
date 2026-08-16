@@ -97,6 +97,19 @@ class CompletionInputValidationTests(unittest.TestCase):
             RELEASE._validate_transfer_link_facts(facts, "esp32-c3-4mb"),
             facts,
         )
+        compiled_out = json.loads(json.dumps(facts))
+        compiled_out["phy"] = {
+            "required_2m": False,
+            "request_attempts": 0,
+            "updates": [],
+            "settled_tx": 0,
+            "settled_rx": 0,
+        }
+        with self.assertRaises(RELEASE.ReleaseError):
+            RELEASE._validate_transfer_link_facts(
+                compiled_out,
+                "esp32-c3-4mb",
+            )
 
     def test_pico_budget_is_exact_and_zero_capacity_rejects_bool(self) -> None:
         facts = {
