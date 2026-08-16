@@ -469,7 +469,8 @@ release over the authenticated deployment transport, validates them through
 the preserved-public staged-release and checksum gates, and embeds the selector
 at build time. That carry-forward gate repeats the self-contained bundle,
 schema, HIL, profile, artifact, path, size, digest, descriptor, and
-annotated-tag checks. A preserved qualified release does not repeat the
+annotated-tag checks, subject only to the exact legacy-report replay below. A
+preserved qualified release does not repeat the
 source/build license audit because the exact immutable bytes already passed that
 audit during its original activation. The exact `v0.4.2` public beta is a fresh
 pending candidate and MUST instead repeat canonical `--audited-candidate`
@@ -480,6 +481,31 @@ the later website checkout. A preserved qualified release MUST NOT require
 those retained beta source/build/evidence inputs.
 It MUST NOT infer availability from the mere presence of a firmware directory
 or accept a caller-supplied selector.
+
+One already-active `v0.5.1` tree predates the structured HIL marker while its
+complete immutable file inventory remains independently digest-bound. Only the
+authenticated website-only carry-forward path MAY replay that legacy report
+without parsing a `PYBLE_HIL_RECORDS_V4` object, and only when all three exact
+file digests match:
+
+| File | Required SHA-256 |
+|---|---|
+| `release.json` | `3d845ed231173b5917dfe70f301cf08c3ff870a3d15155ec64c7e7fe93e91fbc` |
+| `HIL_REPORT.md` | `f10f4fb67e8ec22a000017daa62bf58bd45d9f47f30481905c0844813be905aa` |
+| `SHA256SUMS` | `aeeb1fbdf5be0e66f003a96197fb9fd884c4adce9da088249c04b23a02c8e815` |
+
+The validator MUST additionally be in explicit
+`--previously-activated-public` mode, read identity version exactly `0.5.1`,
+and complete every ordinary-file layout, `SHA256SUMS` coverage, schema,
+three-profile, artifact, path, size, per-profile `hil_status: passed`, selector,
+active-release continuity, provenance-tag, packaged-output parity, and public
+retrieval check. The exception bypasses only structured parsing of that one
+legacy report. It MUST NOT admit the same bytes through fresh-public,
+candidate, audited-candidate, protected-preview, or local-preview validation;
+MUST NOT accept another version or a one-byte change to any file; and MUST NOT
+qualify or promote any pending `v0.6.0` candidate. It is continuity for the
+already-active immutable selection, not authority to create or reclassify a
+release.
 
 Each release carrying an active selector MUST retain a hidden, unserved copy of
 the canonically validated selector as deployment state. A replacement staged

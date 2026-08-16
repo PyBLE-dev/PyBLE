@@ -2370,6 +2370,22 @@ separate reviewed operation requiring an explicit truth-valued disable flag
 and a production smoke test of the disabled state; absence of staging input
 alone is never authorization to disable it.
 
+The sole legacy-report replay is the already-active `v0.5.1` tree whose
+`release.json`, prose-only `HIL_REPORT.md`, and full-coverage `SHA256SUMS`
+SHA-256 digests are respectively
+`3d845ed231173b5917dfe70f301cf08c3ff870a3d15155ec64c7e7fe93e91fbc`,
+`f10f4fb67e8ec22a000017daa62bf58bd45d9f47f30481905c0844813be905aa`,
+and `aeeb1fbdf5be0e66f003a96197fb9fd884c4adce9da088249c04b23a02c8e815`.
+Canonical validation MAY skip only the structured HIL-marker parse for those
+three exact bytes and identity version `0.5.1`, and only under explicit
+`--previously-activated-public`. All ordinary-file, checksum coverage,
+release/schema/profile/artifact, per-profile passed-state, active-selector
+continuity, provenance-tag, packaging parity, and public retrieval checks
+remain mandatory. Fresh public, candidate, audited-candidate, preview, another
+version, any byte drift, and every `v0.6.0` path remain closed. This exception
+preserves an immutable active selection across a website-only deployment; it
+does not manufacture structured HIL evidence or authorize a new activation.
+
 The pre-public `v0.4.1` candidate path was exposed without the required access
 control and is permanently burned. The origin MUST quarantine
 `/firmware/v0.4.1/` with a non-cacheable not-found response, MUST NOT select or
