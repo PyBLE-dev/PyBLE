@@ -22,6 +22,22 @@ Status: **P1–P9 FROZEN for the F-25/F-26/F-27/X-13 stories (`[docs]` 2026-08-1
 
 - STOP handler: `RSP{OK}` always (idempotent while idle), but its control effect is command-local and provisional until response encoding and `send_message` both succeed. Only after that handoff may the agent commit the stop/cancel intent and decide between P2 cancellation and the executing-run interrupt path. Any dispatch, encode, or send exception MUST discard the staged action without changing the runner, VM, or reboot state; a response that was not handed off never stops or cancels user code. A later command can never inherit the staged action.
 - A reserved-but-not-picked-up RUN follows the P2 cancellation path and does not need a VM interrupt. For an executing RUN, only after the RSP has been handed to the BLE TX path, arm `0x03` in the agent console tee and enqueue the native `os.dupterm_notify(None)` call with `micropython.schedule` → upstream converts the interrupt char into a main-thread `KeyboardInterrupt` at the next VM back-edge (`extmod/os_dupterm.c`, `py/scheduler.c`). The handler MUST NOT call `os.dupterm_notify` inline from the synchronous BTstack IRQ: an inline pending exception unwinds inside the protected BLE IRQ callback before the RSP and upstream disables that IRQ handler. Arming `0x03` and enqueueing its notify are transactional: if scheduler admission raises (including a full queue), the console MUST clear the armed byte before the agent invokes the injected non-returning hardware-reset fail-safe. Thus an already-acknowledged STOP either lands as `KeyboardInterrupt` or stops the program by reset; it never silently continues and never leaves a latent interrupt.
+- Upstream `mp_os_dupterm_tx_strn()` catches every exception which escapes a
+  Python dupterm `write()` call and deactivates that dupterm slot. Therefore a
+  STOP `KeyboardInterrupt` which lands while the running program is printing
+  MUST NOT escape the console tee's `write()` frame into that upstream catch.
+  The tee tracks whether its armed `0x03` was consumed. If that exact in-flight
+  STOP lands inside `write()`, the tee consumes it locally, re-arms `0x03`,
+  enqueues the same native `os.dupterm_notify` once more, and immediately
+  returns the full write count. The retried interrupt then lands after the
+  native dupterm wrapper returns, so the runner performs the ordinary clean
+  teardown and publishes `RUN_STATE(idle)` on the same connection. A
+  `KeyboardInterrupt` without the consumed-STOP marker MUST propagate
+  unchanged. Terminal transition clears both the marker and any armed byte.
+  Retry scheduler-admission failure MUST clear both before invoking the
+  injected non-returning hardware-reset fail-safe. This print-flood recovery
+  does not move the original response-before-effect cut or weaken the
+  `<500 ms` STOP/terminal gate.
 - The deferred `KeyboardInterrupt` may land anywhere from the P2 executing-marker cut through terminal transition/publication, including after user `exec` returns. Runner terminalization and the supervisor's escaped-interrupt recovery MUST be idempotent: they clear the reservation/executing/stop bookkeeping, leave the RSM non-RUNNING, and publish exactly one terminal `RUN_STATE(idle)`. Terminal publication has explicit `transitioned/unpublished` and `published` phases. The emitter commits `published` at its actual send/record cut: a `KeyboardInterrupt` before that commit leaves `unpublished` and recovery retries, while an interrupt after the commit observes `published` and MUST NOT emit IDLE again. An interrupt during that post-exec cut MUST NOT escape into a blind swallow, lose or duplicate the terminal event, strand `RUNNING` with no pending request, or make later RUN commands permanently `EBUSY`.
 - The supervisor pins `micropython.kbd_intr(3)` at start. Known limitation (same class as ESP32): user code calling `kbd_intr(-1)` defeats STOP.
 - `tee.readinto` returns 1 byte or `None` — never 0 and never raises (EOF/raise deactivates dupterm; `extmod/os_dupterm.c`).
