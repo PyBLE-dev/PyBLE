@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MIT
 # Part of PyBLE (https://pyble.dev) — see /LICENSE.
 #
-# [red] ADR-0034/ADR-0035 — exact-profile retained OI-1 link-fact state.
+# [red] ADR-0034/ADR-0035/ADR-0036 — retained OI-1 link-fact state.
 
 from __future__ import annotations
 
@@ -18,6 +18,7 @@ SOURCE_PATH = FIRMWARE / "user_c_modules" / "pyble" / "pble_ble.c"
 SOURCE = SOURCE_PATH.read_text(encoding="utf-8")
 RETAINED_LINK_FACT_OVERLAYS = {
     "esp32-c3",
+    "esp32-s3",
     "waveshare-esp32-s3-lcd-147b",
 }
 
