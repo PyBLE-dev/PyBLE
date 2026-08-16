@@ -69,6 +69,12 @@ if [[ -n ${PYBLE_FLASH_SELECTION_FILE:-} ]]; then
 fi
 unset PYBLE_FLASH_SELECTION_FILE
 
+if [[ ${PYBLE_FIRMWARE_VALIDATION_MODE+x} == x ]]; then
+    printf 'Refusing deployment: PYBLE_FIRMWARE_VALIDATION_MODE is derived only from authenticated carry-forward.\n' >&2
+    exit 65
+fi
+unset PYBLE_FIRMWARE_VALIDATION_MODE
+
 readonly explicitly_disable_public_installer=$(
     printf '%s' "${PYBLE_EXPLICITLY_DISABLE_PUBLIC_INSTALLER:-0}"
 )
@@ -484,6 +490,7 @@ REMOTE
             PYBLE_FIRMWARE_STAGED_ROOT="${trusted_firmware_snapshot}" \
                 node "${web_directory}/scripts/stage-firmware-release.js" \
                 --verify-preserved-staged
+            export PYBLE_FIRMWARE_VALIDATION_MODE=preserved-public
 
             staged_firmware_root="${trusted_firmware_snapshot}"
             staged_selection="${staged_firmware_root}/.pyble-firmware-release-selection.json"

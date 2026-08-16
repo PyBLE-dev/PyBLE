@@ -16,6 +16,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import {
   validateFreshDeploymentBundle,
+  validatePreservedDeploymentBundle,
   validateStagedFirmwareRelease,
 } from "./stage-firmware-release.js";
 
@@ -48,6 +49,19 @@ const requiredPrerenderedRoutes = [
   "/support",
   "/404",
 ];
+
+export function sitesFirmwareReleaseValidator() {
+  const validationMode = process.env.PYBLE_FIRMWARE_VALIDATION_MODE;
+  if (validationMode === undefined) {
+    return validateFreshDeploymentBundle;
+  }
+  if (validationMode === "preserved-public") {
+    return validatePreservedDeploymentBundle;
+  }
+  throw new Error(
+    "PYBLE_FIRMWARE_VALIDATION_MODE must be absent or preserved-public",
+  );
+}
 
 /**
  * @param {string} notFoundHtml
@@ -153,7 +167,7 @@ async function requirePrerenderedRoutes(manifestPath) {
 export async function prepareSitesOutput(
   packageRoot,
   stagedFirmwareRoot = process.env.PYBLE_FIRMWARE_STAGED_ROOT,
-  releaseValidator = validateFreshDeploymentBundle,
+  releaseValidator = sitesFirmwareReleaseValidator(),
 ) {
   if (
     process.env.PYBLE_LOCAL_FLASH_PREVIEW ||

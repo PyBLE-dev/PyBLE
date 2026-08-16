@@ -373,7 +373,10 @@ export async function validateFreshDeploymentBundle(
  * @param {string} bundleDirectory
  * @param {"public" | "candidate" | "public-beta"} deployment
  */
-async function validatePreservedDeploymentBundle(bundleDirectory, deployment) {
+export async function validatePreservedDeploymentBundle(
+  bundleDirectory,
+  deployment,
+) {
   if (deployment === "public-beta") {
     return validateAttestedPublicBetaBundle(bundleDirectory, deployment);
   }

@@ -16,7 +16,7 @@ beforeAll(async () => {
 describe("self-hosted firmware activation", () => {
   it("derives preserved build validation only after authenticated carry-forward", () => {
     const mode = "PYBLE_FIRMWARE_VALIDATION_MODE";
-    const callerGuard = script.indexOf(`if [[ -v ${mode} ]]`);
+    const callerGuard = script.indexOf("if [[ ${" + mode + "+x} == x ]]");
     const stagedBranch = script.indexOf(
       "if [[ -n ${PYBLE_FIRMWARE_STAGED_ROOT:-} ]]; then",
     );
