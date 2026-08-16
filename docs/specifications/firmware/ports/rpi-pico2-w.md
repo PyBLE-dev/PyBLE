@@ -28,20 +28,25 @@ Status: **P1–P9 FROZEN for the F-25/F-26/F-27/X-13 stories (`[docs]` 2026-08-1
   MUST NOT escape the console tee's `write()` frame into that upstream catch.
   The tee tracks whether its armed `0x03` was consumed. If that exact in-flight
   STOP lands inside `write()`, the tee consumes it locally, re-arms `0x03`,
-  temporarily detaches only itself from the dupterm slot, enqueues one recovery
-  callback, and immediately returns the full write count. After the native
-  dupterm wrapper returns, that callback temporarily reattaches the tee, calls
-  native `os.dupterm_notify(None)` to consume the re-armed byte, and detaches
-  the tee again before the pending exception can be raised. The callback MUST
-  contain no Python branch or further scheduled hop after the native notify.
-  The retried interrupt therefore lands outside every dupterm write; runner
-  terminalization reattaches the tee and publishes `RUN_STATE(idle)` on the
-  same connection. A stale recovery callback after terminalization MUST be an
-  inert no-op and MUST NOT detach the restored tee. A
+  enqueues one retry trampoline, and immediately returns the full write count.
+  The pinned scheduler checks a pending exception before callbacks, runs at
+  most one Python queue item per pending checkpoint, and holds the scheduler
+  `LOCKED` while that callback runs. The frozen `write()` bytecode has exactly
+  two pending checkpoints after retry admission and no third before
+  `RETURN_VALUE`: checkpoint 1 runs the trampoline, which enqueues native
+  `os.dupterm_notify` while the scheduler lock prevents it from running
+  recursively; checkpoint 2 runs that native callable, consumes `0x03`, and
+  sets the pending `KeyboardInterrupt` only after its exception check has
+  already passed. `write()` then returns and upstream removes its NLR catch;
+  the next outer VM check raises into the runner, which performs ordinary clean
+  teardown and publishes `RUN_STATE(idle)` on the same connection. Pinned
+  `mpy-cross` disassembly plus a deterministic checkpoint/NLR oracle MUST gate
+  this ordering. A
   `KeyboardInterrupt` without the consumed-STOP marker MUST propagate
   unchanged. Terminal transition clears both the marker and any armed byte.
-  Retry scheduler-admission failure MUST clear both before invoking the
-  injected non-returning hardware-reset fail-safe. This print-flood recovery
+  Initial trampoline admission failure, or native-notify admission failure
+  inside the locked trampoline, MUST clear both before invoking the injected
+  non-returning hardware-reset fail-safe. This print-flood recovery
   does not move the original response-before-effect cut or weaken the
   `<500 ms` STOP/terminal gate.
 - The deferred `KeyboardInterrupt` may land anywhere from the P2 executing-marker cut through terminal transition/publication, including after user `exec` returns. Runner terminalization and the supervisor's escaped-interrupt recovery MUST be idempotent: they clear the reservation/executing/stop bookkeeping, leave the RSM non-RUNNING, and publish exactly one terminal `RUN_STATE(idle)`. Terminal publication has explicit `transitioned/unpublished` and `published` phases. The emitter commits `published` at its actual send/record cut: a `KeyboardInterrupt` before that commit leaves `unpublished` and recovery retries, while an interrupt after the commit observes `published` and MUST NOT emit IDLE again. An interrupt during that post-exec cut MUST NOT escape into a blind swallow, lose or duplicate the terminal event, strand `RUNNING` with no pending request, or make later RUN commands permanently `EBUSY`.
