@@ -467,7 +467,13 @@ preserve that exact immutable selected release.
 The deployment obtains the selector and firmware tree from the current managed
 release over the authenticated deployment transport, validates them through
 the preserved-public staged-release and checksum gates, and embeds the selector
-at build time. That carry-forward gate repeats the self-contained bundle,
+at build time. The deploy helper MUST bind that authenticated carry-forward
+decision through every firmware-aware adapter in the complete website build,
+including the Sites output adapter, so none of those adapters reclassifies the
+retrieved tree as a fresh activation. The binding MUST be derived only after
+authenticated retrieval and preserved-public validation; the helper MUST reject
+a caller-supplied binding before retrieval. Fresh caller staging MUST continue
+to use fresh-activation validation. That carry-forward gate repeats the self-contained bundle,
 schema, HIL, profile, artifact, path, size, digest, descriptor, and
 annotated-tag checks, subject only to the exact legacy-report replay below. A
 preserved qualified release does not repeat the
