@@ -1159,11 +1159,13 @@ buffered work but may receive later chunks from the continuing run.
 
 For the frozen C3 engineering gate, TX scheduling has two behavioral classes:
 control (`RSP`, `RUN_STATE`, and other lifecycle traffic) and bulk
-(`CONSOLE_DATA`). Bulk admission always leaves the two `msys_1` blocks needed
-to submit the one-fragment STOP response (data plus ATT wrapper); paced
-terminal idle then reuses returned capacity. A bulk/event message remains atomic
-across its fragments because the app owns a single reassembly buffer; control
-therefore waits for that bulk complete-message boundary. The generic response
+(`CONSOLE_DATA`). Bulk admission always leaves the four `msys_1` blocks
+concurrently needed by an acknowledged STOP transaction: its incoming request,
+NimBLE's preallocated ATT write response, the PBLE/1 response data, and the ATT
+notification wrapper. Paced terminal idle then reuses returned capacity. A
+bulk/event message remains atomic across its fragments because the app owns a
+single reassembly buffer; control therefore waits for that bulk complete-message
+boundary. The generic response
 callout is the narrow exception: it releases the physical mutex between
 fragments while retaining logical ownership, and only a successful specialized
 RUN/STOP/SOFT_REBOOT response may preempt it. That one-fragment `FIRST|LAST`
@@ -1173,6 +1175,8 @@ STOP response owns the next complete-message boundary, waits no more than its
 single absolute 15 ms boundary deadline, and may win between generic
 response fragments, followed by `RUN_STATE(idle)`. Tests bind capacity,
 ordering, valid reassembly/restart, and the 500 ms terminal deadline.
+The 15 ms budget covers only physical boundary ownership; it never substitutes
+for the four-block reserve or permits a capacity wait/retry.
 This is required for both a quiet tight loop and a loop continuously printing
 to stdout
 ([C3-G2](ports/esp32-c3-4mb.md#c3-g2--run-console-and-authoritative-stop-frozen)).

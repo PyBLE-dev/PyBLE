@@ -132,16 +132,19 @@ MUST remain usable, and a subsequent bounded RUN/console exchange MUST pass.
 
 The print-flood case freezes a transport priority invariant. At the minimum
 ATT MTU, both the STOP response and one-byte terminal RUN_STATE each fit one
-notification fragment. `CONSOLE_DATA` MUST leave the two `msys_1` blocks used
-by one small control notification (data plus ATT wrapper). The STOP response
-submits first; paced terminal idle then reuses the blocks returned as that
-response drains. Bulk traffic MUST permit a pending STOP response to pre-empt
-the next console message promptly. The specialized response may wait under one
+notification fragment. `CONSOLE_DATA` MUST leave the four `msys_1` blocks
+concurrently owned from receipt of the acknowledged STOP write through its
+small control notification: incoming request, preallocated ATT write response,
+PBLE/1 response data, and ATT notification wrapper. The STOP response submits
+first; paced terminal idle then reuses the blocks returned as that transaction
+drains. Bulk traffic MUST permit a pending STOP response to pre-empt the next
+console message promptly. The specialized response may wait under one
 absolute **15 ms** deadline only for the complete-message TX-mutex owner that
 was current when STOP became pending; later ordinary/bulk messages MUST NOT
 begin ahead of it. After acquiring that boundary it revalidates the session and
 makes exactly one local Notify submission, with no wait or retry for mbuf/
-controller capacity. Pre-emption occurs only at a
+controller capacity. The boundary budget does not replace the four-block
+capacity reserve. Pre-emption occurs only at a
 complete PBLE/1 message boundary: fragments of the current message remain
 contiguous, no control fragment is inserted into a bulk message, and the app's
 single reassembly buffer never sees interleaved messages. The implementation

@@ -67,13 +67,16 @@ defines the required regression; it is not a passing qualification result.
    test and changes no current support status.
 
 4. **Reserve control-plane capacity under bulk console output.** On the C3
-   reference path, `CONSOLE_DATA` is bulk traffic and MUST leave the two
-   `msys_1` blocks needed to submit one small control notification: its data
-   mbuf and the ATT wrapper. The one-fragment STOP response submits first; the
-   paced terminal idle event then reuses capacity returned as that response
-   drains. Pending STOP control traffic pre-empts the next console message at a
-   complete-message boundary; fragments within either message remain
-   contiguous and never interleave. Under both `while True: pass` and
+   reference path, `CONSOLE_DATA` is bulk traffic and MUST leave the four
+   `msys_1` blocks concurrently needed from receipt of an acknowledged STOP
+   write through submission of its small control notification: the incoming
+   request mbuf, NimBLE's preallocated ATT write-response mbuf, the PBLE/1
+   response-data mbuf, and its ATT notification wrapper. The one-fragment STOP
+   response submits first; the paced terminal idle event then reuses capacity
+   returned as that transaction drains. Pending STOP control traffic pre-empts
+   the next console message at a complete-message boundary; fragments within
+   either message remain contiguous and never interleave. Under both
+   `while True: pass` and
    `while True: print("x")`, the host-observed STOP sequence is
    `RSP{OK}` followed by `RUN_STATE(idle)`, with the terminal idle event less
    than 500 ms after the STOP command is submitted. Console completeness under
