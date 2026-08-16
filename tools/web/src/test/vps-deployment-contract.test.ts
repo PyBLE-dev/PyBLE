@@ -529,7 +529,7 @@ describe("Cloudflare-fronted VPS deployment", () => {
     );
   });
 
-  it("requires missing firmware and deferred C3 smoke responses to be 404 no-store", async () => {
+  it("requires missing firmware to be 404 no-store and scopes deferred C3 to public beta", async () => {
     const script = await readFile(
       join(deploymentRoot, "vps", "deploy.sh"),
       "utf8",
@@ -552,7 +552,9 @@ describe("Cloudflare-fronted VPS deployment", () => {
       '--request "${firmware_not_found_method}"',
     );
     expect(firmwareNotFoundSmoke).not.toContain("firmware_not_found_curl_mode");
-    expect(firmwareNotFoundSmoke).toContain("esp32-c3-4mb/manifest.json");
+    expect(firmwareNotFoundSmoke).toMatch(
+      /if \[\[ "\$\{firmware_deployment\}" == public-beta \]\]; then\s+firmware_not_found_paths\+=\(\s+"\$\{selected_firmware_root\}\/esp32-c3-4mb\/manifest\.json"\s+\)\s+fi/,
+    );
     expect(firmwareNotFoundSmoke).toContain("--dump-header");
     expect(firmwareNotFoundSmoke).toContain("--write-out '%{http_code}'");
     expect(firmwareNotFoundSmoke).toMatch(
