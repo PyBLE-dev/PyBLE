@@ -826,7 +826,10 @@ The v1 site is releasable when:
   detail panel, repeats its unqualified label, uses verified ESP Web Serial
   actions for the four ESP targets, and uses only verified UF2 download plus
   BOOTSEL-copy guidance for Pico 2 W; it retains the reviewed Waveshare v0.5.0
-  photograph solely as a visibly historical exact-board reference;
+  photograph solely as a visibly historical exact-board reference; on
+  `/flash`, that reference keeps the same first-explanatory placement and
+  eager, high-priority request as the qualified presentation while its nearby
+  copy continues to say that the preview bytes are unqualified;
 - while that preview is active, the home page derives the same version and five
   ordered target identities, constraints, methods, and unqualified state from
   the descriptor; links to `/flash`; presents both approved app-test channels;
