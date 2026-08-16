@@ -188,7 +188,10 @@ describe("firmware installer release copy", () => {
         })
         .closest("section");
       expect(boardSection).toBeDefined();
+      expect(boardSection?.parentElement).toHaveClass("flash-explainer");
+      expect(boardSection?.parentElement?.firstElementChild).toBe(boardSection);
       expect(boardSection).toHaveTextContent(/Exact-board reference/i);
+      expect(boardSection).toHaveTextContent(/real PyBLE board.*not a render/i);
       expect(boardSection).toHaveTextContent(
         /historical identification reference/i,
       );
@@ -204,6 +207,8 @@ describe("firmware installer release copy", () => {
         "src",
         "/boards/esp32-s3-lcd-1.47b-pyble-v0.5.0.jpg",
       );
+      expect(boardPhoto).toHaveAttribute("loading", "eager");
+      expect(boardPhoto).toHaveAttribute("fetchpriority", "high");
       expect(boardPhoto.closest("figure")).toHaveTextContent(
         /Actual board.*PyBLE firmware v0\.5\.0/i,
       );
@@ -306,6 +311,11 @@ describe("firmware installer release copy", () => {
         })
         .closest("section");
       expect(boardSection).toBeDefined();
+      expect(boardSection?.parentElement).toHaveClass("flash-explainer");
+      expect(boardSection?.parentElement?.firstElementChild).toBe(boardSection);
+      expect(boardSection).toHaveTextContent(
+        /PyBLE on real hardware.*not a render/i,
+      );
       expect(boardSection).toHaveTextContent(
         /separate.*waveshare-esp32-s3-lcd-147b.*image/i,
       );
@@ -334,6 +344,8 @@ describe("firmware installer release copy", () => {
         "src",
         "/boards/esp32-s3-lcd-1.47b-pyble-v0.5.0.jpg",
       );
+      expect(boardPhoto).toHaveAttribute("loading", "eager");
+      expect(boardPhoto).toHaveAttribute("fetchpriority", "high");
       expect(boardPhoto.closest("figure")).toHaveTextContent(
         /Actual board.*PyBLE firmware v0\.5\.0/i,
       );
