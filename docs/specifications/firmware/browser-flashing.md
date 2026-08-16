@@ -963,7 +963,12 @@ The following ESP-IDF resolution rules are part of that fail-closed mapping:
    locked wheel closure and execution/isolation identity, and every exact
    build, policy, map, manifest, source, archive, license, and NOTICE input.
    Raw bytes are never overwritten by normalization or discarded after a
-   successful audit.
+   successful audit. Heterogeneous v0.6 composition MUST also preserve each
+   already-verified normalized ESP SPDX document byte-for-byte; it MUST NOT
+   parse and reserialize those documents into a different JSON encoding.
+   Public semantic replay reconstructs the ESP evidence subset in a separate
+   verification process and requires both semantic equality and the exact
+   normalized bytes emitted by the complete ESP audit.
 2. Frozen files are resolved without executing manifest code, from the literal
    `include`, `require`, `package`, `module`, and non-selecting `metadata`
    operations of the hash-bound pinned manifests. Imports, assignments,
