@@ -1466,6 +1466,43 @@ class WaveshareBleExecutorRedTest(unittest.IsolatedAsyncioTestCase):
         )
 
 
+class C3RetainedLinkFactExecutorRedTest(unittest.IsolatedAsyncioTestCase):
+    async def test_c3_accepts_retained_capture_without_uart_authority(self):
+        executor_type = getattr(
+            profile_bench,
+            "RetainedLinkFactHardwareExecutor",
+            None,
+        )
+        self.assertIsNotNone(
+            executor_type,
+            "HAND-OFF [green]: share the retained link-fact executor with C3",
+        )
+
+        class ResetOnly:
+            def read_available(self):
+                raise AssertionError("C3 WCH receive bytes are not authority")
+
+            def clear_input_buffer(self):
+                raise AssertionError("C3 WCH receive bytes are not authority")
+
+        class Log:
+            def write(self, _event, **_values):
+                return None
+
+        args = argparse.Namespace(
+            address="private-test-address",
+            expect_chip="esp32-c3",
+            profile="esp32-c3-4mb",
+        )
+        executor = executor_type(args, ResetOnly(), Log())
+        await executor.begin_transfer_link_capture("esp32-c3-4mb")
+        self.assertTrue(executor._capture_started)
+
+        with self.assertRaisesRegex(profile_bench.BenchError, "profile"):
+            wrong = executor_type(args, ResetOnly(), Log())
+            await wrong.begin_transfer_link_capture("esp32-4mb")
+
+
 class WaveshareBleDeadlineAndCleanupRedTest(unittest.IsolatedAsyncioTestCase):
     @staticmethod
     def _args():
@@ -3262,6 +3299,115 @@ class EvidenceAndCliTest(unittest.TestCase):
                 operator_reset,
                 raw_log,
             )
+
+        asyncio.run(run_case())
+
+    def test_c3_run_selects_serial_reset_and_retained_link_fact_executor(self):
+        executor_type = getattr(
+            profile_bench,
+            "RetainedLinkFactHardwareExecutor",
+            None,
+        )
+        self.assertIsNotNone(
+            executor_type,
+            "HAND-OFF [green]: route C3 through retained link facts",
+        )
+        args = argparse.Namespace(
+            mode="verify",
+            profile="esp32-c3-4mb",
+            expect_chip="esp32-c3",
+            address="test-address",
+            reset_port="/dev/test-wch",
+            reset_baud=115200,
+            application_bin="application.bin",
+            partition_table_bin="partition-table.bin",
+            operator_reset=False,
+            firmware_bin=None,
+            firmware_uf2=None,
+            policy="oi1-gates.json",
+            raw_log="raw.jsonl",
+            output="observation.json",
+            board_manufacturer="Espressif Systems",
+            board_model="ESP32-C3 reference module",
+            module_marking="ESP32-C3-MINI-1-N4",
+            device_flash_capacity_bytes=4 * 1024 * 1024,
+            device_psram_capacity_bytes=0,
+            firmware_sha256=None,
+            manifest_sha256="b" * 64,
+            install_sha256="a" * 64,
+            ble_backend="CoreBluetooth",
+            ble_adapter="built-in",
+        )
+        oi1_build = {
+            "application_image_bytes": 100,
+            "factory_partition_bytes": 200,
+            "application_headroom_bytes": 100,
+        }
+        observation = {"raw_log_sha256": "c" * 64}
+        raw_log = mock.MagicMock()
+        serial_reset = mock.MagicMock()
+        executor = mock.MagicMock()
+
+        async def run_case():
+            with (
+                mock.patch.object(
+                    profile_bench,
+                    "oi1_build_from_paths",
+                    return_value=oi1_build,
+                ),
+                mock.patch.object(
+                    profile_bench,
+                    "RedactedRawLog",
+                    return_value=raw_log,
+                ),
+                mock.patch.object(
+                    profile_bench,
+                    "SerialResetController",
+                    return_value=serial_reset,
+                ) as serial_controller,
+                mock.patch.object(
+                    profile_bench,
+                    "WavesharePromptResetController",
+                ) as waveshare_controller,
+                mock.patch.object(
+                    profile_bench,
+                    "RetainedLinkFactHardwareExecutor",
+                    return_value=executor,
+                ) as retained_executor,
+                mock.patch.object(profile_bench, "HardwareExecutor") as uart_executor,
+                mock.patch.object(
+                    profile_bench,
+                    "collect_observation",
+                    new=mock.AsyncMock(return_value=observation),
+                ),
+                mock.patch.object(
+                    profile_bench,
+                    "_load_policy_thresholds",
+                    return_value={},
+                ),
+                mock.patch.object(profile_bench, "evaluate_thresholds"),
+                mock.patch.object(
+                    profile_bench,
+                    "build_baseline_profile",
+                    return_value={"profile_id": args.profile},
+                ),
+                mock.patch.object(
+                    profile_bench,
+                    "output_for_mode",
+                    return_value=observation,
+                ),
+                mock.patch.object(profile_bench, "atomic_write_canonical_json"),
+            ):
+                result = await profile_bench._run(args)
+
+            self.assertEqual(result, 0)
+            serial_controller.assert_called_once_with(
+                "/dev/test-wch",
+                115200,
+            )
+            waveshare_controller.assert_not_called()
+            retained_executor.assert_called_once_with(args, serial_reset, raw_log)
+            uart_executor.assert_not_called()
 
         asyncio.run(run_case())
 

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MIT
 # Part of PyBLE (https://pyble.dev) — see /LICENSE.
 #
-# [red] ADR-0034 — exact-board retained OI-1 link-fact state.
+# [red] ADR-0034/ADR-0035 — exact-profile retained OI-1 link-fact state.
 
 from __future__ import annotations
 
@@ -16,12 +16,10 @@ REPO_ROOT = HOST_DIR.parents[2]
 FIRMWARE = REPO_ROOT / "firmware"
 SOURCE_PATH = FIRMWARE / "user_c_modules" / "pyble" / "pble_ble.c"
 SOURCE = SOURCE_PATH.read_text(encoding="utf-8")
-WAVE_HEADER = (
-    FIRMWARE
-    / "board_overlays"
-    / "waveshare-esp32-s3-lcd-147b"
-    / "mpconfigboard.h"
-).read_text(encoding="utf-8")
+RETAINED_LINK_FACT_OVERLAYS = {
+    "esp32-c3",
+    "waveshare-esp32-s3-lcd-147b",
+}
 
 
 def _strip_c_comments(text: str) -> str:
@@ -97,24 +95,23 @@ def _gap_case(label: str, next_label: str) -> str:
 
 
 class WaveshareNativeLinkFactContractTests(unittest.TestCase):
-    def test_exact_board_is_the_only_overlay_enabling_hidden_state(self):
-        self.assertEqual(
-            len(
-                re.findall(
-                    r"(?m)^\s*#\s*define\s+PBLE_ENABLE_OI1_LINK_FACTS\s+\(?1\)?\s*$",
-                    WAVE_HEADER,
-                )
-            ),
-            1,
-        )
+    def test_retained_profiles_are_the_only_overlays_enabling_hidden_state(self):
         for header in sorted((FIRMWARE / "board_overlays").glob("*/mpconfigboard.h")):
-            if header.parent.name == "waveshare-esp32-s3-lcd-147b":
-                continue
+            contents = header.read_text(encoding="utf-8")
             with self.subTest(overlay=header.parent.name):
-                self.assertNotIn(
-                    "PBLE_ENABLE_OI1_LINK_FACTS",
-                    header.read_text(encoding="utf-8"),
-                )
+                if header.parent.name in RETAINED_LINK_FACT_OVERLAYS:
+                    self.assertEqual(
+                        len(
+                            re.findall(
+                                r"(?m)^\s*#\s*define\s+"
+                                r"PBLE_ENABLE_OI1_LINK_FACTS\s+\(?1\)?\s*$",
+                                contents,
+                            )
+                        ),
+                        1,
+                    )
+                else:
+                    self.assertNotIn("PBLE_ENABLE_OI1_LINK_FACTS", contents)
         clean = _strip_c_comments(SOURCE)
         self.assertRegex(
             clean,
