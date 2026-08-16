@@ -25,19 +25,22 @@
 #   pyble_console.STDIN_RING == 256     (pble_console.c PBLE_STDIN_RING)
 #   pyble_console.STOP_CHAR == 0x03     (P3 interrupt char)
 #   pyble_console.Console(emit, notify, clock=None, tx_capacity=None,
-#                         tx_refill_per_ms=None, stop_fail=None)
+#                         tx_refill_per_ms=None, stop_fail=None,
+#                         tx_notify_cost=None)
 #     - an io.IOBase subclass (P8: ONE object serves tee + stdin + STOP).
 #     - emit(stream:int, data:bytes) is called once per emitted chunk,
 #       len(data) <= CHUNK; notify() (zero-arg) is the injected
 #       os.dupterm_notify seam; clock() -> int milliseconds; stop_fail() is
 #       the non-returning reset seam if re-notifying a STOP consumed inside
 #       dupterm write cannot be admitted.
-#     - tx_capacity / tx_refill_per_ms configure the token bucket (defaults =
-#       the HIL-tuned OI-P3 constants). Semantics: tokens start at capacity;
+#     - tx_capacity / tx_refill_per_ms / tx_notify_cost configure the token
+#       bucket (defaults = the HIL-tuned OI-P3 constants). Semantics: tokens
+#       start at capacity;
 #       tokens = min(capacity, tokens + elapsed_ms * refill) at each attempt;
-#       a chunk is emitted only if tokens >= len(chunk-data) (then deducted),
-#       else THAT CHUNK is dropped and emission continues — never blocks,
-#       never raises into the program (pble_console.c budget-expiry drop).
+#       each attempted Notify costs max(len(chunk-data), tx_notify_cost); a
+#       chunk is emitted only if that debit is affordable (then deducted), else
+#       THAT CHUNK is dropped and emission continues — never blocks, never
+#       raises into the program (pble_console.c budget-expiry drop).
 #     .set_run_active(flag)             # starts INACTIVE; gate for the tee
 #     .write(b) -> int                  # dupterm stdout entry == out(STDOUT,b);
 #                                       # ALWAYS reports len(b) consumed
@@ -138,6 +141,10 @@ class ConstantsAndShapeTest(unittest.TestCase):
         self.assertEqual(CONSOLE.attr(self, "CHUNK", "F-25/P8 chunk<=200"), 200)
         self.assertEqual(CONSOLE.attr(self, "STDIN_RING", "F-25/P8 ring=256"), 256)
         self.assertEqual(CONSOLE.attr(self, "STOP_CHAR", "F-25/P3 stop=0x03"), 0x03)
+        self.assertEqual(
+            CONSOLE.attr(self, "TX_NOTIFY_COST", "F-27/P8 notify-cost=80"),
+            80,
+        )
 
     def test_console_is_an_iobase(self):
         con, _, _ = make_console(self, "F-25/P8 one io.IOBase object")
@@ -246,6 +253,26 @@ class TokenBucketTest(unittest.TestCase):
                          [200, 200, 200, 200],
                          "tokens clamp at tx_capacity: the second burst still "
                          "affords exactly 400 bytes")
+
+    def test_tiny_writes_pay_the_minimum_notify_cost(self):
+        con, chunks, _ = make_console(
+            self, self.CRIT, clock=lambda: self.now[0], cap=160, refill=20)
+        con.set_run_active(True)
+
+        con.write(b"a")
+        con.write(b"b")
+        con.write(b"c")
+        self.assertEqual(
+            chunks,
+            [(0, b"a"), (0, b"b")],
+            "the 80-token floor must bound tiny print writes by Notify count, "
+            "not only by their one-byte payload",
+        )
+
+        self.now[0] = 4                         # +80 tokens -> one Notify
+        con.write(b"d")
+        self.assertEqual(chunks[-1], (0, b"d"))
+        self.assertEqual(len(chunks), 3)
 
 
 class NeverWedgeTest(unittest.TestCase):

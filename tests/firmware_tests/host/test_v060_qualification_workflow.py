@@ -329,16 +329,18 @@ class PicoPacingSourceBindingTests(unittest.TestCase):
     def test_pico_pacing_fact_is_the_exact_runtime_refill_horizon(self):
         capacity = getattr(CONSOLE, "TX_CAPACITY", None)
         refill_per_ms = getattr(CONSOLE, "TX_REFILL_PER_MS", None)
+        notify_cost = getattr(CONSOLE, "TX_NOTIFY_COST", None)
         runtime_budget = getattr(CONSOLE, "TX_BUDGET_MS", None)
         self.assertEqual(
-            (capacity, refill_per_ms, runtime_budget),
-            (2048, 20, 103),
-            "Pico pacing must use the frozen byte capacity, byte/ms refill, "
-            "and empty-to-full horizon; ESP's 250 ms wait is unrelated",
+            (capacity, refill_per_ms, notify_cost, runtime_budget),
+            (2048, 20, 80, 103),
+            "Pico pacing must use the frozen token capacity, token/ms refill, "
+            "per-Notify floor, and empty-to-full horizon; ESP's 250 ms wait "
+            "is unrelated",
         )
         if not all(
             type(value) is int and value > 0
-            for value in (capacity, refill_per_ms, runtime_budget)
+            for value in (capacity, refill_per_ms, notify_cost, runtime_budget)
         ):
             return
         self.assertEqual(
