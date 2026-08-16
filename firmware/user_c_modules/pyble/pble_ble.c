@@ -83,11 +83,12 @@
 #define PBLE_FRAG_IDX_MASK  0x3F
 #define PBLE_FRAG_IDX_MOD   64
 
-// A small notification uses one msys_1 block for its data mbuf and one for the
-// ATT command wrapper in pinned NimBLE. Bulk traffic must leave both available
-// so a host-task STOP response can be submitted immediately. The terminal
-// RUN_STATE(idle) reuses returned blocks after that response drains.
-#define PBLE_TX_BULK_RESERVE_BLOCKS 2
+// An acknowledged STOP transaction concurrently owns four msys_1 blocks while
+// its RX callback submits the PBLE/1 response: the incoming request, NimBLE's
+// preallocated ATT write response, the PBLE/1 response data, and its ATT Notify
+// wrapper. Bulk traffic must leave all four available. The terminal
+// RUN_STATE(idle) reuses returned blocks after that transaction drains.
+#define PBLE_TX_BULK_RESERVE_BLOCKS 4
 #define PBLE_TX_ATT_WRAPPER_BLOCKS  1
 #define PBLE_CONTROL_TX_BOUNDARY_BUDGET_MS 15u
 
@@ -730,9 +731,10 @@ static int pble_notify_packet(const uint8_t *pkt, size_t len,
         return PBLE_TX_AGAIN;
     }
     // The data chain above is already charged to msys_1. Before a BULK submit,
-    // preserve one block for this packet's ATT wrapper plus the two blocks a
-    // subsequent small control notification needs. Query msys_1 specifically:
-    // aggregate msys_1+msys_2 free space cannot satisfy these allocations.
+    // preserve one block for this packet's ATT wrapper plus all four blocks an
+    // acknowledged STOP transaction needs through its response Notify. Query
+    // msys_1 specifically: aggregate msys_1+msys_2 free space cannot satisfy
+    // these allocations.
     if (reserve_blocks > 0 &&
         pble_msys1_num_free() < PBLE_TX_ATT_WRAPPER_BLOCKS + reserve_blocks) {
         os_mbuf_free_chain(om);
