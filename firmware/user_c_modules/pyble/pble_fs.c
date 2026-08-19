@@ -1249,10 +1249,10 @@ static uint8_t fs_do_mkdir(const pble_fs_req_t *it, size_t *extra) {
         nlr_pop();
         return PBLE_OK;
     } else {
+        if (!pble_fs_ticket_valid(it)) {
+            return PBLE_NO_RSP;
+        }
         st = fs_exc_to_status(MP_OBJ_FROM_PTR(nlr.ret_val));
-    }
-    if (!pble_fs_ticket_valid(it)) {
-        return PBLE_NO_RSP;
     }
     if (st != PBLE_EBADREQ) {      // only EEXIST maps to EBADREQ here
         return st;
