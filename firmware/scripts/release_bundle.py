@@ -21644,6 +21644,11 @@ def _validate_qualification_observation(
     )
     if requires_link_facts:
         observation_keys.add("transfer_link_facts")
+    has_physical_fact_lineage = (
+        isinstance(value, dict) and "physical_fact_lineage" in value
+    )
+    if has_physical_fact_lineage:
+        observation_keys.add("physical_fact_lineage")
     observation = _exact_keys(
         value,
         observation_keys,
@@ -21870,6 +21875,15 @@ def _validate_qualification_observation(
         and SHA256_RE.fullmatch(observation["raw_log_sha256"]) is not None,
         "OI-1 raw log digest must be lowercase 64-hex",
     )
+    if has_physical_fact_lineage:
+        lineage = _validate_physical_fact_lineage_summary(
+            observation["physical_fact_lineage"]
+        )
+        _require(
+            lineage["candidate_automatic_raw_log_sha256"]
+            == observation["raw_log_sha256"],
+            "OI-1 physical-fact lineage does not bind its automatic raw log",
+        )
     return observation
 
 
@@ -24991,6 +25005,68 @@ _V5_COMPLETION_FRAGMENT_FIELDS = {
     "oi1_observation",
 }
 
+_PHYSICAL_FACT_LINEAGE_KIND = "physical-fact-lineage-v1"
+_PHYSICAL_FACT_LINEAGE_SCOPE = ["physical_power_cycle_advertising"]
+_PHYSICAL_FACT_LINEAGE_SUMMARY_FIELDS = {
+    "schema_version",
+    "kind",
+    "claims_new_observation",
+    "reuse_scope",
+    "record_sha256",
+    "baseline_source_commit",
+    "baseline_raw_log_sha256",
+    "candidate_automatic_raw_log_sha256",
+    "qualification_source_commit",
+    "qualification_executable_sha256",
+}
+_PHYSICAL_FACT_LINEAGE_SOURCE_DIFF = (
+    ("A", "docs/validation/firmware/oi1/7441a762b0bc2a6bb5692236d5894281ddf0dca6.json"),
+    ("M", "firmware/qualification/oi1-gates.json"),
+    ("M", "firmware/scripts/release_bundle.py"),
+    ("M", "tests/firmware_tests/host/test_oi1_profile_bench.py"),
+    ("M", "tests/firmware_tests/host/test_release_bundle.py"),
+    ("M", "tests/firmware_tests/host/test_release_finalization.py"),
+    ("M", "tests/firmware_tests/host/test_release_historical_source_contract.py"),
+    ("M", "tests/firmware_tests/host/test_release_profile_split.py"),
+    ("M", "tests/firmware_tests/host/test_v060_completion_safety.py"),
+)
+
+
+def _validate_physical_fact_lineage_summary(value: Any) -> dict[str, Any]:
+    """Validate the public, digest-bound summary of a private lineage receipt."""
+
+    summary = _exact_keys(
+        value,
+        _PHYSICAL_FACT_LINEAGE_SUMMARY_FIELDS,
+        "physical-fact lineage summary",
+    )
+    _require(
+        type(summary["schema_version"]) is int
+        and summary["schema_version"] == 1
+        and summary["kind"] == _PHYSICAL_FACT_LINEAGE_KIND
+        and summary["claims_new_observation"] is False
+        and summary["reuse_scope"] == _PHYSICAL_FACT_LINEAGE_SCOPE,
+        "physical-fact lineage scope or assertion changed",
+    )
+    for key in (
+        "record_sha256",
+        "baseline_raw_log_sha256",
+        "candidate_automatic_raw_log_sha256",
+        "qualification_executable_sha256",
+    ):
+        _require(
+            type(summary[key]) is str
+            and SHA256_RE.fullmatch(summary[key]) is not None,
+            "physical-fact lineage %s must be lowercase 64-hex" % key,
+        )
+    for key in ("baseline_source_commit", "qualification_source_commit"):
+        _require(
+            type(summary[key]) is str
+            and COMMIT_RE.fullmatch(summary[key]) is not None,
+            "physical-fact lineage %s must be lowercase 40-hex" % key,
+        )
+    return summary
+
 
 def _is_exact_utc_second(value: Any) -> bool:
     if type(value) is not str or UTC_RE.fullmatch(value) is None:
@@ -25082,6 +25158,929 @@ def _read_canonical_json_object(
     _require(
         raw == _canonical_json_bytes(value),
         "%s must use canonical JSON bytes" % label,
+    )
+    return value, snapshot
+
+
+def _lineage_raw_records(raw: bytes) -> list[dict[str, Any]]:
+    _require(
+        type(raw) is bytes
+        and 0 < len(raw) <= _V5_COMPLETION_INPUT_MAX_BYTES
+        and raw.endswith(b"\n"),
+        "physical-fact lineage raw log is empty, oversized, or unterminated",
+    )
+    records: list[dict[str, Any]] = []
+    for index, line in enumerate(raw.splitlines(), 1):
+        try:
+            value = json.loads(
+                line.decode("utf-8", errors="strict"),
+                object_pairs_hook=_completion_unique_object,
+                parse_constant=_completion_reject_constant,
+            )
+        except ReleaseError:
+            raise
+        except (UnicodeDecodeError, TypeError, ValueError) as exc:
+            raise ReleaseError(
+                "physical-fact lineage raw log line %d is invalid" % index
+            ) from exc
+        _require(
+            type(value) is dict
+            and value.get("sequence") == index
+            and type(value.get("sequence")) is int
+            and type(value.get("event")) is str,
+            "physical-fact lineage raw sequence is invalid at line %d" % index,
+        )
+        canonical = (
+            json.dumps(
+                value,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+                allow_nan=False,
+            )
+            + "\n"
+        ).encode("utf-8")
+        _require(
+            line + b"\n" == canonical,
+            "physical-fact lineage raw log line %d is not canonical" % index,
+        )
+        records.append(value)
+    return records
+
+
+def _lineage_event_payload(
+    value: dict[str, Any],
+    event: str,
+    fields: set[str],
+    label: str,
+) -> dict[str, Any]:
+    record = _exact_keys(value, {"event", "sequence", *fields}, label)
+    _require(record["event"] == event, "%s event changed" % label)
+    return {key: copy.deepcopy(record[key]) for key in fields}
+
+
+def _replay_lineage_raw(
+    raw: bytes,
+    *,
+    profile_id: str,
+    expected_build: dict[str, int],
+    role: str,
+    candidate_identity: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Replay the exact automatic OI-1 event grammar without hardware."""
+
+    _require(
+        profile_id in V060_RELEASE_PROFILE_ORDER,
+        "physical-fact lineage profile is unsupported",
+    )
+    _require(role in ("baseline", "candidate"), "lineage raw role is invalid")
+    records = _lineage_raw_records(raw)
+    position = 0
+
+    def take(event: str, fields: set[str], label: str) -> dict[str, Any]:
+        nonlocal position
+        _require(
+            position < len(records),
+            "physical-fact lineage raw ended before %s" % label,
+        )
+        result = _lineage_event_payload(records[position], event, fields, label)
+        position += 1
+        return result
+
+    build_fields = set(expected_build)
+    start_extra = set(candidate_identity or {})
+    start = take(
+        "measurement_start",
+        {"mode", "profile_id", *build_fields, *start_extra},
+        "lineage measurement start",
+    )
+    expected_mode = (
+        "baseline"
+        if role == "baseline"
+        else ("private-numeric" if candidate_identity is not None else "verify")
+    )
+    _require(
+        start["mode"] == expected_mode
+        and start["profile_id"] == profile_id
+        and {key: start[key] for key in build_fields} == expected_build,
+        "physical-fact lineage measurement identity or build changed",
+    )
+    if candidate_identity is not None:
+        _require(
+            profile_id in ("waveshare-esp32-s3-lcd-147b", "rpi-pico2-w")
+            and all(start[key] == value for key, value in candidate_identity.items()),
+            "private-numeric candidate identity changed",
+        )
+
+    reset_samples: list[int] = []
+    default_heap: list[int] = []
+    post_hello: list[dict[str, int]] = []
+    hello_transport: tuple[int, int, int] | None = None
+    machine_reset = candidate_identity is not None
+    reset_boundary = "op_run_submit_to_fresh_service_advertisement"
+    for sample_index in range(QUALIFICATION_WORKLOAD["reset_samples"]):
+        if sample_index == QUALIFICATION_WORKLOAD["reset_samples"] - 1:
+            capture = take(
+                "transfer_link_capture_started",
+                {"profile_id"},
+                "lineage transfer-link capture start",
+            )
+            _require(
+                capture["profile_id"] == profile_id,
+                "physical-fact lineage transfer capture profile changed",
+            )
+        automatic_reset: dict[str, Any] | None = None
+        if machine_reset:
+            automatic_reset = take(
+                "automatic_reset_advertisement",
+                {
+                    "sample_index",
+                    "mechanism",
+                    "boundary",
+                    "run_response_status",
+                    "run_response_latency_ms",
+                    "expected_link_drop_observed",
+                    "latency_ms",
+                },
+                "lineage PBLE machine reset",
+            )
+            _require(
+                automatic_reset["sample_index"] == sample_index
+                and automatic_reset["mechanism"] == "pble-machine-reset"
+                and automatic_reset["boundary"] == reset_boundary
+                and automatic_reset["run_response_status"]
+                == "link-drop-before-observed-rsp"
+                and automatic_reset["expected_link_drop_observed"] is True
+                and type(automatic_reset["run_response_latency_ms"]) is int
+                and automatic_reset["run_response_latency_ms"] >= 0,
+                "lineage PBLE machine-reset fact changed",
+            )
+        reset = take(
+            "reset_advertisement",
+            {"sample_index", "latency_ms"},
+            "lineage reset advertisement",
+        )
+        _require(
+            reset["sample_index"] == sample_index
+            and type(reset["latency_ms"]) is int
+            and reset["latency_ms"] >= 0
+            and (
+                automatic_reset is None
+                or automatic_reset["latency_ms"] == reset["latency_ms"]
+            ),
+            "physical-fact lineage reset sample changed",
+        )
+        hello = take(
+            "hello",
+            {
+                "sample_index",
+                "backend_mtu",
+                "hello_mtu",
+                "window",
+                "chunk",
+                "heap_default_free_bytes",
+            },
+            "lineage HELLO",
+        )
+        _require(
+            hello["sample_index"] == sample_index
+            and type(hello["heap_default_free_bytes"]) is int
+            and hello["heap_default_free_bytes"] >= 0,
+            "physical-fact lineage HELLO sample changed",
+        )
+        transport = (hello["backend_mtu"], hello["window"], hello["chunk"])
+        _require(
+            all(type(item) is int for item in transport)
+            and hello["hello_mtu"] == hello["backend_mtu"]
+            and (hello_transport is None or transport == hello_transport),
+            "physical-fact lineage HELLO transport changed",
+        )
+        hello_transport = transport
+        heap_fields = (
+            {"gc_allocated_bytes", "gc_free_bytes"}
+            if PROFILE_SPECS[profile_id]["port"] == "rp2"
+            else {
+                "gc_allocated_bytes",
+                "gc_free_bytes",
+                "idf_internal_free_bytes",
+                "idf_internal_largest_block_bytes",
+                "idf_internal_minimum_free_bytes",
+            }
+        )
+        heap = take("heap_snapshot", heap_fields, "lineage post-HELLO heap")
+        reset_samples.append(reset["latency_ms"])
+        default_heap.append(hello["heap_default_free_bytes"])
+        post_hello.append(heap)
+        if sample_index + 1 < QUALIFICATION_WORKLOAD["reset_samples"]:
+            take("disconnect", set(), "lineage reset disconnect")
+
+    while (
+        position < len(records)
+        and records[position].get("event") == "transfer_link_fact"
+    ):
+        position += 1
+    take("transfer_link_settled", set(), "lineage transfer-link settlement")
+
+    roundtrips: list[dict[str, int]] = []
+    post_roundtrip: list[dict[str, int]] = []
+    for _sample_index in range(QUALIFICATION_WORKLOAD["roundtrip_samples"]):
+        roundtrip = take(
+            "roundtrip",
+            {
+                "payload_bytes",
+                "put_duration_ns",
+                "get_duration_ns",
+                "put_retransmitted_chunks",
+                "put_retransmitted_bytes",
+                "get_retransmitted_chunks",
+                "get_retransmitted_bytes",
+            },
+            "lineage roundtrip",
+        )
+        _require(
+            roundtrip["payload_bytes"]
+            == QUALIFICATION_WORKLOAD["roundtrip_payload_bytes"],
+            "physical-fact lineage roundtrip payload changed",
+        )
+        roundtrips.append(roundtrip)
+        post_roundtrip.append(
+            take("heap_snapshot", heap_fields, "lineage post-roundtrip heap")
+        )
+
+    reliability_fields = {
+        "attempted_files",
+        "completed_files",
+        "verified_files",
+        "bytes_per_file",
+        "total_payload_bytes",
+        "unexpected_disconnects",
+        "integrity_failures",
+        "failed_statuses",
+        "retransmitted_chunks",
+        "retransmitted_bytes",
+        "rewinds",
+    }
+    reliability = take(
+        "reliability", reliability_fields, "lineage reliability workload"
+    )
+    post_reliability = take(
+        "heap_snapshot", heap_fields, "lineage post-reliability heap"
+    )
+    take("disconnect", set(), "lineage workload disconnect")
+    while (
+        position < len(records)
+        and records[position].get("event") == "transfer_link_fact"
+    ):
+        position += 1
+    link = take(
+        "transfer_link_facts", {"facts"}, "lineage transfer-link facts"
+    )["facts"]
+
+    physical_result: str | None = None
+    if role == "baseline":
+        physical = take(
+            "physical_power_cycle", {"result"}, "lineage baseline power fact"
+        )
+        _require(
+            physical["result"] == "passed",
+            "lineage baseline physical-power fact did not pass",
+        )
+        physical_result = "passed"
+        take("measurement_complete", set(), "lineage baseline completion")
+    elif machine_reset:
+        deferred = take(
+            "physical_power_cycle_deferred",
+            {"mechanism", "reason"},
+            "lineage private-numeric physical deferral",
+        )
+        numeric_complete = take(
+            "measurement_numeric_complete",
+            {"physical_power_cycle_advertising", "reset_mechanism"},
+            "lineage private-numeric completion",
+        )
+        _require(
+            deferred
+            == {
+                "mechanism": "not-observed",
+                "reason": "no-truthful-automatic-all-power-control",
+            }
+            and numeric_complete
+            == {
+                "physical_power_cycle_advertising": "deferred",
+                "reset_mechanism": "pble-machine-reset",
+            },
+            "lineage private-numeric physical deferral changed",
+        )
+    elif position < len(records):
+        failure = take(
+            "measurement_failed", {"failure_type"}, "lineage physical seam"
+        )
+        _require(
+            failure["failure_type"] == "EOFError",
+            "candidate automatic raw did not stop only at the physical seam",
+        )
+    _require(
+        position == len(records),
+        "physical-fact lineage raw contains trailing or substituted events",
+    )
+
+    payload_bytes = QUALIFICATION_WORKLOAD["roundtrip_payload_bytes"]
+    automatic: dict[str, Any] = {
+        "observed_att_mtu": hello_transport[0],
+        "observed_window": hello_transport[1],
+        "observed_chunk_bytes": hello_transport[2],
+        "reset_to_service_advertisement_ms": reset_samples,
+        "heap_default_free_post_hello_bytes": default_heap,
+        "heap_post_hello": post_hello,
+        "put_unique_committed_bytes": [payload_bytes] * len(roundtrips),
+        "put_duration_ns": [item["put_duration_ns"] for item in roundtrips],
+        "put_committed_goodput_bytes_per_second": [
+            (payload_bytes * 1_000_000_000) // item["put_duration_ns"]
+            for item in roundtrips
+        ],
+        "get_unique_verified_bytes": [payload_bytes] * len(roundtrips),
+        "get_duration_ns": [item["get_duration_ns"] for item in roundtrips],
+        "get_verified_goodput_bytes_per_second": [
+            (payload_bytes * 1_000_000_000) // item["get_duration_ns"]
+            for item in roundtrips
+        ],
+        "put_retransmitted_chunks": [
+            item["put_retransmitted_chunks"] for item in roundtrips
+        ],
+        "put_retransmitted_bytes": [
+            item["put_retransmitted_bytes"] for item in roundtrips
+        ],
+        "get_retransmitted_chunks": [
+            item["get_retransmitted_chunks"] for item in roundtrips
+        ],
+        "get_retransmitted_bytes": [
+            item["get_retransmitted_bytes"] for item in roundtrips
+        ],
+        "roundtrip_integrity_verified": len(roundtrips),
+        "get_offset_sequences_validated": len(roundtrips),
+        "roundtrip_unexpected_disconnects": 0,
+        "roundtrip_integrity_failures": 0,
+        "heap_post_roundtrip": post_roundtrip,
+        "reliability": reliability,
+        "heap_post_reliability": post_reliability,
+        "transfer_link_facts": link,
+        "raw_log_sha256": hashlib.sha256(raw).hexdigest(),
+    }
+    complete = {
+        **copy.deepcopy(automatic),
+        "physical_power_cycle_advertising": physical_result or "passed",
+    }
+    _validate_qualification_observation(
+        complete,
+        None,
+        profile_id,
+        firmware_version="0.6.0",
+    )
+    if role == "baseline":
+        return complete
+    return automatic
+
+
+def _reconstruct_lineage_automatic_observation(
+    raw: bytes,
+    *,
+    profile_id: str,
+    expected_build: dict[str, int],
+    candidate_identity: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Return only fresh candidate automatic fields; never a power-cycle pass."""
+
+    return _replay_lineage_raw(
+        raw,
+        profile_id=profile_id,
+        expected_build=expected_build,
+        role="candidate",
+        candidate_identity=candidate_identity,
+    )
+
+
+def _lineage_file_binding(
+    path: Path,
+    label: str,
+    *,
+    exclusive: bool = False,
+) -> tuple[dict[str, Any], bytes]:
+    raw, snapshot = _stable_completion_bytes(
+        Path(path), label, maximum=_V5_COMPLETION_INPUT_MAX_BYTES, exclusive=exclusive
+    )
+    identity = snapshot[1]
+    return (
+        {
+            "source_path": snapshot[0],
+            "size": len(raw),
+            "sha256": hashlib.sha256(raw).hexdigest(),
+            "file_mode": "%04o" % stat_module.S_IMODE(identity[2]),
+        },
+        raw,
+    )
+
+
+def _lineage_artifact_binding(root: Path, metadata: dict[str, Any]) -> dict[str, Any]:
+    path = Path(root) / metadata["path"]
+    binding, raw = _lineage_file_binding(path, "lineage candidate artifact")
+    _require(
+        binding["size"] == metadata["size"]
+        and binding["sha256"] == metadata["sha256"],
+        "physical-fact lineage candidate artifact changed",
+    )
+    return {**copy.deepcopy(metadata), "file_mode": binding["file_mode"]}, raw
+
+
+def _lineage_git_blob(checkout: Path, commit: str, relative: str) -> bytes:
+    environment = {
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_TERMINAL_PROMPT": "0",
+        "HOME": os.fspath(checkout),
+        "LANG": "C",
+        "LC_ALL": "C",
+        "PATH": "/usr/bin:/bin",
+        "TMPDIR": "/tmp",
+    }
+    completed = subprocess.run(
+        ["git", "-C", os.fspath(checkout), "cat-file", "blob", "%s:%s" % (commit, relative)],
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=environment,
+    )
+    _require(
+        completed.returncode == 0,
+        "cannot read candidate qualification executable from Git",
+    )
+    return completed.stdout
+
+
+def _lineage_candidate_artifacts(
+    candidate: Path,
+    release_profile: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, bytes]]:
+    bindings: dict[str, Any] = {}
+    contents: dict[str, bytes] = {}
+    install, contents["install"] = _lineage_artifact_binding(
+        candidate, release_profile["install"]
+    )
+    bindings["install"] = install
+    if "manifest" in release_profile:
+        manifest, contents["manifest"] = _lineage_artifact_binding(
+            candidate, release_profile["manifest"]
+        )
+        bindings["manifest"] = manifest
+        components: list[dict[str, Any]] = []
+        for component in release_profile["components"]:
+            item, contents["component:%s" % component["role"]] = (
+                _lineage_artifact_binding(candidate, component)
+            )
+            components.append(item)
+        bindings["components"] = components
+    else:
+        resource, contents["resource_image"] = _lineage_artifact_binding(
+            candidate, release_profile["resource_image"]
+        )
+        bindings["resource_image"] = resource
+    return bindings, contents
+
+
+def _lineage_baseline_artifacts(
+    baseline_inputs: Path,
+    profile_id: str,
+    candidate_contents: dict[str, bytes],
+) -> dict[str, Any]:
+    profile_root = Path(baseline_inputs) / profile_id
+    names = (
+        {"install": "firmware.uf2", "resource_image": "firmware.bin"}
+        if PROFILE_SPECS[profile_id]["port"] == "rp2"
+        else {
+            "install": "firmware.bin",
+            "manifest": "manifest.json",
+            "component:application": "application.bin",
+            "component:partition-table": "partition-table.bin",
+        }
+    )
+    result: dict[str, Any] = {}
+    for role, filename in names.items():
+        binding, raw = _lineage_file_binding(
+            profile_root / filename,
+            "lineage baseline %s artifact" % role,
+            exclusive=True,
+        )
+        _require(
+            raw == candidate_contents[role],
+            "baseline and candidate %s bytes differ for %s" % (role, profile_id),
+        )
+        result[role] = {"path": filename, **binding}
+    return result
+
+
+def _derive_physical_fact_lineage(
+    *,
+    candidate_dir: Path,
+    profile_id: str,
+    baseline_fragment_path: Path,
+    baseline_raw_log_path: Path,
+    baseline_inputs_dir: Path,
+    candidate_automatic_raw_log_path: Path,
+    candidate_automatic_executor_path: Path,
+    qualification_repo_root: Path,
+) -> dict[str, Any]:
+    candidate = Path(candidate_dir)
+    root = Path(qualification_repo_root)
+    _require_checkout_clean(root, "physical-fact lineage qualification")
+    qualification_source_commit = _git_output(
+        root, "physical-fact lineage qualification", "rev-parse", "HEAD"
+    )
+    release_binding, release_raw = _lineage_file_binding(
+        candidate / "release.json", "lineage candidate release.json"
+    )
+    release = validate_bundle(
+        candidate, public=False, qualification_repo_root=root
+    )
+    _require(
+        release["identity"]["version"] == "0.6.0"
+        and release["provenance"]["pyble"]["clean"] is True
+        and profile_id in V060_RELEASE_PROFILE_ORDER,
+        "physical-fact lineage requires the protected v0.6.0 candidate",
+    )
+    candidate_source_commit = release["provenance"]["pyble"]["commit"]
+    release_profile = next(
+        profile for profile in release["profiles"] if profile["id"] == profile_id
+    )
+    candidate_artifacts, candidate_contents = _lineage_candidate_artifacts(
+        candidate, release_profile
+    )
+
+    policy, policy_sha256 = _load_qualification_policy(root)
+    baseline_relative = policy["baseline_evidence"]["path"]
+    baseline_path = root / baseline_relative
+    evidence_binding, evidence_raw = _lineage_file_binding(
+        baseline_path, "lineage baseline evidence"
+    )
+    _require(
+        evidence_binding["sha256"] == policy["baseline_evidence"]["sha256"],
+        "physical-fact lineage baseline evidence differs from active policy",
+    )
+    try:
+        baseline = json.loads(evidence_raw.decode("utf-8", errors="strict"))
+    except (UnicodeError, TypeError, ValueError) as exc:
+        raise ReleaseError("physical-fact lineage baseline evidence is invalid") from exc
+    _require(
+        evidence_raw == _canonical_json_bytes(baseline),
+        "physical-fact lineage baseline evidence is not canonical",
+    )
+    baseline_source_commit = baseline["source_commit"]
+    baseline_profile = next(
+        item for item in baseline["profiles"] if item["profile_id"] == profile_id
+    )
+
+    fragment_binding, fragment_raw = _lineage_file_binding(
+        Path(baseline_fragment_path), "lineage baseline fragment", exclusive=True
+    )
+    try:
+        fragment = json.loads(fragment_raw.decode("utf-8", errors="strict"))
+    except (UnicodeError, TypeError, ValueError) as exc:
+        raise ReleaseError("physical-fact lineage baseline fragment is invalid") from exc
+    _require(
+        fragment_raw == _canonical_json_bytes(fragment)
+        and fragment == baseline_profile,
+        "physical-fact lineage fragment is not the retained baseline profile",
+    )
+    baseline_raw_binding, baseline_raw = _lineage_file_binding(
+        Path(baseline_raw_log_path), "lineage baseline raw log", exclusive=True
+    )
+    baseline_observation = _replay_lineage_raw(
+        baseline_raw,
+        profile_id=profile_id,
+        expected_build=baseline_profile["oi1_build"],
+        role="baseline",
+        candidate_identity=None,
+    )
+    _require(
+        baseline_observation == baseline_profile["oi1_observation"]
+        and baseline_raw_binding["sha256"]
+        == baseline_profile["oi1_observation"]["raw_log_sha256"],
+        "physical-fact lineage raw log does not reproduce the baseline fact",
+    )
+    baseline_artifacts = _lineage_baseline_artifacts(
+        Path(baseline_inputs_dir), profile_id, candidate_contents
+    )
+
+    changed = []
+    for line in _git_output(
+        root,
+        "physical-fact lineage qualification",
+        "diff",
+        "--name-status",
+        baseline_source_commit,
+        candidate_source_commit,
+    ).splitlines():
+        parts = line.split("\t")
+        _require(len(parts) == 2, "physical-fact source diff is not simple")
+        changed.append((parts[0], parts[1]))
+    _require(
+        tuple(changed) == _PHYSICAL_FACT_LINEAGE_SOURCE_DIFF,
+        "physical-fact source diff is not the frozen non-install-affecting set",
+    )
+
+    automatic_binding, automatic_raw = _lineage_file_binding(
+        Path(candidate_automatic_raw_log_path),
+        "lineage candidate automatic raw log",
+        exclusive=True,
+    )
+    executor_binding, executor_raw = _lineage_file_binding(
+        Path(candidate_automatic_executor_path),
+        "lineage candidate automatic executor",
+    )
+    build = _qualification_build_measurement(candidate, profile_id)
+    candidate_identity: dict[str, Any] | None = None
+    reset_mechanism = "oi1-profile-bench-reset-controller"
+    if profile_id in ("waveshare-esp32-s3-lcd-147b", "rpi-pico2-w"):
+        reset_mechanism = "pble-machine-reset"
+        candidate_identity = {
+            "candidate_source_commit": candidate_source_commit,
+            "candidate_release_json_sha256": release_binding["sha256"],
+            "candidate_install_sha256": release_profile["install"]["sha256"],
+            "reset_mechanism": reset_mechanism,
+            "reset_boundary": "op_run_submit_to_fresh_service_advertisement",
+            "physical_power_cycle_advertising": "deferred",
+            "qualification_executor_sha256": executor_binding["sha256"],
+            "qualification_source_commit": candidate_source_commit,
+            "qualification_source_label": "private-auto-numeric-v1",
+            "qualification_source_path": executor_binding["source_path"],
+        }
+    else:
+        tracked_executor = _lineage_git_blob(
+            root,
+            candidate_source_commit,
+            "tests/firmware_tests/hil/oi1_profile_bench.py",
+        )
+        _require(
+            executor_raw == tracked_executor,
+            "candidate automatic executor differs from tagged OI-1 bench",
+        )
+    automatic = _reconstruct_lineage_automatic_observation(
+        automatic_raw,
+        profile_id=profile_id,
+        expected_build=build,
+        candidate_identity=candidate_identity,
+    )
+    thresholds = next(
+        item["thresholds"] for item in policy["profiles"] if item["profile_id"] == profile_id
+    )
+    _validate_qualification_observation(
+        {**copy.deepcopy(automatic), "physical_power_cycle_advertising": "passed"},
+        thresholds,
+        profile_id,
+        firmware_version="0.6.0",
+    )
+
+    release_tool_binding, _release_tool_raw = _lineage_file_binding(
+        Path(__file__).resolve(), "loaded lineage release tool"
+    )
+    gate_binding, _gate_raw = _lineage_file_binding(
+        _V060_PROFILE_GATE_SOURCE, "loaded lineage profile gate"
+    )
+    return {
+        "schema_version": 1,
+        "kind": _PHYSICAL_FACT_LINEAGE_KIND,
+        "claims_new_observation": False,
+        "reuse_scope": copy.deepcopy(_PHYSICAL_FACT_LINEAGE_SCOPE),
+        "profile_id": profile_id,
+        "baseline": {
+            "source_commit": baseline_source_commit,
+            "evidence": {"repo_path": baseline_relative, **evidence_binding},
+            "fragment": fragment_binding,
+            "raw_log": {"measurement_mode": "baseline", **baseline_raw_binding},
+            "artifacts": baseline_artifacts,
+        },
+        "candidate": {
+            "source_commit": candidate_source_commit,
+            "release_json": release_binding,
+            "profile_id": profile_id,
+            "artifacts": candidate_artifacts,
+            "automatic_raw_log": {
+                "measurement_mode": (
+                    "private-numeric" if candidate_identity is not None else "verify"
+                ),
+                "reset_mechanism": reset_mechanism,
+                **automatic_binding,
+            },
+            "automatic_executor": executor_binding,
+            "automatic_observation": automatic,
+        },
+        "source_diff": {
+            "classification": "frozen-non-install-affecting-v1",
+            "from_commit": baseline_source_commit,
+            "to_commit": candidate_source_commit,
+            "changed_paths": [
+                {"status": status, "path": path} for status, path in changed
+            ],
+        },
+        "qualification_executor": {
+            "source_commit": qualification_source_commit,
+            "qualification_policy_sha256": policy_sha256,
+            "release_bundle": release_tool_binding,
+            "v060_profile_release_gate": gate_binding,
+        },
+    }
+
+
+def create_physical_fact_lineage(
+    *,
+    candidate_dir: Path,
+    profile_id: str,
+    baseline_fragment_path: Path,
+    baseline_raw_log_path: Path,
+    baseline_inputs_dir: Path,
+    candidate_automatic_raw_log_path: Path,
+    candidate_automatic_executor_path: Path,
+    output_path: Path,
+    qualification_repo_root: Path,
+) -> Path:
+    """Create one exclusive receipt; this records no new physical observation."""
+
+    output = _V060_PROFILE_GATE._absolute_lexical_path(
+        Path(output_path), "physical-fact lineage output"
+    )
+    arguments = {
+        "candidate_dir": Path(candidate_dir),
+        "profile_id": profile_id,
+        "baseline_fragment_path": Path(baseline_fragment_path),
+        "baseline_raw_log_path": Path(baseline_raw_log_path),
+        "baseline_inputs_dir": Path(baseline_inputs_dir),
+        "candidate_automatic_raw_log_path": Path(candidate_automatic_raw_log_path),
+        "candidate_automatic_executor_path": Path(candidate_automatic_executor_path),
+        "qualification_repo_root": Path(qualification_repo_root),
+    }
+    record = _derive_physical_fact_lineage(**arguments)
+    raw = _canonical_json_bytes(record)
+
+    def unchanged() -> None:
+        _require(
+            _derive_physical_fact_lineage(**arguments) == record,
+            "physical-fact lineage inputs changed while the receipt was created",
+        )
+
+    def validate_written() -> None:
+        written, _snapshot = _read_canonical_json_object(
+            output, "physical-fact lineage receipt"
+        )
+        _require(written == record, "physical-fact lineage receipt changed")
+        unchanged()
+
+    return _write_completion_fragment_no_replace(
+        output,
+        raw,
+        pre_publish_check=unchanged,
+        post_publish_check=validate_written,
+    )
+
+
+def _consume_physical_fact_lineage(
+    path: Path,
+    *,
+    candidate_dir: Path,
+    profile_id: str,
+    qualification_repo_root: Path,
+    thresholds: dict[str, int],
+) -> tuple[dict[str, Any], tuple[Any, ...]]:
+    record, snapshot = _read_canonical_json_object(
+        Path(path), "physical-fact lineage receipt"
+    )
+    _raw, exclusive_snapshot = _stable_completion_bytes(
+        Path(path),
+        "physical-fact lineage receipt",
+        maximum=_V5_COMPLETION_INPUT_MAX_BYTES,
+        exclusive=True,
+    )
+    _require(snapshot == exclusive_snapshot, "physical-fact lineage receipt changed")
+    _exact_keys(
+        record,
+        {
+            "schema_version",
+            "kind",
+            "claims_new_observation",
+            "reuse_scope",
+            "profile_id",
+            "baseline",
+            "candidate",
+            "source_diff",
+            "qualification_executor",
+        },
+        "physical-fact lineage receipt",
+    )
+    _require(
+        record["schema_version"] == 1
+        and record["kind"] == _PHYSICAL_FACT_LINEAGE_KIND
+        and record["claims_new_observation"] is False
+        and record["reuse_scope"] == _PHYSICAL_FACT_LINEAGE_SCOPE
+        and record["profile_id"] == profile_id,
+        "physical-fact lineage receipt scope changed",
+    )
+    try:
+        arguments = {
+            "candidate_dir": Path(candidate_dir),
+            "profile_id": profile_id,
+            "baseline_fragment_path": Path(record["baseline"]["fragment"]["source_path"]),
+            "baseline_raw_log_path": Path(record["baseline"]["raw_log"]["source_path"]),
+            "baseline_inputs_dir": Path(
+                record["baseline"]["artifacts"]["install"]["source_path"]
+            ).parents[1],
+            "candidate_automatic_raw_log_path": Path(
+                record["candidate"]["automatic_raw_log"]["source_path"]
+            ),
+            "candidate_automatic_executor_path": Path(
+                record["candidate"]["automatic_executor"]["source_path"]
+            ),
+            "qualification_repo_root": Path(qualification_repo_root),
+        }
+    except (KeyError, TypeError, ValueError, IndexError) as exc:
+        raise ReleaseError("physical-fact lineage receipt bindings are incomplete") from exc
+    expected = _derive_physical_fact_lineage(**arguments)
+    _require(
+        record == expected,
+        "physical-fact lineage receipt or a bound input changed",
+    )
+    record_raw = _canonical_json_bytes(record)
+    summary = {
+        "schema_version": 1,
+        "kind": _PHYSICAL_FACT_LINEAGE_KIND,
+        "claims_new_observation": False,
+        "reuse_scope": copy.deepcopy(_PHYSICAL_FACT_LINEAGE_SCOPE),
+        "record_sha256": hashlib.sha256(record_raw).hexdigest(),
+        "baseline_source_commit": record["baseline"]["source_commit"],
+        "baseline_raw_log_sha256": record["baseline"]["raw_log"]["sha256"],
+        "candidate_automatic_raw_log_sha256": record["candidate"][
+            "automatic_raw_log"
+        ]["sha256"],
+        "qualification_source_commit": record["qualification_executor"][
+            "source_commit"
+        ],
+        "qualification_executable_sha256": record["qualification_executor"][
+            "release_bundle"
+        ]["sha256"],
+    }
+    _validate_physical_fact_lineage_summary(summary)
+    observation = {
+        **copy.deepcopy(record["candidate"]["automatic_observation"]),
+        "physical_power_cycle_advertising": "passed",
+        "physical_fact_lineage": summary,
+    }
+    _validate_qualification_observation(
+        observation,
+        thresholds,
+        profile_id,
+        firmware_version="0.6.0",
+    )
+    return observation, snapshot
+
+
+def _load_v5_completion_observation(
+    path: Path,
+    *,
+    candidate_dir: Path,
+    profile_id: str,
+    qualification_repo_root: Path,
+    policy: dict[str, Any],
+) -> tuple[dict[str, Any], tuple[Any, ...]]:
+    value, snapshot = _read_canonical_json_object(
+        Path(path), "V5 OI-1 verify observation"
+    )
+    if value.get("kind") == _PHYSICAL_FACT_LINEAGE_KIND:
+        return _consume_physical_fact_lineage(
+            Path(path),
+            candidate_dir=Path(candidate_dir),
+            profile_id=profile_id,
+            qualification_repo_root=Path(qualification_repo_root),
+            thresholds=policy["thresholds"],
+        )
+    _require(
+        "physical_fact_lineage" not in value,
+        "a lineage summary cannot be supplied without its private receipt",
+    )
+    baseline_path = (
+        Path(qualification_repo_root)
+        / _load_qualification_policy(Path(qualification_repo_root))[0][
+            "baseline_evidence"
+        ]["path"]
+    )
+    baseline = _read_json(baseline_path, "active OI-1 baseline evidence")
+    baseline_profile = next(
+        item for item in baseline["profiles"] if item["profile_id"] == profile_id
+    )
+    _require(
+        value != baseline_profile["oi1_observation"],
+        "direct whole-baseline observation promotion is forbidden",
+    )
+    _validate_qualification_observation(
+        value,
+        policy["thresholds"],
+        profile_id,
+        firmware_version="0.6.0",
     )
     return value, snapshot
 
@@ -25461,15 +26460,12 @@ def create_hil_completion_fragment(
         "V5 HIL operator input",
     )
     operator_input = _validate_v5_operator_input(operator_input, profile_id)
-    observation, observation_snapshot = _read_canonical_json_object(
+    observation, observation_snapshot = _load_v5_completion_observation(
         Path(oi1_observation_path),
-        "V5 OI-1 verify observation",
-    )
-    _validate_qualification_observation(
-        observation,
-        policy_by_id[profile_id]["thresholds"],
-        profile_id,
-        firmware_version="0.6.0",
+        candidate_dir=candidate,
+        profile_id=profile_id,
+        qualification_repo_root=qualification_root,
+        policy=policy_by_id[profile_id],
     )
 
     candidate_release_digest = hashlib.sha256(release_raw).hexdigest()
@@ -25578,13 +26574,18 @@ def create_hil_completion_fragment(
             Path(operator_input_path), "V5 HIL operator input"
         )
         _current_observation, current_observation_snapshot = (
-            _read_canonical_json_object(
-                Path(oi1_observation_path), "V5 OI-1 verify observation"
+            _load_v5_completion_observation(
+                Path(oi1_observation_path),
+                candidate_dir=candidate,
+                profile_id=profile_id,
+                qualification_repo_root=qualification_root,
+                policy=policy_by_id[profile_id],
             )
         )
         _require(
             current_operator_snapshot == operator_snapshot
-            and current_observation_snapshot == observation_snapshot,
+            and current_observation_snapshot == observation_snapshot
+            and _current_observation == observation,
             "HIL completion input changed while it was used",
         )
         if result_path is not None:
@@ -26500,6 +27501,19 @@ def _main(argv: list[str] | None = None) -> int:
         type=Path,
     )
 
+    lineage_parser = subparsers.add_parser("create-physical-fact-lineage")
+    lineage_parser.add_argument("candidate_dir", type=Path)
+    lineage_parser.add_argument("profile_id", choices=V060_RELEASE_PROFILE_ORDER)
+    lineage_parser.add_argument("baseline_fragment_path", type=Path)
+    lineage_parser.add_argument("baseline_raw_log_path", type=Path)
+    lineage_parser.add_argument("baseline_inputs_dir", type=Path)
+    lineage_parser.add_argument("candidate_automatic_raw_log_path", type=Path)
+    lineage_parser.add_argument("candidate_automatic_executor_path", type=Path)
+    lineage_parser.add_argument("output_path", type=Path)
+    lineage_parser.add_argument(
+        "--qualification-repo-root", required=True, type=Path
+    )
+
     args = parser.parse_args(argv)
     if args.command == "validate-build":
         validate_build(args.target, args.build_dir)
@@ -26645,6 +27659,19 @@ def _main(argv: list[str] | None = None) -> int:
             output_path=args.output_path,
             qualification_repo_root=args.qualification_repo_root,
             profile_qualification_result=args.profile_qualification_result,
+        )
+        print(output)
+    elif args.command == "create-physical-fact-lineage":
+        output = create_physical_fact_lineage(
+            candidate_dir=args.candidate_dir,
+            profile_id=args.profile_id,
+            baseline_fragment_path=args.baseline_fragment_path,
+            baseline_raw_log_path=args.baseline_raw_log_path,
+            baseline_inputs_dir=args.baseline_inputs_dir,
+            candidate_automatic_raw_log_path=args.candidate_automatic_raw_log_path,
+            candidate_automatic_executor_path=args.candidate_automatic_executor_path,
+            output_path=args.output_path,
+            qualification_repo_root=args.qualification_repo_root,
         )
         print(output)
     return 0
