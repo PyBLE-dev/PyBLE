@@ -1324,8 +1324,7 @@ static uint8_t fs_do_rename(const pble_fs_req_t *it, size_t *extra) {
 // ============================================================================
 static void fs_dispatch(const pble_fs_req_t *it) {
     bool response_bearing = it->opcode != PBLE_OP_FILE_PUT_DATA;
-    if (response_bearing &&
-        (!pble_rsp_ticket_valid(&it->ticket) || !pble_fs_ticket_valid(it))) {
+    if (response_bearing && !pble_fs_ticket_valid(it)) {
         return;
     }
     if (!response_bearing && !pble_fs_item_valid(it)) {
@@ -1348,7 +1347,7 @@ static void fs_dispatch(const pble_fs_req_t *it) {
     if (st == PBLE_NO_RSP) {
         return;                      // handler already emitted its reply
     }
-    if (!pble_rsp_ticket_valid(&it->ticket) || !pble_fs_ticket_valid(it)) {
+    if (!pble_fs_ticket_valid(it)) {
         return;
     }
     g_scratch[0] = st;

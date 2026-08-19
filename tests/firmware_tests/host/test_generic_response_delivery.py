@@ -678,11 +678,22 @@ class NativeDeferredResponseContractTests(unittest.TestCase):
         )
 
     def test_worker_revalidates_ticket_and_get_waits_for_rsp_completion(self):
+        ticket_valid = code_only(c_function(FS, "pble_fs_ticket_valid"))
+        ordered(
+            self,
+            ticket_valid,
+            "pble_fs_item_valid",
+            "pble_rsp_ticket_valid",
+        )
+        self.assertRegex(
+            ticket_valid,
+            r"pble_rsp_ticket_valid\s*\(\s*&it->ticket\s*\)",
+        )
         dispatch = code_only(c_function(FS, "fs_dispatch"))
         ordered(
             self,
             dispatch,
-            "pble_rsp_ticket_valid",
+            "pble_fs_ticket_valid",
             "fs_do_",
             "pble_rsp_publish",
         )
