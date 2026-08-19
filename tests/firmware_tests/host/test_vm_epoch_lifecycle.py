@@ -1699,6 +1699,33 @@ class NativeVmLifecycleContractTests(unittest.TestCase):
 
 
 class NativeFsEpochContractTests(unittest.TestCase):
+    def test_mkdir_eexist_restats_kind_without_failed_prestat_fallthrough(self):
+        mkdir = code_only(c_function(FS, "fs_do_mkdir"))
+        create = mkdir.find("mp_vfs_mkdir")
+        self.assertGreater(create, 0)
+
+        # A failed pre-stat is not proof that a path is absent.  The native
+        # handler must attempt the create directly and resolve only EEXIST with
+        # a fresh stat so a directory is idempotent while a file stays EBADREQ.
+        self.assertNotIn("fs_stat_path", mkdir[:create])
+        after_create = mkdir[create:]
+        ordered(
+            self,
+            after_create,
+            "fs_exc_to_status",
+            "PBLE_EBADREQ",
+            "fs_stat_path",
+            "isdir ? PBLE_OK : PBLE_EBADREQ",
+        )
+        self.assertRegex(
+            after_create,
+            r"if\s*\(\s*st\s*!=\s*PBLE_EBADREQ\s*\)\s*\{\s*return\s+st\s*;",
+        )
+        self.assertRegex(
+            after_create,
+            r"if\s*\(\s*st\s*!=\s*PBLE_OK\s*\)\s*\{\s*return\s+st\s*;",
+        )
+
     def test_fs_items_include_put_data_session_generation_and_vm_epoch(self):
         item = re.search(
             r"typedef\s+struct\s*\{(?P<body>[^{}]*)\}\s*pble_fs_req_t\s*;",
