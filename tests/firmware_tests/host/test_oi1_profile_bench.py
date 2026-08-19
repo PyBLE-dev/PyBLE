@@ -396,7 +396,7 @@ class FrozenConstantsTest(unittest.TestCase):
 
         self.assertEqual(
             hashlib.sha256(payload).hexdigest(),
-            "2a78209a78ac64f8f051975c95e5238514d085e31cc84cf3dc6fe5832f7e8097",
+            "09e208ab5069b2229d2ae0983df33bb9310de85a8aab83ee816db4456cf21bdd",
         )
         self.assertEqual(policy["schema_version"], 3)
         self.assertEqual(
@@ -420,11 +420,11 @@ class FrozenConstantsTest(unittest.TestCase):
             {
                 "path": (
                     "docs/validation/firmware/oi1/"
-                    "7441a762b0bc2a6bb5692236d5894281ddf0dca6.json"
+                    "a8be631df46590166307aa41afaea30b39e29230.json"
                 ),
                 "sha256": (
-                    "f0ccc6496dcd60ad01b848fbaf799455d8ffd29d6033cc1f"
-                    "132608c9dbd8970f"
+                    "8a7dbf328ba8d70f5161582b56d1566821f20b7a259ff29d"
+                    "c7d6fe6bb75a6044"
                 ),
             },
         )
