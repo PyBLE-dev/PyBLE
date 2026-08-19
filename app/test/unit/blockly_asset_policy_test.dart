@@ -8,6 +8,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:pyble/blocks/blocks.dart';
@@ -418,6 +419,43 @@ void main() {
         }
       },
     );
+  });
+
+  group('A-31 Blockly platform asset loading', () {
+    test(
+      'Android enables file access through the exact absolute asset',
+      () async {
+        final List<String> fileLoads = <String>[];
+        final List<String> flutterAssetLoads = <String>[];
+
+        await loadBlocklyAssetForPlatform(
+          platform: TargetPlatform.android,
+          loadFile: (String path) async => fileLoads.add(path),
+          loadFlutterAsset: (String path) async => flutterAssetLoads.add(path),
+        );
+
+        expect(fileLoads, <String>[kAndroidBlocklyAssetFilePath]);
+        expect(
+          kAndroidBlocklyAssetFilePath,
+          '/android_asset/flutter_assets/assets/blockly/index.html',
+        );
+        expect(flutterAssetLoads, isEmpty);
+      },
+    );
+
+    test('iPadOS retains the ordinary bundled-asset loader', () async {
+      final List<String> fileLoads = <String>[];
+      final List<String> flutterAssetLoads = <String>[];
+
+      await loadBlocklyAssetForPlatform(
+        platform: TargetPlatform.iOS,
+        loadFile: (String path) async => fileLoads.add(path),
+        loadFlutterAsset: (String path) async => flutterAssetLoads.add(path),
+      );
+
+      expect(fileLoads, isEmpty);
+      expect(flutterAssetLoads, <String>['assets/blockly/index.html']);
+    });
   });
 
   group('A-31 Blockly navigation policy', () {

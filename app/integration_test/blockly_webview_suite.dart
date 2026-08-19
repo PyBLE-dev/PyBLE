@@ -356,6 +356,26 @@ void registerBlocklyWebViewIntegrationTests() {
       );
       expect(find.text('Loading Blocks…'), findsNothing);
 
+      final WebViewWidget startupWebView = tester.widget<WebViewWidget>(
+        find.byType(WebViewWidget),
+      );
+      final WebViewController startupWebViewController =
+          WebViewController.fromPlatform(
+            startupWebView.platform.params.controller,
+          );
+      final String? startupUrl = await startupWebViewController.currentUrl();
+      expect(startupUrl, isNotNull);
+      expect(isAllowedBlocklyNavigation(startupUrl!), isTrue);
+      if (defaultTargetPlatform == TargetPlatform.android) {
+        expect(
+          startupUrl,
+          Uri.file(kAndroidBlocklyAssetFilePath).toString(),
+          reason:
+              'Android must start through the file loader that enables the '
+              'relative bundled Blockly resources before hostReady',
+        );
+      }
+
       // Exercise the real platform view through both orientation geometries.
       // The retained bridge snapshot must remain runnable; resize is a layout
       // event, never a source mutation or host reset.
