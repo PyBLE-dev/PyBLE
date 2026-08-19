@@ -17,9 +17,9 @@
 //     pble_console_stderr_print, so it is correctly tagged (FR-CON-2) without
 //     passing through the platform printer (which would mis-tag it stdout).
 //   - CONSOLE_INPUT bytes land in a bounded ring (host task); the worker's
-//     input()/sys.stdin drain it via pble_console_stdin_getchar() (wired by the
-//     same board-overlay stdin HAL hook, worker-gated). Fire-and-forget: the 0x31
-//     handler returns PBLE_NO_RSP so dispatch emits no reply frame (FR-CON-3).
+//     input()/sys.stdin drains it through the installed native os.dupterm
+//     stream, whose read path is worker-gated. Fire-and-forget: the 0x31 handler
+//     returns PBLE_NO_RSP so dispatch emits no reply frame (FR-CON-3).
 //
 // Clean-room: authored fresh against protocol.md + the public MicroPython/ESP-IDF
 // API. No proprietary source is referenced.
@@ -256,6 +256,14 @@ int pble_console_stdin_getchar(void) {
     return c;
 }
 
+static bool stdin_ring_readable(void) {
+    bool readable;
+    taskENTER_CRITICAL(&g_ring_mux);
+    readable = g_ring_count > 0;
+    taskEXIT_CRITICAL(&g_ring_mux);
+    return readable;
+}
+
 void pble_console_vm_detach(void) {
     g_worker = NULL;
 }
@@ -273,13 +281,13 @@ void pble_console_vm_reset(void) {
 }
 
 // ============================================================================
-// Native os.dupterm tee stream (write-only stdout tee)
+// Native os.dupterm console stream (worker stdin + stdout tee)
 // ============================================================================
 // esp32 os.dupterm requires a NATIVE stream (C stream protocol), not a Python
-// class. This write-only stream forwards every stdout byte to pble_console_out
-// (which self-gates to the worker), so the worker's print() tees to BLE while the
-// primary UART/USB output is untouched. read() never yields, so the dupterm never
-// feeds the REPL (worker stdin is a separate path via the CONSOLE_INPUT ring).
+// class. Writes forward to pble_console_out(), which self-gates to the worker.
+// Reads drain the CONSOLE_INPUT ring only on that same worker, so the main REPL
+// cannot consume a running program's input. Empty reads are EAGAIN, never EOF:
+// returning zero would make upstream deactivate this dupterm slot.
 typedef struct _pble_tee_obj_t {
     mp_obj_base_t base;
 } pble_tee_obj_t;
@@ -292,15 +300,26 @@ static mp_uint_t tee_write(mp_obj_t self_in, const void *buf, mp_uint_t size, in
 }
 static mp_uint_t tee_read(mp_obj_t self_in, void *buf, mp_uint_t size, int *errcode) {
     (void)self_in;
-    (void)buf;
-    (void)size;
-    *errcode = MP_EAGAIN;      // never feeds REPL input from this slot
-    return MP_STREAM_ERROR;
+    if (!on_worker() || buf == NULL || size == 0) {
+        *errcode = MP_EAGAIN;
+        return MP_STREAM_ERROR;
+    }
+    int c = pble_console_stdin_getchar();
+    if (c < 0) {
+        *errcode = MP_EAGAIN;
+        return MP_STREAM_ERROR;
+    }
+    ((uint8_t *)buf)[0] = (uint8_t)c;
+    return 1;
 }
 static mp_uint_t tee_ioctl(mp_obj_t self_in, mp_uint_t request, uintptr_t arg, int *errcode) {
     (void)self_in;
     if (request == MP_STREAM_POLL) {
-        return arg & MP_STREAM_POLL_WR;   // writable only, never readable
+        uintptr_t ready = arg & MP_STREAM_POLL_WR;
+        if ((arg & MP_STREAM_POLL_RD) && on_worker() && stdin_ring_readable()) {
+            ready |= MP_STREAM_POLL_RD;
+        }
+        return ready;
     }
     *errcode = MP_EINVAL;
     return MP_STREAM_ERROR;
@@ -327,8 +346,8 @@ static mp_obj_t mod_pble_console_register(void) {
 }
 static MP_DEFINE_CONST_FUN_OBJ_0(mod_pble_console_register_obj, mod_pble_console_register);
 
-// HIL helper: drain one stdin byte (or -1). Lets the board-overlay stdin HAL hook
-// or a bring-up script pull the ring without a native call.
+// HIL helper: drain one stdin byte (or -1) through the same primitive used by
+// the native dupterm stream.
 static mp_obj_t mod_pble_console_stdin_getchar(void) {
     return mp_obj_new_int(pble_console_stdin_getchar());
 }
