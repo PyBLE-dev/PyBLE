@@ -42,6 +42,15 @@ BUILD = {
     "factory_partition_bytes": 200,
     "application_headroom_bytes": 100,
 }
+EXPECTED_SOURCE_DIFF = (
+    (
+        "A",
+        "docs/validation/firmware/oi1/"
+        "a8be631df46590166307aa41afaea30b39e29230.json",
+    ),
+    ("M", "firmware/qualification/oi1-gates.json"),
+    ("M", "tests/firmware_tests/host/test_oi1_profile_bench.py"),
+)
 
 
 def _event(sequence: int, event: str, **fields: object) -> dict[str, object]:
@@ -162,6 +171,12 @@ def lineage_summary() -> dict[str, object]:
 
 
 class PhysicalFactLineageContractTests(unittest.TestCase):
+    def test_replacement_candidate_source_diff_is_exactly_frozen(self) -> None:
+        self.assertEqual(
+            getattr(RELEASE, "_PHYSICAL_FACT_LINEAGE_SOURCE_DIFF", None),
+            EXPECTED_SOURCE_DIFF,
+        )
+
     def test_creator_api_and_no_replace_cli_are_frozen(self) -> None:
         creator = getattr(RELEASE, "create_physical_fact_lineage", None)
         self.assertTrue(callable(creator), "the lineage creator is missing")
