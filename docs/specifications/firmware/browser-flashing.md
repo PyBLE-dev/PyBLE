@@ -2268,6 +2268,15 @@ from it. The qualification checkout MUST prove that all source changes between
 the two commits are an exact frozen, non-install-affecting set and that every
 bound candidate artifact equals its baseline counterpart.
 
+For the replacement v0.6.0 candidate, the retained baseline source is
+`a8be631df46590166307aa41afaea30b39e29230` and the candidate source is
+`4b2ef42124f02bb3a456aad89f2ef66016360e38`. Their frozen source diff is
+exactly the addition of
+`docs/validation/firmware/oi1/a8be631df46590166307aa41afaea30b39e29230.json`
+and modifications to `firmware/qualification/oi1-gates.json` and
+`tests/firmware_tests/host/test_oi1_profile_bench.py`. No other candidate-source
+change is permitted by this lineage.
+
 For `waveshare-esp32-s3-lcd-147b` and `rpi-pico2-w`, the fresh automatic reset
 samples use the frozen `pble-machine-reset` mechanism: PBLE RUN invokes the
 real `machine.reset()`, the central observes the expected link loss, and timing
