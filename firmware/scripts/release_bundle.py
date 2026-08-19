@@ -25020,15 +25020,13 @@ _PHYSICAL_FACT_LINEAGE_SUMMARY_FIELDS = {
     "qualification_executable_sha256",
 }
 _PHYSICAL_FACT_LINEAGE_SOURCE_DIFF = (
-    ("A", "docs/validation/firmware/oi1/7441a762b0bc2a6bb5692236d5894281ddf0dca6.json"),
+    (
+        "A",
+        "docs/validation/firmware/oi1/"
+        "a8be631df46590166307aa41afaea30b39e29230.json",
+    ),
     ("M", "firmware/qualification/oi1-gates.json"),
-    ("M", "firmware/scripts/release_bundle.py"),
     ("M", "tests/firmware_tests/host/test_oi1_profile_bench.py"),
-    ("M", "tests/firmware_tests/host/test_release_bundle.py"),
-    ("M", "tests/firmware_tests/host/test_release_finalization.py"),
-    ("M", "tests/firmware_tests/host/test_release_historical_source_contract.py"),
-    ("M", "tests/firmware_tests/host/test_release_profile_split.py"),
-    ("M", "tests/firmware_tests/host/test_v060_completion_safety.py"),
 )
 
 
