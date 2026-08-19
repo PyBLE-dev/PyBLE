@@ -1,6 +1,6 @@
 # PyBLE App — Technical Design Document (TDD)
 
-Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-08-15
+Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-08-19
 
 ## 0. Naming note (acronym clash)
 
@@ -721,6 +721,21 @@ normal launcher package. The normal package is always built from
 `integration` explicitly. The Android CI device job also compiles a production
 release APK after host tests, catching stale dev-plugin registration without
 shipping the integration-test plugin.
+
+Android's authored local document is loaded through the public absolute-file
+controller path at exactly
+`file:///android_asset/flutter_assets/assets/blockly/index.html`. That path
+must enable native WebView file access before navigation; the generic
+`loadFlutterAsset` adapter is insufficient on current target-SDK defaults
+because it can load the main `/android_asset` document while leaving its
+relative CSS and JavaScript unreadable. iPadOS continues to use the ordinary
+Flutter-asset loader. Enabling Android file access does not broaden PyBLE's
+content authority: the exact main-frame navigation allowlist, relative-only
+audited resource graph, bundled-asset existence checks, and deny-by-default
+CSP remain mandatory, including `connect-src 'none'`. The real Android WebView
+gate must observe this exact file URL and an accepted post-`hostReady` snapshot
+before the startup watchdog expires; a 200 response for the main HTML alone is
+not success.
 Blockly's own serializer emits `{}` for a canonical workspace with no blocks or
 variables. Native semantic-empty detection accepts that exact object as empty,
 as well as the expanded empty-block-list form, so a loaded blank workspace gets
