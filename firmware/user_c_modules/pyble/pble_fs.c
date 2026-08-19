@@ -1234,12 +1234,6 @@ static uint8_t fs_do_mkdir(const pble_fs_req_t *it, size_t *extra) {
     if (rc != PBLE_OK) {
         return rc;
     }
-    uint32_t sz;
-    bool isdir;
-    uint8_t s = fs_stat_path(it, path, &sz, &isdir);
-    if (s == PBLE_OK) {
-        return isdir ? PBLE_OK : PBLE_EBADREQ;   // already-a-dir idempotent; file → EBADREQ
-    }
     nlr_buf_t nlr;
     uint8_t st;
     if (nlr_push(&nlr) == 0) {
@@ -1253,11 +1247,27 @@ static uint8_t fs_do_mkdir(const pble_fs_req_t *it, size_t *extra) {
             return PBLE_NO_RSP;
         }
         nlr_pop();
-        st = PBLE_OK;
+        return PBLE_OK;
     } else {
         st = fs_exc_to_status(MP_OBJ_FROM_PTR(nlr.ret_val));
     }
-    return st;
+    if (!pble_fs_ticket_valid(it)) {
+        return PBLE_NO_RSP;
+    }
+    if (st != PBLE_EBADREQ) {      // only EEXIST maps to EBADREQ here
+        return st;
+    }
+
+    // EEXIST can name either a directory (idempotent OK) or a file (EBADREQ).
+    // Resolve it with a fresh stat instead of treating any failed pre-stat as
+    // proof that the path was absent.
+    uint32_t sz;
+    bool isdir;
+    st = fs_stat_path(it, path, &sz, &isdir);
+    if (st != PBLE_OK) {
+        return st;
+    }
+    return isdir ? PBLE_OK : PBLE_EBADREQ;
 }
 
 static uint8_t fs_do_rename(const pble_fs_req_t *it, size_t *extra) {
