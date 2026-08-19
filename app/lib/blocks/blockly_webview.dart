@@ -11,6 +11,7 @@ library;
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:webview_flutter/webview_flutter.dart';
@@ -21,8 +22,27 @@ import 'blocks_document.dart';
 import 'blocks_examples.dart';
 
 const String _assetPath = 'assets/blockly/index.html';
+@visibleForTesting
+const String kAndroidBlocklyAssetFilePath =
+    '/android_asset/flutter_assets/assets/blockly/index.html';
 const String _channelName = 'PybleBlocks';
 const Duration _firstSnapshotTimeout = Duration(seconds: 15);
+
+/// Loads the sealed host through the platform path that can read its relative
+/// bundled resources.
+///
+/// Android's high-target-SDK WebView defaults file access off. Its public
+/// [WebViewController.loadFile] adapter enables that setting before loading
+/// the exact `/android_asset` document; `loadFlutterAsset` does not. WKWebView
+/// continues to resolve the ordinary Flutter asset path directly.
+@visibleForTesting
+Future<void> loadBlocklyAssetForPlatform({
+  required TargetPlatform platform,
+  required Future<void> Function(String path) loadFile,
+  required Future<void> Function(String path) loadFlutterAsset,
+}) => platform == TargetPlatform.android
+    ? loadFile(kAndroidBlocklyAssetFilePath)
+    : loadFlutterAsset(_assetPath);
 
 /// Routing decision for one JavaScript-channel message during host startup.
 enum BlocklyHostChannelDisposition { initialise, forward, ignore, reject }
@@ -425,7 +445,11 @@ class _BlocklyWebViewState extends ConsumerState<BlocklyWebView> {
         setup: controllerSetup,
         waitUntilLoadAllowed: () => _startupLoadAllowed.future,
         isCancelled: startupIsCancelled,
-        load: () => _controller.loadFlutterAsset(_assetPath),
+        load: () => loadBlocklyAssetForPlatform(
+          platform: defaultTargetPlatform,
+          loadFile: _controller.loadFile,
+          loadFlutterAsset: _controller.loadFlutterAsset,
+        ),
       ),
       waitUntilFailureCanBeReported: () => _startupLoadAllowed.future,
       isCancelled: startupIsCancelled,
