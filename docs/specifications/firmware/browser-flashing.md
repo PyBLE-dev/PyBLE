@@ -2265,17 +2265,34 @@ profile, every install artifact's size and SHA-256, each ESP manifest component
 or the Pico raw BIN as applicable; and bind the fresh candidate automatic raw
 log and every reset, heap, transfer, reliability, and link fact reconstructed
 from it. The qualification checkout MUST prove that all source changes between
-the two commits are an exact frozen, non-install-affecting set and that every
-bound candidate artifact equals its baseline counterpart.
+the two commits are the exact frozen candidate set and that every bound
+candidate artifact equals its baseline counterpart. Source-diff membership
+alone never proves that a profile's install bytes are unchanged; the bound
+profile-local artifact comparison is authoritative.
 
 For the replacement v0.6.0 candidate, the retained baseline source is
 `a8be631df46590166307aa41afaea30b39e29230` and the candidate source is
-`4b2ef42124f02bb3a456aad89f2ef66016360e38`. Their frozen source diff is
-exactly the addition of
-`docs/validation/firmware/oi1/a8be631df46590166307aa41afaea30b39e29230.json`
-and modifications to `firmware/qualification/oi1-gates.json` and
-`tests/firmware_tests/host/test_oi1_profile_bench.py`. No other candidate-source
-change is permitted by this lineage.
+`719b211345028e49aee9df9b11c4b5fd110913de`. Their frozen source diff is
+exactly:
+
+```text
+M docs/specifications/firmware/browser-flashing.md
+M docs/specifications/firmware/specs.md
+A docs/validation/firmware/oi1/a8be631df46590166307aa41afaea30b39e29230.json
+M firmware/qualification/oi1-gates.json
+M firmware/scripts/release_bundle.py
+M firmware/user_c_modules/pyble/pble_fs.c
+M tests/firmware_tests/host/test_generic_response_delivery.py
+M tests/firmware_tests/host/test_oi1_profile_bench.py
+M tests/firmware_tests/host/test_v060_physical_fact_lineage.py
+M tests/firmware_tests/host/test_vm_epoch_lifecycle.py
+```
+
+No other candidate-source change is permitted by this lineage. Eligibility is
+still profile-local and byte-bound: the four ESP profiles whose install images
+changed require a fresh physical all-power-off observation. Pico lineage is not
+pre-approved and may proceed only if its complete candidate install binding is
+byte-for-byte identical to the retained baseline.
 
 For `waveshare-esp32-s3-lcd-147b` and `rpi-pico2-w`, the fresh automatic reset
 samples use the frozen `pble-machine-reset` mechanism: PBLE RUN invokes the
