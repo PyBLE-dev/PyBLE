@@ -25020,13 +25020,20 @@ _PHYSICAL_FACT_LINEAGE_SUMMARY_FIELDS = {
     "qualification_executable_sha256",
 }
 _PHYSICAL_FACT_LINEAGE_SOURCE_DIFF = (
+    ("M", "docs/specifications/firmware/browser-flashing.md"),
+    ("M", "docs/specifications/firmware/specs.md"),
     (
         "A",
         "docs/validation/firmware/oi1/"
         "a8be631df46590166307aa41afaea30b39e29230.json",
     ),
     ("M", "firmware/qualification/oi1-gates.json"),
+    ("M", "firmware/scripts/release_bundle.py"),
+    ("M", "firmware/user_c_modules/pyble/pble_fs.c"),
+    ("M", "tests/firmware_tests/host/test_generic_response_delivery.py"),
     ("M", "tests/firmware_tests/host/test_oi1_profile_bench.py"),
+    ("M", "tests/firmware_tests/host/test_v060_physical_fact_lineage.py"),
+    ("M", "tests/firmware_tests/host/test_vm_epoch_lifecycle.py"),
 )
 
 
@@ -25781,7 +25788,7 @@ def _derive_physical_fact_lineage(
         changed.append((parts[0], parts[1]))
     _require(
         tuple(changed) == _PHYSICAL_FACT_LINEAGE_SOURCE_DIFF,
-        "physical-fact source diff is not the frozen non-install-affecting set",
+        "physical-fact source diff is not the frozen candidate set",
     )
 
     automatic_binding, automatic_raw = _lineage_file_binding(
