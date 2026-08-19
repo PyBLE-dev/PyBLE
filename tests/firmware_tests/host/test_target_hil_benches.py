@@ -105,6 +105,28 @@ class TargetSmokeContractTests(unittest.TestCase):
 
 
 class TargetRunStopContractTests(unittest.TestCase):
+    def test_console_input_hil_executes_real_input_round_trip(self):
+        bench = load_hil("target_run_stop")
+        nonce = "stdinfeed01"
+        source = bench.build_stdin_roundtrip_source(nonce)
+        self.assertIn(b"input()", source)
+        self.assertIn(("__PYBLE_STDIN_READY_%s__" % nonce).encode(), source)
+        self.assertIn(("__PYBLE_STDIN_ECHO_%s__" % nonce).encode(), source)
+
+        roundtrip = inspect.getsource(bench.run_stdin_roundtrip)
+        for token in (
+            "OP_RUN",
+            "OP_CONSOLE_INPUT",
+            "send_cmd_no_rsp",
+            "OP_CONSOLE_DATA",
+            "OP_RUN_STATE",
+            "ST_RUNNING, ST_DONE",
+        ):
+            self.assertIn(token, roundtrip)
+        self.assertNotIn("Fake", roundtrip)
+        live_run = inspect.getsource(bench.run)
+        self.assertIn("run_stdin_roundtrip", live_run)
+
     def test_print_flood_exact_stop_order_and_bounded_follow_up_contract(self):
         bench = load_hil("target_run_stop")
         with self.assertRaises(SystemExit):

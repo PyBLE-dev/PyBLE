@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
 # Part of PyBLE (https://pyble.dev) — see /LICENSE.
-"""Target-neutral PBLE/1 RUN/STOP lifecycle and console-flood HIL bench."""
+"""Target-neutral PBLE/1 RUN/STOP, stdin, and console-flood HIL bench."""
 
 from __future__ import annotations
 
@@ -111,6 +111,18 @@ def build_follow_up_source(nonce):
     return ("print('__PYBLE_FOLLOW_UP_%s__')" % nonce).encode("ascii")
 
 
+def build_stdin_roundtrip_source(nonce):
+    """Build one input()/stdout nonce round trip for the real target VM."""
+    if not isinstance(nonce, str) or re.fullmatch(r"[A-Za-z0-9_-]{1,64}", nonce) is None:
+        raise ValueError("stdin nonce must be 1..64 safe ASCII characters")
+    return (
+        "print('__PYBLE_STDIN_READY_%s__')\n"
+        "_pyble_stdin_value=input()\n"
+        "print('__PYBLE_STDIN_ECHO_%s__='+_pyble_stdin_value)\n"
+        % (nonce, nonce)
+    ).encode("ascii")
+
+
 async def _wait_for(log, start, predicate, timeout):
     deadline = time.monotonic() + timeout
     while True:
@@ -182,6 +194,90 @@ async def run_nonce_follow_up(checks, central, log, request_id, nonce, descripti
         "%s: follow-up nonce returns through CONSOLE_DATA" % description,
         console.count(marker) == 1,
     )
+
+
+async def run_stdin_roundtrip(checks, central, log, request_id, nonce):
+    """Prove CONSOLE_INPUT reaches a real program blocked in input()."""
+    ready = ("__PYBLE_STDIN_READY_%s__" % nonce).encode("ascii")
+    value = ("value-%s" % nonce).encode("ascii")
+    echoed = ("__PYBLE_STDIN_ECHO_%s__=" % nonce).encode("ascii") + value
+    cursor = len(log)
+    response = await central.send_cmd(
+        wire.OP_RUN,
+        request_id,
+        bytes((1,)) + build_stdin_roundtrip_source(nonce),
+    )
+    checks.check(
+        "stdin RUN RSP is OK",
+        rsp_status(response) == wire.ST_OK,
+        status_name(rsp_status(response)),
+    )
+    running_index = await _wait_for(
+        log,
+        cursor,
+        lambda frame: frame.type == wire.EVT
+        and frame.opcode == wire.OP_RUN_STATE
+        and frame.payload == bytes((ST_RUNNING,)),
+        STATE_WAIT_S,
+    )
+    if not checks.check("stdin RUN reaches running", running_index is not None):
+        return
+
+    input_id = request_id + 1
+    await central.send_cmd_no_rsp(
+        wire.OP_CONSOLE_INPUT,
+        input_id,
+        value + b"\n",
+    )
+    done_index = await _wait_for(
+        log,
+        cursor,
+        lambda frame: frame.type == wire.EVT
+        and frame.opcode == wire.OP_RUN_STATE
+        and frame.payload == bytes((ST_DONE,)),
+        DONE_WAIT_S,
+    )
+    if not checks.check("stdin RUN reaches done", done_index is not None):
+        return
+
+    frames = [frame for _when, frame in log[cursor : done_index + 1]]
+    stdout = b"".join(
+        frame.payload[1:]
+        for frame in frames
+        if frame.type == wire.EVT
+        and frame.opcode == wire.OP_CONSOLE_DATA
+        and frame.payload
+        and frame.payload[0] == 0
+    )
+    stderr = b"".join(
+        frame.payload[1:]
+        for frame in frames
+        if frame.type == wire.EVT
+        and frame.opcode == wire.OP_CONSOLE_DATA
+        and frame.payload
+        and frame.payload[0] == 1
+    )
+    states = [
+        frame.payload[0]
+        for frame in frames
+        if frame.type == wire.EVT
+        and frame.opcode == wire.OP_RUN_STATE
+        and len(frame.payload) == 1
+    ]
+    input_responses = [
+        frame
+        for frame in frames
+        if frame.type == wire.RSP
+        and frame.opcode == wire.OP_CONSOLE_INPUT
+        and frame.id == input_id
+    ]
+    checks.check(
+        "CONSOLE_INPUT reaches input() and returns through stdout",
+        stdout.count(ready) == 1 and stdout.count(echoed) == 1,
+    )
+    checks.check("stdin RUN has no stderr", stderr == b"")
+    checks.check("stdin RUN state sequence is running/done", states == [ST_RUNNING, ST_DONE])
+    checks.check("CONSOLE_INPUT remains fire-and-forget", not input_responses)
 
 
 async def run_and_stop(checks, central, log, request_id, source, description):
@@ -309,6 +405,14 @@ async def run(args):
         )
         target_smoke.validate_caps(caps, args.expect_chip, args.expect_agent)
         central.confirm_caps_mtu(int(caps["mtu"]))
+
+        await run_stdin_roundtrip(
+            checks,
+            central,
+            log,
+            2,
+            os.urandom(6).hex(),
+        )
 
         await run_and_stop(
             checks, central, log, 10, BUSY_LOOP_SOURCE, "busy-loop"
