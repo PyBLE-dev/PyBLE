@@ -1,0 +1,1405 @@
+{
+  "created_at": "2026-08-19T09:52:52Z",
+  "firmware_version": "0.6.0",
+  "measurement_contract": "oi1-five-profile-v1",
+  "profile_order": [
+    "esp32-4mb",
+    "esp32-s3-n16r8",
+    "waveshare-esp32-s3-lcd-147b",
+    "esp32-c3-4mb",
+    "rpi-pico2-w"
+  ],
+  "profiles": [
+    {
+      "board_manufacturer": "Espressif Systems",
+      "board_model": "Electronically identified ESP32 development board",
+      "device_flash_capacity_bytes": 4194304,
+      "device_psram_capacity_bytes": 0,
+      "environment": {
+        "ble_adapter": "macOS built-in Bluetooth",
+        "ble_backend": "Bleak CoreBluetooth 3.0.2",
+        "desktop_os": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+        "python_version": "3.13.5"
+      },
+      "install_sha256": "00777f42d9bd8fbbcf7db50de5e548ffacaf6959be700da5751853781738cbeb",
+      "manifest_sha256": "51c39410b227e9504122de9043df58be53643fb29282be940afdcdf8061a8b24",
+      "module_marking": "ESP32-D0WD revision v1.0 (esptool)",
+      "oi1_build": {
+        "application_headroom_bytes": 315360,
+        "application_image_bytes": 1716256,
+        "factory_partition_bytes": 2031616
+      },
+      "oi1_observation": {
+        "get_duration_ns": [
+          4743910458,
+          4829016417,
+          4949721708,
+          4681862709,
+          4891274167
+        ],
+        "get_offset_sequences_validated": 5,
+        "get_retransmitted_bytes": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "get_retransmitted_chunks": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "get_unique_verified_bytes": [
+          65536,
+          65536,
+          65536,
+          65536,
+          65536
+        ],
+        "get_verified_goodput_bytes_per_second": [
+          13814,
+          13571,
+          13240,
+          13997,
+          13398
+        ],
+        "heap_default_free_post_hello_bytes": [
+          82684,
+          82668,
+          82540,
+          82544,
+          82668,
+          82540,
+          82544,
+          82544,
+          82544,
+          82544
+        ],
+        "heap_post_hello": [
+          {
+            "gc_allocated_bytes": 1712,
+            "gc_free_bytes": 109584,
+            "idf_internal_free_bytes": 82684,
+            "idf_internal_largest_block_bytes": 55296,
+            "idf_internal_minimum_free_bytes": 82660
+          },
+          {
+            "gc_allocated_bytes": 1712,
+            "gc_free_bytes": 109584,
+            "idf_internal_free_bytes": 82668,
+            "idf_internal_largest_block_bytes": 55296,
+            "idf_internal_minimum_free_bytes": 82648
+          },
+          {
+            "gc_allocated_bytes": 1712,
+            "gc_free_bytes": 109584,
+            "idf_internal_free_bytes": 82540,
+            "idf_internal_largest_block_bytes": 55296,
+            "idf_internal_minimum_free_bytes": 82516
+          },
+          {
+            "gc_allocated_bytes": 1712,
+            "gc_free_bytes": 109584,
+            "idf_internal_free_bytes": 82544,
+            "idf_internal_largest_block_bytes": 55296,
+            "idf_internal_minimum_free_bytes": 82524
+          },
+          {
+            "gc_allocated_bytes": 1712,
+            "gc_free_bytes": 109584,
+            "idf_internal_free_bytes": 82668,
+            "idf_internal_largest_block_bytes": 55296,
+            "idf_internal_minimum_free_bytes": 82648
+          },
+          {
+            "gc_allocated_bytes": 1712,
+            "gc_free_bytes": 109584,
+            "idf_internal_free_bytes": 82540,
+            "idf_internal_largest_block_bytes": 55296,
+            "idf_internal_minimum_free_bytes": 82516
+          },
+          {
+            "gc_allocated_bytes": 1712,
+            "gc_free_bytes": 109584,
+            "idf_internal_free_bytes": 82544,
+            "idf_internal_largest_block_bytes": 55296,
+            "idf_internal_minimum_free_bytes": 82524
+          },
+          {
+            "gc_allocated_bytes": 1712,
+            "gc_free_bytes": 109584,
+            "idf_internal_free_bytes": 82544,
+            "idf_internal_largest_block_bytes": 55296,
+            "idf_internal_minimum_free_bytes": 82524
+          },
+          {
+            "gc_allocated_bytes": 1712,
+            "gc_free_bytes": 109584,
+            "idf_internal_free_bytes": 82544,
+            "idf_internal_largest_block_bytes": 55296,
+            "idf_internal_minimum_free_bytes": 82524
+          },
+          {
+            "gc_allocated_bytes": 1712,
+            "gc_free_bytes": 109584,
+            "idf_internal_free_bytes": 82544,
+            "idf_internal_largest_block_bytes": 55296,
+            "idf_internal_minimum_free_bytes": 82524
+          }
+        ],
+        "heap_post_reliability": {
+          "gc_allocated_bytes": 2128,
+          "gc_free_bytes": 109168,
+          "idf_internal_free_bytes": 82544,
+          "idf_internal_largest_block_bytes": 55296,
+          "idf_internal_minimum_free_bytes": 82500
+        },
+        "heap_post_roundtrip": [
+          {
+            "gc_allocated_bytes": 2128,
+            "gc_free_bytes": 109168,
+            "idf_internal_free_bytes": 82544,
+            "idf_internal_largest_block_bytes": 55296,
+            "idf_internal_minimum_free_bytes": 82500
+          },
+          {
+            "gc_allocated_bytes": 2128,
+            "gc_free_bytes": 109168,
+            "idf_internal_free_bytes": 82544,
+            "idf_internal_largest_block_bytes": 55296,
+            "idf_internal_minimum_free_bytes": 82500
+          },
+          {
+            "gc_allocated_bytes": 2128,
+            "gc_free_bytes": 109168,
+            "idf_internal_free_bytes": 82544,
+            "idf_internal_largest_block_bytes": 55296,
+            "idf_internal_minimum_free_bytes": 82500
+          },
+          {
+            "gc_allocated_bytes": 2128,
+            "gc_free_bytes": 109168,
+            "idf_internal_free_bytes": 82544,
+            "idf_internal_largest_block_bytes": 55296,
+            "idf_internal_minimum_free_bytes": 82500
+          },
+          {
+            "gc_allocated_bytes": 2128,
+            "gc_free_bytes": 109168,
+            "idf_internal_free_bytes": 82544,
+            "idf_internal_largest_block_bytes": 55296,
+            "idf_internal_minimum_free_bytes": 82500
+          }
+        ],
+        "observed_att_mtu": 247,
+        "observed_chunk_bytes": 229,
+        "observed_window": 8,
+        "physical_power_cycle_advertising": "passed",
+        "put_committed_goodput_bytes_per_second": [
+          6870,
+          7136,
+          7161,
+          7208,
+          6957
+        ],
+        "put_duration_ns": [
+          9539053875,
+          9183408583,
+          9151508791,
+          9091390625,
+          9419714792
+        ],
+        "put_retransmitted_bytes": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "put_retransmitted_chunks": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "put_unique_committed_bytes": [
+          65536,
+          65536,
+          65536,
+          65536,
+          65536
+        ],
+        "raw_log_sha256": "55c6632c0008ad8b43edd1f87ebcb1cbe5bf5c7d6b881614a1f35df708de32ce",
+        "reliability": {
+          "attempted_files": 20,
+          "bytes_per_file": 16384,
+          "completed_files": 20,
+          "failed_statuses": 0,
+          "integrity_failures": 0,
+          "retransmitted_bytes": 0,
+          "retransmitted_chunks": 0,
+          "rewinds": 0,
+          "total_payload_bytes": 327680,
+          "unexpected_disconnects": 0,
+          "verified_files": 20
+        },
+        "reset_to_service_advertisement_ms": [
+          1130,
+          1188,
+          1204,
+          1828,
+          1124,
+          1139,
+          1502,
+          1170,
+          1166,
+          1175
+        ],
+        "roundtrip_integrity_failures": 0,
+        "roundtrip_integrity_verified": 5,
+        "roundtrip_unexpected_disconnects": 0,
+        "transfer_link_facts": {
+          "connection_parameters": {
+            "request_return_codes": [
+              0,
+              2
+            ],
+            "settled_interval_units": 24,
+            "updates": [
+              {
+                "interval_units": 24,
+                "status": 0
+              }
+            ]
+          },
+          "dle": {
+            "max_tx_octets": 251,
+            "max_tx_time_us": 2120,
+            "request_attempts": 1
+          },
+          "phy": {
+            "request_attempts": 0,
+            "required_2m": false,
+            "settled_rx": 0,
+            "settled_tx": 0,
+            "updates": []
+          },
+          "tx_mbuf_starve_count": 5695
+        }
+      },
+      "profile_id": "esp32-4mb",
+      "resource_kind": "esp-idf",
+      "target": "esp32"
+    },
+    {
+      "board_manufacturer": "Espressif Systems",
+      "board_model": "Electronically identified ESP32-S3 development board",
+      "device_flash_capacity_bytes": 16777216,
+      "device_psram_capacity_bytes": 8388608,
+      "environment": {
+        "ble_adapter": "macOS built-in Bluetooth",
+        "ble_backend": "Bleak CoreBluetooth 3.0.2",
+        "desktop_os": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+        "python_version": "3.13.5"
+      },
+      "install_sha256": "6cf04a25dc79f0f4007571695eb8a91b31cbf5ef5014fd2ceb16be33aee50618",
+      "manifest_sha256": "880e6fd0214553b7d4d7ab8003499e37785518bab152ffd1873e0a8861c1535c",
+      "module_marking": "ESP32-S3 QFN56 revision v0.1 (esptool)",
+      "oi1_build": {
+        "application_headroom_bytes": 384064,
+        "application_image_bytes": 1713088,
+        "factory_partition_bytes": 2097152
+      },
+      "oi1_observation": {
+        "get_duration_ns": [
+          2974933625,
+          3122770709,
+          3032186667,
+          3062983083,
+          3152592375
+        ],
+        "get_offset_sequences_validated": 5,
+        "get_retransmitted_bytes": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "get_retransmitted_chunks": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "get_unique_verified_bytes": [
+          65536,
+          65536,
+          65536,
+          65536,
+          65536
+        ],
+        "get_verified_goodput_bytes_per_second": [
+          22029,
+          20986,
+          21613,
+          21396,
+          20787
+        ],
+        "heap_default_free_post_hello_bytes": [
+          8466124,
+          8466124,
+          8466124,
+          8466124,
+          8466124,
+          8466124,
+          8466124,
+          8466124,
+          8466124,
+          8466124
+        ],
+        "heap_post_hello": [
+          {
+            "gc_allocated_bytes": 1712,
+            "gc_free_bytes": 8319824,
+            "idf_internal_free_bytes": 177783,
+            "idf_internal_largest_block_bytes": 102400,
+            "idf_internal_minimum_free_bytes": 177783
+          },
+          {
+            "gc_allocated_bytes": 1712,
+            "gc_free_bytes": 8319824,
+            "idf_internal_free_bytes": 177783,
+            "idf_internal_largest_block_bytes": 102400,
+            "idf_internal_minimum_free_bytes": 177783
+          },
+          {
+            "gc_allocated_bytes": 1712,
+            "gc_free_bytes": 8319824,
+            "idf_internal_free_bytes": 177783,
+            "idf_internal_largest_block_bytes": 102400,
+            "idf_internal_minimum_free_bytes": 177783
+          },
+          {
+            "gc_allocated_bytes": 1712,
+            "gc_free_bytes": 8319824,
+            "idf_internal_free_bytes": 177783,
+            "idf_internal_largest_block_bytes": 102400,
+            "idf_internal_minimum_free_bytes": 177783
+          },
+          {
+            "gc_allocated_bytes": 1712,
+            "gc_free_bytes": 8319824,
+            "idf_internal_free_bytes": 177783,
+            "idf_internal_largest_block_bytes": 102400,
+            "idf_internal_minimum_free_bytes": 177783
+          },
+          {
+            "gc_allocated_bytes": 1712,
+            "gc_free_bytes": 8319824,
+            "idf_internal_free_bytes": 177783,
+            "idf_internal_largest_block_bytes": 102400,
+            "idf_internal_minimum_free_bytes": 177783
+          },
+          {
+            "gc_allocated_bytes": 1712,
+            "gc_free_bytes": 8319824,
+            "idf_internal_free_bytes": 177783,
+            "idf_internal_largest_block_bytes": 102400,
+            "idf_internal_minimum_free_bytes": 177783
+          },
+          {
+            "gc_allocated_bytes": 1712,
+            "gc_free_bytes": 8319824,
+            "idf_internal_free_bytes": 177783,
+            "idf_internal_largest_block_bytes": 102400,
+            "idf_internal_minimum_free_bytes": 177783
+          },
+          {
+            "gc_allocated_bytes": 1712,
+            "gc_free_bytes": 8319824,
+            "idf_internal_free_bytes": 177783,
+            "idf_internal_largest_block_bytes": 102400,
+            "idf_internal_minimum_free_bytes": 177783
+          },
+          {
+            "gc_allocated_bytes": 1712,
+            "gc_free_bytes": 8319824,
+            "idf_internal_free_bytes": 177783,
+            "idf_internal_largest_block_bytes": 102400,
+            "idf_internal_minimum_free_bytes": 177783
+          }
+        ],
+        "heap_post_reliability": {
+          "gc_allocated_bytes": 2624,
+          "gc_free_bytes": 8318912,
+          "idf_internal_free_bytes": 177783,
+          "idf_internal_largest_block_bytes": 102400,
+          "idf_internal_minimum_free_bytes": 177651
+        },
+        "heap_post_roundtrip": [
+          {
+            "gc_allocated_bytes": 2672,
+            "gc_free_bytes": 8318864,
+            "idf_internal_free_bytes": 177783,
+            "idf_internal_largest_block_bytes": 102400,
+            "idf_internal_minimum_free_bytes": 177651
+          },
+          {
+            "gc_allocated_bytes": 2624,
+            "gc_free_bytes": 8318912,
+            "idf_internal_free_bytes": 177783,
+            "idf_internal_largest_block_bytes": 102400,
+            "idf_internal_minimum_free_bytes": 177651
+          },
+          {
+            "gc_allocated_bytes": 2624,
+            "gc_free_bytes": 8318912,
+            "idf_internal_free_bytes": 177783,
+            "idf_internal_largest_block_bytes": 102400,
+            "idf_internal_minimum_free_bytes": 177651
+          },
+          {
+            "gc_allocated_bytes": 2624,
+            "gc_free_bytes": 8318912,
+            "idf_internal_free_bytes": 177783,
+            "idf_internal_largest_block_bytes": 102400,
+            "idf_internal_minimum_free_bytes": 177651
+          },
+          {
+            "gc_allocated_bytes": 2624,
+            "gc_free_bytes": 8318912,
+            "idf_internal_free_bytes": 177783,
+            "idf_internal_largest_block_bytes": 102400,
+            "idf_internal_minimum_free_bytes": 177651
+          }
+        ],
+        "observed_att_mtu": 247,
+        "observed_chunk_bytes": 229,
+        "observed_window": 8,
+        "physical_power_cycle_advertising": "passed",
+        "put_committed_goodput_bytes_per_second": [
+          14373,
+          13745,
+          13740,
+          14093,
+          14185
+        ],
+        "put_duration_ns": [
+          4559529209,
+          4767673000,
+          4769607250,
+          4650167708,
+          4619863459
+        ],
+        "put_retransmitted_bytes": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "put_retransmitted_chunks": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "put_unique_committed_bytes": [
+          65536,
+          65536,
+          65536,
+          65536,
+          65536
+        ],
+        "raw_log_sha256": "ea1869be3c9b4cd3269e3cddd50a09026d51a17823f32db08b5631cf309f5994",
+        "reliability": {
+          "attempted_files": 20,
+          "bytes_per_file": 16384,
+          "completed_files": 20,
+          "failed_statuses": 0,
+          "integrity_failures": 0,
+          "retransmitted_bytes": 0,
+          "retransmitted_chunks": 0,
+          "rewinds": 0,
+          "total_payload_bytes": 327680,
+          "unexpected_disconnects": 0,
+          "verified_files": 20
+        },
+        "reset_to_service_advertisement_ms": [
+          849,
+          915,
+          856,
+          1187,
+          861,
+          854,
+          1170,
+          853,
+          851,
+          857
+        ],
+        "roundtrip_integrity_failures": 0,
+        "roundtrip_integrity_verified": 5,
+        "roundtrip_unexpected_disconnects": 0,
+        "transfer_link_facts": {
+          "connection_parameters": {
+            "request_return_codes": [
+              0,
+              2
+            ],
+            "settled_interval_units": 24,
+            "updates": [
+              {
+                "interval_units": 24,
+                "status": 0
+              }
+            ]
+          },
+          "dle": {
+            "max_tx_octets": 251,
+            "max_tx_time_us": 17040,
+            "request_attempts": 1
+          },
+          "phy": {
+            "request_attempts": 1,
+            "required_2m": true,
+            "settled_rx": 2,
+            "settled_tx": 2,
+            "updates": [
+              {
+                "rx": 2,
+                "status": 0,
+                "tx": 2
+              },
+              {
+                "rx": 2,
+                "status": 0,
+                "tx": 2
+              }
+            ]
+          },
+          "tx_mbuf_starve_count": 3485
+        }
+      },
+      "profile_id": "esp32-s3-n16r8",
+      "resource_kind": "esp-idf",
+      "target": "esp32-s3"
+    },
+    {
+      "board_manufacturer": "Waveshare",
+      "board_model": "ESP32-S3-LCD-1.47B",
+      "device_flash_capacity_bytes": 16777216,
+      "device_psram_capacity_bytes": 8388608,
+      "environment": {
+        "ble_adapter": "macOS built-in Bluetooth",
+        "ble_backend": "Bleak CoreBluetooth 3.0.2",
+        "desktop_os": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+        "python_version": "3.13.5"
+      },
+      "install_sha256": "92145285d9393534721142a5cd6ac7a5dcad37420d830a600e6abf688ce877b0",
+      "manifest_sha256": "880e6fd0214553b7d4d7ab8003499e37785518bab152ffd1873e0a8861c1535c",
+      "module_marking": "ESP32-S3R8",
+      "oi1_build": {
+        "application_headroom_bytes": 377024,
+        "application_image_bytes": 1720128,
+        "factory_partition_bytes": 2097152
+      },
+      "oi1_observation": {
+        "get_duration_ns": [
+          2554519959,
+          2403862625,
+          2462754750,
+          2522028000,
+          2284458875
+        ],
+        "get_offset_sequences_validated": 5,
+        "get_retransmitted_bytes": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "get_retransmitted_chunks": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "get_unique_verified_bytes": [
+          65536,
+          65536,
+          65536,
+          65536,
+          65536
+        ],
+        "get_verified_goodput_bytes_per_second": [
+          25654,
+          27262,
+          26610,
+          25985,
+          28687
+        ],
+        "heap_default_free_post_hello_bytes": [
+          8466008,
+          8466008,
+          8465876,
+          8465876,
+          8465876,
+          8465876,
+          8465876,
+          8465876,
+          8465876,
+          8465744
+        ],
+        "heap_post_hello": [
+          {
+            "gc_allocated_bytes": 3152,
+            "gc_free_bytes": 8318384,
+            "idf_internal_free_bytes": 177667,
+            "idf_internal_largest_block_bytes": 102400,
+            "idf_internal_minimum_free_bytes": 177619
+          },
+          {
+            "gc_allocated_bytes": 3152,
+            "gc_free_bytes": 8318384,
+            "idf_internal_free_bytes": 177667,
+            "idf_internal_largest_block_bytes": 102400,
+            "idf_internal_minimum_free_bytes": 177619
+          },
+          {
+            "gc_allocated_bytes": 3152,
+            "gc_free_bytes": 8318384,
+            "idf_internal_free_bytes": 177535,
+            "idf_internal_largest_block_bytes": 102400,
+            "idf_internal_minimum_free_bytes": 177487
+          },
+          {
+            "gc_allocated_bytes": 3152,
+            "gc_free_bytes": 8318384,
+            "idf_internal_free_bytes": 177535,
+            "idf_internal_largest_block_bytes": 102400,
+            "idf_internal_minimum_free_bytes": 177487
+          },
+          {
+            "gc_allocated_bytes": 3152,
+            "gc_free_bytes": 8318384,
+            "idf_internal_free_bytes": 177535,
+            "idf_internal_largest_block_bytes": 102400,
+            "idf_internal_minimum_free_bytes": 177487
+          },
+          {
+            "gc_allocated_bytes": 3152,
+            "gc_free_bytes": 8318384,
+            "idf_internal_free_bytes": 177535,
+            "idf_internal_largest_block_bytes": 102400,
+            "idf_internal_minimum_free_bytes": 177487
+          },
+          {
+            "gc_allocated_bytes": 3152,
+            "gc_free_bytes": 8318384,
+            "idf_internal_free_bytes": 177535,
+            "idf_internal_largest_block_bytes": 102400,
+            "idf_internal_minimum_free_bytes": 177487
+          },
+          {
+            "gc_allocated_bytes": 3152,
+            "gc_free_bytes": 8318384,
+            "idf_internal_free_bytes": 177535,
+            "idf_internal_largest_block_bytes": 102400,
+            "idf_internal_minimum_free_bytes": 177487
+          },
+          {
+            "gc_allocated_bytes": 3152,
+            "gc_free_bytes": 8318384,
+            "idf_internal_free_bytes": 177535,
+            "idf_internal_largest_block_bytes": 102400,
+            "idf_internal_minimum_free_bytes": 177487
+          },
+          {
+            "gc_allocated_bytes": 3152,
+            "gc_free_bytes": 8318384,
+            "idf_internal_free_bytes": 177403,
+            "idf_internal_largest_block_bytes": 102400,
+            "idf_internal_minimum_free_bytes": 177355
+          }
+        ],
+        "heap_post_reliability": {
+          "gc_allocated_bytes": 4112,
+          "gc_free_bytes": 8317424,
+          "idf_internal_free_bytes": 177403,
+          "idf_internal_largest_block_bytes": 102400,
+          "idf_internal_minimum_free_bytes": 177271
+        },
+        "heap_post_roundtrip": [
+          {
+            "gc_allocated_bytes": 4160,
+            "gc_free_bytes": 8317376,
+            "idf_internal_free_bytes": 177403,
+            "idf_internal_largest_block_bytes": 102400,
+            "idf_internal_minimum_free_bytes": 177271
+          },
+          {
+            "gc_allocated_bytes": 4112,
+            "gc_free_bytes": 8317424,
+            "idf_internal_free_bytes": 177403,
+            "idf_internal_largest_block_bytes": 102400,
+            "idf_internal_minimum_free_bytes": 177271
+          },
+          {
+            "gc_allocated_bytes": 4112,
+            "gc_free_bytes": 8317424,
+            "idf_internal_free_bytes": 177403,
+            "idf_internal_largest_block_bytes": 102400,
+            "idf_internal_minimum_free_bytes": 177271
+          },
+          {
+            "gc_allocated_bytes": 4112,
+            "gc_free_bytes": 8317424,
+            "idf_internal_free_bytes": 177403,
+            "idf_internal_largest_block_bytes": 102400,
+            "idf_internal_minimum_free_bytes": 177271
+          },
+          {
+            "gc_allocated_bytes": 4112,
+            "gc_free_bytes": 8317424,
+            "idf_internal_free_bytes": 177403,
+            "idf_internal_largest_block_bytes": 102400,
+            "idf_internal_minimum_free_bytes": 177271
+          }
+        ],
+        "observed_att_mtu": 247,
+        "observed_chunk_bytes": 229,
+        "observed_window": 8,
+        "physical_power_cycle_advertising": "passed",
+        "put_committed_goodput_bytes_per_second": [
+          13739,
+          13825,
+          13917,
+          14277,
+          13656
+        ],
+        "put_duration_ns": [
+          4769864250,
+          4740103833,
+          4708869041,
+          4590086541,
+          4798752834
+        ],
+        "put_retransmitted_bytes": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "put_retransmitted_chunks": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "put_unique_committed_bytes": [
+          65536,
+          65536,
+          65536,
+          65536,
+          65536
+        ],
+        "raw_log_sha256": "565da96811ae4d68d7e0711921531f0452e06cc954f0b4f976ef85cdf97f0232",
+        "reliability": {
+          "attempted_files": 20,
+          "bytes_per_file": 16384,
+          "completed_files": 20,
+          "failed_statuses": 0,
+          "integrity_failures": 0,
+          "retransmitted_bytes": 0,
+          "retransmitted_chunks": 0,
+          "rewinds": 0,
+          "total_payload_bytes": 327680,
+          "unexpected_disconnects": 0,
+          "verified_files": 20
+        },
+        "reset_to_service_advertisement_ms": [
+          1005,
+          989,
+          1274,
+          1285,
+          1004,
+          1006,
+          1594,
+          989,
+          1288,
+          958
+        ],
+        "roundtrip_integrity_failures": 0,
+        "roundtrip_integrity_verified": 5,
+        "roundtrip_unexpected_disconnects": 0,
+        "transfer_link_facts": {
+          "connection_parameters": {
+            "request_return_codes": [
+              0,
+              2
+            ],
+            "settled_interval_units": 24,
+            "updates": [
+              {
+                "interval_units": 24,
+                "status": 0
+              }
+            ]
+          },
+          "dle": {
+            "max_tx_octets": 251,
+            "max_tx_time_us": 17040,
+            "request_attempts": 1
+          },
+          "phy": {
+            "request_attempts": 1,
+            "required_2m": true,
+            "settled_rx": 2,
+            "settled_tx": 2,
+            "updates": [
+              {
+                "rx": 2,
+                "status": 0,
+                "tx": 2
+              },
+              {
+                "rx": 2,
+                "status": 0,
+                "tx": 2
+              }
+            ]
+          },
+          "tx_mbuf_starve_count": 2922
+        }
+      },
+      "profile_id": "waveshare-esp32-s3-lcd-147b",
+      "resource_kind": "esp-idf",
+      "target": "waveshare-esp32-s3-lcd-147b"
+    },
+    {
+      "board_manufacturer": "Espressif Systems",
+      "board_model": "Electronically identified ESP32-C3 development board",
+      "device_flash_capacity_bytes": 4194304,
+      "device_psram_capacity_bytes": 0,
+      "environment": {
+        "ble_adapter": "macOS built-in Bluetooth",
+        "ble_backend": "Bleak CoreBluetooth 3.0.2",
+        "desktop_os": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+        "python_version": "3.13.5"
+      },
+      "install_sha256": "027719ea4c5d2f56948ba05311d6e3e79d6bfa9e7526185e7c18ce80b7e8cede",
+      "manifest_sha256": "04ee5424c207dded1fcf5ca9eb653022ed3ce502c0ebd978ed81c241bd2d6ca1",
+      "module_marking": "ESP32-C3 QFN32 revision v0.4 (esptool)",
+      "oi1_build": {
+        "application_headroom_bytes": 352880,
+        "application_image_bytes": 1678736,
+        "factory_partition_bytes": 2031616
+      },
+      "oi1_observation": {
+        "get_duration_ns": [
+          2134476292,
+          2071548333,
+          2282143958,
+          2069452625,
+          2132958208
+        ],
+        "get_offset_sequences_validated": 5,
+        "get_retransmitted_bytes": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "get_retransmitted_chunks": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "get_unique_verified_bytes": [
+          65536,
+          65536,
+          65536,
+          65536,
+          65536
+        ],
+        "get_verified_goodput_bytes_per_second": [
+          30703,
+          31636,
+          28716,
+          31668,
+          30725
+        ],
+        "heap_default_free_post_hello_bytes": [
+          67148,
+          67148,
+          67148,
+          67148,
+          67148,
+          67148,
+          67148,
+          67148,
+          67148,
+          67148
+        ],
+        "heap_post_hello": [
+          {
+            "gc_allocated_bytes": 1760,
+            "gc_free_bytes": 119584,
+            "idf_internal_free_bytes": 67148,
+            "idf_internal_largest_block_bytes": 57344,
+            "idf_internal_minimum_free_bytes": 63556
+          },
+          {
+            "gc_allocated_bytes": 1760,
+            "gc_free_bytes": 119584,
+            "idf_internal_free_bytes": 67148,
+            "idf_internal_largest_block_bytes": 57344,
+            "idf_internal_minimum_free_bytes": 63556
+          },
+          {
+            "gc_allocated_bytes": 1760,
+            "gc_free_bytes": 119584,
+            "idf_internal_free_bytes": 67148,
+            "idf_internal_largest_block_bytes": 57344,
+            "idf_internal_minimum_free_bytes": 63556
+          },
+          {
+            "gc_allocated_bytes": 1760,
+            "gc_free_bytes": 119584,
+            "idf_internal_free_bytes": 67148,
+            "idf_internal_largest_block_bytes": 57344,
+            "idf_internal_minimum_free_bytes": 63556
+          },
+          {
+            "gc_allocated_bytes": 1760,
+            "gc_free_bytes": 119584,
+            "idf_internal_free_bytes": 67148,
+            "idf_internal_largest_block_bytes": 57344,
+            "idf_internal_minimum_free_bytes": 63556
+          },
+          {
+            "gc_allocated_bytes": 1760,
+            "gc_free_bytes": 119584,
+            "idf_internal_free_bytes": 67148,
+            "idf_internal_largest_block_bytes": 57344,
+            "idf_internal_minimum_free_bytes": 63556
+          },
+          {
+            "gc_allocated_bytes": 1760,
+            "gc_free_bytes": 119584,
+            "idf_internal_free_bytes": 67148,
+            "idf_internal_largest_block_bytes": 57344,
+            "idf_internal_minimum_free_bytes": 63556
+          },
+          {
+            "gc_allocated_bytes": 1760,
+            "gc_free_bytes": 119584,
+            "idf_internal_free_bytes": 67148,
+            "idf_internal_largest_block_bytes": 57344,
+            "idf_internal_minimum_free_bytes": 63556
+          },
+          {
+            "gc_allocated_bytes": 1760,
+            "gc_free_bytes": 119584,
+            "idf_internal_free_bytes": 67148,
+            "idf_internal_largest_block_bytes": 57344,
+            "idf_internal_minimum_free_bytes": 63556
+          },
+          {
+            "gc_allocated_bytes": 1760,
+            "gc_free_bytes": 119584,
+            "idf_internal_free_bytes": 67148,
+            "idf_internal_largest_block_bytes": 57344,
+            "idf_internal_minimum_free_bytes": 63556
+          }
+        ],
+        "heap_post_reliability": {
+          "gc_allocated_bytes": 2784,
+          "gc_free_bytes": 118560,
+          "idf_internal_free_bytes": 67148,
+          "idf_internal_largest_block_bytes": 57344,
+          "idf_internal_minimum_free_bytes": 63556
+        },
+        "heap_post_roundtrip": [
+          {
+            "gc_allocated_bytes": 2784,
+            "gc_free_bytes": 118560,
+            "idf_internal_free_bytes": 67148,
+            "idf_internal_largest_block_bytes": 57344,
+            "idf_internal_minimum_free_bytes": 63556
+          },
+          {
+            "gc_allocated_bytes": 2784,
+            "gc_free_bytes": 118560,
+            "idf_internal_free_bytes": 67148,
+            "idf_internal_largest_block_bytes": 57344,
+            "idf_internal_minimum_free_bytes": 63556
+          },
+          {
+            "gc_allocated_bytes": 2784,
+            "gc_free_bytes": 118560,
+            "idf_internal_free_bytes": 67148,
+            "idf_internal_largest_block_bytes": 57344,
+            "idf_internal_minimum_free_bytes": 63556
+          },
+          {
+            "gc_allocated_bytes": 2800,
+            "gc_free_bytes": 118544,
+            "idf_internal_free_bytes": 67148,
+            "idf_internal_largest_block_bytes": 57344,
+            "idf_internal_minimum_free_bytes": 63556
+          },
+          {
+            "gc_allocated_bytes": 2800,
+            "gc_free_bytes": 118544,
+            "idf_internal_free_bytes": 67148,
+            "idf_internal_largest_block_bytes": 57344,
+            "idf_internal_minimum_free_bytes": 63556
+          }
+        ],
+        "observed_att_mtu": 247,
+        "observed_chunk_bytes": 229,
+        "observed_window": 8,
+        "physical_power_cycle_advertising": "passed",
+        "put_committed_goodput_bytes_per_second": [
+          17905,
+          18828,
+          16181,
+          19681,
+          16180
+        ],
+        "put_duration_ns": [
+          3660149917,
+          3480701166,
+          4050015625,
+          3329822125,
+          4050292667
+        ],
+        "put_retransmitted_bytes": [
+          0,
+          0,
+          1832,
+          0,
+          1832
+        ],
+        "put_retransmitted_chunks": [
+          0,
+          0,
+          8,
+          0,
+          8
+        ],
+        "put_unique_committed_bytes": [
+          65536,
+          65536,
+          65536,
+          65536,
+          65536
+        ],
+        "raw_log_sha256": "cf7404446a8cf0a09d619a3c4332f608a23f9de36531a77e8443dde94cb284d9",
+        "reliability": {
+          "attempted_files": 20,
+          "bytes_per_file": 16384,
+          "completed_files": 20,
+          "failed_statuses": 0,
+          "integrity_failures": 0,
+          "retransmitted_bytes": 1832,
+          "retransmitted_chunks": 8,
+          "rewinds": 1,
+          "total_payload_bytes": 327680,
+          "unexpected_disconnects": 0,
+          "verified_files": 20
+        },
+        "reset_to_service_advertisement_ms": [
+          589,
+          583,
+          590,
+          579,
+          582,
+          1150,
+          589,
+          1167,
+          836,
+          598
+        ],
+        "roundtrip_integrity_failures": 0,
+        "roundtrip_integrity_verified": 5,
+        "roundtrip_unexpected_disconnects": 0,
+        "transfer_link_facts": {
+          "connection_parameters": {
+            "request_return_codes": [
+              0,
+              2
+            ],
+            "settled_interval_units": 24,
+            "updates": [
+              {
+                "interval_units": 24,
+                "status": 0
+              }
+            ]
+          },
+          "dle": {
+            "max_tx_octets": 251,
+            "max_tx_time_us": 17040,
+            "request_attempts": 1
+          },
+          "phy": {
+            "request_attempts": 1,
+            "required_2m": true,
+            "settled_rx": 2,
+            "settled_tx": 2,
+            "updates": [
+              {
+                "rx": 2,
+                "status": 0,
+                "tx": 2
+              },
+              {
+                "rx": 2,
+                "status": 0,
+                "tx": 2
+              }
+            ]
+          },
+          "tx_mbuf_starve_count": 2480
+        }
+      },
+      "profile_id": "esp32-c3-4mb",
+      "resource_kind": "esp-idf",
+      "target": "esp32-c3"
+    },
+    {
+      "board_manufacturer": "Raspberry Pi Ltd",
+      "board_model": "Raspberry Pi Pico 2 W",
+      "device_flash_capacity_bytes": 4194304,
+      "device_psram_capacity_bytes": 0,
+      "environment": {
+        "ble_adapter": "macOS built-in Bluetooth",
+        "ble_backend": "Bleak CoreBluetooth 3.0.2",
+        "desktop_os": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+        "python_version": "3.13.5"
+      },
+      "install_sha256": "03b8ccd142c96fc6291b0f468f5d8eae58d6a868315cbe558f37af22c14cf1ca",
+      "module_marking": "RP2350 + CYW43439",
+      "oi1_build": {
+        "firmware_bin_bytes": 848216,
+        "firmware_image_headroom_bytes": 724648,
+        "firmware_image_limit_bytes": 1572864
+      },
+      "oi1_observation": {
+        "get_duration_ns": [
+          9006219666,
+          9091127250,
+          9125127541,
+          9059753500,
+          9004835000
+        ],
+        "get_offset_sequences_validated": 5,
+        "get_retransmitted_bytes": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "get_retransmitted_chunks": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "get_unique_verified_bytes": [
+          65536,
+          65536,
+          65536,
+          65536,
+          65536
+        ],
+        "get_verified_goodput_bytes_per_second": [
+          7276,
+          7208,
+          7181,
+          7233,
+          7277
+        ],
+        "heap_default_free_post_hello_bytes": [
+          301200,
+          301200,
+          301264,
+          301200,
+          301200,
+          301104,
+          301200,
+          301168,
+          301200,
+          301200
+        ],
+        "heap_post_hello": [
+          {
+            "gc_allocated_bytes": 23456,
+            "gc_free_bytes": 433712
+          },
+          {
+            "gc_allocated_bytes": 23456,
+            "gc_free_bytes": 433712
+          },
+          {
+            "gc_allocated_bytes": 23456,
+            "gc_free_bytes": 433712
+          },
+          {
+            "gc_allocated_bytes": 23456,
+            "gc_free_bytes": 433712
+          },
+          {
+            "gc_allocated_bytes": 23456,
+            "gc_free_bytes": 433712
+          },
+          {
+            "gc_allocated_bytes": 23456,
+            "gc_free_bytes": 433712
+          },
+          {
+            "gc_allocated_bytes": 23456,
+            "gc_free_bytes": 433712
+          },
+          {
+            "gc_allocated_bytes": 23456,
+            "gc_free_bytes": 433712
+          },
+          {
+            "gc_allocated_bytes": 23456,
+            "gc_free_bytes": 433712
+          },
+          {
+            "gc_allocated_bytes": 23456,
+            "gc_free_bytes": 433712
+          }
+        ],
+        "heap_post_reliability": {
+          "gc_allocated_bytes": 23504,
+          "gc_free_bytes": 433664
+        },
+        "heap_post_roundtrip": [
+          {
+            "gc_allocated_bytes": 23456,
+            "gc_free_bytes": 433712
+          },
+          {
+            "gc_allocated_bytes": 23472,
+            "gc_free_bytes": 433696
+          },
+          {
+            "gc_allocated_bytes": 23472,
+            "gc_free_bytes": 433696
+          },
+          {
+            "gc_allocated_bytes": 23504,
+            "gc_free_bytes": 433664
+          },
+          {
+            "gc_allocated_bytes": 23504,
+            "gc_free_bytes": 433664
+          }
+        ],
+        "observed_att_mtu": 247,
+        "observed_chunk_bytes": 229,
+        "observed_window": 4,
+        "physical_power_cycle_advertising": "passed",
+        "put_committed_goodput_bytes_per_second": [
+          14185,
+          14468,
+          13913,
+          12854,
+          13080
+        ],
+        "put_duration_ns": [
+          4619973167,
+          4529474625,
+          4710152583,
+          5098192000,
+          5010100125
+        ],
+        "put_retransmitted_bytes": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "put_retransmitted_chunks": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "put_unique_committed_bytes": [
+          65536,
+          65536,
+          65536,
+          65536,
+          65536
+        ],
+        "raw_log_sha256": "7c6d7ec3a5640e0449ba3499d3190571072a332530e54aa3f716911e8803e9a2",
+        "reliability": {
+          "attempted_files": 20,
+          "bytes_per_file": 16384,
+          "completed_files": 20,
+          "failed_statuses": 0,
+          "integrity_failures": 0,
+          "retransmitted_bytes": 0,
+          "retransmitted_chunks": 0,
+          "rewinds": 0,
+          "total_payload_bytes": 327680,
+          "unexpected_disconnects": 0,
+          "verified_files": 20
+        },
+        "reset_to_service_advertisement_ms": [
+          1290,
+          1287,
+          2452,
+          1285,
+          1842,
+          2443,
+          1259,
+          2207,
+          1285,
+          3378
+        ],
+        "roundtrip_integrity_failures": 0,
+        "roundtrip_integrity_verified": 5,
+        "roundtrip_unexpected_disconnects": 0,
+        "transfer_link_facts": {
+          "ble_host": "btstack",
+          "console_tx_budget_ms": 103,
+          "observed_att_mtu": 247,
+          "observed_chunk_bytes": 229,
+          "observed_window": 4
+        }
+      },
+      "profile_id": "rpi-pico2-w",
+      "resource_image_sha256": "be839206d5ce4352e8a1f8f1e1c2468fd8982d52a4bc9b096518e570c115508d",
+      "resource_kind": "rp2",
+      "target": "rpi-pico2-w"
+    }
+  ],
+  "schema_version": 2,
+  "source_commit": "a8be631df46590166307aa41afaea30b39e29230"
+}

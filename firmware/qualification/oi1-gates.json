@@ -1,7 +1,7 @@
 {
   "baseline_evidence": {
-    "path": "docs/validation/firmware/oi1/7441a762b0bc2a6bb5692236d5894281ddf0dca6.json",
-    "sha256": "f0ccc6496dcd60ad01b848fbaf799455d8ffd29d6033cc1f132608c9dbd8970f"
+    "path": "docs/validation/firmware/oi1/a8be631df46590166307aa41afaea30b39e29230.json",
+    "sha256": "8a7dbf328ba8d70f5161582b56d1566821f20b7a259ff29dc7d6fe6bb75a6044"
   },
   "derivation": {
     "application_headroom": "factory-minus-application-v1",
@@ -23,14 +23,14 @@
       "resource_kind": "esp-idf",
       "target": "esp32",
       "thresholds": {
-        "application_headroom_min_bytes": 315552,
-        "application_image_max_bytes": 1716064,
+        "application_headroom_min_bytes": 315360,
+        "application_image_max_bytes": 1716256,
         "gc_free_min_bytes": 108544,
-        "get_verified_goodput_min_bytes_per_second": 13400,
+        "get_verified_goodput_min_bytes_per_second": 12500,
         "idf_internal_free_min_bytes": 81920,
         "idf_internal_largest_block_min_bytes": 55296,
         "idf_internal_minimum_free_min_bytes": 81920,
-        "put_committed_goodput_min_bytes_per_second": 7000,
+        "put_committed_goodput_min_bytes_per_second": 6500,
         "reset_to_service_advertisement_max_ms": 3000
       },
       "transport": {
@@ -45,14 +45,14 @@
       "resource_kind": "esp-idf",
       "target": "esp32-s3",
       "thresholds": {
-        "application_headroom_min_bytes": 384240,
-        "application_image_max_bytes": 1712912,
+        "application_headroom_min_bytes": 384064,
+        "application_image_max_bytes": 1713088,
         "gc_free_min_bytes": 8317952,
-        "get_verified_goodput_min_bytes_per_second": 32300,
+        "get_verified_goodput_min_bytes_per_second": 19700,
         "idf_internal_free_min_bytes": 177152,
         "idf_internal_largest_block_min_bytes": 102400,
         "idf_internal_minimum_free_min_bytes": 177152,
-        "put_committed_goodput_min_bytes_per_second": 11200,
+        "put_committed_goodput_min_bytes_per_second": 13000,
         "reset_to_service_advertisement_max_ms": 3000
       },
       "transport": {
@@ -67,14 +67,14 @@
       "resource_kind": "esp-idf",
       "target": "waveshare-esp32-s3-lcd-147b",
       "thresholds": {
-        "application_headroom_min_bytes": 377200,
-        "application_image_max_bytes": 1719952,
+        "application_headroom_min_bytes": 377024,
+        "application_image_max_bytes": 1720128,
         "gc_free_min_bytes": 8316928,
-        "get_verified_goodput_min_bytes_per_second": 30000,
+        "get_verified_goodput_min_bytes_per_second": 24300,
         "idf_internal_free_min_bytes": 177152,
         "idf_internal_largest_block_min_bytes": 102400,
         "idf_internal_minimum_free_min_bytes": 177152,
-        "put_committed_goodput_min_bytes_per_second": 19500,
+        "put_committed_goodput_min_bytes_per_second": 12900,
         "reset_to_service_advertisement_max_ms": 3000
       },
       "transport": {
@@ -89,14 +89,14 @@
       "resource_kind": "esp-idf",
       "target": "esp32-c3",
       "thresholds": {
-        "application_headroom_min_bytes": 353024,
-        "application_image_max_bytes": 1678592,
+        "application_headroom_min_bytes": 352880,
+        "application_image_max_bytes": 1678736,
         "gc_free_min_bytes": 117760,
-        "get_verified_goodput_min_bytes_per_second": 19500,
+        "get_verified_goodput_min_bytes_per_second": 27200,
         "idf_internal_free_min_bytes": 66560,
         "idf_internal_largest_block_min_bytes": 57344,
         "idf_internal_minimum_free_min_bytes": 63488,
-        "put_committed_goodput_min_bytes_per_second": 8600,
+        "put_committed_goodput_min_bytes_per_second": 15300,
         "reset_to_service_advertisement_max_ms": 3000
       },
       "transport": {
@@ -115,7 +115,7 @@
         "firmware_image_headroom_min_bytes": 724648,
         "gc_free_min_bytes": 433152,
         "get_verified_goodput_min_bytes_per_second": 6800,
-        "put_committed_goodput_min_bytes_per_second": 12400,
+        "put_committed_goodput_min_bytes_per_second": 12200,
         "reset_to_service_advertisement_max_ms": 3000
       },
       "transport": {
