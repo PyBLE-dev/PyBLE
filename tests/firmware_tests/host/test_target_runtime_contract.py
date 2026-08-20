@@ -1106,6 +1106,48 @@ class BoardConfigurationSourceContractTests(unittest.TestCase):
             "C3 must keep UART0 REPL/debug parity",
         )
 
+    def test_c3_disables_phy_calibration_storage_without_relaxing_oi1(self):
+        config = _sdkconfig_values(
+            OVERLAYS / "esp32-c3" / "sdkconfig.board"
+        )
+        self.assertEqual(
+            config.get("CONFIG_ESP_PHY_CALIBRATION_AND_DATA_STORAGE"),
+            "n",
+            "C3 must run full PHY calibration instead of growing PHY NVS state",
+        )
+
+        policy = json.loads(
+            (FIRMWARE_DIR / "qualification" / "oi1-gates.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        profile = next(
+            item
+            for item in policy["profiles"]
+            if item["profile_id"] == "esp32-c3-4mb"
+        )
+        thresholds = profile["thresholds"]
+        self.assertEqual(
+            {
+                key: thresholds[key]
+                for key in (
+                    "gc_free_min_bytes",
+                    "idf_internal_free_min_bytes",
+                    "idf_internal_largest_block_min_bytes",
+                    "idf_internal_minimum_free_min_bytes",
+                    "reset_to_service_advertisement_max_ms",
+                )
+            },
+            {
+                "gc_free_min_bytes": 117760,
+                "idf_internal_free_min_bytes": 66560,
+                "idf_internal_largest_block_min_bytes": 57344,
+                "idf_internal_minimum_free_min_bytes": 63488,
+                "reset_to_service_advertisement_max_ms": 3000,
+            },
+            "the PHY policy must not weaken any C3 heap or reset gate",
+        )
+
 
 class GeneratedRuntimeContractTests(unittest.TestCase):
     @classmethod
@@ -1381,6 +1423,7 @@ class GeneratedRuntimeContractTests(unittest.TestCase):
             "CONFIG_ESP32C3_REV_MIN_3": "y",
             "CONFIG_ESP32C3_REV_MIN_FULL": "3",
             "CONFIG_ESP32C3_REV_MAX_FULL": "199",
+            "CONFIG_ESP_PHY_CALIBRATION_AND_DATA_STORAGE": "n",
         }
         for key, value in expected.items():
             with self.subTest(key=key):
