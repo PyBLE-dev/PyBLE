@@ -103,6 +103,35 @@ def canonical_json_bytes(value: object) -> bytes:
     ).encode("utf-8")
 
 
+def write_c3_post_oi_nvs_receipt(
+    path: Path,
+    *,
+    release_raw: bytes,
+    artifact: bytes,
+    namespaces: list[dict[str, object]] | None = None,
+    oi1_raw_sha256: str = "d" * 64,
+) -> tuple[dict[str, object], bytes]:
+    inventory = namespaces or []
+    summary = {
+        "schema_version": 1,
+        "profile_id": "esp32-c3-4mb",
+        "candidate_release_json_sha256": hashlib.sha256(release_raw).hexdigest(),
+        "candidate_firmware_sha256": hashlib.sha256(artifact).hexdigest(),
+        "oi1_raw_sha256": oi1_raw_sha256,
+        "reset_samples": 10,
+        "partition_offset": 0x9000,
+        "partition_size": 0x6000,
+        "integrity": "passed",
+        "written_namespaces": [item["namespace"] for item in inventory],
+    }
+    receipt = {"summary": summary, "inventory": inventory}
+    raw = canonical_json_bytes(receipt)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(raw)
+    path.chmod(0o600)
+    return summary, raw
+
+
 def candidate_release(artifact: bytes) -> dict[str, object]:
     esp_specs = {
         "esp32-4mb": (
@@ -407,7 +436,13 @@ class PrivateGateResultWriterContractTests(unittest.TestCase):
             return
         self.assertEqual(
             set(inspect.signature(writer).parameters),
-            {"candidate_dir", "profile_id", "passed_gates", "output_path"},
+            {
+                "candidate_dir",
+                "profile_id",
+                "passed_gates",
+                "output_path",
+                "post_oi_nvs_receipt_path",
+            },
         )
 
     def test_private_gate_cli_exposes_only_derived_identity_inputs(self):
@@ -420,6 +455,14 @@ class PrivateGateResultWriterContractTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertIn("create-result", completed.stdout)
         self.assertIn("--passed-gate", completed.stdout)
+        command_help = subprocess.run(
+            [sys.executable, str(GATE_PATH), "create-result", "--help"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(command_help.returncode, 0, command_help.stderr)
+        self.assertIn("--post-oi-nvs-receipt", command_help.stdout)
         for forbidden in (
             "--status",
             "--firmware-version",
@@ -442,6 +485,12 @@ class PrivateGateResultWriterContractTests(unittest.TestCase):
             release_raw = canonical_json_bytes(candidate_release(artifact))
             (candidate / "release.json").write_bytes(release_raw)
             output = root / "private" / "c3-result.json"
+            receipt = root / "private" / "c3-post-oi-nvs.json"
+            receipt_summary, receipt_raw = write_c3_post_oi_nvs_receipt(
+                receipt,
+                release_raw=release_raw,
+                artifact=artifact,
+            )
             gates = ["C3-G%d" % index for index in range(7)]
 
             created = writer(
@@ -449,6 +498,7 @@ class PrivateGateResultWriterContractTests(unittest.TestCase):
                 profile_id="esp32-c3-4mb",
                 passed_gates=gates,
                 output_path=output,
+                post_oi_nvs_receipt_path=receipt,
             )
             expected = {
                 "schema_version": 1,
@@ -460,6 +510,11 @@ class PrivateGateResultWriterContractTests(unittest.TestCase):
                 ).hexdigest(),
                 "candidate_firmware_sha256": hashlib.sha256(artifact).hexdigest(),
                 "gates": {name: "passed" for name in gates},
+                "post_oi_nvs": {
+                    "receipt_sha256": hashlib.sha256(receipt_raw).hexdigest(),
+                    "receipt_size_bytes": len(receipt_raw),
+                    "summary": receipt_summary,
+                },
             }
             self.assertEqual(Path(created), output)
             self.assertEqual(output.read_bytes(), canonical_json_bytes(expected))
@@ -472,6 +527,7 @@ class PrivateGateResultWriterContractTests(unittest.TestCase):
                     profile_id="esp32-c3-4mb",
                     passed_gates=gates,
                     output_path=output,
+                    post_oi_nvs_receipt_path=receipt,
                 )
             missing_output = root / "private" / "missing.json"
             with self.assertRaises(GATE.QualificationError):
@@ -480,8 +536,52 @@ class PrivateGateResultWriterContractTests(unittest.TestCase):
                     profile_id="esp32-c3-4mb",
                     passed_gates=gates[:-1],
                     output_path=missing_output,
+                    post_oi_nvs_receipt_path=receipt,
                 )
             self.assertFalse(missing_output.exists())
+
+            for name, receipt_path in (
+                ("missing-receipt", None),
+                ("non-exclusive-receipt", receipt),
+            ):
+                if receipt_path is not None:
+                    receipt.chmod(0o644)
+                rejected_output = root / "private" / (name + ".json")
+                with self.subTest(name=name), self.assertRaises(
+                    GATE.QualificationError
+                ):
+                    writer(
+                        candidate_dir=candidate,
+                        profile_id="esp32-c3-4mb",
+                        passed_gates=gates,
+                        output_path=rejected_output,
+                        post_oi_nvs_receipt_path=receipt_path,
+                    )
+                self.assertFalse(rejected_output.exists())
+                receipt.chmod(0o600)
+
+            phy_receipt = root / "private" / "phy-receipt.json"
+            write_c3_post_oi_nvs_receipt(
+                phy_receipt,
+                release_raw=release_raw,
+                artifact=artifact,
+                namespaces=[
+                    {
+                        "namespace": "phy",
+                        "keys": [{"key": "cal_data", "type": "blob"}],
+                    }
+                ],
+            )
+            phy_output = root / "private" / "phy-result.json"
+            with self.assertRaises(GATE.QualificationError):
+                writer(
+                    candidate_dir=candidate,
+                    profile_id="esp32-c3-4mb",
+                    passed_gates=gates,
+                    output_path=phy_output,
+                    post_oi_nvs_receipt_path=phy_receipt,
+                )
+            self.assertFalse(phy_output.exists())
 
     def test_writer_rejects_minimal_or_substituted_candidate_metadata(self):
         writer = GATE.create_result_file
@@ -660,6 +760,12 @@ class PrivateGateResultWriterContractTests(unittest.TestCase):
                 canonical_json_bytes(candidate_release(artifact))
             )
             output = root / "private" / "result.json"
+            receipt = root / "private" / "post-oi-nvs.json"
+            write_c3_post_oi_nvs_receipt(
+                receipt,
+                release_raw=(candidate / "release.json").read_bytes(),
+                artifact=artifact,
+            )
             with mock.patch.object(
                 GATE,
                 "validate_result_file",
@@ -670,6 +776,7 @@ class PrivateGateResultWriterContractTests(unittest.TestCase):
                     profile_id="esp32-c3-4mb",
                     passed_gates=gates,
                     output_path=output,
+                    post_oi_nvs_receipt_path=receipt,
                 )
             self.assertFalse(output.exists())
 

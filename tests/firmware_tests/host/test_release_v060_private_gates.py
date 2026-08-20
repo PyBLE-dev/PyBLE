@@ -50,6 +50,7 @@ C3_GATES = tuple("C3-G%d" % index for index in range(7))
 PICO_GATES = ("GP0", "GP1", "GP2")
 VERSION = "0.6.0"
 RELEASE_DIGEST = "ab" * 32
+OI1_RAW_SHA256 = "cd" * 32
 
 
 def load_module(name: str, path: Path):
@@ -87,6 +88,33 @@ def sha256_bytes(value: bytes) -> str:
     return hashlib.sha256(value).hexdigest()
 
 
+def post_oi_nvs_binding(
+    artifact: bytes,
+    *,
+    release_digest: str = RELEASE_DIGEST,
+    oi1_raw_sha256: str = OI1_RAW_SHA256,
+) -> dict[str, object]:
+    summary = {
+        "schema_version": 1,
+        "profile_id": C3_PROFILE,
+        "candidate_release_json_sha256": release_digest,
+        "candidate_firmware_sha256": sha256_bytes(artifact),
+        "oi1_raw_sha256": oi1_raw_sha256,
+        "reset_samples": 10,
+        "partition_offset": 0x9000,
+        "partition_size": 0x6000,
+        "integrity": "passed",
+        "written_namespaces": [],
+    }
+    receipt = {"summary": summary, "inventory": []}
+    raw = canonical_json_bytes(receipt)
+    return {
+        "receipt_sha256": sha256_bytes(raw),
+        "receipt_size_bytes": len(raw),
+        "summary": summary,
+    }
+
+
 def private_result(
     profile_id: str,
     artifact: bytes,
@@ -101,7 +129,7 @@ def private_result(
         gate_names = PICO_GATES
     else:  # pragma: no cover - fixture misuse.
         raise AssertionError("unsupported private-gate fixture profile")
-    return {
+    result = {
         "schema_version": 1,
         "status": "passed",
         "profile_id": profile_id,
@@ -110,6 +138,12 @@ def private_result(
         digest_key: sha256_bytes(artifact),
         "gates": {name: "passed" for name in gate_names},
     }
+    if profile_id == C3_PROFILE:
+        result["post_oi_nvs"] = post_oi_nvs_binding(
+            artifact,
+            release_digest=release_digest,
+        )
+    return result
 
 
 def write_private_result(path: Path, value: object) -> None:
@@ -123,6 +157,7 @@ def expected_summary(
     artifact: bytes,
 ) -> dict[str, object]:
     value = private_result(profile_id, artifact)
+    value.pop("post_oi_nvs", None)
     value["qualification_result_sha256"] = sha256_bytes(result_path.read_bytes())
     return value
 
@@ -134,6 +169,7 @@ class PresenceTests(unittest.TestCase):
             return
         for name in (
             "validate_result_file",
+            "validate_c3_result_for_observation",
             "validate_public_summary",
             "private_result_snapshot",
         ):
@@ -295,6 +331,80 @@ class StrictPrivateResultTests(unittest.TestCase):
                 with self.assertRaises(GATE.QualificationError):
                     self.validate(profile_id)
 
+    def test_c3_post_oi_nvs_binding_is_exact_and_observation_bound(self) -> None:
+        original = private_result(C3_PROFILE, self.artifacts[C3_PROFILE])
+        observation = {
+            "raw_log_sha256": OI1_RAW_SHA256,
+            "reset_to_service_advertisement_ms": [1000] * 10,
+        }
+        summary = GATE.validate_c3_result_for_observation(
+            self.result_paths[C3_PROFILE],
+            artifact_path=self.artifact_paths[C3_PROFILE],
+            expected_version=VERSION,
+            candidate_release_json_sha256=RELEASE_DIGEST,
+            observation=observation,
+        )
+        self.assertNotIn("post_oi_nvs", summary)
+
+        mutations = {
+            "missing": lambda value: value.pop("post_oi_nvs"),
+            "receipt-digest": lambda value: value["post_oi_nvs"].__setitem__(
+                "receipt_sha256", "0" * 64
+            ),
+            "receipt-size": lambda value: value["post_oi_nvs"].__setitem__(
+                "receipt_size_bytes", 0
+            ),
+            "release": lambda value: value["post_oi_nvs"]["summary"].__setitem__(
+                "candidate_release_json_sha256", "0" * 64
+            ),
+            "firmware": lambda value: value["post_oi_nvs"]["summary"].__setitem__(
+                "candidate_firmware_sha256", "0" * 64
+            ),
+            "raw": lambda value: value["post_oi_nvs"]["summary"].__setitem__(
+                "oi1_raw_sha256", "0" * 64
+            ),
+            "resets": lambda value: value["post_oi_nvs"]["summary"].__setitem__(
+                "reset_samples", 9
+            ),
+            "offset": lambda value: value["post_oi_nvs"]["summary"].__setitem__(
+                "partition_offset", 0
+            ),
+            "size": lambda value: value["post_oi_nvs"]["summary"].__setitem__(
+                "partition_size", 0x5000
+            ),
+            "integrity": lambda value: value["post_oi_nvs"]["summary"].__setitem__(
+                "integrity", "failed"
+            ),
+            "phy": lambda value: value["post_oi_nvs"]["summary"].__setitem__(
+                "written_namespaces", ["phy"]
+            ),
+        }
+        for name, mutate in mutations.items():
+            with self.subTest(mutation=name):
+                changed = copy.deepcopy(original)
+                mutate(changed)
+                self.rewrite(C3_PROFILE, changed)
+                with self.assertRaises(GATE.QualificationError):
+                    self.validate(C3_PROFILE)
+
+        self.rewrite(C3_PROFILE, original)
+        for name, changed_observation in {
+            "wrong-raw": {**observation, "raw_log_sha256": "0" * 64},
+            "nine-resets": {
+                **observation,
+                "reset_to_service_advertisement_ms": [1000] * 9,
+            },
+        }.items():
+            with self.subTest(observation=name):
+                with self.assertRaises(GATE.QualificationError):
+                    GATE.validate_c3_result_for_observation(
+                        self.result_paths[C3_PROFILE],
+                        artifact_path=self.artifact_paths[C3_PROFILE],
+                        expected_version=VERSION,
+                        candidate_release_json_sha256=RELEASE_DIGEST,
+                        observation=changed_observation,
+                    )
+
     def test_gate_sets_require_every_exact_gate_passed(self) -> None:
         for profile_id, gate_names in (
             (C3_PROFILE, C3_GATES),
@@ -446,6 +556,7 @@ class V5SummaryBindingTests(unittest.TestCase):
     def summaries(self) -> tuple[dict[str, object], dict[str, object], dict[str, object]]:
         waveshare = {"schema_version": 1, "status": "passed"}
         c3 = private_result(C3_PROFILE, b"c3")
+        c3.pop("post_oi_nvs")
         c3["qualification_result_sha256"] = "2" * 64
         pico = private_result(PICO_PROFILE, b"pico")
         pico["qualification_result_sha256"] = "3" * 64
@@ -565,6 +676,14 @@ class FinalizerBindingTests(unittest.TestCase):
             4,
             "each C3/Pico input must be snapshotted before and after promotion",
         )
+
+    def test_completion_and_finalizer_bind_c3_receipt_to_the_oi_observation(self) -> None:
+        seam = "_V060_PROFILE_GATE.validate_c3_result_for_observation"
+        self.assertIn(
+            seam,
+            inspect.getsource(RELEASE.create_hil_completion_fragment),
+        )
+        self.assertIn(seam, inspect.getsource(RELEASE.finalize_public_bundle))
 
     def test_public_tree_validator_revalidates_both_derived_summaries(self) -> None:
         source = inspect.getsource(RELEASE._validate_hil)

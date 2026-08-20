@@ -1128,24 +1128,19 @@ class BoardConfigurationSourceContractTests(unittest.TestCase):
         )
         thresholds = profile["thresholds"]
         self.assertEqual(
+            thresholds,
             {
-                key: thresholds[key]
-                for key in (
-                    "gc_free_min_bytes",
-                    "idf_internal_free_min_bytes",
-                    "idf_internal_largest_block_min_bytes",
-                    "idf_internal_minimum_free_min_bytes",
-                    "reset_to_service_advertisement_max_ms",
-                )
-            },
-            {
+                "application_headroom_min_bytes": 352880,
+                "application_image_max_bytes": 1678736,
                 "gc_free_min_bytes": 117760,
+                "get_verified_goodput_min_bytes_per_second": 27200,
                 "idf_internal_free_min_bytes": 66560,
                 "idf_internal_largest_block_min_bytes": 57344,
                 "idf_internal_minimum_free_min_bytes": 63488,
+                "put_committed_goodput_min_bytes_per_second": 15300,
                 "reset_to_service_advertisement_max_ms": 3000,
             },
-            "the PHY policy must not weaken any C3 heap or reset gate",
+            "the PHY policy must not weaken any C3 release threshold",
         )
 
 
