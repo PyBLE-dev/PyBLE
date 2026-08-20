@@ -20991,13 +20991,20 @@ def _qualification_derivation_for_source(
         and COMMIT_RE.fullmatch(source_commit) is not None,
         "qualification source commit must be full lowercase 40-hex",
     )
-    merge_base = _git_output(
-        Path(checkout),
-        "PyBLE",
-        "merge-base",
-        V060_SUPERSEDED_SOURCE_BOUNDARY,
-        source_commit,
-    )
+    try:
+        merge_base = _git_output(
+            Path(checkout),
+            "PyBLE",
+            "merge-base",
+            V060_SUPERSEDED_SOURCE_BOUNDARY,
+            source_commit,
+        )
+    except ReleaseError as exc:
+        raise ReleaseError(
+            "qualification source %s ancestry against the superseded "
+            "v0.6.0 source boundary is unprovable; failing closed instead "
+            "of guessing a derivation era" % source_commit
+        ) from exc
     if (
         merge_base == V060_SUPERSEDED_SOURCE_BOUNDARY
         and source_commit != V060_SUPERSEDED_SOURCE_BOUNDARY
@@ -21006,8 +21013,9 @@ def _qualification_derivation_for_source(
     if merge_base == source_commit:
         return _qualification_derivation_for_version(firmware_version)
     raise ReleaseError(
-        "qualification source %s is unrelated to the superseded v0.6.0 "
-        "source boundary; the derivation era is unprovable" % source_commit
+        "qualification source %s ancestry is unrelated to the superseded "
+        "v0.6.0 source boundary; the derivation era is unprovable"
+        % source_commit
     )
 
 
@@ -21326,7 +21334,16 @@ def _validate_qualification_policy(
 
 def _load_qualification_policy(
     repo_root: Path,
+    *,
+    derivation: dict[str, str] | None = None,
 ) -> tuple[dict[str, Any], str]:
+    """Load and fully revalidate the committed OI-1 qualification policy.
+
+    ``derivation`` optionally binds the ADR-0038 era already proven from a
+    bound source commit's ancestry; without it a v0.6.0-or-later era is
+    routed from this checkout's own HEAD ancestry.
+    """
+
     root = Path(repo_root)
     firmware_version = _read_lock(root)["pyble"]["agent_version"]
     path = _audit_repo_file(
@@ -21346,6 +21363,7 @@ def _load_qualification_policy(
             document,
             repo_root=root,
             firmware_version=firmware_version,
+            derivation=derivation,
         ),
         _sha256_bytes(source),
     )
@@ -26237,7 +26255,17 @@ def _load_v5_completion_observation(
     profile_id: str,
     qualification_repo_root: Path,
     policy: dict[str, Any],
+    derivation: dict[str, str],
 ) -> tuple[dict[str, Any], tuple[Any, ...]]:
+    """Load one V5 completion observation under the candidate-bound era.
+
+    ``derivation`` is the ADR-0038 era already proven from the CANDIDATE's
+    bound source commit's git ancestry; the committed policy is revalidated
+    under exactly that era, never under this checkout's HEAD or a SemVer
+    fallback.  The lineage branch re-derives its receipt against a clean git
+    checkout, which re-proves the same binding on its own.
+    """
+
     value, snapshot = _read_canonical_json_object(
         Path(path), "V5 OI-1 verify observation"
     )
@@ -26255,9 +26283,10 @@ def _load_v5_completion_observation(
     )
     baseline_path = (
         Path(qualification_repo_root)
-        / _load_qualification_policy(Path(qualification_repo_root))[0][
-            "baseline_evidence"
-        ]["path"]
+        / _load_qualification_policy(
+            Path(qualification_repo_root),
+            derivation=derivation,
+        )[0]["baseline_evidence"]["path"]
     )
     baseline = _read_json(baseline_path, "active OI-1 baseline evidence")
     baseline_profile = next(
@@ -26592,6 +26621,21 @@ def create_hil_completion_fragment(
         == candidate_snapshot,
         "candidate release changed during HIL completion validation",
     )
+    # ADR-0038: the qualification-policy derivation era is a git-ancestry
+    # fact of the CANDIDATE's bound source commit — never of this checkout's
+    # HEAD and never of SemVer alone.  Route by that commit's ancestry and
+    # fail closed when it is unprovable.
+    try:
+        candidate_source_commit = release["provenance"]["pyble"]["commit"]
+    except (KeyError, TypeError) as exc:
+        raise ReleaseError(
+            "candidate release provenance lacks its bound pyble source commit"
+        ) from exc
+    completion_derivation = _qualification_derivation_for_source(
+        qualification_root,
+        candidate_source_commit,
+        firmware_version="0.6.0",
+    )
     try:
         pending_report_text = pending_report_raw.decode("utf-8", errors="strict")
     except UnicodeDecodeError as exc:
@@ -26657,6 +26701,7 @@ def create_hil_completion_fragment(
         profile_id=profile_id,
         qualification_repo_root=qualification_root,
         policy=policy_by_id[profile_id],
+        derivation=completion_derivation,
     )
 
     candidate_release_digest = hashlib.sha256(release_raw).hexdigest()
@@ -26806,6 +26851,7 @@ def create_hil_completion_fragment(
                 profile_id=profile_id,
                 qualification_repo_root=qualification_root,
                 policy=policy_by_id[profile_id],
+                derivation=completion_derivation,
             )
         )
         _require(
