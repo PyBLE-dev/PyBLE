@@ -9,6 +9,10 @@
 CONFIG_BT_ENABLED=y
 CONFIG_BT_NIMBLE_ENABLED=y
 
+# Run full PHY calibration on each boot instead of growing retained PHY NVS
+# state. Its documented ~100 ms cost stays inside the frozen 3000 ms ceiling.
+# CONFIG_ESP_PHY_CALIBRATION_AND_DATA_STORAGE is not set
+
 # sdkconfig.base carries an ESP32-only AUTO choice. C3 has a fixed 40 MHz
 # crystal choice; make the final defaults assignment explicit and warning-free.
 # CONFIG_XTAL_FREQ_AUTO is not set
