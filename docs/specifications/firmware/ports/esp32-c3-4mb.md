@@ -89,8 +89,22 @@ existing 10 controlled C3-G4 reset samples MUST still pass the 3,000 ms ceiling
 and every frozen heap floor. A read-only NVS namespace/key/type inventory taken
 after those repeated resets MUST pass partition integrity checks and contain no
 written `phy` namespace or key; values are neither required nor retained as
-public evidence. The application and VFS regions remain subject to their
-existing exact-byte and functional checks.
+public evidence. The C3 private-result writer MUST require that inventory as a
+stable, exclusive mode-`0600` canonical receipt. It derives and stores the
+receipt's exact SHA-256 and byte length plus a candidate-bound summary; the
+summary binds the candidate release and firmware digests, the exact OI raw-log
+digest, 10 reset samples, NVS offset `0x9000`, size `0x6000`, integrity pass,
+and the complete written namespace list. The writer rejects a missing,
+changed, malformed, non-exclusive, wrong-candidate, wrong-offset,
+wrong-size, integrity-failed, or `phy`-containing receipt. Finalization MUST
+cross-check its OI raw-log binding against the completed C3 observation. The
+public summary omits the private receipt body; its private-result digest binds
+the validated receipt transitively. The application and VFS regions remain
+subject to their existing exact-byte and functional checks.
+
+The existing V5 `provisioning_install: passed` check remains the mechanical
+full-chip-erase/install attestation and MUST still be present. The NVS receipt
+does not duplicate or replace that check.
 
 ## C3-G0 — Identity, build, and install (FROZEN)
 
