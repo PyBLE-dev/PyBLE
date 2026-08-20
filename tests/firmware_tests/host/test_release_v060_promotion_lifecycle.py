@@ -10,15 +10,18 @@ release documents without building, flashing, publishing, or using hardware.
 from __future__ import annotations
 
 import copy
+import functools
 import hashlib
 import json
 from pathlib import Path
 import stat
+import subprocess
 import tempfile
 import unittest
 from unittest import mock
 
 import test_release_bundle as bundle_fixture
+import _support
 import test_release_v060_lifecycle as lifecycle_fixture
 
 
@@ -221,13 +224,79 @@ def provenance() -> dict[str, object]:
     }
 
 
+def _repo_git(*args: str) -> str:
+    completed = subprocess.run(
+        ["git", "-C", _support.REPO_ROOT, *args],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return completed.stdout.strip()
+
+
+@functools.lru_cache(maxsize=None)
+def real_source_commit() -> str:
+    """This checkout's HEAD — a real strict descendant of the ADR-0038 boundary.
+
+    The completion writer binds the qualification-policy derivation era to the
+    CANDIDATE's bound source commit by git ancestry and fails closed when that
+    ancestry is unprovable (ADR-0038).  A hardcoded fake commit such as
+    ``"1" * 40`` is unprovable by construction and can therefore never reach
+    the happy path; the fixture must carry a real strict descendant of the
+    superseded-source boundary, resolved from the repository's own history at
+    test runtime rather than hardcoded, so it tracks this branch's history.
+    """
+
+    return _repo_git("rev-parse", "HEAD")
+
+
+def provision_qualification_root(root: Path) -> None:
+    """Provision a hermetic qualification root the completion writer accepts.
+
+    The writer reads firmware/versions.lock, the committed OI-1 policy, and
+    the retained a8be631d baseline under the qualification root
+    (release_bundle._load_qualification_policy), and proves the candidate's
+    source-era ancestry with git against that same root.  Copy the REAL files
+    so the fixture exercises the production parse and threshold verification,
+    and link the real git history through a gitfile — read-only: rev-parse and
+    merge-base resolve through the shared object store, nothing is written.
+    """
+
+    repo = Path(_support.REPO_ROOT)
+    lock_dir = root / "firmware"
+    lock_dir.mkdir()
+    (lock_dir / "versions.lock").write_bytes(
+        (repo / "firmware" / "versions.lock").read_bytes()
+    )
+    gates_dir = lock_dir / "qualification"
+    gates_dir.mkdir()
+    (gates_dir / "oi1-gates.json").write_bytes(
+        (repo / "firmware" / "qualification" / "oi1-gates.json").read_bytes()
+    )
+    baseline_rel = Path("docs") / "validation" / "firmware" / "oi1"
+    baseline_dir = root / baseline_rel
+    baseline_dir.mkdir(parents=True)
+    baseline_name = "a8be631df46590166307aa41afaea30b39e29230.json"
+    (baseline_dir / baseline_name).write_bytes(
+        (repo / baseline_rel / baseline_name).read_bytes()
+    )
+    (root / ".git").write_text(
+        "gitdir: %s\n" % _repo_git("rev-parse", "--absolute-git-dir"),
+        encoding="utf-8",
+    )
+
+
 @unittest.skipUnless(HAVE_RELEASE, RELEASE_LOAD_ERROR)
 class V5CompletionAndPromotionContractTests(unittest.TestCase):
     def test_completion_writer_derives_profile_and_gate_fields(self) -> None:
         pending = pending_v5_payload()
         release = {
             "identity": {"version": "0.6.0", "tag": "firmware-v0.6.0"},
-            "provenance": {"pyble": {"commit": "1" * 40}},
+            # A REAL strict descendant of the superseded-source boundary: the
+            # writer routes the policy derivation era by this bound commit's
+            # ancestry and fails closed when it is unprovable, so a fake
+            # commit can never reach the happy path — see real_source_commit().
+            "provenance": {"pyble": {"commit": real_source_commit()}},
             "profiles": lifecycle_fixture.pending_profiles(),
         }
         with tempfile.TemporaryDirectory() as temporary:
@@ -238,6 +307,7 @@ class V5CompletionAndPromotionContractTests(unittest.TestCase):
             (candidate / "HIL_REPORT.md").write_text(
                 hil_report(pending), encoding="utf-8"
             )
+            provision_qualification_root(root)
             profile_id = "esp32-c3-4mb"
             operator_path = root / "operator.json"
             observation_path = root / "observation.json"
@@ -259,6 +329,10 @@ class V5CompletionAndPromotionContractTests(unittest.TestCase):
                 RELEASE._V060_PROFILE_GATE,
                 "private_result_snapshot",
                 return_value=("fixture-private-snapshot",),
+            ), mock.patch.object(
+                RELEASE._V060_PROFILE_GATE,
+                "validate_c3_result_for_observation",
+                return_value={"gates": gates},
             ), mock.patch.object(
                 RELEASE._V060_PROFILE_GATE,
                 "validate_result_file",
@@ -302,7 +376,10 @@ class V5CompletionAndPromotionContractTests(unittest.TestCase):
         pending = pending_v5_payload()
         release = {
             "identity": {"version": "0.6.0", "tag": "firmware-v0.6.0"},
-            "provenance": {"pyble": {"commit": "1" * 40}},
+            # Real strict descendant, so every subtest fails on exactly the
+            # forbidden operator field / wrong private phase it pins, never on
+            # unprovable source ancestry — see real_source_commit().
+            "provenance": {"pyble": {"commit": real_source_commit()}},
             "profiles": lifecycle_fixture.pending_profiles(),
         }
         with tempfile.TemporaryDirectory() as temporary:
@@ -313,6 +390,7 @@ class V5CompletionAndPromotionContractTests(unittest.TestCase):
             (candidate / "HIL_REPORT.md").write_text(
                 hil_report(pending), encoding="utf-8"
             )
+            provision_qualification_root(root)
             observation_path = root / "observation.json"
             write_json(observation_path, {"fixture": "esp32-4mb"})
 
@@ -349,6 +427,121 @@ class V5CompletionAndPromotionContractTests(unittest.TestCase):
                             profile_qualification_result=result_path,
                         )
                     self.assertFalse(output.exists())
+
+    def test_completion_binds_policy_era_to_candidate_source_ancestry(self) -> None:
+        """ADR-0037/ADR-0038: the completion writer's derivation era is a git
+        ancestry fact of the CANDIDATE's bound source commit.
+
+        A strict descendant of the superseded-source boundary must verify the
+        checked-in V4 fixed-SLO policy; the boundary and its ancestors route
+        to the historical arithmetic (so the committed V4 policy is refused as
+        the wrong source era); an unprovable commit fails closed with an
+        error naming ancestry — never a baseline-threshold mismatch and never
+        a silent fall back to historical arithmetic.
+        """
+
+        pending = pending_v5_payload()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            candidate = root / "candidate"
+            candidate.mkdir()
+            (candidate / "release.json").write_bytes(b"{}\n")
+            (candidate / "HIL_REPORT.md").write_text(
+                hil_report(pending), encoding="utf-8"
+            )
+            provision_qualification_root(root)
+            # An ungated profile: no private gate result, so the era routing
+            # itself is the only seam under test.
+            profile_id = "esp32-4mb"
+            operator_path = root / "operator.json"
+            observation_path = root / "observation.json"
+            write_json(operator_path, operator_input(profile_id))
+            write_json(observation_path, {"fixture": profile_id})
+
+            def attempt(commit: str, output_name: str) -> Path:
+                release = {
+                    "identity": {
+                        "version": "0.6.0",
+                        "tag": "firmware-v0.6.0",
+                    },
+                    "provenance": {"pyble": {"commit": commit}},
+                    "profiles": lifecycle_fixture.pending_profiles(),
+                }
+                with mock.patch.object(
+                    RELEASE, "validate_bundle", return_value=release
+                ), mock.patch.object(
+                    RELEASE,
+                    "_validate_qualification_observation",
+                    side_effect=lambda value, *_args, **_kwargs: value,
+                ):
+                    return RELEASE.create_hil_completion_fragment(
+                        candidate_dir=candidate,
+                        profile_id=profile_id,
+                        operator_input_path=operator_path,
+                        oi1_observation_path=observation_path,
+                        output_path=root / output_name,
+                        qualification_repo_root=root,
+                        profile_qualification_result=None,
+                    )
+
+            descendant = real_source_commit()
+            self.assertEqual(
+                RELEASE._qualification_derivation_for_source(
+                    root, descendant, firmware_version="0.6.0"
+                ),
+                RELEASE.QUALIFICATION_DERIVATION_V4,
+                "the fixture root must prove the descendant's ancestry",
+            )
+            created = attempt(descendant, "descendant-completion.json")
+            self.assertEqual(Path(created), root / "descendant-completion.json")
+            self.assertEqual(
+                json.loads(created.read_text(encoding="utf-8")),
+                completion_fragment(profile_id),
+                "a strict descendant of the boundary must verify the "
+                "checked-in V4 fixed-SLO policy and complete",
+            )
+
+            for superseded in (
+                RELEASE.V060_SUPERSEDED_SOURCE_BOUNDARY,
+                RELEASE.V060_ABANDONED_CANDIDATE_SOURCE,
+            ):
+                with self.subTest(superseded_commit=superseded):
+                    output_name = "superseded-%s.json" % superseded[:8]
+                    with self.assertRaises(
+                        RELEASE.ReleaseError,
+                        msg="the boundary and its ancestors keep the "
+                        "historical arithmetic, which the committed V4 "
+                        "policy can never satisfy",
+                    ) as caught:
+                        attempt(superseded, output_name)
+                    message = str(caught.exception)
+                    self.assertIn(
+                        "does not match the firmware source era",
+                        message,
+                        "a superseded-era candidate must be refused as the "
+                        "wrong source era for the committed V4 policy",
+                    )
+                    self.assertNotIn("were not derived from baseline", message)
+                    self.assertFalse((root / output_name).exists())
+
+            for unprovable in (
+                "1" * 40,
+                hashlib.sha256(b"pyble-unprovable-source").hexdigest()[:40],
+            ):
+                with self.subTest(unprovable_commit=unprovable):
+                    output_name = "unprovable-%s.json" % unprovable[:8]
+                    with self.assertRaises(
+                        RELEASE.ReleaseError,
+                        msg="unprovable candidate source ancestry must fail "
+                        "closed, never silently fall back to historical "
+                        "arithmetic",
+                    ) as caught:
+                        attempt(unprovable, output_name)
+                    message = str(caught.exception)
+                    self.assertIn("ancestry", message)
+                    self.assertIn("unprovable", message)
+                    self.assertNotIn("were not derived from baseline", message)
+                    self.assertFalse((root / output_name).exists())
 
     def test_promotion_envelope_uses_v5_discriminated_immutable_fields(self) -> None:
         pending = pending_v5_payload()
