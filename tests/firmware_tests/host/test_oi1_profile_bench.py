@@ -42,6 +42,32 @@ CURRENT_PROFILE_ORDER = PROFILE_ORDER + (
     "esp32-c3-4mb",
     "rpi-pico2-w",
 )
+HISTORICAL_V3_DERIVATION = {
+    "application_image": "exact-byte-identical-two-root-v1",
+    "application_headroom": "factory-minus-application-v1",
+    "heap_floor": "floor-min-1024-v1",
+    "boot_ceiling": "fixed-product-slo-3000-v3",
+    "goodput_floor": "floor-95pct-min-100-v2",
+}
+REPLACEMENT_V4_DERIVATION = {
+    "application_image": "exact-byte-identical-two-root-v1",
+    "application_headroom": "factory-minus-application-v1",
+    "heap_floor": "floor-min-1024-v1",
+    "boot_ceiling": "fixed-profile-product-slo-esp3000-pico7000-v4",
+    "goodput_floor": "fixed-product-slo-64k-under-10s-6600-v3",
+}
+FIXED_PERFORMANCE_THRESHOLDS = {
+    profile_id: {
+        "reset_to_service_advertisement_max_ms": (
+            7000 if profile_id == "rpi-pico2-w" else 3000
+        ),
+        "put_committed_goodput_min_bytes_per_second": 6600,
+        "get_verified_goodput_min_bytes_per_second": 6600,
+    }
+    for profile_id in CURRENT_PROFILE_ORDER
+}
+PASSING_6600_DURATION_NS = 9_929_696_969
+FAILING_6599_DURATION_NS = PASSING_6600_DURATION_NS + 1
 HISTORICAL_V042_PROFILE_ORDER = (
     "esp32-4mb",
     "esp32-s3-n16r8",
@@ -378,26 +404,16 @@ class FrozenConstantsTest(unittest.TestCase):
         )
         self.assertEqual(
             bench.DERIVATION,
-            {
-                "application_image": "exact-byte-identical-two-root-v1",
-                "application_headroom": "factory-minus-application-v1",
-                "heap_floor": "floor-min-1024-v1",
-                "boot_ceiling": "fixed-product-slo-3000-v3",
-                "goodput_floor": "floor-95pct-min-100-v2",
-            },
+            REPLACEMENT_V4_DERIVATION,
         )
 
-    def test_committed_v060_policy_is_immutable_five_profile_evidence(self):
+    def test_committed_v060_policy_uses_fixed_slos_and_retains_a8_baseline(self):
         policy_path = (
             REPO_ROOT / "firmware" / "qualification" / "oi1-gates.json"
         )
         payload = policy_path.read_bytes()
         policy = json.loads(payload.decode("utf-8"))
 
-        self.assertEqual(
-            hashlib.sha256(payload).hexdigest(),
-            "09e208ab5069b2229d2ae0983df33bb9310de85a8aab83ee816db4456cf21bdd",
-        )
         self.assertEqual(policy["schema_version"], 3)
         self.assertEqual(
             policy["profile_order"],
@@ -428,6 +444,53 @@ class FrozenConstantsTest(unittest.TestCase):
                 ),
             },
         )
+        self.assertEqual(policy["derivation"], REPLACEMENT_V4_DERIVATION)
+        self.assertEqual(
+            {
+                entry["profile_id"]: {
+                    key: entry["thresholds"][key]
+                    for key in (
+                        "reset_to_service_advertisement_max_ms",
+                        "put_committed_goodput_min_bytes_per_second",
+                        "get_verified_goodput_min_bytes_per_second",
+                    )
+                }
+                for entry in policy["profiles"]
+            },
+            FIXED_PERFORMANCE_THRESHOLDS,
+        )
+        self.assertEqual(len(payload), 5015)
+        self.assertEqual(
+            hashlib.sha256(payload).hexdigest(),
+            "b9b19ddc217598835185429d6d1f1da60bb3a504a447e32dcdeae15bf18bd0c5",
+        )
+
+    def test_retained_a8_baseline_bytes_and_samples_remain_immutable(self):
+        baseline_path = (
+            REPO_ROOT
+            / "docs"
+            / "validation"
+            / "firmware"
+            / "oi1"
+            / "a8be631df46590166307aa41afaea30b39e29230.json"
+        )
+        payload = baseline_path.read_bytes()
+        baseline = json.loads(payload.decode("utf-8"))
+
+        self.assertEqual(
+            hashlib.sha256(payload).hexdigest(),
+            "8a7dbf328ba8d70f5161582b56d1566821f20b7a259ff29dc7d6fe6bb75a6044",
+        )
+        self.assertEqual(baseline["schema_version"], 2)
+        self.assertEqual(baseline["source_commit"], "a8be631df46590166307aa41afaea30b39e29230")
+        self.assertEqual(baseline["profile_order"], list(CURRENT_PROFILE_ORDER))
+        self.assertEqual(
+            [
+                max(entry["oi1_observation"]["reset_to_service_advertisement_ms"])
+                for entry in baseline["profiles"]
+            ],
+            [1828, 1187, 1594, 1167, 3378],
+        )
 
     def test_v051_three_profile_policy_contract_uses_synthetic_evidence(self):
         synthetic_thresholds = {
@@ -443,7 +506,7 @@ class FrozenConstantsTest(unittest.TestCase):
             "profile_order": list(PROFILE_ORDER),
             "deferred_profiles": ["esp32-c3-4mb"],
             "workload": bench.V051_WORKLOAD,
-            "derivation": bench.DERIVATION,
+            "derivation": HISTORICAL_V3_DERIVATION,
             "baseline_evidence": {
                 "path": "synthetic-v0.5.1-evidence.json",
                 "sha256": "0" * 64,
@@ -874,7 +937,7 @@ class BuildAndDerivationTest(unittest.TestCase):
         with self.assertRaises(bench.BenchError):
             bench.oi1_build_from_bytes(b"A" * 101, _partition_table(100))
 
-    def test_frozen_metric_specific_threshold_derivation(self):
+    def test_fixed_esp_product_slos_ignore_baseline_extrema(self):
         post_hello = [
             _heap(9001 + i, 1000, 17001 + i, 9001 + i, 5001 + i)
             for i in range(10)
@@ -908,8 +971,8 @@ class BuildAndDerivationTest(unittest.TestCase):
                 "idf_internal_largest_block_min_bytes": 8192,
                 "idf_internal_minimum_free_min_bytes": 4096,
                 "reset_to_service_advertisement_max_ms": 3000,
-                "put_committed_goodput_min_bytes_per_second": 31100,
-                "get_verified_goodput_min_bytes_per_second": 15500,
+                "put_committed_goodput_min_bytes_per_second": 6600,
+                "get_verified_goodput_min_bytes_per_second": 6600,
             },
         )
 
@@ -941,8 +1004,8 @@ class BuildAndDerivationTest(unittest.TestCase):
                 "idf_internal_largest_block_min_bytes": 81920,
                 "idf_internal_minimum_free_min_bytes": 86016,
                 "reset_to_service_advertisement_max_ms": 3000,
-                "put_committed_goodput_min_bytes_per_second": 6900,
-                "get_verified_goodput_min_bytes_per_second": 13200,
+                "put_committed_goodput_min_bytes_per_second": 6600,
+                "get_verified_goodput_min_bytes_per_second": 6600,
             },
         )
 
@@ -971,7 +1034,7 @@ class BuildAndDerivationTest(unittest.TestCase):
             repeat_derived[
                 "put_committed_goodput_min_bytes_per_second"
             ],
-            6800,
+            6600,
         )
 
     def test_fixed_reset_product_slo_accepts_boundary_and_rejects_above_it(self):
@@ -1023,6 +1086,76 @@ class BuildAndDerivationTest(unittest.TestCase):
                 above_boundary,
                 thresholds,
             )
+
+    def test_all_four_esp_profiles_enforce_every_fixed_boundary_sample(self):
+        build = {
+            "application_image_bytes": 100,
+            "factory_partition_bytes": 1000,
+            "application_headroom_bytes": 900,
+        }
+        for profile_id in CURRENT_PROFILE_ORDER[:-1]:
+            with self.subTest(profile_id=profile_id):
+                observation = _valid_observation(profile_id)
+                observation["reset_to_service_advertisement_ms"] = [3000] * 10
+                for prefix in ("put", "get"):
+                    observation["%s_duration_ns" % prefix] = [
+                        PASSING_6600_DURATION_NS
+                    ] * 5
+                observation["put_committed_goodput_bytes_per_second"] = [6600] * 5
+                observation["get_verified_goodput_bytes_per_second"] = [6600] * 5
+                bench.validate_observation(observation, profile_id=profile_id)
+
+                thresholds = bench.derive_thresholds(build, observation)
+                self.assertEqual(
+                    {
+                        key: thresholds[key]
+                        for key in FIXED_PERFORMANCE_THRESHOLDS[profile_id]
+                    },
+                    FIXED_PERFORMANCE_THRESHOLDS[profile_id],
+                    "derivation must yield the fixed product SLOs for %s"
+                    % profile_id,
+                )
+                bench.evaluate_thresholds(build, observation, thresholds)
+
+                reset_failure = copy.deepcopy(observation)
+                reset_failure["reset_to_service_advertisement_ms"][-1] = 3001
+                with self.assertRaisesRegex(
+                    bench.BenchError,
+                    "reset_to_service_advertisement_max_ms=3001 exceeds 3000",
+                ):
+                    bench.evaluate_thresholds(build, reset_failure, thresholds)
+
+                for direction, duration_key, goodput_key, floor_key in (
+                    (
+                        "PUT",
+                        "put_duration_ns",
+                        "put_committed_goodput_bytes_per_second",
+                        "put_committed_goodput_min_bytes_per_second",
+                    ),
+                    (
+                        "GET",
+                        "get_duration_ns",
+                        "get_verified_goodput_bytes_per_second",
+                        "get_verified_goodput_min_bytes_per_second",
+                    ),
+                ):
+                    transfer_failure = copy.deepcopy(observation)
+                    transfer_failure[duration_key][-1] = FAILING_6599_DURATION_NS
+                    transfer_failure[goodput_key][-1] = 6599
+                    bench.validate_observation(
+                        transfer_failure,
+                        profile_id=profile_id,
+                    )
+                    with self.assertRaisesRegex(
+                        bench.BenchError,
+                        "%s=6599 is below 6600" % floor_key,
+                        msg="%s boundary must fail for %s" % (direction, profile_id),
+                    ):
+                        bench.evaluate_thresholds(
+                            build,
+                            transfer_failure,
+                            thresholds,
+                        )
 
 
 class CapsAndMtuTest(unittest.TestCase):

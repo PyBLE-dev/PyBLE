@@ -11,8 +11,12 @@ files.  It never builds firmware or talks to hardware.
 from __future__ import annotations
 
 import copy
+import hashlib
 import importlib.util
+import inspect
+import json
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 from unittest import mock
@@ -37,6 +41,43 @@ V060_PROFILE_ORDER = (
     "esp32-c3-4mb",
     "rpi-pico2-w",
 )
+V060_SUPERSEDED_SOURCE_BOUNDARY = (
+    "5620f2fdc672b440548119e3431cfa4f4ed3f5a3"
+)
+V060_ABANDONED_CANDIDATE_SOURCE = (
+    "719b211345028e49aee9df9b11c4b5fd110913de"
+)
+QUALIFICATION_DERIVATION_V2 = {
+    "application_image": "exact-byte-identical-two-root-v1",
+    "application_headroom": "factory-minus-application-v1",
+    "heap_floor": "floor-min-1024-v1",
+    "boot_ceiling": "ceil-max-plus-300-10-v2",
+    "goodput_floor": "floor-95pct-min-100-v2",
+}
+QUALIFICATION_DERIVATION_V3 = {
+    "application_image": "exact-byte-identical-two-root-v1",
+    "application_headroom": "factory-minus-application-v1",
+    "heap_floor": "floor-min-1024-v1",
+    "boot_ceiling": "fixed-product-slo-3000-v3",
+    "goodput_floor": "floor-95pct-min-100-v2",
+}
+QUALIFICATION_DERIVATION_V4 = {
+    "application_image": "exact-byte-identical-two-root-v1",
+    "application_headroom": "factory-minus-application-v1",
+    "heap_floor": "floor-min-1024-v1",
+    "boot_ceiling": "fixed-profile-product-slo-esp3000-pico7000-v4",
+    "goodput_floor": "fixed-product-slo-64k-under-10s-6600-v3",
+}
+FIXED_PERFORMANCE_THRESHOLDS = {
+    profile_id: {
+        "reset_to_service_advertisement_max_ms": (
+            7000 if profile_id == "rpi-pico2-w" else 3000
+        ),
+        "put_committed_goodput_min_bytes_per_second": 6600,
+        "get_verified_goodput_min_bytes_per_second": 6600,
+    }
+    for profile_id in V060_PROFILE_ORDER
+}
 ESP_TARGETS = (
     "esp32",
     "esp32-s3",
@@ -314,6 +355,211 @@ class V060QualificationPolicyContractTests(unittest.TestCase):
                 firmware_version="0.6.0",
             ),
             policy,
+        )
+
+
+class V060ReplacementSourceEraContractTests(unittest.TestCase):
+    """ADR-0038: the replacement era is a git-ancestry fact, not a SemVer.
+
+    The superseded unpublished v0.6.0 source era ends at and includes
+    ``5620f2f``.  Only strict descendants of that boundary may use the
+    ADR-0037 fixed-SLO derivation; the boundary and its ancestors keep the
+    historical arithmetic; unprovable ancestry fails closed.
+    """
+
+    @staticmethod
+    def git_output(checkout: Path, *args: str) -> str:
+        completed = subprocess.run(
+            ["git", "-C", str(checkout), *args],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return completed.stdout.strip()
+
+    def selector(self):
+        selector = getattr(
+            RELEASE, "_qualification_derivation_for_source", None
+        )
+        self.assertIsNotNone(
+            selector,
+            "release tooling must select the qualification derivation from "
+            "the bound source commit's ancestry, not from SemVer alone",
+        )
+        return selector
+
+    def test_replacement_registry_preserves_history_and_freezes_v4(self):
+        self.assertEqual(
+            RELEASE.QUALIFICATION_DERIVATION_V2,
+            QUALIFICATION_DERIVATION_V2,
+        )
+        self.assertEqual(
+            RELEASE.QUALIFICATION_DERIVATION_V3,
+            QUALIFICATION_DERIVATION_V3,
+        )
+        self.assertEqual(
+            getattr(RELEASE, "QUALIFICATION_DERIVATION_V4", None),
+            QUALIFICATION_DERIVATION_V4,
+        )
+        self.assertEqual(
+            getattr(RELEASE, "V060_SUPERSEDED_SOURCE_BOUNDARY", None),
+            V060_SUPERSEDED_SOURCE_BOUNDARY,
+        )
+        self.assertEqual(
+            getattr(RELEASE, "V060_ABANDONED_CANDIDATE_SOURCE", None),
+            V060_ABANDONED_CANDIDATE_SOURCE,
+        )
+
+    def test_derivation_selection_routes_by_source_ancestry_not_semver(self):
+        selector = self.selector()
+        head = self.git_output(REPO_ROOT, "rev-parse", "HEAD")
+
+        self.assertEqual(
+            selector(REPO_ROOT, head, firmware_version="0.6.0"),
+            QUALIFICATION_DERIVATION_V4,
+            "a strict descendant of the boundary is the replacement era",
+        )
+        for source_commit in (
+            V060_SUPERSEDED_SOURCE_BOUNDARY,
+            V060_ABANDONED_CANDIDATE_SOURCE,
+        ):
+            with self.subTest(source_commit=source_commit):
+                self.assertEqual(
+                    selector(
+                        REPO_ROOT,
+                        source_commit,
+                        firmware_version="0.6.0",
+                    ),
+                    QUALIFICATION_DERIVATION_V3,
+                    "the boundary and its ancestors keep historical "
+                    "arithmetic; abandoned-candidate evidence can never "
+                    "satisfy a V4 policy",
+                )
+        self.assertEqual(
+            selector(
+                REPO_ROOT,
+                V060_ABANDONED_CANDIDATE_SOURCE,
+                firmware_version="0.4.2",
+            ),
+            RELEASE.QUALIFICATION_DERIVATION_V1,
+            "historical version routing inside the superseded era is "
+            "unchanged",
+        )
+
+    def test_unknown_or_unrelated_source_ancestry_fails_closed(self):
+        selector = self.selector()
+        with self.assertRaises(RELEASE.ReleaseError):
+            selector(REPO_ROOT, "f" * 40, firmware_version="0.6.0")
+
+        with tempfile.TemporaryDirectory(prefix="pyble-v060-era-") as tmp:
+            unrelated = Path(tmp) / "unrelated"
+            unrelated.mkdir()
+            subprocess.run(
+                ["git", "init", "-q", str(unrelated)],
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(unrelated),
+                    "-c",
+                    "user.name=PyBLE Test",
+                    "-c",
+                    "user.email=test@invalid",
+                    "commit",
+                    "-q",
+                    "--allow-empty",
+                    "-m",
+                    "unrelated",
+                ],
+                check=True,
+                capture_output=True,
+            )
+            orphan = self.git_output(unrelated, "rev-parse", "HEAD")
+            with self.assertRaises(RELEASE.ReleaseError):
+                selector(unrelated, orphan, firmware_version="0.6.0")
+            with self.assertRaises(RELEASE.ReleaseError):
+                selector(
+                    unrelated,
+                    V060_SUPERSEDED_SOURCE_BOUNDARY,
+                    firmware_version="0.6.0",
+                )
+
+            plain = Path(tmp) / "plain"
+            plain.mkdir()
+            with self.assertRaises(RELEASE.ReleaseError):
+                selector(
+                    plain,
+                    V060_SUPERSEDED_SOURCE_BOUNDARY,
+                    firmware_version="0.6.0",
+                )
+
+    def test_active_policy_is_exact_fixed_slo_delta_of_superseded_policy(self):
+        historical_raw = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(REPO_ROOT),
+                "show",
+                "%s:firmware/qualification/oi1-gates.json"
+                % V060_SUPERSEDED_SOURCE_BOUNDARY,
+            ],
+            check=True,
+            capture_output=True,
+        ).stdout
+        self.assertEqual(len(historical_raw), 4986)
+        self.assertEqual(
+            hashlib.sha256(historical_raw).hexdigest(),
+            "09e208ab5069b2229d2ae0983df33bb9310de85a8aab83ee816db4456cf21bdd",
+            "the superseded-era policy identity must stay auditable",
+        )
+        historical = json.loads(historical_raw.decode("utf-8"))
+        self.assertEqual(historical["derivation"], QUALIFICATION_DERIVATION_V3)
+
+        active_path = (
+            REPO_ROOT / "firmware" / "qualification" / "oi1-gates.json"
+        )
+        active_raw = active_path.read_bytes()
+        active = json.loads(active_raw.decode("utf-8"))
+        self.assertEqual(
+            (
+                json.dumps(
+                    active,
+                    indent=2,
+                    sort_keys=True,
+                    ensure_ascii=False,
+                    allow_nan=False,
+                )
+                + "\n"
+            ).encode("utf-8"),
+            active_raw,
+            "the active policy must stay canonical sorted-key JSON",
+        )
+        self.assertEqual(active["derivation"], QUALIFICATION_DERIVATION_V4)
+
+        expected = copy.deepcopy(historical)
+        expected["derivation"] = copy.deepcopy(QUALIFICATION_DERIVATION_V4)
+        changed_numeric_fields = 0
+        for entry in expected["profiles"]:
+            fixed = FIXED_PERFORMANCE_THRESHOLDS[entry["profile_id"]]
+            for key, value in fixed.items():
+                if entry["thresholds"][key] != value:
+                    changed_numeric_fields += 1
+                entry["thresholds"][key] = value
+        self.assertEqual(
+            changed_numeric_fields,
+            11,
+            "exactly the Pico reset ceiling and all ten transfer floors "
+            "change; the two derivation identifiers are separate string "
+            "fields",
+        )
+        self.assertEqual(
+            active,
+            expected,
+            "every static/heap threshold, schema field, and baseline "
+            "binding must stay byte-identical to the superseded policy",
         )
 
 

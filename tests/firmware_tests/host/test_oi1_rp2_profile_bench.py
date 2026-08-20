@@ -369,9 +369,9 @@ class Rp2BuildAndHeapTests(unittest.TestCase):
                     RP2_IMAGE_LIMIT_BYTES - 256
                 ),
                 "gc_free_min_bytes": 8192,
-                "reset_to_service_advertisement_max_ms": 3000,
-                "put_committed_goodput_min_bytes_per_second": 62200,
-                "get_verified_goodput_min_bytes_per_second": 62200,
+                "reset_to_service_advertisement_max_ms": 7000,
+                "put_committed_goodput_min_bytes_per_second": 6600,
+                "get_verified_goodput_min_bytes_per_second": 6600,
             },
         )
         self.assertEqual(
@@ -386,6 +386,69 @@ class Rp2BuildAndHeapTests(unittest.TestCase):
                 contaminated,
                 profile_id=PICO_PROFILE,
             )
+
+    def test_pico_fixed_reset_and_transfer_boundaries_are_exact(self):
+        build = {
+            "firmware_bin_bytes": 256,
+            "firmware_image_limit_bytes": RP2_IMAGE_LIMIT_BYTES,
+            "firmware_image_headroom_bytes": RP2_IMAGE_LIMIT_BYTES - 256,
+        }
+        observation = _rp2_observation()
+        observation["reset_to_service_advertisement_ms"] = [7000] * 10
+        for prefix in ("put", "get"):
+            observation["%s_duration_ns" % prefix] = [9_929_696_969] * 5
+        observation["put_committed_goodput_bytes_per_second"] = [6600] * 5
+        observation["get_verified_goodput_bytes_per_second"] = [6600] * 5
+        bench.validate_observation(observation, profile_id=PICO_PROFILE)
+
+        thresholds = bench.derive_thresholds(build, observation)
+        self.assertEqual(
+            {
+                key: thresholds[key]
+                for key in (
+                    "reset_to_service_advertisement_max_ms",
+                    "put_committed_goodput_min_bytes_per_second",
+                    "get_verified_goodput_min_bytes_per_second",
+                )
+            },
+            {
+                "reset_to_service_advertisement_max_ms": 7000,
+                "put_committed_goodput_min_bytes_per_second": 6600,
+                "get_verified_goodput_min_bytes_per_second": 6600,
+            },
+            "derivation must yield the fixed Pico product SLOs",
+        )
+        bench.evaluate_thresholds(build, observation, thresholds)
+
+        reset_failure = dict(observation)
+        reset_failure["reset_to_service_advertisement_ms"] = [7000] * 9 + [7001]
+        with self.assertRaisesRegex(
+            bench.BenchError,
+            "reset_to_service_advertisement_max_ms=7001 exceeds 7000",
+        ):
+            bench.evaluate_thresholds(build, reset_failure, thresholds)
+
+        for duration_key, goodput_key, floor_key in (
+            (
+                "put_duration_ns",
+                "put_committed_goodput_bytes_per_second",
+                "put_committed_goodput_min_bytes_per_second",
+            ),
+            (
+                "get_duration_ns",
+                "get_verified_goodput_bytes_per_second",
+                "get_verified_goodput_min_bytes_per_second",
+            ),
+        ):
+            transfer_failure = dict(observation)
+            transfer_failure[duration_key] = [9_929_696_969] * 4 + [9_929_696_970]
+            transfer_failure[goodput_key] = [6600] * 4 + [6599]
+            bench.validate_observation(transfer_failure, profile_id=PICO_PROFILE)
+            with self.assertRaisesRegex(
+                bench.BenchError,
+                "%s=6599 is below 6600" % floor_key,
+            ):
+                bench.evaluate_thresholds(build, transfer_failure, thresholds)
 
     def test_rp2_baseline_fragment_binds_install_and_resource_hashes(self):
         profile = profile_bench.build_baseline_profile(

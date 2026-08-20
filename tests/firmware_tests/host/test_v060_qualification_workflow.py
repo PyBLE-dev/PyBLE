@@ -103,6 +103,22 @@ def canonical_json_bytes(value: object) -> bytes:
     ).encode("utf-8")
 
 
+C3_NVS_SLICE = b"\xff" * 24576
+C3_NVS_SLICE_SHA256 = (
+    "1df8949b2e345ab8c00cb81fb6b83686e20a4080f969e5cd8b8d520a07cdaba2"
+)
+C3_NVS_ACQUISITION_LOG = (
+    b"c3-post-oi-nvs-acquisition-v1\n"
+    b"offset=0x9000 size=0x6000 captured=post-workload pre-evaluation\n"
+)
+
+
+def _write_private_file(path: Path, raw: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(raw)
+    path.chmod(0o600)
+
+
 def write_c3_post_oi_nvs_receipt(
     path: Path,
     *,
@@ -110,8 +126,23 @@ def write_c3_post_oi_nvs_receipt(
     artifact: bytes,
     namespaces: list[dict[str, object]] | None = None,
     oi1_raw_sha256: str = "d" * 64,
-) -> tuple[dict[str, object], bytes]:
+    slice_raw: bytes = C3_NVS_SLICE,
+    acquisition_log_raw: bytes = C3_NVS_ACQUISITION_LOG,
+    claimed_slice_sha256: str | None = None,
+    claimed_slice_size: int | None = None,
+) -> dict[str, object]:
+    """Write receipt, raw NVS slice, and acquisition log as 0600 files.
+
+    ``claimed_*`` lets a test author a hand-written summary that disagrees
+    with the actual slice bytes; validators must reopen the real file and
+    reject the copied claim.
+    """
+
     inventory = namespaces or []
+    slice_path = path.with_name(path.stem + "-slice.bin")
+    log_path = path.with_name(path.stem + "-acquisition.log")
+    _write_private_file(slice_path, slice_raw)
+    _write_private_file(log_path, acquisition_log_raw)
     summary = {
         "schema_version": 1,
         "profile_id": "esp32-c3-4mb",
@@ -121,15 +152,33 @@ def write_c3_post_oi_nvs_receipt(
         "reset_samples": 10,
         "partition_offset": 0x9000,
         "partition_size": 0x6000,
+        "nvs_slice_sha256": (
+            claimed_slice_sha256
+            if claimed_slice_sha256 is not None
+            else hashlib.sha256(slice_raw).hexdigest()
+        ),
+        "nvs_slice_size_bytes": (
+            claimed_slice_size
+            if claimed_slice_size is not None
+            else len(slice_raw)
+        ),
+        "acquisition_log_sha256": hashlib.sha256(
+            acquisition_log_raw
+        ).hexdigest(),
+        "acquisition_log_size_bytes": len(acquisition_log_raw),
         "integrity": "passed",
         "written_namespaces": [item["namespace"] for item in inventory],
     }
     receipt = {"summary": summary, "inventory": inventory}
     raw = canonical_json_bytes(receipt)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(raw)
-    path.chmod(0o600)
-    return summary, raw
+    _write_private_file(path, raw)
+    return {
+        "summary": summary,
+        "raw": raw,
+        "receipt_path": path,
+        "slice_path": slice_path,
+        "log_path": log_path,
+    }
 
 
 def candidate_release(artifact: bytes) -> dict[str, object]:
@@ -442,6 +491,8 @@ class PrivateGateResultWriterContractTests(unittest.TestCase):
                 "passed_gates",
                 "output_path",
                 "post_oi_nvs_receipt_path",
+                "post_oi_nvs_slice_path",
+                "post_oi_nvs_acquisition_log_path",
             },
         )
 
@@ -463,6 +514,8 @@ class PrivateGateResultWriterContractTests(unittest.TestCase):
         )
         self.assertEqual(command_help.returncode, 0, command_help.stderr)
         self.assertIn("--post-oi-nvs-receipt", command_help.stdout)
+        self.assertIn("--post-oi-nvs-slice", command_help.stdout)
+        self.assertIn("--post-oi-nvs-acquisition-log", command_help.stdout)
         for forbidden in (
             "--status",
             "--firmware-version",
@@ -486,7 +539,7 @@ class PrivateGateResultWriterContractTests(unittest.TestCase):
             (candidate / "release.json").write_bytes(release_raw)
             output = root / "private" / "c3-result.json"
             receipt = root / "private" / "c3-post-oi-nvs.json"
-            receipt_summary, receipt_raw = write_c3_post_oi_nvs_receipt(
+            evidence = write_c3_post_oi_nvs_receipt(
                 receipt,
                 release_raw=release_raw,
                 artifact=artifact,
@@ -499,6 +552,8 @@ class PrivateGateResultWriterContractTests(unittest.TestCase):
                 passed_gates=gates,
                 output_path=output,
                 post_oi_nvs_receipt_path=receipt,
+                post_oi_nvs_slice_path=evidence["slice_path"],
+                post_oi_nvs_acquisition_log_path=evidence["log_path"],
             )
             expected = {
                 "schema_version": 1,
@@ -511,9 +566,11 @@ class PrivateGateResultWriterContractTests(unittest.TestCase):
                 "candidate_firmware_sha256": hashlib.sha256(artifact).hexdigest(),
                 "gates": {name: "passed" for name in gates},
                 "post_oi_nvs": {
-                    "receipt_sha256": hashlib.sha256(receipt_raw).hexdigest(),
-                    "receipt_size_bytes": len(receipt_raw),
-                    "summary": receipt_summary,
+                    "receipt_sha256": hashlib.sha256(
+                        evidence["raw"]
+                    ).hexdigest(),
+                    "receipt_size_bytes": len(evidence["raw"]),
+                    "summary": evidence["summary"],
                 },
             }
             self.assertEqual(Path(created), output)
@@ -521,47 +578,59 @@ class PrivateGateResultWriterContractTests(unittest.TestCase):
             self.assertEqual(stat.S_IMODE(output.stat().st_mode), 0o600)
             self.assertEqual(output.stat().st_nlink, 1)
 
+            def create(output_path, **overrides):
+                arguments = {
+                    "candidate_dir": candidate,
+                    "profile_id": "esp32-c3-4mb",
+                    "passed_gates": gates,
+                    "output_path": output_path,
+                    "post_oi_nvs_receipt_path": receipt,
+                    "post_oi_nvs_slice_path": evidence["slice_path"],
+                    "post_oi_nvs_acquisition_log_path": evidence["log_path"],
+                }
+                arguments.update(overrides)
+                return writer(**arguments)
+
             with self.assertRaises(GATE.QualificationError):
-                writer(
-                    candidate_dir=candidate,
-                    profile_id="esp32-c3-4mb",
-                    passed_gates=gates,
-                    output_path=output,
-                    post_oi_nvs_receipt_path=receipt,
-                )
+                create(output)
             missing_output = root / "private" / "missing.json"
             with self.assertRaises(GATE.QualificationError):
-                writer(
-                    candidate_dir=candidate,
-                    profile_id="esp32-c3-4mb",
-                    passed_gates=gates[:-1],
-                    output_path=missing_output,
-                    post_oi_nvs_receipt_path=receipt,
-                )
+                create(missing_output, passed_gates=gates[:-1])
             self.assertFalse(missing_output.exists())
 
-            for name, receipt_path in (
-                ("missing-receipt", None),
-                ("non-exclusive-receipt", receipt),
+            for name, overrides, chmod_path in (
+                ("missing-receipt", {"post_oi_nvs_receipt_path": None}, None),
+                ("non-exclusive-receipt", {}, receipt),
+                (
+                    "missing-slice",
+                    {"post_oi_nvs_slice_path": None},
+                    None,
+                ),
+                ("non-exclusive-slice", {}, evidence["slice_path"]),
+                (
+                    "missing-acquisition-log",
+                    {"post_oi_nvs_acquisition_log_path": None},
+                    None,
+                ),
+                (
+                    "non-exclusive-acquisition-log",
+                    {},
+                    evidence["log_path"],
+                ),
             ):
-                if receipt_path is not None:
-                    receipt.chmod(0o644)
+                if chmod_path is not None:
+                    chmod_path.chmod(0o644)
                 rejected_output = root / "private" / (name + ".json")
                 with self.subTest(name=name), self.assertRaises(
                     GATE.QualificationError
                 ):
-                    writer(
-                        candidate_dir=candidate,
-                        profile_id="esp32-c3-4mb",
-                        passed_gates=gates,
-                        output_path=rejected_output,
-                        post_oi_nvs_receipt_path=receipt_path,
-                    )
+                    create(rejected_output, **overrides)
                 self.assertFalse(rejected_output.exists())
-                receipt.chmod(0o600)
+                if chmod_path is not None:
+                    chmod_path.chmod(0o600)
 
             phy_receipt = root / "private" / "phy-receipt.json"
-            write_c3_post_oi_nvs_receipt(
+            phy_evidence = write_c3_post_oi_nvs_receipt(
                 phy_receipt,
                 release_raw=release_raw,
                 artifact=artifact,
@@ -574,14 +643,84 @@ class PrivateGateResultWriterContractTests(unittest.TestCase):
             )
             phy_output = root / "private" / "phy-result.json"
             with self.assertRaises(GATE.QualificationError):
-                writer(
-                    candidate_dir=candidate,
-                    profile_id="esp32-c3-4mb",
-                    passed_gates=gates,
-                    output_path=phy_output,
+                create(
+                    phy_output,
                     post_oi_nvs_receipt_path=phy_receipt,
+                    post_oi_nvs_slice_path=phy_evidence["slice_path"],
+                    post_oi_nvs_acquisition_log_path=phy_evidence["log_path"],
                 )
             self.assertFalse(phy_output.exists())
+
+    def test_writer_reopens_slice_bytes_and_never_mints_from_diagnostics(self):
+        """Handoff robust-design points 2, 4, and 5 at result creation.
+
+        The writer must re-derive every digest from the reopened evidence
+        bytes.  A diagnostic capture — any slice that is not the exact
+        fully erased 24,576-byte all-0xff partition — may be retained for
+        debugging but must never mint a passing result, even when the
+        hand-written receipt summary copies the frozen digest.
+        """
+
+        writer = getattr(GATE, "create_result_file", None)
+        if not callable(writer):
+            self.skipTest("RED: private gate writer has not landed")
+        with tempfile.TemporaryDirectory(prefix="pyble-v060-nvs-slice-") as tmp:
+            root = Path(tmp).resolve()
+            candidate = root / "candidate"
+            (candidate / "esp32-c3-4mb").mkdir(parents=True)
+            artifact = b"candidate C3 firmware\0"
+            (candidate / "esp32-c3-4mb" / "firmware.bin").write_bytes(artifact)
+            release_raw = canonical_json_bytes(candidate_release(artifact))
+            (candidate / "release.json").write_bytes(release_raw)
+            gates = ["C3-G%d" % index for index in range(7)]
+            written_slice = b"\x00" + C3_NVS_SLICE[1:]
+
+            cases = {
+                "diagnostic-written-byte": {
+                    "slice_raw": written_slice,
+                },
+                "diagnostic-truncated": {
+                    "slice_raw": C3_NVS_SLICE[:-1],
+                },
+                "copied-summary-bypass": {
+                    "slice_raw": written_slice,
+                    "claimed_slice_sha256": C3_NVS_SLICE_SHA256,
+                    "claimed_slice_size": len(C3_NVS_SLICE),
+                },
+                "claimed-digest-without-bytes": {
+                    "slice_raw": C3_NVS_SLICE[:-1],
+                    "claimed_slice_sha256": C3_NVS_SLICE_SHA256,
+                    "claimed_slice_size": len(C3_NVS_SLICE),
+                },
+            }
+            for name, overrides in cases.items():
+                with self.subTest(name=name):
+                    receipt = root / "private" / (name + ".json")
+                    evidence = write_c3_post_oi_nvs_receipt(
+                        receipt,
+                        release_raw=release_raw,
+                        artifact=artifact,
+                        **overrides,
+                    )
+                    rejected_output = root / "private" / (name + "-result.json")
+                    with self.assertRaises(GATE.QualificationError):
+                        writer(
+                            candidate_dir=candidate,
+                            profile_id="esp32-c3-4mb",
+                            passed_gates=gates,
+                            output_path=rejected_output,
+                            post_oi_nvs_receipt_path=receipt,
+                            post_oi_nvs_slice_path=evidence["slice_path"],
+                            post_oi_nvs_acquisition_log_path=evidence[
+                                "log_path"
+                            ],
+                        )
+                    self.assertFalse(rejected_output.exists())
+                    self.assertTrue(
+                        evidence["slice_path"].is_file(),
+                        "a rejected diagnostic capture is retained, not "
+                        "destroyed",
+                    )
 
     def test_writer_rejects_minimal_or_substituted_candidate_metadata(self):
         writer = GATE.create_result_file
@@ -761,7 +900,7 @@ class PrivateGateResultWriterContractTests(unittest.TestCase):
             )
             output = root / "private" / "result.json"
             receipt = root / "private" / "post-oi-nvs.json"
-            write_c3_post_oi_nvs_receipt(
+            evidence = write_c3_post_oi_nvs_receipt(
                 receipt,
                 release_raw=(candidate / "release.json").read_bytes(),
                 artifact=artifact,
@@ -777,8 +916,95 @@ class PrivateGateResultWriterContractTests(unittest.TestCase):
                     passed_gates=gates,
                     output_path=output,
                     post_oi_nvs_receipt_path=receipt,
+                    post_oi_nvs_slice_path=evidence["slice_path"],
+                    post_oi_nvs_acquisition_log_path=evidence["log_path"],
                 )
             self.assertFalse(output.exists())
+
+
+class C3PostOiNvsCaptureContractTests(unittest.TestCase):
+    """Handoff robust-design points 1 and 2 in the verify-mode runner.
+
+    The raw NVS slice is captured immediately after the full workload,
+    while the run resources are still open, and strictly before numeric
+    threshold evaluation or any app/NVS setter; the only passing slice is
+    the exact fully erased partition.
+    """
+
+    def test_bench_freezes_the_c3_nvs_slice_identity(self):
+        self.assertEqual(
+            getattr(PROFILE_BENCH, "C3_NVS_PARTITION_OFFSET", None),
+            0x9000,
+        )
+        self.assertEqual(
+            getattr(PROFILE_BENCH, "C3_NVS_PARTITION_SIZE", None),
+            0x6000,
+        )
+        self.assertEqual(
+            getattr(PROFILE_BENCH, "C3_POST_OI_NVS_SLICE_SHA256", None),
+            C3_NVS_SLICE_SHA256,
+        )
+
+    def test_slice_validator_accepts_only_the_fully_erased_partition(self):
+        validator = getattr(
+            PROFILE_BENCH, "validate_c3_post_oi_nvs_slice", None
+        )
+        self.assertTrue(
+            callable(validator),
+            "the C3 raw NVS slice needs a pure validator the writer and "
+            "finalizer can share",
+        )
+        self.assertEqual(validator(C3_NVS_SLICE), C3_NVS_SLICE_SHA256)
+        for name, raw in (
+            ("empty", b""),
+            ("truncated", C3_NVS_SLICE[:-1]),
+            ("oversized", C3_NVS_SLICE + b"\xff"),
+            ("leading-write", b"\x00" + C3_NVS_SLICE[1:]),
+            ("trailing-write", C3_NVS_SLICE[:-1] + b"\xfe"),
+        ):
+            with self.subTest(name=name), self.assertRaises(
+                PROFILE_BENCH.BenchError
+            ):
+                validator(raw)
+
+    def test_runner_captures_before_teardown_and_threshold_evaluation(self):
+        source = inspect.getsource(PROFILE_BENCH._run)
+        collect = source.find("collect_observation(")
+        capture = source.find("capture_c3_post_oi_nvs")
+        close = source.find("_close_run_resources(")
+        evaluate = source.find("evaluate_thresholds(")
+        write = source.find("atomic_write_canonical_json(")
+        for label, index in (
+            ("collect_observation", collect),
+            ("_close_run_resources", close),
+            ("evaluate_thresholds", evaluate),
+            ("atomic_write_canonical_json", write),
+        ):
+            self.assertGreaterEqual(
+                index, 0, "%s must stay part of the runner" % label
+            )
+        self.assertGreater(
+            capture,
+            collect,
+            "the raw NVS slice is captured only after the full workload",
+        )
+        self.assertLess(
+            capture,
+            close,
+            "capture needs the still-open run resources; no app/NVS setter "
+            "or teardown may run first",
+        )
+        self.assertLess(
+            capture,
+            evaluate,
+            "capture must precede numeric threshold evaluation",
+        )
+        self.assertLess(
+            evaluate,
+            write,
+            "a threshold failure may retain a diagnostic capture but must "
+            "never mint a passing result",
+        )
 
 
 class HilCompletionWriterContractTests(unittest.TestCase):

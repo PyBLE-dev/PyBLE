@@ -88,12 +88,22 @@ def sha256_bytes(value: bytes) -> str:
     return hashlib.sha256(value).hexdigest()
 
 
-def post_oi_nvs_binding(
+NVS_SLICE = b"\xff" * 24576
+NVS_SLICE_SHA256 = (
+    "1df8949b2e345ab8c00cb81fb6b83686e20a4080f969e5cd8b8d520a07cdaba2"
+)
+NVS_ACQUISITION_LOG = (
+    b"c3-post-oi-nvs-acquisition-v1\n"
+    b"offset=0x9000 size=0x6000 captured=post-workload pre-evaluation\n"
+)
+
+
+def post_oi_nvs_receipt(
     artifact: bytes,
     *,
     release_digest: str = RELEASE_DIGEST,
     oi1_raw_sha256: str = OI1_RAW_SHA256,
-) -> dict[str, object]:
+) -> tuple[dict[str, object], bytes]:
     summary = {
         "schema_version": 1,
         "profile_id": C3_PROFILE,
@@ -103,11 +113,28 @@ def post_oi_nvs_binding(
         "reset_samples": 10,
         "partition_offset": 0x9000,
         "partition_size": 0x6000,
+        "nvs_slice_sha256": NVS_SLICE_SHA256,
+        "nvs_slice_size_bytes": len(NVS_SLICE),
+        "acquisition_log_sha256": sha256_bytes(NVS_ACQUISITION_LOG),
+        "acquisition_log_size_bytes": len(NVS_ACQUISITION_LOG),
         "integrity": "passed",
         "written_namespaces": [],
     }
     receipt = {"summary": summary, "inventory": []}
-    raw = canonical_json_bytes(receipt)
+    return summary, canonical_json_bytes(receipt)
+
+
+def post_oi_nvs_binding(
+    artifact: bytes,
+    *,
+    release_digest: str = RELEASE_DIGEST,
+    oi1_raw_sha256: str = OI1_RAW_SHA256,
+) -> dict[str, object]:
+    summary, raw = post_oi_nvs_receipt(
+        artifact,
+        release_digest=release_digest,
+        oi1_raw_sha256=oi1_raw_sha256,
+    )
     return {
         "receipt_sha256": sha256_bytes(raw),
         "receipt_size_bytes": len(raw),
@@ -220,6 +247,20 @@ class StrictPrivateResultTests(unittest.TestCase):
             )
             self.artifact_paths[profile_id] = artifact_path
             self.result_paths[profile_id] = result_path
+        _summary, receipt_raw = post_oi_nvs_receipt(self.artifacts[C3_PROFILE])
+        self.evidence_paths = {
+            "receipt": self.root / "c3-post-oi-nvs.json",
+            "slice": self.root / "c3-post-oi-nvs-slice.bin",
+            "log": self.root / "c3-post-oi-nvs-acquisition.log",
+        }
+        for key, raw in (
+            ("receipt", receipt_raw),
+            ("slice", NVS_SLICE),
+            ("log", NVS_ACQUISITION_LOG),
+        ):
+            path = self.evidence_paths[key]
+            path.write_bytes(raw)
+            path.chmod(0o600)
 
     def tearDown(self) -> None:
         self.temporary.cleanup()
@@ -231,6 +272,24 @@ class StrictPrivateResultTests(unittest.TestCase):
             expected_profile_id=profile_id,
             expected_version=VERSION,
             candidate_release_json_sha256=RELEASE_DIGEST,
+        )
+
+    def validate_c3(
+        self, observation: dict[str, object], **overrides: object
+    ) -> dict[str, object]:
+        arguments: dict[str, object] = {
+            "artifact_path": self.artifact_paths[C3_PROFILE],
+            "expected_version": VERSION,
+            "candidate_release_json_sha256": RELEASE_DIGEST,
+            "observation": observation,
+            "post_oi_nvs_receipt_path": self.evidence_paths["receipt"],
+            "post_oi_nvs_slice_path": self.evidence_paths["slice"],
+            "post_oi_nvs_acquisition_log_path": self.evidence_paths["log"],
+        }
+        arguments.update(overrides)
+        return GATE.validate_c3_result_for_observation(
+            self.result_paths[C3_PROFILE],
+            **arguments,
         )
 
     def rewrite(self, profile_id: str, value: object, *, canonical: bool = True) -> None:
@@ -337,13 +396,7 @@ class StrictPrivateResultTests(unittest.TestCase):
             "raw_log_sha256": OI1_RAW_SHA256,
             "reset_to_service_advertisement_ms": [1000] * 10,
         }
-        summary = GATE.validate_c3_result_for_observation(
-            self.result_paths[C3_PROFILE],
-            artifact_path=self.artifact_paths[C3_PROFILE],
-            expected_version=VERSION,
-            candidate_release_json_sha256=RELEASE_DIGEST,
-            observation=observation,
-        )
+        summary = self.validate_c3(observation)
         self.assertNotIn("post_oi_nvs", summary)
 
         mutations = {
@@ -378,6 +431,12 @@ class StrictPrivateResultTests(unittest.TestCase):
             "phy": lambda value: value["post_oi_nvs"]["summary"].__setitem__(
                 "written_namespaces", ["phy"]
             ),
+            "slice-digest": lambda value: value["post_oi_nvs"][
+                "summary"
+            ].__setitem__("nvs_slice_sha256", "0" * 64),
+            "slice-size": lambda value: value["post_oi_nvs"][
+                "summary"
+            ].__setitem__("nvs_slice_size_bytes", 24575),
         }
         for name, mutate in mutations.items():
             with self.subTest(mutation=name):
@@ -386,6 +445,22 @@ class StrictPrivateResultTests(unittest.TestCase):
                 self.rewrite(C3_PROFILE, changed)
                 with self.assertRaises(GATE.QualificationError):
                     self.validate(C3_PROFILE)
+
+        log_mutations = {
+            "log-digest": lambda value: value["post_oi_nvs"][
+                "summary"
+            ].__setitem__("acquisition_log_sha256", "0" * 64),
+            "log-size": lambda value: value["post_oi_nvs"][
+                "summary"
+            ].__setitem__("acquisition_log_size_bytes", 0),
+        }
+        for name, mutate in log_mutations.items():
+            with self.subTest(mutation=name):
+                changed = copy.deepcopy(original)
+                mutate(changed)
+                self.rewrite(C3_PROFILE, changed)
+                with self.assertRaises(GATE.QualificationError):
+                    self.validate_c3(observation)
 
         self.rewrite(C3_PROFILE, original)
         for name, changed_observation in {
@@ -397,13 +472,63 @@ class StrictPrivateResultTests(unittest.TestCase):
         }.items():
             with self.subTest(observation=name):
                 with self.assertRaises(GATE.QualificationError):
-                    GATE.validate_c3_result_for_observation(
-                        self.result_paths[C3_PROFILE],
-                        artifact_path=self.artifact_paths[C3_PROFILE],
-                        expected_version=VERSION,
-                        candidate_release_json_sha256=RELEASE_DIGEST,
-                        observation=changed_observation,
-                    )
+                    self.validate_c3(changed_observation)
+
+    def test_c3_validator_reopens_evidence_bytes_and_rejects_copied_claims(
+        self,
+    ) -> None:
+        """Handoff robust-design point 4 at completion/finalization time.
+
+        The result's embedded digests and copied ``integrity: passed``
+        summary prove nothing by themselves: the validator must reopen the
+        exclusive mode-0600 receipt, raw-slice, and acquisition-log files,
+        re-derive every digest from the reopened bytes, and re-verify the
+        slice's exact fully erased identity.
+        """
+
+        observation = {
+            "raw_log_sha256": OI1_RAW_SHA256,
+            "reset_to_service_advertisement_ms": [1000] * 10,
+        }
+        self.validate_c3(observation)
+
+        original_bytes = {
+            key: path.read_bytes()
+            for key, path in self.evidence_paths.items()
+        }
+        tampers = {
+            "slice-rewritten": ("slice", b"\x00" + NVS_SLICE[1:], 0o600),
+            "slice-truncated": ("slice", NVS_SLICE[:-1], 0o600),
+            "slice-non-exclusive": ("slice", NVS_SLICE, 0o644),
+            "receipt-swapped": ("receipt", b"{}\n", 0o600),
+            "receipt-non-exclusive": (
+                "receipt",
+                original_bytes["receipt"],
+                0o644,
+            ),
+            "log-rewritten": ("log", NVS_ACQUISITION_LOG + b"tail\n", 0o600),
+            "log-non-exclusive": ("log", NVS_ACQUISITION_LOG, 0o644),
+        }
+        for name, (key, raw, mode) in tampers.items():
+            with self.subTest(evidence=name):
+                path = self.evidence_paths[key]
+                path.write_bytes(raw)
+                path.chmod(mode)
+                with self.assertRaises(GATE.QualificationError):
+                    self.validate_c3(observation)
+                path.write_bytes(original_bytes[key])
+                path.chmod(0o600)
+
+        for key in ("receipt", "slice", "log"):
+            with self.subTest(missing=key):
+                path = self.evidence_paths[key]
+                path.unlink()
+                with self.assertRaises(GATE.QualificationError):
+                    self.validate_c3(observation)
+                path.write_bytes(original_bytes[key])
+                path.chmod(0o600)
+
+        self.validate_c3(observation)
 
     def test_gate_sets_require_every_exact_gate_passed(self) -> None:
         for profile_id, gate_names in (
@@ -679,11 +804,24 @@ class FinalizerBindingTests(unittest.TestCase):
 
     def test_completion_and_finalizer_bind_c3_receipt_to_the_oi_observation(self) -> None:
         seam = "_V060_PROFILE_GATE.validate_c3_result_for_observation"
-        self.assertIn(
-            seam,
-            inspect.getsource(RELEASE.create_hil_completion_fragment),
-        )
-        self.assertIn(seam, inspect.getsource(RELEASE.finalize_public_bundle))
+        for owner in (
+            RELEASE.create_hil_completion_fragment,
+            RELEASE.finalize_public_bundle,
+        ):
+            source = inspect.getsource(owner)
+            self.assertIn(seam, source)
+            for evidence_path in (
+                "post_oi_nvs_receipt_path",
+                "post_oi_nvs_slice_path",
+                "post_oi_nvs_acquisition_log_path",
+            ):
+                self.assertIn(
+                    evidence_path,
+                    source,
+                    "completion and finalization must reopen the actual "
+                    "exclusive evidence files, never trust a hand-written "
+                    "result's copied summary",
+                )
 
     def test_public_tree_validator_revalidates_both_derived_summaries(self) -> None:
         source = inspect.getsource(RELEASE._validate_hil)
