@@ -30,9 +30,35 @@ class QualificationError(RuntimeError):
 
 RESULT_SCHEMA_VERSION = 1
 SUMMARY_SCHEMA_VERSION = 1
+RECEIPT_SCHEMA_VERSION = 1
 MAX_RESULT_BYTES = 64 * 1024
 C3_PROFILE_ID = "esp32-c3-4mb"
 PICO_PROFILE_ID = "rpi-pico2-w"
+# Frozen C3 post-OI NVS raw-slice identity (ports/esp32-c3-4mb.md): the only
+# passing capture is the fully erased partition at the frozen geometry.
+C3_NVS_PARTITION_OFFSET = 0x9000
+C3_NVS_PARTITION_SIZE = 0x6000
+C3_POST_OI_NVS_SLICE_SHA256 = (
+    "1df8949b2e345ab8c00cb81fb6b83686e20a4080f969e5cd8b8d520a07cdaba2"
+)
+C3_POST_OI_NVS_RESET_SAMPLES = 10
+_POST_OI_NVS_BINDING_KEYS = {"receipt_sha256", "receipt_size_bytes", "summary"}
+_POST_OI_NVS_SUMMARY_KEYS = {
+    "schema_version",
+    "profile_id",
+    "candidate_release_json_sha256",
+    "candidate_firmware_sha256",
+    "oi1_raw_sha256",
+    "reset_samples",
+    "partition_offset",
+    "partition_size",
+    "nvs_slice_sha256",
+    "nvs_slice_size_bytes",
+    "acquisition_log_sha256",
+    "acquisition_log_size_bytes",
+    "integrity",
+    "written_namespaces",
+}
 _GATES_BY_PROFILE = {
     C3_PROFILE_ID: tuple("C3-G%d" % index for index in range(7)),
     PICO_PROFILE_ID: ("GP0", "GP1", "GP2"),
@@ -288,6 +314,193 @@ def _validate_expected_inputs(
     return _GATES_BY_PROFILE[expected_profile_id], expected_name, digest_key
 
 
+def post_oi_nvs_evidence_paths(result_path: Path) -> dict[str, Path]:
+    """Frozen sibling layout binding one C3 result to its evidence trio.
+
+    Completion and finalization never accept operator-chosen evidence paths;
+    the receipt, raw NVS slice, and acquisition log live beside the private
+    result under these derived names so every stage reopens the same files.
+    """
+
+    result = Path(result_path)
+    base = result.stem + "-post-oi-nvs"
+    return {
+        "post_oi_nvs_receipt_path": result.with_name(base + ".json"),
+        "post_oi_nvs_slice_path": result.with_name(base + "-slice.bin"),
+        "post_oi_nvs_acquisition_log_path": result.with_name(
+            base + "-acquisition.log"
+        ),
+    }
+
+
+def _validate_c3_post_oi_nvs_slice_bytes(raw: bytes) -> str:
+    """Admit only the exact fully erased C3 NVS partition slice."""
+
+    _require(
+        type(raw) is bytes,
+        "C3 post-OI NVS slice must be raw bytes",
+    )
+    _require(
+        len(raw) == C3_NVS_PARTITION_SIZE,
+        "C3 post-OI NVS slice must be exactly %d bytes" % C3_NVS_PARTITION_SIZE,
+    )
+    _require(
+        raw == b"\xff" * C3_NVS_PARTITION_SIZE,
+        "C3 post-OI NVS slice is not the fully erased partition",
+    )
+    digest = hashlib.sha256(raw).hexdigest()
+    _require(
+        digest == C3_POST_OI_NVS_SLICE_SHA256,
+        "C3 post-OI NVS slice digest changed",
+    )
+    return digest
+
+
+def _validate_post_oi_nvs_summary(
+    value: Any,
+    *,
+    candidate_release_json_sha256: str,
+    artifact_sha256: str,
+) -> dict[str, Any]:
+    """Validate one candidate-bound C3 post-OI NVS receipt summary."""
+
+    summary = _exact_dict(
+        value,
+        _POST_OI_NVS_SUMMARY_KEYS,
+        "C3 post-OI NVS summary",
+    )
+    _require(
+        type(summary["schema_version"]) is int
+        and summary["schema_version"] == RECEIPT_SCHEMA_VERSION
+        and summary["profile_id"] == C3_PROFILE_ID
+        and summary["integrity"] == "passed",
+        "C3 post-OI NVS summary identity changed",
+    )
+    _require(
+        summary["candidate_release_json_sha256"] == candidate_release_json_sha256,
+        "C3 post-OI NVS candidate-release binding changed",
+    )
+    _require(
+        summary["candidate_firmware_sha256"] == artifact_sha256,
+        "C3 post-OI NVS candidate-firmware binding changed",
+    )
+    _require(
+        type(summary["oi1_raw_sha256"]) is str
+        and _SHA256_RE.fullmatch(summary["oi1_raw_sha256"]) is not None
+        and summary["oi1_raw_sha256"] != "0" * 64,
+        "C3 post-OI NVS raw-log binding is invalid",
+    )
+    _require(
+        type(summary["reset_samples"]) is int
+        and summary["reset_samples"] == C3_POST_OI_NVS_RESET_SAMPLES,
+        "C3 post-OI NVS reset-sample count changed",
+    )
+    _require(
+        type(summary["partition_offset"]) is int
+        and summary["partition_offset"] == C3_NVS_PARTITION_OFFSET
+        and type(summary["partition_size"]) is int
+        and summary["partition_size"] == C3_NVS_PARTITION_SIZE,
+        "C3 post-OI NVS partition geometry changed",
+    )
+    _require(
+        summary["nvs_slice_sha256"] == C3_POST_OI_NVS_SLICE_SHA256
+        and type(summary["nvs_slice_size_bytes"]) is int
+        and summary["nvs_slice_size_bytes"] == C3_NVS_PARTITION_SIZE,
+        "C3 post-OI NVS slice binding changed",
+    )
+    _require(
+        type(summary["acquisition_log_sha256"]) is str
+        and _SHA256_RE.fullmatch(summary["acquisition_log_sha256"]) is not None
+        and type(summary["acquisition_log_size_bytes"]) is int
+        and summary["acquisition_log_size_bytes"] > 0,
+        "C3 post-OI NVS acquisition-log binding is invalid",
+    )
+    _require(
+        summary["written_namespaces"] == [],
+        "C3 post-OI NVS capture recorded written namespaces",
+    )
+    return summary
+
+
+def _expected_post_oi_nvs_receipt_bytes(summary: dict[str, Any]) -> bytes:
+    """A passing slice is fully erased, so the canonical inventory is empty."""
+
+    return canonical_json_bytes({"summary": summary, "inventory": []})
+
+
+def _reopen_c3_post_oi_nvs_evidence(
+    receipt_path: Path | None,
+    slice_path: Path | None,
+    acquisition_log_path: Path | None,
+    *,
+    candidate_release_json_sha256: str,
+    artifact_sha256: str,
+) -> dict[str, Any]:
+    """Reopen and re-hash the exclusive C3 evidence trio; trust no summary.
+
+    Every digest and byte length is re-derived from the reopened bytes and
+    the raw slice is re-verified against its exact fully erased identity, so
+    a hand-written receipt or result can never substitute copied claims.
+    """
+
+    _require(
+        receipt_path is not None
+        and slice_path is not None
+        and acquisition_log_path is not None,
+        "C3 qualification requires the post-OI NVS receipt, raw slice, "
+        "and acquisition log",
+    )
+    receipt_raw, _receipt_identity = _stable_regular_bytes(
+        Path(receipt_path),
+        label="C3 post-OI NVS receipt",
+        maximum=MAX_RESULT_BYTES,
+        exclusive=True,
+    )
+    slice_raw, _slice_identity = _stable_regular_bytes(
+        Path(slice_path),
+        label="C3 post-OI NVS raw slice",
+        maximum=C3_NVS_PARTITION_SIZE,
+        exclusive=True,
+    )
+    log_raw, _log_identity = _stable_regular_bytes(
+        Path(acquisition_log_path),
+        label="C3 post-OI NVS acquisition log",
+        maximum=MAX_RESULT_BYTES,
+        exclusive=True,
+    )
+    slice_digest = _validate_c3_post_oi_nvs_slice_bytes(slice_raw)
+    receipt = _exact_dict(
+        _strict_json(receipt_raw),
+        {"summary", "inventory"},
+        "C3 post-OI NVS receipt",
+    )
+    _require(
+        receipt["inventory"] == [],
+        "C3 post-OI NVS inventory must be empty for the fully erased slice",
+    )
+    summary = _validate_post_oi_nvs_summary(
+        receipt["summary"],
+        candidate_release_json_sha256=candidate_release_json_sha256,
+        artifact_sha256=artifact_sha256,
+    )
+    _require(
+        summary["nvs_slice_sha256"] == slice_digest
+        and summary["nvs_slice_size_bytes"] == len(slice_raw),
+        "C3 post-OI NVS summary does not match the reopened raw slice",
+    )
+    _require(
+        summary["acquisition_log_sha256"]
+        == hashlib.sha256(log_raw).hexdigest()
+        and summary["acquisition_log_size_bytes"] == len(log_raw),
+        "C3 post-OI NVS summary does not match the reopened acquisition log",
+    )
+    return {
+        "receipt_sha256": hashlib.sha256(receipt_raw).hexdigest(),
+        "receipt_size_bytes": len(receipt_raw),
+        "summary": summary,
+    }
+
+
 def _validate_common(
     value: Any,
     *,
@@ -305,6 +518,8 @@ def _validate_common(
     expected_keys = set(_BASE_KEYS) | {digest_key}
     if public:
         expected_keys.add("qualification_result_sha256")
+    elif expected_profile_id == C3_PROFILE_ID:
+        expected_keys.add("post_oi_nvs")
     item = _exact_dict(
         value,
         expected_keys,
@@ -338,6 +553,25 @@ def _validate_common(
         all(gates[name] == "passed" for name in gate_names),
         "qualification profile gates are incomplete",
     )
+    if not public and expected_profile_id == C3_PROFILE_ID:
+        binding = _exact_dict(
+            item["post_oi_nvs"],
+            _POST_OI_NVS_BINDING_KEYS,
+            "C3 post-OI NVS binding",
+        )
+        receipt_summary = _validate_post_oi_nvs_summary(
+            binding["summary"],
+            candidate_release_json_sha256=candidate_release_json_sha256,
+            artifact_sha256=artifact_sha256,
+        )
+        expected_receipt = _expected_post_oi_nvs_receipt_bytes(receipt_summary)
+        _require(
+            binding["receipt_sha256"]
+            == hashlib.sha256(expected_receipt).hexdigest()
+            and type(binding["receipt_size_bytes"]) is int
+            and binding["receipt_size_bytes"] == len(expected_receipt),
+            "C3 post-OI NVS receipt binding changed",
+        )
     if public:
         # Private bytes never enter the bundle, so replay cannot recompute this
         # digest.  Exact recomputation happens while the private mode-0600 file
@@ -384,6 +618,89 @@ def validate_result_file(
         public=False,
     )
     summary = dict(value)
+    summary.pop("post_oi_nvs", None)
+    summary[digest_key] = artifact_sha256
+    summary["qualification_result_sha256"] = hashlib.sha256(raw).hexdigest()
+    return summary
+
+
+def validate_c3_result_for_observation(
+    result_path: Path,
+    *,
+    artifact_path: Path,
+    expected_version: str,
+    candidate_release_json_sha256: str,
+    observation: Any,
+    post_oi_nvs_receipt_path: Path,
+    post_oi_nvs_slice_path: Path,
+    post_oi_nvs_acquisition_log_path: Path,
+) -> dict[str, Any]:
+    """Bind one C3 private result to its reopened evidence and observation.
+
+    Completion and finalization use this seam instead of trusting a
+    hand-written result: the exclusive mode-0600 receipt, raw-slice, and
+    acquisition-log files are reopened and re-hashed, the slice's exact
+    fully erased identity is re-verified, and the retained OI raw-log
+    digest plus reset-sample count are cross-checked against the completed
+    C3 observation.  Returns the same non-private public summary as
+    ``validate_result_file``.
+    """
+
+    _gate_names, expected_name, digest_key = _validate_expected_inputs(
+        C3_PROFILE_ID,
+        expected_version,
+        candidate_release_json_sha256,
+    )
+    raw, _identity = _stable_regular_bytes(
+        Path(result_path),
+        label="qualification result",
+        maximum=MAX_RESULT_BYTES,
+        exclusive=True,
+    )
+    artifact_sha256 = _artifact_digest(Path(artifact_path), expected_name)
+    value = _validate_common(
+        _strict_json(raw),
+        expected_profile_id=C3_PROFILE_ID,
+        expected_version=expected_version,
+        candidate_release_json_sha256=candidate_release_json_sha256,
+        artifact_sha256=artifact_sha256,
+        public=False,
+    )
+    binding = value["post_oi_nvs"]
+    reopened = _reopen_c3_post_oi_nvs_evidence(
+        post_oi_nvs_receipt_path,
+        post_oi_nvs_slice_path,
+        post_oi_nvs_acquisition_log_path,
+        candidate_release_json_sha256=candidate_release_json_sha256,
+        artifact_sha256=artifact_sha256,
+    )
+    _require(
+        reopened == binding,
+        "C3 post-OI NVS evidence does not match the private result",
+    )
+    _require(
+        type(observation) is dict,
+        "C3 qualification observation must be an object",
+    )
+    observed_raw_sha256 = observation.get("raw_log_sha256")
+    observed_resets = observation.get("reset_to_service_advertisement_ms")
+    _require(
+        type(observed_raw_sha256) is str
+        and _SHA256_RE.fullmatch(observed_raw_sha256) is not None,
+        "C3 qualification observation raw-log digest is invalid",
+    )
+    _require(
+        type(observed_resets) is list
+        and len(observed_resets) == C3_POST_OI_NVS_RESET_SAMPLES,
+        "C3 qualification observation reset samples changed",
+    )
+    _require(
+        reopened["summary"]["oi1_raw_sha256"] == observed_raw_sha256
+        and reopened["summary"]["reset_samples"] == len(observed_resets),
+        "C3 post-OI NVS receipt is not bound to this observation",
+    )
+    summary = dict(value)
+    summary.pop("post_oi_nvs", None)
     summary[digest_key] = artifact_sha256
     summary["qualification_result_sha256"] = hashlib.sha256(raw).hexdigest()
     return summary
@@ -1107,8 +1424,20 @@ def create_result_file(
     profile_id: str,
     passed_gates: list[str],
     output_path: Path,
+    post_oi_nvs_receipt_path: Path | None = None,
+    post_oi_nvs_slice_path: Path | None = None,
+    post_oi_nvs_acquisition_log_path: Path | None = None,
 ) -> Path:
-    """Derive and create one candidate-bound private gate result safely."""
+    """Derive and create one candidate-bound private gate result safely.
+
+    For ``esp32-c3-4mb`` the three post-OI NVS evidence paths are required:
+    the writer reopens the exclusive mode-0600 receipt, raw-slice, and
+    acquisition-log files, re-derives every digest from the reopened bytes,
+    and re-verifies the slice's exact fully erased identity before any
+    result byte is written.  A diagnostic capture that fails those checks is
+    retained on disk but never mints a passing result.  Pico rejects the
+    evidence inputs.
+    """
 
     expected_gates = _GATES_BY_PROFILE.get(profile_id)
     _require(expected_gates is not None, "qualification profile is unsupported")
@@ -1130,6 +1459,22 @@ def create_result_file(
         not output.is_relative_to(candidate_root),
         "qualification result output must not be inside the candidate",
     )
+    if profile_id == C3_PROFILE_ID:
+        post_oi_nvs_binding = _reopen_c3_post_oi_nvs_evidence(
+            post_oi_nvs_receipt_path,
+            post_oi_nvs_slice_path,
+            post_oi_nvs_acquisition_log_path,
+            candidate_release_json_sha256=release_sha256,
+            artifact_sha256=artifact_sha256,
+        )
+    else:
+        _require(
+            post_oi_nvs_receipt_path is None
+            and post_oi_nvs_slice_path is None
+            and post_oi_nvs_acquisition_log_path is None,
+            "%s rejects post-OI NVS evidence inputs" % profile_id,
+        )
+        post_oi_nvs_binding = None
     _expected_name, digest_key = _ARTIFACT_BY_PROFILE[profile_id]
     result = {
         "schema_version": RESULT_SCHEMA_VERSION,
@@ -1140,6 +1485,8 @@ def create_result_file(
         digest_key: artifact_sha256,
         "gates": {name: "passed" for name in expected_gates},
     }
+    if post_oi_nvs_binding is not None:
+        result["post_oi_nvs"] = post_oi_nvs_binding
     raw = canonical_json_bytes(result)
     def validate_before_preserve() -> None:
         validate_result_file(
@@ -1153,6 +1500,18 @@ def create_result_file(
             _candidate_snapshot(Path(candidate_dir), profile_id) == candidate_snapshot,
             "candidate changed while qualification result was created",
         )
+        if post_oi_nvs_binding is not None:
+            _require(
+                _reopen_c3_post_oi_nvs_evidence(
+                    post_oi_nvs_receipt_path,
+                    post_oi_nvs_slice_path,
+                    post_oi_nvs_acquisition_log_path,
+                    candidate_release_json_sha256=release_sha256,
+                    artifact_sha256=artifact_sha256,
+                )
+                == post_oi_nvs_binding,
+                "C3 post-OI NVS evidence changed while the result was created",
+            )
 
     _write_exclusive_result(
         output,
@@ -1184,6 +1543,24 @@ def _main(argv: list[str] | None = None) -> int:
         required=True,
         dest="passed_gates",
     )
+    create_parser.add_argument(
+        "--post-oi-nvs-receipt",
+        type=Path,
+        dest="post_oi_nvs_receipt",
+        help="C3-only exclusive mode-0600 post-OI NVS inventory receipt",
+    )
+    create_parser.add_argument(
+        "--post-oi-nvs-slice",
+        type=Path,
+        dest="post_oi_nvs_slice",
+        help="C3-only exclusive mode-0600 raw NVS partition slice",
+    )
+    create_parser.add_argument(
+        "--post-oi-nvs-acquisition-log",
+        type=Path,
+        dest="post_oi_nvs_acquisition_log",
+        help="C3-only exclusive mode-0600 NVS acquisition log",
+    )
     args = parser.parse_args(argv)
     try:
         created = create_result_file(
@@ -1191,6 +1568,9 @@ def _main(argv: list[str] | None = None) -> int:
             profile_id=args.profile_id,
             passed_gates=args.passed_gates,
             output_path=args.output_path,
+            post_oi_nvs_receipt_path=args.post_oi_nvs_receipt,
+            post_oi_nvs_slice_path=args.post_oi_nvs_slice,
+            post_oi_nvs_acquisition_log_path=args.post_oi_nvs_acquisition_log,
         )
     except QualificationError as exc:
         print("qualification result creation failed: %s" % exc, file=sys.stderr)
@@ -1200,12 +1580,17 @@ def _main(argv: list[str] | None = None) -> int:
 
 
 __all__ = (
+    "C3_NVS_PARTITION_OFFSET",
+    "C3_NVS_PARTITION_SIZE",
+    "C3_POST_OI_NVS_SLICE_SHA256",
     "C3_PROFILE_ID",
     "PICO_PROFILE_ID",
     "QualificationError",
     "canonical_json_bytes",
     "create_result_file",
+    "post_oi_nvs_evidence_paths",
     "private_result_snapshot",
+    "validate_c3_result_for_observation",
     "validate_public_summary",
     "validate_result_file",
 )

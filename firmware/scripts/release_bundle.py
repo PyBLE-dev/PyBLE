@@ -26708,6 +26708,41 @@ def create_hil_completion_fragment(
                 expected_version="0.6.0",
                 candidate_release_json_sha256=candidate_release_digest,
             )
+            if profile_id == "esp32-c3-4mb":
+                # Handoff robust-design point 4: completion reopens and
+                # re-hashes the exclusive C3 evidence trio at the frozen
+                # sibling paths and binds the receipt to this exact
+                # observation; a hand-written result's copied summary is
+                # never trusted.
+                c3_evidence_paths = (
+                    _V060_PROFILE_GATE.post_oi_nvs_evidence_paths(result_path)
+                )
+                c3_observation_summary = (
+                    _V060_PROFILE_GATE.validate_c3_result_for_observation(
+                        result_path,
+                        artifact_path=(
+                            candidate
+                            / profile_id
+                            / PROFILE_SPECS[profile_id]["primary_artifact"]
+                        ),
+                        expected_version="0.6.0",
+                        candidate_release_json_sha256=candidate_release_digest,
+                        observation=observation,
+                        post_oi_nvs_receipt_path=c3_evidence_paths[
+                            "post_oi_nvs_receipt_path"
+                        ],
+                        post_oi_nvs_slice_path=c3_evidence_paths[
+                            "post_oi_nvs_slice_path"
+                        ],
+                        post_oi_nvs_acquisition_log_path=c3_evidence_paths[
+                            "post_oi_nvs_acquisition_log_path"
+                        ],
+                    )
+                )
+                _require(
+                    c3_observation_summary == private_summary,
+                    "C3 observation-bound qualification summary diverged",
+                )
         except _V060_PROFILE_GATE.QualificationError as exc:
             raise ReleaseError(
                 "private profile qualification result is invalid: %s" % exc
@@ -26808,6 +26843,35 @@ def create_hil_completion_fragment(
                     expected_version="0.6.0",
                     candidate_release_json_sha256=candidate_release_digest,
                 )
+                if profile_id == "esp32-c3-4mb":
+                    current_c3_summary = (
+                        _V060_PROFILE_GATE.validate_c3_result_for_observation(
+                            result_path,
+                            artifact_path=(
+                                candidate
+                                / profile_id
+                                / PROFILE_SPECS[profile_id]["primary_artifact"]
+                            ),
+                            expected_version="0.6.0",
+                            candidate_release_json_sha256=(
+                                candidate_release_digest
+                            ),
+                            observation=observation,
+                            post_oi_nvs_receipt_path=c3_evidence_paths[
+                                "post_oi_nvs_receipt_path"
+                            ],
+                            post_oi_nvs_slice_path=c3_evidence_paths[
+                                "post_oi_nvs_slice_path"
+                            ],
+                            post_oi_nvs_acquisition_log_path=c3_evidence_paths[
+                                "post_oi_nvs_acquisition_log_path"
+                            ],
+                        )
+                    )
+                    _require(
+                        current_c3_summary == current_summary,
+                        "C3 post-OI NVS evidence changed while it was used",
+                    )
             except _V060_PROFILE_GATE.QualificationError as exc:
                 raise ReleaseError(
                     "private profile qualification result became unsafe: %s" % exc
@@ -27267,6 +27331,26 @@ def finalize_public_bundle(
                 and pico_qualification_result is not None,
                 "v0.6.0 private qualification inputs disappeared",
             )
+            completed_c3_record = next(
+                (
+                    record
+                    for record in completed_hil["records"]
+                    if type(record) is dict
+                    and record.get("profile_id") == "esp32-c3-4mb"
+                ),
+                None,
+            )
+            _require(
+                completed_c3_record is not None,
+                "completed HIL report is missing the C3 record",
+            )
+            # Handoff robust-design point 4: finalization reopens and
+            # re-hashes the exclusive C3 evidence trio at the frozen sibling
+            # paths of the private result and cross-checks the retained OI
+            # raw-log binding against the completed C3 observation.
+            c3_evidence_paths = _V060_PROFILE_GATE.post_oi_nvs_evidence_paths(
+                c3_qualification_result
+            )
             try:
                 c3_qualification_snapshot = (
                     _V060_PROFILE_GATE.private_result_snapshot(
@@ -27279,16 +27363,25 @@ def finalize_public_bundle(
                     )
                 )
                 c3_qualification_summary = (
-                    _V060_PROFILE_GATE.validate_result_file(
+                    _V060_PROFILE_GATE.validate_c3_result_for_observation(
                         c3_qualification_result,
                         artifact_path=(
                             candidate / "esp32-c3-4mb" / "firmware.bin"
                         ),
-                        expected_profile_id="esp32-c3-4mb",
                         expected_version=firmware_version,
                         candidate_release_json_sha256=(
                             candidate_release_json_sha256
                         ),
+                        observation=completed_c3_record.get("oi1_observation"),
+                        post_oi_nvs_receipt_path=c3_evidence_paths[
+                            "post_oi_nvs_receipt_path"
+                        ],
+                        post_oi_nvs_slice_path=c3_evidence_paths[
+                            "post_oi_nvs_slice_path"
+                        ],
+                        post_oi_nvs_acquisition_log_path=c3_evidence_paths[
+                            "post_oi_nvs_acquisition_log_path"
+                        ],
                     )
                 )
                 pico_qualification_summary = (
@@ -27479,6 +27572,28 @@ def finalize_public_bundle(
                         pico_qualification_result
                     )
                 )
+                current_c3_summary = (
+                    _V060_PROFILE_GATE.validate_c3_result_for_observation(
+                        c3_qualification_result,
+                        artifact_path=(
+                            candidate / "esp32-c3-4mb" / "firmware.bin"
+                        ),
+                        expected_version=firmware_version,
+                        candidate_release_json_sha256=(
+                            candidate_release_json_sha256
+                        ),
+                        observation=completed_c3_record.get("oi1_observation"),
+                        post_oi_nvs_receipt_path=c3_evidence_paths[
+                            "post_oi_nvs_receipt_path"
+                        ],
+                        post_oi_nvs_slice_path=c3_evidence_paths[
+                            "post_oi_nvs_slice_path"
+                        ],
+                        post_oi_nvs_acquisition_log_path=c3_evidence_paths[
+                            "post_oi_nvs_acquisition_log_path"
+                        ],
+                    )
+                )
             except _V060_PROFILE_GATE.QualificationError as exc:
                 raise ReleaseError(
                     "private v0.6.0 qualification result changed or became unsafe: %s"
@@ -27486,7 +27601,8 @@ def finalize_public_bundle(
                 ) from exc
             _require(
                 current_c3_snapshot == c3_qualification_snapshot
-                and current_pico_snapshot == pico_qualification_snapshot,
+                and current_pico_snapshot == pico_qualification_snapshot
+                and current_c3_summary == c3_qualification_summary,
                 "private C3/Pico qualification result changed during finalization",
             )
         _atomic_publish_no_replace(staging, output, "public release")

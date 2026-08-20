@@ -5,6 +5,7 @@
 # tooling; it is not firmware and does not ship to a board.
 
 import asyncio
+import binascii
 import hashlib
 import json
 import os
@@ -1668,6 +1669,193 @@ async def run_rp2_heap_probe(
                 )
             await sleep(0.002)
     return parse_rp2_heap_probe_output(stdout_chunks, nonce)
+
+
+C3_NVS_MARKER_PREFIX = "__PYBLE_OI1_C3_NVS_"
+
+
+def _validated_c3_nvs_geometry(offset, size, block_bytes):
+    for value, label in (
+        (offset, "C3 NVS partition offset"),
+        (size, "C3 NVS partition size"),
+        (block_bytes, "C3 NVS probe block size"),
+    ):
+        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+            raise BenchError("%s must be a positive integer" % label)
+    if size % block_bytes != 0:
+        raise BenchError("C3 NVS partition size must be whole probe blocks")
+    return offset, size, block_bytes
+
+
+def c3_nvs_probe_source(nonce, *, offset, size, block_bytes):
+    """Return the C3 RUN source that streams the raw NVS partition slice.
+
+    The probe is strictly read-only: it opens the ``nvs`` data partition,
+    echoes its exact geometry, and prints each flash block base64-encoded.
+    It never imports or initializes the NVS API, so no key, namespace, or
+    PHY-calibration write can occur during the capture.
+    """
+
+    if (
+        not isinstance(nonce, str)
+        or not re.fullmatch(r"[0-9A-Za-z_-]{1,64}", nonce)
+    ):
+        raise BenchError("C3 NVS probe nonce is invalid")
+    offset, size, block_bytes = _validated_c3_nvs_geometry(
+        offset, size, block_bytes
+    )
+    marker = C3_NVS_MARKER_PREFIX + nonce
+    blocks = size // block_bytes
+    return (
+        "import binascii\n"
+        "from esp32 import Partition\n"
+        "_p = Partition.find(Partition.TYPE_DATA, label='nvs')[0]\n"
+        "_i = _p.info()\n"
+        'print("%s-geometry=%%d,%%d" %% (_i[2], _i[3]))\n'
+        "_b = bytearray(%d)\n"
+        "for _n in range(%d):\n"
+        "    _p.readblocks(_n, _b)\n"
+        '    print("%s-block-%%d=%%s"\n'
+        "          %% (_n, binascii.b2a_base64(_b).decode().strip()))\n"
+        % (marker, block_bytes, blocks, marker)
+    )
+
+
+def parse_c3_nvs_probe_output(chunks, nonce, *, offset, size, block_bytes):
+    """Rebuild and bound-check the raw C3 NVS slice from probe stdout."""
+
+    if not isinstance(chunks, (list, tuple)):
+        raise BenchError("C3 NVS probe output must be a chunk sequence")
+    if (
+        not isinstance(nonce, str)
+        or not re.fullmatch(r"[0-9A-Za-z_-]{1,64}", nonce)
+    ):
+        raise BenchError("C3 NVS probe nonce is invalid")
+    offset, size, block_bytes = _validated_c3_nvs_geometry(
+        offset, size, block_bytes
+    )
+    try:
+        output = b"".join(bytes(chunk) for chunk in chunks).decode(
+            "ascii", errors="strict"
+        )
+    except (TypeError, ValueError, UnicodeDecodeError) as exc:
+        raise BenchError("C3 NVS probe output is not strict ASCII") from exc
+    marker = re.escape(C3_NVS_MARKER_PREFIX + nonce)
+    geometry_pattern = re.compile(
+        r"^" + marker + r"-geometry=([0-9]+),([0-9]+)$"
+    )
+    block_pattern = re.compile(
+        r"^" + marker + r"-block-([0-9]+)=([0-9A-Za-z+/]+={0,2})$"
+    )
+    geometries = []
+    blocks = []
+    for line in output.splitlines():
+        geometry_match = geometry_pattern.fullmatch(line)
+        if geometry_match:
+            geometries.append(
+                tuple(int(value, 10) for value in geometry_match.groups())
+            )
+            continue
+        block_match = block_pattern.fullmatch(line)
+        if block_match:
+            blocks.append(
+                (int(block_match.group(1), 10), block_match.group(2))
+            )
+    if geometries != [(offset, size)]:
+        raise BenchError("C3 NVS probe geometry does not match the frozen slice")
+    expected_blocks = size // block_bytes
+    if [index for index, _encoded in blocks] != list(range(expected_blocks)):
+        raise BenchError("C3 NVS probe blocks are missing or out of order")
+    raw = bytearray()
+    for _index, encoded in blocks:
+        try:
+            decoded = binascii.a2b_base64(encoded.encode("ascii"))
+        except (ValueError, binascii.Error) as exc:
+            raise BenchError("C3 NVS probe block is not valid base64") from exc
+        if len(decoded) != block_bytes:
+            raise BenchError("C3 NVS probe block size changed")
+        raw.extend(decoded)
+    if len(raw) != size:
+        raise BenchError("C3 NVS probe slice size changed")
+    return bytes(raw)
+
+
+async def run_c3_nvs_probe(
+        central,
+        next_id,
+        *,
+        offset,
+        size,
+        block_bytes,
+        nonce=None,
+        timeout_s=60.0,
+        sleep=asyncio.sleep):
+    """Read the raw C3 NVS partition slice over one RUN probe session."""
+
+    if nonce is None:
+        nonce = hashlib.sha256(
+            ("%d:%d" % (time.monotonic_ns(), os.getpid())).encode("ascii")
+        ).hexdigest()[:16]
+    source = c3_nvs_probe_source(
+        nonce,
+        offset=offset,
+        size=size,
+        block_bytes=block_bytes,
+    ).encode("utf-8")
+    cursor = central.event_cursor()
+    response = await central.send_cmd(
+        wire.OP_RUN,
+        next_id(),
+        b"\x01" + source,
+        timeout=timeout_s,
+    )
+    status = rsp_status(response)
+    if status != wire.ST_OK:
+        raise StatusFailure("RUN C3 NVS probe", status)
+    stdout_chunks = []
+    deadline = time.monotonic() + timeout_s
+    terminal = None
+    while terminal is None:
+        cursor, events = central.events_since(cursor)
+        for event in events:
+            if event.opcode == wire.OP_CONSOLE_DATA:
+                if not event.payload:
+                    raise BenchError(
+                        "C3 NVS probe emitted malformed CONSOLE_DATA"
+                    )
+                stream = event.payload[0]
+                if stream == 1:
+                    raise BenchError(
+                        "C3 NVS probe emitted stderr: %s"
+                        % event.payload[1:].decode("utf-8", errors="replace")
+                    )
+                if stream == 0:
+                    stdout_chunks.append(event.payload[1:])
+            elif event.opcode == wire.OP_RUN_STATE:
+                if len(event.payload) != 1:
+                    raise BenchError(
+                        "C3 NVS probe emitted malformed RUN_STATE"
+                    )
+                state = event.payload[0]
+                if state == 2:
+                    terminal = "done"
+                elif state == 3:
+                    raise BenchError(
+                        "C3 NVS probe ended in RUN_STATE(error)"
+                    )
+        if terminal is None:
+            if time.monotonic() >= deadline:
+                raise BenchError(
+                    "C3 NVS probe timed out before RUN_STATE(done)"
+                )
+            await sleep(0.002)
+    return parse_c3_nvs_probe_output(
+        stdout_chunks,
+        nonce,
+        offset=offset,
+        size=size,
+        block_bytes=block_bytes,
+    )
 
 
 async def _require_status(central, opcode, next_id, payload, operation, timeout=10.0):

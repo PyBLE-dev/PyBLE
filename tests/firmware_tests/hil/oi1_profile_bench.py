@@ -9,9 +9,12 @@
 
 import argparse
 import asyncio
+import binascii
 import errno
+import hashlib
 import importlib.util
 import json
+import os
 import platform
 import re
 import sys
@@ -54,6 +57,7 @@ from _pble_bench import (
     rp2_heap_probe_source,
     rp2_oi1_build_from_paths,
     roundtrip_file,
+    run_c3_nvs_probe,
     run_heap_probe,
     run_oi1_link_fact_probe,
     run_rp2_heap_probe,
@@ -94,6 +98,21 @@ RETAINED_DIAGNOSTIC_SETTLE_GUARD_S = 1.0
 # Compatibility names for callers of the original ADR-0034 Wave-only seam.
 WAVESHARE_DIAGNOSTIC_HELLO_TIMEOUT_S = RETAINED_DIAGNOSTIC_HELLO_TIMEOUT_S
 WAVESHARE_DIAGNOSTIC_SETTLE_GUARD_S = RETAINED_DIAGNOSTIC_SETTLE_GUARD_S
+
+# Frozen C3 post-OI NVS raw-slice identity (ports/esp32-c3-4mb.md): the
+# profile disables PHY-calibration persistence and the frozen workload writes
+# no NVS entry, so the only passing capture is the fully erased partition.
+C3_NVS_PARTITION_OFFSET = 0x9000
+C3_NVS_PARTITION_SIZE = 0x6000
+C3_POST_OI_NVS_SLICE_SHA256 = (
+    "1df8949b2e345ab8c00cb81fb6b83686e20a4080f969e5cd8b8d520a07cdaba2"
+)
+C3_NVS_PROBE_BLOCK_BYTES = 4096
+C3_NVS_PROBE_MARKER_PREFIX = "PYBLE-C3-NVS-"
+C3_POST_OI_NVS_ACQUISITION_LOG = (
+    b"c3-post-oi-nvs-acquisition-v1\n"
+    b"offset=0x9000 size=0x6000 captured=post-workload pre-evaluation\n"
+)
 
 
 def _load_rp2_console_pacing():
@@ -152,6 +171,116 @@ def _require_nonnegative_int(value, label):
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         raise BenchError("%s must be a non-negative integer" % label)
     return value
+
+
+def validate_c3_post_oi_nvs_slice(raw):
+    """Admit only the exact fully erased C3 NVS partition slice.
+
+    This is the pure identity check shared conceptually with the release
+    writer and finalizer: exactly 24,576 bytes, every byte ``0xff``, SHA-256
+    equal to the frozen digest.  Any other content is a diagnostic capture
+    that must never mint a passing result.
+    """
+
+    if not isinstance(raw, (bytes, bytearray)):
+        raise BenchError("C3 post-OI NVS slice must be raw bytes")
+    raw = bytes(raw)
+    if len(raw) != C3_NVS_PARTITION_SIZE:
+        raise BenchError(
+            "C3 post-OI NVS slice must be exactly %d bytes"
+            % C3_NVS_PARTITION_SIZE
+        )
+    if raw != b"\xff" * C3_NVS_PARTITION_SIZE:
+        raise BenchError(
+            "C3 post-OI NVS slice is not the fully erased partition"
+        )
+    digest = hashlib.sha256(raw).hexdigest()
+    if digest != C3_POST_OI_NVS_SLICE_SHA256:
+        raise BenchError("C3 post-OI NVS slice digest changed")
+    return digest
+
+
+def _write_exclusive_private_file(path, raw, label):
+    """Create one exclusive mode-0600 evidence file or remove the partial."""
+
+    if not isinstance(raw, (bytes, bytearray)) or not raw:
+        raise BenchError("%s bytes are invalid" % label)
+    raw = bytes(raw)
+    target = Path(path).expanduser()
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        descriptor = os.open(os.fspath(target), flags, 0o600)
+    except OSError as exc:
+        raise BenchError(
+            "cannot create %s exclusively: %s" % (label, exc)
+        ) from exc
+    try:
+        os.fchmod(descriptor, 0o600)
+        offset = 0
+        while offset < len(raw):
+            written = os.write(descriptor, raw[offset:])
+            if written <= 0:
+                raise OSError("short %s write" % label)
+            offset += written
+        os.fsync(descriptor)
+    except OSError as exc:
+        try:
+            os.close(descriptor)
+        finally:
+            try:
+                os.unlink(target)
+            except OSError:
+                pass
+        raise BenchError("cannot write %s: %s" % (label, exc)) from exc
+    os.close(descriptor)
+    return target
+
+
+async def capture_c3_post_oi_nvs(executor, *, slice_path, acquisition_log_path):
+    """Capture the raw C3 NVS slice immediately after the full OI workload.
+
+    Runs strictly before numeric threshold evaluation and before any
+    application code or NVS setter: the read-only probe streams the raw
+    partition bytes over a fresh PBLE/1 session while the run resources are
+    still open.  Both capture files are written as exclusive mode-0600
+    evidence first, so a failing slice is retained for diagnosis — then the
+    exact fully erased identity is enforced, failing the whole verify run
+    on any other content.
+    """
+
+    args = executor.args
+    if args.profile != "esp32-c3-4mb":
+        raise BenchError("post-OI NVS capture is a C3-only verify seam")
+    central = await PbleCentral.connect(args.address)
+    try:
+        await hello(
+            central,
+            executor.ids.next,
+            expected_chip=args.expect_chip,
+            profile_id=args.profile,
+        )
+        raw = await run_c3_nvs_probe(
+            central,
+            executor.ids.next,
+            offset=C3_NVS_PARTITION_OFFSET,
+            size=C3_NVS_PARTITION_SIZE,
+            block_bytes=C3_NVS_PROBE_BLOCK_BYTES,
+        )
+    finally:
+        await central.disconnect()
+    _write_exclusive_private_file(slice_path, raw, "C3 post-OI NVS slice")
+    _write_exclusive_private_file(
+        acquisition_log_path,
+        C3_POST_OI_NVS_ACQUISITION_LOG,
+        "C3 post-OI NVS acquisition log",
+    )
+    validate_c3_post_oi_nvs_slice(raw)
+    return raw
 
 
 def build_baseline_profile(
@@ -1913,6 +2042,14 @@ def _parse_args(argv=None):
         "--policy",
         help="committed oi1-gates.json (required only in verify mode)",
     )
+    parser.add_argument(
+        "--post-oi-nvs-slice",
+        help="C3 verify-mode raw NVS slice output (exclusive mode 0600)",
+    )
+    parser.add_argument(
+        "--post-oi-nvs-acquisition-log",
+        help="C3 verify-mode NVS acquisition-log output (exclusive mode 0600)",
+    )
     parser.add_argument("--raw-log", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--board-manufacturer")
@@ -1933,6 +2070,18 @@ def _parse_args(argv=None):
         )
     if args.mode == "verify" and not args.policy:
         parser.error("--policy is required in verify mode")
+    nvs_outputs = (args.post_oi_nvs_slice, args.post_oi_nvs_acquisition_log)
+    if any(value is not None for value in nvs_outputs):
+        if args.profile != "esp32-c3-4mb" or args.mode != "verify":
+            parser.error(
+                "--post-oi-nvs-slice/--post-oi-nvs-acquisition-log are "
+                "C3 verify-mode outputs"
+            )
+        if any(value is None for value in nvs_outputs):
+            parser.error(
+                "--post-oi-nvs-slice and --post-oi-nvs-acquisition-log are "
+                "required together"
+            )
     is_rp2 = args.profile == "rpi-pico2-w"
     esp_build_inputs = (
         args.application_bin,
@@ -2010,10 +2159,19 @@ def _validate_run_metadata(args):
         if is_rp2
         else [args.application_bin, args.partition_table_bin]
     )
+    nvs_outputs = [
+        value
+        for value in (
+            getattr(args, "post_oi_nvs_slice", None),
+            getattr(args, "post_oi_nvs_acquisition_log", None),
+        )
+        if value is not None
+    ]
     paths = [
         Path(args.raw_log).expanduser().resolve(),
         Path(args.output).expanduser().resolve(),
         *(Path(path).expanduser().resolve() for path in build_inputs),
+        *(Path(path).expanduser().resolve() for path in nvs_outputs),
     ]
     if len(set(paths)) != len(paths):
         raise BenchError("raw log, output, and build inputs must be distinct paths")
@@ -2063,6 +2221,17 @@ async def _run(args):
                 executor = HardwareExecutor(args, reset, raw_log)
         try:
             observation = await collect_observation(args.profile, executor)
+            # Handoff robust-design point 1: the raw NVS slice is captured
+            # immediately after the full workload, while the run resources
+            # are still open, and strictly before threshold evaluation or
+            # any app/NVS setter.
+            nvs_slice_output = getattr(args, "post_oi_nvs_slice", None)
+            if nvs_slice_output is not None:
+                await capture_c3_post_oi_nvs(
+                    executor,
+                    slice_path=nvs_slice_output,
+                    acquisition_log_path=args.post_oi_nvs_acquisition_log,
+                )
         except Exception as exc:
             raw_log.write("measurement_failed", failure_type=type(exc).__name__)
             raise

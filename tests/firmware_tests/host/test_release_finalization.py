@@ -471,6 +471,53 @@ def v060_profile_gates(profile_id: str) -> dict[str, str] | None:
     return None
 
 
+def write_c3_post_oi_nvs_evidence(
+    result_path: Path,
+    *,
+    candidate_release_sha256: str,
+    candidate_firmware_sha256: str,
+    oi1_raw_sha256: str,
+) -> dict:
+    """Write the frozen C3 evidence trio beside one private result."""
+
+    gate = RELEASE._V060_PROFILE_GATE
+    evidence_paths = gate.post_oi_nvs_evidence_paths(result_path)
+    slice_raw = b"\xff" * gate.C3_NVS_PARTITION_SIZE
+    log_raw = (
+        b"c3-post-oi-nvs-acquisition-v1\n"
+        b"offset=0x9000 size=0x6000 captured=post-workload pre-evaluation\n"
+    )
+    summary = {
+        "schema_version": 1,
+        "profile_id": C3_PROFILE_ID,
+        "candidate_release_json_sha256": candidate_release_sha256,
+        "candidate_firmware_sha256": candidate_firmware_sha256,
+        "oi1_raw_sha256": oi1_raw_sha256,
+        "reset_samples": 10,
+        "partition_offset": gate.C3_NVS_PARTITION_OFFSET,
+        "partition_size": gate.C3_NVS_PARTITION_SIZE,
+        "nvs_slice_sha256": hashlib.sha256(slice_raw).hexdigest(),
+        "nvs_slice_size_bytes": len(slice_raw),
+        "acquisition_log_sha256": hashlib.sha256(log_raw).hexdigest(),
+        "acquisition_log_size_bytes": len(log_raw),
+        "integrity": "passed",
+        "written_namespaces": [],
+    }
+    receipt_raw = canonical_json_bytes({"summary": summary, "inventory": []})
+    for target, raw in (
+        (evidence_paths["post_oi_nvs_receipt_path"], receipt_raw),
+        (evidence_paths["post_oi_nvs_slice_path"], slice_raw),
+        (evidence_paths["post_oi_nvs_acquisition_log_path"], log_raw),
+    ):
+        Path(target).write_bytes(raw)
+        Path(target).chmod(0o600)
+    return {
+        "receipt_sha256": hashlib.sha256(receipt_raw).hexdigest(),
+        "receipt_size_bytes": len(receipt_raw),
+        "summary": summary,
+    }
+
+
 def write_v060_private_result(
     path: Path,
     *,
@@ -492,6 +539,15 @@ def write_v060_private_result(
         digest_key: sha256_path(artifact),
         "gates": v060_profile_gates(profile_id),
     }
+    if profile_id == C3_PROFILE_ID:
+        value["post_oi_nvs"] = write_c3_post_oi_nvs_evidence(
+            path,
+            candidate_release_sha256=candidate_release_sha256,
+            candidate_firmware_sha256=sha256_path(artifact),
+            oi1_raw_sha256=qualification_observation(C3_PROFILE_ID)[
+                "raw_log_sha256"
+            ],
+        )
     path.write_bytes(canonical_json_bytes(value))
     path.chmod(0o600)
     return path
