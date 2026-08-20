@@ -86,20 +86,45 @@ Every candidate using this setting MUST receive a full-chip erase before the
 exact verified install. An application-only reflash can retain the old PHY NVS
 pages and does not qualify the fixed bytes. After the erased install, the
 existing 10 controlled C3-G4 reset samples MUST still pass the 3,000 ms ceiling
-and every frozen heap floor. A read-only NVS namespace/key/type inventory taken
-after those repeated resets MUST pass partition integrity checks and contain no
-written `phy` namespace or key; values are neither required nor retained as
-public evidence. The C3 private-result writer MUST require that inventory as a
-stable, exclusive mode-`0600` canonical receipt. It derives and stores the
-receipt's exact SHA-256 and byte length plus a candidate-bound summary; the
-summary binds the candidate release and firmware digests, the exact OI raw-log
-digest, 10 reset samples, NVS offset `0x9000`, size `0x6000`, integrity pass,
-and the complete written namespace list. The writer rejects a missing,
-changed, malformed, non-exclusive, wrong-candidate, wrong-offset,
-wrong-size, integrity-failed, or `phy`-containing receipt. Finalization MUST
-cross-check its OI raw-log binding against the completed C3 observation. The
-public summary omits the private receipt body; its private-result digest binds
-the validated receipt transitively. The application and VFS regions remain
+and every frozen heap floor.
+
+Immediately after the full OI workload completes — before any numeric
+threshold evaluation and before any application code or NVS setter runs — the
+verify-mode runner MUST capture the raw NVS partition slice over the
+still-open session: offset `0x9000`, size `0x6000`. Because this profile
+disables PHY-calibration persistence and the frozen workload writes no NVS
+entry, the captured slice MUST be exactly 24,576 bytes with every byte `0xff`
+and SHA-256
+`1df8949b2e345ab8c00cb81fb6b83686e20a4080f969e5cd8b8d520a07cdaba2` — the
+fully erased partition. Any other content fails the gate. The capture writes
+two exclusive mode-`0600` regular files, the raw slice and its acquisition
+log; neither is public evidence. The read-only namespace/key/type inventory
+taken from that slice MUST pass partition integrity checks and contain no
+written `phy` namespace or key.
+
+The C3 private-result writer MUST require the inventory as a stable,
+exclusive mode-`0600` canonical receipt together with the raw slice and
+acquisition-log files. The receipt's candidate-bound summary binds the
+candidate release and firmware digests, the exact OI raw-log digest, 10 reset
+samples, NVS offset `0x9000`, size `0x6000`, integrity pass, the complete
+written namespace list, and the raw slice and acquisition log by exact
+SHA-256 and byte length. The earlier inventory-only receipt design is
+superseded as bypassable: a hand-written result could embed an arbitrary
+digest, size, and copied `integrity: passed` summary that no later stage
+re-derived from real bytes. Therefore result creation, completion, and
+finalization MUST each independently reopen the actual receipt, raw-slice,
+and acquisition-log files, require them to be stable, exclusive mode-`0600`
+regular files, re-derive every digest and byte length from the reopened
+bytes, and re-verify the slice's exact all-`0xff` identity. No stage may
+trust a path, digest, size, or summary copied from a hand-written result.
+The writer rejects a missing, changed, malformed, non-exclusive,
+wrong-candidate, wrong-offset, wrong-size, wrong-slice, integrity-failed, or
+`phy`-containing receipt. Finalization MUST additionally cross-check the OI
+raw-log binding against the completed C3 observation. A numeric threshold
+failure may retain the captured slice and log as private diagnostic
+evidence, but a failed run MUST NOT mint any passing result. The public
+summary omits the private receipt body; its private-result digest binds the
+validated receipt transitively. The application and VFS regions remain
 subject to their existing exact-byte and functional checks.
 
 The existing V5 `provisioning_install: passed` check remains the mechanical

@@ -2403,21 +2403,36 @@ The operation does not run a gate, infer a pass from a build, create a
 threshold, or turn pending evidence into a result. This section freezes an
 evidence-writing workflow and records no passed result.
 
-For `esp32-c3-4mb`, `create-result` additionally requires one explicit
-post-OI NVS inventory receipt path; Pico rejects that input. The receipt MUST
-be canonical strict JSON in one stable, exclusive mode-`0600` regular file. It
-contains no NVS values or device identity: only namespace/key/type inventory
-and an exact summary with schema/profile, candidate `release.json` and merged
-firmware SHA-256, the verify-mode OI raw-log SHA-256, exactly 10 reset samples,
-NVS partition offset `0x9000` and size `0x6000`, integrity `passed`, and the
-complete sorted written-namespace list. The writer derives the receipt's byte
-length and SHA-256, requires its summary to match the inventory, rejects any
-written `phy` namespace/key, and copies only the summary plus receipt binding
-into the private result. Completion and finalization cross-check the retained
-OI raw-log digest against the completed C3 observation. The public C3 summary
-does not expose this private object; `qualification_result_sha256` binds it.
-The already-required `provisioning_install: passed` remains the separate
-full-chip-erase/install proof and is neither duplicated nor weakened.
+For `esp32-c3-4mb`, `create-result` additionally requires three explicit
+post-OI NVS evidence paths — the canonical inventory receipt, the raw NVS
+slice, and its acquisition log; Pico rejects those inputs. Each MUST be a
+stable, exclusive mode-`0600` regular file, the receipt as canonical strict
+JSON. The receipt contains no NVS values or device identity: only
+namespace/key/type inventory and an exact summary with schema/profile,
+candidate `release.json` and merged firmware SHA-256, the verify-mode OI
+raw-log SHA-256, exactly 10 reset samples, NVS partition offset `0x9000` and
+size `0x6000`, integrity `passed`, the complete sorted written-namespace
+list, and the raw slice and acquisition log bound by exact SHA-256 and byte
+length. The slice was captured by the verify-mode runner immediately after
+the full OI workload — before numeric threshold evaluation and before any
+app/NVS setter — and MUST be exactly 24,576 bytes, all `0xff`, SHA-256
+`1df8949b2e345ab8c00cb81fb6b83686e20a4080f969e5cd8b8d520a07cdaba2`. The
+earlier single-receipt design is superseded as bypassable: no stage
+re-derived the embedded digest, size, or `integrity: passed` summary from
+real evidence bytes. The writer therefore reopens all three files, re-derives
+every digest and byte length from the reopened bytes, re-verifies the exact
+all-`0xff` slice identity, requires the summary to match both the inventory
+and the reopened evidence, rejects any written `phy` namespace/key, and
+copies only the summary plus receipt binding into the private result.
+Completion and finalization MUST again reopen and re-hash the same exclusive
+mode-`0600` evidence files and cross-check the retained OI raw-log digest
+against the completed C3 observation; they never trust a path, digest, size,
+or copied summary from a hand-written result. A threshold failure may retain
+the captured slice and log as private diagnostics but can never mint a
+passing result. The public C3 summary does not expose these private objects;
+`qualification_result_sha256` binds them transitively. The already-required
+`provisioning_install: passed` remains the separate full-chip-erase/install
+proof and is neither duplicated nor weakened.
 
 The four ESP records use `resource_kind: "esp-idf"` and
 `provisioning_kind: "esp-web-serial"`. Each additionally has exact
