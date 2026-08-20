@@ -166,10 +166,11 @@ Each story selects the applicable categories; the protocol and firmware stories 
 - **Resource gates** — total shipped application-image size/headroom is a
   static build/candidate gate; Python GC and internal-IDF heap floors,
   reset-to-advertising latency, transfer goodput floors, and reliability are
-  candidate HIL gates. The numeric values in
+  candidate HIL gates. Static/headroom and heap values in
   [firmware.md §7](firmware.md#7-footprint-budget-provisional-per-target) are
-  derived from real-hardware baseline samples by a method frozen before
-  measurement, not asserted up front.
+  derived from retained real-hardware baseline samples. Replacement-v0.6.0
+  reset and transfer values are instead predeclared product SLOs: ESP 3,000
+  ms, Pico 7,000 ms, and PUT/GET 6,600 bytes/s on all five profiles.
 - **Hardware-in-the-loop (HIL)** — on every exact profile claimed by the
   release: connect, `DEVICE_INFO`, run/stop, console streaming, and a clean
   multi-file upload without dropping the link, plus resume-on-reconnect and
@@ -179,9 +180,10 @@ Each story selects the applicable categories; the protocol and firmware stories 
   pending. The earlier v0.5.1 source-candidate matrix was exactly
   `esp32-4mb`, `esp32-s3-n16r8`, and
   `waveshare-esp32-s3-lcd-147b`; no exact-byte qualification was completed for
-  it. The current v0.6.0 source retains those prospective public profiles,
-  while C3 remains engineering-only and v1.0 additionally requires
-  `esp32-c3-4mb`. The two S3 profiles require independent evidence because
+  it. The current v0.6.0 contract is the atomic five-profile order
+  `esp32-4mb`, `esp32-s3-n16r8`, `waveshare-esp32-s3-lcd-147b`,
+  `esp32-c3-4mb`, and `rpi-pico2-w`; every row remains release-blocking. The
+  two S3 profiles require independent evidence because
   their candidate contracts produce different immutable bytes. No v0.6.0
   exact-byte qualification is asserted here. A milestone is gated by a working
   HIL demo, not by merged code alone.
@@ -942,12 +944,13 @@ Each successful per-target build MUST emit a flashable artifact set ([firmware.m
   selection, and recovery commands and shown as unavailable, never silently
   marked supported. The immutable v0.4.2 public-beta set remains exactly
   `esp32-4mb` plus `esp32-s3-n16r8` and MUST NOT be expanded.
-- The current v0.6.0 source's prospective public set is exactly `esp32-4mb`,
-  `esp32-s3-n16r8`, and `waveshare-esp32-s3-lcd-147b`, in that order. The
-  earlier v0.5.1 candidate did not complete qualification;
-  `esp32-c3-4mb` remains unavailable pending exact-profile
-  real-hardware validation. Re-enabling it requires a new SemVer candidate and
-  immutable bundle.
+- The replacement v0.6.0 prospective public set is exactly `esp32-4mb`,
+  `esp32-s3-n16r8`, `waveshare-esp32-s3-lcd-147b`, `esp32-c3-4mb`, and
+  `rpi-pico2-w`, in that order. The set is atomic: any pending or failed row is
+  unavailable and blocks the release. The earlier local v0.6.0 tag/candidate
+  at `719b211…` was never public and is abandoned; retaining version 0.6.0 is
+  permitted only as the source-era-routed pre-publication replacement in
+  ADR-0038.
 - The flasher manifest MUST select the correct artifact per released profile.
   The two S3 selections MUST reference different immutable bytes and require
   separate explicit compatibility consent. v1.0 MUST retain the three v0.5
@@ -956,39 +959,36 @@ Each successful per-target build MUST emit a flashable artifact set ([firmware.m
 ### §10.13 Resource and performance thresholds as REQUIREMENTS
 
 [firmware.md §7](firmware.md#7-footprint-budget-provisional-per-target) retains
-the immutable v0.4.2 two-profile history; C3 remains provisional. The current
-v0.6.0 source requires a controlled three-profile refresh using the
+the immutable v0.4.2 two-profile history. Replacement v0.6.0 requires the
+atomic five-profile contract using the
 detailed method, exact workload, metric meanings, rounding formulas, and
 evidence contract in
 [firmware/specs.md §5.3](firmware/specs.md#53-footprint-gates-nfr-fp).
 
-| Gate | Metric and direction | v0.6.0 prospective public profiles | ESP32-C3 / v1.0 |
-|---|---|---|---|
-| **FP-FLASH** | Total shipped application-image ceiling plus factory-partition headroom floor | Derive and freeze independently for all three profiles | Remains open for `esp32-c3-4mb`; C3 is the hard constraint |
-| **FP-HEAP** | Python GC and internal-IDF current/largest/minimum heap floors after HELLO and transfer workloads | Derive and freeze all three profile floors; default-capability `free_mem` is diagnostic only | Must leave usable user-code and control-plane headroom |
-| **FP-BOOT** | Controlled reset-release → first fresh service-advertisement ceiling, plus physical power-cycle pass | Apply the fixed SLO and verify all three profiles | Required before C3 enablement and v1.0 |
-| **FP-TPUT** | Committed PUT and verified GET goodput floors at observed ATT MTU 247, plus exact reliability counts | Derive and freeze all three profile floors | Must remain usable and reliable on the binding target |
+| Gate | Metric and direction | Replacement v0.6.0 five-profile contract |
+|---|---|---|
+| **FP-FLASH** | Exact shipped ESP application ceiling/headroom or Pico raw-image ceiling/headroom | Derive independently for all five rows from retained evidence |
+| **FP-HEAP** | Python GC floors on all profiles plus internal-IDF current/largest/minimum floors on ESP after the frozen workloads | Derive independently for all five rows; default-capability `free_mem` is diagnostic only |
+| **FP-BOOT** | Controlled reset-release → first fresh exact-service host callback, plus physical power-cycle pass | Fixed 3,000 ms on four ESP rows and 7,000 ms on Pico; all 10 samples pass |
+| **FP-TPUT** | Committed PUT and verified GET at observed ATT MTU 247, plus exact reliability/link facts | Fixed 6,600 B/s in both directions on every row; all five samples pass |
 
 Requirements:
 
 - The immutable v0.4.2 public-beta set is exactly the two profiles in §10.12.
   Its bounded exception does not satisfy or waive the remaining qualification
-  gates. The current v0.6.0 source's prospective public set is exactly the
-  three profiles in
-  §10.12; fresh numeric policy and hash-locked final-candidate HIL are
-  release-blocking for every one of them.
-  Earlier v0.5.1 evidence cannot qualify it. `esp32-c3-4mb` MUST remain absent
-  from a three-profile release's policy, HIL rows,
-  artifacts, recovery, and installer selection.
+  gates. The replacement v0.6.0 set is exactly the five profiles in §10.12;
+  its updated policy and fresh hash-locked final-candidate HIL are
+  release-blocking for every one. Earlier v0.5.1 or predecessor-v0.6.0
+  candidate/HIL evidence cannot qualify it.
 - The split changes both S3 binaries. Pre-split v0.5 baseline, threshold,
   candidate, and HIL evidence MUST NOT qualify either new S3 image. A fresh
-  source-bound baseline, independently derived threshold row, reproducible
-  candidate, browser-install/recovery pass, physical power-cycle pass, and full
-  HIL record are required for each of all three prospective profiles; one S3 board or
-  binary MUST NOT stand in for the other.
-- **ESP32-C3 remains the binding v1.0 constraint.** Its source target continues
-  to build and participate in reproducibility and license audits. If its later
-  exact-profile HIL does not meet flash/heap requirements with usable
+  source-era-selected policy row, reproducible candidate,
+  browser-install/recovery pass, physical power-cycle pass, and full HIL record
+  are required for each profile; the retained five-profile baseline supplies
+  only the static/heap inputs and diagnostic performance samples. One S3 board
+  or binary MUST NOT stand in for the other.
+- **ESP32-C3 remains the binding footprint constraint.** If its exact-profile
+  HIL does not meet flash/heap requirements with usable
   headroom, the design MUST change (for example native `USER_C_MODULE` hot
   paths per §10.2), not the constraint.
 - The application-image ceiling/headroom floor MUST be enforced by automated
@@ -996,17 +996,20 @@ Requirements:
   thresholds MUST be evaluated from machine-readable final-candidate HIL.
 - Thresholds MUST follow only the predeclared, metric-specific contracts in
   firmware/specs.md §5.3. Static build quantities remain exact; heap keeps its
-  baseline-derived outward quantum; reset detection uses the fixed 3,000 ms
-  end-to-end product SLO; and goodput receives the exact integer 5%
-  baseline-derived repeatability allowance before outward quantization. A
-  candidate result MUST NOT be used to fit, trim, or relax any threshold.
-- A controlled refresh MUST retain earlier evidence, replace all three current
-  profile threshold sets together, and rebuild and reverify the final
-  candidate. Engineering-baseline observations do not qualify that candidate.
-- Qualification of all three prospective public profiles closes only that
-  release
-  subset. The open C3 portion remains release-blocking for any C3 enablement
-  and for v1.0; “to be measured on hardware” is not permission to claim C3.
+  baseline-derived outward quantum; replacement reset detection is fixed at
+  3,000 ms on ESP and 7,000 ms on Pico; and PUT/GET are fixed at 6,600 B/s on
+  every profile. Exactly 10 reset and five transfer samples per direction must
+  all pass with no trim or retry. A failed or favorable run MUST NOT fit,
+  rederive, widen, or relax either SLO.
+- The immutable `a8be631…` baseline remains byte-for-byte evidence. Its
+  static/heap values are rederived under the bound policy/candidate source era;
+  its reset/goodput values remain diagnostic and its own source commit never
+  selects the derivation. The policy replaces all five performance rows
+  together, then the final candidate is rebuilt and freshly verified.
+- The predecessor source era ends at inclusive `5620f2f…`. Strict descendants
+  use ADR-0037's V4/V3 identifiers, while predecessor 0.6.0 retains V3/V2 for
+  historical replay. The unpublished local `719b211…` candidate, its bytes,
+  HIL, and lineage are invalid for replacement qualification.
 
 ### §10.14 .mpy / .pyc policy
 
@@ -1240,7 +1243,7 @@ Exact per-package licenses MUST be generated mechanically at build time (not han
 ### §15.3 Distribution
 
 - The app MUST be distributed **free** on the **Apple App Store** and **Google Play**, at feature parity across iPadOS and Android tablets (see §13.6 and §19). No account, no paywall, no in-app purchase.
-- A browser-based **web flasher** MUST be hosted at `pyble.dev/flash`, built on **esp-web-tools**, with one profile-scoped, single-build manifest per exact profile included in that release (see [firmware.md §6](firmware.md#6-build--distribution)). It MUST allow a user to flash the agent from a supported desktop browser over USB without installing a toolchain, and MUST NOT give ESP Web Tools a multi-family manifest that could override the user's selected profile. The immutable v0.4.2 hardware-tested beta contains the two exact profiles in §10.12; complete release qualification remains pending. The earlier v0.5.1 source candidate completed no exact-byte qualification. Current v0.6.0 source authorizes no public bytes until every included profile qualifies. C3 is unavailable until separately qualified.
+- A browser-based **web flasher** MUST be hosted at `pyble.dev/flash`, built on **esp-web-tools**, with one profile-scoped, single-build manifest per exact profile included in that release (see [firmware.md §6](firmware.md#6-build--distribution)). It MUST allow a user to flash the agent from a supported desktop browser over USB without installing a toolchain, and MUST NOT give ESP Web Tools a multi-family manifest that could override the user's selected profile. The immutable v0.4.2 hardware-tested beta contains the two exact profiles in §10.12; complete release qualification remains pending. The earlier v0.5.1 and predecessor-v0.6.0 candidates completed no public exact-byte qualification. Replacement v0.6.0 authorizes no public bytes until all five profiles qualify atomically.
 - Firmware binaries (`firmware.bin`, bootloader, partition table, profile-scoped
   `manifest.json` files, and `THIRD_PARTY_LICENSES`) MUST be published at the
   canonical immutable `pyble.dev/firmware/v<version>/` path, one set per exact
@@ -1331,15 +1334,15 @@ PyBLE depends on third-party code at two layers (firmware upstream and Flutter p
 - Before release-candidate builds or HIL, the exact committed lock file MUST be
   **candidate-frozen**. This makes the selected input immutable; it does not
   approve the pins. Public-release approval still requires the same candidate
-  to pass HIL on every exact profile included in that release. The current
-  v0.6.0 source's prospective public set is the three profiles in §10.12; v1.0 retains them and adds the
-  binding ESP32-C3 footprint profile (§10.13, §21.2). A pin change
+  to pass HIL on every exact profile included in that release. Replacement
+  v0.6.0 uses the exact five profiles in §10.12, including binding C3 and
+  Pico rows. A pin change
   abandons that candidate and all evidence bound to it.
   The immutable v0.4.2 formal history remains its two-profile matrix and MUST
   NOT be reinterpreted as approval of the current candidate.
 - A **SHA gate** MUST run in the build: the build prep verifies the checked-out submodule SHA against `versions.lock` and **refuses to proceed on mismatch**. CI MUST run this gate on every PR.
 - ESP-IDF is **not** a submodule; it is installed from the pinned version into a gitignored directory by the build scripts. MicroPython's own `lib/` dependencies are fetched by the standard port build (`make … submodules`).
-- Upgrades MUST go only through the **controlled upgrade workflow** (`firmware/scripts/upgrade_micropython.sh`) — never edited by hand during a build. An upgrade MUST: bump `versions.lock` (ref + resolved SHA) in its own commit; rebuild `mpy-cross`; pass the full host + protocol-conformance suite; pass the applicable per-profile resource gates (§10.13); candidate-freeze the updated lock before release-candidate generation; and validate that exact candidate on every profile included in the release. All three profiles are mandatory for v1.0. The default patch count against upstream is **zero**; any patch is re-reviewed for retirement at every upgrade.
+- Upgrades MUST go only through the **controlled upgrade workflow** (`firmware/scripts/upgrade_micropython.sh`) — never edited by hand during a build. An upgrade MUST: bump `versions.lock` (ref + resolved SHA) in its own commit; rebuild `mpy-cross`; pass the full host + protocol-conformance suite; pass the applicable per-profile resource gates (§10.13); candidate-freeze the updated lock before release-candidate generation; and validate that exact candidate on every profile included in the release. Every profile selected by that source era is mandatory. The default patch count against upstream is **zero**; any patch is re-reviewed for retirement at every upgrade.
 
 ### §17.2 App dependencies
 
@@ -1355,8 +1358,8 @@ PyBLE depends on third-party code at two layers (firmware upstream and Flutter p
 - The project SHOULD track upstream MicroPython and ESP-IDF release lines and plan a controlled upgrade before its pinned line reaches end-of-life, so PyBLE is never stranded on an unsupported base.
 - An upgrade MUST NOT be approved for a public candidate on the strength of CI
   alone: it requires the §17.1 HIL pass on every exact profile included in that
-  release. The three prospective public profiles plus `esp32-c3-4mb` remain mandatory for
-  v1.0.
+  release. All five profiles in the frozen v0.6.0 scope remain mandatory for
+  v1.0 unless a later ADR explicitly changes that release scope.
 - When a dependency is abandoned upstream, the project MUST either vendor it under MIT/Apache/BSD terms (with the source pinned and recorded) or replace it; an unmaintained dependency MUST NOT be left as a silent liability.
 
 ---
@@ -1536,11 +1539,10 @@ The entry flow is scan → connect → use, with no QR pairing, no account, and 
 
 These are the production targets the project measures itself against. Numeric
 BLE/throughput targets are validated on hardware for every exact profile
-included in a release and MUST be frozen per profile after measurement. The
-immutable v0.4.2 formal matrix has two profiles. The current v0.6.0 source has
-three prospective public profiles, and the v1.0 matrix retains them and
-adds `esp32-c3-4mb`. Until a profile's values are frozen from retained evidence,
-they are stated as intent, not asserted.
+included in a release. The immutable v0.4.2 formal matrix has two profiles.
+Replacement v0.6.0 has five atomic prospective profiles. Static/heap values
+remain evidence-derived; reset/goodput are the fixed product SLOs in §10.13.
+Until every profile passes, no public qualification is asserted.
 
 | Metric | Definition | v1.0 target | Status |
 |---|---|---|---|
@@ -1697,8 +1699,8 @@ The foundational product decisions are resolved and recorded as Architecture Dec
   immutable release-build/HIL input; historical v0.5.1 selection does not
   qualify a new candidate. The same candidate MUST then pass the
   complete exact-profile HIL matrix before its pins and resource gates are
-  approved. The v0.6.0 prospective public subset is exactly the three profiles in
-  §10.12; v1.0 retains them and adds C3 (§10.9, §17.1, §21.2). A pin
+  approved. The replacement v0.6.0 prospective public set is exactly the five
+  profiles in §10.12 (§10.9, §17.1, §21.2). A pin
   change creates a new candidate. New ADRs are added if a pin or budget
   changes materially.
 - **Agent base transition point** — frozen-Python first, then C `USER_C_MODULES` for hot paths; the exact point where the C port becomes necessary per chip is decided by HIL footprint/throughput data, not up front (see [firmware.md §2](firmware.md#2-agent-base-native-vs-frozen)).
@@ -1718,4 +1720,4 @@ New significant decisions MUST be captured as additional ADRs (`docs/decisions/N
 | **Control plane** | The agent's protected layer that owns BLE, the runner, and the filesystem bridge. It MUST NOT be editable by user code; a frozen `while True` in user code MUST NOT be able to wedge BLE or block `STOP`. |
 | **Workspace** | The user's own files on the board — `/main.py`, `/lib/*.py`, `/data/*` (Layer 4). Just programs the agent runs; never the control plane. |
 | **Platform port / target adapter** | Layer-2 integration for a MicroPython target: BLE host, scheduler/interrupt boundary, storage/config, identity, build, and provisioning. The initial ESP32 port uses per-chip board overlays for `esp32` / `esp32-s3` / `esp32-c3`, copied into the upstream tree at build prep so the submodule stays pristine. |
-| **HIL** | Hardware-in-the-loop — validation and measurement performed on a real board (as opposed to host-side or fake-transport tests). Resource and BLE/goodput numbers are frozen only after HIL measurement for every exact profile claimed by a release. The immutable v0.4.2 matrix is `esp32-4mb` plus `esp32-s3-n16r8`; its supplemental browser rows passed while other formal rows remain pending. The earlier v0.5.1 source-candidate matrix added `waveshare-esp32-s3-lcd-147b` but completed no exact-byte qualification. Current v0.6.0 source retains those prospective public profiles, and the two S3 binaries require independent evidence. v1.0 additionally requires `esp32-c3-4mb`. |
+| **HIL** | Hardware-in-the-loop — validation and measurement performed on a real board (as opposed to host-side or fake-transport tests). Every release profile needs fresh candidate-bound HIL even when a threshold is a fixed product SLO. The immutable v0.4.2 matrix is `esp32-4mb` plus `esp32-s3-n16r8`; its supplemental browser rows passed while other formal rows remain pending. The earlier v0.5.1 and predecessor-v0.6.0 candidates completed no public exact-byte qualification. Replacement v0.6.0 requires all five profiles, including separate S3 rows, C3, and Pico. |

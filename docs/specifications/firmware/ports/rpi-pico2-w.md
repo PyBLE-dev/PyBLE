@@ -154,6 +154,14 @@ After the operator confirms reconnection, the watcher atomically establishes
 the post-release epoch and numeric start boundary. Thus an advertisement seen
 while the operator was reaching for either cable action can neither pass the
 power-off proof nor become the measured post-reconnection advertisement.
+The timed endpoint is the same first fresh exact-service host callback used by
+ESP, but ADR-0037 fixes Pico's profile ceiling at **7,000 ms**. That value is
+the pinned upstream BTstack normal 5–6 second controller-initialization
+allowance plus one fixed second for advertisement acquisition/callback
+delivery; it is not fitted to a retained sample and MUST NOT be widened after
+a failure. Exactly 10 samples must all pass, without trimming or retry, inside
+the unchanged 15,000 ms health timeout. The separate physical power-cycle
+check remains exact.
 
 - **GP0 build/boot:** image builds under the pinned toolchain, passes the size gate, boots advertising. *Verify: build.*
 - **GP1 parity:** host unit + shared conformance corpus green for every grown module. *Verify: unit/conformance.*
@@ -178,6 +186,15 @@ forbidden. Transport evidence records BTstack, negotiated ATT MTU, advertised
 window/chunk, and `console_tx_budget_ms: 103`, the source-bound P8 empty-to-full
 refill horizon; ESP/NimBLE DLE/PHY/serial link-settlement keys are forbidden.
 Any other or operator-supplied value fails the observation.
+
+The replacement-v0.6.0 row uses derivation identifiers
+`fixed-profile-product-slo-esp3000-pico7000-v4` and
+`fixed-product-slo-64k-under-10s-6600-v3`. Its reset ceiling is exactly 7,000
+ms and both PUT and GET floors are exactly 6,600 bytes/s. All five samples in
+each direction must pass with no retry; duration/goodput equality, unique
+65,536-byte payloads, offsets, byte/size/CRC integrity, reliability, and
+BTstack facts remain exact. Baseline reset/goodput samples are retained only
+as diagnostics; they never fit these product SLOs.
 
 The release artifact is `rpi-pico2-w/firmware.uf2`. Release metadata binds its
 exact byte size/SHA-256 and the raw `firmware.bin` size/SHA-256 used for static

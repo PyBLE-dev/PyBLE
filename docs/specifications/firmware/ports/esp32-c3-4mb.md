@@ -70,8 +70,8 @@ The `esp32-c3` overlay MUST explicitly disable
 performs full PHY calibration on every boot instead of retaining calibration
 data in NVS. ESP-IDF documents approximately 100 ms for a full calibration;
 that cost is accepted inside the unchanged 3,000 ms reset ceiling. None of the
-frozen reset, heap, reliability, or throughput thresholds may be relaxed to
-adopt this policy.
+frozen reset, heap, reliability, or fixed 6,600-byte/s PUT/GET thresholds may
+be relaxed to adopt this policy.
 
 This C3-only setting removes a state-dependent qualification failure. A sealed
 A/B/A diagnostic held the application and VFS bytes exact and showed that the
@@ -241,9 +241,11 @@ clean builds; 10 controlled reset/HELLO/heap snapshots; five deterministic
 20 × 16,384-byte reliability workload and final heap snapshot; and a physical
 power-cycle advertising check. Thus every C3 heap floor derives from exactly
 16 snapshots, reset retains the fixed 3,000 ms product ceiling, application
-bytes/headroom remain exact, and PUT/GET floors use the existing integer 5%
-allowance and outward 100-byte/s quantization. No sample from another profile
-may enter a C3 threshold.
+bytes/headroom remain exact, and PUT/GET each use the fixed product-wide 6,600
+bytes/s floor. All 10 reset and all five samples in each transfer direction
+must pass without trimming or retry. The old 95%-of-baseline formula remains
+predecessor history and no sample from this or another profile may fit either
+replacement performance threshold.
 
 The C3 transfer connection MUST settle the same link-fact contract before
 timing. C3 requires the BLE 2M rung: `phy.required_2m = true`, request attempts
@@ -273,9 +275,13 @@ to the source and exact firmware/manifest bytes, plus mechanically derived C3
 thresholds. It is not inserted into the historical schema-2 three-profile
 policy, does not mutate historical evidence, and is not final-candidate
 verification. ADR-0033 supplies the successor contract: one controlled
-five-profile baseline atomically creates the schema-3 policy, after which the
-final v0.6.0 candidate is rebuilt and this C3 profile reruns verify-mode HIL on
-those different, hash-locked bytes.
+five-profile replacement baseline atomically creates the schema-3 policy,
+inserting ADR-0037's fixed performance values while deriving only static/heap
+thresholds, after which the final v0.6.0 candidate is rebuilt and this C3
+profile reruns verify-mode HIL on those different, hash-locked bytes. The
+earlier `719b211…` candidate predates this PHY policy and its post-OI receipt;
+all of its bytes, HIL, and physical lineage are invalid for replacement
+qualification even though their metadata remains retained.
 
 ## C3-G5 — Real app HIL on both platforms (FROZEN)
 

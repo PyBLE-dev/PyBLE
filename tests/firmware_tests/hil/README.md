@@ -14,7 +14,7 @@ code (PRD §1B.7). These drivers are that demo, made repeatable.
 |---|---|
 | `_pble_wire.py` | Pure-Python PBLE/1 codec (§3.1 frame + §3.2 fragmentation + IEEE CRC-32) + the frozen §4 opcode / §8 status numbers. **No dependencies.** Cross-checked byte-for-byte against the shared corpus by `host/conformance/test_hil_wire.py` (host-runnable, no hardware) — the harness can never drift from the firmware↔Dart wire. |
 | `_pble_central.py` | Minimal PBLE/1 BLE central over `bleak`: filtered scan/connect, conservative pre-HELLO fragmentation, optional real backend-MTU evidence, TX-notify reassembly, RSP correlation, and transfer-scoped ACK/event cursors. An unknown backend MTU remains unknown; it is never replaced with 247 as evidence. |
-| `_pble_bench.py` | Shared frozen OI-1 operations: strict caps, SHA-256-counter payloads, ESP partition/build arithmetic, reset timing, RUN heap probe, exact PUT/GET timers, offset/byte/CRC verification, retransmit accounting, reliability workload, threshold derivation, and canonical JSON. |
+| `_pble_bench.py` | Shared frozen OI-1 operations: strict caps, SHA-256-counter payloads, ESP partition/build arithmetic, reset timing, RUN heap probe, exact PUT/GET timers, offset/byte/CRC verification, retransmit accounting, reliability workload, source-era fixed performance SLOs, static/heap threshold derivation, and canonical JSON. |
 | `oi1_profile_bench.py` | Single-profile OI-1 orchestrator. `baseline` emits one canonical redacted profile fragment; `verify` loads the committed policy, evaluates the target-specific thresholds, and emits the exact completed `oi1_observation`. Its v0.6 catalog is the four ESP profiles plus `rpi-pico2-w`; RP2 uses its own build, heap, reset, and BTstack adapter. |
 | `f11_reliability_bench.py` | **F-11** multi-file reliability bench: performs mandatory HELLO, uses the board-advertised `window` and `chunk` (current reference `W=8`), uploads N files back-to-back, asserts every file's whole-file CRC (`FILE_PUT_END`) **and** an independent `FILE_STAT` re-verify, and reports a throughput baseline. |
 | `file_roundtrip_bench.py` | Upload/download regression bench for the reported 11.9 KiB stall: consumes HELLO caps, supports an exact canonical `--expect-chip`, and now requires contiguous unique GET offsets plus exact bytes/size/CRC. |
@@ -79,6 +79,13 @@ The orchestrator always runs the frozen workload:
   probe, followed by BLE disconnect and at most 2,000 ms for the same session's
   report-only TX-mbuf starvation count; and
 - one interactive physical power-cycle advertising check.
+
+For replacement v0.6.0, all 10 reset samples must meet 3,000 ms on each ESP
+profile or 7,000 ms on Pico, and all five PUT plus five GET samples must meet
+6,600 bytes/s on every profile. There is no trim, replacement, retry, or
+post-failure widening. The exact-service callback endpoint, 15-second health
+timeout, physical check, byte/offset/CRC integrity, reliability, disconnect
+counts, duration arithmetic, and settled link facts remain exact.
 
 It creates the raw log with exclusive-create semantics. Use a new,
 access-controlled path for every attempt; the log deliberately excludes the
@@ -184,11 +191,9 @@ override.
 
 Baseline output is deliberately one **profile fragment**, not a release
 approval. The immutable `v0.4.2` evidence remains frozen as its historical
-two-profile envelope and must not be broadened or reinterpreted. For the
-source-selected `v0.6.0` tree, one fragment is not a substitute for a fresh
-profile envelope. Retain every successful current-source fragment required by
-the prospective release, then assemble the envelope and policy without
-hand-editing JSON:
+two-profile envelope and must not be broadened or reinterpreted. Initial v0.6.0
+baseline assembly used all five source-selected fragments as shown below; the
+result at `a8be631….json` is now immutable retained input evidence:
 
 ```sh
 python3 ../../../firmware/scripts/release_bundle.py \
@@ -211,6 +216,18 @@ Review and commit both generated files together. The individual bench command
 also prints its derived thresholds for review; neither fragment nor assembled
 baseline is release approval, and neither claims that `v0.6.0` has completed
 exact-byte HIL qualification or is ready for publication.
+
+For the ADR-0037/ADR-0038 pre-publication replacement, do **not** rerun that
+baseline merely to fit new performance numbers and do not edit its bytes. The
+policy tool reuses the exact `a8be631…` file, derives unchanged static/heap
+values from it, retains its reset/goodput arrays diagnostically, and emits the
+new fixed identifiers and five rows under the bound replacement
+policy/candidate source era. The baseline's `source_commit` never selects the
+derivation. The predecessor policy remains reproducible when explicitly
+validated against its predecessor candidate source. Only after the checked-in
+replacement policy exists and the pre-candidate build/reproducibility/license/
+audit gates pass may the local unpublished tag be replaced and the audited
+candidate created; fresh five-profile verify HIL follows.
 
 After that policy exists, run the exact final candidate in verify mode:
 

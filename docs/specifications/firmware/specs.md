@@ -1,6 +1,6 @@
 # PyBLE Agent Firmware — Requirements Specification
 
-Status: **DRAFT (per-section freeze in effect)** · Owner: project maintainer · Last updated: 2026-08-19
+Status: **DRAFT (per-section freeze in effect)** · Owner: project maintainer · Last updated: 2026-08-20
 
 ### Freeze ledger (per-section, per PRD §1B.4)
 
@@ -14,9 +14,9 @@ any dependent code. Freezing is cumulative with the gates in the
 | §5.1 Reliability | NFR-REL-1…5 | **FROZEN v1.0** | G0 · 2026-07-01 · `[docs]` | Wire-independent; unblocks X-03 (NFR-REL-4). |
 | §5.6 Maintainability | NFR-MAINT-1…4 | **FROZEN v1.0** | G0 · 2026-07-01 · `[docs]` | Unblocks X-01 (NFR-MAINT-4) + module/layout freeze (NFR-MAINT-2). |
 | §6 Constraints | CON-1…13 | **FROZEN v1.0 (amended)** | G0 · 2026-07-01; display amendments 2026-08-01; image-split and erased-install-default amendments 2026-08-03 · `[docs]` | ADR-0023 admits the inert Layer-4 driver; ADR-0024 admits one exact-board companion and bounded boot hook; ADR-0028 confines both to a separate exact-board build; ADR-0029 enables the splash only in that exact image after erase. None adds Layer-3 display control, automatic detection, or a routing profile. |
-| §8 Build, versioning & distribution | BLD-1…22 | **FROZEN v1.0 (amended)** | G0 · 2026-07-01; browser-release amendment 2026-07-29; exact-board split 2026-08-03; heterogeneous v0.6.0 release 2026-08-12 · `[docs]` | ADR-0033 freezes one five-profile v0.6.0 bundle with four ESP Web Serial images plus verified Pico UF2/BOOTSEL while preserving historical v0.4.2/v0.5.1 contracts. |
+| §8 Build, versioning & distribution | BLD-1…22 | **FROZEN v1.0 (amended)** | G0 · 2026-07-01; browser-release amendment 2026-07-29; exact-board split 2026-08-03; heterogeneous v0.6.0 release 2026-08-12; unpublished-candidate replacement 2026-08-20 · `[docs]` | ADR-0033 freezes one five-profile v0.6.0 bundle; ADR-0038 replaces its unpublished local candidate in place and routes the two v0.6.0 qualification contracts by source ancestry. |
 | §4 Functional (FR-BLE/PROTO/RUN/FS/CON/INFO/BOOT/MODE/IDENT) | FR-* | DRAFT (FR-BLE/FR-PROTO numbers frozen) | — | Inherits PBLE/1 numbers; frozen per M1 story as protocol.md §§ freeze. **protocol.md §4 opcodes + §8 status are FROZEN (2026-07-01), closing OI-4** — FR-BLE-8/10 and FR-PROTO-1…10 opcode/status numbers are now stable (F-01/F-02 DoR met). **protocol.md §6 (RUN-file) / §7 (HELLO caps) / §9 (version) froze 2026-07-01 (S3)** — FR-INFO-1..6, FR-PROTO-7/10, FR-RUN (RUN-file) and the FR-IDENT-1 / FR-BLE-12 **label** bound (24 B) are now stable (F-03/F-16/F-22/F-04 DoR met). **protocol.md §6 fully froze 2026-07-01 (S4)** — RUN{source}, STOP, SOFT_REBOOT, CONSOLE_DATA/INPUT + the OI-6 identify remainder (SET_IDENTIFY_LED/IDENTIFY/caps) are now stable (F-05/F-06/F-07/F-23 DoR met), **closing OI-6**. **Transactional RUN admission was clarified 2026-08-14 and its current-message TX-boundary wait was bounded 2026-08-15**: local acceptance of one connection-bound `RSP{OK}` submission is the execution cut; the specialized path may wait under one absolute 15 ms deadline only for the current complete-message TX-mutex boundary, then makes one local Notify submission without capacity wait/retry, with exact-state rollback and no side effect on failure. **Per-event session binding was clarified 2026-08-15**: every new `RUN_STATE`/`CONSOLE_DATA` event captures the live full session at creation, never retargets old work, and allows later events to bind a successor. **The ESP native stdin bridge was clarified 2026-08-19**: its installed `os.dupterm` stream drains `CONSOLE_INPUT` only for the runner worker, returns non-blocking empty rather than EOF, and exposes readable poll state without allowing the main REPL to consume program input. **protocol.md §5 froze 2026-07-01 (S5)** — the file-transfer wire (read + windowed upload + workspace jail) is stable (FR-FS-1..16, F-08/F-09/F-17 DoR met); **§2–§9 are now all frozen**, only §10 (Security) remained DRAFT. The jail chokepoint (`pble_fs_resolve` + forbidden set: `fs_root` confinement, reserved `.pbltmp` suffix, reserved agent prefixes) is firmware-internal per ADR-0006 (the agent/overlay are embedded, not vfs paths). **protocol.md §10 (Security) + §5 resume behaviour + the OI-5 `auto_run` cap / `SET_AUTORUN` 0x23 froze 2026-07-01 (S6)** — SEC-1..11, FR-FS-7, FR-BOOT-1..6 / FR-MODE-1/4 / NFR-SAFE-3 are now stable (F-10/F-11/F-12/F-18 DoR met). **PBLE/1 §2–§10 are now ALL frozen — the wire is complete for v1.0.** |
-| §5.2–§5.3 PERF/FP measurement contract | NFR-PERF/FP | **FROZEN pre-v1 (amended)** | Pre-v1 qualification amendment · 2026-07-30; repeatability amendment 2026-08-02; profile-split amendment 2026-08-03; five-profile amendment 2026-08-12 · `[docs]` | Historical v0.5 uses the exact three-profile policy schema 2. ADR-0033 freezes the v0.6.0 five-profile successor baseline schema 2, policy schema 3, and target-discriminated metrics without changing historical evidence. |
+| §5.2–§5.3 PERF/FP measurement contract | NFR-PERF/FP | **FROZEN pre-v1 (amended)** | Pre-v1 qualification amendment · 2026-07-30; repeatability amendment 2026-08-02; profile-split amendment 2026-08-03; five-profile amendment 2026-08-12; fixed-SLO replacement amendment 2026-08-20 · `[docs]` | Historical v0.5 uses policy schema 2. ADR-0033 freezes the v0.6.0 five-profile schemas; ADR-0037 fixes source-era reset and transfer product SLOs without changing retained evidence. |
 | [ESP32-C3 engineering qualification](ports/esp32-c3-4mb.md) | C3-G0…C3-G7 | **FROZEN; all results pending** | ADR-0032 · 2026-08-12 · `[docs]` | Selects ESP32-C3-MINI-1-N4 v0.4/4 MiB/no-PSRAM as reference hardware for the existing generic profile; freezes build, behavior, C3 OI-1 baseline, dual-app HIL, and console-flood control-priority gates without admitting a public C3 release. |
 | §5.4–§5.5 SAFE/OFF | NFR-SAFE/OFF | DRAFT | — | Frozen per dependent story. |
 | §7 External interfaces, §9 Security | IF-*, SEC-* | §9 SEC-* **FROZEN** (2026-07-01, S6) | — | SEC-1..11 mirror the frozen [protocol.md §10](../protocol.md#10-security-note-v1): pairing/encryption baseline (non-gating), connected-client-trust, single active writer (SEC-3), no MAC/label gating (SEC-7/11), no PII in adv (SEC-10), no telemetry (SEC-5). IF-* frozen per story alongside their protocol.md §§. |
@@ -805,10 +805,10 @@ upstream package and required runtime primitive for that target.
 
 ### 5.2 Performance (NFR-PERF)
 
-- **NFR-PERF-1** — At MTU 247, BLE throughput MUST meet the frozen per-profile PUT and GET goodput floors in [§5.3](#53-footprint-gates-nfr-fp) on every exact profile included in a release. No profile, including C3 or RP2, may borrow a floor or passing result from another row. — *(source: PRD §13.4, §10.13; verify: HIL; story: F-11, F-13/14)*
+- **NFR-PERF-1** — At MTU 247, BLE throughput MUST meet the frozen PUT and GET goodput floors in [§5.3](#53-footprint-gates-nfr-fp) on every exact profile included in a release. The replacement-v0.6.0 product floor is exactly 6,600 bytes/s in both directions on all five profiles; sharing that fixed requirement never permits one profile's passing result to stand in for another row. — *(source: PRD §13.4, §10.13; ADR-0037; verify: HIL; story: F-11, F-13/14)*
 - **NFR-PERF-2** — File transfer MUST use windowed chunks (`W` advertised in HELLO caps; reference-agent default window **`W=8`**, chunk sized to one MTU) with cumulative-offset ACKs. — *(source: PRD §13.4, [protocol.md §5](../protocol.md#5-file-transfer-the-reliability-core); verify: conformance, HIL; story: F-09; reference-agent W raised 4→8 2026-07-04 `[docs]`, no wire change)*
 - **NFR-PERF-3** — Interactive console latency (`CONSOLE_INPUT` → echo, and `stdout` → event) MUST stay low enough to feel live. — *(source: PRD §13.4; verify: HIL; story: F-07)*
-- **NFR-PERF-4** — The reset-to-advertisement **ceiling** MUST be the fixed product SLO in §5.3, while PUT/GET goodput **floors** MUST be derived from retained HIL baseline samples by the frozen formulas there; all three MUST then be enforced against the final candidate. — *(source: PRD §13.4, §10.13; ADR-0026; verify: HIL; story: F-13/14)*
+- **NFR-PERF-4** — Reset-to-advertisement **ceilings** and PUT/GET goodput **floors** MUST use the source-era contract in §5.3. For replacement v0.6.0 they are fixed profile/product SLOs independent of retained baseline extrema, and all three MUST be enforced against every final-candidate sample. — *(source: PRD §13.4, §10.13; ADR-0026, ADR-0037; verify: HIL; story: F-13/14)*
 - **NFR-PERF-5** — Before final-candidate PUT/GET timing begins, the exact
   transfer connection MUST complete the bounded link-tuning ladder and the HIL
   runner MUST retain candidate-bound, redacted link facts proving DLE, the
@@ -823,7 +823,8 @@ upstream package and required runtime primitive for that target.
 > **FROZEN measurement contract (2026-07-30 · `[docs]`); exact-Waveshare
 > operator-reset and retained BLE link-fact amendments (2026-08-13 ·
 > `[docs]`); C3 and generic-S3 retained-link-fact amendments (2026-08-16 ·
-> `[docs]`).** This contract freezes
+> `[docs]`); fixed five-profile product-SLO and unpublished-candidate
+> replacement amendments (2026-08-20 · `[docs]`).** This contract freezes
 > the release scope, metric meanings, workload, derivation formulas, and
 > evidence schema before any threshold is selected. It does not invent or
 > claim a numeric threshold.
@@ -846,9 +847,12 @@ exact-byte qualification and remains immutable historical evidence.
 ADR-0033 replaces the prospective v0.6.0 scope with exactly, and in this
 order, `esp32-4mb`, `esp32-s3-n16r8`,
 `waveshare-esp32-s3-lcd-147b`, `esp32-c3-4mb`, and `rpi-pico2-w`. All five
-require one fresh controlled baseline, an independent numeric policy row, and
-passing final-candidate HIL. C3-G0…C3-G6 and Pico GP2 remain additional
-release-blocking gates. No earlier-candidate evidence qualifies v0.6.0.
+require one retained controlled baseline, an exact numeric policy row, and
+passing final-candidate HIL. ADR-0037 fixes reset and goodput product SLOs
+without fitting them to that baseline; static image/headroom and heap remain
+baseline-derived. C3-G0…C3-G6 and Pico GP2 remain additional release-blocking
+gates. ADR-0038 invalidates every earlier candidate/HIL result for replacement
+qualification while retaining its metadata and engineering evidence.
 
 - **NFR-FP-FLASH** — The total shipped application image MUST not exceed its
   frozen per-profile ceiling and MUST leave at least the frozen headroom in the
@@ -864,14 +868,16 @@ release-blocking gates. No earlier-candidate evidence qualifies v0.6.0.
   gates, especially on a PSRAM-equipped S3. — *(source: PRD §10.13 (FP-HEAP);
   verify: HIL; story: F-13/14)*
 - **NFR-FP-BOOT** — Controlled reset release → first fresh host scanner event
-  containing the PyBLE service UUID MUST not exceed the fixed product ceiling.
+  containing the exact PyBLE service UUID MUST not exceed the source-era fixed
+  profile ceiling (replacement v0.6.0: 3,000 ms for ESP, 7,000 ms for Pico).
   That callback proves a matching advertisement occurred but is not an on-air
   packet timestamp. A separate physical power-cycle advertising check MUST pass
   once per final profile record. — *(source: PRD §10.13 (FP-BOOT); ADR-0026;
   verify: HIL; story: F-12, F-13/14)*
 - **NFR-FP-TPUT** — At an observed negotiated ATT MTU of exactly 247, committed
-  PUT goodput and verified GET goodput MUST each meet the frozen per-profile
-  floor on the same serial-attested, settled transfer connection, while the
+  PUT goodput and verified GET goodput MUST each meet the frozen source-era
+  floor (replacement v0.6.0: 6,600 bytes/s in both directions on every
+  profile) on the same candidate-attested, settled transfer connection, while the
   frozen reliability workload remains byte/CRC clean with no unexpected
   disconnect. — *(source: PRD §10.13 (FP-TPUT), ADR-0027; verify: HIL;
   story: F-11, F-13/14)*
@@ -1186,9 +1192,10 @@ controlled-hard-reset proxy for cold boot because it provides an external
 release-to-host-discovery boundary; the physical power-cycle check prevents
 that proxy from replacing real power-on behaviour.
 
-#### 5.3.3 Baseline, threshold derivation, and policy
+#### 5.3.3 Historical v0.5.x baseline, threshold derivation, and policy
 
-The derivation algorithm is frozen before measurement. Define
+This subsection preserves the v0.5.x derivation algorithm. Replacement
+v0.6.0 uses the overrides in §5.3.5. Define
 `floor_q(x) = q * floor(x/q)` and `ceil_q(x) = q * ceil(x/q)`.
 
 - `application_image_max_bytes` is the exact application byte count from two
@@ -1290,7 +1297,7 @@ MUST be positive integers. The policy MUST contain no C3 threshold object. A
 final candidate is evaluated against this committed policy; the engineering
 baseline derives the policy but does not itself approve a release.
 
-For source releases at or after `0.5.0`, the exact derivation identifiers are
+For v0.5.x source releases, the exact derivation identifiers are
 `floor-min-1024-v1`, `fixed-product-slo-3000-v3`, and
 `floor-95pct-min-100-v2` for heap, reset, and goodput respectively. The
 superseded private-candidate reset identifier
@@ -1309,14 +1316,20 @@ machine-verifiable. Candidate generation freezes the policy and build
 measurements; finalization may add HIL observations and operator sign-off but
 MUST NOT change those frozen fields. A changed firmware, manifest, policy, or
 candidate identity invalidates the affected evidence.
+For v0.6.0, derivation selection uses the bound policy/candidate source
+ancestry. The retained baseline's earlier `source_commit`, SemVer alone,
+schema alone, operator input, and the validator checkout are forbidden routing
+inputs.
 
 #### 5.3.5 v0.6.0 five-profile successor policy and evidence
 
 ADR-0033 adds a successor contract without reinterpreting §§5.3.1–5.3.4.
-Those sections remain authoritative for the historical V2/V4 source eras;
-v0.6.0 uses the same workload, timer boundaries, derivation arithmetic,
-reliability totals, immutable-baseline rules, and exact-byte candidate binding
-with the target discrimination below.
+Those sections remain authoritative for the historical V2/V4 source eras.
+Both v0.6.0 source eras use the same workload, timer boundaries, reliability
+totals, immutable-baseline rules, and exact-byte candidate binding with the
+target discrimination below. ADR-0037 replaces only reset/goodput derivation
+for strict descendants of ADR-0038's source boundary; static image/headroom
+and heap derivation remain unchanged.
 
 The controlled v0.6.0 baseline has schema version `2`, measurement contract
 `"oi1-five-profile-v1"`, and exactly `schema_version`,
@@ -1340,9 +1353,9 @@ The successor `firmware/qualification/oi1-gates.json` has exactly:
 - the exact `profile_order` above;
 - `workload`, retaining every §5.3.2 constant except that the PUT window is
   profile-specific;
-- `derivation`, retaining the exact application/image, headroom,
-  `floor-min-1024-v1`, `fixed-product-slo-3000-v3`, and
-  `floor-95pct-min-100-v2` algorithms;
+- `derivation`, retaining the exact application/image, headroom, and
+  `floor-min-1024-v1` algorithms while selecting reset/goodput identifiers by
+  candidate source ancestry as defined below;
 - `baseline_evidence`, binding the canonical schema-2 baseline path and
   SHA-256; and
 - five `profiles` entries in order, each with exactly `profile_id`, `target`,
@@ -1392,6 +1405,63 @@ ESP per-Notify wait budget. ESP DLE/PHY/session-end fields are forbidden. The
 bench MUST import the exact positive runtime constants, recheck the ceiling
 formula, and reject an operator-selectable or unequal numeric replacement.
 
+For a source at or before
+`5620f2fdc672b440548119e3431cfa4f4ed3f5a3`, the unpublished v0.6.0 replay
+contract retains `fixed-product-slo-3000-v3` and
+`floor-95pct-min-100-v2`. For a strict descendant of that boundary, the
+replacement v0.6.0 policy derivation object instead contains exactly:
+
+```json
+{
+  "application_image": "exact-byte-identical-two-root-v1",
+  "application_headroom": "factory-minus-application-v1",
+  "heap_floor": "floor-min-1024-v1",
+  "boot_ceiling": "fixed-profile-product-slo-esp3000-pico7000-v4",
+  "goodput_floor": "fixed-product-slo-64k-under-10s-6600-v3"
+}
+```
+
+The bound policy/candidate source commit, not its `0.6.0` SemVer, the
+validator checkout, or the baseline's `source_commit`, selects between these
+contracts. A replacement policy/candidate source MUST be a strict descendant
+of the boundary. Missing, unrelated, equal-boundary, or ancestry-unprovable
+identity fails closed. The immutable retained baseline
+`docs/validation/firmware/oi1/a8be631df46590166307aa41afaea30b39e29230.json`
+and its exact SHA-256
+`8a7dbf328ba8d70f5161582b56d1566821f20b7a259ff29dc7d6fe6bb75a6044`
+remain byte-for-byte input evidence. Its static/heap samples are rederived
+under the selected policy/candidate era; its reset/goodput samples remain
+diagnostic. It is never rewritten, never routes its own derivation, and is not
+replacement qualification.
+
+The replacement policy rows MUST contain the following reset and transfer
+values before candidate freeze; no other reset or transfer value is valid:
+
+| Profile | Reset maximum (ms) | PUT minimum (B/s) | GET minimum (B/s) |
+|---|---:|---:|---:|
+| `esp32-4mb` | 3000 | 6600 | 6600 |
+| `esp32-s3-n16r8` | 3000 | 6600 | 6600 |
+| `waveshare-esp32-s3-lcd-147b` | 3000 | 6600 | 6600 |
+| `esp32-c3-4mb` | 3000 | 6600 | 6600 |
+| `rpi-pico2-w` | 7000 | 6600 | 6600 |
+
+The reset endpoint remains the first fresh host callback containing the exact
+service UUID. Exactly 10 reset samples per profile must all pass, with the
+15,000 ms health timeout and separate physical power-cycle check unchanged;
+there is no trim, retry, replacement, or post-failure widening. Pico's 7,000
+ms is the pinned BTstack 5–6 second normal controller-initialization allowance
+plus a fixed 1,000 ms acquisition/delivery budget, never arithmetic over a
+baseline sample.
+
+The product-wide transfer floor is exactly
+`ceil_100(65536 / 10) = 6600` bytes/s. Under the frozen integer-goodput
+formula, the largest passing duration is `9,929,696,969 ns` (about `9.9297 s`).
+All five PUT and all five GET samples for each profile must pass without retry.
+Unique-byte totals, duration/goodput equality, integrity, offsets, settled
+link facts, retransmit/rewind accounting, reliability totals, disconnect
+counts, and every target-specific transport fact remain exact. Neither a
+failed run nor a favorable baseline may rederive either fixed SLO.
+
 Every V5 profile record additionally binds both real-app results. `app_hil`
 has exactly `ipad` and `android`; each entry has exactly non-empty
 `app_version`, `app_build`, and `os_major`, plus `status: "passed"` in a
@@ -1399,7 +1469,8 @@ completed record. Both are pending in a candidate, and neither platform can
 stand in for the other. C3-G0…C3-G6 and Pico GP2 are separately derived
 profile-gate summaries as frozen in
 [browser-flashing.md §9.5](browser-flashing.md#95-pyble_hil_records_v5-five-profile-heterogeneous-release).
-No numeric value or passed result is established by this specification.
+No passed result is established by this specification. The fixed reset and
+goodput values above are product requirements, not claims of qualification.
 
 ### 5.4 Software safety (NFR-SAFE)
 
@@ -1513,7 +1584,8 @@ This is software-level safety of the IDE/agent, **not** hardware/actuator safety
 
 > **FROZEN v1.0 (amended) for the initial ESP32 v1 port (G0 · 2026-07-01;
 > browser-release amendments 2026-07-29 through 2026-07-31; exact-board split
-> amendment 2026-08-03; heterogeneous five-profile amendment 2026-08-12 ·
+> amendment 2026-08-03; heterogeneous five-profile amendment 2026-08-12;
+> unpublished-candidate replacement amendment 2026-08-20 ·
 > `[docs]`).**
 > BLD-1…22 are the build/versioning contract build-smith implements. The
 > 2026-07-29 amendments tighten BLD-5…8/13/14 and add BLD-17…22 before
@@ -1575,7 +1647,9 @@ This is software-level safety of the IDE/agent, **not** hardware/actuator safety
   two-profile exception and its GitHub publication MUST remain marked as a
   pre-release; it MUST NOT be expanded or reinterpreted. The v0.5.1 source
   candidate remains unqualified historical identity and MUST NOT be retagged
-  or repackaged. —
+  or repackaged. The local v0.6.0 tag peeling to `719b211…` is unpublished and
+  may be replaced in place only by ADR-0038's source-bound sequence; its old
+  bytes/HIL cannot qualify the replacement. —
   *(source: PRD §10.12, §18.2,
   [browser-flashing §3](browser-flashing.md#3-same-origin-versioned-layout);
   verify: build, release; story: X-11)*
@@ -1745,6 +1819,12 @@ This is software-level safety of the IDE/agent, **not** hardware/actuator safety
   upstream pin change after candidate-freezing creates a new candidate and
   requires every build, audit, deployment, and exact-profile HIL gate to
   restart; candidate-freezing itself is not HIL or public-release approval. Any
+  v0.6.0 pre-publication replacement MUST retain the superseded local
+  tag-object/source metadata, pass source/docs/RED/GREEN plus clean build,
+  two-root reproducibility, license, source, and audit gates, then replace the
+  local annotated tag so it peels to candidate `HEAD` before audited candidate
+  creation. Fresh HIL/finalization follows; push/publication/activation remains
+  forbidden until it passes. Any
   changed release byte outside the copy-on-write administrative promotion
   envelope frozen in
   [browser-flashing §9](browser-flashing.md#9-automated-and-hil-acceptance)
@@ -1820,9 +1900,10 @@ This is software-level safety of the IDE/agent, **not** hardware/actuator safety
 
 These are tracked, release-blocking where noted; they MUST be closed before the v1.0 tag.
 
-- **OI-1 — Per-profile resource numbers pending HIL.** The measurement method,
+- **OI-1 — Replacement static/heap values and final evidence pending.** The measurement method,
   exact current scope, evidence contract, and threshold derivation are frozen
-  in §5.3. Numeric thresholds remain open. The v0.6.0 portion closes only when
+  in §5.3. Reset and goodput are fixed; rederived static image/headroom and
+  heap values plus final evidence remain open. The v0.6.0 portion closes only when
   all five ordered profiles have one committed schema-3 policy row and passing
   final-candidate V5 evidence, including C3-G0…C3-G6 and Pico GP2. That state
   MUST be described as **“qualified for the five-profile v0.6.0 release”**,

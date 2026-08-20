@@ -1,6 +1,6 @@
 # PyBLE — Agent Firmware
 
-Status: **DRAFT** · Last updated: 2026-08-12
+Status: **DRAFT** · Last updated: 2026-08-20
 
 The PyBLE agent is small board-side firmware that turns a compatible
 MicroPython target into a PyBLE-speaking board: it advertises the BLE service,
@@ -107,6 +107,18 @@ qualification target, not a claim that any v0.6.0 gate has passed. Fresh
 two-clean-build reproducibility, license audit, resource policy, exact-byte
 HIL, both-platform app HIL, install/recovery, and copy-on-write finalization
 remain required for all five profiles before activation.
+
+ADR-0038 replaces the unpublished local candidate tagged at `719b211…` in
+place: no origin tag, GitHub Release, or canonical v0.6.0 website release ever
+existed, so the first public version remains `0.6.0`. The predecessor source
+era ends at inclusive commit `5620f2f…`; only strict descendants use the
+ADR-0037 fixed-SLO contract. All old candidate bytes and HIL are invalid for
+the replacement, while superseded metadata and immutable baseline evidence
+remain retained. After source/docs/RED/GREEN, build, reproducibility, license,
+source, and audit gates pass, the local tag may be replaced so it peels to
+candidate `HEAD`; audited candidate creation then precedes fresh HIL and
+finalization. Push, publication, and activation remain forbidden until those
+later gates pass.
 
 The ESP32-C3-MINI-1-N4 v0.4/4 MiB/no-PSRAM reference and its still-pending
 C3-G0…C3-G6 gates remain frozen in
@@ -452,27 +464,29 @@ internal-heap gate. Total application-image size is the normative flash
 quantity; an “agent-only overhead” requires a matched no-agent control build
 and is supplemental only.
 
-Thresholds are never fitted to a candidate run: heap floors round the minimum
-of the frozen sample set outward to 1 KiB; reset-to-advertisement uses the
-fixed 3,000 ms end-to-end product SLO; and goodput floors apply the exact
-integer 5% host/radio repeatability allowance before rounding outward to 100
-bytes/s. The reset metric ends at a host scanner callback, so it is a
-user-visible discovery SLO rather than a tight firmware boot-regression
-statistic. Static image/headroom quantities remain exact, and
-integrity/reliability assertions receive no allowance. The engineering
-baseline derives the remaining committed policy values; only hash-locked
-final-candidate HIL qualifies a release. The v0.6.0 policy derives five
-independent rows; C3 and Pico remain pending rather than deferred or inferred
-from another target.
+Thresholds are never fitted to a candidate run. For replacement v0.6.0, heap
+floors alone round the minimum of the frozen sample set outward to 1 KiB;
+static image/headroom remains exact. Reset-to-advertisement is fixed at 3,000
+ms for each ESP profile and 7,000 ms for Pico, and both PUT and GET are fixed
+at 6,600 bytes/s for every profile. The reset metric ends at the same fresh
+exact-service host scanner callback. Exactly 10 reset and five PUT/five GET
+samples must all pass their fixed SLO with no trim or retry; the 15-second
+health timeout, physical cycle, integrity, reliability, duration arithmetic,
+and link facts remain exact. The engineering baseline retains reset/goodput
+samples diagnostically but derives only static and heap values. Only fresh
+hash-locked final-candidate HIL qualifies the replacement. Historical source
+eras retain their V3/V2 derivation arithmetic.
 
-The sole permitted cross-commit physical-fact lineage is specified by
-[browser-flashing.md](firmware/browser-flashing.md): it may reuse only the
+The predecessor source-era cross-commit physical-fact lineage is specified by
+[browser-flashing.md](firmware/browser-flashing.md): it could reuse only the
 retained baseline's passed physical-power-cycle boolean when all shipped bytes
 are identical. Every quantitative and automatic OI field still comes from a
 fresh hash-bound final-candidate run, the record explicitly claims no new
 physical observation, and every app, operator, private, and profile gate
 remains mandatory. No complete baseline row may be relabelled as final-candidate
 verification.
+ADR-0038 invalidates that predecessor lineage for replacement v0.6.0; every
+replacement profile requires a fresh exact physical power-cycle check.
 
 Fresh Waveshare and Pico reset arrays use PBLE RUN of `machine.reset()`, the
 expected link drop, and the following fresh advertisement. That automatic
@@ -481,7 +495,9 @@ not enlarge the one-field lineage scope.
 
 Published v0.4.2 metadata and HIL evidence retain their historical exact
 two-profile contract. The unqualified v0.5.1 source candidate retains its
-three-profile source-era contract. Neither is expanded or reinterpreted as the
-v0.6.0 five-profile matrix.
+three-profile source-era contract. The predecessor unpublished v0.6.0 source
+also retains its V3/V2 derivation for replay, but its candidate/HIL cannot
+qualify the replacement. None is expanded or reinterpreted as replacement
+v0.6.0 evidence.
 
 <!-- SPDX-License-Identifier: MIT -->

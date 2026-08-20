@@ -91,6 +91,10 @@ Compatibility copy MUST distinguish platform scope from current support:
 - the selected `v0.6.0` qualified-release contract requires the exact five
   ordered profiles in §7; this is an activation contract, not a claim that
   those release bytes are qualified or public, and every gate remains pending;
+- the earlier local `firmware-v0.6.0` tag/candidate at `719b211…` was never
+  present at origin, in GitHub Releases, or at the canonical same-origin
+  release path and is abandoned. Only ADR-0038's source-era-routed replacement
+  may become the first public v0.6.0, after fresh candidate HIL/finalization;
 - the generic `esp32-s3-n16r8` image MUST NOT bundle `pyble_st7789`,
   `pyble_waveshare_lcd147b`, exact-board pin data, or the boot splash; the
   Waveshare profile MUST use its own manifest and different immutable firmware

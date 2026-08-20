@@ -1,10 +1,12 @@
 # PyBLE Firmware Browser Provisioning and Release Bundle
 
-Status: **FROZEN v1.31** · Owner: project maintainer · Frozen:
-2026-08-12 (`[docs]`; ADR-0033 adds the exact five-profile v0.6.0 successor
+Status: **FROZEN v1.32** · Owner: project maintainer · Frozen:
+2026-08-20 (`[docs]`; ADR-0033 adds the exact five-profile v0.6.0 successor
 with release schema 4, HIL V5, OI policy schema 3, four ESP Web Serial images,
 and one verified-UF2/manual-BOOTSEL path; every new gate remains pending;
-immutable v0.4.2 and v0.5.1 source-era contracts are preserved)
+ADR-0037 fixes replacement-era reset and transfer product SLOs; ADR-0038
+replaces an unpublished local v0.6.0 candidate by source ancestry; immutable
+v0.4.2, v0.5.1, and predecessor-v0.6.0 contracts are preserved)
 
 This document is the source of truth for the initial browser-provisioning
 release bundle. It refines
@@ -252,6 +254,28 @@ audit, protected deployment, and complete current-release-profile HIL matrix
 MUST then start again; evidence from the abandoned candidate MUST NOT be
 carried forward.
 
+The local annotated `firmware-v0.6.0` tag object
+`d86eb6473a8d0269479061f03cd4a7b48bc8dabe`, which peels to
+`719b211345028e49aee9df9b11c4b5fd110913de`, is an abandoned unpublished
+candidate, not release authority. The 2026-08-20 pre-publication audit found no
+matching origin tag, GitHub Release, or canonical
+`/firmware/v0.6.0/release.json`. Therefore the replacement remains version
+`0.6.0`, but every old candidate byte, protected result, HIL result, and
+physical-fact lineage is invalid for it. Their identities and metadata remain
+retained as superseded history. The replacement tag may be created only after
+the replacement source and policy pass docs/RED/GREEN, clean build, two-root
+reproducibility, license, source, and audit gates. Candidate creation then
+requires that local annotated tag to peel to exact candidate `HEAD`. Fresh HIL
+and finalization follow candidate creation; only after they pass may the tag
+be considered for origin push, publication, or activation.
+
+The predecessor v0.6.0 source era ends at and includes
+`5620f2fdc672b440548119e3431cfa4f4ed3f5a3`; the replacement era contains
+only strict descendants. Qualification tooling selects the applicable
+derivation from the bound policy/candidate source commit's proven ancestry,
+never SemVer alone, the retained baseline's `source_commit`, or the validator
+checkout. Unknown or unrelated ancestry fails closed.
+
 For the historical v0.5.1 schema-2 OI contract, before the first OI-1 policy
 can be committed, the release tool MUST provide a
 `create-baseline-inputs` operation that breaks the policy/evidence dependency
@@ -300,18 +324,23 @@ and never mixes a historical fragment or source commit into the set. The two
 clean roots must compare every released ESP part plus Pico `firmware.uf2`,
 `firmware.bin`, and `firmware.elf` byte-for-byte before staging.
 
-After both exact-profile baseline runs succeed, the release tool MUST provide
+After all exact source-era profile baseline runs succeed, the release tool MUST provide
 an `assemble-oi1-baseline` operation. It accepts the immutable staged baseline
-input tree above, exactly two canonical single-profile fragments emitted by
-the OI-1 bench, the clean canonical PyBLE proof checkout, and one explicit UTC
+input tree above, exactly one canonical single-profile fragment for each
+source-era profile (five for the v0.6.0 schema) emitted by the OI-1 bench,
+the clean canonical PyBLE proof checkout, and one explicit UTC
 `created_at` value. It MUST derive `source_commit` from that checkout's exact
 `HEAD` and `firmware_version` from its `versions.lock`; operator-supplied
 substitutes for either identity are forbidden. Before writing, it MUST require
 the proof checkout to be clean, require exactly one fragment for each profile
 regardless of input order, validate every fragment and observation field,
 bind each fragment's firmware hash, manifest hash, and build measurements to
-the corresponding staged bytes, and mechanically derive all nine thresholds
-with the frozen formulas.
+the corresponding staged bytes, mechanically derive the static image/headroom
+and heap thresholds, and insert the source-era fixed reset/goodput values. For
+replacement v0.6.0 these are ESP `3000`/Pico `7000` ms and PUT/GET `6600`
+bytes/s for every row, with the exact ADR-0037 derivation identifiers. Reset
+and transfer samples remain mandatory diagnostics and every sample must pass;
+they do not fit either fixed threshold.
 
 The operation MUST canonicalize and create the baseline evidence at
 `docs/validation/firmware/oi1/<HEAD>.json`, compute the digest of those exact
@@ -321,6 +350,17 @@ no-replace: any existing destination is fatal. The policy update MUST be an
 atomic same-directory replacement, and both complete payloads MUST pass the
 production baseline/policy validator. This operation is evidence assembly
 only; it does not approve a release or mutate staged measurement inputs.
+
+The ADR-0037 pre-publication policy replacement does not rerun or rewrite that
+assembly. It reuses the exact immutable baseline at
+`docs/validation/firmware/oi1/a8be631df46590166307aa41afaea30b39e29230.json`
+and its existing policy pointer. Under the replacement policy/candidate source
+era, the release tool rederives static image/headroom and heap from those
+samples, retains reset/goodput samples diagnostically, and atomically writes
+the new derivation identifiers plus fixed five-row performance values. The
+baseline's own earlier `source_commit` MUST NOT select the predecessor
+derivation. This policy-only rederivation edits neither baseline byte nor any
+candidate/HIL result.
 
 The protected candidate site's build-selected SHA-256 of `release.json` is the
 root identity of the candidate exercised during HIL. The completed HIL
@@ -1777,6 +1817,10 @@ releases. The retained `0.4.2` source era instead requires policy
 schema 1, its historical exact two-profile order, `ceil-max-10-v1`, and
 `floor-min-100-v1` values; validation selects the complete policy contract by
 firmware source era and never silently reinterprets published evidence.
+The two unpublished v0.6.0 source eras both retain policy schema 3 and the
+five-profile order, but they do not share a derivation object: §9.5 selects
+the predecessor V3/V2 or replacement V4/V3 identifiers from bound source
+ancestry. Version, schema, or operator input alone cannot select it.
 
 `baseline_evidence.path` MUST match
 `docs/validation/firmware/oi1/<40-lowercase-hex-source-commit>.json`;
@@ -2219,6 +2263,29 @@ C3-G0…C3-G6; Pico binds GP0, GP1, and complete GP2. A missing private result,
 non-null input summary, failed sub-gate, changed input, or identity/hash
 mismatch leaves no public output.
 
+The V5 envelope is unchanged across the two unpublished v0.6.0 source eras,
+but its policy derivation is source-bound. A candidate source at or before
+`5620f2fdc672b440548119e3431cfa4f4ed3f5a3` retains
+`fixed-product-slo-3000-v3` and `floor-95pct-min-100-v2`. Only a strict
+descendant uses
+`fixed-profile-product-slo-esp3000-pico7000-v4` and
+`fixed-product-slo-64k-under-10s-6600-v3`. Its policy has reset ceilings
+`3000` for the four ESP rows and `7000` for Pico, and PUT/GET floors `6600`
+for all five rows. The bound replacement policy/candidate source must be a
+strict boundary descendant. Missing, equal-to-boundary, unrelated, or
+ancestry-unprovable replacement identity fails closed. The immutable
+`a8be631…` baseline remains the exact input: its static/heap thresholds are
+rederived under the bound replacement policy/candidate era, while its
+reset/goodput values are diagnostic. Its own `source_commit` never routes the
+derivation and its bytes are never rewritten.
+
+Every one of the ten reset samples must meet its row's ceiling, and every one
+of five PUT and five GET samples must meet 6,600 bytes/s. No sample may be
+trimmed, replaced, or retried. The 15-second reset health timeout, exact
+service-callback endpoint, separate physical check, goodput-duration equality,
+integrity, reliability, disconnect, and target-specific settled-link facts
+remain exact. A failed run never rederives or widens a fixed SLO.
+
 Every V5 record has exactly the V2 identity/operator/environment keys, with
 `manifest_sha256` replaced by common `install_sha256`, plus these required
 keys:
@@ -2270,29 +2337,14 @@ candidate artifact equals its baseline counterpart. Source-diff membership
 alone never proves that a profile's install bytes are unchanged; the bound
 profile-local artifact comparison is authoritative.
 
-For the replacement v0.6.0 candidate, the retained baseline source is
-`a8be631df46590166307aa41afaea30b39e29230` and the candidate source is
-`719b211345028e49aee9df9b11c4b5fd110913de`. Their frozen source diff is
-exactly:
-
-```text
-M docs/specifications/firmware/browser-flashing.md
-M docs/specifications/firmware/specs.md
-A docs/validation/firmware/oi1/a8be631df46590166307aa41afaea30b39e29230.json
-M firmware/qualification/oi1-gates.json
-M firmware/scripts/release_bundle.py
-M firmware/user_c_modules/pyble/pble_fs.c
-M tests/firmware_tests/host/test_generic_response_delivery.py
-M tests/firmware_tests/host/test_oi1_profile_bench.py
-M tests/firmware_tests/host/test_v060_physical_fact_lineage.py
-M tests/firmware_tests/host/test_vm_epoch_lifecycle.py
-```
-
-No other candidate-source change is permitted by this lineage. Eligibility is
-still profile-local and byte-bound: the four ESP profiles whose install images
-changed require a fresh physical all-power-off observation. Pico lineage is not
-pre-approved and may proceed only if its complete candidate install binding is
-byte-for-byte identical to the retained baseline.
+The earlier lineage from baseline source `a8be631…` to candidate source
+`719b211…`, including its frozen diff and all candidate-bound HIL, is
+superseded unpublished metadata and is explicitly ineligible for the
+replacement. It remains retained so the predecessor source era is auditable;
+it MUST NOT authorize any carried fact, candidate byte, or pass in the new
+era. ADR-0038 permits no physical-fact carry-forward into the replacement;
+every profile requires a fresh physical all-power-off observation on the new
+candidate.
 
 For `waveshare-esp32-s3-lcd-147b` and `rpi-pico2-w`, the fresh automatic reset
 samples use the frozen `pble-machine-reset` mechanism: PBLE RUN invokes the
@@ -2303,12 +2355,14 @@ retained physical all-power-off fact. Other profiles retain their frozen reset
 mechanisms.
 
 The lineage creator and finalizer are qualification executables, not candidate
-firmware inputs. A reviewed post-tag qualification checkout MAY process the
-immutable tagged candidate without rebuilding or retagging it, but the lineage
-record MUST bind that checkout's source commit and the SHA-256 of every loaded
-qualification executable. Candidate source identity and all shipped artifact
-bytes remain those in the protected candidate; changing either invalidates the
-record.
+firmware inputs. A reviewed post-freeze qualification checkout MAY process the
+immutable candidate without rebuilding it. The replacement local
+`firmware-v0.6.0` tag is created after pre-candidate source/build/audit gates
+and must peel to candidate `HEAD`; it remains unpublished while HIL runs. The
+lineage record MUST bind the qualification checkout's source commit and the
+SHA-256 of every loaded qualification executable. Candidate source identity
+and all shipped artifact bytes remain those in the protected candidate;
+changing either invalidates the record.
 
 Lineage never promotes a baseline observation wholesale and never claims that
 the inherited fact was observed again. `create-hil-completion` MUST reconstruct

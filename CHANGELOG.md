@@ -24,6 +24,11 @@ are released independently from this monorepo.
 
 ### Firmware 0.6.0 source integration
 
+- Abandoned the unpublished local `firmware-v0.6.0` candidate at `719b211…`
+  after the C3 stateless-PHY/post-OI receipt and fixed performance-contract
+  amendments. Version 0.6.0 and its atomic five-profile scope are retained for
+  a source-era-routed replacement; all candidate/HIL gates restart before any
+  tag is pushed or release is published.
 - Added the `rpi-pico2-w` portable frozen-Python agent port, its isolated RP2
   build plane, and pinned Arm GNU toolchain input alongside the four existing
   ESP build variants.
