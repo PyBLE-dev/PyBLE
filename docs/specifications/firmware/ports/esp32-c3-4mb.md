@@ -63,6 +63,35 @@ access-controlled and are never release artifacts.
 An observation from different bytes, a dirty build, a stale build directory,
 another C3 module/memory tuple, classic ESP32, or ESP32-S3 cannot fill a gate.
 
+## C3.3 PHY-calibration persistence policy (FROZEN)
+
+The `esp32-c3` overlay MUST explicitly disable
+`CONFIG_ESP_PHY_CALIBRATION_AND_DATA_STORAGE`. The pinned ESP-IDF therefore
+performs full PHY calibration on every boot instead of retaining calibration
+data in NVS. ESP-IDF documents approximately 100 ms for a full calibration;
+that cost is accepted inside the unchanged 3,000 ms reset ceiling. None of the
+frozen reset, heap, reliability, or throughput thresholds may be relaxed to
+adopt this policy.
+
+This C3-only setting removes a state-dependent qualification failure. A sealed
+A/B/A diagnostic held the application and VFS bytes exact and showed that the
+two-page PHY-calibration NVS state alone reduced both current and minimum-ever
+internal heap by 312 bytes, from 67,148/63,556 bytes to 66,836/63,244 bytes.
+The latter minimum crosses the frozen 63,488-byte floor. PyBLE does not require
+persisted PHY calibration, and NVS remains available for ordinary application
+state; this policy only prevents ESP-IDF from creating the `phy` namespace and
+rewriting its calibration entry on this profile.
+
+Every candidate using this setting MUST receive a full-chip erase before the
+exact verified install. An application-only reflash can retain the old PHY NVS
+pages and does not qualify the fixed bytes. After the erased install, the
+existing 10 controlled C3-G4 reset samples MUST still pass the 3,000 ms ceiling
+and every frozen heap floor. A read-only NVS namespace/key/type inventory taken
+after those repeated resets MUST pass partition integrity checks and contain no
+written `phy` namespace or key; values are neither required nor retained as
+public evidence. The application and VFS regions remain subject to their
+existing exact-byte and functional checks.
+
 ## C3-G0 — Identity, build, and install (FROZEN)
 
 1. Operator inspection records `ESP32-C3-MINI-1-N4`/`C3N4`; the connected-chip
