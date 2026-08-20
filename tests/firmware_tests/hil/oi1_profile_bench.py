@@ -35,6 +35,7 @@ from _pble_bench import (
     RedactedRawLog,
     RP2_THRESHOLD_KEYS,
     THRESHOLD_KEYS,
+    V051_DERIVATION,
     V051_PROFILE_ORDER,
     V051_WORKLOAD,
     WORKLOAD,
@@ -1804,6 +1805,7 @@ def _load_policy_thresholds(path, profile_id):
         profile_order = V051_PROFILE_ORDER
         expected_scope = "pre-v1"
         expected_workload = V051_WORKLOAD
+        expected_derivation = V051_DERIVATION
         if policy.get("deferred_profiles") != ["esp32-c3-4mb"]:
             raise BenchError("qualification policy has the wrong deferred profile")
     elif schema_version == 3:
@@ -1811,6 +1813,7 @@ def _load_policy_thresholds(path, profile_id):
         profile_order = PROFILE_ORDER
         expected_scope = "v0.6.0-five-profile"
         expected_workload = WORKLOAD
+        expected_derivation = DERIVATION
     else:
         raise BenchError("qualification policy schema_version must be 2 or 3")
     if set(policy) != expected_keys:
@@ -1821,7 +1824,7 @@ def _load_policy_thresholds(path, profile_id):
         raise BenchError("qualification policy has the wrong profile order")
     if (
         policy.get("workload") != expected_workload
-        or policy.get("derivation") != DERIVATION
+        or policy.get("derivation") != expected_derivation
     ):
         raise BenchError("qualification policy workload/derivation has drifted")
     profiles = policy.get("profiles")
@@ -2068,7 +2071,12 @@ async def _run(args):
 
     if args.mode == "verify":
         thresholds = _load_policy_thresholds(args.policy, args.profile)
-        evaluate_thresholds(oi1_build, observation, thresholds)
+        evaluate_thresholds(
+            oi1_build,
+            observation,
+            thresholds,
+            profile_id=args.profile,
+        )
     baseline_profile = build_baseline_profile(
         profile_id=args.profile,
         board_manufacturer=args.board_manufacturer,
@@ -2096,7 +2104,13 @@ async def _run(args):
     if args.mode == "baseline" and output is baseline_profile:
         sys.stderr.buffer.write(
             b"Derived profile thresholds (not a release policy):\n"
-            + canonical_json_bytes(derive_thresholds(oi1_build, observation))
+            + canonical_json_bytes(
+                derive_thresholds(
+                    oi1_build,
+                    observation,
+                    profile_id=args.profile,
+                )
+            )
         )
     return 0
 

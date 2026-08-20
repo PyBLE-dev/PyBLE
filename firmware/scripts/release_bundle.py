@@ -153,7 +153,31 @@ QUALIFICATION_DERIVATION_V3 = {
     "boot_ceiling": "fixed-product-slo-3000-v3",
     "goodput_floor": "floor-95pct-min-100-v2",
 }
-QUALIFICATION_DERIVATION = QUALIFICATION_DERIVATION_V3
+QUALIFICATION_DERIVATION_V4 = {
+    "application_image": "exact-byte-identical-two-root-v1",
+    "application_headroom": "factory-minus-application-v1",
+    "heap_floor": "floor-min-1024-v1",
+    "boot_ceiling": "fixed-profile-product-slo-esp3000-pico7000-v4",
+    "goodput_floor": "fixed-product-slo-64k-under-10s-6600-v3",
+}
+QUALIFICATION_DERIVATION = QUALIFICATION_DERIVATION_V4
+# ADR-0038: the superseded unpublished v0.6.0 source era ends at and
+# includes this commit.  Only strict descendants belong to the replacement
+# v0.6.0 era and use QUALIFICATION_DERIVATION_V4; the boundary and its
+# ancestors keep the historical derivation arithmetic; unknown, unrelated,
+# or ancestry-unprovable v0.6.0 source identity fails closed.
+V060_SUPERSEDED_SOURCE_BOUNDARY = (
+    "5620f2fdc672b440548119e3431cfa4f4ed3f5a3"
+)
+# ADR-0038: the abandoned, never-published v0.6.0 candidate source.  Its
+# evidence can never satisfy a replacement-era policy.
+V060_ABANDONED_CANDIDATE_SOURCE = (
+    "719b211345028e49aee9df9b11c4b5fd110913de"
+)
+# ADR-0037 fixed product SLOs for the replacement v0.6.0 era.
+V4_FIXED_RESET_SLO_MS_ESP = 3000
+V4_FIXED_RESET_SLO_MS_RP2 = 7000
+V4_FIXED_GOODPUT_FLOOR_BPS = 6600
 QUALIFICATION_THRESHOLD_KEYS = (
     "application_image_max_bytes",
     "application_headroom_min_bytes",
@@ -20946,13 +20970,99 @@ def _qualification_derivation_for_version(
     return QUALIFICATION_DERIVATION_V1
 
 
+def _qualification_derivation_for_source(
+    checkout: Path,
+    source_commit: str,
+    *,
+    firmware_version: str,
+) -> dict[str, str]:
+    """Select the derivation from the bound source commit's git ancestry.
+
+    ADR-0038: a strict descendant of the superseded-source boundary is the
+    replacement era and requires QUALIFICATION_DERIVATION_V4.  The boundary
+    commit and its ancestors keep the historical version-routed derivation.
+    Unknown, unrelated, or ancestry-unprovable source identity fails closed
+    (``git merge-base`` fails for missing objects, non-checkouts, and
+    unrelated histories; a diverged sibling yields a third merge base).
+    """
+
+    _require(
+        isinstance(source_commit, str)
+        and COMMIT_RE.fullmatch(source_commit) is not None,
+        "qualification source commit must be full lowercase 40-hex",
+    )
+    merge_base = _git_output(
+        Path(checkout),
+        "PyBLE",
+        "merge-base",
+        V060_SUPERSEDED_SOURCE_BOUNDARY,
+        source_commit,
+    )
+    if (
+        merge_base == V060_SUPERSEDED_SOURCE_BOUNDARY
+        and source_commit != V060_SUPERSEDED_SOURCE_BOUNDARY
+    ):
+        return QUALIFICATION_DERIVATION_V4
+    if merge_base == source_commit:
+        return _qualification_derivation_for_version(firmware_version)
+    raise ReleaseError(
+        "qualification source %s is unrelated to the superseded v0.6.0 "
+        "source boundary; the derivation era is unprovable" % source_commit
+    )
+
+
+def _qualification_derivation_for_checkout(
+    repo_root: Path,
+    firmware_version: str,
+) -> dict[str, str] | None:
+    """Era derivation for the policy committed in this source checkout.
+
+    Only a v0.6.0-or-later source needs ancestry routing (ADR-0038: two
+    source eras share SemVer 0.6.0).  A bare exported tree carries no git
+    source identity to gate on; identity-binding flows (candidate creation
+    and validation) always operate on git checkouts and re-check HEAD, so a
+    tree without ``.git`` keeps SemVer routing and returns None here.
+    """
+
+    source_core = _firmware_release_core(
+        firmware_version,
+        "firmware source version",
+    )
+    if source_core < (0, 6, 0):
+        return _qualification_derivation_for_version(firmware_version)
+    root = Path(repo_root)
+    try:
+        has_git = (root / ".git").exists()
+    except OSError:
+        has_git = False
+    if not has_git:
+        return None
+    head = _git_output(root, "PyBLE", "rev-parse", "HEAD")
+    _require(
+        COMMIT_RE.fullmatch(head) is not None,
+        "qualification source checkout HEAD must be full lowercase 40-hex",
+    )
+    return _qualification_derivation_for_source(
+        root,
+        head,
+        firmware_version=firmware_version,
+    )
+
+
 def _validate_qualification_policy(
     value: Any,
     *,
     repo_root: Path | None = None,
     firmware_version: str | None = None,
+    derivation: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     _require(isinstance(value, dict), "OI-1 qualification policy must be an object")
+    era_derivation = derivation
+    if era_derivation is None and firmware_version is not None and repo_root is not None:
+        era_derivation = _qualification_derivation_for_checkout(
+            Path(repo_root),
+            firmware_version,
+        )
     raw_schema_version = value.get("schema_version")
     if firmware_version is not None:
         profile_order = _release_profile_order_for_version(firmware_version)
@@ -21037,15 +21147,31 @@ def _validate_qualification_policy(
         set(QUALIFICATION_DERIVATION),
         "OI-1 qualification derivation",
     )
-    allowed_derivations = (
-        (_qualification_derivation_for_version(firmware_version),)
-        if firmware_version is not None
-        else (
+    if era_derivation is not None:
+        allowed_derivations: tuple[dict[str, str], ...] = (era_derivation,)
+    elif firmware_version is not None:
+        selected = _qualification_derivation_for_version(firmware_version)
+        source_core = _firmware_release_core(
+            firmware_version,
+            "firmware source version",
+        )
+        # ADR-0038: SemVer alone cannot separate the two v0.6.0 source
+        # eras.  Without a bound source checkout both era derivations are
+        # shape-admissible; identity-binding flows narrow to the exact era
+        # through the source checkout's ancestry.
+        allowed_derivations = (
+            (QUALIFICATION_DERIVATION_V3, QUALIFICATION_DERIVATION_V4)
+            if selected == QUALIFICATION_DERIVATION_V3
+            and source_core >= (0, 6, 0)
+            else (selected,)
+        )
+    else:
+        allowed_derivations = (
             QUALIFICATION_DERIVATION_V1,
             QUALIFICATION_DERIVATION_V2,
             QUALIFICATION_DERIVATION_V3,
+            QUALIFICATION_DERIVATION_V4,
         )
-    )
     _require(
         all(type(value) is str for value in derivation.values())
         and any(derivation == expected for expected in allowed_derivations),
@@ -21193,6 +21319,7 @@ def _validate_qualification_policy(
             baseline_match.group(1),
             policy,
             firmware_version=firmware_version,
+            derivation=era_derivation,
         )
     return policy
 
@@ -21941,6 +22068,8 @@ def _derived_qualification_thresholds(
     observation: dict[str, Any],
     *,
     firmware_version: str = "0.4.2",
+    derivation: dict[str, str] | None = None,
+    profile_id: str | None = None,
 ) -> dict[str, int]:
     heap_samples = (
         observation["heap_post_hello"]
@@ -21953,7 +22082,14 @@ def _derived_qualification_thresholds(
             min(sample[metric] for sample in heap_samples) // quantum
         ) * quantum
 
-    derivation = _qualification_derivation_for_version(firmware_version)
+    if derivation is None:
+        derivation = _qualification_derivation_for_version(firmware_version)
+    is_rp2_build = "firmware_bin_bytes" in build
+    if profile_id is not None:
+        _require(
+            (PROFILE_SPECS[profile_id]["port"] == "rp2") == is_rp2_build,
+            "OI-1 build resource kind disagrees with profile %s" % profile_id,
+        )
     reset_max = max(observation["reset_to_service_advertisement_ms"])
     put_min = min(
         observation["put_committed_goodput_bytes_per_second"]
@@ -21969,11 +22105,19 @@ def _derived_qualification_thresholds(
     ):
         put_min = (put_min * 95) // 100
         get_min = (get_min * 95) // 100
-    reset_threshold = (
-        3000
-        if derivation == QUALIFICATION_DERIVATION_V3
-        else ((reset_max + 9) // 10) * 10
-    )
+    if derivation == QUALIFICATION_DERIVATION_V4:
+        # ADR-0037: fixed product SLOs, never functions of baseline extrema.
+        reset_threshold = (
+            V4_FIXED_RESET_SLO_MS_RP2
+            if is_rp2_build
+            else V4_FIXED_RESET_SLO_MS_ESP
+        )
+        put_min = V4_FIXED_GOODPUT_FLOOR_BPS
+        get_min = V4_FIXED_GOODPUT_FLOOR_BPS
+    elif derivation == QUALIFICATION_DERIVATION_V3:
+        reset_threshold = 3000
+    else:
+        reset_threshold = ((reset_max + 9) // 10) * 10
 
     image_thresholds = (
         {
@@ -22032,6 +22176,7 @@ def _validate_qualification_baseline(
     policy: dict[str, Any],
     *,
     firmware_version: str | None = None,
+    derivation: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     profile_order = (
         _release_profile_order_for_version(firmware_version)
@@ -22226,6 +22371,8 @@ def _validate_qualification_baseline(
                 firmware_version=(
                     firmware_version or baseline["firmware_version"]
                 ),
+                derivation=derivation,
+                profile_id=profile_id,
             ),
             "OI-1 policy thresholds were not derived from baseline %s"
             % profile_id,
@@ -24189,6 +24336,41 @@ def assemble_oi1_baseline(
         "OI-1 proof checkout HEAD must be full lowercase 40-hex",
     )
     firmware_version = _read_lock(root)["pyble"]["agent_version"]
+    # ADR-0038: a v0.6.0-or-later policy derivation is selected from the
+    # bound source commit's ancestry, never from SemVer alone.
+    if _firmware_release_core(
+        firmware_version,
+        "firmware source version",
+    ) >= (0, 6, 0):
+        qualification_derivation = _qualification_derivation_for_source(
+            root,
+            source_commit,
+            firmware_version=firmware_version,
+        )
+    else:
+        qualification_derivation = _qualification_derivation_for_version(
+            firmware_version
+        )
+
+    def _profile_thresholds(
+        build: dict[str, int],
+        observation: dict[str, Any],
+        profile_id: str,
+    ) -> dict[str, int]:
+        if qualification_derivation == QUALIFICATION_DERIVATION_V4:
+            return _derived_qualification_thresholds(
+                build,
+                observation,
+                firmware_version=firmware_version,
+                derivation=qualification_derivation,
+                profile_id=profile_id,
+            )
+        return _derived_qualification_thresholds(
+            build,
+            observation,
+            firmware_version=firmware_version,
+        )
+
     profile_order = _release_profile_order_for_version(firmware_version)
     _require_source_era_evidence_count(
         fragments,
@@ -24347,18 +24529,18 @@ def assemble_oi1_baseline(
                         "btstack-observed-v1" if is_rp2 else "nimble-settled-v1"
                     ),
                 },
-                "thresholds": _derived_qualification_thresholds(
+                "thresholds": _profile_thresholds(
                     build,
                     observation,
-                    firmware_version=firmware_version,
+                    profile_id,
                 ),
             } if policy_schema_version == 3 else {
                 "profile_id": profile_id,
                 "target": spec["target"],
-                "thresholds": _derived_qualification_thresholds(
+                "thresholds": _profile_thresholds(
                     build,
                     observation,
-                    firmware_version=firmware_version,
+                    profile_id,
                 ),
             })
         )
@@ -24393,9 +24575,7 @@ def assemble_oi1_baseline(
             for key, value in QUALIFICATION_WORKLOAD.items()
             if policy_schema_version != 3 or key != "required_put_window"
         },
-        "derivation": copy.deepcopy(
-            _qualification_derivation_for_version(firmware_version)
-        ),
+        "derivation": copy.deepcopy(qualification_derivation),
         "baseline_evidence": {
             "path": baseline_relative,
             "sha256": _sha256_bytes(baseline_bytes),
@@ -24410,10 +24590,12 @@ def assemble_oi1_baseline(
         source_commit,
         policy,
         firmware_version=firmware_version,
+        derivation=qualification_derivation,
     )
     _validate_qualification_policy(
         policy,
         firmware_version=firmware_version,
+        derivation=qualification_derivation,
     )
 
     policy_path = root / QUALIFICATION_POLICY_RELATIVE
@@ -24463,7 +24645,11 @@ def assemble_oi1_baseline(
             "OI-1 baseline evidence",
         )
         baseline_staging = None
-        _validate_qualification_policy(policy, repo_root=root)
+        _validate_qualification_policy(
+            policy,
+            repo_root=root,
+            derivation=qualification_derivation,
+        )
         if policy_original is None:
             _atomic_publish_no_replace(
                 policy_staging,

@@ -90,9 +90,30 @@ DERIVATION = {
     "application_image": "exact-byte-identical-two-root-v1",
     "application_headroom": "factory-minus-application-v1",
     "heap_floor": "floor-min-1024-v1",
+    "boot_ceiling": "fixed-profile-product-slo-esp3000-pico7000-v4",
+    "goodput_floor": "fixed-product-slo-64k-under-10s-6600-v3",
+}
+
+# Frozen historical derivation identity of the v0.5.1 schema-2 policy era.
+# Schema-2 policies keep this arithmetic forever; only the active schema-3
+# era uses DERIVATION above.
+V051_DERIVATION = {
+    "application_image": "exact-byte-identical-two-root-v1",
+    "application_headroom": "factory-minus-application-v1",
+    "heap_floor": "floor-min-1024-v1",
     "boot_ceiling": "fixed-product-slo-3000-v3",
     "goodput_floor": "floor-95pct-min-100-v2",
 }
+
+# ADR-0037 fixed product SLOs: ceil_100(65536 B / 10 s) = 6600 B/s for every
+# profile; reset-to-service 3000 ms on the ESP profiles and 7000 ms on
+# rpi-pico2-w.  These are product decisions, never functions of baseline
+# extrema.
+FIXED_RESET_SLO_MS_ESP = 3000
+FIXED_RESET_SLO_MS_RP2 = 7000
+FIXED_GOODPUT_FLOOR_BPS = 6600
+
+RP2_PROFILE_ID = "rpi-pico2-w"
 
 HEAP_KEYS = (
     "gc_free_bytes",
@@ -657,8 +678,21 @@ def _qualification_samples(observation, *, heap_keys):
     )
 
 
-def derive_thresholds(oi1_build, observation):
+def _require_profile_matches_resource_kind(profile_id, resource_kind):
+    if profile_id is None:
+        return
+    if not isinstance(profile_id, str) or not profile_id:
+        raise BenchError("profile_id must be a non-empty string")
+    if (profile_id == RP2_PROFILE_ID) != (resource_kind == "rp2"):
+        raise BenchError(
+            "profile %s does not match %s build resources"
+            % (profile_id, resource_kind)
+        )
+
+
+def derive_thresholds(oi1_build, observation, profile_id=None):
     resource_kind = _resource_build_kind(oi1_build)
+    _require_profile_matches_resource_kind(profile_id, resource_kind)
     if resource_kind == "rp2":
         firmware_size = _require_nonnegative_int(
             oi1_build["firmware_bin_bytes"], "firmware_bin_bytes"
@@ -675,9 +709,11 @@ def derive_thresholds(oi1_build, observation):
             raise BenchError("RP2 firmware image limit has drifted")
         if image_limit - firmware_size != headroom:
             raise BenchError("RP2 firmware image headroom arithmetic disagrees")
-        snapshots, _resets, put_goodput, get_goodput = _qualification_samples(
-            observation,
-            heap_keys=RP2_HEAP_KEYS,
+        snapshots, _resets, _put_goodput, _get_goodput = (
+            _qualification_samples(
+                observation,
+                heap_keys=RP2_HEAP_KEYS,
+            )
         )
         return {
             "firmware_bin_max_bytes": firmware_size,
@@ -685,12 +721,12 @@ def derive_thresholds(oi1_build, observation):
             "gc_free_min_bytes": floor_quantum(
                 min(item["gc_free_bytes"] for item in snapshots), 1024
             ),
-            "reset_to_service_advertisement_max_ms": 3000,
-            "put_committed_goodput_min_bytes_per_second": floor_quantum(
-                (min(put_goodput) * 95) // 100, 100
+            "reset_to_service_advertisement_max_ms": FIXED_RESET_SLO_MS_RP2,
+            "put_committed_goodput_min_bytes_per_second": (
+                FIXED_GOODPUT_FLOOR_BPS
             ),
-            "get_verified_goodput_min_bytes_per_second": floor_quantum(
-                (min(get_goodput) * 95) // 100, 100
+            "get_verified_goodput_min_bytes_per_second": (
+                FIXED_GOODPUT_FLOOR_BPS
             ),
         }
 
@@ -706,7 +742,7 @@ def derive_thresholds(oi1_build, observation):
     if factory_size - application_size != headroom:
         raise BenchError("application headroom arithmetic does not agree")
 
-    snapshots, _resets, put_goodput, get_goodput = _qualification_samples(
+    snapshots, _resets, _put_goodput, _get_goodput = _qualification_samples(
         observation,
         heap_keys=HEAP_KEYS,
     )
@@ -731,17 +767,17 @@ def derive_thresholds(oi1_build, observation):
             min(item["idf_internal_minimum_free_bytes"] for item in snapshots),
             1024,
         ),
-        "reset_to_service_advertisement_max_ms": 3000,
-        "put_committed_goodput_min_bytes_per_second": floor_quantum(
-            (min(put_goodput) * 95) // 100, 100
+        "reset_to_service_advertisement_max_ms": FIXED_RESET_SLO_MS_ESP,
+        "put_committed_goodput_min_bytes_per_second": (
+            FIXED_GOODPUT_FLOOR_BPS
         ),
-        "get_verified_goodput_min_bytes_per_second": floor_quantum(
-            (min(get_goodput) * 95) // 100, 100
+        "get_verified_goodput_min_bytes_per_second": (
+            FIXED_GOODPUT_FLOOR_BPS
         ),
     }
 
 
-def evaluate_thresholds(oi1_build, observation, thresholds):
+def evaluate_thresholds(oi1_build, observation, thresholds, profile_id=None):
     resource_kind = _resource_build_kind(oi1_build)
     threshold_keys = (
         RP2_THRESHOLD_KEYS if resource_kind == "rp2" else THRESHOLD_KEYS
@@ -749,7 +785,7 @@ def evaluate_thresholds(oi1_build, observation, thresholds):
     _require_exact_keys(thresholds, threshold_keys, "thresholds")
     for key in threshold_keys:
         _require_positive_int(thresholds[key], "thresholds.%s" % key)
-    derived = derive_thresholds(oi1_build, observation)
+    derived = derive_thresholds(oi1_build, observation, profile_id)
     if resource_kind == "rp2":
         heap_snapshots = (
             observation["heap_post_hello"]
