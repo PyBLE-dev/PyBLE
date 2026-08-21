@@ -160,7 +160,17 @@ QUALIFICATION_DERIVATION_V4 = {
     "boot_ceiling": "fixed-profile-product-slo-esp3000-pico7000-v4",
     "goodput_floor": "fixed-product-slo-64k-under-10s-6600-v3",
 }
-QUALIFICATION_DERIVATION = QUALIFICATION_DERIVATION_V4
+# ADR-0039: the second-replacement v0.6.0 derivation changes exactly the
+# heap-floor identifier.  Every heap floor keeps floor-min-1024-v1
+# arithmetic except the fixed Waveshare largest-block floor.
+QUALIFICATION_DERIVATION_V5 = {
+    "application_image": "exact-byte-identical-two-root-v1",
+    "application_headroom": "factory-minus-application-v1",
+    "heap_floor": "floor-min-1024-waveshare-block-98304-v2",
+    "boot_ceiling": "fixed-profile-product-slo-esp3000-pico7000-v4",
+    "goodput_floor": "fixed-product-slo-64k-under-10s-6600-v3",
+}
+QUALIFICATION_DERIVATION = QUALIFICATION_DERIVATION_V5
 # ADR-0038: the superseded unpublished v0.6.0 source era ends at and
 # includes this commit.  Only strict descendants belong to the replacement
 # v0.6.0 era and use QUALIFICATION_DERIVATION_V4; the boundary and its
@@ -174,10 +184,20 @@ V060_SUPERSEDED_SOURCE_BOUNDARY = (
 V060_ABANDONED_CANDIDATE_SOURCE = (
     "719b211345028e49aee9df9b11c4b5fd110913de"
 )
+# ADR-0039: the first-replacement candidate source is the second era
+# boundary.  Only strict descendants use QUALIFICATION_DERIVATION_V5; the
+# boundary itself and its ancestors keep the ADR-0038 routing above.
+V060_FIRST_REPLACEMENT_SOURCE_BOUNDARY = (
+    "7d853289815751c7381c9fd0b9a9a4409bdb6879"
+)
 # ADR-0037 fixed product SLOs for the replacement v0.6.0 era.
 V4_FIXED_RESET_SLO_MS_ESP = 3000
 V4_FIXED_RESET_SLO_MS_RP2 = 7000
 V4_FIXED_GOODPUT_FLOOR_BPS = 6600
+# ADR-0039: the fixed Waveshare largest-block floor — the baseline-derived
+# 102400 minus exactly one 4096-byte page.
+V5_FIXED_WAVESHARE_LARGEST_BLOCK_MIN_BYTES = 98304
+V5_WAVESHARE_PROFILE_ID = "waveshare-esp32-s3-lcd-147b"
 QUALIFICATION_THRESHOLD_KEYS = (
     "application_image_max_bytes",
     "application_headroom_min_bytes",
@@ -20991,6 +21011,26 @@ def _qualification_derivation_for_source(
         and COMMIT_RE.fullmatch(source_commit) is not None,
         "qualification source commit must be full lowercase 40-hex",
     )
+    # ADR-0039: a strict descendant of the first-replacement boundary is
+    # the second-replacement era.  When this stage cannot be proven (for
+    # example a historical checkout that predates the boundary object),
+    # fall through to the ADR-0038 routing below, which itself fails
+    # closed on any ancestry it cannot prove.
+    try:
+        second_merge_base = _git_output(
+            Path(checkout),
+            "PyBLE",
+            "merge-base",
+            V060_FIRST_REPLACEMENT_SOURCE_BOUNDARY,
+            source_commit,
+        )
+    except ReleaseError:
+        second_merge_base = None
+    if (
+        second_merge_base == V060_FIRST_REPLACEMENT_SOURCE_BOUNDARY
+        and source_commit != V060_FIRST_REPLACEMENT_SOURCE_BOUNDARY
+    ):
+        return QUALIFICATION_DERIVATION_V5
     try:
         merge_base = _git_output(
             Path(checkout),
@@ -21163,12 +21203,16 @@ def _validate_qualification_policy(
             firmware_version,
             "firmware source version",
         )
-        # ADR-0038: SemVer alone cannot separate the two v0.6.0 source
-        # eras.  Without a bound source checkout both era derivations are
-        # shape-admissible; identity-binding flows narrow to the exact era
-        # through the source checkout's ancestry.
+        # ADR-0038/ADR-0039: SemVer alone cannot separate the v0.6.0
+        # source eras.  Without a bound source checkout every era
+        # derivation is shape-admissible; identity-binding flows narrow to
+        # the exact era through the source checkout's ancestry.
         allowed_derivations = (
-            (QUALIFICATION_DERIVATION_V3, QUALIFICATION_DERIVATION_V4)
+            (
+                QUALIFICATION_DERIVATION_V3,
+                QUALIFICATION_DERIVATION_V4,
+                QUALIFICATION_DERIVATION_V5,
+            )
             if selected == QUALIFICATION_DERIVATION_V3
             and source_core >= (0, 6, 0)
             else (selected,)
@@ -21179,6 +21223,7 @@ def _validate_qualification_policy(
             QUALIFICATION_DERIVATION_V2,
             QUALIFICATION_DERIVATION_V3,
             QUALIFICATION_DERIVATION_V4,
+            QUALIFICATION_DERIVATION_V5,
         )
     _require(
         all(type(value) is str for value in derivation.values())
@@ -22123,7 +22168,10 @@ def _derived_qualification_thresholds(
     ):
         put_min = (put_min * 95) // 100
         get_min = (get_min * 95) // 100
-    if derivation == QUALIFICATION_DERIVATION_V4:
+    if derivation in (
+        QUALIFICATION_DERIVATION_V4,
+        QUALIFICATION_DERIVATION_V5,
+    ):
         # ADR-0037: fixed product SLOs, never functions of baseline extrema.
         reset_threshold = (
             V4_FIXED_RESET_SLO_MS_RP2
@@ -22179,6 +22227,15 @@ def _derived_qualification_thresholds(
                 ),
             }
         )
+        if (
+            derivation == QUALIFICATION_DERIVATION_V5
+            and profile_id == V5_WAVESHARE_PROFILE_ID
+        ):
+            # ADR-0039: the single fixed heap-floor exception — never a
+            # function of the observed samples.
+            derived["idf_internal_largest_block_min_bytes"] = (
+                V5_FIXED_WAVESHARE_LARGEST_BLOCK_MIN_BYTES
+            )
     for key, value in derived.items():
         _qualification_integer(
             value,
@@ -24375,7 +24432,10 @@ def assemble_oi1_baseline(
         observation: dict[str, Any],
         profile_id: str,
     ) -> dict[str, int]:
-        if qualification_derivation == QUALIFICATION_DERIVATION_V4:
+        if qualification_derivation in (
+            QUALIFICATION_DERIVATION_V4,
+            QUALIFICATION_DERIVATION_V5,
+        ):
             return _derived_qualification_thresholds(
                 build,
                 observation,

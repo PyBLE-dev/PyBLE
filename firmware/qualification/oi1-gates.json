@@ -8,7 +8,7 @@
     "application_image": "exact-byte-identical-two-root-v1",
     "boot_ceiling": "fixed-profile-product-slo-esp3000-pico7000-v4",
     "goodput_floor": "fixed-product-slo-64k-under-10s-6600-v3",
-    "heap_floor": "floor-min-1024-v1"
+    "heap_floor": "floor-min-1024-waveshare-block-98304-v2"
   },
   "profile_order": [
     "esp32-4mb",
@@ -72,7 +72,7 @@
         "gc_free_min_bytes": 8316928,
         "get_verified_goodput_min_bytes_per_second": 6600,
         "idf_internal_free_min_bytes": 177152,
-        "idf_internal_largest_block_min_bytes": 102400,
+        "idf_internal_largest_block_min_bytes": 98304,
         "idf_internal_minimum_free_min_bytes": 177152,
         "put_committed_goodput_min_bytes_per_second": 6600,
         "reset_to_service_advertisement_max_ms": 3000

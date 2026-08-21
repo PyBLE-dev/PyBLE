@@ -1034,6 +1034,34 @@ class BuildAndDerivationTest(unittest.TestCase):
             },
         )
 
+        repeat_observation = dict(observation)
+        repeat_observation.update(
+            {
+                "reset_to_service_advertisement_ms": [1170] * 9 + [2378],
+                "put_committed_goodput_bytes_per_second": [7208] * 5,
+                "get_verified_goodput_bytes_per_second": [13238] * 5,
+            }
+        )
+        repeat_derived = bench.evaluate_thresholds(
+            {
+                "application_image_bytes": 1699936,
+                "factory_partition_bytes": 2031616,
+                "application_headroom_bytes": 331680,
+            },
+            repeat_observation,
+            thresholds,
+        )
+        self.assertEqual(
+            repeat_derived["reset_to_service_advertisement_max_ms"],
+            3000,
+        )
+        self.assertEqual(
+            repeat_derived[
+                "put_committed_goodput_min_bytes_per_second"
+            ],
+            6600,
+        )
+
     def test_waveshare_largest_block_floor_is_fixed_one_page_below_baseline(self):
         # ADR-0039: the fixed Waveshare exception never derives from samples,
         # while the identically shaped generic S3 keeps floor-min-1024-v1.
@@ -1129,34 +1157,6 @@ class BuildAndDerivationTest(unittest.TestCase):
         self.assertIn(
             "idf_internal_largest_block_min_bytes=98303 is below 98304",
             str(caught.exception),
-        )
-
-        repeat_observation = dict(observation)
-        repeat_observation.update(
-            {
-                "reset_to_service_advertisement_ms": [1170] * 9 + [2378],
-                "put_committed_goodput_bytes_per_second": [7208] * 5,
-                "get_verified_goodput_bytes_per_second": [13238] * 5,
-            }
-        )
-        repeat_derived = bench.evaluate_thresholds(
-            {
-                "application_image_bytes": 1699936,
-                "factory_partition_bytes": 2031616,
-                "application_headroom_bytes": 331680,
-            },
-            repeat_observation,
-            thresholds,
-        )
-        self.assertEqual(
-            repeat_derived["reset_to_service_advertisement_max_ms"],
-            3000,
-        )
-        self.assertEqual(
-            repeat_derived[
-                "put_committed_goodput_min_bytes_per_second"
-            ],
-            6600,
         )
 
     def test_fixed_reset_product_slo_accepts_boundary_and_rejects_above_it(self):

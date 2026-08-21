@@ -90,7 +90,7 @@ V051_WORKLOAD = {**WORKLOAD, "required_put_window": 8}
 DERIVATION = {
     "application_image": "exact-byte-identical-two-root-v1",
     "application_headroom": "factory-minus-application-v1",
-    "heap_floor": "floor-min-1024-v1",
+    "heap_floor": "floor-min-1024-waveshare-block-98304-v2",
     "boot_ceiling": "fixed-profile-product-slo-esp3000-pico7000-v4",
     "goodput_floor": "fixed-product-slo-64k-under-10s-6600-v3",
 }
@@ -113,6 +113,13 @@ V051_DERIVATION = {
 FIXED_RESET_SLO_MS_ESP = 3000
 FIXED_RESET_SLO_MS_RP2 = 7000
 FIXED_GOODPUT_FLOOR_BPS = 6600
+
+# ADR-0039: the single fixed heap-floor exception — the Waveshare
+# largest-block floor is the baseline-derived 102400 minus exactly one
+# 4096-byte page, admitting that image's characterized single-page
+# transient.  Never a function of observed samples.
+FIXED_WAVESHARE_LARGEST_BLOCK_MIN_BYTES = 98304
+WAVESHARE_PROFILE_ID = "waveshare-esp32-s3-lcd-147b"
 
 RP2_PROFILE_ID = "rpi-pico2-w"
 
@@ -748,6 +755,18 @@ def derive_thresholds(oi1_build, observation, profile_id=None):
         heap_keys=HEAP_KEYS,
     )
 
+    largest_block_floor = (
+        # ADR-0039: the fixed Waveshare exception, never sample-derived.
+        FIXED_WAVESHARE_LARGEST_BLOCK_MIN_BYTES
+        if profile_id == WAVESHARE_PROFILE_ID
+        else floor_quantum(
+            min(
+                item["idf_internal_largest_block_bytes"]
+                for item in snapshots
+            ),
+            1024,
+        )
+    )
     return {
         "application_image_max_bytes": application_size,
         "application_headroom_min_bytes": headroom,
@@ -757,13 +776,7 @@ def derive_thresholds(oi1_build, observation, profile_id=None):
         "idf_internal_free_min_bytes": floor_quantum(
             min(item["idf_internal_free_bytes"] for item in snapshots), 1024
         ),
-        "idf_internal_largest_block_min_bytes": floor_quantum(
-            min(
-                item["idf_internal_largest_block_bytes"]
-                for item in snapshots
-            ),
-            1024,
-        ),
+        "idf_internal_largest_block_min_bytes": largest_block_floor,
         "idf_internal_minimum_free_min_bytes": floor_quantum(
             min(item["idf_internal_minimum_free_bytes"] for item in snapshots),
             1024,
