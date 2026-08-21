@@ -429,15 +429,16 @@ class V5CompletionAndPromotionContractTests(unittest.TestCase):
                     self.assertFalse(output.exists())
 
     def test_completion_binds_policy_era_to_candidate_source_ancestry(self) -> None:
-        """ADR-0037/ADR-0038: the completion writer's derivation era is a git
-        ancestry fact of the CANDIDATE's bound source commit.
+        """ADR-0037/ADR-0038/ADR-0039: the completion writer's derivation era
+        is a git ancestry fact of the CANDIDATE's bound source commit.
 
-        A strict descendant of the superseded-source boundary must verify the
-        checked-in V4 fixed-SLO policy; the boundary and its ancestors route
-        to the historical arithmetic (so the committed V4 policy is refused as
-        the wrong source era); an unprovable commit fails closed with an
-        error naming ancestry — never a baseline-threshold mismatch and never
-        a silent fall back to historical arithmetic.
+        A strict descendant of the first-replacement boundary must verify the
+        checked-in second-replacement (V5) policy; earlier boundaries and
+        their ancestors route to their historical arithmetic (so the
+        committed V5 policy is refused as the wrong source era); an
+        unprovable commit fails closed with an error naming ancestry — never
+        a baseline-threshold mismatch and never a silent fall back to
+        historical arithmetic.
         """
 
         pending = pending_v5_payload()
@@ -489,7 +490,7 @@ class V5CompletionAndPromotionContractTests(unittest.TestCase):
                 RELEASE._qualification_derivation_for_source(
                     root, descendant, firmware_version="0.6.0"
                 ),
-                RELEASE.QUALIFICATION_DERIVATION_V4,
+                RELEASE.QUALIFICATION_DERIVATION_V5,
                 "the fixture root must prove the descendant's ancestry",
             )
             created = attempt(descendant, "descendant-completion.json")
@@ -497,13 +498,14 @@ class V5CompletionAndPromotionContractTests(unittest.TestCase):
             self.assertEqual(
                 json.loads(created.read_text(encoding="utf-8")),
                 completion_fragment(profile_id),
-                "a strict descendant of the boundary must verify the "
-                "checked-in V4 fixed-SLO policy and complete",
+                "a strict descendant of the first-replacement boundary must "
+                "verify the checked-in V5 policy and complete",
             )
 
             for superseded in (
                 RELEASE.V060_SUPERSEDED_SOURCE_BOUNDARY,
                 RELEASE.V060_ABANDONED_CANDIDATE_SOURCE,
+                "7d853289815751c7381c9fd0b9a9a4409bdb6879",
             ):
                 with self.subTest(superseded_commit=superseded):
                     output_name = "superseded-%s.json" % superseded[:8]

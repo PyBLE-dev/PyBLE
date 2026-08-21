@@ -68,6 +68,17 @@ QUALIFICATION_DERIVATION_V4 = {
     "boot_ceiling": "fixed-profile-product-slo-esp3000-pico7000-v4",
     "goodput_floor": "fixed-product-slo-64k-under-10s-6600-v3",
 }
+V060_FIRST_REPLACEMENT_SOURCE_BOUNDARY = (
+    "7d853289815751c7381c9fd0b9a9a4409bdb6879"
+)
+QUALIFICATION_DERIVATION_V5 = {
+    "application_image": "exact-byte-identical-two-root-v1",
+    "application_headroom": "factory-minus-application-v1",
+    "heap_floor": "floor-min-1024-waveshare-block-98304-v2",
+    "boot_ceiling": "fixed-profile-product-slo-esp3000-pico7000-v4",
+    "goodput_floor": "fixed-product-slo-64k-under-10s-6600-v3",
+}
+V5_FIXED_WAVESHARE_LARGEST_BLOCK_MIN_BYTES = 98304
 FIXED_PERFORMANCE_THRESHOLDS = {
     profile_id: {
         "reset_to_service_advertisement_max_ms": (
@@ -409,6 +420,28 @@ class V060ReplacementSourceEraContractTests(unittest.TestCase):
             getattr(RELEASE, "V060_ABANDONED_CANDIDATE_SOURCE", None),
             V060_ABANDONED_CANDIDATE_SOURCE,
         )
+        self.assertEqual(
+            getattr(RELEASE, "QUALIFICATION_DERIVATION_V5", None),
+            QUALIFICATION_DERIVATION_V5,
+            "ADR-0039: the second-replacement derivation changes exactly "
+            "the heap-floor identifier",
+        )
+        self.assertEqual(
+            getattr(
+                RELEASE, "V060_FIRST_REPLACEMENT_SOURCE_BOUNDARY", None
+            ),
+            V060_FIRST_REPLACEMENT_SOURCE_BOUNDARY,
+            "ADR-0039: the first-replacement candidate source is the "
+            "second era boundary",
+        )
+        self.assertEqual(
+            getattr(
+                RELEASE,
+                "V5_FIXED_WAVESHARE_LARGEST_BLOCK_MIN_BYTES",
+                None,
+            ),
+            V5_FIXED_WAVESHARE_LARGEST_BLOCK_MIN_BYTES,
+        )
 
     def test_derivation_selection_routes_by_source_ancestry_not_semver(self):
         selector = self.selector()
@@ -416,8 +449,19 @@ class V060ReplacementSourceEraContractTests(unittest.TestCase):
 
         self.assertEqual(
             selector(REPO_ROOT, head, firmware_version="0.6.0"),
+            QUALIFICATION_DERIVATION_V5,
+            "a strict descendant of the first-replacement boundary is the "
+            "second-replacement era (ADR-0039)",
+        )
+        self.assertEqual(
+            selector(
+                REPO_ROOT,
+                V060_FIRST_REPLACEMENT_SOURCE_BOUNDARY,
+                firmware_version="0.6.0",
+            ),
             QUALIFICATION_DERIVATION_V4,
-            "a strict descendant of the boundary is the replacement era",
+            "the first-replacement boundary itself keeps the V4 era; only "
+            "strict descendants enter the second replacement",
         )
         for source_commit in (
             V060_SUPERSEDED_SOURCE_BOUNDARY,
@@ -537,7 +581,30 @@ class V060ReplacementSourceEraContractTests(unittest.TestCase):
             active_raw,
             "the active policy must stay canonical sorted-key JSON",
         )
-        self.assertEqual(active["derivation"], QUALIFICATION_DERIVATION_V4)
+        self.assertEqual(active["derivation"], QUALIFICATION_DERIVATION_V5)
+
+        first_replacement_raw = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(REPO_ROOT),
+                "show",
+                "%s:firmware/qualification/oi1-gates.json"
+                % V060_FIRST_REPLACEMENT_SOURCE_BOUNDARY,
+            ],
+            check=True,
+            capture_output=True,
+        ).stdout
+        self.assertEqual(len(first_replacement_raw), 5015)
+        self.assertEqual(
+            hashlib.sha256(first_replacement_raw).hexdigest(),
+            "b9b19ddc217598835185429d6d1f1da60bb3a504a447e32dcdeae15bf18bd0c5",
+            "the first-replacement policy identity must stay auditable",
+        )
+        first_replacement = json.loads(first_replacement_raw.decode("utf-8"))
+        self.assertEqual(
+            first_replacement["derivation"], QUALIFICATION_DERIVATION_V4
+        )
 
         expected = copy.deepcopy(historical)
         expected["derivation"] = copy.deepcopy(QUALIFICATION_DERIVATION_V4)
@@ -552,14 +619,44 @@ class V060ReplacementSourceEraContractTests(unittest.TestCase):
             changed_numeric_fields,
             11,
             "exactly the Pico reset ceiling and all ten transfer floors "
-            "change; the two derivation identifiers are separate string "
-            "fields",
+            "change between the superseded and first-replacement policies; "
+            "the two derivation identifiers are separate string fields",
         )
         self.assertEqual(
-            active,
+            first_replacement,
             expected,
             "every static/heap threshold, schema field, and baseline "
             "binding must stay byte-identical to the superseded policy",
+        )
+
+        expected_active = copy.deepcopy(first_replacement)
+        expected_active["derivation"] = copy.deepcopy(
+            QUALIFICATION_DERIVATION_V5
+        )
+        second_changed_numeric_fields = 0
+        for entry in expected_active["profiles"]:
+            if entry["profile_id"] == "waveshare-esp32-s3-lcd-147b":
+                self.assertEqual(
+                    entry["thresholds"][
+                        "idf_internal_largest_block_min_bytes"
+                    ],
+                    102400,
+                )
+                entry["thresholds"][
+                    "idf_internal_largest_block_min_bytes"
+                ] = V5_FIXED_WAVESHARE_LARGEST_BLOCK_MIN_BYTES
+                second_changed_numeric_fields += 1
+        self.assertEqual(
+            second_changed_numeric_fields,
+            1,
+            "ADR-0039 changes exactly the Waveshare largest-block floor; "
+            "the heap-floor identifier is a separate string field",
+        )
+        self.assertEqual(
+            active,
+            expected_active,
+            "every other threshold, schema field, and baseline binding "
+            "must stay byte-identical to the first-replacement policy",
         )
 
 

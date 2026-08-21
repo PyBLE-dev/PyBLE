@@ -56,6 +56,21 @@ REPLACEMENT_V4_DERIVATION = {
     "boot_ceiling": "fixed-profile-product-slo-esp3000-pico7000-v4",
     "goodput_floor": "fixed-product-slo-64k-under-10s-6600-v3",
 }
+SECOND_REPLACEMENT_V5_DERIVATION = {
+    "application_image": "exact-byte-identical-two-root-v1",
+    "application_headroom": "factory-minus-application-v1",
+    "heap_floor": "floor-min-1024-waveshare-block-98304-v2",
+    "boot_ceiling": "fixed-profile-product-slo-esp3000-pico7000-v4",
+    "goodput_floor": "fixed-product-slo-64k-under-10s-6600-v3",
+}
+WAVESHARE_PROFILE_ID = "waveshare-esp32-s3-lcd-147b"
+V5_FIXED_WAVESHARE_LARGEST_BLOCK_MIN_BYTES = 98304
+EXPECTED_LARGEST_BLOCK_FLOORS = {
+    "esp32-4mb": 55296,
+    "esp32-s3-n16r8": 102400,
+    WAVESHARE_PROFILE_ID: V5_FIXED_WAVESHARE_LARGEST_BLOCK_MIN_BYTES,
+    "esp32-c3-4mb": 57344,
+}
 FIXED_PERFORMANCE_THRESHOLDS = {
     profile_id: {
         "reset_to_service_advertisement_max_ms": (
@@ -404,7 +419,7 @@ class FrozenConstantsTest(unittest.TestCase):
         )
         self.assertEqual(
             bench.DERIVATION,
-            REPLACEMENT_V4_DERIVATION,
+            SECOND_REPLACEMENT_V5_DERIVATION,
         )
 
     def test_committed_v060_policy_uses_fixed_slos_and_retains_a8_baseline(self):
@@ -444,7 +459,7 @@ class FrozenConstantsTest(unittest.TestCase):
                 ),
             },
         )
-        self.assertEqual(policy["derivation"], REPLACEMENT_V4_DERIVATION)
+        self.assertEqual(policy["derivation"], SECOND_REPLACEMENT_V5_DERIVATION)
         self.assertEqual(
             {
                 entry["profile_id"]: {
@@ -459,10 +474,20 @@ class FrozenConstantsTest(unittest.TestCase):
             },
             FIXED_PERFORMANCE_THRESHOLDS,
         )
-        self.assertEqual(len(payload), 5015)
+        self.assertEqual(
+            {
+                entry["profile_id"]: entry["thresholds"][
+                    "idf_internal_largest_block_min_bytes"
+                ]
+                for entry in policy["profiles"]
+                if "idf_internal_largest_block_min_bytes" in entry["thresholds"]
+            },
+            EXPECTED_LARGEST_BLOCK_FLOORS,
+        )
+        self.assertEqual(len(payload), 5036)
         self.assertEqual(
             hashlib.sha256(payload).hexdigest(),
-            "b9b19ddc217598835185429d6d1f1da60bb3a504a447e32dcdeae15bf18bd0c5",
+            "c3167853df6c31d7364b58616701d45ea62f2374d18cacc89e51292624dca8db",
         )
 
     def test_retained_a8_baseline_bytes_and_samples_remain_immutable(self):
@@ -1007,6 +1032,103 @@ class BuildAndDerivationTest(unittest.TestCase):
                 "put_committed_goodput_min_bytes_per_second": 6600,
                 "get_verified_goodput_min_bytes_per_second": 6600,
             },
+        )
+
+    def test_waveshare_largest_block_floor_is_fixed_one_page_below_baseline(self):
+        # ADR-0039: the fixed Waveshare exception never derives from samples,
+        # while the identically shaped generic S3 keeps floor-min-1024-v1.
+        heaps = [_heap(8318000, 1, 177500, 102400, 177300) for _ in range(16)]
+        observation = {
+            "reset_to_service_advertisement_ms": [900] * 10,
+            "heap_post_hello": heaps[:10],
+            "heap_post_roundtrip": heaps[10:15],
+            "heap_post_reliability": heaps[15],
+            "put_committed_goodput_bytes_per_second": [13000] * 5,
+            "get_verified_goodput_bytes_per_second": [29000] * 5,
+        }
+        build = {
+            "application_image_bytes": 1720112,
+            "factory_partition_bytes": 2097152,
+            "application_headroom_bytes": 377040,
+        }
+        waveshare = bench.derive_thresholds(
+            build, observation, profile_id=WAVESHARE_PROFILE_ID
+        )
+        self.assertEqual(
+            waveshare["idf_internal_largest_block_min_bytes"],
+            V5_FIXED_WAVESHARE_LARGEST_BLOCK_MIN_BYTES,
+        )
+        generic = bench.derive_thresholds(
+            build, observation, profile_id="esp32-s3-n16r8"
+        )
+        self.assertEqual(
+            generic["idf_internal_largest_block_min_bytes"], 102400
+        )
+        for other_key in (
+            "gc_free_min_bytes",
+            "idf_internal_free_min_bytes",
+            "idf_internal_minimum_free_min_bytes",
+            "reset_to_service_advertisement_max_ms",
+            "put_committed_goodput_min_bytes_per_second",
+            "get_verified_goodput_min_bytes_per_second",
+            "application_image_max_bytes",
+            "application_headroom_min_bytes",
+        ):
+            self.assertEqual(waveshare[other_key], generic[other_key])
+
+    def test_waveshare_fixed_block_floor_rejects_below_and_accepts_boundary(self):
+        def observation_with_block(block):
+            heaps = [_heap(8318000, 1, 177500, 102400, 177300) for _ in range(15)]
+            dipped = _heap(8318000, 1, 177500, block, 177300)
+            return {
+                "reset_to_service_advertisement_ms": [900] * 10,
+                "heap_post_hello": heaps[:9] + [dipped],
+                "heap_post_roundtrip": heaps[9:14],
+                "heap_post_reliability": heaps[14],
+                "put_committed_goodput_bytes_per_second": [13000] * 5,
+                "get_verified_goodput_bytes_per_second": [29000] * 5,
+            }
+
+        build = {
+            "application_image_bytes": 1720112,
+            "factory_partition_bytes": 2097152,
+            "application_headroom_bytes": 377040,
+        }
+        thresholds = {
+            "application_image_max_bytes": 1720128,
+            "application_headroom_min_bytes": 377024,
+            "gc_free_min_bytes": 8316928,
+            "idf_internal_free_min_bytes": 177152,
+            "idf_internal_largest_block_min_bytes": (
+                V5_FIXED_WAVESHARE_LARGEST_BLOCK_MIN_BYTES
+            ),
+            "idf_internal_minimum_free_min_bytes": 177152,
+            "reset_to_service_advertisement_max_ms": 3000,
+            "put_committed_goodput_min_bytes_per_second": 6600,
+            "get_verified_goodput_min_bytes_per_second": 6600,
+        }
+        derived = bench.evaluate_thresholds(
+            build,
+            observation_with_block(98304),
+            thresholds,
+            profile_id=WAVESHARE_PROFILE_ID,
+        )
+        # ADR-0039: the returned diagnostic derivation must carry the fixed
+        # floor, never the sample-derived floor-min value.
+        self.assertEqual(
+            derived["idf_internal_largest_block_min_bytes"],
+            V5_FIXED_WAVESHARE_LARGEST_BLOCK_MIN_BYTES,
+        )
+        with self.assertRaises(bench.BenchError) as caught:
+            bench.evaluate_thresholds(
+                build,
+                observation_with_block(98303),
+                thresholds,
+                profile_id=WAVESHARE_PROFILE_ID,
+            )
+        self.assertIn(
+            "idf_internal_largest_block_min_bytes=98303 is below 98304",
+            str(caught.exception),
         )
 
         repeat_observation = dict(observation)
