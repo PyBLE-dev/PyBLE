@@ -75,6 +75,26 @@ function hypotheticalQualifiedV060Release(): FirmwareReleaseDescriptor {
   return release as FirmwareReleaseDescriptor;
 }
 
+function candidateV060Release(): FirmwareReleaseDescriptor {
+  const release = hypotheticalQualifiedV060Release() as unknown as {
+    deployment: string;
+    accessControlled: boolean;
+    hilStatus: string;
+  };
+  release.deployment = "candidate";
+  release.accessControlled = true;
+  release.hilStatus = "pending";
+  return release as unknown as FirmwareReleaseDescriptor;
+}
+
+const fiveProfileOrder = [
+  "esp32-4mb",
+  "esp32-s3-n16r8",
+  "waveshare-esp32-s3-lcd-147b",
+  "esp32-c3-4mb",
+  "rpi-pico2-w",
+] as const;
+
 function jpegDimensions(bytes: Buffer): { width: number; height: number } {
   if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8) {
     throw new Error("not a JPEG");
@@ -706,7 +726,36 @@ describe("public-site contract", () => {
         status: "Planned · installer unavailable pending exact-profile HIL",
         planned: true,
       },
+      {
+        id: "rpi-pico2-w",
+        target: "Raspberry Pi Pico 2 W",
+        constraint: "RP2350 + CYW43439 · UF2 / BOOTSEL",
+        status: "Planned · installer unavailable pending exact-profile HIL",
+        planned: true,
+      },
     ]);
+    expect(
+      firmwareTargetsForRelease(candidateV060Release()).map(
+        ({ id, planned, status }) => ({ id, planned, status }),
+      ),
+    ).toEqual(
+      fiveProfileOrder.map((id) => ({
+        id,
+        planned: false,
+        status: "v0.6.0 protected candidate · HIL pending",
+      })),
+    );
+    expect(
+      firmwareTargetsForRelease(hypotheticalQualifiedV060Release()).map(
+        ({ id, planned, status }) => ({ id, planned, status }),
+      ),
+    ).toEqual(
+      fiveProfileOrder.map((id) => ({
+        id,
+        planned: false,
+        status: "v0.6.0 qualified public release",
+      })),
+    );
     expect(
       firmwareTargetsForRelease(publicBetaFirmwareRelease)
         .filter(({ planned }) => !planned)
@@ -942,9 +991,90 @@ describe("public-site contract", () => {
       ).toBeInTheDocument();
       candidateHome.unmount();
       render(<SupportPage />);
+      // The support page must mirror the staged candidate instead of
+      // contradicting /flash with an installer-unavailable claim.
       expect(
-        screen.getByText(/firmware installer is currently unavailable/i),
+        screen.getByText(/protected candidate v0\.5\.1 is staged/i),
       ).toBeInTheDocument();
+      expect(
+        screen.queryByText(/firmware installer is currently unavailable/i),
+      ).toBeNull();
+    } finally {
+      if (previousSelection === undefined) {
+        delete process.env.PYBLE_FLASH_SELECTION_FILE;
+      } else {
+        process.env.PYBLE_FLASH_SELECTION_FILE = previousSelection;
+      }
+      await rm(selectionRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("presents all five v0.6.0 targets and the board photo for the staged candidate", async () => {
+    const selectionRoot = await mkdtemp(
+      join(tmpdir(), "pyble-site-v060-candidate-selection-"),
+    );
+    const selectionFile = join(selectionRoot, "selection.json");
+    const previousSelection = process.env.PYBLE_FLASH_SELECTION_FILE;
+    process.env.PYBLE_FLASH_SELECTION_FILE = selectionFile;
+
+    try {
+      await writeFile(
+        selectionFile,
+        JSON.stringify(candidateV060Release()),
+        "utf8",
+      );
+      const home = render(<HomePage />);
+
+      // The hero reflects the five-target candidate instead of the stale
+      // pre-v0.6.0 C3/Pico unavailability sentence.
+      expect(
+        screen.getByText(/protected candidate v0\.6\.0 is staged/i),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByText(/remain unavailable in the public installer/i),
+      ).toBeNull();
+      expect(
+        screen.getByText(
+          /all five firmware targets, including ESP32-C3 and Raspberry Pi Pico 2 W/i,
+        ),
+      ).toHaveTextContent(/pending hardware validation/i);
+
+      // The availability grid presents all five targets consistently with
+      // the candidate deployment mode.
+      for (const id of fiveProfileOrder) {
+        const card = screen.getByText(id).closest("div");
+        expect(card).toHaveTextContent(
+          "v0.6.0 protected candidate · HIL pending",
+        );
+        expect(card).not.toHaveTextContent(/planned/i);
+      }
+      expect(screen.getByText("rpi-pico2-w").closest("div")).toHaveTextContent(
+        "Raspberry Pi Pico 2 W",
+      );
+      expect(screen.getByText("esp32-c3-4mb").closest("div")).toHaveTextContent(
+        "ESP32-C3",
+      );
+
+      // The real-hardware board photo stays visible while the candidate
+      // offers the exact-board profile.
+      const boardPhoto = screen.getByRole("img", {
+        name: "Actual Waveshare ESP32-S3-LCD-1.47B displaying the PyBLE v0.5.0 boot splash and app QR",
+      });
+      expect(boardPhoto.closest("figure")).toHaveTextContent(
+        /Actual board.*PyBLE firmware v0\.5\.0/i,
+      );
+
+      home.unmount();
+      render(<SupportPage />);
+      expect(
+        screen.getByText(/protected candidate v0\.6\.0 is staged/i),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByText(/firmware installer is currently unavailable/i),
+      ).toBeNull();
+      expect(
+        screen.queryByText(/ESP32-C3 is not currently available/i),
+      ).toBeNull();
     } finally {
       if (previousSelection === undefined) {
         delete process.env.PYBLE_FLASH_SELECTION_FILE;
@@ -976,6 +1106,20 @@ describe("public-site contract", () => {
         ),
       ).toBeInTheDocument();
       flash.unmount();
+
+      const home = render(<HomePage />);
+      expect(
+        screen.getByText(/qualified public v0\.6\.0 firmware/i),
+      ).toHaveTextContent(/all five exact release profiles/i);
+      expect(
+        screen.queryByText(/remain unavailable in the public installer/i),
+      ).toBeNull();
+      for (const id of fiveProfileOrder) {
+        expect(screen.getByText(id).closest("div")).toHaveTextContent(
+          "v0.6.0 qualified public release",
+        );
+      }
+      home.unmount();
 
       render(<SupportPage />);
       const qualifiedCopy = screen.getByText(
