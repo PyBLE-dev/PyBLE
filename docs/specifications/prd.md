@@ -996,7 +996,10 @@ Requirements:
   thresholds MUST be evaluated from machine-readable final-candidate HIL.
 - Thresholds MUST follow only the predeclared, metric-specific contracts in
   firmware/specs.md §5.3. Static build quantities remain exact; heap keeps its
-  baseline-derived outward quantum; replacement reset detection is fixed at
+  baseline-derived outward quantum with exactly one second-replacement
+  exception (ADR-0039: the Waveshare largest-block floor is fixed at
+  98,304 — one 4,096-byte page below its baseline-derived value); replacement
+  reset detection is fixed at
   3,000 ms on ESP and 7,000 ms on Pico; and PUT/GET are fixed at 6,600 B/s on
   every profile. Exactly 10 reset and five transfer samples per direction must
   all pass with no trim or retry. A failed or favorable run MUST NOT fit,
@@ -1007,9 +1010,13 @@ Requirements:
   selects the derivation. The policy replaces all five performance rows
   together, then the final candidate is rebuilt and freshly verified.
 - The predecessor source era ends at inclusive `5620f2f…`. Strict descendants
-  use ADR-0037's V4/V3 identifiers, while predecessor 0.6.0 retains V3/V2 for
+  use ADR-0037's V4/V3 identifiers up to inclusive second boundary
+  `7d85328…`; strict descendants of that boundary use the ADR-0039
+  second-replacement identifiers. Predecessor 0.6.0 retains V3/V2 for
   historical replay. The unpublished local `719b211…` candidate, its bytes,
-  HIL, and lineage are invalid for replacement qualification.
+  HIL, and lineage are invalid for replacement qualification; first-replacement
+  physical evidence may carry into the second replacement only under the
+  byte-identity conditions of ADR-0039 item 6.
 
 ### §10.14 .mpy / .pyc policy
 

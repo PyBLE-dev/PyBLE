@@ -5,6 +5,10 @@ are released independently from this monorepo.
 
 ## Unreleased
 
+- Admitted the characterized Waveshare single-page largest-block transient
+  with a fixed `98304` heap floor in a second-replacement qualification era
+  (ADR-0039), with byte-identity-conditioned carry-forward of already-passed
+  physical evidence; no firmware bytes changed.
 - Established `PyBLE-dev/PyBLE` as the canonical public monorepo.
 - Added public contributor, security, architecture, protocol, and validation
   documentation.

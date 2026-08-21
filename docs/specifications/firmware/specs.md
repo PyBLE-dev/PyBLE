@@ -1353,9 +1353,11 @@ The successor `firmware/qualification/oi1-gates.json` has exactly:
 - the exact `profile_order` above;
 - `workload`, retaining every §5.3.2 constant except that the PUT window is
   profile-specific;
-- `derivation`, retaining the exact application/image, headroom, and
-  `floor-min-1024-v1` algorithms while selecting reset/goodput identifiers by
-  candidate source ancestry as defined below;
+- `derivation`, retaining the exact application/image and headroom
+  algorithms while selecting the heap-floor and reset/goodput identifiers by
+  candidate source ancestry as defined below (`floor-min-1024-v1`, or its
+  ADR-0039 successor `floor-min-1024-waveshare-block-98304-v2` whose single
+  exception is the fixed Waveshare largest-block floor);
 - `baseline_evidence`, binding the canonical schema-2 baseline path and
   SHA-256; and
 - five `profiles` entries in order, each with exactly `profile_id`, `target`,
@@ -1408,8 +1410,10 @@ formula, and reject an operator-selectable or unequal numeric replacement.
 For a source at or before
 `5620f2fdc672b440548119e3431cfa4f4ed3f5a3`, the unpublished v0.6.0 replay
 contract retains `fixed-product-slo-3000-v3` and
-`floor-95pct-min-100-v2`. For a strict descendant of that boundary, the
-replacement v0.6.0 policy derivation object instead contains exactly:
+`floor-95pct-min-100-v2`. For a strict descendant of that boundary at or
+before the second boundary
+`7d853289815751c7381c9fd0b9a9a4409bdb6879`, the first-replacement v0.6.0
+policy derivation object contains exactly:
 
 ```json
 {
@@ -1421,11 +1425,25 @@ replacement v0.6.0 policy derivation object instead contains exactly:
 }
 ```
 
+For a strict descendant of `7d853289815751c7381c9fd0b9a9a4409bdb6879`, the
+second-replacement (ADR-0039) policy derivation object instead changes
+exactly the `heap_floor` identifier:
+
+```json
+{
+  "application_image": "exact-byte-identical-two-root-v1",
+  "application_headroom": "factory-minus-application-v1",
+  "heap_floor": "floor-min-1024-waveshare-block-98304-v2",
+  "boot_ceiling": "fixed-profile-product-slo-esp3000-pico7000-v4",
+  "goodput_floor": "fixed-product-slo-64k-under-10s-6600-v3"
+}
+```
+
 The bound policy/candidate source commit, not its `0.6.0` SemVer, the
 validator checkout, or the baseline's `source_commit`, selects between these
 contracts. A replacement policy/candidate source MUST be a strict descendant
-of the boundary. Missing, unrelated, equal-boundary, or ancestry-unprovable
-identity fails closed. The immutable retained baseline
+of the applicable boundary. Missing, unrelated, equal-boundary, or
+ancestry-unprovable identity fails closed. The immutable retained baseline
 `docs/validation/firmware/oi1/a8be631df46590166307aa41afaea30b39e29230.json`
 and its exact SHA-256
 `8a7dbf328ba8d70f5161582b56d1566821f20b7a259ff29dc7d6fe6bb75a6044`
@@ -1461,6 +1479,15 @@ Unique-byte totals, duration/goodput equality, integrity, offsets, settled
 link facts, retransmit/rewind accounting, reliability totals, disconnect
 counts, and every target-specific transport fact remain exact. Neither a
 failed run nor a favorable baseline may rederive either fixed SLO.
+
+Under the second-replacement era, every heap floor keeps `floor-min-1024-v1`
+arithmetic from the immutable baseline with exactly one fixed exception
+(ADR-0039): `idf_internal_largest_block_min_bytes` for
+`waveshare-esp32-s3-lcd-147b` is exactly `98304` — the baseline-derived
+`102400` minus one 4,096-byte page, admitting that image's characterized
+single-page transient while every other heap value, static bound, reset
+ceiling, and goodput floor stays byte-for-byte at its first-replacement
+value. A sample below `98304` fails and MUST NOT relax the floor again.
 
 Every V5 profile record additionally binds both real-app results. `app_hil`
 has exactly `ipad` and `android`; each entry has exactly non-empty

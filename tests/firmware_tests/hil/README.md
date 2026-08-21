@@ -217,7 +217,10 @@ also prints its derived thresholds for review; neither fragment nor assembled
 baseline is release approval, and neither claims that `v0.6.0` has completed
 exact-byte HIL qualification or is ready for publication.
 
-For the ADR-0037/ADR-0038 pre-publication replacement, do **not** rerun that
+For the ADR-0037/ADR-0038 pre-publication replacement — and equally for the
+ADR-0039 second replacement, whose only numeric delta is the fixed Waveshare
+largest-block floor `98304` under
+`floor-min-1024-waveshare-block-98304-v2` — do **not** rerun that
 baseline merely to fit new performance numbers and do not edit its bytes. The
 policy tool reuses the exact `a8be631…` file, derives unchanged static/heap
 values from it, retains its reset/goodput arrays diagnostically, and emits the

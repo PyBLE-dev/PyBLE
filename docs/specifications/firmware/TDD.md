@@ -1711,7 +1711,11 @@ Profiles or successful samples from different baselines MUST NOT be mixed.
 Historical pre-`0.5.0` and v0.5.x policies retain their exact V1 and V3/V2
 derivation identifiers and arithmetic. The predecessor v0.6.0 contract also
 retains V3/V2 when its bound source is at or before
-`5620f2fdc672b440548119e3431cfa4f4ed3f5a3`. The replacement policy must be
+`5620f2fdc672b440548119e3431cfa4f4ed3f5a3`; the first-replacement contract
+applies to strict descendants at or before
+`7d853289815751c7381c9fd0b9a9a4409bdb6879`, and strict descendants of that
+second boundary use the ADR-0039 second-replacement contract. The
+replacement policy must be
 rederived from the retained baseline under a strict-descendant candidate source.
 The helper proves that bound policy/candidate ancestry; SemVer, policy schema,
 validator checkout, operator input, and the retained baseline's own
@@ -1739,6 +1743,15 @@ endpoint, 15-second health timeout, and physical check. Transfer duration,
 integrity, reliability, disconnect, and settled-link facts remain exact. A
 failed result cannot rederive or widen either SLO. Static image/headroom, heap,
 and all historical arithmetic remain unchanged.
+
+The second-replacement era keeps every value above and changes exactly one
+heap fact (ADR-0039): its heap identifier is
+`floor-min-1024-waveshare-block-98304-v2`, under which every heap floor keeps
+`floor-min-1024-v1` arithmetic except the fixed Waveshare
+`idf_internal_largest_block_min_bytes` of `98304` (the baseline-derived
+`102400` minus one 4,096-byte page, admitting that image's characterized
+single-page fragmentation transient). A sample below `98304` fails and MUST
+NOT relax the floor again.
 
 A schema-3 policy has exactly the five ordered threshold-bearing rows in
 specs.md §5.3.5. Four ESP rows use the existing application/partition,

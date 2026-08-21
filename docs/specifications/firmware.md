@@ -111,8 +111,12 @@ remain required for all five profiles before activation.
 ADR-0038 replaces the unpublished local candidate tagged at `719b211…` in
 place: no origin tag, GitHub Release, or canonical v0.6.0 website release ever
 existed, so the first public version remains `0.6.0`. The predecessor source
-era ends at inclusive commit `5620f2f…`; only strict descendants use the
-ADR-0037 fixed-SLO contract. All old candidate bytes and HIL are invalid for
+era ends at inclusive commit `5620f2f…`; strict descendants use the
+ADR-0037 fixed-SLO contract, and strict descendants of the second boundary
+`7d85328…` use the ADR-0039 second-replacement contract, which additionally
+fixes the Waveshare largest-block heap floor at `98304` under
+`floor-min-1024-waveshare-block-98304-v2` and permits byte-identity-conditioned
+carry-forward of already-passed physical evidence (ADR-0039 item 6). All old candidate bytes and HIL are invalid for
 the replacement, while superseded metadata and immutable baseline evidence
 remain retained. After source/docs/RED/GREEN, build, reproducibility, license,
 source, and audit gates pass, the local tag may be replaced so it peels to

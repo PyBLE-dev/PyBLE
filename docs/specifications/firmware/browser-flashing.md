@@ -1817,10 +1817,13 @@ releases. The retained `0.4.2` source era instead requires policy
 schema 1, its historical exact two-profile order, `ceil-max-10-v1`, and
 `floor-min-100-v1` values; validation selects the complete policy contract by
 firmware source era and never silently reinterprets published evidence.
-The two unpublished v0.6.0 source eras both retain policy schema 3 and the
+The three unpublished v0.6.0 source eras all retain policy schema 3 and the
 five-profile order, but they do not share a derivation object: §9.5 selects
-the predecessor V3/V2 or replacement V4/V3 identifiers from bound source
-ancestry. Version, schema, or operator input alone cannot select it.
+the predecessor V3/V2 identifiers, the first-replacement V4/V3 identifiers,
+or the second-replacement (ADR-0039) identifiers — which change exactly the
+heap-floor identifier to `floor-min-1024-waveshare-block-98304-v2` — from
+bound source ancestry. Version, schema, or operator input alone cannot
+select it.
 
 `baseline_evidence.path` MUST match
 `docs/validation/firmware/oi1/<40-lowercase-hex-source-commit>.json`;
@@ -2263,16 +2266,22 @@ C3-G0…C3-G6; Pico binds GP0, GP1, and complete GP2. A missing private result,
 non-null input summary, failed sub-gate, changed input, or identity/hash
 mismatch leaves no public output.
 
-The V5 envelope is unchanged across the two unpublished v0.6.0 source eras,
+The V5 envelope is unchanged across the unpublished v0.6.0 source eras,
 but its policy derivation is source-bound. A candidate source at or before
 `5620f2fdc672b440548119e3431cfa4f4ed3f5a3` retains
-`fixed-product-slo-3000-v3` and `floor-95pct-min-100-v2`. Only a strict
-descendant uses
+`fixed-product-slo-3000-v3` and `floor-95pct-min-100-v2`. A strict
+descendant of that boundary at or before
+`7d853289815751c7381c9fd0b9a9a4409bdb6879` uses
 `fixed-profile-product-slo-esp3000-pico7000-v4` and
-`fixed-product-slo-64k-under-10s-6600-v3`. Its policy has reset ceilings
-`3000` for the four ESP rows and `7000` for Pico, and PUT/GET floors `6600`
-for all five rows. The bound replacement policy/candidate source must be a
-strict boundary descendant. Missing, equal-to-boundary, unrelated, or
+`fixed-product-slo-64k-under-10s-6600-v3` with `floor-min-1024-v1` heap
+floors. A strict descendant of `7d853289…` (the second-replacement era,
+ADR-0039) additionally replaces exactly the heap-floor identifier with
+`floor-min-1024-waveshare-block-98304-v2`, whose single numeric effect is
+the fixed Waveshare `idf_internal_largest_block_min_bytes` of `98304`.
+Every replacement policy has reset ceilings `3000` for the four ESP rows and
+`7000` for Pico, and PUT/GET floors `6600` for all five rows. The bound
+replacement policy/candidate source must be a strict descendant of the
+applicable boundary. Missing, equal-to-boundary, unrelated, or
 ancestry-unprovable replacement identity fails closed. The immutable
 `a8be631…` baseline remains the exact input: its static/heap thresholds are
 rederived under the bound replacement policy/candidate era, while its
