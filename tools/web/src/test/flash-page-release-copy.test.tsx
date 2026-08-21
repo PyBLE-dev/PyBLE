@@ -149,6 +149,26 @@ function expectFiveProfileFlashPageCopy() {
   expect(picoProfile).toHaveTextContent(/BOOTSEL/i);
   expect(picoProfile).toHaveTextContent(/not a Web Serial flow/i);
 
+  // The real-hardware exact-board photo spotlight stays visible whenever the
+  // Waveshare profile is offered by the selected release; the photograph is
+  // deliberately the historical v0.5.0 shot of the actual board.
+  const boardSection = screen
+    .getByRole("heading", { name: "Waveshare ESP32-S3-LCD-1.47B" })
+    .closest("section");
+  expect(boardSection).toBeDefined();
+  expect(boardSection).toHaveTextContent(/real hardware.*not a render/i);
+  const boardPhoto = screen.getByRole("img", {
+    name: "Actual Waveshare ESP32-S3-LCD-1.47B displaying the PyBLE v0.5.0 boot splash and app QR",
+  });
+  expect(boardSection).toContainElement(boardPhoto);
+  expect(boardPhoto).toHaveAttribute(
+    "src",
+    "/boards/esp32-s3-lcd-1.47b-pyble-v0.5.0.jpg",
+  );
+  expect(boardPhoto.closest("figure")).toHaveTextContent(
+    /Actual board.*PyBLE firmware v0\.5\.0/i,
+  );
+
   // "Before you connect" must not claim Web Serial or desktop Chromium as a
   // requirement of the Pico flow.
   const beforeConnect = screen
@@ -393,6 +413,14 @@ describe("firmware installer release copy", () => {
         .closest("section");
       expect(methods).toHaveTextContent(/visibly pending candidate/i);
       expect(methods).toHaveTextContent(/hardware qualification.*pending/i);
+
+      // The real-hardware photo stays, but the spotlight eyebrow must not
+      // claim a validated board while qualification is pending.
+      const spotlight = screen
+        .getByRole("heading", { name: "Waveshare ESP32-S3-LCD-1.47B" })
+        .closest("section");
+      expect(spotlight).toHaveTextContent(/hardware qualification pending/i);
+      expect(spotlight).not.toHaveTextContent(/Validated display board/i);
     });
   });
 
@@ -413,6 +441,13 @@ describe("firmware installer release copy", () => {
         .getByRole("heading", { name: /two provisioning methods/i })
         .closest("section");
       expect(methods).not.toHaveTextContent(/visibly pending candidate/i);
+
+      // Once qualified, the spotlight keeps its validated framing.
+      const spotlight = screen
+        .getByRole("heading", { name: "Waveshare ESP32-S3-LCD-1.47B" })
+        .closest("section");
+      expect(spotlight).toHaveTextContent(/Validated display board/i);
+      expect(spotlight).not.toHaveTextContent(/qualification pending/i);
     });
   });
 
