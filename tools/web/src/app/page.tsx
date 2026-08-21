@@ -19,7 +19,10 @@ import {
   ShieldIcon,
 } from "@/components/icons";
 import { WaveshareBoardPhoto } from "@/components/waveshare-board-photo";
-import { releaseIncludesWaveshareLcd147b } from "@/lib/firmware-release";
+import {
+  firmwareVersionUsesFiveProfiles,
+  releaseIncludesWaveshareLcd147b,
+} from "@/lib/firmware-release";
 import {
   firmwareReleaseSelectedAtBuild,
   localFirmwarePreviewSelectedAtBuild,
@@ -82,6 +85,14 @@ export default function HomePage() {
   const publicBeta = firmwareRelease?.deployment === "public-beta";
   const waveshareLcd147b = releaseIncludesWaveshareLcd147b(firmwareRelease);
   const qualifiedPublic = firmwareRelease !== null && waveshareLcd147b;
+  const fiveProfileRelease =
+    firmwareRelease !== null &&
+    firmwareVersionUsesFiveProfiles(firmwareRelease.version);
+  const releaseHasWaveshareProfile = Boolean(
+    firmwareRelease?.profiles.some(
+      ({ id }) => id === "waveshare-esp32-s3-lcd-147b",
+    ),
+  );
   const firmwareTargetGroupLabel = preview
     ? `Five exact v${preview.version} engineering targets`
     : qualifiedPublic
@@ -138,6 +149,13 @@ export default function HomePage() {
                   interrupted-flash recovery passed on both exact profiles;
                   complete release qualification continues.
                 </>
+              ) : qualifiedPublic && fiveProfileRelease ? (
+                <>
+                  Qualified public v{firmwareRelease.version} firmware is
+                  available for all five exact release profiles across classic
+                  ESP32, ESP32-S3, the separate Waveshare exact-board image,
+                  ESP32-C3, and the Raspberry Pi Pico 2 W.
+                </>
               ) : qualifiedPublic ? (
                 <>
                   Qualified public v{firmwareRelease.version} firmware is
@@ -156,10 +174,18 @@ export default function HomePage() {
                   status before provisioning a board.
                 </>
               )}{" "}
-              {!preview ? (
+              {!preview && !fiveProfileRelease ? (
                 <>
                   ESP32-C3 and Raspberry Pi Pico 2 W are under engineering
                   validation and remain unavailable in the public installer.
+                </>
+              ) : null}
+              {!preview &&
+              fiveProfileRelease &&
+              firmwareRelease.deployment === "candidate" ? (
+                <>
+                  All five firmware targets, including ESP32-C3 and Raspberry Pi
+                  Pico 2 W, are staged and pending hardware validation.
                 </>
               ) : null}
             </p>
@@ -357,7 +383,9 @@ export default function HomePage() {
               ))}
             </div>
           </div>
-          {waveshareLcd147b ? <WaveshareBoardPhoto showInstallerLink /> : null}
+          {releaseHasWaveshareProfile ? (
+            <WaveshareBoardPhoto showInstallerLink />
+          ) : null}
         </div>
       </section>
 

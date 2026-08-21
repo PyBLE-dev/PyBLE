@@ -49,12 +49,15 @@ function qualifiedProfileList(profileIds: readonly string[]) {
 export default function SupportPage() {
   const firmwareRelease = firmwareReleaseSelectedAtBuild();
   const publicBeta = firmwareRelease?.deployment === "public-beta";
+  const candidate = firmwareRelease?.deployment === "candidate";
   const qualifiedPublic =
     firmwareRelease !== null &&
     releaseIncludesWaveshareLcd147b(firmwareRelease);
-  const esp32C3Available =
-    qualifiedPublic &&
-    firmwareRelease.profiles.some(({ id }) => id === "esp32-c3-4mb");
+  // Derived from the release profile set so the note never contradicts the
+  // /flash installer's offered targets.
+  const esp32C3Available = Boolean(
+    firmwareRelease?.profiles.some(({ id }) => id === "esp32-c3-4mb"),
+  );
 
   return (
     <main id="main-content">
@@ -96,6 +99,13 @@ export default function SupportPage() {
                         )}
                         . The Waveshare image alone includes its TFT runtime and
                         fresh-install splash.
+                      </>
+                    ) : candidate ? (
+                      <>
+                        Protected candidate v{firmwareRelease.version} is staged
+                        for access-controlled qualification; hardware validation
+                        is pending on every included profile before a public
+                        release.
                       </>
                     ) : (
                       <>
