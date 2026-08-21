@@ -450,7 +450,7 @@ describe("browser firmware installer states", () => {
     render(<InstallerUnderTest capabilities={supportedCapabilities} />);
 
     expect(screen.getByRole("status")).toHaveTextContent(
-      /installer unavailable.*hardware validation.*every profile included in a future v0\.6\.0-derived candidate/i,
+      /installer unavailable.*hardware validation.*every profile included in a v0\.6\.0-derived candidate/i,
     );
     expect(
       screen.getByRole("button", { name: /installer coming soon/i }),
@@ -1055,7 +1055,7 @@ describe("local five-board engineering preview", () => {
       name: /selected firmware target details/i,
     });
     expect(details).toHaveTextContent(/esp32-c3-4mb/i);
-    expect(details).toHaveTextContent(/\besp web tools\b.*web serial/i);
+    expect(details).toHaveTextContent(/esp web tools.*web serial/i);
     expect(details).toHaveTextContent(
       /local engineering preview.*unqualified/i,
     );

@@ -5,14 +5,14 @@ export const localFirmwareProfileTable = [
   {
     id: "esp32-4mb",
     label: "ESP32 · 4 MiB flash",
-    selectLabel: "Classical ESP32 · 4 MiB flash",
+    selectLabel: "Classic ESP32 · 4 MiB flash",
     buildTarget: "esp32",
     chipFamily: "ESP32",
     method: "esp-web-tools",
     offset: 4096,
     group: "ESP Web Serial",
     requirements: "4 MiB external SPI flash · no PSRAM required",
-    warning: "Use only for a classical ESP32 module with exactly 4 MiB flash.",
+    warning: "Use only for a classic ESP32 module with exactly 4 MiB flash.",
   },
   {
     id: "esp32-s3-n16r8",

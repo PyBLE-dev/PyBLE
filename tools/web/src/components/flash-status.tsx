@@ -156,7 +156,7 @@ function policyFailure(release: FirmwareReleaseDescriptor | null | undefined) {
   if (!release) {
     return {
       heading: "Installer unavailable",
-      body: "Hardware validation is still required on every profile included in a future v0.6.0-derived candidate before the public installer can be enabled.",
+      body: "Hardware validation is still required on every profile included in a v0.6.0-derived candidate before the public installer can be enabled.",
     };
   }
   if (release.deployment !== "public" && release.deployment !== "candidate") {
@@ -472,8 +472,12 @@ function FlashStatusForRelease({
     timeZone: "UTC",
     year: "numeric",
   }).format(new Date(activeRelease.builtAt));
-  const includesWaveshareLcd147b =
-    releaseIncludesWaveshareLcd147b(activeRelease);
+  // The exact-board warning accompanies the profile whenever the selected
+  // release offers it — candidate builds included — not only after public
+  // qualification.
+  const includesWaveshareLcd147b = activeRelease.profiles.some(
+    ({ id }) => id === "waveshare-esp32-s3-lcd-147b",
+  );
 
   return (
     <section className="flash-status" aria-labelledby="installer-status-title">
@@ -562,6 +566,7 @@ function FlashStatusForRelease({
           className="consent-list"
           aria-label="Installation acknowledgements"
         >
+          <legend>Installation acknowledgements</legend>
           {requiredConsentItems.map(({ id, label }) => (
             <label key={id}>
               <input
@@ -570,10 +575,13 @@ function FlashStatusForRelease({
                 onChange={(event) => updateConsent(id, event.target.checked)}
               />
               <span>
-                {id === "erase" &&
-                selectedProfile.provisioningKind === "verified-uf2-bootsel"
-                  ? "I understand copying the UF2 overwrites the installed board firmware."
-                  : label}
+                {selectedProfile.provisioningKind === "verified-uf2-bootsel" &&
+                id === "profile"
+                  ? "My board is a Raspberry Pi Pico 2 W (RP2350 + CYW43439)."
+                  : selectedProfile.provisioningKind ===
+                        "verified-uf2-bootsel" && id === "erase"
+                    ? "I understand copying the UF2 overwrites the installed board firmware."
+                    : label}
               </span>
             </label>
           ))}
@@ -722,7 +730,7 @@ type PreviewConsentId =
 
 function previewMethodLabel(profile: LocalFirmwarePreviewProfile) {
   return profile.method === "esp-web-tools"
-    ? "ESP32 Web Tools · Web Serial direct install"
+    ? "ESP Web Tools · Web Serial direct install"
     : "RP2 UF2 download · BOOTSEL copy";
 }
 
@@ -739,7 +747,7 @@ function previewWarning(profileId: LocalFirmwareProfileId) {
   if (profileId === "rpi-pico2-w") {
     return "Disconnect the Pico 2 W, hold BOOTSEL while you connect USB, wait for the RP2350 volume, then copy the verified UF2.";
   }
-  return "Use only a classical ESP32 module with exactly 4 MiB flash and no PSRAM requirement.";
+  return "Use only a classic ESP32 module with exactly 4 MiB flash and no PSRAM requirement.";
 }
 
 function LocalFlashPreview({

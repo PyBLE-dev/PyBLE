@@ -5,7 +5,10 @@ import { ExternalIcon } from "@/components/icons";
 import { FlashStatus } from "@/components/flash-status";
 import { PageIntro } from "@/components/page-intro";
 import { WaveshareBoardPhoto } from "@/components/waveshare-board-photo";
-import { releaseIncludesWaveshareLcd147b } from "@/lib/firmware-release";
+import {
+  firmwareVersionUsesFiveProfiles,
+  releaseIncludesWaveshareLcd147b,
+} from "@/lib/firmware-release";
 import {
   firmwareReleaseSelectedAtBuild,
   localFirmwarePreviewSelectedAtBuild,
@@ -29,7 +32,18 @@ export default function FlashPage() {
   const preview = localFirmwarePreviewSelectedAtBuild();
   const release = preview ? null : firmwareReleaseSelectedAtBuild();
   const publicBeta = release?.deployment === "public-beta";
+  const candidate = release?.deployment === "candidate";
   const waveshareLcd147b = releaseIncludesWaveshareLcd147b(release);
+  const fiveProfileRelease =
+    release !== null && firmwareVersionUsesFiveProfiles(release.version);
+  const releaseHasWaveshareProfile = Boolean(
+    release?.profiles.some(
+      (profile) => profile.id === "waveshare-esp32-s3-lcd-147b",
+    ),
+  );
+  const releaseHasPicoProfile = Boolean(
+    release?.profiles.some((profile) => profile.id === "rpi-pico2-w"),
+  );
   const showWaveshareBoard =
     waveshareLcd147b ||
     preview?.profiles.some(
@@ -49,7 +63,9 @@ export default function FlashPage() {
               ? " The current v0.4.2 installer is a hardware-tested firmware beta. Production Chrome erase/install and deliberately interrupted-flash recovery passed on both exact profiles. Complete release qualification is still pending; this is not a qualified release."
               : qualifiedPublic
                 ? ` Qualified v${release.version} firmware is available for all ${exactProfileCountLabel(release.profiles.length)} exact release profiles.`
-                : " The public install action remains unavailable until the final v0.6.0-derived bytes pass hardware validation on every included profile."}
+                : candidate
+                  ? ` This protected, access-controlled v${release.version} release candidate is staged for hardware qualification. Hardware validation is pending on every included profile; the public install action stays unavailable until it passes.`
+                  : " The public install action remains unavailable until the final v0.6.0-derived bytes pass hardware validation on every included profile."}
         </p>
       </PageIntro>
 
@@ -126,7 +142,8 @@ export default function FlashPage() {
                         <span>
                           Firmware includes the inert <code>pyble_st7789</code>{" "}
                           user library and <code>pyble_waveshare_lcd147b</code>{" "}
-                          companion for ordinary Python and Blocky TFT programs.
+                          companion for ordinary Python and Blockly TFT
+                          programs.
                         </span>
                       </li>
                       <li>
@@ -169,7 +186,7 @@ export default function FlashPage() {
                 <li>
                   <strong>esp32-4mb</strong>
                   <span>
-                    Classical ESP32 module with 4 MiB flash; no PSRAM required.
+                    Classic ESP32 module with 4 MiB flash; no PSRAM required.
                   </span>
                 </li>
                 <li>
@@ -182,7 +199,7 @@ export default function FlashPage() {
                     the display boot splash.
                   </span>
                 </li>
-                {showWaveshareBoard ? (
+                {showWaveshareBoard || releaseHasWaveshareProfile ? (
                   <li>
                     <strong>waveshare-esp32-s3-lcd-147b</strong>
                     <span>
@@ -191,6 +208,25 @@ export default function FlashPage() {
                       runtime and fresh-install splash support.
                     </span>
                   </li>
+                ) : null}
+                {fiveProfileRelease ? (
+                  <>
+                    <li>
+                      <strong>esp32-c3-4mb</strong>
+                      <span>
+                        ESP32-C3 revision v0.3 or newer with 4 MiB flash; no
+                        PSRAM required.
+                      </span>
+                    </li>
+                    <li>
+                      <strong>rpi-pico2-w</strong>
+                      <span>
+                        Raspberry Pi Pico 2 W (RP2350 + CYW43439). Provisioned
+                        by a verified UF2 download and a manual BOOTSEL copy,
+                        not a Web Serial flow.
+                      </span>
+                    </li>
+                  </>
                 ) : null}
               </ul>
             </section>
@@ -215,11 +251,41 @@ export default function FlashPage() {
                   </li>
                 </ul>
               </section>
+            ) : fiveProfileRelease ? (
+              <section aria-labelledby="release-methods">
+                <h2 id="release-methods">Two provisioning methods</h2>
+                <ul className="requirement-list">
+                  <li>
+                    <strong>ESP Web Tools · Web Serial</strong>
+                    <span>
+                      Direct browser installation for the four exact ESP
+                      profiles — esp32-4mb, esp32-s3-n16r8,
+                      waveshare-esp32-s3-lcd-147b, and esp32-c3-4mb — after
+                      manifest and firmware verification.
+                    </span>
+                  </li>
+                  <li>
+                    <strong>Pico 2 W · BOOTSEL / UF2</strong>
+                    <span>
+                      Verify and download the UF2, then copy it to the mounted
+                      RP2350 BOOTSEL volume. This is not an ESP Web Tools flow.
+                    </span>
+                  </li>
+                </ul>
+                {candidate ? (
+                  <p>
+                    All five targets are provisioned from this visibly pending
+                    candidate: hardware qualification is pending on every
+                    profile, and installation is offered only through this
+                    access-controlled candidate build.
+                  </p>
+                ) : null}
+              </section>
             ) : (
               <section aria-labelledby="planned-profile">
                 <h2 id="planned-profile">Planned profiles</h2>
                 <ul className="requirement-list planned-profile-list">
-                  <li className="planned-profile-card" aria-disabled="true">
+                  <li className="planned-profile-card">
                     <strong>esp32-c3-4mb</strong>
                     <span>
                       <b>Unavailable.</b> Exact-profile real-hardware validation
@@ -228,11 +294,12 @@ export default function FlashPage() {
                       command is offered yet.
                     </span>
                   </li>
-                  <li className="planned-profile-card" aria-disabled="true">
+                  <li className="planned-profile-card">
                     <strong>rpi-pico2-w</strong>
                     <span>
-                      <b>Unavailable.</b> The Pico 2 W port remains pre-GP2; no
-                      public UF2 download or installer action is offered yet.
+                      <b>Unavailable.</b> The Pico 2 W port has not completed
+                      release qualification; no public UF2 download or installer
+                      action is offered in this release.
                     </span>
                   </li>
                 </ul>
@@ -264,6 +331,33 @@ export default function FlashPage() {
                     <span>
                       Its action downloads verified in-memory UF2 bytes for a
                       manual BOOTSEL-volume copy. Back up board files first.
+                    </span>
+                  </li>
+                </ul>
+              ) : fiveProfileRelease ? (
+                <ul className="requirement-list">
+                  <li>
+                    <strong>ESP targets use Web Serial</strong>
+                    <span>
+                      The four ESP profiles install through Web Serial and Web
+                      Crypto in a current desktop Chromium browser over HTTPS.
+                      iPadOS cannot perform this wired ESP provisioning step.
+                    </span>
+                  </li>
+                  <li>
+                    <strong>Pico 2 W does not use Web Serial</strong>
+                    <span>
+                      The rpi-pico2-w flow needs only a secure context with Web
+                      Crypto: it verifies and downloads the UF2 for a manual
+                      BOOTSEL-volume copy.
+                    </span>
+                  </li>
+                  <li>
+                    <strong>Data-capable USB and stable power</strong>
+                    <span>
+                      Back up board files and close other serial tools first.
+                      ESP installation erases the device; copying the UF2
+                      overwrites the installed firmware.
                     </span>
                   </li>
                 </ul>
@@ -371,7 +465,8 @@ export default function FlashPage() {
               </p>
               <p>
                 For advanced merged-image recovery with the same version-matched
-                bundle bytes, run the command for the exact selected profile:
+                bundle bytes, run the command for the exact selected ESP
+                profile:
               </p>
               <ul className="readiness-list">
                 <li>
@@ -388,7 +483,7 @@ export default function FlashPage() {
                     <span>n16r8/firmware.bin</span>
                   </code>
                 </li>
-                {waveshareLcd147b ? (
+                {releaseHasWaveshareProfile ? (
                   <li>
                     <code>
                       python -m esptool --chip esp32s3 write_flash 0x0{" "}
@@ -397,18 +492,41 @@ export default function FlashPage() {
                     </code>
                   </li>
                 ) : null}
+                {fiveProfileRelease ? (
+                  <li>
+                    <code>
+                      python -m esptool --chip esp32c3 write_flash 0x0{" "}
+                      <span>esp32-c3-</span>
+                      <span>4mb/firmware.bin</span>
+                    </code>
+                  </li>
+                ) : null}
               </ul>
               <p>
                 As an advanced diagnostic or recovery alternative, the component
                 offsets are: bootloader at 0x1000 for classic ESP32 or 0x0 for
-                ESP32-S3, partition table at 0x8000, and application at 0x10000.
-                Use only the component files from that same bundle.
+                ESP32-S3{fiveProfileRelease ? " and ESP32-C3" : ""}, partition
+                table at 0x8000, and application at 0x10000. Use only the
+                component files from that same bundle.
               </p>
               <p>
                 After flashing, perform a hard reset or power cycle. Expect the
                 board to advertise as <code>PyBLE-XXXX</code>, then make the
                 first connection from the PyBLE app.
               </p>
+              {releaseHasPicoProfile ? (
+                <p>
+                  <strong>Pico 2 W recovery:</strong> the merged-image commands
+                  and component offsets above apply only to the ESP profiles,
+                  never to the Pico 2 W. After an interrupted or failed copy,
+                  disconnect the board, hold BOOTSEL while reconnecting USB,
+                  wait for the RP2350 volume, then re-verify and copy the same
+                  versioned UF2 again. Wait for the automatic reboot and confirm
+                  the <code>PyBLE-XXXX</code> BLE advertisement. Pico
+                  provisioning does not use Web Serial or the ESP ROM recovery
+                  controls.
+                </p>
+              ) : null}
               <p>
                 Repeated resets, flash-size or PSRAM startup errors, or no BLE
                 advertisement can indicate a wrong memory profile. Stop instead
