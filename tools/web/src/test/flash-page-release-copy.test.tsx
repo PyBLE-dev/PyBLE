@@ -9,7 +9,10 @@ import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import FlashPage from "@/app/flash/page";
-import type { FirmwareReleaseDescriptor } from "@/lib/firmware-release";
+import {
+  firmwareProfileDescriptors,
+  type FirmwareReleaseDescriptor,
+} from "@/lib/firmware-release";
 import * as firmwareSelection from "@/lib/firmware-release-selection";
 import type { LocalFirmwarePreviewDescriptor } from "@/lib/local-firmware-preview";
 import {
@@ -46,6 +49,164 @@ function hypotheticalQualifiedReleaseAtVersion(
     );
   }
   return release as unknown as FirmwareReleaseDescriptor;
+}
+
+function fiveProfileV060Release(
+  deployment: "candidate" | "public",
+): FirmwareReleaseDescriptor {
+  const version = "0.6.0";
+  return {
+    deployment,
+    accessControlled: deployment === "candidate",
+    version,
+    builtAt: "2026-08-21T00:00:00Z",
+    hilStatus: deployment === "public" ? "passed" : "pending",
+    releaseJson: {
+      path: `/firmware/v${version}/release.json`,
+      sha256: "a".repeat(64),
+    },
+    schemaPath: `/firmware/v${version}/release.schema.json`,
+    recoveryPath: `/firmware/v${version}/RECOVERY.md`,
+    profiles: firmwareProfileDescriptors(version),
+  } as FirmwareReleaseDescriptor;
+}
+
+async function withSelectedRelease(
+  release: FirmwareReleaseDescriptor,
+  run: () => Promise<void> | void,
+) {
+  const selectionRoot = await mkdtemp(
+    join(tmpdir(), "pyble-flash-five-profile-selection-"),
+  );
+  const selectionFile = join(selectionRoot, "selection.json");
+  const previousSelection = process.env.PYBLE_FLASH_SELECTION_FILE;
+  process.env.PYBLE_FLASH_SELECTION_FILE = selectionFile;
+  try {
+    await writeFile(selectionFile, JSON.stringify(release), "utf8");
+    await run();
+  } finally {
+    if (previousSelection === undefined) {
+      delete process.env.PYBLE_FLASH_SELECTION_FILE;
+    } else {
+      process.env.PYBLE_FLASH_SELECTION_FILE = previousSelection;
+    }
+    await rm(selectionRoot, { recursive: true, force: true });
+  }
+}
+
+function expectFiveProfileFlashPageCopy() {
+  // The stale planned/unavailable cards must never render beside a
+  // five-profile installer that offers those same targets.
+  expect(
+    screen.queryByRole("heading", { name: /planned profiles/i }),
+  ).toBeNull();
+  expect(
+    screen.queryByText(
+      /no installer selection, firmware image, or recovery command is offered yet/i,
+    ),
+  ).toBeNull();
+  expect(screen.queryByText(/pre-GP2/i)).toBeNull();
+  expect(
+    screen.queryByText(/no public UF2 download or installer action/i),
+  ).toBeNull();
+
+  // Accurate five-target provisioning summary instead.
+  const methods = screen
+    .getByRole("heading", { name: /two provisioning methods/i })
+    .closest("section");
+  expect(methods).toBeDefined();
+  expect(methods).toHaveTextContent(
+    /ESP Web Tools.*Web Serial.*four exact ESP profiles/i,
+  );
+  expect(methods).toHaveTextContent(
+    /esp32-4mb.*esp32-s3-n16r8.*waveshare-esp32-s3-lcd-147b.*esp32-c3-4mb/i,
+  );
+  expect(methods).toHaveTextContent(/Pico 2 W.*BOOTSEL.*UF2/i);
+
+  // The profile explainer covers all five profiles with exact requirements.
+  const profileSection = screen
+    .getByRole("heading", { name: /choose the exact module profile/i })
+    .closest("section");
+  expect(profileSection).toBeDefined();
+  const classicProfile = within(profileSection as HTMLElement)
+    .getByText("esp32-4mb")
+    .closest("li");
+  expect(classicProfile).toHaveTextContent(/Classic ESP32 module/);
+  const c3Profile = within(profileSection as HTMLElement)
+    .getByText("esp32-c3-4mb")
+    .closest("li");
+  expect(c3Profile).toHaveTextContent(/revision v0\.3 or newer.*4 MiB flash/i);
+  const waveshareProfile = within(profileSection as HTMLElement)
+    .getByText("waveshare-esp32-s3-lcd-147b")
+    .closest("li");
+  expect(waveshareProfile).toHaveTextContent(
+    /B version.*16 MiB flash.*8 MiB Octal PSRAM/i,
+  );
+  const picoProfile = within(profileSection as HTMLElement)
+    .getByText("rpi-pico2-w")
+    .closest("li");
+  expect(picoProfile).toHaveTextContent(/RP2350.*CYW43439/i);
+  expect(picoProfile).toHaveTextContent(/BOOTSEL/i);
+  expect(picoProfile).toHaveTextContent(/not a Web Serial flow/i);
+
+  // "Before you connect" must not claim Web Serial or desktop Chromium as a
+  // requirement of the Pico flow.
+  const beforeConnect = screen
+    .getByRole("heading", { name: /before you connect/i })
+    .closest("section");
+  expect(beforeConnect).toBeDefined();
+  expect(beforeConnect).toHaveTextContent(
+    /ESP.*Web Serial.*desktop Chromium|desktop Chromium.*Web Serial/i,
+  );
+  expect(beforeConnect).toHaveTextContent(/Pico 2 W does not use Web Serial/i);
+  expect(beforeConnect).toHaveTextContent(/secure context.*Web Crypto/i);
+  expect(beforeConnect).not.toHaveTextContent(
+    /The installer uses Web Serial and Web Crypto/i,
+  );
+
+  // The visible recovery section carries all four ESP merged-image commands.
+  const recoverySection = screen
+    .getByRole("heading", { name: /recover an interrupted flash/i })
+    .closest("section");
+  expect(recoverySection).toBeDefined();
+  const recoveryCommands = [
+    "python -m esptool --chip esp32 write_flash 0x1000 esp32-4mb/firmware.bin",
+    "python -m esptool --chip esp32s3 write_flash 0x0 esp32-s3-n16r8/firmware.bin",
+    "python -m esptool --chip esp32s3 write_flash 0x0 waveshare-esp32-s3-lcd-147b/firmware.bin",
+    "python -m esptool --chip esp32c3 write_flash 0x0 esp32-c3-4mb/firmware.bin",
+  ];
+  for (const command of recoveryCommands) {
+    expect(
+      screen.getByText(
+        (_content, element) =>
+          element?.tagName === "CODE" &&
+          element.textContent?.replace(/\s+/g, " ").trim() === command,
+      ),
+    ).toBeInTheDocument();
+  }
+
+  // Component offsets name the C3 beside the S3.
+  expect(recoverySection).toHaveTextContent(
+    /bootloader at 0x1000 for classic ESP32 or 0x0 for ESP32-S3 and ESP32-C3/i,
+  );
+
+  // Separate Pico BOOTSEL re-copy recovery with no esptool/offset/Web Serial
+  // fallback inside it.
+  const picoRecovery = within(recoverySection as HTMLElement)
+    .getByText(/Pico 2 W recovery/i)
+    .closest("p");
+  expect(picoRecovery).toBeDefined();
+  expect(picoRecovery).toHaveTextContent(
+    /hold BOOTSEL while reconnecting USB/i,
+  );
+  expect(picoRecovery).toHaveTextContent(/RP2350 volume/i);
+  expect(picoRecovery).toHaveTextContent(/same versioned UF2/i);
+  expect(picoRecovery).toHaveTextContent(/automatic reboot/i);
+  expect(picoRecovery).toHaveTextContent(/PyBLE-XXXX/i);
+  expect(picoRecovery).toHaveTextContent(
+    /does not use Web Serial or the ESP ROM recovery controls/i,
+  );
+  expect(picoRecovery?.textContent).not.toMatch(/esptool|write_flash|0x[0-9]/i);
 }
 
 function localPreviewArtifact(
@@ -217,6 +378,44 @@ describe("firmware installer release copy", () => {
     }
   });
 
+  it("describes the staged five-profile candidate accurately with pending-qualification framing", async () => {
+    await withSelectedRelease(fiveProfileV060Release("candidate"), () => {
+      render(<FlashPage />);
+
+      expectFiveProfileFlashPageCopy();
+
+      // Candidate mode alone carries the visibly pending candidate framing.
+      expect(
+        screen.getByText(/access-controlled.*release candidate/i),
+      ).toBeInTheDocument();
+      const methods = screen
+        .getByRole("heading", { name: /two provisioning methods/i })
+        .closest("section");
+      expect(methods).toHaveTextContent(/visibly pending candidate/i);
+      expect(methods).toHaveTextContent(/hardware qualification.*pending/i);
+    });
+  });
+
+  it("covers all five targets in the qualified v0.6.0 release copy", async () => {
+    await withSelectedRelease(fiveProfileV060Release("public"), () => {
+      render(<FlashPage />);
+
+      expect(
+        screen.getByText(
+          /qualified v0\.6\.0 firmware is available for all five exact release profiles/i,
+        ),
+      ).toBeInTheDocument();
+
+      expectFiveProfileFlashPageCopy();
+
+      // Qualified-public mode never claims a pending candidate.
+      const methods = screen
+        .getByRole("heading", { name: /two provisioning methods/i })
+        .closest("section");
+      expect(methods).not.toHaveTextContent(/visibly pending candidate/i);
+    });
+  });
+
   it("keeps the historical public beta available without a current exact-board claim", async () => {
     const selectionRoot = await mkdtemp(
       join(tmpdir(), "pyble-flash-qualified-selection-"),
@@ -328,6 +527,8 @@ describe("firmware installer release copy", () => {
       expect(boardSection).toHaveTextContent(/172.*320.*ST7789V3/i);
       expect(boardSection).toHaveTextContent(/pyble_st7789/i);
       expect(boardSection).toHaveTextContent(/pyble_waveshare_lcd147b/i);
+      expect(boardSection).toHaveTextContent(/Blockly TFT programs/);
+      expect(boardSection).not.toHaveTextContent(/Blocky TFT/);
       expect(boardSection).toHaveTextContent(
         /fresh erased installation.*boot splash.*shown by default.*persistently disable/i,
       );

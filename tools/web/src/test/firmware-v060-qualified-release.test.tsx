@@ -59,8 +59,8 @@ interface QualifiedProfileDescriptor {
 }
 
 interface QualifiedReleaseDescriptor {
-  deployment: "public";
-  accessControlled: false;
+  deployment: "public" | "candidate";
+  accessControlled: boolean;
   version: string;
   builtAt: string;
   hilStatus: HilStatus;
@@ -188,6 +188,14 @@ function qualifiedRelease(
     schemaPath: `/firmware/v${version}/release.schema.json`,
     recoveryPath: `/firmware/v${version}/RECOVERY.md`,
     profiles: qualifiedProfiles(),
+  };
+}
+
+function candidateRelease(): QualifiedReleaseDescriptor {
+  return {
+    ...qualifiedRelease("pending"),
+    deployment: "candidate",
+    accessControlled: true,
   };
 }
 
@@ -682,6 +690,75 @@ describe("qualified v0.6.0 production installer", () => {
     expect(screen.getByText(/BOOTSEL/i)).toBeVisible();
     expect(loadInstaller).not.toHaveBeenCalled();
     expect(document.querySelector("esp-web-install-button")).toBeNull();
+  });
+
+  it("keeps the exact-board Waveshare warning visible whenever its profile is selectable", () => {
+    const candidate = render(
+      <QualifiedFlashStatus
+        capabilities={{ secureContext: true, webSerial: true, webCrypto: true }}
+        release={candidateRelease()}
+      />,
+    );
+
+    expect(
+      screen.getByRole("heading", { name: /protected release candidate/i }),
+    ).toBeVisible();
+    expect(
+      screen.getByText(/image is only for the exact ESP32-S3-LCD-1\.47B/i),
+    ).toBeVisible();
+    candidate.unmount();
+
+    render(
+      <QualifiedFlashStatus
+        capabilities={{ secureContext: true, webSerial: true, webCrypto: true }}
+        release={qualifiedRelease()}
+      />,
+    );
+    expect(
+      screen.getByText(/image is only for the exact ESP32-S3-LCD-1\.47B/i),
+    ).toBeVisible();
+  });
+
+  it("asks for Pico-appropriate acknowledgements in the verified-UF2 flow", () => {
+    render(
+      <QualifiedFlashStatus
+        capabilities={{
+          secureContext: true,
+          webSerial: false,
+          webCrypto: true,
+        }}
+        release={qualifiedRelease()}
+      />,
+    );
+
+    selectProfile("rpi-pico2-w");
+
+    const group = screen.getByRole("group", {
+      name: /installation acknowledgements/i,
+    });
+    expect(
+      within(group).getByText("Installation acknowledgements", {
+        selector: "legend",
+      }),
+    ).toBeInTheDocument();
+    // The board affirmation names the actual Pico 2 W hardware contract, not
+    // the ESP chip/silicon-revision/flash/PSRAM fields the schema-4 Pico
+    // profile deliberately omits.
+    expect(
+      within(group).getByRole("checkbox", {
+        name: /raspberry pi pico 2 w \(rp2350 \+ cyw43439\)/i,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(group).queryByRole("checkbox", {
+        name: /chip, silicon revision, flash, and psram/i,
+      }),
+    ).toBeNull();
+    expect(
+      within(group).queryByRole("checkbox", {
+        name: /closed serial monitors/i,
+      }),
+    ).toBeNull();
   });
 
   it("keeps a pending public five-profile release fail-closed", () => {

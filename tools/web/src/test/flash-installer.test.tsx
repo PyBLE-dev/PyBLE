@@ -1021,7 +1021,7 @@ describe("local five-board engineering preview", () => {
       "rpi-pico2-w",
     ]);
     expect(targetOptions.map((option) => option.textContent)).toEqual([
-      expect.stringMatching(/classical esp32/i),
+      expect.stringMatching(/classic esp32/i),
       expect.stringMatching(/esp32-s3.*lean/i),
       expect.stringMatching(/waveshare.*exact/i),
       expect.stringMatching(/esp32-c3/i),
@@ -1055,7 +1055,7 @@ describe("local five-board engineering preview", () => {
       name: /selected firmware target details/i,
     });
     expect(details).toHaveTextContent(/esp32-c3-4mb/i);
-    expect(details).toHaveTextContent(/esp32 web tools.*web serial/i);
+    expect(details).toHaveTextContent(/\besp web tools\b.*web serial/i);
     expect(details).toHaveTextContent(
       /local engineering preview.*unqualified/i,
     );
@@ -1119,7 +1119,7 @@ describe("local five-board engineering preview", () => {
     acceptPreviewConsents();
     fireEvent.click(
       screen.getByRole("button", {
-        name: /verify firmware.*classical esp32/i,
+        name: /verify firmware.*classic esp32/i,
       }),
     );
 
@@ -1197,7 +1197,7 @@ describe("local five-board engineering preview", () => {
     acceptPreviewConsents();
     fireEvent.click(
       screen.getByRole("button", {
-        name: /verify firmware.*classical esp32/i,
+        name: /verify firmware.*classic esp32/i,
       }),
     );
     await waitFor(() => {

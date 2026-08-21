@@ -1036,11 +1036,14 @@ describe("public-site contract", () => {
     const deferredC3 = within(plannedProfiles as HTMLElement)
       .getByText("esp32-c3-4mb")
       .closest("li");
-    expect(deferredC3).toHaveAttribute("aria-disabled", "true");
+    // Informational list items are not interactive; aria-disabled is ARIA
+    // misuse there.
+    expect(deferredC3).not.toHaveAttribute("aria-disabled");
     expect(deferredC3).toHaveTextContent(/unavailable/i);
     expect(deferredC3).toHaveTextContent(
       /exact-profile real-hardware validation/i,
     );
+    expect(plannedProfiles).not.toHaveTextContent(/pre-GP2/i);
     expect(
       screen.getByRole("heading", { name: /recover an interrupted flash/i }),
     ).toBeInTheDocument();
