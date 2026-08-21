@@ -44,8 +44,10 @@ export default function FlashPage() {
   const releaseHasPicoProfile = Boolean(
     release?.profiles.some((profile) => profile.id === "rpi-pico2-w"),
   );
+  // The real-hardware board photo accompanies the profile whenever the
+  // selected release or preview offers it — candidate builds included.
   const showWaveshareBoard =
-    waveshareLcd147b ||
+    releaseHasWaveshareProfile ||
     preview?.profiles.some(
       (profile) => profile.id === "waveshare-esp32-s3-lcd-147b",
     );
@@ -82,7 +84,9 @@ export default function FlashPage() {
                 <p className="eyebrow">
                   {preview
                     ? "Exact-board reference"
-                    : "Validated display board"}
+                    : candidate
+                      ? "Exact-board reference · hardware qualification pending"
+                      : "Validated display board"}
                 </p>
                 <h2 id="waveshare-lcd147b">Waveshare ESP32-S3-LCD-1.47B</h2>
                 {preview ? (
@@ -199,7 +203,7 @@ export default function FlashPage() {
                     the display boot splash.
                   </span>
                 </li>
-                {showWaveshareBoard || releaseHasWaveshareProfile ? (
+                {showWaveshareBoard ? (
                   <li>
                     <strong>waveshare-esp32-s3-lcd-147b</strong>
                     <span>
