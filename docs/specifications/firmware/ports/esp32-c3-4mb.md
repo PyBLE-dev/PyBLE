@@ -279,7 +279,7 @@ are `1..4`, at least one update is retained, and settled TX/RX are exactly
 unsettled rung produces no baseline result.
 
 **Retained session evidence — FROZEN (2026-08-16 · `[docs]`,
-[ADR-0035](../../decisions/0035-read-c3-link-facts-through-run.md)).** The C3
+[ADR-0035](../../../decisions/0035-read-c3-link-facts-through-run.md)).** The C3
 image enables the same bounded, hidden `pble_ble._oi1_link_facts()` state as
 the exact Waveshare profile. The WCH bridge remains the mandatory RTS-to-EN
 reset/release adapter, but its received bytes are private diagnostics only and
@@ -292,7 +292,7 @@ must expose that exact transfer epoch as immutable `last_ended`. Null, stale,
 wrapped, non-successor, malformed, overflowed, or wrong-epoch state fails
 closed with no retry. Classic ESP32 retains the unchanged 2,000 ms UART
 terminal gate; generic S3 follows
-[ADR-0036](../../decisions/0036-read-generic-s3-link-facts-through-run.md), and
+[ADR-0036](../../../decisions/0036-read-generic-s3-link-facts-through-run.md), and
 C3 neither lengthens nor consumes the classic gate.
 
 The output is a redacted, canonical **C3 engineering profile fragment** bound
