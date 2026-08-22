@@ -99,9 +99,12 @@ the selected `.py` files sequentially to the current board directory.**
 7. **One connection session owns the commit.** The action captures the stable
    `Connection` facade's opaque local session stamp with `cwd`. The stamp must
    still be current before every board preflight and immediately before each
-   `putFile`; attach or detach advances it, including reconnecting the same
-   board. A mismatch stops the batch before the next board verb. This stamp is
-   in-memory action consistency only—not identity, authentication, persisted
+   `putFile`; attach or detach advances it. The facade also advances it once
+   when an attached live connection leaves an established `ready`/`running`
+   state for `connecting` or `disconnected`, so an in-place reconnect to the
+   same board is a successor session; ordinary `ready` ↔ `running` transitions
+   retain it. A mismatch stops the batch before the next board verb. This stamp
+   is in-memory action consistency only—not identity, authentication, persisted
    provenance, or PBLE/1 wire data.
 
 8. **The commit is sequential and honestly non-atomic.** After the entire
@@ -128,6 +131,9 @@ the selected `.py` files sequentially to the current board directory.**
    no tight or unbounded automatic retry. A positive supplied retry delay gates
    every network-producing action on the surface until its deadline; local
    navigation, selection, and review transitions cannot clear or bypass it.
+   Every individual REST GET has one absolute wall-clock deadline spanning
+   request send, response headers, and the complete bounded response body;
+   arriving chunks do not extend it, and expiry aborts the request.
    Header-rejected HTTP responses have their body streams cancelled before the
    typed failure is returned so repeated failures do not strand resources.
 
