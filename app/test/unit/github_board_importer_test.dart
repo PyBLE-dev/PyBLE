@@ -36,8 +36,9 @@ final class _FakeGithubApi extends Fake implements GithubApi {
   @override
   Future<Uint8List> fetchFile(
     PinnedRepository repository,
-    GithubEntry entry,
-  ) async {
+    GithubEntry entry, {
+    GithubCancellation? cancellation,
+  }) async {
     operationLog.add('fetch:${entry.remotePath}');
     fetchedRemotePaths.add(entry.remotePath);
     if (entry.objectSha == heldObjectSha) {

@@ -19,6 +19,9 @@
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" android:maxSdkVersion="28" />
+    <!-- User-started, public GitHub example import (A-33). This must be in the
+         main manifest so release builds can reach the exact HTTPS API host. -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <application
         android:label="PyBLE"
         android:name="${applicationName}"

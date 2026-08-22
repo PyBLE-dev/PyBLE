@@ -1837,5 +1837,289 @@
     "placeholders": {
       "reason": {"type": "String", "example": "BlocksSnapshotTimeout"}
     }
+  },
+  "githubImportAction": "Import examples from GitHub",
+  "@githubImportAction": {
+    "description": "Files action and tooltip that opens the connected public GitHub importer."
+  },
+  "githubImportRequiresReady": "Connect a ready board before importing GitHub examples",
+  "@githubImportRequiresReady": {
+    "description": "Disabled Files-action tooltip while the board is connecting or running."
+  },
+  "githubImportTitle": "Import examples from GitHub",
+  "@githubImportTitle": {
+    "description": "Title of the adaptive public GitHub import surface."
+  },
+  "githubImportRepositoryLabel": "Public repository URL",
+  "@githubImportRepositoryLabel": {
+    "description": "Label for the canonical public GitHub repository-root field."
+  },
+  "githubImportRepositoryHint": "https://github.com/owner/repository",
+  "@githubImportRepositoryHint": {
+    "description": "Technical example for the canonical repository-root field."
+  },
+  "githubImportRefLabel": "Branch, tag, or commit",
+  "@githubImportRefLabel": {
+    "description": "Label for the optional Git ref field."
+  },
+  "githubImportRefHint": "Leave blank for the default branch",
+  "@githubImportRefHint": {
+    "description": "Hint explaining the blank Git ref behavior."
+  },
+  "githubImportBrowse": "Browse repository",
+  "@githubImportBrowse": {
+    "description": "Action that resolves a repository ref and opens its pinned root tree."
+  },
+  "githubImportResolving": "Resolving repository…",
+  "@githubImportResolving": {
+    "description": "Visible and semantic state while an input ref resolves to an immutable commit."
+  },
+  "githubImportLoadingFolder": "Loading repository folder…",
+  "@githubImportLoadingFolder": {
+    "description": "Visible and semantic state while one pinned Git tree is loading."
+  },
+  "githubImportCheckingBoardTargets": "Checking board targets…",
+  "@githubImportCheckingBoardTargets": {
+    "description": "Visible and semantic state while the board folder is checked for exact import conflicts."
+  },
+  "githubImportDestination": "Board folder: {path}",
+  "@githubImportDestination": {
+    "description": "Captured board destination folder shown by the importer.",
+    "placeholders": {
+      "path": {"type": "String", "example": "/examples"}
+    }
+  },
+  "githubImportPinnedCommit": "Pinned commit: {sha}",
+  "@githubImportPinnedCommit": {
+    "description": "Immutable Git commit identity shown after resolving the ref.",
+    "placeholders": {
+      "sha": {"type": "String", "example": "1111111111111111111111111111111111111111"}
+    }
+  },
+  "githubImportGoUp": "Parent repository folder",
+  "@githubImportGoUp": {
+    "description": "Tooltip and semantics label for navigating to the parent repository folder."
+  },
+  "githubImportSelectFile": "Select {name}",
+  "@githubImportSelectFile": {
+    "description": "Accessible label for an eligible Python file checkbox.",
+    "placeholders": {
+      "name": {"type": "String", "example": "hello.py"}
+    }
+  },
+  "githubImportIneligibleFile": "{name} cannot be imported in this version",
+  "@githubImportIneligibleFile": {
+    "description": "Accessible explanation for a visible but ineligible repository entry.",
+    "placeholders": {
+      "name": {"type": "String", "example": "README.md"}
+    }
+  },
+  "githubImportSelectedCount": "{count, plural, =0{No files selected} =1{1 file selected} other{{count} files selected}}",
+  "@githubImportSelectedCount": {
+    "description": "Live count of folder-local files selected for review.",
+    "placeholders": {
+      "count": {"type": "int", "example": "2"}
+    }
+  },
+  "githubImportEmptyFolder": "This repository folder has no entries.",
+  "@githubImportEmptyFolder": {
+    "description": "Empty state for a successfully loaded repository folder."
+  },
+  "githubImportReview": "Review selected files",
+  "@githubImportReview": {
+    "description": "Action that checks board targets and opens the exact mapping review."
+  },
+  "githubImportReviewTitle": "Review board targets",
+  "@githubImportReviewTitle": {
+    "description": "Heading above exact remote-to-board path mappings."
+  },
+  "githubImportMapping": "{source} to {target}",
+  "@githubImportMapping": {
+    "description": "Accessible remote source to board target mapping.",
+    "placeholders": {
+      "source": {"type": "String", "example": "examples/hello.py"},
+      "target": {"type": "String", "example": "/hello.py"}
+    }
+  },
+  "githubImportWillOverwrite": "Existing board file — overwrite confirmation required",
+  "@githubImportWillOverwrite": {
+    "description": "Review marker for an exact regular-file target collision."
+  },
+  "githubImportDownload": "Download to board",
+  "@githubImportDownload": {
+    "description": "Action that fetches the reviewed files and commits them to the board."
+  },
+  "githubImportOverwriteTitle": "Overwrite existing files?",
+  "@githubImportOverwriteTitle": {
+    "description": "Title of the separate exact-path overwrite confirmation."
+  },
+  "githubImportOverwriteBody": "These board files already exist. Only the listed files will be replaced:",
+  "@githubImportOverwriteBody": {
+    "description": "Explanation before the exact conflicting board paths."
+  },
+  "githubImportOverwrite": "Overwrite and download",
+  "@githubImportOverwrite": {
+    "description": "Explicit confirmation action for named existing regular files."
+  },
+  "githubImportComplete": "{count, plural, =1{1 file downloaded to the board} other{{count} files downloaded to the board}}",
+  "@githubImportComplete": {
+    "description": "Successful connected GitHub import result.",
+    "placeholders": {
+      "count": {"type": "int", "example": "2"}
+    }
+  },
+  "githubImportPartial": "Some files reached the board, but the batch did not finish. Review the exact result before retrying.",
+  "@githubImportPartial": {
+    "description": "Honest non-atomic partial board import result."
+  },
+  "githubImportCancelled": "Import cancelled. Files already completed may remain on the board.",
+  "@githubImportCancelled": {
+    "description": "Cancellation result that does not imply rollback."
+  },
+  "githubImportCancelling": "Cancelling after the current board write finishes…",
+  "@githubImportCancelling": {
+    "description": "Cooperative cancellation state while one verified PBLE PUT is settling."
+  },
+  "githubImportFetching": "Downloading and validating selected files…",
+  "@githubImportFetching": {
+    "description": "Pre-mutation phase while exact pinned Git blobs are fetched and validated."
+  },
+  "githubImportRecheckingBoard": "Checking board conflicts again…",
+  "@githubImportRecheckingBoard": {
+    "description": "Pre-mutation phase while overwrite conflicts are rechecked."
+  },
+  "githubImportUploading": "Writing files to the board…",
+  "@githubImportUploading": {
+    "description": "Sequential PBLE board-write phase."
+  },
+  "githubImportSucceededHeading": "Downloaded",
+  "@githubImportSucceededHeading": {
+    "description": "Heading above exact board paths that completed successfully."
+  },
+  "githubImportFailedHeading": "Failed",
+  "@githubImportFailedHeading": {
+    "description": "Heading above the exact current board path whose PUT failed."
+  },
+  "githubImportUnattemptedHeading": "Not attempted",
+  "@githubImportUnattemptedHeading": {
+    "description": "Heading above exact board paths not started after failure or cancellation."
+  },
+  "githubImportErrorInvalidInput": "Enter a canonical public GitHub repository URL and a valid optional ref.",
+  "@githubImportErrorInvalidInput": {
+    "description": "Safe repository/ref validation error."
+  },
+  "githubImportErrorOffline": "GitHub could not be reached. Check the internet connection and try again.",
+  "@githubImportErrorOffline": {
+    "description": "Offline or timeout error for the optional GitHub workflow."
+  },
+  "githubImportErrorNotFound": "That public repository or ref could not be found.",
+  "@githubImportErrorNotFound": {
+    "description": "Not-found message that does not reveal whether a repository is private."
+  },
+  "githubImportErrorForbidden": "GitHub did not allow this public request.",
+  "@githubImportErrorForbidden": {
+    "description": "Non-rate-limited forbidden public request error."
+  },
+  "githubImportErrorRateLimited": "GitHub's public request limit was reached. Wait before retrying.",
+  "@githubImportErrorRateLimited": {
+    "description": "Unauthenticated public GitHub rate-limit guidance."
+  },
+  "githubImportErrorRateLimitedReady": "GitHub's requested wait has ended. You can retry now.",
+  "@githubImportErrorRateLimitedReady": {
+    "description": "Public GitHub rate-limit guidance after the supplied retry time has elapsed."
+  },
+  "githubImportErrorRateLimitedRetry": "GitHub's public request limit was reached. Try again in {seconds} seconds.",
+  "@githubImportErrorRateLimitedRetry": {
+    "description": "Rate-limit guidance using GitHub's bounded Retry-After delay.",
+    "placeholders": {
+      "seconds": {"type": "int", "example": "120"}
+    }
+  },
+  "githubImportErrorRateLimitedReset": "GitHub's public request limit was reached. Try again after {reset} UTC.",
+  "@githubImportErrorRateLimitedReset": {
+    "description": "Rate-limit guidance using GitHub's bounded UTC reset instant.",
+    "placeholders": {
+      "reset": {"type": "String", "example": "2033-05-18T03:33:20.000Z"}
+    }
+  },
+  "githubImportErrorRateLimitedRemaining": "GitHub's public request limit was reached ({remaining} requests remain). Wait before retrying.",
+  "@githubImportErrorRateLimitedRemaining": {
+    "description": "Rate-limit guidance when only the bounded remaining-request count is supplied.",
+    "placeholders": {
+      "remaining": {"type": "int", "example": "0"}
+    }
+  },
+  "githubImportErrorServer": "GitHub is temporarily unavailable. Try again later.",
+  "@githubImportErrorServer": {
+    "description": "Remote server failure guidance."
+  },
+  "githubImportErrorMalformed": "GitHub returned an unexpected response, so nothing was written.",
+  "@githubImportErrorMalformed": {
+    "description": "Fail-closed malformed or redirected response message."
+  },
+  "githubImportErrorUnsafe": "One selected file or board target is unsafe for this import.",
+  "@githubImportErrorUnsafe": {
+    "description": "Path, type, encoding, NUL, or blocking-target validation failure."
+  },
+  "githubImportErrorUnsafePath": "The selected path {path} is unsafe for this import.",
+  "@githubImportErrorUnsafePath": {
+    "description": "Safe path-specific target or content validation failure.",
+    "placeholders": {
+      "path": {"type": "String", "example": "examples/hello.py"}
+    }
+  },
+  "githubImportErrorTooLarge": "The selected files exceed the safe import size limit.",
+  "@githubImportErrorTooLarge": {
+    "description": "Per-file or aggregate byte-limit failure."
+  },
+  "githubImportErrorTooLargePath": "The selected files exceed the safe import size limit at {path}.",
+  "@githubImportErrorTooLargePath": {
+    "description": "Per-file or aggregate byte-limit failure naming only the safe repository path.",
+    "placeholders": {
+      "path": {"type": "String", "example": "examples/hello.py"}
+    }
+  },
+  "githubImportErrorStaleSession": "The connected board session changed. Reopen the importer before writing.",
+  "@githubImportErrorStaleSession": {
+    "description": "Session-stamp mismatch guidance."
+  },
+  "githubImportErrorBoard": "The board could not finish writing the selected files. Review the result and Files list.",
+  "@githubImportErrorBoard": {
+    "description": "PBLE board-write failure guidance."
+  },
+  "githubImportErrorIncompleteBoardListing": "The board folder listing is incomplete, so overwrite safety cannot be verified. Use a smaller folder and try again.",
+  "@githubImportErrorIncompleteBoardListing": {
+    "description": "Fail-closed guidance for PBLE FILE_LIST more=1 or unavailable completeness metadata."
+  },
+  "githubImportErrorBlockingConflict": "A board directory or unsupported entry already uses a selected target. Choose another folder or remove it.",
+  "@githubImportErrorBlockingConflict": {
+    "description": "Initial-review guidance for a non-regular exact target conflict."
+  },
+  "githubImportErrorBlockingConflictPath": "The board target {path} is a directory or unsupported entry. Choose another folder or remove it.",
+  "@githubImportErrorBlockingConflictPath": {
+    "description": "Path-specific initial-review guidance for a non-regular exact target conflict.",
+    "placeholders": {
+      "path": {"type": "String", "example": "/examples/hello.py"}
+    }
+  },
+  "githubImportErrorOverwriteRequired": "Review the existing board files and explicitly confirm overwrite before downloading.",
+  "@githubImportErrorOverwriteRequired": {
+    "description": "Guidance when a commit lacks required separate overwrite consent."
+  },
+  "githubImportErrorConflictChanged": "The board files changed after review. Review the targets and confirm again.",
+  "@githubImportErrorConflictChanged": {
+    "description": "Overwrite conflict-set drift guidance."
+  },
+  "githubImportRetry": "Retry",
+  "@githubImportRetry": {
+    "description": "User-driven retry action after a contained GitHub failure."
+  },
+  "githubImportClose": "Close",
+  "@githubImportClose": {
+    "description": "Dismisses the terminal GitHub import result."
+  },
+  "githubImportNoAutomaticRun": "Downloaded files are not opened or run automatically.",
+  "@githubImportNoAutomaticRun": {
+    "description": "Safety note on review and terminal import states."
   }
 }

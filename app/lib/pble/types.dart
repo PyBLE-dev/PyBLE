@@ -176,6 +176,17 @@ class RemoteEntry {
   final int size;
 }
 
+/// One `FILE_LIST` result with the protocol's completeness signal preserved.
+///
+/// PBLE/1 has no continuation cursor. When [truncated] is true, [entries] is a
+/// useful display prefix but must never be used to prove that a name is absent.
+final class DirectoryListing {
+  const DirectoryListing({required this.entries, required this.truncated});
+
+  final List<RemoteEntry> entries;
+  final bool truncated;
+}
+
 /// Progress of a file transfer (download or upload), reported to a [ProgressCb].
 ///
 /// [sent] is the number of verified/transferred bytes so far; [total] is the

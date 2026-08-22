@@ -19,7 +19,7 @@
 #      token present in an en VALUE MUST appear verbatim in every other locale's
 #      value for that key.
 #
-#   3. HARD-CODED TEXT — a display-string literal in `lib/app` (a `Text()`
+#   3. HARD-CODED TEXT — a display-string literal in `lib/**` (a `Text()`
 #      positional string, or a `tooltip:` / `title:` / `label:` / `content:`
 #      string literal) that is NOT sourced from `AppLocalizations` is a FAIL
 #      (FR-I18N-3). Bare technical identifiers (esp32*, `/paths`) and
@@ -58,7 +58,7 @@ import sys
 
 app_dir = sys.argv[1]
 arb_dir = os.path.join(app_dir, "lib", "localization", "arb")
-lib_app_dir = os.path.join(app_dir, "lib", "app")
+lib_dir = os.path.join(app_dir, "lib")
 
 # Reserved ASCII technical tokens that must render verbatim (FR-I18N-4). Longer
 # chip variants come first so the specific form is detected before its prefix.
@@ -131,7 +131,7 @@ for key, en_val in en.items():
                     "are rendered verbatim (FR-I18N-4)" % (locale, key, tok)
                 )
 
-# --- Rule 3: HARD-CODED TEXT over lib/app (display literal not from ARB). ---
+# --- Rule 3: HARD-CODED TEXT over lib/** (display literal not from ARB). ---
 # Matches a Text() positional string, or a tooltip/title/label/content string
 # literal, and captures the literal body so the technical-identifier allowlist
 # can spare bare identifiers. A variable/AppLocalizations argument has no leading
@@ -152,11 +152,20 @@ def is_allowlisted(body):
         return True  # a bare chip / protocol identifier
     if re.fullmatch(r"\{[A-Za-z_][A-Za-z0-9_]*\}", s):
         return True  # a lone ICU placeholder, not literal copy
+    if re.fullmatch(r"%[0-9]+", s):
+        return True  # a Blockly message placeholder, not display copy
+    if re.fullmatch(
+        r"(?:\$[A-Za-z_][A-Za-z0-9_]*|\$\{[^}]+\}|[\s.,:;!?()\-/–—])+",
+        s,
+    ):
+        return True  # localized/interpolated values joined only by punctuation
     return False
 
 
-if os.path.isdir(lib_app_dir):
-    for root, _dirs, files in os.walk(lib_app_dir):
+if os.path.isdir(lib_dir):
+    for root, dirs, files in os.walk(lib_dir):
+        dirs[:] = [d for d in dirs if os.path.join(root, d) !=
+                   os.path.join(lib_dir, "localization", "gen")]
         for name in sorted(files):
             if not name.endswith(".dart"):
                 continue
@@ -177,10 +186,12 @@ if os.path.isdir(lib_app_dir):
                         )
 
 # --- Dead-key report (non-fatal; only after the shell starts using ARB). ---
-if os.path.isdir(lib_app_dir) and en_keys:
+if os.path.isdir(lib_dir) and en_keys:
     used = set()
     migration_started = False
-    for root, _dirs, files in os.walk(lib_app_dir):
+    for root, dirs, files in os.walk(lib_dir):
+        dirs[:] = [d for d in dirs if os.path.join(root, d) !=
+                   os.path.join(lib_dir, "localization", "gen")]
         for name in files:
             if not name.endswith(".dart"):
                 continue
@@ -195,7 +206,7 @@ if os.path.isdir(lib_app_dir) and en_keys:
     if migration_started:
         for k in sorted(en_keys - used):
             notes.append(
-                "note: en key '%s' is referenced by no widget in lib/app "
+                "note: en key '%s' is referenced by no widget in lib/** "
                 "(dead key?)" % k
             )
 
@@ -208,13 +219,13 @@ if violations:
     print(
         "locale-parity gate: %d violation(s) — fix: keep every non-en ARB at en "
         "key parity (no missing/orphan keys), keep technical identifiers "
-        "ASCII/verbatim (FR-I18N-4), and source lib/app display text from "
+        "ASCII/verbatim (FR-I18N-4), and source lib/** display text from "
         "AppLocalizations (FR-I18N-3)." % len(violations),
         file=sys.stderr,
     )
     sys.exit(1)
 
 print("locale-parity gate: clean (ARB key parity + technical-identifier + "
-      "hard-coded-text over lib/app)")
+      "hard-coded-text over lib/**)")
 sys.exit(0)
 PY

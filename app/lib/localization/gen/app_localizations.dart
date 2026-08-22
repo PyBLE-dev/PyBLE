@@ -2288,6 +2288,372 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Could not prepare blocks: {reason}'**
   String pythonBlocksFailed(String reason);
+
+  /// Files action and tooltip that opens the connected public GitHub importer.
+  ///
+  /// In en, this message translates to:
+  /// **'Import examples from GitHub'**
+  String get githubImportAction;
+
+  /// Disabled Files-action tooltip while the board is connecting or running.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect a ready board before importing GitHub examples'**
+  String get githubImportRequiresReady;
+
+  /// Title of the adaptive public GitHub import surface.
+  ///
+  /// In en, this message translates to:
+  /// **'Import examples from GitHub'**
+  String get githubImportTitle;
+
+  /// Label for the canonical public GitHub repository-root field.
+  ///
+  /// In en, this message translates to:
+  /// **'Public repository URL'**
+  String get githubImportRepositoryLabel;
+
+  /// Technical example for the canonical repository-root field.
+  ///
+  /// In en, this message translates to:
+  /// **'https://github.com/owner/repository'**
+  String get githubImportRepositoryHint;
+
+  /// Label for the optional Git ref field.
+  ///
+  /// In en, this message translates to:
+  /// **'Branch, tag, or commit'**
+  String get githubImportRefLabel;
+
+  /// Hint explaining the blank Git ref behavior.
+  ///
+  /// In en, this message translates to:
+  /// **'Leave blank for the default branch'**
+  String get githubImportRefHint;
+
+  /// Action that resolves a repository ref and opens its pinned root tree.
+  ///
+  /// In en, this message translates to:
+  /// **'Browse repository'**
+  String get githubImportBrowse;
+
+  /// Visible and semantic state while an input ref resolves to an immutable commit.
+  ///
+  /// In en, this message translates to:
+  /// **'Resolving repository…'**
+  String get githubImportResolving;
+
+  /// Visible and semantic state while one pinned Git tree is loading.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading repository folder…'**
+  String get githubImportLoadingFolder;
+
+  /// Visible and semantic state while the board folder is checked for exact import conflicts.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking board targets…'**
+  String get githubImportCheckingBoardTargets;
+
+  /// Captured board destination folder shown by the importer.
+  ///
+  /// In en, this message translates to:
+  /// **'Board folder: {path}'**
+  String githubImportDestination(String path);
+
+  /// Immutable Git commit identity shown after resolving the ref.
+  ///
+  /// In en, this message translates to:
+  /// **'Pinned commit: {sha}'**
+  String githubImportPinnedCommit(String sha);
+
+  /// Tooltip and semantics label for navigating to the parent repository folder.
+  ///
+  /// In en, this message translates to:
+  /// **'Parent repository folder'**
+  String get githubImportGoUp;
+
+  /// Accessible label for an eligible Python file checkbox.
+  ///
+  /// In en, this message translates to:
+  /// **'Select {name}'**
+  String githubImportSelectFile(String name);
+
+  /// Accessible explanation for a visible but ineligible repository entry.
+  ///
+  /// In en, this message translates to:
+  /// **'{name} cannot be imported in this version'**
+  String githubImportIneligibleFile(String name);
+
+  /// Live count of folder-local files selected for review.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{No files selected} =1{1 file selected} other{{count} files selected}}'**
+  String githubImportSelectedCount(int count);
+
+  /// Empty state for a successfully loaded repository folder.
+  ///
+  /// In en, this message translates to:
+  /// **'This repository folder has no entries.'**
+  String get githubImportEmptyFolder;
+
+  /// Action that checks board targets and opens the exact mapping review.
+  ///
+  /// In en, this message translates to:
+  /// **'Review selected files'**
+  String get githubImportReview;
+
+  /// Heading above exact remote-to-board path mappings.
+  ///
+  /// In en, this message translates to:
+  /// **'Review board targets'**
+  String get githubImportReviewTitle;
+
+  /// Accessible remote source to board target mapping.
+  ///
+  /// In en, this message translates to:
+  /// **'{source} to {target}'**
+  String githubImportMapping(String source, String target);
+
+  /// Review marker for an exact regular-file target collision.
+  ///
+  /// In en, this message translates to:
+  /// **'Existing board file — overwrite confirmation required'**
+  String get githubImportWillOverwrite;
+
+  /// Action that fetches the reviewed files and commits them to the board.
+  ///
+  /// In en, this message translates to:
+  /// **'Download to board'**
+  String get githubImportDownload;
+
+  /// Title of the separate exact-path overwrite confirmation.
+  ///
+  /// In en, this message translates to:
+  /// **'Overwrite existing files?'**
+  String get githubImportOverwriteTitle;
+
+  /// Explanation before the exact conflicting board paths.
+  ///
+  /// In en, this message translates to:
+  /// **'These board files already exist. Only the listed files will be replaced:'**
+  String get githubImportOverwriteBody;
+
+  /// Explicit confirmation action for named existing regular files.
+  ///
+  /// In en, this message translates to:
+  /// **'Overwrite and download'**
+  String get githubImportOverwrite;
+
+  /// Successful connected GitHub import result.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 file downloaded to the board} other{{count} files downloaded to the board}}'**
+  String githubImportComplete(int count);
+
+  /// Honest non-atomic partial board import result.
+  ///
+  /// In en, this message translates to:
+  /// **'Some files reached the board, but the batch did not finish. Review the exact result before retrying.'**
+  String get githubImportPartial;
+
+  /// Cancellation result that does not imply rollback.
+  ///
+  /// In en, this message translates to:
+  /// **'Import cancelled. Files already completed may remain on the board.'**
+  String get githubImportCancelled;
+
+  /// Cooperative cancellation state while one verified PBLE PUT is settling.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancelling after the current board write finishes…'**
+  String get githubImportCancelling;
+
+  /// Pre-mutation phase while exact pinned Git blobs are fetched and validated.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloading and validating selected files…'**
+  String get githubImportFetching;
+
+  /// Pre-mutation phase while overwrite conflicts are rechecked.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking board conflicts again…'**
+  String get githubImportRecheckingBoard;
+
+  /// Sequential PBLE board-write phase.
+  ///
+  /// In en, this message translates to:
+  /// **'Writing files to the board…'**
+  String get githubImportUploading;
+
+  /// Heading above exact board paths that completed successfully.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloaded'**
+  String get githubImportSucceededHeading;
+
+  /// Heading above the exact current board path whose PUT failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed'**
+  String get githubImportFailedHeading;
+
+  /// Heading above exact board paths not started after failure or cancellation.
+  ///
+  /// In en, this message translates to:
+  /// **'Not attempted'**
+  String get githubImportUnattemptedHeading;
+
+  /// Safe repository/ref validation error.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a canonical public GitHub repository URL and a valid optional ref.'**
+  String get githubImportErrorInvalidInput;
+
+  /// Offline or timeout error for the optional GitHub workflow.
+  ///
+  /// In en, this message translates to:
+  /// **'GitHub could not be reached. Check the internet connection and try again.'**
+  String get githubImportErrorOffline;
+
+  /// Not-found message that does not reveal whether a repository is private.
+  ///
+  /// In en, this message translates to:
+  /// **'That public repository or ref could not be found.'**
+  String get githubImportErrorNotFound;
+
+  /// Non-rate-limited forbidden public request error.
+  ///
+  /// In en, this message translates to:
+  /// **'GitHub did not allow this public request.'**
+  String get githubImportErrorForbidden;
+
+  /// Unauthenticated public GitHub rate-limit guidance.
+  ///
+  /// In en, this message translates to:
+  /// **'GitHub\'s public request limit was reached. Wait before retrying.'**
+  String get githubImportErrorRateLimited;
+
+  /// Public GitHub rate-limit guidance after the supplied retry time has elapsed.
+  ///
+  /// In en, this message translates to:
+  /// **'GitHub\'s requested wait has ended. You can retry now.'**
+  String get githubImportErrorRateLimitedReady;
+
+  /// Rate-limit guidance using GitHub's bounded Retry-After delay.
+  ///
+  /// In en, this message translates to:
+  /// **'GitHub\'s public request limit was reached. Try again in {seconds} seconds.'**
+  String githubImportErrorRateLimitedRetry(int seconds);
+
+  /// Rate-limit guidance using GitHub's bounded UTC reset instant.
+  ///
+  /// In en, this message translates to:
+  /// **'GitHub\'s public request limit was reached. Try again after {reset} UTC.'**
+  String githubImportErrorRateLimitedReset(String reset);
+
+  /// Rate-limit guidance when only the bounded remaining-request count is supplied.
+  ///
+  /// In en, this message translates to:
+  /// **'GitHub\'s public request limit was reached ({remaining} requests remain). Wait before retrying.'**
+  String githubImportErrorRateLimitedRemaining(int remaining);
+
+  /// Remote server failure guidance.
+  ///
+  /// In en, this message translates to:
+  /// **'GitHub is temporarily unavailable. Try again later.'**
+  String get githubImportErrorServer;
+
+  /// Fail-closed malformed or redirected response message.
+  ///
+  /// In en, this message translates to:
+  /// **'GitHub returned an unexpected response, so nothing was written.'**
+  String get githubImportErrorMalformed;
+
+  /// Path, type, encoding, NUL, or blocking-target validation failure.
+  ///
+  /// In en, this message translates to:
+  /// **'One selected file or board target is unsafe for this import.'**
+  String get githubImportErrorUnsafe;
+
+  /// Safe path-specific target or content validation failure.
+  ///
+  /// In en, this message translates to:
+  /// **'The selected path {path} is unsafe for this import.'**
+  String githubImportErrorUnsafePath(String path);
+
+  /// Per-file or aggregate byte-limit failure.
+  ///
+  /// In en, this message translates to:
+  /// **'The selected files exceed the safe import size limit.'**
+  String get githubImportErrorTooLarge;
+
+  /// Per-file or aggregate byte-limit failure naming only the safe repository path.
+  ///
+  /// In en, this message translates to:
+  /// **'The selected files exceed the safe import size limit at {path}.'**
+  String githubImportErrorTooLargePath(String path);
+
+  /// Session-stamp mismatch guidance.
+  ///
+  /// In en, this message translates to:
+  /// **'The connected board session changed. Reopen the importer before writing.'**
+  String get githubImportErrorStaleSession;
+
+  /// PBLE board-write failure guidance.
+  ///
+  /// In en, this message translates to:
+  /// **'The board could not finish writing the selected files. Review the result and Files list.'**
+  String get githubImportErrorBoard;
+
+  /// Fail-closed guidance for PBLE FILE_LIST more=1 or unavailable completeness metadata.
+  ///
+  /// In en, this message translates to:
+  /// **'The board folder listing is incomplete, so overwrite safety cannot be verified. Use a smaller folder and try again.'**
+  String get githubImportErrorIncompleteBoardListing;
+
+  /// Initial-review guidance for a non-regular exact target conflict.
+  ///
+  /// In en, this message translates to:
+  /// **'A board directory or unsupported entry already uses a selected target. Choose another folder or remove it.'**
+  String get githubImportErrorBlockingConflict;
+
+  /// Path-specific initial-review guidance for a non-regular exact target conflict.
+  ///
+  /// In en, this message translates to:
+  /// **'The board target {path} is a directory or unsupported entry. Choose another folder or remove it.'**
+  String githubImportErrorBlockingConflictPath(String path);
+
+  /// Guidance when a commit lacks required separate overwrite consent.
+  ///
+  /// In en, this message translates to:
+  /// **'Review the existing board files and explicitly confirm overwrite before downloading.'**
+  String get githubImportErrorOverwriteRequired;
+
+  /// Overwrite conflict-set drift guidance.
+  ///
+  /// In en, this message translates to:
+  /// **'The board files changed after review. Review the targets and confirm again.'**
+  String get githubImportErrorConflictChanged;
+
+  /// User-driven retry action after a contained GitHub failure.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry'**
+  String get githubImportRetry;
+
+  /// Dismisses the terminal GitHub import result.
+  ///
+  /// In en, this message translates to:
+  /// **'Close'**
+  String get githubImportClose;
+
+  /// Safety note on review and terminal import states.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloaded files are not opened or run automatically.'**
+  String get githubImportNoAutomaticRun;
 }
 
 class _AppLocalizationsDelegate

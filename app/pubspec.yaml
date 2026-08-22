@@ -54,6 +54,13 @@ dependencies:
   # Dart 3.12.1 / iOS 13 / Java 17 toolchain.
   package_info_plus: ^10.2.1
 
+  # Public GitHub example import (A-33 connected subset). License:
+  # BSD-3-Clause. Min version: 1.6.0, already resolved transitively by the
+  # pinned Flutter graph; declaring it directly makes lib/github_import's sole
+  # HTTPS dependency explicit. Requests are public/unauthenticated and are
+  # restricted by the adapter to api.github.com.
+  http: ^1.6.0
+
   # Offline Blockly host (A-31). License: BSD-3-Clause. Min version: 4.14.1,
   # whose Android 24 / iOS 13 floors match PyBLE's pinned platform floors and
   # whose WebViewController supports loadFlutterAsset + JavaScript channels.

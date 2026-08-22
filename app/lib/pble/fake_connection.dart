@@ -29,7 +29,7 @@ import 'types.dart'; // re-exports pble_exception.dart (the neutral type family)
 ///
 /// The identity verbs + the full error-injection/progress POLISH are the
 /// A-14/S4 shipped-FakeConnection freeze; S3 adds only what A-11/A-12 need.
-class FakeConnection implements Connection {
+class FakeConnection implements Connection, ConnectionDirectoryListingSource {
   FakeConnection({
     ConnState initial = ConnState.disconnected,
     DeviceInfo? deviceInfo,
@@ -165,6 +165,10 @@ class FakeConnection implements Connection {
     }
     return entries;
   }
+
+  @override
+  Future<DirectoryListing> listDirWithMetadata(String path) async =>
+      DirectoryListing(entries: await listDir(path), truncated: false);
 
   @override
   Future<Uint8List> getFile(String path, {ProgressCb? onProgress}) async {

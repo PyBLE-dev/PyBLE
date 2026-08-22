@@ -9,7 +9,7 @@
 // never committed). It defines the gate's invocation + behaviour:
 //
 //   locale_parity.sh [APP_DIR]   (APP_DIR defaults to the repo's app/)
-//     scans <APP_DIR>/lib/localization/arb/app_*.arb and <APP_DIR>/lib/app,
+//     scans <APP_DIR>/lib/localization/arb/app_*.arb and <APP_DIR>/lib/**,
 //     exiting non-zero on ANY of:
 //     1. KEY PARITY  — a non-en app_*.arb whose key set != en's (MISSING or
 //        ORPHAN key). A partial translation must not ship (NFR-A11Y-2). The
@@ -18,16 +18,12 @@
 //        technical token (esp32 / esp32-s3 / esp32-c3, paths, opcode/cap/status
 //        names): a token present in the en value must appear verbatim in every
 //        other locale's value for that key (FR-I18N-4).
-//     3. HARD-CODED TEXT — a display-string literal in lib/app (Text(),
+//     3. HARD-CODED TEXT — a display-string literal in lib/** (Text(),
 //        tooltip:, AppBar title, SnackBar, label:) not sourced from
 //        AppLocalizations (FR-I18N-3).
 //
-// CURRENTLY RED for TWO reasons, each a clean hand-off:
-//   • the gate script does not exist yet → HAND-OFF app-build-smith (owns
-//     tools/ci/locale_parity.sh + the ci.yml wiring);
-//   • once it exists, the "real app tree passes" check stays red until the shell
-//     user-facing strings are migrated to ARB keys → HAND-OFF app-architect
-//     (shell-string migration + MaterialApp delegate wiring).
+// The fixtures also keep the gate itself from silently narrowing its scan as
+// new feature packages add UI outside `lib/app/`.
 
 import 'dart:io';
 

@@ -113,6 +113,15 @@ abstract interface class ConnectionSessionStampSource {
   Object get connectionSessionStamp;
 }
 
+/// Optional neutral capability that preserves PBLE/1 directory completeness.
+///
+/// Ordinary Files callers may use [Connection.listDir]. Multi-step actions that
+/// infer absence (such as overwrite preflight) must require this capability and
+/// fail closed when [DirectoryListing.truncated] is true or it is unavailable.
+abstract interface class ConnectionDirectoryListingSource {
+  Future<DirectoryListing> listDirWithMetadata(String path);
+}
+
 /// Returns the current local session stamp for [connection].
 ///
 /// Ordinary injected/fake [Connection] implementations need not implement

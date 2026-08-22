@@ -1349,4 +1349,252 @@ class AppLocalizationsEn extends AppLocalizations {
   String pythonBlocksFailed(String reason) {
     return 'Could not prepare blocks: $reason';
   }
+
+  @override
+  String get githubImportAction => 'Import examples from GitHub';
+
+  @override
+  String get githubImportRequiresReady =>
+      'Connect a ready board before importing GitHub examples';
+
+  @override
+  String get githubImportTitle => 'Import examples from GitHub';
+
+  @override
+  String get githubImportRepositoryLabel => 'Public repository URL';
+
+  @override
+  String get githubImportRepositoryHint =>
+      'https://github.com/owner/repository';
+
+  @override
+  String get githubImportRefLabel => 'Branch, tag, or commit';
+
+  @override
+  String get githubImportRefHint => 'Leave blank for the default branch';
+
+  @override
+  String get githubImportBrowse => 'Browse repository';
+
+  @override
+  String get githubImportResolving => 'Resolving repository…';
+
+  @override
+  String get githubImportLoadingFolder => 'Loading repository folder…';
+
+  @override
+  String get githubImportCheckingBoardTargets => 'Checking board targets…';
+
+  @override
+  String githubImportDestination(String path) {
+    return 'Board folder: $path';
+  }
+
+  @override
+  String githubImportPinnedCommit(String sha) {
+    return 'Pinned commit: $sha';
+  }
+
+  @override
+  String get githubImportGoUp => 'Parent repository folder';
+
+  @override
+  String githubImportSelectFile(String name) {
+    return 'Select $name';
+  }
+
+  @override
+  String githubImportIneligibleFile(String name) {
+    return '$name cannot be imported in this version';
+  }
+
+  @override
+  String githubImportSelectedCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count files selected',
+      one: '1 file selected',
+      zero: 'No files selected',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get githubImportEmptyFolder =>
+      'This repository folder has no entries.';
+
+  @override
+  String get githubImportReview => 'Review selected files';
+
+  @override
+  String get githubImportReviewTitle => 'Review board targets';
+
+  @override
+  String githubImportMapping(String source, String target) {
+    return '$source to $target';
+  }
+
+  @override
+  String get githubImportWillOverwrite =>
+      'Existing board file — overwrite confirmation required';
+
+  @override
+  String get githubImportDownload => 'Download to board';
+
+  @override
+  String get githubImportOverwriteTitle => 'Overwrite existing files?';
+
+  @override
+  String get githubImportOverwriteBody =>
+      'These board files already exist. Only the listed files will be replaced:';
+
+  @override
+  String get githubImportOverwrite => 'Overwrite and download';
+
+  @override
+  String githubImportComplete(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count files downloaded to the board',
+      one: '1 file downloaded to the board',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get githubImportPartial =>
+      'Some files reached the board, but the batch did not finish. Review the exact result before retrying.';
+
+  @override
+  String get githubImportCancelled =>
+      'Import cancelled. Files already completed may remain on the board.';
+
+  @override
+  String get githubImportCancelling =>
+      'Cancelling after the current board write finishes…';
+
+  @override
+  String get githubImportFetching =>
+      'Downloading and validating selected files…';
+
+  @override
+  String get githubImportRecheckingBoard => 'Checking board conflicts again…';
+
+  @override
+  String get githubImportUploading => 'Writing files to the board…';
+
+  @override
+  String get githubImportSucceededHeading => 'Downloaded';
+
+  @override
+  String get githubImportFailedHeading => 'Failed';
+
+  @override
+  String get githubImportUnattemptedHeading => 'Not attempted';
+
+  @override
+  String get githubImportErrorInvalidInput =>
+      'Enter a canonical public GitHub repository URL and a valid optional ref.';
+
+  @override
+  String get githubImportErrorOffline =>
+      'GitHub could not be reached. Check the internet connection and try again.';
+
+  @override
+  String get githubImportErrorNotFound =>
+      'That public repository or ref could not be found.';
+
+  @override
+  String get githubImportErrorForbidden =>
+      'GitHub did not allow this public request.';
+
+  @override
+  String get githubImportErrorRateLimited =>
+      'GitHub\'s public request limit was reached. Wait before retrying.';
+
+  @override
+  String get githubImportErrorRateLimitedReady =>
+      'GitHub\'s requested wait has ended. You can retry now.';
+
+  @override
+  String githubImportErrorRateLimitedRetry(int seconds) {
+    return 'GitHub\'s public request limit was reached. Try again in $seconds seconds.';
+  }
+
+  @override
+  String githubImportErrorRateLimitedReset(String reset) {
+    return 'GitHub\'s public request limit was reached. Try again after $reset UTC.';
+  }
+
+  @override
+  String githubImportErrorRateLimitedRemaining(int remaining) {
+    return 'GitHub\'s public request limit was reached ($remaining requests remain). Wait before retrying.';
+  }
+
+  @override
+  String get githubImportErrorServer =>
+      'GitHub is temporarily unavailable. Try again later.';
+
+  @override
+  String get githubImportErrorMalformed =>
+      'GitHub returned an unexpected response, so nothing was written.';
+
+  @override
+  String get githubImportErrorUnsafe =>
+      'One selected file or board target is unsafe for this import.';
+
+  @override
+  String githubImportErrorUnsafePath(String path) {
+    return 'The selected path $path is unsafe for this import.';
+  }
+
+  @override
+  String get githubImportErrorTooLarge =>
+      'The selected files exceed the safe import size limit.';
+
+  @override
+  String githubImportErrorTooLargePath(String path) {
+    return 'The selected files exceed the safe import size limit at $path.';
+  }
+
+  @override
+  String get githubImportErrorStaleSession =>
+      'The connected board session changed. Reopen the importer before writing.';
+
+  @override
+  String get githubImportErrorBoard =>
+      'The board could not finish writing the selected files. Review the result and Files list.';
+
+  @override
+  String get githubImportErrorIncompleteBoardListing =>
+      'The board folder listing is incomplete, so overwrite safety cannot be verified. Use a smaller folder and try again.';
+
+  @override
+  String get githubImportErrorBlockingConflict =>
+      'A board directory or unsupported entry already uses a selected target. Choose another folder or remove it.';
+
+  @override
+  String githubImportErrorBlockingConflictPath(String path) {
+    return 'The board target $path is a directory or unsupported entry. Choose another folder or remove it.';
+  }
+
+  @override
+  String get githubImportErrorOverwriteRequired =>
+      'Review the existing board files and explicitly confirm overwrite before downloading.';
+
+  @override
+  String get githubImportErrorConflictChanged =>
+      'The board files changed after review. Review the targets and confirm again.';
+
+  @override
+  String get githubImportRetry => 'Retry';
+
+  @override
+  String get githubImportClose => 'Close';
+
+  @override
+  String get githubImportNoAutomaticRun =>
+      'Downloaded files are not opened or run automatically.';
 }
