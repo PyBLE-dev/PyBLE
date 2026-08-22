@@ -358,10 +358,12 @@ consent, bounded fetched candidate, operation generation, phase/progress,
 rate-limit metadata, and an honest complete/partial/cancelled result.
 
 **Dependencies:** a pinned approved HTTP client behind `GithubApi` (HTTPS to
-the exact GitHub REST API host), `Connection.listDir`/`putFile`, the Files
+the exact GitHub REST API host), `Connection.listDir`/`putFile` plus the optional
+neutral `ConnectionDirectoryListingSource` completeness capability, the Files
 controller's current directory + refresh callback, connection-session stamps,
-and `lib/localization/`. The connected subset has no `lib/data/` dependency and
-never imports `lib/ble/`.
+and `lib/localization/`. Production and shipped fakes implement that capability;
+an unknown Connection double fails closed for import preflight. The connected
+subset has no `lib/data/` dependency and never imports `lib/ble/`.
 
 **Satisfies in this increment:** the frozen connected subset of
 FR-IMPORT-1/-2/-3/-5, IF-4, NFR-OFF-2, CON-3/8/9, SEC-10. **Deferred, not
@@ -795,13 +797,18 @@ duplicate target, non-canonical escape, and any complete board path over
 PBLE/1's 128-byte UTF-8 ceiling. The review view renders exact remote → board
 path pairs before a network content fetch or PUT.
 
-`review()` first requires the captured session stamp to be current, then calls
-`Connection.listDir(capturedCwd)`. Exact-name regular-file collisions are the
-overwrite set. A directory or other non-regular entry at a target is blocking;
-the importer never replaces or descends into it. A non-empty overwrite set
-opens a separate confirmation that lists the exact board paths. Consent is
-bound to `{sessionStamp, cwd, targetPaths, conflictPaths}`; changing selection,
-ref, folder, target data, or session invalidates it.
+`review()` first requires the captured session stamp to be current, then obtains
+`Connection.listDir(capturedCwd)` together with the neutral completeness bit
+exposed by `ConnectionDirectoryListingSource`. `PbleConnection` derives that bit
+from `FILE_LIST more`; its stable facade and `FakeConnection` preserve it. A
+truncated result—or an unknown Connection double that cannot prove
+completeness—fails closed before conflict classification. Exact-name
+regular-file collisions are the overwrite set. A directory or other non-regular
+entry at a target is blocking; the importer never replaces or descends into it.
+A non-empty overwrite set opens a separate confirmation that lists the exact
+board paths. Consent is bound to
+`{sessionStamp, cwd, targetPaths, conflictPaths}`; changing selection, ref,
+folder, target data, or session invalidates it.
 
 Immediately after all content validates and before the first PUT, the
 controller requires the same session, lists `capturedCwd` again, and compares

@@ -239,9 +239,12 @@ to `[red]` before implementation:
   duplicate/escaping targets, and targets exceeding PBLE/1's 128-byte UTF-8
   path ceiling MUST fail before download. Existing regular files MUST be named
   in a separate explicit overwrite confirmation; an existing directory or
-  other non-regular conflict MUST block import. The directory MUST be listed
-  again immediately before the first PUT; a changed conflict set MUST
-  invalidate prior confirmation and return to review with zero writes. MUST
+  other non-regular conflict MUST block import. The board-listing seam MUST
+  preserve PBLE/1's completeness bit, and `FILE_LIST more=1` (or a test double
+  that cannot prove completeness) MUST block import rather than treating omitted
+  names as absent. The directory MUST be listed again immediately before the
+  first PUT; a changed conflict set MUST invalidate prior confirmation and
+  return to review with zero writes. MUST
 - **A33-SUB-AC-5 (bounded all-fetch preflight)** — Before any board mutation,
   the client MUST fetch every selected file from the pinned snapshot and form
   one in-memory candidate. Each actual raw file MUST be at most 256 KiB and the
