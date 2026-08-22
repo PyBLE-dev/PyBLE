@@ -51,7 +51,7 @@ The question OI-1 actually poses, then, is not "is this package good?" but **"wh
 
 6. **R1 stays open with concrete fallback triggers.** We switch implementations if any of these is observed: (a) a correctness or data-loss defect on iPad that cannot be fixed at the adapter layer; (b) unusable typing latency on a realistic beginner file on target hardware; (c) a Flutter SDK bump the dormant upstream does not follow. R1 is re-scoped in the TDD accordingly rather than being declared solved.
 
-7. **The licence and dependency facts are recorded, not glossed.** The MPL-2.0 `autotrie` link, the Apache-2.0 + retained-MIT chain, the 24-package closure, `mocktail`-in-runtime-deps and the `url_launcher`/`hive` transitives all go into the pubspec dependency ledger and a generated `THIRD_PARTY_LICENSES` (BLD-6), with the in-app open-source notices screen surfacing them. The MPL-2.0 carve-out against CLAUDE.md's "every file is MIT" is an **owner ratification**, called out explicitly because it is a policy change, not an implementation detail.
+7. **The licence and dependency facts are recorded, not glossed.** The MPL-2.0 `autotrie` link, the Apache-2.0 + retained-MIT chain, the 24-package closure, `mocktail`-in-runtime-deps and the `url_launcher`/`hive` transitives all go into the pubspec dependency ledger and Flutter's generated `NOTICES.Z`/`LicenseRegistry` payload (the app's `THIRD_PARTY_LICENSES` bundle under BLD-6), with the in-app open-source notices screen surfacing them. The MPL-2.0 carve-out against CLAUDE.md's "every file is MIT" is an **owner ratification**, called out explicitly because it is a policy change, not an implementation detail.
 
 Unchanged: the `Connection` seam (D1), neutral types (D2), `UI → lib/pble → lib/ble` layering, the offline-first mandate, the clean-room rule, and every §1A.3 rejection. Nothing in this ADR is derived from any closed-source sibling product: the package is public, and its evaluation was performed against its own source.
 
@@ -74,7 +74,7 @@ Unchanged: the `Connection` seam (D1), neutral types (D2), `UI → lib/pble → 
 
 **Costs / mitigations**
 - **+24 packages**, including a native plugin family and an embedded database we will never use. *Mitigation:* recorded in the ledger; footprint measured before/after and reported, not estimated; optional surfaces off.
-- **MPL-2.0 in the closure via `autotrie`, unavoidable.** *Mitigation:* we modify none of it, so no source-disclosure duty attaches to PyBLE's own files; it is disclosed in `THIRD_PARTY_LICENSES` and the notices screen — but it requires the owner ratification named above.
+- **MPL-2.0 in the closure via `autotrie`, unavoidable.** *Mitigation:* we modify none of it, so no source-disclosure duty attaches to PyBLE's own files; its complete licence is disclosed in Flutter's generated `NOTICES.Z`/`LicenseRegistry` bundle and the notices screen, while the dependency ledger records durable package/upstream source links — but it requires the owner ratification named above.
 - **Dormant `DartPadAnalyzer` network path.** *Mitigation:* default local analyzer, plus a boundary that forbids `DartPadAnalyzer` everywhere and permits `package:http` only inside ADR-0040's exact bounded `lib/github_import/` production adapter. No editor or analyzer receives that exception.
 - **Superlinear typing cost with no soft wrap.** *Mitigation:* fallback trigger (b) makes this a measured, actionable condition on real hardware rather than a vague worry.
 - **Dormant upstream.** *Mitigation:* exact version pin, adapter-level fixes, retained second implementation, fallback trigger (c).
@@ -83,7 +83,7 @@ Unchanged: the `Connection` seam (D1), neutral types (D2), `UI → lib/pble → 
 **Process**
 - Spec-first: this ADR, the OI-1/R1 re-scoping in [specs.md](../specifications/App/specs.md) and [TDD.md](../specifications/App/TDD.md), and the corrected `EditorSurface` contract land together in a `[docs]` commit **before** any `[red]`.
 - Test-first: `[red]` tests are authored against the frozen contract — the Tab reproduction, the smart-punctuation invariant through `EditorSurface`, and the CI gate — then `[green]`, then the gates (no-leak, import-boundary, locale parity, iPadOS + Android golden parity).
-- Dependency governance (`pubspec.yaml` ledger entry, `THIRD_PARTY_LICENSES`, notices screen) is a build-plane change and lands with the implementation, not before the ADR is accepted.
+- Dependency governance (`pubspec.yaml` ledger entry, generated `NOTICES.Z`/`LicenseRegistry` bundle, notices screen) is a build-plane change and lands with the implementation, not before the ADR is accepted.
 
 ## Related
 
