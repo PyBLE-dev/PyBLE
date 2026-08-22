@@ -215,6 +215,39 @@
     }
   },
 
+  "connStatusBoardInfoSummary": "· {deviceId} · {agentVersion}",
+  "@connStatusBoardInfoSummary": {
+    "description": "Compact identity suffix appended after the full connection-state word in the always-visible status pill. {deviceId} is the PBLE/1 display-only board ID and {agentVersion} is the PyBLE agent firmware version; both are rendered verbatim.",
+    "placeholders": {
+      "deviceId": {
+        "type": "String",
+        "example": "5646"
+      },
+      "agentVersion": {
+        "type": "String",
+        "example": "0.6.0"
+      }
+    }
+  },
+  "connStatusBoardInfoSemanticLabel": "Connection status: {status}. Board ID: {deviceId}. PyBLE firmware: {agentVersion}.",
+  "@connStatusBoardInfoSemanticLabel": {
+    "description": "Screen-reader label for the connected status pill, preserving the complete state and the two labeled DeviceInfo values even when the visual summary is ellipsized.",
+    "placeholders": {
+      "status": {
+        "type": "String",
+        "example": "Ready"
+      },
+      "deviceId": {
+        "type": "String",
+        "example": "5646"
+      },
+      "agentVersion": {
+        "type": "String",
+        "example": "0.6.0"
+      }
+    }
+  },
+
   "connectEmptyTitle": "No board connected",
   "@connectEmptyTitle": {
     "description": "Title of the Connect surface empty state, shown when no board is connected (first-run / disconnected)."

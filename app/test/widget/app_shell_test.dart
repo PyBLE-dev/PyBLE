@@ -235,7 +235,7 @@ void main() {
           find.descendant(
             of: find.byKey(_pillKey),
             matching: find.text(
-              l10n.connStatusWithBoardInfo('Ready', '5646', '0.6.0'),
+              l10n.connStatusBoardInfoSummary('5646', '0.6.0'),
             ),
           ),
           findsOneWidget,
@@ -271,8 +271,7 @@ void main() {
           find.descendant(
             of: find.byKey(_pillKey),
             matching: find.text(
-              l10n.connStatusWithBoardInfo(
-                'Ready',
+              l10n.connStatusBoardInfoSummary(
                 l10n.connectDeviceNotReported,
                 l10n.connectDeviceNotReported,
               ),

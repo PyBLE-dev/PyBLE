@@ -596,8 +596,14 @@ class _Toolbar extends ConsumerWidget {
                     ),
                     const SizedBox(width: SignalSpacing.lg),
                   ],
-                  const ConnectionStatusPill(),
-                  const Spacer(),
+                  // The pill owns the remaining width. Its state word is fixed;
+                  // only its appended board identity may ellipsize (§7.6).
+                  const Expanded(
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: ConnectionStatusPill(),
+                    ),
+                  ),
                   // Connection action: Disconnect when a board is connected —
                   // returns to the full-screen Connect flow (ADR-0011); otherwise
                   // an inert Connect slot (the live scan/connect flow is the

@@ -361,6 +361,22 @@ abstract class AppLocalizations {
   /// **'Connection status: {status}'**
   String connStatusSemanticLabel(String status);
 
+  /// Compact identity suffix appended after the full connection-state word in the always-visible status pill. {deviceId} is the PBLE/1 display-only board ID and {agentVersion} is the PyBLE agent firmware version; both are rendered verbatim.
+  ///
+  /// In en, this message translates to:
+  /// **'· {deviceId} · {agentVersion}'**
+  String connStatusBoardInfoSummary(String deviceId, String agentVersion);
+
+  /// Screen-reader label for the connected status pill, preserving the complete state and the two labeled DeviceInfo values even when the visual summary is ellipsized.
+  ///
+  /// In en, this message translates to:
+  /// **'Connection status: {status}. Board ID: {deviceId}. PyBLE firmware: {agentVersion}.'**
+  String connStatusBoardInfoSemanticLabel(
+    String status,
+    String deviceId,
+    String agentVersion,
+  );
+
   /// Title of the Connect surface empty state, shown when no board is connected (first-run / disconnected).
   ///
   /// In en, this message translates to:
