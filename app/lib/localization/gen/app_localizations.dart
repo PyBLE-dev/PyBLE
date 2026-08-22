@@ -1667,6 +1667,24 @@ abstract class AppLocalizations {
   /// **'Board info'**
   String get connectDeviceInfoTitle;
 
+  /// Label for the display-only PBLE/1 device_id in the board-info card. The value is rendered verbatim and is never the platform scan identifier or an authorization/profile gate.
+  ///
+  /// In en, this message translates to:
+  /// **'Board ID'**
+  String get connectDeviceBoardId;
+
+  /// Label for the PyBLE agent firmware SemVer in the board-info card. The value is rendered verbatim and is distinct from the MicroPython version.
+  ///
+  /// In en, this message translates to:
+  /// **'PyBLE firmware'**
+  String get connectDeviceAgentVersion;
+
+  /// Fallback shown when an additive Board ID or PyBLE firmware value is empty; absence does not gate the connection.
+  ///
+  /// In en, this message translates to:
+  /// **'Not reported'**
+  String get connectDeviceNotReported;
+
   /// Label for the board's chip target in the board-info card. The value (e.g. esp32, esp32-s3, esp32-c3) is a technical identifier rendered verbatim (FR-I18N-4).
   ///
   /// In en, this message translates to:
