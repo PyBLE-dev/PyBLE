@@ -809,11 +809,18 @@ implementation:
 ### 4.14 Scan/Connect Flow UI (`lib/connect/`) — FR-CONNECT
 
 - **FR-CONNECT-1** — The connect screen MUST present a scan **filtered to the PyBLE service UUID**, listing each board by its **advertised name with RSSI** — the user-set device **label** when one is set, otherwise the default `PyBLE-XXXX` ([protocol.md §2](../protocol.md#2-ble-transport-gatt)) — and MUST NOT present a raw, unfiltered BLE device list. MUST (*source: PRD §9.6, §19.3, §8.1, protocol.md §2; verify: widget; story: A-22*)
-- **FR-CONNECT-2** — On Connect, the app MUST open GATT, subscribe to TX notify, request MTU 247, read INFO / send HELLO, and display `DeviceInfo` (chip, MicroPython version, free memory) before enabling editor/console/file actions. MUST (*source: PRD §9.6, §19.3, §8.1; verify: integration; story: A-22*)
+- **FR-CONNECT-2** — On Connect, the app MUST open GATT, subscribe to TX notify, request MTU 247, read INFO / send HELLO, and display `DeviceInfo` (display-only board ID, PyBLE agent firmware version, chip, MicroPython version, and free memory) before enabling editor/console/file actions. The board ID MUST be `DeviceInfo.deviceId`, never the platform scan identifier; board ID and agent version MUST be rendered verbatim, MUST NOT be derived or used as an authorization/profile gate, and an empty value MUST render a localized **Not reported** fallback without blocking use. MUST (*source: PRD §9.6, §19.3, §8.1, protocol.md §7; verify: widget/integration; story: A-22*)
 - **FR-CONNECT-3** — The screen MUST surface BLE permission and adapter state with localized rationale (iOS `NSBluetoothAlwaysUsageDescription`; Android `BLUETOOTH_SCAN`/`BLUETOOTH_CONNECT` + older-Android location). MUST (*source: PRD §9.6, §19.3, app.md §5; verify: widget/integration; story: A-04/A-22*)
 - **FR-CONNECT-4** — The screen MUST list **saved boards** and reconnect them by remembered identifier; on link loss the app MUST auto-reattempt and in-flight transfers MUST resume per [protocol.md §5](../protocol.md#5-file-transfer-the-reliability-core). MUST (*source: PRD §8.1, §19.3, §13.1; verify: integration; story: A-03/A-22*)
 - **FR-CONNECT-5** — The flow MUST be scan → connect → use only: no pairing-code step, no account, no session-lock/heartbeat, and no board-identity gating (the non-goals of [PRD §4.3](../prd.md)). MUST (*source: PRD §8.1, §9.6, §19.3, §4.3; verify: widget; story: A-22*)
 - **FR-CONNECT-6** — The connect flow MUST refuse a board with an unsupported `proto_version` and prompt to update the firmware/app rather than failing silently. MUST (*source: PRD §18.3; verify: widget/integration; story: A-10/A-22*)
+
+**Connected Board-info identity slice — FROZEN (`[docs]` 2026-08-22, additive to FR-CONNECT-2).** The testable acceptance criteria are:
+
+- **AC-1 (board ID source)** — The Board-info card MUST label and show `DeviceInfo.deviceId` verbatim. It MUST NOT expose `ScanHit.id`, which is a platform connection identifier (an iOS UUID or Android MAC-form string), or substitute the advertised name/label. MUST
+- **AC-2 (firmware distinction)** — The card MUST label and show `DeviceInfo.agentVersion` verbatim as **PyBLE firmware**, distinct from the existing **MicroPython** version row. It MUST NOT derive the value from app metadata or `mpyVersion`. MUST
+- **AC-3 (additive compatibility)** — When either additive field is empty, its row MUST remain visible with a localized **Not reported** value; absence MUST NOT fail the connection, hide the existing DeviceInfo proof, or gate any action. MUST
+- **AC-4 (existing proof retained)** — The chip, MicroPython version, free-memory value, and Disconnect action MUST remain present and retain their current semantics. MUST
 
 ### 4.15 About & Open-Source Information (`lib/app/`) — FR-ABOUT
 

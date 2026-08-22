@@ -74,7 +74,7 @@ Widgets receive a `Connection` (or narrow callbacks derived from it). Tests inje
 ## 4. Connect flow
 
 1. **Scan** — `flutter_blue_plus` scan filtered to the PyBLE service UUID; show advertised `PyBLE-XXXX` names + RSSI.
-2. **Connect** — open GATT, subscribe to TX notify, request MTU 247, read INFO / send HELLO, show `DeviceInfo`.
+2. **Connect** — open GATT, subscribe to TX notify, request MTU 247, read INFO / send HELLO, show `DeviceInfo`, including its display-only board ID and PyBLE agent firmware version.
 3. **Use** — editor/console/files bind to the `Connection`.
 4. **Reconnect** — on link loss, auto-reattempt; in-flight file transfers resume via PBLE/1 §5. Saved boards reconnect by remembered identifier.
 
@@ -82,6 +82,13 @@ The `DeviceInfo.chip` value is a port-defined technical identifier. The app
 renders unknown future values verbatim and continues from advertised PBLE/1
 capabilities; a missing in-app pin reference is informational and MUST NOT
 block the connection.
+
+The connected Board-info card renders `DeviceInfo.deviceId` as **Board ID** and
+`DeviceInfo.agentVersion` as **PyBLE firmware**, verbatim. It MUST NOT substitute
+the platform scan identifier, derive either value, or use either value as an
+authorization/profile gate. When a legacy or nonconforming agent reports an
+empty value, the card shows a localized **Not reported** fallback and keeps the
+connection usable.
 
 `DeviceInfo.chip == "esp32-s3"` does not identify which provisioning image is
 installed and cannot distinguish the lean `esp32-s3-n16r8` image from the
