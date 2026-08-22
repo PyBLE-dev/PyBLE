@@ -8,10 +8,14 @@ from __future__ import annotations
 import copy
 import hashlib
 import importlib.util
+import io
 import json
 from pathlib import Path
+import tarfile
+import tempfile
 import tomllib
 import unittest
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -118,9 +122,28 @@ SOURCE_LOCK_CONTRACT = {
     ),
 }
 
+FIXTURE_SOURCE_ARCHIVE_NAME = "arm-gnu-toolchain-source-fixture.tar.xz"
+FIXTURE_SOURCE_MANIFEST = b"fixture-source.c\tfixture source archive member\n"
+FIXTURE_SOURCE = b"int pyble_arm_runtime_fixture(void) { return 0; }\n"
+
 
 def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def sha256_bytes(value: bytes) -> str:
+    return hashlib.sha256(value).hexdigest()
+
+
+def source_archive_fixture() -> bytes:
+    output = io.BytesIO()
+    with tarfile.open(fileobj=output, mode="w:xz") as archive:
+        info = tarfile.TarInfo("arm-gnu-source-fixture/fixture-source.c")
+        info.size = len(FIXTURE_SOURCE)
+        info.mode = 0o644
+        info.mtime = 0
+        archive.addfile(info, io.BytesIO(FIXTURE_SOURCE))
+    return output.getvalue()
 
 
 def load_release_module():
@@ -140,6 +163,72 @@ class RP2ArmRuntimeClosureTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.attribution = json.loads(ATTRIBUTION.read_text(encoding="utf-8"))
+        cls._temporary = tempfile.TemporaryDirectory(
+            prefix="pyble-rp2-arm-runtime-closure-"
+        )
+        cls.addClassCleanup(cls._temporary.cleanup)
+        cls.validation_root = Path(cls._temporary.name)
+
+        archive_raw = source_archive_fixture()
+        archive_path = (
+            cls.validation_root
+            / "firmware/.arm-gnu/.pyble-dist"
+            / FIXTURE_SOURCE_ARCHIVE_NAME
+        )
+        archive_path.parent.mkdir(parents=True)
+        archive_path.write_bytes(archive_raw)
+
+        cls.validation_attribution = copy.deepcopy(cls.attribution)
+        identity = cls.validation_attribution["identity"]
+        identity["source_archive"] = {
+            "bytes": len(archive_raw),
+            "filename": FIXTURE_SOURCE_ARCHIVE_NAME,
+            "sha256": sha256_bytes(archive_raw),
+        }
+        manifest_relative = identity["source_manifest"]["path"]
+        identity["source_manifest"]["sha256"] = sha256_bytes(
+            FIXTURE_SOURCE_MANIFEST
+        )
+
+        evidence_path = (
+            cls.validation_root
+            / "firmware/licenses/evidence/rp2/arm-gnu-toolchain/14.2.rel1"
+        )
+        evidence_path.mkdir(parents=True)
+        (cls.validation_root / manifest_relative).write_bytes(
+            FIXTURE_SOURCE_MANIFEST
+        )
+        fixture_attribution = evidence_path / "runtime-attribution-v1.json"
+        fixture_attribution.write_text(
+            json.dumps(cls.validation_attribution, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        cls.validation_attribution_sha256 = sha256(fixture_attribution)
+
+        lock_path = cls.validation_root / "firmware/versions.lock"
+        lock_path.write_text(
+            "# SPDX-License-Identifier: MIT\n"
+            "[micropython]\n"
+            'repo = "https://example.invalid/micropython.git"\n'
+            'ref = "fixture"\n'
+            f'commit = "{"1" * 40}"\n\n'
+            "[esp_idf]\n"
+            'repo = "https://example.invalid/esp-idf.git"\n'
+            'ref = "fixture"\n'
+            f'commit = "{"2" * 40}"\n\n'
+            "[pyble]\n"
+            'agent_version = "0.6.0"\n'
+            'protocol_version = "PBLE/1"\n\n'
+            "[arm_gnu_toolchain]\n"
+            f'source_archive_filename = "{FIXTURE_SOURCE_ARCHIVE_NAME}"\n'
+            f"source_archive_bytes = {len(archive_raw)}\n"
+            'source_archive_format = "tar.xz"\n'
+            f'source_archive_sha256 = "{sha256_bytes(archive_raw)}"\n'
+            f'source_manifest_path = "{manifest_relative}"\n'
+            "source_manifest_sha256 = "
+            f'"{sha256_bytes(FIXTURE_SOURCE_MANIFEST)}"\n',
+            encoding="utf-8",
+        )
 
     def test_spec_freezes_build_input_vs_shipped_contribution(self) -> None:
         value = SPEC.read_text(encoding="utf-8")
@@ -365,7 +454,7 @@ class RP2ArmRuntimeClosureTests(unittest.TestCase):
                 self.assertEqual(arm.get(key), expected)
 
     def expected_observation(self) -> dict[str, object]:
-        attribution = self.attribution
+        attribution = self.validation_attribution
         return {
             "identity": copy.deepcopy(attribution["identity"]),
             "build_tools": copy.deepcopy(attribution["build_tools"]),
@@ -408,7 +497,7 @@ class RP2ArmRuntimeClosureTests(unittest.TestCase):
                     attribution["specs_inputs"]
                 ),
                 "source_archive_sha256": (
-                    SOURCE_LOCK_CONTRACT["source_archive_sha256"]
+                    attribution["identity"]["source_archive"]["sha256"]
                 ),
             },
         }
@@ -422,11 +511,16 @@ class RP2ArmRuntimeClosureTests(unittest.TestCase):
         return value
 
     def validate(self, observed: dict[str, object]) -> dict[str, object]:
-        return self.validator()(
-            copy.deepcopy(self.attribution),
-            observed,
-            repo_root=ROOT,
-        )
+        with mock.patch.object(
+            RELEASE,
+            "_RP2_ARM_RUNTIME_ATTRIBUTION_SHA256",
+            self.validation_attribution_sha256,
+        ):
+            return self.validator()(
+                copy.deepcopy(self.validation_attribution),
+                observed,
+                repo_root=self.validation_root,
+            )
 
     def test_validator_derives_notice_scope_from_contribution_not_load(self) -> None:
         result = self.validate(self.expected_observation())
