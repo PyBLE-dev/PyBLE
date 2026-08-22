@@ -33,6 +33,11 @@ shared conformance corpus in one pull request.
 - [`validation/`](validation/) — retained release and hardware qualification
   evidence
 
+## Testing and release handoff
+
+- [PyBLE 0.1.0 (4) TestFlight description and test
+  plan](testing/testflight/0.1.0-build-4.md)
+
 Internal sprint notes and automated-agent orchestration are intentionally kept
 outside the public source repository. Public work is planned through the
 roadmap and GitHub issues.
