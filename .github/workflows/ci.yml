@@ -132,6 +132,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          fetch-depth: 0
           submodules: true
       - name: Initialize pinned MicroPython host dependency
         run: |
