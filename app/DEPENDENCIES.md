@@ -36,6 +36,7 @@ Toolchain pin: **Flutter 3.44.1 (stable)** / Dart SDK `^3.12.1` (see
 | `flutter_blue_plus` | runtime | `^1.35.0` | 1.36.8 | BSD-3-Clause | The BLE transport (A-02; FR-BLE-1/2/3/5). The **sole** importer lives under `lib/ble/`; no other layer may import it (enforced by `tools/ci/import_boundary.sh`, CON-8). Min 1.35.0 is the floor carrying the GATT service-filtered scan + `requestMtu(247)` + write-without-response API the `lib/ble` adapter binds to. It is a **federated** plugin: it hard-depends on all platform backends (`_android`/`_darwin`/`_linux`/`_web`); only the Android + iOS (`_darwin`) backends compile into PyBLE's shipped targets — see the **copyleft carve-out** under the transitive table. |
 | `intl` | runtime | `^0.20.2` | 0.20.2 | BSD-3-Clause | The ARB message runtime consumed by the generated `AppLocalizations` (X-12). The constraint is reconciled to the exact `intl` the pinned `flutter_localizations` (Flutter 3.44.1) admits — 0.20.2. |
 | `package_info_plus` | runtime | `^10.2.1` | 10.2.1 | BSD-3-Clause | The sole `lib/app/app_build_info.dart` adapter reads the actual installed iOS/Android version and build number for the X-11 About page (FR-ABOUT-3). It is never imported by `lib/pble`; static ASCII `kAppVersion` remains the PBLE/1 HELLO identity. Min 10.2.1 supports PyBLE's pinned Flutter 3.44.1, Dart 3.12.1, iOS 13, Java 17, AGP 9.0.1, and Gradle 9.1 toolchain. |
+| `http` | runtime | `^1.6.0` | 1.6.0 | BSD-3-Clause | The bounded public GitHub REST client for the connected A-33 subset ([ADR-0040](../docs/decisions/0040-sha-pinned-connected-github-import.md)). The direct dependency is confined to `lib/github_import/`'s production composition point and `GithubRepositoryClient`; all feature consumers bind to the neutral `GithubApi` seam. The adapter accepts only canonical public repository input, sends no credential or user source, permits requests only to exact HTTPS host `api.github.com`, disables redirects, pins every browse to a full commit SHA, and bounds time and response bodies. Min 1.6.0 supplies the abortable request surface used by the cancellation contract on the pinned Dart/Flutter toolchain. |
 | `webview_flutter` | runtime | `^4.14.1` | 4.14.1 | BSD-3-Clause | The offline platform-WebView host for the pinned Blockly runtime (A-31, ADR-0013). Min 4.14.1 matches PyBLE's Android 24 / iOS 13 platform floors and supplies `loadFlutterAsset`, JavaScript channels, and navigation delegates. Its sole importer is `lib/blocks/`; generated source and board actions stay in Dart behind the neutral `Connection` seam. |
 | `flutter_test` | dev (SDK) | Flutter SDK | 3.44.1 | BSD-3-Clause | Widget/unit/golden test harness; the substrate for the G1 suites (NFR-MAINT-4). |
 | `integration_test` | dev (SDK) | Flutter SDK | 3.44.1 | BSD-3-Clause | On-device Android/iPadOS parity coverage for the real Blockly platform WebView, local asset load, JavaScript bridge, generated Python, and file-backed actions (A-31). Ships with the Flutter SDK and is never part of a release build. |
@@ -70,7 +71,6 @@ directly. Every one is permissive and MIT-compatible (verified against the
 | `flutter_driver` | (Flutter SDK) | BSD-3-Clause |
 | `flutter_web_plugins` | (Flutter SDK) | BSD-3-Clause |
 | `fuchsia_remote_debug_protocol` | (Flutter SDK) | BSD-3-Clause |
-| `http` | 1.6.0 | BSD-3-Clause |
 | `http_parser` | 4.1.2 | BSD-3-Clause |
 | `leak_tracker` | 11.0.2 | BSD-3-Clause |
 | `leak_tracker_flutter_testing` | 3.0.10 | BSD-3-Clause |
@@ -151,5 +151,4 @@ rationale when added:
 |---|---|---|
 | `drift`, `sqlite3` | S5 / A-24 | Local persistence. |
 | `fl_chart` | later | Plotting surface. |
-| direct `http` / `dio` client | later | Network fetch for the import flow. (`http` is currently transitive through `package_info_plus`, but PyBLE imports no network client for About and performs no metadata network request.) |
 | `go_router` | — | Not planned for S1; navigation is index-based via a Riverpod `StateProvider` + `IndexedStack`. |

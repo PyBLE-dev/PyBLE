@@ -344,26 +344,39 @@ write it to the connected board through sequential `Connection.putFile` calls.
 The full design later stores the exact bytes locally as the source of truth and
 records provenance; those durable parts remain deferred to A-24/full A-33.
 
-**Public API (sketch):** an injected `GithubApi` with
-`resolve(locator) → PinnedRepository`, `listDirectory(repository, path)`, and
-`fetchFile(repository, entry)`; `GithubImportController` owns
-`resolve`/`openDirectory`/`toggleFile`/`review`/`confirmOverwrite`/`import`/
-`cancel`. The network seam returns neutral models and has no widget or
-`Connection` dependency.
+**Public API (implemented connected subset):** an injected `GithubApi` with
+`resolve(locator) → PinnedRepository`, `listDirectory(repository, treeSha,
+path)`, and `fetchFile(repository, entry)`. `githubApiProvider` is the sole
+production composition point: it owns and closes the `http.Client` and exposes
+only `GithubApi`. `GithubRepositoryClient` implements that board-independent
+REST seam. The adaptive view owns ephemeral repository/ref input, lazy
+navigation, selection, retry, focus, and visible-step state; it delegates
+board review/commit/cancellation to `GithubBoardImporter`. That service owns
+safe target derivation, complete-listing conflict snapshots, bounded all-fetch
+validation, the session-bound sequential PUT loop, progress/result accounting,
+and Files refresh. It knows no widget, BLE transport, editor, or persistence
+type.
 
-**Key state:** canonical repo locator, requested/default ref, full pinned commit
-SHA, current remote directory, lazy entries, folder-local selection, captured
-board `cwd` + opaque connection-session stamp, exact target mappings/conflict
-consent, bounded fetched candidate, operation generation, phase/progress,
-rate-limit metadata, and an honest complete/partial/cancelled result.
+**Key state:** presentation scope holds the canonical repo locator,
+requested/default ref, full pinned commit SHA, current remote-directory stack,
+lazy entries, folder-local selection, retry/focus data, and visible
+browse/review/result state. One `GithubBoardImporter` instance is constructed
+per opened action with the captured board `cwd`, stable `Connection` facade,
+opaque connection-session stamp, and Files refresh callback. It holds only
+operation generation/cancellation/commit-lock state; exact target mappings and
+conflict snapshot live in the immutable review, candidate bytes stay bounded
+and private to one `commit()` invocation, and progress plus the honest
+complete/partial/cancelled result flow back to presentation. Rate-limit
+metadata remains a bounded field of neutral `GithubFailure`.
 
 **Dependencies:** a pinned approved HTTP client behind `GithubApi` (HTTPS to
-the exact GitHub REST API host), `Connection.listDir`/`putFile` plus the optional
-neutral `ConnectionDirectoryListingSource` completeness capability, the Files
-controller's current directory + refresh callback, connection-session stamps,
-and `lib/localization/`. Production and shipped fakes implement that capability;
-an unknown Connection double fails closed for import preflight. The connected
-subset has no `lib/data/` dependency and never imports `lib/ble/`.
+the exact GitHub REST API host), the optional neutral
+`ConnectionDirectoryListingSource.listDirWithMetadata` completeness capability,
+`Connection.putFile`, the Files controller's current directory + refresh
+callback, connection-session stamps, and `lib/localization/`. Production and
+shipped fakes implement that capability; an unknown Connection double fails
+closed for import preflight. The connected subset has no `lib/data/` dependency
+and never imports `lib/ble/`.
 
 **Satisfies in this increment:** the frozen connected subset of
 FR-IMPORT-1/-2/-3/-5, IF-4, NFR-OFF-2, CON-3/8/9, SEC-10. **Deferred, not
@@ -651,20 +664,31 @@ not yet satisfy FR-IMPORT-4/-6 or DAT-6.)*
 
 ### 10.1 Boundaries and neutral models
 
-`lib/github_import/` has three layers:
+`lib/github_import/` separates composition, REST, board-action service, and
+presentation responsibilities:
 
 ```text
-GithubImportView (adaptive sheet/dialog)
-  → GithubImportController (Riverpod; validation + state machine)
-    → GithubApi (injected public REST seam; no UI/Connection types)
+githubApiProvider (Riverpod composition; owns/closes http.Client)
+  → GithubRepositoryClient implements GithubApi
+      → exact-host public GitHub REST reads only
 
-GithubImportController
-  → Connection.listDir / Connection.putFile only
+showGithubImportBrowser + adaptive view presentation state
+  → GithubApi.resolve / listDirectory
+  → GithubBoardImporter.review / commit / cancel
+
+GithubBoardImporter (non-widget action service)
+  → GithubApi.fetchFile
+  → ConnectionDirectoryListingSource.listDirWithMetadata
+  → sequential Connection.putFile
   → Files cwd snapshot + refresh callback
 ```
 
-The widget never imports an HTTP implementation, `lib/ble/`, or wire types.
-The REST client never knows a board or `Connection`. Suggested neutral values:
+The adaptive view imports neither `package:http` nor the concrete REST client;
+it receives the neutral `GithubApi` from the provider and uses only the neutral
+PBLE `Connection` seam captured at entry. It never imports `lib/ble/` or
+frame/opcode types. The REST client never knows a board or `Connection`, and
+`GithubBoardImporter` knows no widget, raw BLE transport, editor, or durable
+data store. The boundary values are:
 
 ```dart
 record RepositoryLocator(Uri canonicalRoot, String owner, String repo);
@@ -685,15 +709,31 @@ record GithubEntry(
   int declaredSize,
 );
 
+record GithubDirectory(
+  String remotePath,
+  String treeSha,
+  List<GithubEntry> entries,
+);
 record ImportTarget(GithubEntry source, String boardPath, bool overwrites);
-record ImportCandidate(ImportTarget target, Uint8List bytes);
-record ImportResult(
+record GithubImportReview(
+  PinnedRepository repository,
+  String cwd,
+  List<ImportTarget> targets,
+  List<String> conflictPaths,
+  List<String> blockingPaths,
+);
+record GithubImportResult(
   List<String> succeeded,
   String? failedOrCancelled,
   List<String> unattempted,
-  ImportOutcome outcome,
+  GithubImportOutcome outcome,
+  GithubFailure? failure,
 );
 ```
+
+The fetched `_ImportCandidate` is deliberately a private service value rather
+than public/provider state: it exists only inside one bounded `commit()` call
+and is released at terminal return.
 
 `GithubEntryKind.regularFile` is granted only to a Git tree entry with
 `type = blob` and mode `100644` or `100755`; a directory is `type = tree` and
@@ -705,10 +745,12 @@ selection predicate, not evidence of file kind. All models use decoded logical
 paths; request builders percent-encode each owner/repository/ref/path segment
 rather than interpolating untrusted text into a URL.
 
-The controller captures `{Connection stableFacade, opaqueSessionStamp,
-filesCwd}` when opened. `filesCwd` is immutable for that presentation; if the
-underlying Files surface later navigates, the displayed target paths do not
-silently move. Closing and reopening is how the user targets the new `cwd`.
+`showGithubImportBrowser` captures `{Connection stableFacade,
+opaqueSessionStamp, filesCwd, refreshFiles}` and constructs one
+`GithubBoardImporter` when the action opens. `filesCwd` is immutable for that
+presentation; if the underlying Files surface later navigates, the displayed
+target paths do not silently move. Closing and reopening is how the user
+targets the new `cwd`.
 
 ### 10.2 Canonical input and immutable snapshot resolution
 
@@ -743,7 +785,7 @@ clears directories, selection, candidate bytes, conflicts, and consent.
 
 ### 10.3 Lazy browse, selection, and adaptive state
 
-The controller phase is one of:
+The user-visible lifecycle remains:
 
 ```text
 enterRepository → resolving → browsing → selecting → reviewing
@@ -751,11 +793,20 @@ enterRepository → resolving → browsing → selecting → reviewing
   → complete | partial | cancelled | failed
 ```
 
-Loading and terminal phases are values in controller state, not transient
-widget booleans. Each async operation captures an increasing generation;
-cancel, ref refresh, directory change, or disposal advances it, and a late
-completion from an older generation is ignored. At most one resolve/list/fetch
-or commit operation owns the controller at once.
+The implementation does not introduce a second Riverpod workflow controller.
+The adaptive `StatefulWidget` owns presentation-only state: a
+`browse | review | result` surface step, `resolving | loadingDirectory`
+network phase, directory stack, selection, failure/retry/focus data, and the
+current progress/result. Resolve/list operations capture the view's increasing
+epoch and a `GithubCancellation`; cancel, ref refresh, directory change, or
+disposal advances that epoch, and a late completion cannot repopulate the
+view. `GithubBoardImporter` separately owns its fetch/commit generation,
+active cancellation token, and duplicate-commit lock, publishing typed
+fetch/recheck/upload progress and terminal results through callbacks/returns.
+Together these values render every lifecycle state above distinctly. At most
+one presentation network operation may be active, duplicate importer commits
+are rejected, and the UI's busy state prevents the two paths from being started
+against each other.
 
 Resolution loads only the repository's root Git tree. Opening a directory
 calls `listDirectory` only with that child entry's tree SHA; the REST request
@@ -774,13 +825,14 @@ shown in review.
 The connected Files action is visible only in the connected shell and enabled
 only at `ConnState.ready`; disabled states explain that a ready board is
 required. Under 600 dp the view is a scroll-controlled modal bottom sheet; at
-600 dp and wider the same state/controller renders in a dialog. Repository/ref
-fields, breadcrumb rows, eligibility and selection controls, pinned SHA,
-targets, overwrite state, progress, cancellation, and results have ARB-backed
-labels and semantics. The surface uses ≥48 dp controls, scrolls through
-keyboard insets and 2× text, sends focus to the first invalid field/error, and
-returns focus to the Files action on dismissal. One-shot semantic announcements
-cover an important error and the final outcome, not each progress tick.
+600 dp and wider the same view and presentation state render in a dialog.
+Repository/ref fields, breadcrumb rows, eligibility and selection controls,
+pinned SHA, targets, overwrite state, progress, cancellation, and results have
+ARB-backed labels and semantics. The surface uses ≥48 dp controls, scrolls
+through keyboard insets and 2× text, sends focus to the first invalid
+field/error, and returns focus to the Files action on dismissal. One-shot
+semantic announcements cover an important error and the final outcome, not
+each progress tick.
 
 ### 10.4 Board target review and overwrite preflight
 
@@ -797,28 +849,31 @@ duplicate target, non-canonical escape, and any complete board path over
 PBLE/1's 128-byte UTF-8 ceiling. The review view renders exact remote → board
 path pairs before a network content fetch or PUT.
 
-`review()` first requires the captured session stamp to be current, then obtains
-`Connection.listDir(capturedCwd)` together with the neutral completeness bit
-exposed by `ConnectionDirectoryListingSource`. `PbleConnection` derives that bit
+`GithubBoardImporter.review()` first requires the captured session stamp to be
+current, then calls
+`ConnectionDirectoryListingSource.listDirWithMetadata(capturedCwd)` so the
+neutral result carries its completeness bit. `PbleConnection` derives that bit
 from `FILE_LIST more`; its stable facade and `FakeConnection` preserve it. A
 truncated result—or an unknown Connection double that cannot prove
-completeness—fails closed before conflict classification. Exact-name
-regular-file collisions are the overwrite set. A directory or other non-regular
-entry at a target is blocking; the importer never replaces or descends into it.
-A non-empty overwrite set opens a separate confirmation that lists the exact
+completeness—fails closed before conflict classification. Exact-name regular-
+file collisions are the overwrite set. A directory or other non-regular entry
+at a target is blocking; the importer never replaces or descends into it. A
+non-empty overwrite set opens a separate confirmation that lists the exact
 board paths. Consent is bound to
 `{sessionStamp, cwd, targetPaths, conflictPaths}`; changing selection, ref,
 folder, target data, or session invalidates it.
 
-Immediately after all content validates and before the first PUT, the
-controller requires the same session, lists `capturedCwd` again, and compares
-the complete relevant conflict set. A new/disappeared/type-changed conflict
-invalidates consent and returns to review. This conservative recheck prevents
-the general Import tap or stale confirmation from authorizing an overwrite.
+Immediately after all content validates and before the first PUT,
+`GithubBoardImporter` requires the same session, lists `capturedCwd` again, and
+compares the complete relevant conflict set. A new, disappeared, or
+type-changed conflict invalidates consent and returns to review. This
+conservative recheck prevents the general Import tap or stale confirmation
+from authorizing an overwrite.
 
 ### 10.5 All-fetch validation and sequential commit
 
-The controller constructs a candidate in two phases with a hard boundary:
+`GithubBoardImporter` constructs a candidate in two phases with a hard
+boundary:
 
 ```text
 for each target in review order:
@@ -844,7 +899,8 @@ lengths decide the 256 KiB/file and 1 MiB/batch gates. Strict UTF-8 uses a
 decoder configured to reject malformed input; it does not replace invalid
 sequences. NUL is rejected in raw bytes. Candidate source is not parsed,
 rendered as executable content, logged, opened in Editor, persisted, or run.
-It is released on close/cancel/terminal acknowledgement.
+It is never published into presentation/provider state and becomes releasable
+when the single `commit()` invocation returns.
 
 Every selected fetch must complete and the complete candidate must validate
 before the first PUT. Thus any repository/network/content error has a
@@ -855,18 +911,21 @@ single-file CRC/size success contract; the importer adds no weaker success
 path.
 
 The multi-file batch is not atomic. On the first failed PUT or stale session,
-the loop stops. `ImportResult` records exact succeeded paths, the current
+the loop stops. `GithubImportResult` records exact succeeded paths, the current
 failed/cancelled path when applicable, and exact unattempted paths. It never
 deletes or rewrites earlier targets in an attempted rollback. If at least one
-PUT began, the controller calls the injected Files refresh callback in a
+PUT began, `GithubBoardImporter` calls the injected Files refresh callback in a
 `finally` path after the in-flight PUT settles, even for partial/cancelled
 outcomes. Complete does not open a file or change the selected IDE surface.
 
 ### 10.6 Cancellation, rate limits, and errors
 
-Cancellation before upload advances the operation generation, asks the HTTP
-client to abort when supported, clears candidate bytes, and makes zero board
-writes. A late HTTP result cannot repopulate state. During one
+Cancellation before upload advances the owning generation: presentation
+resolve/list uses the view epoch and cancellation token, while fetch/commit
+uses `GithubBoardImporter`'s independent generation and token. The HTTP client
+is asked to abort when supported, candidate bytes remain local to the aborted
+commit, and zero board writes occur. A late HTTP result cannot repopulate
+presentation or resume the importer. During one
 `Connection.putFile`, cancel is cooperative because the seam exposes no
 mid-file cancellation: state records the request, lets that verified PUT
 settle, and starts no next PUT. The terminal result states whether that current
@@ -1835,15 +1894,19 @@ Run-time Python errors arrive as `stderr` `ConsoleEvent`s, not status bytes. The
 
 ### 14.3 GitHub import error ownership
 
-The REST adapter owns HTTP/response classification and bounded rate metadata;
-the import controller owns URL/ref/path/content/session/batch validation; the
-existing `Connection` layer owns PBLE/1 transfer errors. None exposes arbitrary
-HTTP bodies, fetched source, or raw exception text to the widget. The widget
-maps the resulting neutral kinds to ARB messages and a bounded next action:
-retry the exact network step, return to repository input/review, reconnect the
-board, or acknowledge an honest partial result. A network/content failure
-before commit is explicitly zero-mutation; a failure after a PUT began is
-explicitly potentially partial ([§10.6](#106-cancellation-rate-limits-and-errors)).
+The REST boundary (`RepositoryLocator` plus `GithubRepositoryClient`) owns
+canonical repository/ref validation, HTTP/response classification, immutable
+object validation, and bounded rate metadata. The adaptive presentation owns
+input focus, browse/selection generations, and localized recovery routing;
+`GithubBoardImporter` owns board-target, content/session/batch validation plus
+commit/result accounting. The existing `Connection` layer owns PBLE/1 transfer
+errors. None exposes arbitrary HTTP bodies, fetched source, or raw exception
+text to the widget. The widget maps the resulting neutral kinds to ARB messages
+and a bounded next action: retry the exact network step, return to repository
+input/review, reconnect the board, or acknowledge an honest partial result. A
+network/content failure before commit is explicitly zero-mutation; a failure
+after a PUT began is explicitly potentially partial
+([§10.6](#106-cancellation-rate-limits-and-errors)).
 
 ## 15. Test design
 
