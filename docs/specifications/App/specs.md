@@ -1,6 +1,6 @@
 # PyBLE App — Requirements Specification
 
-Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-08-15
+Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-08-22
 
 ## 1. Purpose, Scope & Document Role
 
@@ -195,6 +195,106 @@ The client implements the PBLE/1 wire contract; it references [protocol.md](../p
 - **FR-IMPORT-4** — Imported files MUST be stored locally so work continues offline after import; the local project remains the source of truth (import is a project source, not the storage model). MUST (*source: PRD §9.7, §13.5; verify: integration; story: A-33*)
 - **FR-IMPORT-5** — Import MUST be `.py`/data only and MUST NOT fetch or write `.mpy`/`.pyc`. MUST (*source: PRD §9.7, §10.14; verify: unit; story: A-33*)
 - **FR-IMPORT-6** — The app MUST record import provenance (repo URL, ref, subpath, commit SHA, file count, timestamp) in the local `github_imports` data per §8. MUST (*source: PRD §12.1; verify: unit; story: A-33*)
+
+**Connected working-loop increment — FROZEN (A-33 subset · `[docs]`
+2026-08-22, [ADR-0040](../../decisions/0040-sha-pinned-connected-github-import.md),
+[TDD §10](TDD.md#10-github-import-design-libgithub_import)).** This increment
+is a bounded connected-board slice of FR-IMPORT-1/-2/-3/-5. It does **not**
+close full story A-33 or weaken any requirement above. In particular,
+FR-IMPORT-4's durable local project copy and FR-IMPORT-6/DAT-6's durable
+provenance are **carried, not dropped**, and re-freeze with A-24/full A-33.
+Until then the fetched candidate exists only in bounded memory and on the
+board after a successful PUT; the app MUST NOT claim offline continuity or a
+recorded import. Test authors MUST convert the following acceptance contract
+to `[red]` before implementation:
+
+- **A33-SUB-AC-1 (entry and presentation)** — **Import examples from GitHub**
+  MUST be a connected Files action, enabled only while the captured connection
+  is `ready`. The same controller MUST use a scroll-controlled modal bottom
+  sheet below 600 dp and a dialog at 600 dp and wider. Opening it MUST capture
+  the current Files `cwd` and the opaque local connection-session stamp. MUST
+- **A33-SUB-AC-2 (canonical repository and immutable ref)** — Input MUST be a
+  public, unauthenticated canonical repository-root URL
+  `https://github.com/<owner>/<repo>` (one trailing slash MAY be normalized)
+  plus either an explicit branch/tag/commit ref or a blank ref meaning the
+  repository's reported default branch. Credentials, ports, query/fragment,
+  `.git`, `tree`/`blob` subpaths, other schemes/hosts, and extra path segments
+  MUST be rejected. Before browsing, the GitHub REST client MUST resolve the
+  selected ref once to a full immutable commit SHA, display it, and bind every
+  later tree/content read to that SHA rather than the moving ref. Refreshing
+  the ref MUST create a new snapshot and clear prior navigation/selection.
+  MUST
+- **A33-SUB-AC-3 (lazy folder-scoped browse)** — The client MUST load only the
+  opened directory at the pinned commit; it MUST NOT recursively enumerate the
+  repository. Up MUST be bounded at repository root. Multi-selection MUST be
+  limited to direct, eligible children of one chosen remote directory, and a
+  directory change MUST clear it. Only GitHub-confirmed regular files with a
+  lowercase `.py` suffix are eligible; directories MAY be opened, while
+  symlinks, submodules, non-files, `.mpy`, `.pyc`, and other suffixes MUST NOT
+  be selected, fetched, or written. MUST
+- **A33-SUB-AC-4 (exact targets and overwrite consent)** — Review MUST show
+  every exact remote path and its exact board target
+  `join(capturedCwd, basename(remotePath))`. This subset MUST NOT preserve the
+  remote parent hierarchy or call `mkdir`. Empty/dot names, separators, NUL,
+  duplicate/escaping targets, and targets exceeding PBLE/1's 128-byte UTF-8
+  path ceiling MUST fail before download. Existing regular files MUST be named
+  in a separate explicit overwrite confirmation; an existing directory or
+  other non-regular conflict MUST block import. The directory MUST be listed
+  again immediately before the first PUT; a changed conflict set MUST
+  invalidate prior confirmation and return to review with zero writes. MUST
+- **A33-SUB-AC-5 (bounded all-fetch preflight)** — Before any board mutation,
+  the client MUST fetch every selected file from the pinned snapshot and form
+  one in-memory candidate. Each actual raw file MUST be at most 256 KiB and the
+  actual raw batch total MUST be at most 1 MiB. Declared sizes MAY reject
+  early but MUST NOT replace actual-byte validation. Every file MUST be strict
+  UTF-8 with no NUL. Any missing/type/path/object mismatch, network/rate,
+  malformed response, decoding, or bound failure MUST reject the complete
+  candidate before the first `Connection.putFile`. The app MUST NOT interpret,
+  execute, persist, preview-run, or log fetched source bytes. MUST
+- **A33-SUB-AC-6 (session-bound sequential commit)** — After successful
+  all-fetch validation and current overwrite consent, the importer MUST issue
+  sequential `Connection.putFile` calls in the stable order shown by review.
+  The captured session stamp MUST still be current before every board
+  preflight and immediately before each PUT; attach/detach, including a
+  reconnect to the same board, MUST stop the batch before its next board verb.
+  The action MUST make no `mkdir`, parallel PUT, automatic editor-open, Save,
+  Run, `runFile`, or `runSource` call. MUST
+- **A33-SUB-AC-7 (cancel and honest partial result)** — Resolve, browse, fetch,
+  review, upload, cancelled, failed, partial, and complete MUST be distinct
+  visible states and duplicate submission MUST be locked out. Cancellation
+  before commit MUST cause zero writes and late network completions MUST be
+  ignored. Cancellation during one PUT is cooperative: that verified PUT MAY
+  finish, but no later PUT may start. On the first upload error, cancellation,
+  or stale session, the final result MUST distinguish succeeded, failed/current,
+  and unattempted exact target paths; it MUST NOT claim transactionality or
+  rollback. Files MUST refresh the captured directory after every outcome that
+  may have written. MUST
+- **A33-SUB-AC-8 (network/rate/error honesty)** — Offline, not-found/private,
+  forbidden, rate-limited, server, malformed-response, validation, board, and
+  stale-session failures MUST map to distinct localized, actionable messages.
+  A GitHub `403`/`429` MUST show bounded retry/reset guidance when the response
+  supplies it; the importer MUST NOT tight-loop or retry without a bound and an
+  explicit user action. Browse/fetch loading MUST retain location and selection
+  context without presenting stale data as current. MUST
+- **A33-SUB-AC-9 (accessibility)** — All visible and semantic text MUST come
+  from ARB except ASCII technical URL/ref/SHA/path values. Fields, directory
+  rows, file eligibility/selection, loading, pinned SHA, target mappings,
+  overwrite warning, progress, cancel, errors, and results MUST have explicit
+  labels/semantics; controls MUST be at least 48 dp. The surface MUST scroll
+  without clipped actions through keyboard insets, portrait/landscape, and 2×
+  text; focus MUST move to the first invalid field/error and return to the
+  invoking Files action on dismissal; important error/final-result
+  announcements MUST occur once. MUST
+- **A33-SUB-AC-10 (verification)** — Unit coverage MUST prove URL/host parsing,
+  ref-to-SHA pinning, lazy traversal, filtering, target safety, byte bounds,
+  strict UTF-8/NUL rejection, rate/error mapping, stale-operation suppression,
+  and result accounting. Fake-client/`FakeConnection` widget tests MUST prove
+  overwrite consent, all fetches before the first PUT, sequential order,
+  cancellation/session boundaries, partial truth, refresh, and zero
+  mkdir/open/run calls. Goldens MUST cover compact/wide responsive states,
+  loading/error/review/partial outcomes, portrait/landscape, 2× text, high
+  contrast, and keyboard inset. Integration/HIL MUST verify exact imported
+  bytes in a disposable board directory and no automatic execution. MUST
 
 ### 4.10 Blocks & Plots — FR-BLOCKS / FR-PLOTS
 
@@ -924,7 +1024,14 @@ finished.
 - **IF-1** — **BLE GATT to the board** carrying PBLE/1: one primary service on the PyBLE-owned UUID base with RX (Write), TX (Notify), and INFO (Read) characteristics, advertised name prefix `PyBLE-`, MTU 247. The app consumes this per [protocol.md §2](../protocol.md#2-ble-transport-gatt)/[§3](../protocol.md#3-framing) via `lib/ble/`. MUST (*source: PRD §6.3, protocol.md §2/§3; verify: integration; story: A-01/A-02*)
 - **IF-2** — The **`Connection` API** is the internal seam between UI and transport ([app.md §3](../app.md#3-the-connection-api-the-seam-every-widget-binds-to)); all widget↔board interaction crosses it. MUST (*source: PRD §6.1, app.md §3; verify: unit; story: A-10*)
 - **IF-3** — **Local database** via Drift (SQLite) for projects, settings, saved boards, snapshots, run/console logs, import provenance (offline-first; see §8). MUST (*source: PRD §12, §16.1; verify: unit; story: A-20*)
-- **IF-4** — **GitHub over HTTPS** (public, unauthenticated) for importing a folder of `.py` files (`lib/github_import/`). MUST (*source: PRD §9.7; verify: integration; story: A-33*)
+- **IF-4** — **GitHub REST over HTTPS** (public, unauthenticated) for importing
+  `.py` files (`lib/github_import/`). The connected A-33 subset accepts only a
+  canonical `github.com` repository-root input and permits network requests
+  only to the exact GitHub REST API host, with browse/content bound to one
+  resolved immutable commit SHA; it MUST NOT follow a response-provided
+  arbitrary content URL. MUST (*source: PRD §9.7,
+  [ADR-0040](../../decisions/0040-sha-pinned-connected-github-import.md);
+  verify: unit/integration; story: A-33*)
 - **IF-5** — **Platform BLE permission APIs** on iOS and Android, invoked with localized rationale. MUST (*source: PRD §9.6, §13.6, app.md §5; verify: integration; story: A-04*)
 - **IF-6** — **In-app Open-Source Notices** screen sourcing the generated third-party notice set on both platforms (see §9), reachable offline from the global About route. MUST (*source: PRD §15.2; verify: widget; story: X-11*)
 
@@ -968,6 +1075,16 @@ The local Drift database ([PRD §12.1](../prd.md), `lib/data/`) MUST model exact
 - **SEC-7** — The app MUST NOT attempt to write the agent control plane or board overlay via PBLE/1 file commands; it treats those as forbidden paths (the agent enforces `EACCES`). MUST (*source: PRD §10.4, §14.1; verify: integration; story: A-30*)
 - **SEC-8** — Because a user-set device **label is broadcast** in the BLE advertisement ([protocol.md §2](../protocol.md#2-ble-transport-gatt)/[§10](../protocol.md#10-security-note-v1)), the rename-board UI (FR-CONN-10) MUST warn the user that the label is publicly visible to anyone scanning, MUST nudge against entering personal data (PII), and MUST bound the label length in the UI to the board's limit; the default `PyBLE-XXXX` carries no PII. MUST (*source: PRD §14.2, protocol.md §10; verify: widget; story: A-22*)
 - **SEC-9** — The label and identify-LED are per-device configuration the board owns for its own screenless UX; the app MUST NOT use `device_id`, MAC, or `label` to gate access or build any remote registry of boards (extends SEC-6 to the new identity fields). MUST (*source: PRD §14.2, §11.1, §4.3, protocol.md §10; verify: unit; story: A-22*)
+- **SEC-10** — GitHub import MUST restrict user input to canonical public
+  `https://github.com/<owner>/<repo>` roots and outbound requests to HTTPS on
+  the exact GitHub REST API host; any redirect outside that host MUST fail
+  closed. It MUST send no authentication/token/cookie, board datum, or user
+  content, MUST NOT dereference an API-provided arbitrary download URL, and
+  MUST NOT log fetched source bytes. Remote source MUST remain inert data: the
+  app MUST NOT interpret or execute it merely because it was browsed, fetched,
+  or imported. MUST (*source: PRD §9.7, §13.5, §14.2,
+  [ADR-0040](../../decisions/0040-sha-pinned-connected-github-import.md);
+  verify: unit/integration; story: A-33*)
 
 ## 11. Traceability Matrix
 
@@ -981,7 +1098,7 @@ The local Drift database ([PRD §12.1](../prd.md), `lib/data/`) MUST model exact
 | FR-EDIT-* | §9.3, §16.1 | A-20 | widget, golden |
 | FR-CONSOLE-* | §9.4 | A-21 | widget, golden |
 | FR-RUN-* | §9.5, §8.2, §8.3, §13.3 | A-11 | widget, integration |
-| FR-IMPORT-* | §9.7, §12.1 | A-33 | integration |
+| FR-IMPORT-* | §9.7, §12.1 | A-33 | unit, widget, golden, integration, HIL |
 | FR-BLOCKS-*/FR-PLOTS-* | §9.8, §16.1 | A-31, A-32, A-38 | unit, asset, widget, integration, HIL |
 | FR-ERR-* | §9.9 | A-21 | unit, widget |
 | FR-I18N-* | §9.10, §13.7 | X-12 | locale |
@@ -993,13 +1110,13 @@ The local Drift database ([PRD §12.1](../prd.md), `lib/data/`) MUST model exact
 | NFR-USE-* | §13.2, §9.6 | A-21, A-22, A-30 | widget, golden |
 | NFR-OFF-* | §13.5, §12.1 | A-20, A-33 | integration |
 | NFR-COMPAT-* | §13.6, §15.3 | X-11, A-04, A-02 | integration |
-| NFR-A11Y-* | §13.7, §9.10 | X-12, A-20, A-21 | locale, golden |
+| NFR-A11Y-* | §13.7, §9.10 | X-12, A-20, A-21, A-33 | locale, widget, golden |
 | NFR-MAINT-* | §16.1, §1B.2, §23 | A-02, A-20, all | unit, conformance |
 | CON-* | §1A.3, §4.3, §9.6, §13.x | A-01, A-02, A-20, X-02 | unit, golden |
 | IF-* | §6.3, §12, §9.7, §15.2 | A-01, A-20, A-33, X-11 | integration |
 | DAT-* | §12.1 | A-20, A-11, A-21, A-33 | unit |
 | BLD-* | §13.6, §15, §17.2, §18 | X-11, X-12, X-03, X-01 | unit, build, integration, locale |
-| SEC-* | §14, §10.4, §11.1, §4.3, protocol.md §10 | A-02, A-20, A-22, A-30 | integration, unit, widget |
+| SEC-* | §14, §10.4, §11.1, §4.3, protocol.md §10 | A-02, A-20, A-22, A-30, A-33 | integration, unit, widget |
 
 ## 12. Open Items
 

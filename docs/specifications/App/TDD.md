@@ -1,6 +1,6 @@
 # PyBLE App — Technical Design Document (TDD)
 
-Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-08-19
+Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-08-22
 
 ## 0. Naming note (acronym clash)
 
@@ -337,15 +337,35 @@ the host `file` classifier reports as `script text executable` (BLD-11).
 
 ### 4.9 `lib/github_import/` — public-repo import
 
-**Responsibility:** fetch a folder of `.py` files from a **public** GitHub repo over HTTPS (no account/token), let the user pick subpath/branch and preview, write via `Connection.putFile`, store locally as the source of truth, and record provenance.
+**Responsibility:** fetch `.py` files from a **public** GitHub repository over
+HTTPS (no account/token), pin a selected/default ref to one immutable commit,
+lazy-browse that snapshot, validate one bounded folder-scoped selection, and
+write it to the connected board through sequential `Connection.putFile` calls.
+The full design later stores the exact bytes locally as the source of truth and
+records provenance; those durable parts remain deferred to A-24/full A-33.
 
-**Public API (sketch):** `GithubImporter { Future<RepoTree> browse(repoUrl, ref); Future<ImportResult> import(selection, Connection c, ProgressCb); }`.
+**Public API (sketch):** an injected `GithubApi` with
+`resolve(locator) → PinnedRepository`, `listDirectory(repository, path)`, and
+`fetchFile(repository, entry)`; `GithubImportController` owns
+`resolve`/`openDirectory`/`toggleFile`/`review`/`confirmOverwrite`/`import`/
+`cancel`. The network seam returns neutral models and has no widget or
+`Connection` dependency.
 
-**Key state:** repo URL/ref/subpath, fetched file list (`.py`/data only filter), conflict set vs existing board files, provenance record for `github_imports`.
+**Key state:** canonical repo locator, requested/default ref, full pinned commit
+SHA, current remote directory, lazy entries, folder-local selection, captured
+board `cwd` + opaque connection-session stamp, exact target mappings/conflict
+consent, bounded fetched candidate, operation generation, phase/progress,
+rate-limit metadata, and an honest complete/partial/cancelled result.
 
-**Dependencies:** `http`/`dio` (HTTPS), `Connection.putFile`, `lib/data/`, `lib/localization/`. No `lib/ble/`.
+**Dependencies:** a pinned approved HTTP client behind `GithubApi` (HTTPS to
+the exact GitHub REST API host), `Connection.listDir`/`putFile`, the Files
+controller's current directory + refresh callback, connection-session stamps,
+and `lib/localization/`. The connected subset has no `lib/data/` dependency and
+never imports `lib/ble/`.
 
-**Satisfies:** FR-IMPORT-1..6, IF-4, DAT-6, NFR-OFF-2, CON-3.
+**Satisfies in this increment:** the frozen connected subset of
+FR-IMPORT-1/-2/-3/-5, IF-4, NFR-OFF-2, CON-3/8/9, SEC-10. **Deferred, not
+satisfied:** FR-IMPORT-4/-6 and DAT-6 (A-24/full A-33).
 
 ### 4.10 `lib/data/` — persistence (Drift)
 
@@ -622,9 +642,255 @@ Drift schema versions with explicit `MigrationStrategy` step migrations (forward
 
 ## 10. GitHub import design (`lib/github_import/`)
 
-— *(satisfies FR-IMPORT-1..6, IF-4, DAT-6.)*
+— *(implements the connected subset frozen by
+[ADR-0040](../../decisions/0040-sha-pinned-connected-github-import.md):
+FR-IMPORT-1/-2/-3/-5, IF-4, NFR-OFF-2, CON-3/8/9, SEC-10. It explicitly does
+not yet satisfy FR-IMPORT-4/-6 or DAT-6.)*
 
-`browse(repoUrl, ref)` uses the **public, unauthenticated** GitHub HTTPS API (repo contents / raw) — no account, token, or auth, and no Git push (FR-IMPORT-2). The user selects a subpath/branch (ref) and SHOULD preview the file list, warned on conflicts with existing board files (FR-IMPORT-3). `import(...)` filters to `.py`/data (never `.mpy`/`.pyc`, FR-IMPORT-5, CON-3), writes each via `Connection.putFile` (FR-IMPORT-1), stores files locally so work continues offline with the local project as source of truth (FR-IMPORT-4, NFR-OFF-2), and records provenance — repo URL, ref, subpath, commit SHA, file count, timestamp — in `github_imports` (FR-IMPORT-6, DAT-6). Import failures never block other workflows (NFR-OFF-2).
+### 10.1 Boundaries and neutral models
+
+`lib/github_import/` has three layers:
+
+```text
+GithubImportView (adaptive sheet/dialog)
+  → GithubImportController (Riverpod; validation + state machine)
+    → GithubApi (injected public REST seam; no UI/Connection types)
+
+GithubImportController
+  → Connection.listDir / Connection.putFile only
+  → Files cwd snapshot + refresh callback
+```
+
+The widget never imports an HTTP implementation, `lib/ble/`, or wire types.
+The REST client never knows a board or `Connection`. Suggested neutral values:
+
+```dart
+record RepositoryLocator(Uri canonicalRoot, String owner, String repo);
+record PinnedRepository(
+  RepositoryLocator locator,
+  String requestedRef,
+  String resolvedRef,
+  String commitSha,
+  String rootTreeSha,
+);
+
+enum GithubEntryKind { regularFile, directory, ineligible }
+record GithubEntry(
+  String name,
+  String remotePath,
+  GithubEntryKind kind,
+  String objectSha,
+  int declaredSize,
+);
+
+record ImportTarget(GithubEntry source, String boardPath, bool overwrites);
+record ImportCandidate(ImportTarget target, Uint8List bytes);
+record ImportResult(
+  List<String> succeeded,
+  String? failedOrCancelled,
+  List<String> unattempted,
+  ImportOutcome outcome,
+);
+```
+
+`GithubEntryKind.regularFile` is granted only to a Git tree entry with
+`type = blob` and mode `100644` or `100755`; a directory is `type = tree` and
+mode `040000`. Symlink mode `120000`, submodule `type = commit` / mode `160000`,
+unknown modes/types, and a truncated/malformed tree are ineligible or fail the
+listing. This avoids the repository-contents endpoint's backwards-compatible
+submodule-as-`file` ambiguity. A lowercase `.py` suffix is an additional
+selection predicate, not evidence of file kind. All models use decoded logical
+paths; request builders percent-encode each owner/repository/ref/path segment
+rather than interpolating untrusted text into a URL.
+
+The controller captures `{Connection stableFacade, opaqueSessionStamp,
+filesCwd}` when opened. `filesCwd` is immutable for that presentation; if the
+underlying Files surface later navigates, the displayed target paths do not
+silently move. Closing and reopening is how the user targets the new `cwd`.
+
+### 10.2 Canonical input and immutable snapshot resolution
+
+`RepositoryLocator.parse` accepts only HTTPS, exact host `github.com`, default
+port, no user-info/query/fragment, and exactly two non-empty decoded path
+segments. One trailing slash is removed. `.git`, `tree`/`blob` subpaths,
+encoded path separators, dot segments, and any other shape fail before a
+request. The canonical value displayed back to the user is
+`https://github.com/<owner>/<repo>`.
+
+`GithubApi` talks only to HTTPS on exact host `api.github.com`, with redirects
+disabled (or independently revalidated and rejected unless the destination is
+the same exact host). It sends GitHub's required API version/accept/user-agent
+headers but no authorization, token, cookie, board fact, or user source. It
+does not follow `download_url`, HTML links, or any arbitrary URL returned in a
+response (SEC-10).
+
+Resolution is a two-step logical operation:
+
+1. if the ref field is blank, read public repository metadata and take its
+   `default_branch`; otherwise retain the explicit branch/tag/commit text; and
+2. resolve that value through the public commit endpoint and require the full
+   returned commit SHA plus its root Git-tree SHA before publishing
+   `PinnedRepository`.
+
+Every later directory is a non-recursive Git-tree read by the root tree SHA or
+a child-tree SHA reached from it; every file is a Git-blob read by a blob SHA
+from that tree. Thus every object is derived from the resolved commit without
+reading through the original moving ref or trusting a response URL. An
+explicit **Refresh ref** starts a new operation generation, resolves again, and
+clears directories, selection, candidate bytes, conflicts, and consent.
+
+### 10.3 Lazy browse, selection, and adaptive state
+
+The controller phase is one of:
+
+```text
+enterRepository → resolving → browsing → selecting → reviewing
+  → awaitingOverwrite → fetching → recheckingBoard → uploading
+  → complete | partial | cancelled | failed
+```
+
+Loading and terminal phases are values in controller state, not transient
+widget booleans. Each async operation captures an increasing generation;
+cancel, ref refresh, directory change, or disposal advances it, and a late
+completion from an older generation is ignored. At most one resolve/list/fetch
+or commit operation owns the controller at once.
+
+Resolution loads only the repository's root Git tree. Opening a directory
+calls `listDirectory` only with that child entry's tree SHA; the REST request
+does not set the recursive-tree option and never eagerly fetches descendants.
+Up uses the locally retained ancestor-tree stack and is bounded at root. The
+view shows a breadcrumb, pinned commit SHA, current-directory loading/error
+state, and a retry action that repeats only the failed request. It never
+substitutes stale entries under a new breadcrumb/ref.
+
+Multi-selection is limited to eligible direct children of the current remote
+directory. Navigating clears selection and review state. Stable review order is
+the displayed deterministic order (directories then names, with selected files
+ordered by their exact remote paths); upload reuses the selected-file order
+shown in review.
+
+The connected Files action is visible only in the connected shell and enabled
+only at `ConnState.ready`; disabled states explain that a ready board is
+required. Under 600 dp the view is a scroll-controlled modal bottom sheet; at
+600 dp and wider the same state/controller renders in a dialog. Repository/ref
+fields, breadcrumb rows, eligibility and selection controls, pinned SHA,
+targets, overwrite state, progress, cancellation, and results have ARB-backed
+labels and semantics. The surface uses ≥48 dp controls, scrolls through
+keyboard insets and 2× text, sends focus to the first invalid field/error, and
+returns focus to the Files action on dismissal. One-shot semantic announcements
+cover an important error and the final outcome, not each progress tick.
+
+### 10.4 Board target review and overwrite preflight
+
+For this subset, one selected direct remote file maps to the captured Files
+directory by basename:
+
+```text
+target = joinBoardPath(capturedCwd, basename(entry.remotePath))
+```
+
+No remote ancestor is preserved and no `mkdir` is called. Path derivation is a
+pure, tested function. It rejects empty, `.`/`..`, slash/backslash, NUL,
+duplicate target, non-canonical escape, and any complete board path over
+PBLE/1's 128-byte UTF-8 ceiling. The review view renders exact remote → board
+path pairs before a network content fetch or PUT.
+
+`review()` first requires the captured session stamp to be current, then calls
+`Connection.listDir(capturedCwd)`. Exact-name regular-file collisions are the
+overwrite set. A directory or other non-regular entry at a target is blocking;
+the importer never replaces or descends into it. A non-empty overwrite set
+opens a separate confirmation that lists the exact board paths. Consent is
+bound to `{sessionStamp, cwd, targetPaths, conflictPaths}`; changing selection,
+ref, folder, target data, or session invalidates it.
+
+Immediately after all content validates and before the first PUT, the
+controller requires the same session, lists `capturedCwd` again, and compares
+the complete relevant conflict set. A new/disappeared/type-changed conflict
+invalidates consent and returns to review. This conservative recheck prevents
+the general Import tap or stale confirmation from authorizing an overwrite.
+
+### 10.5 All-fetch validation and sequential commit
+
+The controller constructs a candidate in two phases with a hard boundary:
+
+```text
+for each target in review order:
+  fetch exact Git blob reached from pinned commit
+  verify response object/type/encoding against the selected tree entry
+  decode raw bytes
+  require actual length <= 256 KiB
+  require strict UTF-8 and no NUL
+  require running actual-byte total <= 1 MiB
+publish immutable in-memory candidate
+
+require current session + current overwrite consent/conflict recheck
+for each candidate in the same order:
+  require current session
+  await connection.putFile(candidate.target.boardPath, candidate.bytes)
+```
+
+The blob response must use the expected Git object SHA and base64 encoding;
+the adapter rejects any other encoding or object mismatch rather than
+following a returned URL. Declared GitHub sizes permit early rejection but
+actual decoded raw byte
+lengths decide the 256 KiB/file and 1 MiB/batch gates. Strict UTF-8 uses a
+decoder configured to reject malformed input; it does not replace invalid
+sequences. NUL is rejected in raw bytes. Candidate source is not parsed,
+rendered as executable content, logged, opened in Editor, persisted, or run.
+It is released on close/cancel/terminal acknowledgement.
+
+Every selected fetch must complete and the complete candidate must validate
+before the first PUT. Thus any repository/network/content error has a
+zero-board-mutation boundary. The commit then uses exactly one awaited PUT at
+a time. It calls no `mkdir`, `getFile`, editor-document action, Save,
+`runFile`, or `runSource`. `Connection.putFile` remains responsible for its
+single-file CRC/size success contract; the importer adds no weaker success
+path.
+
+The multi-file batch is not atomic. On the first failed PUT or stale session,
+the loop stops. `ImportResult` records exact succeeded paths, the current
+failed/cancelled path when applicable, and exact unattempted paths. It never
+deletes or rewrites earlier targets in an attempted rollback. If at least one
+PUT began, the controller calls the injected Files refresh callback in a
+`finally` path after the in-flight PUT settles, even for partial/cancelled
+outcomes. Complete does not open a file or change the selected IDE surface.
+
+### 10.6 Cancellation, rate limits, and errors
+
+Cancellation before upload advances the operation generation, asks the HTTP
+client to abort when supported, clears candidate bytes, and makes zero board
+writes. A late HTTP result cannot repopulate state. During one
+`Connection.putFile`, cancel is cooperative because the seam exposes no
+mid-file cancellation: state records the request, lets that verified PUT
+settle, and starts no next PUT. The terminal result states whether that current
+target succeeded and that remaining targets were not attempted.
+
+Network errors map into a bounded neutral enum such as `offline`, `notFound`,
+`privateOrForbidden`, `rateLimited`, `server`, `malformedResponse`, and
+`cancelled`; target/content/session/board failures retain their own kinds. The
+widget maps kinds—not raw exception strings or response bodies—to localized
+messages and actions. Repository-not-found copy does not claim whether a repo
+is private. Validation errors identify the safe repo/board path involved but
+never echo fetched bytes.
+
+For `403`/`429`, the REST adapter captures bounded numeric rate-limit metadata
+(`remaining`, reset instant or retry delay when valid). The view explains the
+unauthenticated public limit and offers a user-driven retry after the supplied
+time. There is no automatic tight loop; transient retries, if later admitted,
+must be separately bounded and cancellable. Ordinary GitHub failure does not
+disable Files, Editor, Run, or any offline workflow (NFR-OFF-2).
+
+### 10.7 Explicit deferred full-A-33 design
+
+This connected increment keeps downloaded bytes only in bounded memory and
+writes them to the board. It does **not** write `project_files` or
+`github_imports`; therefore FR-IMPORT-4, FR-IMPORT-6, and DAT-6 remain open.
+A-24/full A-33 must add a local transaction that persists the exact candidate
+bytes and the canonical repo URL, requested/resolved ref, chosen subpath, full
+commit SHA, file count, and timestamp before claiming offline continuity or
+durable provenance. That later transaction must define its ordering relative
+to board PUT and recovery from a partial board batch; ADR-0040 does not invent
+those semantics early.
 
 ## 11. Editor / blocks / plots / console design
 
@@ -1537,7 +1803,8 @@ and standard Back returns to the exact prior shell state (FR-ABOUT-1/7/8).
 
 ## 14. Error handling & mapping
 
-— *(satisfies FR-PBLE-13, FR-ERR-1..4, FR-FILES-3, NFR-USE-3, NFR-REL-4.)*
+— *(satisfies FR-PBLE-13, FR-ERR-1..4, FR-FILES-3, the A-33 connected
+import error contract, NFR-USE-3, NFR-REL-4.)*
 
 ### 14.1 Status byte → typed exception → localized message
 
@@ -1559,6 +1826,18 @@ unsupported proto_version          -> UnsupportedProtocolException
 
 Run-time Python errors arrive as `stderr` `ConsoleEvent`s, not status bytes. The data-driven error explainer ([§11.4](#114-console--error-explanation)) matches the traceback against signature → ARB suggestion and renders the suggestion **alongside** the raw traceback (annotate, never hide — FR-ERR-2). Honest surfacing at each recovery rung (STOP → soft-reboot → physical power cycle) per FR-RUN-5; there is no app-level hard-reset/safe-mode (FR-RUN-1).
 
+### 14.3 GitHub import error ownership
+
+The REST adapter owns HTTP/response classification and bounded rate metadata;
+the import controller owns URL/ref/path/content/session/batch validation; the
+existing `Connection` layer owns PBLE/1 transfer errors. None exposes arbitrary
+HTTP bodies, fetched source, or raw exception text to the widget. The widget
+maps the resulting neutral kinds to ARB messages and a bounded next action:
+retry the exact network step, return to repository input/review, reconnect the
+board, or acknowledge an honest partial result. A network/content failure
+before commit is explicitly zero-mutation; a failure after a PUT began is
+explicitly potentially partial ([§10.6](#106-cancellation-rate-limits-and-errors)).
+
 ## 15. Test design
 
 This is where the Technical Design meets **Test-Driven Development** ([§0](#0-naming-note-acronym-clash), [PRD §1B.3](../prd.md)). The verification methods of [specs.md §2.2](specs.md) — *widget*, *golden*, *unit*, *conformance*, *integration*, *locale* — map onto the packages below. Each behaviour is pinned by a `[red]` test before code (NFR-MAINT-3).
@@ -1577,7 +1856,7 @@ This is where the Technical Design meets **Test-Driven Development** ([§0](#0-n
 | `lib/connect/` | saved-board store | scan list (label/PyBLE-XXXX + RSSI), diagnostics, unsupported-version prompt, rename privacy-warn + length bound, Identify shown iff has_identify, configure-LED prompt when identify_led null, EUNSUPPORTED surfaced | — | — | scan→connect→HELLO→DeviceInfo; setLabel/setIdentifyLed/identify round-trips | permission rationale, rename warning |
 | `lib/blocks/` | bridge decode/limits, host epochs, fresh-snapshot correlation, action lock, restore state; GPIO/Time/NeoPixel/TFT definitions, codegen, validation, imports, and name safety; catalog schema/IDs/distinct-role materialization; production-generation of all eight fixtures (no pin/default/profile or device gate); target adoption/path derivation/128-byte preflight, sidecar v1 codec/CRC/exact-source and scratch-round-trip validation; bounded tokenizer/parser/model precedence, imports, names, numeric/range/function/NeoPixel/TFT/resource limits, supported/rejected grammar, all-or-nothing and semantic reparse equality | focused layout, sole Run ownership, off-canvas notices, inspector threshold, console expansion; shared adaptive example/import chooser; Preview non-mutation; empty Create; confirmed/cancelled/failed Replace with workspace+target rollback and host-acknowledged success; duplicate-role/diagnostic/stale-document errors; non-destructive optional/invalid toolbox IDs; no implicit board action; keyboard/semantics | wide landscape with inspector; narrower landscape without; stacked portrait; empty Examples state; exact-reopen/import diagnostics, target paths, and source preview; compact bottom sheet, wider dialog, constrained action overflow, large text, and keyboard inset | source-first/sidecar-last write ordering, no-PUT overlength preflight, local-session stamp lifecycle, board-swap/disconnect refusal before the next sidecar/Run verb, and CRC anchor reuse | every catalog workspace restore→generate; exact pair reopen preserving serialization/target; composed bound-document Python subset→workspace→generate→semantic reparse; torn-pair failures; GPIO/NeoPixel/TFT workspace pair Save→Run on iPadOS + Android | all Blocks/example/import/actions/wiring/diagnostic/validation/semantics labels |
 | `lib/plots/` | SeriesParser | plot render | plot golden | — | live plot from console | — |
-| `lib/github_import/` | `.py` filter, provenance | preview/conflict | — | — | fetch→putFile→record | — |
+| `lib/github_import/` | canonical URL/host parser; default/explicit ref→full-SHA pin; lazy response models and regular-`.py` filter; safe basename target derivation; strict UTF-8/NUL and 256 KiB/file + 1 MiB/batch bounds; rate/error mapping; operation generations; result accounting | fake-GitHub + FakeConnection resolve/browse/select/review; exact target preview; overwrite consent/recheck; all fetches before first PUT; stable sequential PUT order; pre/during-commit cancellation; session swap; partial truth + refresh; no mkdir/open/run; keyboard/focus/semantics | compact sheet + wide dialog in portrait/landscape; loading, empty, validation, rate-limit, review, overwrite, upload, partial, and complete states; 2× text, high contrast, keyboard inset | — | deterministic mock-HTTP→FakeConnection flow; pinned public fixture→disposable board directory with exact bytes and no execution (HIL) | every field/action/loading/error/rate/overwrite/progress/result/semantics label |
 | `lib/localization/` | key registry | — | — | — | — | parity gate (en vs locale) |
 | `lib/app/` About | runtime build-info adapter + blank/failure formatting | global disconnected/connected entry, full-route/back preservation, offline `LicenseRegistry` navigation, semantics, zero `Connection` calls | phone + iPadOS/Android portrait/landscape, 2× text/high contrast | — | installed version/build smoke on iPadOS + Android | every About/action/privacy/version string |
 
@@ -1605,9 +1884,23 @@ pending/success/blank/failing package metadata, prove the licenses route is
 offline/reachable, and assert that neither route calls `Connection`
 (FR-ABOUT-1..8).
 
+GitHub-import variants are separate from the offline Blocks Python importer.
+They cover the connected Files action, canonical repository/ref entry, lazy
+folder navigation, eligible/ineligible rows, multi-selection, the pinned commit
+SHA, exact remote→board target review, overwrite confirmation, progress,
+rate-limit/error/cancel, and honest partial results. Compact sheet and wide
+dialog goldens run in portrait/landscape with 2× text, high contrast, and a
+keyboard inset. Widget/semantics tests prove focus recovery, one-shot terminal
+announcements, current selection/location during loading, and that no hidden
+mkdir/open/run action occurs (A33-SUB-AC-1..10).
+
 ### 15.3 FakeConnection / mocked transport
 
-Widget/unit suites inject `FakeConnection` (D5, FR-CONN-7); `lib/ble/` uses a mocked `flutter_blue_plus` transport (FR-BLE-7); `lib/pble/` uses an in-memory fake byte transport (FR-PBLE-* conformance).
+Widget/unit suites inject `FakeConnection` (D5, FR-CONN-7);
+`lib/github_import/` injects a deterministic `GithubApi` or bounded local mock
+HTTP adapter and never requires the live public API in a host test; `lib/ble/`
+uses a mocked `flutter_blue_plus` transport (FR-BLE-7); `lib/pble/` uses an
+in-memory fake byte transport (FR-PBLE-* conformance).
 
 ### 15.4 PBLE/1 conformance
 
@@ -1673,6 +1966,18 @@ plugin boundary (FR-ABOUT-3/4). Integration suites also run end-to-end against a
 fake board and on-device smoke per chip (run/stop, multi-file upload,
 dropped-link resume, observe-anywhere console) — NFR-REL-1..4, NFR-PERF-* (HIL
 ceilings frozen later, [OI-4](specs.md)).
+
+The GitHub-import integration scenario runs deterministically against an
+injected REST fixture and `FakeConnection`, including a moving named ref whose
+resolved commit stays fixed, a late invalid file that proves zero PUTs, and a
+third-PUT failure that proves exact succeeded/failed/unattempted accounting.
+The release HIL row is explicitly networked and bounded: resolve one small
+public fixture to its displayed commit, select direct `.py` children, import
+them into a disposable board directory, read back byte-exact contents, and
+prove no run-state transition or editor-open occurred. It records the canonical
+repo URL, requested ref, resolved SHA, target paths, byte hashes, app/source
+revision, board/agent identity, and cleanup; it records evidence only and does
+not satisfy the deferred in-app FR-IMPORT-6 provenance store.
 
 The Android build also pins `io.flutter.embedding.android.EnableImpeller=false`
 while the Flutter 3.44 Impeller/Vulkan path produces a blank frame on the
@@ -1751,7 +2056,7 @@ Design element → satisfied requirement IDs. Each `FR-*`/`NFR-*`/`CON-*`/`DAT-*
 | Plots ([§4.7](#47-libplots--live-plots), [§11.3](#113-plots)) | lib/plots | FR-PLOTS-1..3, CON-7, OI-5 |
 | Connect flow + runtime `ConnectionManager` session ([§4.8](#48-libconnect--scanconnect-flow-ui), [ADR-0009](../../decisions/0009-runtime-connection-manager.md)) | lib/connect, lib/pble | FR-CONNECT-1..6, FR-CONN-6, FR-UI-3, FR-BLE-8, CON-8, SEC-6, NFR-USE-1 |
 | Screenless identity — label/identify caps, scan-list name, rename + Identify UI, privacy ([§4.8](#48-libconnect--scanconnect-flow-ui), [§7.1](#71-scan--connect), [§8.6](#86-hello--capabilities), [§8.9](#89-screenless-identity--identify-control-commands), [§11.5](#115-screenless-identity--rename--identify)) | lib/connect, lib/pble | FR-CONN-10/11/12, FR-CONNECT-1, FR-CONN-1/6, SEC-8/9 |
-| GitHub import ([§4.9](#49-libgithub_import--public-repo-import), [§10](#10-github-import-design-libgithub_import)) | lib/github_import | FR-IMPORT-1..6, IF-4, DAT-6, NFR-OFF-2 |
+| GitHub import ([§4.9](#49-libgithub_import--public-repo-import), [§10](#10-github-import-design-libgithub_import), [ADR-0040](../../decisions/0040-sha-pinned-connected-github-import.md)) | lib/github_import, lib/files | Connected subset of FR-IMPORT-1/-2/-3/-5, IF-4, NFR-OFF-2, CON-3/8/9, SEC-10; FR-IMPORT-4/-6 and DAT-6 explicitly deferred to A-24/full A-33 |
 | Persistence ([§4.10](#410-libdata--persistence-drift), [§9](#9-persistence-design-libdata)) | lib/data | FR-PROJ-1..7, DAT-1..8, IF-3, NFR-OFF-1..3, CON-4 |
 | Localization ([§4.11](#411-liblocalization--i18n), [§12](#12-localization-design-liblocalization)) | lib/localization | FR-I18N-1..5, NFR-A11Y-1/2/4, BLD-5, CON-9 |
 | About, runtime metadata, and offline notices entry ([§4.12](#412-libapp--about-and-open-source-information), [§13.2](#132-responsive-layout)) | lib/app | FR-ABOUT-1..8, IF-6, NFR-OFF-1..3, NFR-A11Y-3, CON-5/8/9, SEC-3/5 |
@@ -1761,7 +2066,7 @@ Design element → satisfied requirement IDs. Each `FR-*`/`NFR-*`/`CON-*`/`DAT-*
 | Reliability (resume, CRC, preserve-on-drop) ([§8.4](#84-file-transfer-state-machine), [§9.2](#92-migrations--hydration)) | lib/pble, lib/data | NFR-REL-1..4, NFR-PERF-1/2, FR-PROJ-6 |
 | Test design, shared corpus, gates ([§15](#15-test-design)) | all | NFR-MAINT-1/3/4, BLD-5/8, CON-6/8 |
 | Build/versioning/distribution ([§15.6](#156-import-boundary--no-leak-gates), [§15.7](#157-launcher-identity-and-platform-assets), [§15.8](#158-android-release-signing-and-app-bundle-gate), [§8.6](#86-hello--capabilities)) | all | BLD-1..12, IF-6, NFR-COMPAT-1 |
-| Security & privacy ([§5.1](#51-the-connection-interface), [§6.3](#63-single-active-writer--serialization), [§8.9](#89-screenless-identity--identify-control-commands), [§9.1](#91-schema), [§11.5](#115-screenless-identity--rename--identify)) | lib/pble, lib/connect, lib/data | SEC-1..9 |
+| Security & privacy ([§5.1](#51-the-connection-interface), [§6.3](#63-single-active-writer--serialization), [§8.9](#89-screenless-identity--identify-control-commands), [§9.1](#91-schema), [§10.2](#102-canonical-input-and-immutable-snapshot-resolution), [§11.5](#115-screenless-identity--rename--identify)) | lib/pble, lib/connect, lib/data, lib/github_import | SEC-1..10 |
 
 **Requirements with no dedicated design element:** none functional. Notes:
 
@@ -1779,3 +2084,10 @@ Design element → satisfied requirement IDs. Each `FR-*`/`NFR-*`/`CON-*`/`DAT-*
 - **R5 — Large-file transfer UX.** Long uploads over BLE need continuous progress and graceful resume across drops; covered by the window+resume state machine ([§8.4](#84-file-transfer-state-machine)) and progress callbacks, but real-link throughput/latency ceilings are HIL-frozen later (OI-4, NFR-PERF-3/4).
 - **R6 — PBLE/1 still DRAFT (OI-3).** UUIDs/opcodes/status numbers are provisional until [protocol.md](../protocol.md) §2/§4 freeze; the single constants mirror (D7) localizes the churn, and the shared corpus ([§8.8](#88-shared-conformance-corpus-with-the-firmware)) keeps app and firmware in lockstep.
 - **R7 — Plot-parsing configuration model (OI-5).** The exact user-facing model for mapping console output to series ([§11.3](#113-plots)) is to be detailed; the `SeriesParser` seam keeps it changeable without touching `fl_chart` rendering.
+- **R8 — Public GitHub API availability/rate.** Unauthenticated requests can be
+  unavailable or rate-limited independently of PyBLE. Mitigation: the feature
+  is user-started and isolated behind `GithubApi`; browsing is lazy, requests
+  are cancellable and generation-scoped, `403`/`429` guidance is honest and
+  bounded, and every non-import workflow remains available offline
+  ([§10.3](#103-lazy-browse-selection-and-adaptive-state),
+  [§10.6](#106-cancellation-rate-limits-and-errors), NFR-OFF-2).
