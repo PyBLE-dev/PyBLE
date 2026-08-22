@@ -822,6 +822,7 @@ implementation:
 - **AC-3 (additive compatibility)** — When either additive field is empty, its row MUST remain visible with a localized **Not reported** value; absence MUST NOT fail the connection, hide the existing DeviceInfo proof, or gate any action. MUST
 - **AC-4 (existing proof retained)** — The chip, MicroPython version, free-memory value, and Disconnect action MUST remain present and retain their current semantics. MUST
 - **AC-5 (connected-shell reachability)** — On `ready` and `running`, the always-visible status pill MUST append the same Board ID and PyBLE firmware values after its full localized state word. Tight layouts MAY ellipsize only the appended summary, never the state word; the semantics label MUST expose the complete state, **Board ID**, and **PyBLE firmware** values with context. While `DeviceInfo` is still loading the pill MAY show the state alone. MUST
+- **AC-6 (connection-session consistency)** — A `DeviceInfo` result MUST apply only to the local connection session that requested it. After disconnect/reconnect or replacement of the active board, a late result from the prior session MUST be discarded; the pill MUST remain state-only until the current session's `DeviceInfo` arrives and MUST never flash or retain the prior board's ID or firmware. MUST
 
 ### 4.15 About & Open-Source Information (`lib/app/`) — FR-ABOUT
 
