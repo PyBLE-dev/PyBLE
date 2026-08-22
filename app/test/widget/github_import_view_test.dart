@@ -75,8 +75,10 @@ final class _FakeGithubApi implements GithubApi {
       'blink.py': 'print(1)\n',
     },
     this.resolveFailure,
+    this.childListFailure,
     this.resolveGate,
     this.listGate,
+    this.fetchFailuresRemaining = 0,
   }) : _bytesByRemotePath = <String, Uint8List>{
          for (final MapEntry<String, String> source
              in sourceByRemotePath.entries)
@@ -86,8 +88,10 @@ final class _FakeGithubApi implements GithubApi {
   final List<GithubEntry> entries;
   final Map<String, Uint8List> _bytesByRemotePath;
   final GithubFailure? resolveFailure;
+  final GithubFailure? childListFailure;
   final Completer<void>? resolveGate;
   final Completer<void>? listGate;
+  int fetchFailuresRemaining;
   final List<(RepositoryLocator, String)> resolveCalls =
       <(RepositoryLocator, String)>[];
   final List<String> listedRemotePaths = <String>[];
@@ -97,6 +101,7 @@ final class _FakeGithubApi implements GithubApi {
   Future<PinnedRepository> resolve(
     RepositoryLocator locator, {
     String ref = '',
+    GithubCancellation? cancellation,
   }) async {
     resolveCalls.add((locator, ref));
     await resolveGate?.future;
@@ -115,9 +120,14 @@ final class _FakeGithubApi implements GithubApi {
     PinnedRepository repository, {
     required String treeSha,
     required String remotePath,
+    GithubCancellation? cancellation,
   }) async {
     listedRemotePaths.add(remotePath);
     await listGate?.future;
+    if (remotePath.isNotEmpty && childListFailure
+        case final GithubFailure failure) {
+      throw failure;
+    }
     return GithubDirectory(
       treeSha: treeSha,
       remotePath: remotePath,
@@ -128,9 +138,14 @@ final class _FakeGithubApi implements GithubApi {
   @override
   Future<Uint8List> fetchFile(
     PinnedRepository repository,
-    GithubEntry entry,
-  ) async {
+    GithubEntry entry, {
+    GithubCancellation? cancellation,
+  }) async {
     fetchedRemotePaths.add(entry.remotePath);
+    if (fetchFailuresRemaining > 0) {
+      fetchFailuresRemaining -= 1;
+      throw GithubFailure(GithubFailureKind.offline, path: entry.remotePath);
+    }
     return Uint8List.fromList(_bytesByRemotePath[entry.remotePath]!);
   }
 }
@@ -565,6 +580,97 @@ void main() {
         find.byKey(const ValueKey<String>('githubImportResult')),
         findsOneWidget,
       );
+    });
+
+    testWidgets('failed child navigation retains the parent selection', (
+      WidgetTester tester,
+    ) async {
+      final RecordingConnection connection = RecordingConnection(
+        initial: ConnState.ready,
+      );
+      final _FakeGithubApi api = _FakeGithubApi(
+        childListFailure: const GithubFailure(GithubFailureKind.server),
+      );
+      addTearDown(connection.dispose);
+
+      await _openImport(tester, connection, api);
+      await _browse(tester);
+      await tester.tap(find.byKey(_selectionKey('hello.py')));
+      await tester.pump();
+      await tester.tap(find.byKey(_entryKey('nested')));
+      await tester.pumpAndSettle();
+
+      expect(
+        tester
+            .widget<CheckboxListTile>(find.byKey(_selectionKey('hello.py')))
+            .value,
+        isTrue,
+      );
+      expect(find.text('/'), findsOneWidget);
+    });
+
+    testWidgets('a zero-write blob failure retries from the same review', (
+      WidgetTester tester,
+    ) async {
+      final RecordingConnection connection = RecordingConnection(
+        initial: ConnState.ready,
+      );
+      final _FakeGithubApi api = _FakeGithubApi(
+        entries: const <GithubEntry>[_helloEntry],
+        fetchFailuresRemaining: 1,
+      );
+      addTearDown(connection.dispose);
+
+      await _openImport(tester, connection, api);
+      await _browse(tester);
+      await tester.tap(find.byKey(_selectionKey('hello.py')));
+      await tester.pump();
+      await tester.tap(find.byKey(kGithubReviewButtonKey));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(kGithubCommitButtonKey));
+      await tester.pumpAndSettle();
+
+      expect(connection.putFileCalls, isEmpty);
+      expect(find.text(l10nOf(tester).githubImportRetry), findsOneWidget);
+      expect(find.byKey(kGithubCommitButtonKey), findsOneWidget);
+
+      await tester.tap(find.text(l10nOf(tester).githubImportRetry));
+      await tester.pumpAndSettle();
+
+      expect(connection.putFileCalls, hasLength(1));
+      expect(
+        find.byKey(const ValueKey<String>('githubImportResult')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('review marks an existing regular-file target before consent', (
+      WidgetTester tester,
+    ) async {
+      final RecordingConnection connection = RecordingConnection(
+        initial: ConnState.ready,
+      );
+      final _FakeGithubApi api = _FakeGithubApi(
+        entries: const <GithubEntry>[_helloEntry],
+      );
+      addTearDown(connection.dispose);
+      await connection.putFile(
+        '/hello.py',
+        Uint8List.fromList(utf8.encode('print(0)\n')),
+      );
+
+      await _openImport(tester, connection, api);
+      await _browse(tester);
+      await tester.tap(find.byKey(_selectionKey('hello.py')));
+      await tester.pump();
+      await tester.tap(find.byKey(kGithubReviewButtonKey));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text(l10nOf(tester).githubImportWillOverwrite),
+        findsOneWidget,
+      );
+      expect(find.textContaining('/hello.py'), findsOneWidget);
     });
   });
 }

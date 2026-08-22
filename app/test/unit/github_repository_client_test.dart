@@ -603,5 +603,50 @@ void main() {
         throwsA(_githubFailure(GithubFailureKind.cancelled)),
       );
     });
+
+    test('aborts an in-flight blob response through the same token', () async {
+      final Completer<void> requestStarted = Completer<void>();
+      final GithubCancellation cancellation = GithubCancellation();
+      final GithubRepositoryClient api = GithubRepositoryClient(
+        httpClient: MockClient.streaming((request, bodyStream) async {
+          expect(request, isA<http.AbortableRequest>());
+          final http.AbortableRequest abortable =
+              request as http.AbortableRequest;
+          requestStarted.complete();
+          await abortable.abortTrigger;
+          throw http.RequestAbortedException(request.url);
+        }),
+      );
+
+      final Future<Uint8List> pending = api.fetchFile(
+        _pinned(),
+        _helloEntry(),
+        cancellation: cancellation,
+      );
+      await requestStarted.future;
+      cancellation.cancel();
+
+      await expectLater(
+        pending,
+        throwsA(_githubFailure(GithubFailureKind.cancelled)),
+      );
+    });
+
+    test('ignores malformed Retry-After metadata without leaking', () async {
+      final GithubRepositoryClient api = GithubRepositoryClient(
+        httpClient: MockClient(
+          (http.Request request) async => http.Response(
+            '{}',
+            429,
+            headers: <String, String>{'retry-after': 'not-an-http-date'},
+          ),
+        ),
+      );
+
+      await expectLater(
+        api.resolve(_locator(), ref: 'main'),
+        throwsA(_githubFailure(GithubFailureKind.rateLimited)),
+      );
+    });
   });
 }
