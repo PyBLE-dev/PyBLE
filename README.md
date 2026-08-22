@@ -201,6 +201,11 @@ npm ci
 npm run check
 ```
 
+The website gate includes a high/critical npm advisory audit, deterministic
+third-party notices, and timeout-bounded regression coverage for the image
+parser bundled inside the pinned preview adapter. Production remains a checked
+static export with no Node.js website process.
+
 The complete build requires the pinned toolchains documented in the relevant
 component README and specifications.
 

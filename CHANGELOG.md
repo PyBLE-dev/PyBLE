@@ -26,9 +26,13 @@ its annotated tag rather than from the newer branch tip.
   contributor, security, architecture, protocol, and validation documentation.
 - Added an independent `/privacy` policy and stable `/app` landing page, with
   invited Android testing and public TestFlight presented as distinct channels.
-- Patched the remediable website PostCSS/Nanoid dependency chain and bounded
-  the remaining build-only `image-size` advisory behind a static-deploy and
-  no-metadata-image-route contract until an upstream fix exists.
+- Patched the website PostCSS/Nanoid chain, upgraded vinext so `image-size` is
+  absent from the installed dependency graph, and made high/critical npm audit
+  findings fail the release gate.
+- Hardened vinext's internally bundled image parser against the ICNS, HEIF, and
+  JXL zero-length denial-of-service paths, with timeout-bounded regression
+  inputs, fail-closed upstream-drift checks, static-image import guards, and
+  complete MIT attribution while production remains a static-only deployment.
 - Made publication CI fetch the complete source history required by
   ancestry-routed firmware gates, and made the RP2 runtime-closure fixture
   hermetic instead of depending on a retained local archive.

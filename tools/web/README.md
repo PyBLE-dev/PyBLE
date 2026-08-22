@@ -60,25 +60,34 @@ The full release gate is:
 npm run check
 ```
 
-That command checks formatting, lint, strict types, unit/content contracts,
-vinext compatibility, the portable Next.js export, and the Sites preview
-artifact. Canonical VPS production files are written to `out/`; the
-host-specific owner-preview bundle is written to `dist/`, including fully
-prerendered launch routes, static discovery files, a static 404 boundary around
-the vinext handler, and the exact Sites project binding.
+That command checks formatting, lint, strict types, high/critical dependency
+advisories, exact third-party notices, unit/content contracts, vinext
+compatibility, the portable Next.js export, and the Sites preview artifact.
+Canonical VPS production files are written to `out/`; the host-specific
+owner-preview bundle is written to `dist/`, including fully prerendered launch
+routes, static discovery files, a static 404 boundary around the vinext handler,
+and the exact Sites project binding.
 
 No application backend, remote CMS, analytics service, or web-font request is
 needed. A normal build needs no runtime or build-time environment variables.
 
-### Temporary build-dependency exception
+### Build-dependency security boundary
 
-Vinext currently depends on `image-size` 2.0.2, and npm has no patched release
-for GHSA-w3rx-r6r6-pgpr or GHSA-5p2g-fcmc-qvqq. The dependency is confined to
-the owner-preview build: production deploys only `out/` and runs no Node.js
-process. Until a compatible fix exists, the test gate forbids filesystem
-metadata image routes under `src/app`, which are the vinext path that invokes
-the parser. Recheck this exception on every vinext or `image-size` update; do
-not describe `npm audit` as clean while the two related high findings remain.
+Vinext `1.0.0-beta.8` removes `image-size` from the installed npm dependency
+graph, so the exact lockfile passes `npm audit --audit-level=high`. Its
+published build tooling still embeds the affected `image-size` 2.0.2 parser,
+however. PyBLE's post-install step therefore adds reviewed fail-closed guards
+for the zero-length ICNS, HEIF, and JXL loops; installation fails if the pinned
+upstream source drifts. Timeout-bounded regression inputs exercise all three
+paths, and the generated notice explicitly retains the embedded parser's MIT
+attribution.
+
+The build contract also forbids static image module imports and filesystem
+metadata image routes; authored images remain static `public/` URLs with
+explicit dimensions. Production deploys only the checked `out/` tree and runs
+no Node.js website process. Keep these defenses until vinext publishes tooling
+with a patched parser, then remove the local hardening only alongside its
+contracts and notice review.
 
 ## Production deployment
 
