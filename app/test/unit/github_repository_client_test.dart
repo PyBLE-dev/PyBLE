@@ -407,6 +407,51 @@ void main() {
         );
       }
     });
+
+    test('accepts 512 direct entries and rejects a 513th', () async {
+      Map<String, Object?> treeWithEntries(int count) => <String, Object?>{
+        'sha': _rootTreeSha,
+        'truncated': false,
+        'tree': <Object?>[
+          for (int index = 0; index < count; index += 1)
+            <String, Object?>{
+              'path': 'example_$index.py',
+              'mode': '100644',
+              'type': 'blob',
+              'sha': index.toRadixString(16).padLeft(40, '0'),
+              'size': 0,
+            },
+        ],
+      };
+
+      final GithubRepositoryClient atLimit = GithubRepositoryClient(
+        httpClient: MockClient(
+          (http.Request request) async =>
+              http.Response(jsonEncode(treeWithEntries(512)), 200),
+        ),
+      );
+      final GithubDirectory accepted = await atLimit.listDirectory(
+        _pinned(),
+        treeSha: _rootTreeSha,
+        remotePath: '',
+      );
+      expect(accepted.entries, hasLength(512));
+
+      final GithubRepositoryClient aboveLimit = GithubRepositoryClient(
+        httpClient: MockClient(
+          (http.Request request) async =>
+              http.Response(jsonEncode(treeWithEntries(513)), 200),
+        ),
+      );
+      await expectLater(
+        aboveLimit.listDirectory(
+          _pinned(),
+          treeSha: _rootTreeSha,
+          remotePath: '',
+        ),
+        throwsA(_githubFailure(GithubFailureKind.malformedResponse)),
+      );
+    });
   });
 
   group('GithubRepositoryClient blob reads', () {
@@ -505,6 +550,65 @@ void main() {
   });
 
   group('GithubRepositoryClient failures', () {
+    test(
+      'cancels response bodies rejected by status or declared length',
+      () async {
+        final List<({int status, int? length, GithubFailureKind kind})> cases =
+            <({int status, int? length, GithubFailureKind kind})>[
+              (
+                status: HttpStatus.notFound,
+                length: null,
+                kind: GithubFailureKind.notFound,
+              ),
+              (
+                status: HttpStatus.ok,
+                length: 1024 * 1024 + 1,
+                kind: GithubFailureKind.malformedResponse,
+              ),
+            ];
+
+        for (final variant in cases) {
+          final int status = variant.status;
+          final int? length = variant.length;
+          final GithubFailureKind kind = variant.kind;
+          bool bodyCancelled = false;
+          final StreamController<List<int>> body = StreamController<List<int>>(
+            onCancel: () {
+              bodyCancelled = true;
+            },
+          );
+          final MockClient httpClient = MockClient.streaming((
+            http.BaseRequest request,
+            http.ByteStream requestBody,
+          ) async {
+            return http.StreamedResponse(
+              body.stream,
+              status,
+              contentLength: length,
+            );
+          });
+          final GithubRepositoryClient api = GithubRepositoryClient(
+            httpClient: httpClient,
+          );
+
+          try {
+            await expectLater(
+              api.resolve(_locator(), ref: 'main'),
+              throwsA(_githubFailure(kind)),
+            );
+            expect(
+              bodyCancelled,
+              isTrue,
+              reason: 'HTTP $status with Content-Length $length',
+            );
+          } finally {
+            unawaited(body.close());
+            httpClient.close();
+          }
+        }
+      },
+    );
+
     test('maps HTTP status classes to stable failure kinds', () async {
       const Map<int, GithubFailureKind> cases = <int, GithubFailureKind>{
         404: GithubFailureKind.notFound,
