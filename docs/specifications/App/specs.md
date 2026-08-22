@@ -226,12 +226,14 @@ to `[red]` before implementation:
   MUST
 - **A33-SUB-AC-3 (lazy folder-scoped browse)** — The client MUST load only the
   opened directory at the pinned commit; it MUST NOT recursively enumerate the
-  repository. Up MUST be bounded at repository root. Multi-selection MUST be
-  limited to direct, eligible children of one chosen remote directory, and a
-  directory change MUST clear it. Only GitHub-confirmed regular files with a
-  lowercase `.py` suffix are eligible; directories MAY be opened, while
-  symlinks, submodules, non-files, `.mpy`, `.pyc`, and other suffixes MUST NOT
-  be selected, fetched, or written. MUST
+  repository. A non-recursive tree response MUST be at most 2 MiB and contain
+  at most 512 direct entries; a larger response MUST fail closed before entries
+  are published to the eager tablet view. Up MUST be bounded at repository
+  root. Multi-selection MUST be limited to direct, eligible children of one
+  chosen remote directory, and a directory change MUST clear it. Only
+  GitHub-confirmed regular files with a lowercase `.py` suffix are eligible;
+  directories MAY be opened, while symlinks, submodules, non-files, `.mpy`,
+  `.pyc`, and other suffixes MUST NOT be selected, fetched, or written. MUST
 - **A33-SUB-AC-4 (exact targets and overwrite consent)** — Review MUST show
   every exact remote path and its exact board target
   `join(capturedCwd, basename(remotePath))`. This subset MUST NOT preserve the
@@ -276,9 +278,12 @@ to `[red]` before implementation:
   forbidden, rate-limited, server, malformed-response, validation, board, and
   stale-session failures MUST map to distinct localized, actionable messages.
   A GitHub `403`/`429` MUST show bounded retry/reset guidance when the response
-  supplies it; the importer MUST NOT tight-loop or retry without a bound and an
-  explicit user action. Browse/fetch loading MUST retain location and selection
-  context without presenting stale data as current. MUST
+  supplies it. A positive server-supplied retry delay MUST gate every network-
+  producing action on that import surface until its deadline; navigation,
+  selection, review cancellation, or another local state transition MUST NOT
+  clear or bypass it. The importer MUST NOT tight-loop or retry without a bound
+  and an explicit user action. Browse/fetch loading MUST retain location and
+  selection context without presenting stale data as current. MUST
 - **A33-SUB-AC-9 (accessibility)** — All visible and semantic text MUST come
   from ARB except ASCII technical URL/ref/SHA/path values. Fields, directory
   rows, file eligibility/selection, loading, pinned SHA, target mappings,

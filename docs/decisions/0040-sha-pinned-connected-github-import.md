@@ -55,13 +55,14 @@ the selected `.py` files sequentially to the current board directory.**
 3. **Directory browsing is lazy and selection is folder-scoped.** Resolving a
    repository does not recursively enumerate its tree. Opening a directory
    fetches only that directory at the pinned commit; Up is bounded at the repo
-   root. A selection contains direct children of one currently chosen remote
-   directory only. Changing directory clears it. Only Git-tree entries with an
-   ordinary blob mode (`100644` or `100755`) and a lowercase `.py` suffix are
-   eligible. Directories remain browsable; symlink mode `120000`, submodule
-   mode `160000`, non-files, `.mpy`, `.pyc`, and every other suffix are visible
-   only as ineligible or omitted and are never fetched or written by this
-   increment.
+   root. One response is capped at 2 MiB and 512 direct entries; exceeding
+   either limit rejects the folder before it reaches the eager tablet view. A
+   selection contains direct children of one currently chosen remote directory
+   only. Changing directory clears it. Only Git-tree entries with an ordinary
+   blob mode (`100644` or `100755`) and a lowercase `.py` suffix are eligible.
+   Directories remain browsable; symlink mode `120000`, submodule mode `160000`,
+   non-files, `.mpy`, `.pyc`, and every other suffix are visible only as
+   ineligible or omitted and are never fetched or written by this increment.
 
 4. **The board target is explicit and flat for this subset.** Opening the
    action captures the Files controller's current board directory (`cwd`).
@@ -124,7 +125,11 @@ the selected `.py` files sequentially to the current board directory.**
    offline/not-found/forbidden/rate-limit/server/malformed-response failures
    map to localized user actions. `403`/`429` rate limiting shows the public
    API limit and reset/retry guidance when GitHub supplies it; the app performs
-   no tight or unbounded automatic retry.
+   no tight or unbounded automatic retry. A positive supplied retry delay gates
+   every network-producing action on the surface until its deadline; local
+   navigation, selection, and review transitions cannot clear or bypass it.
+   Header-rejected HTTP responses have their body streams cancelled before the
+   typed failure is returned so repeated failures do not strand resources.
 
 10. **The surface is adaptive and accessible.** Import examples is an action
     on the connected Files surface, enabled only for a ready connection. Below
