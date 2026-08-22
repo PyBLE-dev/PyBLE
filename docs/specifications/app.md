@@ -88,7 +88,10 @@ The connected Board-info card renders `DeviceInfo.deviceId` as **Board ID** and
 the platform scan identifier, derive either value, or use either value as an
 authorization/profile gate. When a legacy or nonconforming agent reports an
 empty value, the card shows a localized **Not reported** fallback and keeps the
-connection usable.
+connection usable. When the ready/running shell replaces the pre-connection
+Connect surface, its always-visible connection-status pill retains a compact
+board-ID + PyBLE-firmware summary from the same `DeviceInfo`; the state word
+remains fully visible and the complete labeled values remain in semantics.
 
 `DeviceInfo.chip == "esp32-s3"` does not identify which provisioning image is
 installed and cannot distinguish the lean `esp32-s3-n16r8` image from the

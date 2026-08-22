@@ -253,9 +253,9 @@ The primary state signal. Binds to `connStateProvider` (read-only, `ValueListena
   | `running` | `Icons.play_circle` (live) |
 
   The glyph is the state color at full strength (≥ 3:1 graphic).
-- **Contents** (row, `SignalSpacing.sm` gap, `EdgeInsets.symmetric(horizontal: SignalSpacing.md, vertical: SignalSpacing.xs)`): the state glyph + the **localized state label** in **`colorScheme.onSurface`** (`labelMedium`, scaler ≤ 1.3). The label uses `onSurface` (not the state color) so text is AA-safe at any hue (§1.3). The **state word never ellipsizes to nothing** — the pill's minimum content is glyph + full word (§7.1 shrink order).
+- **Contents** (row, `SignalSpacing.sm` gap, `EdgeInsets.symmetric(horizontal: SignalSpacing.md, vertical: SignalSpacing.xs)`): the state glyph + the **localized state label** in **`colorScheme.onSurface`** (`labelMedium`, scaler ≤ 1.3). On `ready`/`running`, once `DeviceInfo` is available, a localized compact pattern appends its verbatim board ID + PyBLE agent version (English: `Ready · 5646 · 0.6.0`); empty values use the localized **Not reported** fallback. The label uses `onSurface` (not the state color) so text is AA-safe at any hue (§1.3). The full **state word never ellipsizes** — under width pressure only the appended identity summary may ellipsize, and the pill's minimum content remains glyph + full word (§7.1 shrink order).
 - **Motion:** `connecting`/`running` glyphs pulse (`SignalMotion.pulse`, opacity 0.55↔1.0) under the reduced-motion gate (§6). Color transitions animate over `SignalMotion.standard`.
-- **Screen reader (folded from review):** wrap the pill in a `Semantics` node with `label: l10n.connStatusSemanticLabel(stateWord)` → "Connection status: {state}", so the state is announced *with context* rather than a bare "Ready".
+- **Screen reader (folded from review):** wrap the pill in one `Semantics` node. Without live metadata its label remains `l10n.connStatusSemanticLabel(stateWord)` → "Connection status: {state}". With metadata it uses a localized label that announces the complete state, **Board ID**, and **PyBLE firmware** values with context; visual ellipsis never truncates semantics.
 - Hit area ≥ 48 dp tall (transparent padding) so it can later become a tappable connection summary.
 
 ### 7.7 Toolbar actions (slots; FR-UI-3)
