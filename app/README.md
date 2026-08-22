@@ -9,6 +9,9 @@ Low Energy.
 - BLE discovery, connection, reconnect, and capability negotiation
 - Python editing, save, run, stop, soft reboot, and live console
 - Wireless filesystem browsing and integrity-checked transfer
+- Optional public, unauthenticated GitHub browsing with immutable commit
+  pinning, exact board-target review, and bounded `.py` import into the current
+  connected Files folder
 - Offline Blockly workspace with beginner examples, GPIO, and NeoPixel blocks
 - Exact Blockly sidecars and bounded Python-to-block conversion
 - Adaptive portrait and landscape layouts
@@ -16,6 +19,11 @@ Low Energy.
 
 The public iPad beta is available through
 [TestFlight](https://testflight.apple.com/join/yU4e8s6d).
+
+GitHub import is the app's sole optional internet workflow. It sends no account
+credential, board fact, or source file; it never auto-opens or runs imported
+code. Editing, BLE, Files, Blocks, and Run remain account-free and independent
+of GitHub availability.
 
 ## Requirements
 
@@ -40,10 +48,11 @@ Pixel goldens use reviewed macOS baselines. Run them separately on macOS:
 flutter test --tags golden
 ```
 
-Run on a connected device:
+Install a standalone development build on a connected device (the current
+source build is `0.1.0+3`):
 
 ```sh
-flutter run
+flutter run --release -d <device-id>
 ```
 
 Platform WebView integration tests live under `integration_test/`. CI runs

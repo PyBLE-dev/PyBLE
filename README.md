@@ -43,13 +43,26 @@ The Flutter app currently provides:
   version retained in the always-visible connection status;
 - a MicroPython editor with save, run, stop, soft reboot, and live console;
 - wireless file browsing and transfer with integrity checks;
+- an optional public GitHub example browser that resolves a repository/ref to
+  an immutable commit, previews exact `.py` source-to-board paths, and imports
+  selected files into the connected Files folder only after explicit review;
 - an offline Blockly workspace with GPIO and standard MicroPython NeoPixel
   blocks, including explicit numeric GPIOs and bounded named `machine.Pin`
   identities;
 - editable beginner examples;
 - exact Blockly sidecar reopening and a bounded Python-to-blocks importer;
 - an adaptive tablet interface for portrait and landscape use; and
-- local operation without an account, analytics, or cloud dependency.
+- core editing, BLE, Files, Blocks, and Run operation without an account,
+  analytics, or cloud dependency. GitHub is the sole optional network surface;
+  its public, unauthenticated requests start only when the user opens the
+  importer.
+
+GitHub import is deliberately bounded and non-executing. It accepts a canonical
+public repository URL, lazily browses one SHA-pinned snapshot, and selects only
+ordinary lowercase `.py` files from one folder. Before any board write, PyBLE
+fetches and validates the complete batch, shows the exact destination paths,
+and asks separately before overwriting existing files. Import never creates a
+remote folder hierarchy, opens an editor document, or runs downloaded code.
 
 The iPad build is available through public TestFlight. An invited Android
 internal test is available through Google Play; this is not a public Play
@@ -113,6 +126,8 @@ This repository is intentionally a monorepo:
 - [`app/`](app/) — the Flutter tablet application;
 - [`firmware/`](firmware/) — the portable agent, board overlays, and release
   tooling;
+- [`examples/`](examples/) — clean-room, board-neutral MicroPython examples,
+  including the public GitHub-import fixtures;
 - [`docs/specifications/protocol.md`](docs/specifications/protocol.md) — the
   open PBLE/1 wire contract;
 - [`tests/`](tests/) — host, conformance, release, and HIL test runners;
@@ -136,11 +151,19 @@ shared conformance corpus, documentation, and CI atomically.
 4. For the four ESP profiles, connect the board and install with Web Serial.
    For Pico 2 W, download the verified UF2 and copy it manually to the BOOTSEL
    mass-storage volume. iPadOS cannot perform either wired provisioning step.
-5. Open PyBLE, scan for the provisioned board, connect, and run an example over
-   BLE.
+5. Open PyBLE, scan for the provisioned board, and connect over BLE.
+6. To try the optional public example importer, open the destination folder in
+   **Files**, choose **Import examples from GitHub**, enter
+   `https://github.com/PyBLE-dev/PyBLE` with ref `main`, then browse to
+   `examples/github-import`.
+7. Select `hello.py` or `count.py`, review the displayed commit SHA and exact
+   board target, and confirm any overwrite separately. Import does not open or
+   run the file; open it from Files and choose Run only when you are ready.
 
 See [support and troubleshooting](https://pyble.dev/support) for browser,
-Bluetooth, and recovery requirements.
+Bluetooth, network, and recovery requirements. A GitHub account or token is not
+needed for the optional import; every other workflow remains available without
+it.
 
 ## Build and test
 
