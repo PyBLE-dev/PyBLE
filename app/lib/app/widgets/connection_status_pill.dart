@@ -6,8 +6,11 @@
 /// [connStateProvider] through the [Connection] seam (CON-8 — no `lib/ble`
 /// import) and renders `disconnected` / `connecting` / `ready` / `running` with
 /// a distinct per-state glyph + localized label + the frozen `SignalStateColors`
-/// (glyph / border / tint). State is legible by shape + text, with color as
-/// reinforcement — never color alone, never text alone.
+/// (glyph / border / tint). Once connected it retains the display-only PBLE/1
+/// board ID and PyBLE firmware from [connectControllerProvider], because the
+/// pre-connection Connect surface is no longer mounted (ADR-0011). State is
+/// legible by shape + text, with color as reinforcement — never color alone,
+/// never text alone.
 ///
 /// **Motion (deferred, harness-gated):** §7.6/§6 call for a `connecting`/
 /// `running` opacity breathe under the reduced-motion gate. A perpetual
@@ -24,6 +27,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:pyble/connect/connect_controller.dart';
 import 'package:pyble/localization/localization.dart';
 import 'package:pyble/pble/pble.dart';
 import 'package:pyble/theme/theme.dart';
@@ -67,6 +71,11 @@ class ConnectionStatusPill extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final ValueListenable<ConnState> listenable = ref.watch(connStateProvider);
+    final DeviceInfo? deviceInfo = ref.watch(
+      connectControllerProvider.select(
+        (ConnectController controller) => controller.state.deviceInfo,
+      ),
+    );
     final AppLocalizations l10n = AppLocalizations.of(context);
     return ValueListenableBuilder<ConnState>(
       valueListenable: listenable,
@@ -75,6 +84,20 @@ class ConnectionStatusPill extends ConsumerWidget {
         final ColorScheme scheme = theme.colorScheme;
         final Color stateColor = SignalStateColors.of(context).colorFor(state);
         final bool isDark = scheme.brightness == Brightness.dark;
+        final bool connected =
+            state == ConnState.ready || state == ConnState.running;
+        final DeviceInfo? visibleInfo = connected ? deviceInfo : null;
+        final String stateWord = _wordFor(l10n, state);
+        final String? deviceId = visibleInfo == null
+            ? null
+            : visibleInfo.deviceId.isEmpty
+            ? l10n.connectDeviceNotReported
+            : visibleInfo.deviceId;
+        final String? agentVersion = visibleInfo == null
+            ? null
+            : visibleInfo.agentVersion.isEmpty
+            ? l10n.connectDeviceNotReported
+            : visibleInfo.agentVersion;
 
         // Tint fill = state color at 16 % (light) / 24 % (dark), composited to an
         // OPAQUE color over the pill's actual host surface (level 4) so contrast
@@ -101,23 +124,37 @@ class ConnectionStatusPill extends ConsumerWidget {
                 // Glyph = state color at full strength (≥ 3:1 graphic).
                 Icon(_glyphFor(state), size: 18, color: stateColor),
                 const SizedBox(width: SignalSpacing.sm),
-                // Label = onSurface (AA-safe at any hue, §1.3); never ellipsizes
-                // to nothing — the glyph always remains.
-                Flexible(
-                  child: Text(
-                    _wordFor(l10n, state),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    // Cosmetic chrome text clamps its scaler (§5) so the top
-                    // toolbar stays bounded while body/content text scales fully.
-                    textScaler: MediaQuery.textScalerOf(
-                      context,
-                    ).clamp(maxScaleFactor: 1.3),
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      color: scheme.onSurface,
-                    ),
+                // The full localized state word is the minimum signal and never
+                // ellipsizes. Only the appended identity summary may truncate.
+                Text(
+                  stateWord,
+                  maxLines: 1,
+                  textScaler: MediaQuery.textScalerOf(
+                    context,
+                  ).clamp(maxScaleFactor: 1.3),
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: scheme.onSurface,
                   ),
                 ),
+                if (deviceId != null && agentVersion != null) ...<Widget>[
+                  const SizedBox(width: SignalSpacing.xs),
+                  Flexible(
+                    child: Text(
+                      l10n.connStatusBoardInfoSummary(deviceId, agentVersion),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textScaler: MediaQuery.textScalerOf(
+                        context,
+                      ).clamp(maxScaleFactor: 1.3),
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: scheme.onSurface,
+                        fontFeatures: const <FontFeature>[
+                          FontFeature.tabularFigures(),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -125,7 +162,14 @@ class ConnectionStatusPill extends ConsumerWidget {
 
         return Semantics(
           container: true,
-          label: l10n.connStatusSemanticLabel(_wordFor(l10n, state)),
+          excludeSemantics: true,
+          label: deviceId == null || agentVersion == null
+              ? l10n.connStatusSemanticLabel(stateWord)
+              : l10n.connStatusBoardInfoSemanticLabel(
+                  stateWord,
+                  deviceId,
+                  agentVersion,
+                ),
           child: ConstrainedBox(
             // ≥ 48 dp tall hit area (FR-UI-6); the visual pill is centered in it.
             constraints: const BoxConstraints(minHeight: 48),

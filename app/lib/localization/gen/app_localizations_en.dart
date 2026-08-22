@@ -162,6 +162,20 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String connStatusBoardInfoSummary(String deviceId, String agentVersion) {
+    return '· $deviceId · $agentVersion';
+  }
+
+  @override
+  String connStatusBoardInfoSemanticLabel(
+    String status,
+    String deviceId,
+    String agentVersion,
+  ) {
+    return 'Connection status: $status. Board ID: $deviceId. PyBLE firmware: $agentVersion.';
+  }
+
+  @override
   String get connectEmptyTitle => 'No board connected';
 
   @override
