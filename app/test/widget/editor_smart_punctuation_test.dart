@@ -3,11 +3,12 @@
 //
 // A-25 — end-to-end cover through the REAL EditorView widget.
 //
-// The unit tests pin the formatter in isolation; this pins that the editor
-// actually WIRES it, so a future refactor cannot quietly drop `inputFormatters`
-// and re-introduce `SyntaxError: invalid syntax` on a tablet.
+// The unit tests pin the formatter in isolation; this pins its observable
+// guarantee through both EditorSurface implementations, independent of where
+// each adapter intercepts TextEditingValue updates.
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:pyble/editor/editor.dart';
@@ -17,28 +18,28 @@ import '../support/feature_harness.dart';
 import '../support/recording_connection.dart';
 
 void main() {
-  testWidgets('the editor field carries the smart-punctuation formatter', (
+  testWidgets('both editor adapters preserve the typing-safety configuration', (
     WidgetTester tester,
   ) async {
-    await pumpSurface(
-      tester,
-      const EditorView(),
-      connection: RecordingConnection(initial: ConnState.ready),
-    );
-    await tester.pumpAndSettle();
+    for (final EditorSurfaceBuilder builder in <EditorSurfaceBuilder>[
+      richEditorSurfaceBuilder,
+      plainEditorSurfaceBuilder,
+    ]) {
+      await pumpSurface(
+        tester,
+        const EditorView(),
+        connection: RecordingConnection(initial: ConnState.ready),
+        extra: <Override>[
+          editorSurfaceBuilderProvider.overrideWithValue(builder),
+        ],
+      );
+      await tester.pumpAndSettle();
 
-    final TextField field = tester.widget<TextField>(find.byType(TextField));
-    expect(
-      field.inputFormatters?.whereType<SmartPunctuationFormatter>(),
-      isNotEmpty,
-      reason:
-          'without this the iOS-only smartQuotesType hint is the ONLY '
-          'defence, and it covers neither Android/macOS nor pasted text',
-    );
-    // The iOS hints must remain too — belt and braces.
-    expect(field.smartQuotesType, SmartQuotesType.disabled);
-    expect(field.smartDashesType, SmartDashesType.disabled);
-    expect(field.autocorrect, isFalse);
+      final TextField field = tester.widget<TextField>(find.byType(TextField));
+      expect(field.smartQuotesType, SmartQuotesType.disabled);
+      expect(field.smartDashesType, SmartDashesType.disabled);
+      expect(field.autocorrect, isFalse);
+    }
   });
 
   testWidgets(
@@ -53,7 +54,10 @@ void main() {
 
       // Exactly what iPadOS Smart Punctuation delivers, and exactly the bytes
       // recovered from the bench board's /test.py.
-      await tester.enterText(find.byType(TextField), 'print(“Hello world!!”)');
+      await tester.enterText(
+        find.byType(EditableText),
+        'print(“Hello world!!”)',
+      );
       await tester.pumpAndSettle();
 
       expect(
@@ -74,7 +78,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.enterText(find.byType(TextField), 'x = 1');
+    await tester.enterText(find.byType(EditableText), 'x = 1');
     await tester.pumpAndSettle();
 
     final String content = containerOf(
