@@ -113,7 +113,7 @@ FakeConnection fakeConnection({
 /// radio, NO BleLink. The chrome (pill/toolbar/nav) keeps reading the scripted
 /// [connection] via the [connectionProvider] override, so every existing shell
 /// assertion holds unchanged.
-Future<void> pumpShell(
+Future<PbleConnectionManager> pumpShell(
   WidgetTester tester, {
   required FakeConnection connection,
   ShellSurface surface = ipadLandscape,
@@ -153,4 +153,5 @@ Future<void> pumpShell(
     ),
   );
   await tester.pumpAndSettle();
+  return manager;
 }
