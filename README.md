@@ -7,13 +7,14 @@ MicroPython IDE.
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
 [![Platforms](https://img.shields.io/badge/app-iPadOS%20%7C%20Android-2D5BFF.svg)](#app)
 [![Protocol](https://img.shields.io/badge/protocol-PBLE%2F1-0E7490.svg)](docs/specifications/protocol.md)
+[![Firmware](https://img.shields.io/badge/firmware-v0.6.0%20qualified-15803D.svg)](https://pyble.dev/flash)
 
 PyBLE lets you edit, transfer, run, and stop MicroPython programs on a
 compatible microcontroller board over Bluetooth Low Energy. Its normal
 workflow needs no USB serial connection, Wi-Fi onboarding, cloud account, or
 telemetry.
 
-- Website and browser-installer status: [pyble.dev](https://pyble.dev)
+- Qualified firmware v0.6.0: [installer and download](https://pyble.dev/flash)
 - iPad external beta:
   [join with TestFlight](https://testflight.apple.com/join/yU4e8s6d)
 - Android invited testing: [see the app page](https://pyble.dev/app)
@@ -65,27 +66,36 @@ BLE GATT peripheral. It supports:
 - board naming and identify support; and
 - upstream MicroPython’s standard `neopixel` module.
 
-The public browser installer currently offers the exact v0.4.2 hardware-tested
-beta for both current profiles. Production Chrome erase/install and deliberately
-interrupted-flash recovery passed on real hardware for both exact profiles.
-Complete release qualification continues across the app, PBLE/1, resource, and
-remaining firmware matrices:
+The installer offers the qualified public v0.6.0 release across all five exact
+release profiles. All five exact-byte HIL rows passed. The four ESP profiles
+use Web Serial from a supported desktop Chromium browser; Pico 2 W uses a
+browser-verified UF2 download followed by a manual BOOTSEL copy.
 
-| Installer profile | Exact target constraint                                      | Public status                                                |
-| ----------------- | ------------------------------------------------------------ | ------------------------------------------------------------ |
-| `esp32-4mb`       | Classic ESP32, 4 MiB external SPI flash; no PSRAM assumed    | v0.4.2 hardware-tested beta; browser install/recovery passed |
-| `esp32-s3-n16r8`  | ESP32-S3, 16 MiB flash / 8 MiB Octal PSRAM; N16R8-class only | v0.4.2 hardware-tested beta; browser install/recovery passed |
-| `esp32-c3-4mb`    | ESP32-C3, 4 MiB external SPI flash; no PSRAM assumed         | Planned; unavailable; no public image                        |
+| Profile                       | Exact hardware constraint                                               | Provisioning                       | Public status    |
+| ----------------------------- | ----------------------------------------------------------------------- | ---------------------------------- | ---------------- |
+| `esp32-4mb`                   | Classic ESP32; exactly 4 MiB external flash; no PSRAM required          | ESP Web Serial                     | Qualified v0.6.0 |
+| `esp32-s3-n16r8`              | Lean ESP32-S3; exactly 16 MiB flash and 8 MiB Octal PSRAM               | ESP Web Serial                     | Qualified v0.6.0 |
+| `waveshare-esp32-s3-lcd-147b` | Exact ESP32-S3-LCD-1.47B B-version; 16 MiB flash and 8 MiB Octal PSRAM  | ESP Web Serial                     | Qualified v0.6.0 |
+| `esp32-c3-4mb`                | ESP32-C3 revision v0.3 or newer; exactly 4 MiB flash; no PSRAM required | ESP Web Serial                     | Qualified v0.6.0 |
+| `rpi-pico2-w`                 | Raspberry Pi Pico 2 W; RP2350 with CYW43439                             | Verified UF2 + manual BOOTSEL copy | Qualified v0.6.0 |
 
-See the
-[post-release production-browser attestation](docs/validation/browser-flashing/v0.4.2-production.md)
-for the exact hashes, completed checks, and deliberately bounded claim.
+The immutable
+[release descriptor](https://pyble.dev/firmware/v0.6.0/release.json), with
+SHA-256
+`c2940281a14feddb55c48de15ac18087e9317d1b7130e514fab5a209b046a1e6`,
+binds the five artifacts and passed HIL status to source commit
+`0c7230d6708797c241160ba71fbd37e6b22f180a` and the annotated
+[`firmware-v0.6.0` source tag](https://github.com/PyBLE-dev/PyBLE/tree/firmware-v0.6.0).
+See the [release notes](https://pyble.dev/firmware/v0.6.0/RELEASE_NOTES.md),
+[artifact checksums](https://pyble.dev/firmware/v0.6.0/SHA256SUMS), and
+[recovery guide](https://pyble.dev/firmware/v0.6.0/RECOVERY.md) before
+installing.
 
-These are the initial port targets, not a chip-family allowlist. A future board
-is compatible when it has a maintained PyBLE agent port, BLE GATT
-peripheral support, adequate resources, PBLE/1 conformance, recovery testing,
-and hardware-validation evidence. Stock MicroPython plus generic Bluetooth
-hardware is not sufficient by itself.
+These maintained release profiles are not an app-side chip or board allowlist.
+A future board is compatible when it has a maintained PyBLE agent port, BLE
+GATT peripheral support, adequate resources, PBLE/1 conformance, recovery
+testing, and hardware-validation evidence. Stock MicroPython plus generic
+Bluetooth hardware is not sufficient by itself.
 
 ## How it fits together
 
@@ -117,15 +127,14 @@ shared conformance corpus, documentation, and CI atomically.
    [TestFlight](https://testflight.apple.com/join/yU4e8s6d), or build the
    Flutter app locally.
 2. Open [pyble.dev/flash](https://pyble.dev/flash) in a supported desktop
-   Chromium browser.
-   The exact v0.4.2 hardware-tested beta is active. Browser installation and
-   interrupted-flash recovery passed on both exact profiles; complete release
-   qualification continues. Confirm the active version, your exact profile,
-   and the enabled install action.
-3. Before flashing, back up the board, confirm its exact memory profile, and
-   accept every safety acknowledgement before using the one-time wired
-   installer. Flashing erases the board.
-4. Open PyBLE, scan for the provisioned board, connect, and run an example over
+   Chromium browser. Confirm that the qualified v0.6.0 release is selected,
+   then choose only the exact profile matching the board and memory topology.
+3. Before provisioning, back up the board and accept every safety
+   acknowledgement. Flashing erases the board and its existing workspace.
+4. For the four ESP profiles, connect the board and install with Web Serial.
+   For Pico 2 W, download the verified UF2 and copy it manually to the BOOTSEL
+   mass-storage volume. iPadOS cannot perform either wired provisioning step.
+5. Open PyBLE, scan for the provisioned board, connect, and run an example over
    BLE.
 
 See [support and troubleshooting](https://pyble.dev/support) for browser,
@@ -148,7 +157,9 @@ flutter pub get --enforce-lockfile
 flutter gen-l10n
 dart format --output=none --set-exit-if-changed lib test integration_test
 flutter analyze
-flutter test
+flutter test --exclude-tags golden
+# Run the pixel-golden lane on its pinned macOS host:
+flutter test --tags golden
 ```
 
 Firmware host tests:
@@ -169,9 +180,18 @@ firmware/scripts/install_arm_toolchain.sh
 firmware/scripts/build_rp2.sh rpi-pico2-w
 ```
 
-The Pico 2 W command builds the in-progress `0.6.0` source port. It has
-successful pre-GP2 hardware evidence but no public installer image or support
-claim until the complete GP2 matrix passes.
+These are the five target builds in the qualified v0.6.0 release. The four ESP
+targets produce Web Serial artifacts; `rpi-pico2-w` produces the UF2 used by
+the verified-download and BOOTSEL flow.
+
+The commands above build the current checkout. To start from the exact source
+used for the public v0.6.0 artifacts, detach at the annotated release tag and
+restore its pinned submodules:
+
+```sh
+git switch --detach firmware-v0.6.0
+git submodule update --init --recursive
+```
 
 Website:
 
@@ -184,9 +204,17 @@ npm run check
 The complete build requires the pinned toolchains documented in the relevant
 component README and specifications.
 
+Firmware binaries are external release artifacts, not committed source. The
+production website receives a qualified bundle and validates its descriptor
+and hashes before enabling installation. A source-only website build remains
+fail-closed unless an explicit validated release input is supplied.
+
 ## Documentation
 
 - [Documentation index](docs/README.md)
+- [Changelog](CHANGELOG.md)
+- [Qualified firmware v0.6.0 source](https://github.com/PyBLE-dev/PyBLE/tree/firmware-v0.6.0)
+- [Qualified firmware v0.6.0 release notes](https://pyble.dev/firmware/v0.6.0/RELEASE_NOTES.md)
 - [Product specification](docs/specifications/product.md)
 - [Architecture](docs/specifications/architecture.md)
 - [PBLE/1 protocol](docs/specifications/protocol.md)
@@ -195,6 +223,7 @@ component README and specifications.
 - [Hardware and compatibility](docs/specifications/hardware.md)
 - [Public roadmap](docs/ROADMAP.md)
 - [Architecture decisions](docs/decisions/README.md)
+- [Validation evidence index](docs/validation/README.md)
 - [Security policy](SECURITY.md)
 
 ## Contributing
