@@ -5,6 +5,7 @@ import { execFile as execFileCallback } from "node:child_process";
 import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
 import { describe, expect, it } from "vitest";
@@ -99,13 +100,16 @@ describe("production build contract", () => {
   });
 
   it("pins the audited build closure and excludes the vulnerable image parser package", async () => {
-    const [packageJson, packageLock, appFiles] = await Promise.all([
-      readFile(join(process.cwd(), "package.json"), "utf8").then(JSON.parse),
-      readFile(join(process.cwd(), "package-lock.json"), "utf8").then(
-        JSON.parse,
-      ),
-      authoredFiles(join(process.cwd(), "src", "app")),
-    ]);
+    const [packageJson, packageLock, appFiles, sourceFiles] = await Promise.all(
+      [
+        readFile(join(process.cwd(), "package.json"), "utf8").then(JSON.parse),
+        readFile(join(process.cwd(), "package-lock.json"), "utf8").then(
+          JSON.parse,
+        ),
+        authoredFiles(join(process.cwd(), "src", "app")),
+        authoredFiles(join(process.cwd(), "src")),
+      ],
+    );
 
     expect(packageJson.dependencies?.vinext).toBe("1.0.0-beta.8");
     expect(packageJson.devDependencies?.["@vitejs/plugin-rsc"]).toBe("0.5.34");
@@ -145,6 +149,28 @@ describe("production build contract", () => {
     expect(
       appFiles.filter((path) => metadataImageRoute.test(basename(path))),
     ).toEqual([]);
+
+    const sourceImageImport = [
+      /\bfrom\s*["'][^"']+\.(?:avif|gif|ico|icns|jpe?g|jxl|png|svg|webp)(?:\?[^"']*)?["']/,
+      /\bimport\s*["'][^"']+\.(?:avif|gif|ico|icns|jpe?g|jxl|png|svg|webp)(?:\?[^"']*)?["']/,
+      /\bimport\s*\(\s*["'][^"']+\.(?:avif|gif|ico|icns|jpe?g|jxl|png|svg|webp)(?:\?[^"']*)?["']\s*\)/,
+      /\brequire\s*\(\s*["'][^"']+\.(?:avif|gif|ico|icns|jpe?g|jxl|png|svg|webp)(?:\?[^"']*)?["']\s*\)/,
+    ];
+    const sourceImageImports = (
+      await Promise.all(
+        sourceFiles
+          .filter((path) => /\.(?:js|jsx|ts|tsx)$/.test(path))
+          .map(async (path) => ({
+            path,
+            source: await readFile(join(process.cwd(), "src", path), "utf8"),
+          })),
+      )
+    )
+      .filter(({ source }) =>
+        sourceImageImport.some((pattern) => pattern.test(source)),
+      )
+      .map(({ path }) => path);
+    expect(sourceImageImports).toEqual([]);
   });
 
   it("hardens and attributes the image parser bundled inside vinext", async () => {
@@ -186,6 +212,109 @@ describe("production build contract", () => {
     expect(notice).toContain(
       "Copyright © 2013-Present Aditya Yadav, http://netroy.in",
     );
+  });
+
+  it("applies all bundled parser guards idempotently and rejects upstream drift", async () => {
+    const vulnerableFragments = [
+      "\t\t\tconst imageHeader = readImageHeader(input, imageOffset);\n\t\t\tconst imageSize2 = getImageSize2(imageHeader[0]);",
+      '\t\t\tconst ispeBox = findBox(input, "ispe", currentOffset);\n\t\t\tif (!ispeBox) break;\n\t\t\tconst rawWidth = readUInt32BE(input, ispeBox.offset + 12);',
+      '\t\tconst jxlpBox = findBox(input, "jxlp", offset);\n\t\tif (!jxlpBox) break;\n\t\tpartialStreams.push(input.slice(jxlpBox.offset + 12, jxlpBox.offset + jxlpBox.size));',
+    ].join("\n");
+
+    const patcherUrl = pathToFileURL(
+      join(process.cwd(), "scripts", "patch-vinext-image-size.js"),
+    ).href;
+    const childSource = `
+      import { hardenBundledImageSize } from ${JSON.stringify(patcherUrl)};
+      const vulnerable = ${JSON.stringify(vulnerableFragments)};
+      const hardened = hardenBundledImageSize(vulnerable);
+      for (const marker of [
+        "Invalid ICNS, zero-length image entry",
+        "Invalid HEIF, zero-length ispe box",
+        "Invalid JXL, zero-length jxlp box",
+      ]) {
+        if (!hardened.includes(marker)) throw new Error(\`missing \${marker}\`);
+      }
+      if (hardenBundledImageSize(hardened) !== hardened) {
+        throw new Error("hardening is not idempotent");
+      }
+      let driftRejected = false;
+      try {
+        hardenBundledImageSize("upstream source drift");
+      } catch (error) {
+        driftRejected = String(error).includes(
+          "Cannot apply GHSA-w3rx-r6r6-pgpr hardening",
+        );
+      }
+      if (!driftRejected) throw new Error("upstream drift was not rejected");
+      console.log("ok");
+    `;
+    const result = await execFile(
+      process.execPath,
+      ["--input-type=module", "--eval", childSource],
+      { timeout: 2_000 },
+    );
+    expect(result.stderr).toBe("");
+    expect(result.stdout).toBe("ok\n");
+  });
+
+  it("terminates safely for all three bundled parser advisory inputs", async () => {
+    const bundledParserUrl = pathToFileURL(
+      join(
+        process.cwd(),
+        "node_modules/vinext/dist/deps/.pnpm/image-size@2.0.2/deps/image-size/dist/index.js",
+      ),
+    ).href;
+    const parserPocs = [
+      {
+        name: "ICNS",
+        expected: "Invalid ICNS, zero-length image entry",
+        bytes: [
+          0x69, 0x63, 0x6e, 0x73, 0x00, 0x00, 0x00, 0x10, 0x69, 0x73, 0x33,
+          0x32, 0x00, 0x00, 0x00, 0x00,
+        ],
+      },
+      {
+        name: "HEIF/AVIF",
+        expected: "Invalid HEIF, zero-length ispe box",
+        bytes: [
+          0, 0, 0, 16, 0x66, 0x74, 0x79, 0x70, 0x61, 0x76, 0x69, 0x66, 0, 0, 0,
+          0, 0, 0, 0, 36, 0x6d, 0x65, 0x74, 0x61, 0, 0, 0, 0, 0, 0, 0, 8, 0x69,
+          0x70, 0x72, 0x70, 0, 0, 0, 20, 0x69, 0x70, 0x63, 0x6f, 0, 0, 0, 0,
+          0x69, 0x73, 0x70, 0x65, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        ],
+      },
+      {
+        name: "JXL",
+        expected: "Invalid JXL, zero-length jxlp box",
+        bytes: [
+          0, 0, 0, 12, 0x4a, 0x58, 0x4c, 0x20, 0x0d, 0x0a, 0x87, 0x0a, 0, 0, 0,
+          12, 0x66, 0x74, 0x79, 0x70, 0x6a, 0x78, 0x6c, 0x20, 0, 0, 0, 0, 0x6a,
+          0x78, 0x6c, 0x70,
+        ],
+      },
+    ] as const;
+
+    for (const poc of parserPocs) {
+      const childSource = `
+        import { imageSize } from ${JSON.stringify(bundledParserUrl)};
+        try {
+          imageSize(Uint8Array.from(${JSON.stringify(poc.bytes)}));
+          console.error("unexpected parser success");
+          process.exit(3);
+        } catch (error) {
+          if (!(error instanceof TypeError)) throw error;
+          console.log(error.message);
+        }
+      `;
+      const result = await execFile(
+        process.execPath,
+        ["--input-type=module", "--eval", childSource],
+        { timeout: 2_000 },
+      );
+      expect(result.stderr, poc.name).toBe("");
+      expect(result.stdout.trim(), poc.name).toBe(poc.expected);
+    }
   });
 
   it("checks and publishes a deterministic notice for the exact website dependency closure", async () => {
