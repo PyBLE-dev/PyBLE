@@ -14,7 +14,7 @@ publish_to: 'none'
 
 # SemVer app version. Pre-1.0 through milestones M0–M3; v1.0.0 ships at the
 # at-parity App Store + Play release (story X-11). Build number after '+'.
-version: 0.1.0+3
+version: 0.1.0+4
 
 environment:
   sdk: ^3.12.1
