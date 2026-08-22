@@ -39,6 +39,8 @@ telemetry.
 The Flutter app currently provides:
 
 - filtered BLE discovery and PBLE/1 connection;
+- connected-board details with the PBLE/1 board ID and PyBLE agent firmware
+  version retained in the always-visible connection status;
 - a MicroPython editor with save, run, stop, soft reboot, and live console;
 - wireless file browsing and transfer with integrity checks;
 - an offline Blockly workspace with GPIO and standard MicroPython NeoPixel
