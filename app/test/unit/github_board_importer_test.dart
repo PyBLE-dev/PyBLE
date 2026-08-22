@@ -55,17 +55,20 @@ final class _FakeGithubApi extends Fake implements GithubApi {
 }
 
 final class _SessionRecordingConnection extends RecordingConnection
-    implements ConnectionSessionStampSource {
+    implements ConnectionSessionStampSource, ConnectionDirectoryListingSource {
   _SessionRecordingConnection({
     List<List<RemoteEntry>>? directoryListings,
+    List<bool>? listingTruncation,
     this.failPutAt,
     this.holdPutAt,
   }) : directoryListings =
            directoryListings ?? <List<RemoteEntry>>[<RemoteEntry>[]],
+       listingTruncation = listingTruncation ?? <bool>[false],
        _sessionStamp = Object(),
        super(initial: ConnState.ready);
 
   final List<List<RemoteEntry>> directoryListings;
+  final List<bool> listingTruncation;
   final int? failPutAt;
   final int? holdPutAt;
 
@@ -82,14 +85,28 @@ final class _SessionRecordingConnection extends RecordingConnection
   void advanceSession() => _sessionStamp = Object();
 
   @override
-  Future<List<RemoteEntry>> listDir(String path) async {
+  Future<DirectoryListing> listDirWithMetadata(String path) async {
     operationLog.add('list:$path');
-    if (directoryListings.isEmpty) return <RemoteEntry>[];
+    if (directoryListings.isEmpty) {
+      return const DirectoryListing(entries: <RemoteEntry>[], truncated: false);
+    }
     final int index = _listIndex < directoryListings.length
         ? _listIndex
         : directoryListings.length - 1;
     _listIndex += 1;
-    return List<RemoteEntry>.of(directoryListings[index]);
+    final int truncationIndex = index < listingTruncation.length
+        ? index
+        : listingTruncation.length - 1;
+    return DirectoryListing(
+      entries: directoryListings[index],
+      truncated: listingTruncation[truncationIndex],
+    );
+  }
+
+  @override
+  Future<List<RemoteEntry>> listDir(String path) async {
+    final DirectoryListing listing = await listDirWithMetadata(path);
+    return listing.entries;
   }
 
   @override
@@ -133,6 +150,7 @@ final class _Harness {
   factory _Harness({
     String cwd = '/flash',
     List<List<RemoteEntry>>? directoryListings,
+    List<bool>? listingTruncation,
     int? failPutAt,
     int? holdPutAt,
   }) {
@@ -140,6 +158,7 @@ final class _Harness {
     // of a pending or unvalidated Git blob.
     final _SessionRecordingConnection connection = _SessionRecordingConnection(
       directoryListings: directoryListings,
+      listingTruncation: listingTruncation,
       failPutAt: failPutAt,
       holdPutAt: holdPutAt,
     );
@@ -217,12 +236,14 @@ void main() {
   _Harness harness({
     String cwd = '/flash',
     List<List<RemoteEntry>>? directoryListings,
+    List<bool>? listingTruncation,
     int? failPutAt,
     int? holdPutAt,
   }) {
     final _Harness value = _Harness(
       cwd: cwd,
       directoryListings: directoryListings,
+      listingTruncation: listingTruncation,
       failPutAt: failPutAt,
       holdPutAt: holdPutAt,
     );
@@ -367,6 +388,25 @@ void main() {
       expect(h.api.fetchedRemotePaths, isEmpty);
       expect(h.connection.putFileCalls, isEmpty);
     });
+
+    test(
+      'a truncated board listing blocks review before any download',
+      () async {
+        final _Harness h = harness(
+          directoryListings: <List<RemoteEntry>>[
+            <RemoteEntry>[_remoteFile('visible.py')],
+          ],
+          listingTruncation: <bool>[true],
+        );
+
+        await expectLater(
+          h.importer.review(_repository, <GithubEntry>[_file('hidden.py')]),
+          throwsA(_failure(GithubFailureKind.incompleteBoardListing)),
+        );
+        expect(h.api.fetchedRemotePaths, isEmpty);
+        expect(h.connection.putFileCalls, isEmpty);
+      },
+    );
 
     test(
       'an existing file requires separate explicit overwrite consent',

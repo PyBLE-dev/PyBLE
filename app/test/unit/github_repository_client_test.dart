@@ -5,6 +5,7 @@
 // tests describe PyBLE's fresh REST adapter; they do not exercise or copy
 // another application's implementation.
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -574,5 +575,33 @@ void main() {
         );
       },
     );
+
+    test('aborts an in-flight request through its operation token', () async {
+      final Completer<void> requestStarted = Completer<void>();
+      final GithubCancellation cancellation = GithubCancellation();
+      final GithubRepositoryClient api = GithubRepositoryClient(
+        httpClient: MockClient.streaming((request, bodyStream) async {
+          expect(request, isA<http.AbortableRequest>());
+          final http.AbortableRequest abortable =
+              request as http.AbortableRequest;
+          requestStarted.complete();
+          await abortable.abortTrigger;
+          throw http.RequestAbortedException(request.url);
+        }),
+      );
+
+      final Future<PinnedRepository> pending = api.resolve(
+        _locator(),
+        ref: 'main',
+        cancellation: cancellation,
+      );
+      await requestStarted.future;
+      cancellation.cancel();
+
+      await expectLater(
+        pending,
+        throwsA(_githubFailure(GithubFailureKind.cancelled)),
+      );
+    });
   });
 }
