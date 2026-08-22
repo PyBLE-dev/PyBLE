@@ -98,7 +98,7 @@ describe("production build contract", () => {
     });
   });
 
-  it("patches remediable dependencies and bounds the build-only image parser exception", async () => {
+  it("pins the audited build closure and excludes the vulnerable image parser package", async () => {
     const [packageJson, packageLock, appFiles] = await Promise.all([
       readFile(join(process.cwd(), "package.json"), "utf8").then(JSON.parse),
       readFile(join(process.cwd(), "package-lock.json"), "utf8").then(
@@ -107,13 +107,38 @@ describe("production build contract", () => {
       authoredFiles(join(process.cwd(), "src", "app")),
     ]);
 
+    expect(packageJson.dependencies?.vinext).toBe("1.0.0-beta.8");
+    expect(packageJson.devDependencies?.["@vitejs/plugin-rsc"]).toBe("0.5.34");
+    expect(packageJson.scripts?.["audit:dependencies"]).toBe(
+      "npm audit --audit-level=high",
+    );
+    expect(packageJson.scripts?.check).toContain("npm run audit:dependencies");
     expect(packageJson.overrides?.next?.postcss).toBe("8.5.26");
+    expect(packageLock.packages?.["node_modules/vinext"]?.version).toBe(
+      "1.0.0-beta.8",
+    );
+    expect(
+      packageLock.packages?.["node_modules/@vitejs/plugin-rsc"]?.version,
+    ).toBe("0.5.34");
     expect(packageLock.packages?.["node_modules/postcss"]?.version).toBe(
       "8.5.26",
     );
     expect(packageLock.packages?.["node_modules/nanoid"]?.version).toBe(
       "3.3.18",
     );
+    expect(packageLock.packages?.["node_modules/image-size"]).toBeUndefined();
+    expect(
+      (
+        Object.values(packageLock.packages ?? {}) as Array<{
+          dependencies?: Record<string, string>;
+          optionalDependencies?: Record<string, string>;
+        }>
+      ).some(
+        (entry) =>
+          entry?.dependencies?.["image-size"] !== undefined ||
+          entry?.optionalDependencies?.["image-size"] !== undefined,
+      ),
+    ).toBe(false);
 
     const metadataImageRoute =
       /^(?:favicon|icon|apple-icon|opengraph-image|twitter-image)(?:\..+)?$/;
