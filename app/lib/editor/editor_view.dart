@@ -1,16 +1,12 @@
 // SPDX-License-Identifier: MIT
 // Part of PyBLE (https://pyble.dev) — see /LICENSE.
 
-/// A-20 — the EditorView: a monospace, `SignalCodeColors`-styled editable
-/// surface over the volatile in-memory current document (ADR-0010, TDD §11.6a,
-/// specs.md FR-EDIT §4.6).
+/// A-20 — the EditorView over the volatile in-memory current document
+/// (ADR-0010/0012, TDD §11.1/§11.6a, specs.md FR-EDIT §4.6).
 ///
-/// v1 is a REAL editable field (a themed `TextField` over `EditableText`) — no
-/// heavy code-editor dependency and no `google_fonts` (OI-1 / NFR-OFF). Syntax
-/// highlighting, multi-file tabs, find/replace, and a scroll-synced line-number
-/// gutter are deferred to A-24 / OI-1; a bare `TextField` cannot host a synced
-/// gutter without a code-editor, so line numbers are intentionally omitted here
-/// rather than shipped desynced.
+/// Feature code binds only to the app-owned EditorSurface seam. ADR-0012's
+/// pinned rich adapter supplies Python highlighting and synchronized line
+/// numbers; the original plain TextField remains an executable fallback.
 ///
 /// Run lives on the shell TOOLBAR (single active writer, FR-RUN-1), not in this
 /// view, so the editor and the toolbar never present two competing Run controls.
@@ -19,7 +15,6 @@
 library;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show TextInputFormatter;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:pyble/localization/localization.dart';
@@ -27,6 +22,9 @@ import 'package:pyble/pble/pble.dart';
 import 'package:pyble/theme/theme.dart';
 
 import 'editor_document.dart';
+import 'editor_display_settings.dart';
+import 'editor_surface.dart';
+import 'editor_surface_factory.dart';
 import 'run_controller.dart';
 import 'save_controller.dart';
 import 'smart_punctuation.dart';
@@ -41,6 +39,23 @@ const Key kEditorSaveButtonKey = ValueKey<String>('editorSaveButton');
 /// Stable key for the explicit Python → Blocks action.
 const Key kEditorConvertToBlocksButtonKey = ValueKey<String>(
   'editorConvertToBlocksButton',
+);
+
+const Key kEditorDecreaseFontSizeButtonKey = ValueKey<String>(
+  'editorDecreaseFontSizeButton',
+);
+const Key kEditorIncreaseFontSizeButtonKey = ValueKey<String>(
+  'editorIncreaseFontSizeButton',
+);
+const Key kEditorFontSizeValueKey = ValueKey<String>('editorFontSizeValue');
+const Key kEditorCompactFontSizeButtonKey = ValueKey<String>(
+  'editorCompactFontSizeButton',
+);
+const Key kEditorCompactFontSizeDecreaseKey = ValueKey<String>(
+  'editorCompactFontSizeDecrease',
+);
+const Key kEditorCompactFontSizeIncreaseKey = ValueKey<String>(
+  'editorCompactFontSizeIncrease',
 );
 
 /// The live MicroPython editing surface for the current document.
@@ -60,41 +75,15 @@ class EditorView extends ConsumerStatefulWidget {
 }
 
 class _EditorViewState extends ConsumerState<EditorView> {
-  late final TextEditingController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = TextEditingController(
-      text: ref.read(editorDocumentProvider).content,
-    );
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
   @override
   Widget build(BuildContext context) {
-    // Keep the field in sync with EXTERNAL document changes (New, open-from-
-    // board) without clobbering the user's cursor on their own edits: when the
-    // change originates from typing, the buffer already equals the field text,
-    // so the guard skips and the selection is untouched.
-    ref.listen<EditorDocument>(editorDocumentProvider, (
-      _,
-      EditorDocument next,
-    ) {
-      if (next.content != _controller.text) {
-        _controller.value = TextEditingValue(
-          text: next.content,
-          selection: TextSelection.collapsed(offset: next.content.length),
-        );
-      }
-    });
-
     final EditorDocument doc = ref.watch(editorDocumentProvider);
+    final EditorDisplaySettings display = ref.watch(
+      editorDisplaySettingsProvider,
+    );
+    final EditorSurfaceBuilder surfaceBuilder = ref.watch(
+      editorSurfaceBuilderProvider,
+    );
     final ThemeData theme = Theme.of(context);
     final ColorScheme scheme = theme.colorScheme;
     final AppLocalizations l10n = AppLocalizations.of(context);
@@ -116,49 +105,21 @@ class _EditorViewState extends ConsumerState<EditorView> {
         const _SmartPunctuationBanner(),
         // The editable code well — a recessed monospace surface (§1.4).
         Expanded(
-          child: Container(
-            color: scheme.surfaceContainerLowest,
-            padding: const EdgeInsets.symmetric(
-              horizontal: SignalSpacing.lg,
-              vertical: SignalSpacing.md,
-            ),
-            child: TextField(
-              controller: _controller,
+          child: surfaceBuilder(
+            EditorSurfaceConfiguration(
+              text: doc.content,
               onChanged: (String value) =>
                   ref.read(editorDocumentProvider.notifier).setContent(value),
-              expands: true,
-              maxLines: null,
-              minLines: null,
-              keyboardType: TextInputType.multiline,
-              // CODE, not prose. iPadOS Smart Punctuation is ON by default and
-              // silently rewrites " -> “ ” and -- -> — as the user types, which
-              // makes MicroPython answer `SyntaxError: invalid syntax` for a
-              // literal that LOOKS correct on screen (U+201C/U+201D are not
-              // string delimiters). On a tablet-first MicroPython IDE that
-              // breaks the very first `print("hello")` a beginner writes, so
-              // every text-assist feature is disabled here.
-              smartQuotesType: SmartQuotesType.disabled,
-              smartDashesType: SmartDashesType.disabled,
-              autocorrect: false,
-              enableSuggestions: false,
-              textCapitalization: TextCapitalization.none,
-              // The flags above are only a HINT — Flutter documents
-              // smartQuotesType/smartDashesType as "This flag only affects
-              // iOS", so they do nothing on Android/macOS/web and never cover
-              // PASTED text on any platform. This formatter is the actual
-              // guarantee: it runs on every value change, so a curly quote or
-              // an invisible non-breaking space can never reach the buffer.
-              inputFormatters: const <TextInputFormatter>[
-                SmartPunctuationFormatter(),
-              ],
-              textAlignVertical: TextAlignVertical.top,
+              textStyle: SignalType.codeOn(
+                scheme,
+              ).copyWith(fontSize: display.fontSize),
+              backgroundColor: scheme.surfaceContainerLowest,
               cursorColor: scheme.primary,
-              style: SignalType.codeOn(scheme),
-              decoration: InputDecoration(
-                isCollapsed: true,
-                border: InputBorder.none,
-                hintText: l10n.editorHintText,
-                hintStyle: SignalType.code.copyWith(color: code.gutter),
+              gutterColor: code.gutter,
+              hintText: l10n.editorHintText,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: SignalSpacing.lg,
+                vertical: SignalSpacing.md,
               ),
             ),
           ),
@@ -189,6 +150,14 @@ class _EditorHeader extends ConsumerWidget {
     final ThemeData theme = Theme.of(context);
     final ColorScheme scheme = theme.colorScheme;
     final AppLocalizations l10n = AppLocalizations.of(context);
+    final double fontSize = ref.watch(
+      editorDisplaySettingsProvider.select(
+        (EditorDisplaySettings settings) => settings.fontSize,
+      ),
+    );
+    final EditorDisplaySettingsController displayController = ref.read(
+      editorDisplaySettingsProvider.notifier,
+    );
     return Container(
       color: SignalElevation.tier(scheme, 2),
       padding: const EdgeInsets.only(
@@ -199,7 +168,7 @@ class _EditorHeader extends ConsumerWidget {
       ),
       child: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {
-          final bool compact = constraints.maxWidth < 400;
+          final bool compact = constraints.maxWidth < 600;
           return Row(
             children: <Widget>[
               if (!compact) ...<Widget>[
@@ -226,6 +195,26 @@ class _EditorHeader extends ConsumerWidget {
                 else
                   _UnsavedChip(label: l10n.editorUnsavedLabel),
               ],
+              if (compact)
+                _CompactFontSizeButton(
+                  fontSize: fontSize,
+                  onDecrease: fontSize > kEditorMinFontSize
+                      ? displayController.decreaseFontSize
+                      : null,
+                  onIncrease: fontSize < kEditorMaxFontSize
+                      ? displayController.increaseFontSize
+                      : null,
+                )
+              else
+                _FontSizeControls(
+                  fontSize: fontSize,
+                  onDecrease: fontSize > kEditorMinFontSize
+                      ? displayController.decreaseFontSize
+                      : null,
+                  onIncrease: fontSize < kEditorMaxFontSize
+                      ? displayController.increaseFontSize
+                      : null,
+                ),
               IconButton(
                 key: kEditorConvertToBlocksButtonKey,
                 icon: convertingToBlocks
@@ -326,6 +315,142 @@ class _EditorHeader extends ConsumerWidget {
   }
 }
 
+class _FontSizeControls extends StatelessWidget {
+  const _FontSizeControls({
+    required this.fontSize,
+    required this.onDecrease,
+    required this.onIncrease,
+  });
+
+  final double fontSize;
+  final VoidCallback? onDecrease;
+  final VoidCallback? onIncrease;
+
+  @override
+  Widget build(BuildContext context) {
+    final AppLocalizations l10n = AppLocalizations.of(context);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Tooltip(
+          message: l10n.editorFontSizeValue(fontSize.round()),
+          excludeFromSemantics: true,
+          child: Semantics(
+            key: kEditorFontSizeValueKey,
+            label: l10n.editorFontSizeValue(fontSize.round()),
+            excludeSemantics: true,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                border: Border.all(
+                  color: Theme.of(context).colorScheme.outlineVariant,
+                ),
+                borderRadius: BorderRadius.circular(SignalRadius.sm),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: SignalSpacing.sm,
+                  vertical: SignalSpacing.xs,
+                ),
+                child: Text(
+                  '${fontSize.round()}',
+                  style: Theme.of(context).textTheme.labelMedium,
+                ),
+              ),
+            ),
+          ),
+        ),
+        IconButton(
+          key: kEditorDecreaseFontSizeButtonKey,
+          icon: const Icon(Icons.text_decrease),
+          tooltip: l10n.editorDecreaseFontSize,
+          onPressed: onDecrease,
+        ),
+        IconButton(
+          key: kEditorIncreaseFontSizeButtonKey,
+          icon: const Icon(Icons.text_increase),
+          tooltip: l10n.editorIncreaseFontSize,
+          onPressed: onIncrease,
+        ),
+      ],
+    );
+  }
+}
+
+enum _CompactFontAction { decrease, increase }
+
+class _CompactFontSizeButton extends StatelessWidget {
+  const _CompactFontSizeButton({
+    required this.fontSize,
+    required this.onDecrease,
+    required this.onIncrease,
+  });
+
+  final double fontSize;
+  final VoidCallback? onDecrease;
+  final VoidCallback? onIncrease;
+
+  @override
+  Widget build(BuildContext context) {
+    final AppLocalizations l10n = AppLocalizations.of(context);
+    return PopupMenuButton<_CompactFontAction>(
+      key: kEditorCompactFontSizeButtonKey,
+      tooltip: l10n.editorFontSizeValue(fontSize.round()),
+      icon: const Icon(Icons.format_size),
+      onSelected: (_CompactFontAction action) {
+        switch (action) {
+          case _CompactFontAction.decrease:
+            onDecrease?.call();
+            break;
+          case _CompactFontAction.increase:
+            onIncrease?.call();
+            break;
+        }
+      },
+      itemBuilder: (BuildContext context) =>
+          <PopupMenuEntry<_CompactFontAction>>[
+            PopupMenuItem<_CompactFontAction>(
+              key: kEditorCompactFontSizeDecreaseKey,
+              value: _CompactFontAction.decrease,
+              enabled: onDecrease != null,
+              child: Row(
+                children: <Widget>[
+                  const Icon(Icons.text_decrease),
+                  const SizedBox(width: SignalSpacing.md),
+                  Flexible(
+                    child: Text(
+                      l10n.editorDecreaseFontSize,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            PopupMenuItem<_CompactFontAction>(
+              enabled: false,
+              child: Text(l10n.editorFontSizeValue(fontSize.round())),
+            ),
+            PopupMenuItem<_CompactFontAction>(
+              key: kEditorCompactFontSizeIncreaseKey,
+              value: _CompactFontAction.increase,
+              enabled: onIncrease != null,
+              child: Row(
+                children: <Widget>[
+                  const Icon(Icons.text_increase),
+                  const SizedBox(width: SignalSpacing.md),
+                  Flexible(
+                    child: Text(
+                      l10n.editorIncreaseFontSize,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+    );
+  }
+}
+
 /// Stable key for the smart-punctuation fix affordance (widget tests + HIL).
 const Key kEditorFixPunctuationKey = ValueKey<String>('editorFixPunctuation');
 
@@ -334,9 +459,9 @@ const Key kEditorFixPunctuationKey = ValueKey<String>('editorFixPunctuation');
 ///
 /// This exists because the board's own answer — `SyntaxError: invalid syntax` —
 /// points at a line that looks perfectly correct, and a non-breaking space is
-/// not even visible. Suppressing Smart Punctuation on our own field (see the
-/// TextField above) stops it while TYPING; it cannot stop it arriving by PASTE,
-/// which is how most beginner code gets into a tablet editor.
+/// not even visible. Both EditorSurface adapters suppress Smart Punctuation and
+/// intercept every typed/pasted value; this banner remains the explicit repair
+/// path for source opened from a board or another external source.
 class _SmartPunctuationBanner extends ConsumerWidget {
   const _SmartPunctuationBanner();
 

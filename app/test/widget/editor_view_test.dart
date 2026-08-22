@@ -1,18 +1,14 @@
 // SPDX-License-Identifier: MIT
 // Part of PyBLE (https://pyble.dev) — see /LICENSE.
 //
-// A-20 [red] — the EditorView: a monospace, SignalCodeColors-styled editable
-// surface over the volatile in-memory current document (ADR-0010, TDD §11.6a,
-// specs.md FR-EDIT §4.6). v1 is a real editable field (no heavy code-editor dep,
-// no google_fonts — OI-1/NFR-OFF); syntax highlighting / tabs / find-replace are
-// deferred to A-24/OI-1. Binds through the seam ONLY (CON-8).
+// A-20 — the EditorView: an ADR-0012 rich Python surface over the volatile
+// in-memory current document (ADR-0010, TDD §11.6a, specs.md FR-EDIT §4.6),
+// with the original plain field retained behind the app-owned seam. Binds
+// through that seam only (CON-8); find/replace and file tabs remain deferred.
 //
 // Pins: an editable surface with the localized hint when empty; edits flow to
 // editorDocumentProvider (dirty); the unsaved indicator shows while dirty; a
 // "New" affordance resets to a fresh untitled buffer.
-//
-// CURRENTLY RED: lib/editor exports no EditorView. HAND-OFF:
-// lib/editor/editor_view.dart -> app-editor-console-engineer.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -97,6 +93,27 @@ void main() {
       );
     });
 
+    testWidgets('font sizing preserves undo history', (
+      WidgetTester tester,
+    ) async {
+      final FakeConnection fake = FakeConnection(initial: ConnState.ready);
+      addTearDown(fake.dispose);
+      await pumpSurface(tester, const EditorView(), connection: fake);
+
+      await tester.enterText(find.byType(EditableText), 'value = 1');
+      await tester.pump();
+      await tester.tap(find.byKey(kEditorIncreaseFontSizeButtonKey));
+      await tester.pump();
+
+      Actions.invoke<UndoTextIntent>(
+        tester.element(find.byType(EditableText)),
+        const UndoTextIntent(SelectionChangedCause.keyboard),
+      );
+      await tester.pump();
+
+      expect(containerOf(tester).read(editorDocumentProvider).content, isEmpty);
+    });
+
     testWidgets('opening, zooming, and editing preserve literal tab bytes', (
       WidgetTester tester,
     ) async {
@@ -119,17 +136,15 @@ void main() {
       editable = tester.widget<EditableText>(find.byType(EditableText));
       expect(editable.controller.text, source);
 
-      editable.controller.value = const TextEditingValue(
-        text: '${source}# unrelated edit\n',
-        selection: TextSelection.collapsed(
-          offset: '${source}# unrelated edit\n'.length,
-        ),
+      await tester.enterText(
+        find.byType(EditableText),
+        '$source# unrelated edit\n',
       );
       await tester.pump();
 
       expect(
         containerOf(tester).read(editorDocumentProvider).content,
-        '${source}# unrelated edit\n',
+        '$source# unrelated edit\n',
         reason: 'valid tab indentation is source data, never display state',
       );
     });
@@ -209,11 +224,138 @@ void main() {
         tester.widget<EditableText>(find.byType(EditableText)).style.fontSize,
         kEditorMaxFontSize,
       );
+      expect(
+        tester
+            .state<EditableTextState>(find.byType(EditableText))
+            .renderEditable
+            .textScaler
+            .scale(kEditorMaxFontSize),
+        48,
+      );
       expect(find.text('120'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('compact editor exposes font sizing without overflowing', (
+    testWidgets('compact editor changes font size without overflowing', (
+      WidgetTester tester,
+    ) async {
+      final FakeConnection fake = FakeConnection(initial: ConnState.ready);
+      addTearDown(fake.dispose);
+      await pumpSurface(
+        tester,
+        const MediaQuery(
+          data: MediaQueryData(
+            textScaler: TextScaler.linear(2),
+            highContrast: true,
+          ),
+          child: EditorView(),
+        ),
+        connection: fake,
+        size: const Size(390, 844),
+      );
+
+      final AppLocalizations l10n = l10nOf(tester);
+      expect(find.byKey(kEditorCompactFontSizeButtonKey), findsOneWidget);
+      final Finder compactTooltip = find.descendant(
+        of: find.byKey(kEditorCompactFontSizeButtonKey),
+        matching: find.byType(Tooltip),
+      );
+      expect(compactTooltip, findsOneWidget);
+      expect(
+        tester.widget<Tooltip>(compactTooltip).message,
+        l10n.editorFontSizeValue(kEditorDefaultFontSize.round()),
+      );
+      expect(tester.takeException(), isNull);
+      await tester.tap(find.byKey(kEditorCompactFontSizeButtonKey));
+      await tester.pumpAndSettle();
+      expect(find.byKey(kEditorCompactFontSizeIncreaseKey), findsOneWidget);
+      expect(find.text(l10n.editorIncreaseFontSize), findsOneWidget);
+      expect(
+        tester.getSize(find.byKey(kEditorCompactFontSizeIncreaseKey)).height,
+        greaterThanOrEqualTo(48),
+      );
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(find.byKey(kEditorCompactFontSizeIncreaseKey));
+      await tester.pumpAndSettle();
+      expect(
+        containerOf(tester).read(editorDisplaySettingsProvider).fontSize,
+        kEditorDefaultFontSize + kEditorFontSizeStep,
+      );
+      expect(
+        tester.widget<EditableText>(find.byType(EditableText)).style.fontSize,
+        kEditorDefaultFontSize + kEditorFontSizeStep,
+      );
+    });
+
+    for (final ({double width, bool compact}) breakpoint
+        in <({double width, bool compact})>[
+          // The header consumes 24 dp of horizontal padding before measuring
+          // the width available to its actions.
+          (width: 623, compact: true),
+          (width: 624, compact: false),
+        ]) {
+      testWidgets('font controls adapt at ${breakpoint.width.toInt()} dp', (
+        WidgetTester tester,
+      ) async {
+        final FakeConnection fake = FakeConnection(initial: ConnState.ready);
+        addTearDown(fake.dispose);
+        await pumpSurface(
+          tester,
+          const EditorView(),
+          connection: fake,
+          size: Size(breakpoint.width, 844),
+        );
+
+        expect(
+          find.byKey(kEditorCompactFontSizeButtonKey),
+          breakpoint.compact ? findsOneWidget : findsNothing,
+        );
+        expect(
+          find.byKey(kEditorIncreaseFontSizeButtonKey),
+          breakpoint.compact ? findsNothing : findsOneWidget,
+        );
+        expect(tester.takeException(), isNull);
+      });
+    }
+
+    testWidgets('font size survives editor unmount in the same app session', (
+      WidgetTester tester,
+    ) async {
+      final FakeConnection fake = FakeConnection(initial: ConnState.ready);
+      addTearDown(fake.dispose);
+      late StateSetter setHostState;
+      bool showEditor = true;
+      await pumpSurface(
+        tester,
+        StatefulBuilder(
+          builder: (BuildContext context, StateSetter setState) {
+            setHostState = setState;
+            return showEditor
+                ? const EditorView()
+                : const SizedBox(key: ValueKey<String>('otherSurface'));
+          },
+        ),
+        connection: fake,
+      );
+      containerOf(
+        tester,
+      ).read(editorDisplaySettingsProvider.notifier).setFontSize(19);
+      await tester.pump();
+
+      setHostState(() => showEditor = false);
+      await tester.pump();
+      expect(find.byType(EditorView), findsNothing);
+      setHostState(() => showEditor = true);
+      await tester.pump();
+
+      expect(
+        tester.widget<EditableText>(find.byType(EditableText)).style.fontSize,
+        19,
+      );
+    });
+
+    testWidgets('gutter tracks vertical scroll and ignores horizontal scroll', (
       WidgetTester tester,
     ) async {
       final FakeConnection fake = FakeConnection(initial: ConnState.ready);
@@ -222,14 +364,64 @@ void main() {
         tester,
         const EditorView(),
         connection: fake,
-        size: const Size(390, 844),
+        size: const Size(800, 480),
+      );
+      final String longLine =
+          'print("${List<String>.filled(120, 'x').join()}")';
+      containerOf(tester)
+          .read(editorDocumentProvider.notifier)
+          .openFromBoard(
+            path: '/main.py',
+            content: List<String>.filled(100, longLine).join('\n'),
+          );
+      await tester.pump();
+
+      final double gutterLeft = tester.getTopLeft(find.text('1')).dx;
+      final List<ScrollableState> vertical = tester
+          .stateList<ScrollableState>(find.byType(Scrollable))
+          .where(
+            (ScrollableState state) =>
+                state.widget.axisDirection == AxisDirection.down &&
+                state.position.maxScrollExtent > 0,
+          )
+          .toList();
+      expect(vertical.length, 2);
+      vertical.first.position.jumpTo(300);
+      await tester.pump();
+      expect(
+        (vertical.first.position.pixels - vertical.last.position.pixels).abs(),
+        lessThan(0.01),
       );
 
-      expect(find.byKey(kEditorCompactFontSizeButtonKey), findsOneWidget);
-      expect(tester.takeException(), isNull);
-      await tester.tap(find.byKey(kEditorCompactFontSizeButtonKey));
-      await tester.pumpAndSettle();
-      expect(find.byKey(kEditorCompactFontSizeIncreaseKey), findsOneWidget);
+      final ScrollableState horizontal = tester
+          .stateList<ScrollableState>(find.byType(Scrollable))
+          .singleWhere(
+            (ScrollableState state) =>
+                state.widget.axisDirection == AxisDirection.right &&
+                state.position.maxScrollExtent > 0,
+          );
+      horizontal.position.jumpTo(300);
+      await tester.pump();
+      expect(horizontal.position.pixels, 300);
+      expect(tester.getTopLeft(find.text('1')).dx, gutterLeft);
+    });
+
+    testWidgets('editor hint and font value have exact semantic labels', (
+      WidgetTester tester,
+    ) async {
+      final FakeConnection fake = FakeConnection(initial: ConnState.ready);
+      addTearDown(fake.dispose);
+      await pumpSurface(tester, const EditorView(), connection: fake);
+      final AppLocalizations l10n = l10nOf(tester);
+
+      expect(
+        tester.getSemantics(find.byKey(kEditorRichSurfaceKey)).label,
+        l10n.editorHintText,
+      );
+      expect(
+        tester.getSemantics(find.byKey(kEditorFontSizeValueKey)).label,
+        l10n.editorFontSizeValue(kEditorDefaultFontSize.round()),
+      );
     });
 
     testWidgets('exposes the app-layer Python to Blocks action', (

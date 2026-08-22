@@ -61,6 +61,17 @@ dependencies:
   # restricted by the adapter to api.github.com.
   http: ^1.6.0
 
+  # Rich Python editor surface (A-20, ADR-0012). License: Apache-2.0 with a
+  # retained MIT grant for its code_field ancestry. Pinned exactly because the
+  # upstream is dormant and PyBLE's adapter owns the tested Tab/punctuation
+  # safeguards. Optional network/error/find/autocomplete UI stays disabled.
+  flutter_code_editor: 0.3.5
+
+  # Python grammar consumed directly by lib/editor's rich adapter. License:
+  # MIT. It is also in flutter_code_editor's closure, but a direct import must
+  # have an explicit direct constraint under BLD-2.
+  highlight: ^0.7.0
+
   # Offline Blockly host (A-31). License: BSD-3-Clause. Min version: 4.14.1,
   # whose Android 24 / iOS 13 floors match PyBLE's pinned platform floors and
   # whose WebViewController supports loadFlutterAsset + JavaScript channels.

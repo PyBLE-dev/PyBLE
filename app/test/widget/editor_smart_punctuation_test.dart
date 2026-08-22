@@ -42,49 +42,62 @@ void main() {
     }
   });
 
-  testWidgets(
-    'typing curly quotes into the editor stores ASCII in the document',
-    (WidgetTester tester) async {
+  for (final (String, EditorSurfaceBuilder) surface
+      in <(String, EditorSurfaceBuilder)>[
+        ('rich', richEditorSurfaceBuilder),
+        ('plain fallback', plainEditorSurfaceBuilder),
+      ]) {
+    testWidgets(
+      '${surface.$1} converts typed curly quotes before document storage',
+      (WidgetTester tester) async {
+        await pumpSurface(
+          tester,
+          const EditorView(),
+          connection: RecordingConnection(initial: ConnState.ready),
+          extra: <Override>[
+            editorSurfaceBuilderProvider.overrideWithValue(surface.$2),
+          ],
+        );
+        await tester.pumpAndSettle();
+
+        // Exactly what iPadOS Smart Punctuation delivers, and exactly the bytes
+        // recovered from the bench board's /test.py.
+        await tester.enterText(
+          find.byType(EditableText),
+          'print(“Hello world!!”)',
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          containerOf(tester).read(editorDocumentProvider).content,
+          'print("Hello world!!")',
+          reason:
+              'the document must never hold a character MicroPython rejects',
+        );
+      },
+    );
+
+    testWidgets('${surface.$1} removes pasted non-breaking spaces', (
+      WidgetTester tester,
+    ) async {
       await pumpSurface(
         tester,
         const EditorView(),
         connection: RecordingConnection(initial: ConnState.ready),
+        extra: <Override>[
+          editorSurfaceBuilderProvider.overrideWithValue(surface.$2),
+        ],
       );
       await tester.pumpAndSettle();
 
-      // Exactly what iPadOS Smart Punctuation delivers, and exactly the bytes
-      // recovered from the bench board's /test.py.
-      await tester.enterText(
-        find.byType(EditableText),
-        'print(“Hello world!!”)',
-      );
+      await tester.enterText(find.byType(EditableText), 'x = 1');
       await tester.pumpAndSettle();
 
-      expect(
-        containerOf(tester).read(editorDocumentProvider).content,
-        'print("Hello world!!")',
-        reason: 'the document must never hold a character MicroPython rejects',
-      );
-    },
-  );
-
-  testWidgets('an invisible non-breaking space never reaches the document', (
-    WidgetTester tester,
-  ) async {
-    await pumpSurface(
-      tester,
-      const EditorView(),
-      connection: RecordingConnection(initial: ConnState.ready),
-    );
-    await tester.pumpAndSettle();
-
-    await tester.enterText(find.byType(EditableText), 'x = 1');
-    await tester.pumpAndSettle();
-
-    final String content = containerOf(
-      tester,
-    ).read(editorDocumentProvider).content;
-    expect(content, 'x = 1');
-    expect(content.codeUnits.contains(0x00A0), isFalse);
-  });
+      final String content = containerOf(
+        tester,
+      ).read(editorDocumentProvider).content;
+      expect(content, 'x = 1');
+      expect(content.codeUnits.contains(0x00A0), isFalse);
+    });
+  }
 }

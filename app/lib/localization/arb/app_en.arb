@@ -1480,6 +1480,21 @@
   "@editorHintText": {
     "description": "Placeholder hint shown in the empty editor buffer. 'MicroPython' is a product proper noun, rendered verbatim."
   },
+  "editorDecreaseFontSize": "Decrease code font size",
+  "@editorDecreaseFontSize": {
+    "description": "Accessible label and tooltip for decreasing only the editor code and line-number font size."
+  },
+  "editorIncreaseFontSize": "Increase code font size",
+  "@editorIncreaseFontSize": {
+    "description": "Accessible label and tooltip for increasing only the editor code and line-number font size."
+  },
+  "editorFontSizeValue": "Code font size {size}",
+  "@editorFontSizeValue": {
+    "description": "Accessible label for the current editor code font size. The size is the integer decimal value of the editor-only setting.",
+    "placeholders": {
+      "size": { "type": "int" }
+    }
+  },
   "editorUnsavedLabel": "Unsaved changes",
   "@editorUnsavedLabel": {
     "description": "Indicator shown when the current editor document has unsaved edits (EditorDocument.dirty)."
