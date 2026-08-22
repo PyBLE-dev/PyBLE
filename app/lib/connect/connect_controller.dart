@@ -93,7 +93,7 @@ class ConnectController extends ChangeNotifier {
   BleReadiness _readiness;
   List<ScanHit> _hits;
   DeviceInfo? _deviceInfo;
-  bool _fetchingInfo = false;
+  Object? _fetchingInfoSessionStamp;
   bool _disposed = false;
 
   StreamSubscription<BleReadiness>? _readinessSub;
@@ -163,22 +163,38 @@ class ConnectController extends ChangeNotifier {
   /// proof the round-trip works — and clears it on `disconnected`.
   void _maybeFetchInfo(ConnState s) {
     if (s == ConnState.ready || s == ConnState.running) {
-      if (_deviceInfo == null && !_fetchingInfo) {
-        unawaited(_fetchInfo());
+      final Object sessionStamp = connectionSessionStampOf(_manager.connection);
+      if (_deviceInfo == null &&
+          !identical(_fetchingInfoSessionStamp, sessionStamp)) {
+        _fetchingInfoSessionStamp = sessionStamp;
+        unawaited(_fetchInfo(sessionStamp));
       }
     } else if (s == ConnState.disconnected) {
       _deviceInfo = null;
+      _fetchingInfoSessionStamp = null;
     }
   }
 
-  Future<void> _fetchInfo() async {
-    _fetchingInfo = true;
+  Future<void> _fetchInfo(Object sessionStamp) async {
     try {
-      _deviceInfo = await _manager.connection.deviceInfo();
+      final DeviceInfo info = await _manager.connection.deviceInfo();
+      final ConnState current = _manager.connection.state.value;
+      if (!_disposed &&
+          identical(
+            connectionSessionStampOf(_manager.connection),
+            sessionStamp,
+          ) &&
+          (current == ConnState.ready || current == ConnState.running)) {
+        _deviceInfo = info;
+      }
     } on Object {
       // Leave null; any connect error surfaces via lastError/phase instead.
     } finally {
-      _fetchingInfo = false;
+      // A replacement session may already have started its own fetch. A late
+      // prior-session completion must not clear that current in-flight stamp.
+      if (identical(_fetchingInfoSessionStamp, sessionStamp)) {
+        _fetchingInfoSessionStamp = null;
+      }
       _safeNotify();
     }
   }
@@ -200,7 +216,9 @@ class ConnectController extends ChangeNotifier {
 }
 
 /// The connect controller provider, wired to the root [connectionManagerProvider]
-/// (ADR-0009). Auto-disposed with the surface; the manager it wraps outlives it.
+/// (ADR-0009). Auto-disposed when neither the pre-connection Connect surface nor
+/// the connected shell's status pill watches it; the manager it wraps outlives
+/// it.
 final AutoDisposeChangeNotifierProvider<ConnectController>
 connectControllerProvider =
     ChangeNotifierProvider.autoDispose<ConnectController>(
