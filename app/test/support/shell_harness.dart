@@ -77,14 +77,15 @@ const List<String> navDestinations = <String>[
 ];
 
 /// Builds a scriptable [DeviceInfo]. `deviceId`/`label` are DISPLAY-ONLY and
-/// never gate access (SEC-9) — the shell must render with them empty.
+/// never gate access (SEC-9); [agentVersion] is the PyBLE agent firmware SemVer.
 DeviceInfo fakeDeviceInfo({
   String chip = 'esp32-s3',
   String mpyVersion = '1.28.0',
   int freeMem = 48000,
   String fsRoot = '/',
-  String deviceId = '',
+  String deviceId = '5646',
   String label = '',
+  String agentVersion = '0.6.0',
 }) => DeviceInfo(
   chip: chip,
   mpyVersion: mpyVersion,
@@ -92,13 +93,14 @@ DeviceInfo fakeDeviceInfo({
   fsRoot: fsRoot,
   deviceId: deviceId,
   label: label,
+  agentVersion: agentVersion,
 );
 
 /// A scripted [FakeConnection] in a given initial [ConnState].
 FakeConnection fakeConnection({
   ConnState initial = ConnState.disconnected,
   DeviceInfo? info,
-}) => FakeConnection(initial: initial, deviceInfo: info);
+}) => FakeConnection(initial: initial, deviceInfo: info ?? fakeDeviceInfo());
 
 /// Pumps the real [PybleApp] shell at [surface], with the Connection seam
 /// overridden by a scripted [connection]. Resets the view on teardown.
@@ -127,6 +129,12 @@ Future<void> pumpShell(
     connectionFactory: (String id) async => connection,
   );
   addTearDown(manager.dispose);
+  // A connected shell must exercise the same live manager facade production
+  // uses, so connectControllerProvider can retain/fetch the DeviceInfo proof.
+  if (connection.state.value == ConnState.ready ||
+      connection.state.value == ConnState.running) {
+    await manager.connect('shell-harness-board');
+  }
 
   await tester.pumpWidget(
     ProviderScope(
