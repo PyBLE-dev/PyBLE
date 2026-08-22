@@ -53,14 +53,24 @@ void main() {
 
       Finder action = find.byTooltip(l10nOf(tester).githubImportAction);
       expect(action, findsOneWidget);
-      expect(tester.widget<IconButton>(action).onPressed, isNotNull);
+      Finder actionButton = find.ancestor(
+        of: action,
+        matching: find.byType(IconButton),
+      );
+      expect(actionButton, findsOneWidget);
+      expect(tester.widget<IconButton>(actionButton).onPressed, isNotNull);
 
       fake.emitRunState(RunState.running);
       await tester.pump();
-      action = find.byTooltip(l10nOf(tester).githubImportAction);
+      expect(find.byTooltip(l10nOf(tester).githubImportAction), findsNothing);
+      action = find.byTooltip(l10nOf(tester).githubImportRequiresReady);
       expect(action, findsOneWidget);
+      actionButton = find.ancestor(
+        of: action,
+        matching: find.byType(IconButton),
+      );
       expect(
-        tester.widget<IconButton>(action).onPressed,
+        tester.widget<IconButton>(actionButton).onPressed,
         isNull,
         reason: 'a running board cannot accept import PUTs',
       );
