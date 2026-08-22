@@ -195,6 +195,20 @@ final class _HoldingPutConnection extends RecordingConnection {
   }
 }
 
+final class _HoldingReviewConnection extends RecordingConnection {
+  _HoldingReviewConnection() : super(initial: ConnState.ready);
+
+  final Completer<void> listStarted = Completer<void>();
+  final Completer<void> releaseList = Completer<void>();
+
+  @override
+  Future<DirectoryListing> listDirWithMetadata(String path) async {
+    if (!listStarted.isCompleted) listStarted.complete();
+    await releaseList.future;
+    return super.listDirWithMetadata(path);
+  }
+}
+
 Key _entryKey(String remotePath) => ValueKey<String>('githubEntry_$remotePath');
 
 Key _selectionKey(String remotePath) =>
@@ -751,6 +765,115 @@ void main() {
         find.byKey(const ValueKey<String>('githubImportResult')),
         findsOneWidget,
       );
+    });
+
+    testWidgets('review cancellation cannot bypass a blob retry deadline', (
+      WidgetTester tester,
+    ) async {
+      final RecordingConnection connection = RecordingConnection(
+        initial: ConnState.ready,
+      );
+      final _FakeGithubApi api = _FakeGithubApi(
+        entries: const <GithubEntry>[_helloEntry],
+        fetchFailuresRemaining: 1,
+        fetchFailure: const GithubFailure(
+          GithubFailureKind.rateLimited,
+          retryAfter: Duration(seconds: 60),
+        ),
+      );
+      addTearDown(connection.dispose);
+
+      await _openImport(tester, connection, api);
+      await _browse(tester);
+      await tester.tap(find.byKey(_selectionKey('hello.py')));
+      await tester.pump();
+      await tester.tap(find.byKey(kGithubReviewButtonKey));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(kGithubCommitButtonKey));
+      await tester.pumpAndSettle();
+      expect(api.fetchedRemotePaths, <String>['hello.py']);
+
+      await tester.tap(
+        find.widgetWithText(TextButton, l10nOf(tester).commonCancel),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(kGithubReviewButtonKey));
+      await tester.pumpAndSettle();
+
+      expect(
+        tester
+            .widget<FilledButton>(find.byKey(kGithubCommitButtonKey))
+            .onPressed,
+        isNull,
+      );
+      expect(api.fetchedRemotePaths, <String>['hello.py']);
+
+      await tester.pump(const Duration(seconds: 60));
+      expect(
+        tester
+            .widget<FilledButton>(find.byKey(kGithubCommitButtonKey))
+            .onPressed,
+        isNotNull,
+      );
+    });
+
+    testWidgets('folder navigation cannot bypass a retry deadline', (
+      WidgetTester tester,
+    ) async {
+      final RecordingConnection connection = RecordingConnection(
+        initial: ConnState.ready,
+      );
+      final _FakeGithubApi api = _FakeGithubApi(
+        childListFailure: const GithubFailure(
+          GithubFailureKind.rateLimited,
+          retryAfter: Duration(seconds: 60),
+        ),
+      );
+      addTearDown(connection.dispose);
+
+      await _openImport(tester, connection, api);
+      await _browse(tester);
+      await tester.tap(find.byKey(_entryKey('nested')));
+      await tester.pumpAndSettle();
+      expect(api.listedRemotePaths, <String>['', 'nested']);
+
+      await tester.tap(find.byKey(_entryKey('nested')));
+      await tester.pumpAndSettle();
+      expect(api.listedRemotePaths, <String>['', 'nested']);
+
+      await tester.pump(const Duration(seconds: 60));
+      await tester.tap(find.byKey(_entryKey('nested')));
+      await tester.pumpAndSettle();
+      expect(api.listedRemotePaths, <String>['', 'nested', 'nested']);
+    });
+
+    testWidgets('board target review has a distinct visible phase', (
+      WidgetTester tester,
+    ) async {
+      final _HoldingReviewConnection connection = _HoldingReviewConnection();
+      final _FakeGithubApi api = _FakeGithubApi(
+        entries: const <GithubEntry>[_helloEntry],
+      );
+      addTearDown(() async {
+        if (!connection.releaseList.isCompleted) {
+          connection.releaseList.complete();
+        }
+        await connection.dispose();
+      });
+
+      await _openImport(tester, connection, api);
+      await _browse(tester);
+      await tester.tap(find.byKey(_selectionKey('hello.py')));
+      await tester.pump();
+      await tester.tap(find.byKey(kGithubReviewButtonKey));
+      await connection.listStarted.future;
+      await tester.pump();
+
+      expect(find.text('Checking board targets…'), findsOneWidget);
+
+      connection.releaseList.complete();
+      await tester.pumpAndSettle();
+      expect(find.byKey(kGithubCommitButtonKey), findsOneWidget);
     });
 
     testWidgets('review marks an existing regular-file target before consent', (
