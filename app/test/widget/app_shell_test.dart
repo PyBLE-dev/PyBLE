@@ -22,6 +22,7 @@
 // HAND-OFF provenance: lib/app → app-architect; lib/pble → app-protocol-engineer.
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:pyble/app/app.dart';
@@ -231,6 +232,7 @@ void main() {
         );
 
         final AppLocalizations l10n = _l10n(tester);
+        expect(_pillLabel('Ready'), findsOneWidget);
         expect(
           find.descendant(
             of: find.byKey(_pillKey),
@@ -283,6 +285,108 @@ void main() {
         expect(find.byTooltip('Disconnect'), findsOneWidget);
       },
     );
+
+    testWidgets(
+      'Connect-to-IDE transition retains identity in ready and running',
+      (tester) async {
+        final FakeConnection connection = fakeConnection(
+          initial: ConnState.connecting,
+          info: fakeDeviceInfo(deviceId: '5646', agentVersion: '0.6.0'),
+        );
+        final PbleConnectionManager manager = await pumpShell(
+          tester,
+          connection: connection,
+          surface: ipadLandscape,
+        );
+
+        final AppLocalizations l10n = _l10n(tester);
+        expect(
+          find.text(l10n.connectEmptyTitle),
+          findsOneWidget,
+          reason: 'the pre-connection Connect surface starts mounted',
+        );
+
+        await manager.connect('shell-transition-board');
+        connection.emit(ConnState.ready);
+        await tester.pumpAndSettle();
+
+        expect(find.text(l10n.connectEmptyTitle), findsNothing);
+        expect(find.text(l10n.connectDeviceInfoTitle), findsNothing);
+        expect(_pillLabel('Ready'), findsOneWidget);
+        expect(
+          find.text(l10n.connStatusBoardInfoSummary('5646', '0.6.0')),
+          findsOneWidget,
+        );
+        expect(
+          find.bySemanticsLabel(
+            l10n.connStatusBoardInfoSemanticLabel('Ready', '5646', '0.6.0'),
+          ),
+          findsOneWidget,
+        );
+
+        connection.emit(ConnState.running);
+        await tester.pumpAndSettle();
+
+        expect(_pillLabel('Running'), findsOneWidget);
+        expect(
+          find.text(l10n.connStatusBoardInfoSummary('5646', '0.6.0')),
+          findsOneWidget,
+        );
+        expect(
+          find.bySemanticsLabel(
+            l10n.connStatusBoardInfoSemanticLabel('Running', '5646', '0.6.0'),
+          ),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets('tight 2x layout ellipsizes identity but not state', (
+      tester,
+    ) async {
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      const String longId = 'BOARD-IDENTITY-1234567890';
+      const String longVersion = '0.6.0-development-metadata';
+
+      await pumpShell(
+        tester,
+        connection: fakeConnection(
+          initial: ConnState.ready,
+          info: fakeDeviceInfo(deviceId: longId, agentVersion: longVersion),
+        ),
+        surface: phonePortrait,
+      );
+
+      final AppLocalizations l10n = _l10n(tester);
+      final Finder stateFinder = _pillLabel('Ready');
+      final Finder summaryFinder = find.descendant(
+        of: find.byKey(_pillKey),
+        matching: find.text(
+          l10n.connStatusBoardInfoSummary(longId, longVersion),
+        ),
+      );
+      expect(stateFinder, findsOneWidget);
+      expect(summaryFinder, findsOneWidget);
+      expect(
+        tester.renderObject<RenderParagraph>(stateFinder).didExceedMaxLines,
+        isFalse,
+        reason: 'the full state word is the non-negotiable minimum signal',
+      );
+      expect(
+        tester.renderObject<RenderParagraph>(summaryFinder).didExceedMaxLines,
+        isTrue,
+        reason: 'only the appended identity may ellipsize under pressure',
+      );
+      expect(
+        find.bySemanticsLabel(
+          l10n.connStatusBoardInfoSemanticLabel('Ready', longId, longVersion),
+        ),
+        findsOneWidget,
+        reason: 'visual ellipsis must not truncate accessibility metadata',
+      );
+      expect(tester.takeException(), isNull);
+    });
   });
 
   group('FR-UI-1 collapsible landscape Files sidebar', () {
