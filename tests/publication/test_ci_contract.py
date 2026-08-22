@@ -28,11 +28,12 @@ class CiContractTest(unittest.TestCase):
             firmware_host,
         )
         self.assertIn(
-            "      - name: Initialize pinned MicroPython host dependency\n"
+            "      - name: Initialize pinned MicroPython host dependencies\n"
             "        run: |\n"
             "          git -C firmware/upstream/micropython submodule update "
             "--init --depth 1 \\\n"
-            "            lib/micropython-lib\n",
+            "            lib/micropython-lib \\\n"
+            "            lib/cyw43-driver\n",
             firmware_host,
         )
 
