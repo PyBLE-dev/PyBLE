@@ -79,8 +79,11 @@ the selected `.py` files sequentially to the current board directory.**
    directories or other non-regular conflicts block the batch. Existing files
    require a separate, explicit confirmation naming the target paths; selecting
    Import is not itself overwrite consent. Immediately before the first PUT,
-   the controller lists the directory again. A new or changed conflict
-   invalidates prior consent and returns to review without writing.
+   the controller lists the directory again. Both listings must carry explicit
+   PBLE/1 completeness metadata: `FILE_LIST more=1`, or a Connection test double
+   that cannot prove completeness, blocks the batch because an omitted entry
+   could hide a conflict. A new or changed conflict invalidates prior consent
+   and returns to review without writing.
 
 6. **All bytes are acquired and validated before any board mutation.** The
    controller fetches every selected object from the pinned snapshot into one
