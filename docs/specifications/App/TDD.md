@@ -769,7 +769,10 @@ does not follow `download_url`, HTML links, or any arbitrary URL returned in a
 response. A response rejected from headers alone (including status or declared
 body length) has its body stream cancelled before the adapter publishes the
 typed failure, so repeated hostile responses cannot strand transport resources
-(SEC-10).
+(SEC-10). Each REST GET also owns one non-extending absolute wall-clock
+deadline that starts before the request is sent and covers both headers and the
+complete bounded body. Receiving a slow trickle never extends that deadline;
+expiry asks the transport to abort and maps to the neutral offline failure.
 
 Resolution is a two-step logical operation:
 
@@ -877,6 +880,12 @@ compares the complete relevant conflict set. A new, disappeared, or
 type-changed conflict invalidates consent and returns to review. This
 conservative recheck prevents the general Import tap or stale confirmation
 from authorizing an overwrite.
+
+The stable facade rotates its opaque session stamp on attach/detach and once
+when an attached live connection leaves an established `ready`/`running`
+session for `connecting` or `disconnected`. A later in-place reconnect therefore
+uses the rotated successor stamp. Ordinary `ready` ↔ `running` transitions do
+not rotate it.
 
 ### 10.5 All-fetch validation and sequential commit
 
