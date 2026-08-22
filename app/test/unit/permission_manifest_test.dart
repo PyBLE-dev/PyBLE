@@ -12,6 +12,8 @@
 //            BLUETOOTH / BLUETOOTH_ADMIN / ACCESS_FINE_LOCATION capped at 30
 //            ACCESS_COARSE_LOCATION capped at 28
 //            android.hardware.bluetooth_le required
+//            INTERNET in src/main so release builds can perform the explicit
+//            public GitHub import workflow
 
 import 'dart:io';
 
@@ -80,6 +82,16 @@ void main() {
 
     test('BLUETOOTH_CONNECT is declared', () {
       expect(manifest, contains('BLUETOOTH_CONNECT'));
+    });
+
+    test('release builds can perform the user-started GitHub import', () {
+      expect(
+        manifest,
+        contains('android.permission.INTERNET'),
+        reason:
+            'the permission must live in src/main, not only debug/profile, '
+            'so the optional public GitHub workflow works in release builds',
+      );
     });
 
     test('BLE hardware is required because BLE is the primary transport', () {
