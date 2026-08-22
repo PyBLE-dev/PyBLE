@@ -8,8 +8,9 @@
 ///
 ///   readiness banner (adapter-off / unauthorized / unsupported rationale)
 ///   → filtered scan CTA → live [ScanHit] list (advertised name + RSSI)
-///   → connecting progress → connected Board-info card (chip / MicroPython /
-///   free memory — the round-trip PROOF) + Disconnect → failure prompt,
+///   → connecting progress → connected Board-info card (board ID / PyBLE
+///   firmware / chip / MicroPython / free memory — the round-trip PROOF)
+///   + Disconnect → failure prompt,
 ///
 /// plus an always-on compact diagnostics panel (adapter state, scan running,
 /// boards seen, last error) for on-hardware (HIL) debugging.
@@ -17,8 +18,8 @@
 /// Binds ONLY to the neutral [ConnectController] over the [ConnectionManager]
 /// seam (CON-8, FR-BLE-8): NO `lib/ble` / `flutter_blue_plus` import, never a
 /// raw device list (SEC-4). All copy is sourced from [AppLocalizations];
-/// technical identifiers (the chip target, RSSI dBm, byte counts) render
-/// verbatim (FR-I18N-4).
+/// technical identifiers (board ID, firmware versions, chip target, RSSI dBm,
+/// byte counts) render verbatim (FR-I18N-4).
 library;
 
 import 'package:flutter/material.dart';
@@ -416,7 +417,20 @@ class _ConnectedView extends StatelessWidget {
                       ),
                     )
                   else ...<Widget>[
-                    // Chip is a technical identifier — rendered verbatim (FR-I18N-4).
+                    // These PBLE/1 values are display-only technical identifiers:
+                    // render them verbatim and never substitute ScanHit.id (SEC-9).
+                    _InfoRow(
+                      label: l10n.connectDeviceBoardId,
+                      value: info.deviceId.isEmpty
+                          ? l10n.connectDeviceNotReported
+                          : info.deviceId,
+                    ),
+                    _InfoRow(
+                      label: l10n.connectDeviceAgentVersion,
+                      value: info.agentVersion.isEmpty
+                          ? l10n.connectDeviceNotReported
+                          : info.agentVersion,
+                    ),
                     _InfoRow(label: l10n.connectDeviceChip, value: info.chip),
                     _InfoRow(
                       label: l10n.connectDeviceMpyVersion,

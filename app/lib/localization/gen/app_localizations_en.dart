@@ -966,6 +966,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get connectDeviceInfoTitle => 'Board info';
 
   @override
+  String get connectDeviceBoardId => 'Board ID';
+
+  @override
+  String get connectDeviceAgentVersion => 'PyBLE firmware';
+
+  @override
+  String get connectDeviceNotReported => 'Not reported';
+
+  @override
   String get connectDeviceChip => 'Chip';
 
   @override
