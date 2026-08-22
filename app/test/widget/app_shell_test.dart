@@ -30,6 +30,7 @@ import 'package:pyble/app/providers.dart';
 import 'package:pyble/console/console.dart';
 import 'package:pyble/editor/editor.dart';
 import 'package:pyble/files/files.dart';
+import 'package:pyble/localization/localization.dart';
 import 'package:pyble/pble/pble.dart';
 
 import '../support/shell_harness.dart';
@@ -54,6 +55,9 @@ const ValueKey<String> _pillKey = ValueKey<String>('connStatusPill');
 /// Ready}). Findable only inside the pill subtree, so state changes are legible.
 Finder _pillLabel(String word) =>
     find.descendant(of: find.byKey(_pillKey), matching: find.text(word));
+
+AppLocalizations _l10n(WidgetTester tester) =>
+    AppLocalizations.of(tester.element(find.byType(Scaffold).first));
 
 /// The run-control toolbar action tooltips (ARB: toolbar{Run,Stop,SoftReboot}).
 /// These always render; their ENABLED state is state-driven from run-control
@@ -213,6 +217,73 @@ void main() {
       expect(_pillLabel('Ready'), findsOneWidget);
       expect(_pillLabel('Disconnected'), findsNothing);
     });
+
+    testWidgets(
+      'connected pill retains board ID and firmware after Connect unmounts',
+      (tester) async {
+        await pumpShell(
+          tester,
+          connection: fakeConnection(
+            initial: ConnState.ready,
+            info: fakeDeviceInfo(deviceId: '5646', agentVersion: '0.6.0'),
+          ),
+          surface: ipadLandscape,
+        );
+
+        final AppLocalizations l10n = _l10n(tester);
+        expect(
+          find.descendant(
+            of: find.byKey(_pillKey),
+            matching: find.text(
+              l10n.connStatusWithBoardInfo('Ready', '5646', '0.6.0'),
+            ),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.bySemanticsLabel(
+            l10n.connStatusBoardInfoSemanticLabel('Ready', '5646', '0.6.0'),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.text(l10n.connectDeviceInfoTitle),
+          findsNothing,
+          reason: 'ADR-0011 replaces the Connect surface once ready',
+        );
+      },
+    );
+
+    testWidgets(
+      'connected pill reports empty additive metadata without gating',
+      (tester) async {
+        await pumpShell(
+          tester,
+          connection: fakeConnection(
+            initial: ConnState.ready,
+            info: fakeDeviceInfo(deviceId: '', agentVersion: ''),
+          ),
+          surface: phonePortrait,
+        );
+
+        final AppLocalizations l10n = _l10n(tester);
+        expect(
+          find.descendant(
+            of: find.byKey(_pillKey),
+            matching: find.text(
+              l10n.connStatusWithBoardInfo(
+                'Ready',
+                l10n.connectDeviceNotReported,
+                l10n.connectDeviceNotReported,
+              ),
+            ),
+          ),
+          findsOneWidget,
+        );
+        expect(tester.takeException(), isNull);
+        expect(find.byTooltip('Disconnect'), findsOneWidget);
+      },
+    );
   });
 
   group('FR-UI-1 collapsible landscape Files sidebar', () {
