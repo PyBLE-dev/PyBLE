@@ -35,6 +35,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:pyble/pble/connection.dart';
 import 'package:pyble/pble/engine.dart';
 import 'package:pyble/pble/frame.dart';
 import 'package:pyble/pble/pble_connection.dart';

@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: MIT
 // Part of PyBLE (https://pyble.dev) — see /LICENSE.
 
-/// PyBLE `lib/github_import/` — pull a folder of `.py` from a public,
-/// unauthenticated GitHub repo over HTTPS into the local project, then to the
-/// board via `Connection.putFile` (see docs/specifications/app.md §2).
-/// No account; `.py`/data only. Binds only to the `Connection` seam (CON-8).
-///
-/// S1 skeleton placeholder barrel. Real content lands at story A-33.
+/// PyBLE `lib/github_import/` — bounded, SHA-pinned public GitHub example
+/// import into the connected board (A-33 subset, ADR-0040).
 library;
+
+export 'github_board_importer.dart';
+export 'github_import_view.dart';
+export 'github_import_providers.dart';
+export 'github_models.dart';
+export 'github_repository_client.dart';

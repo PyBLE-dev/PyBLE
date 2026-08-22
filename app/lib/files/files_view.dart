@@ -8,7 +8,8 @@
 ///   * **Disconnected** — a quiet `folder_off` [EmptyState] with guidance and NO
 ///     destructive actions (nothing to act on).
 ///   * **Connected** — a breadcrumb + action bar (Up / Refresh / New file / New
-///     folder / Upload) over the live listing. Tapping a folder descends; tapping
+///     folder / Upload / GitHub import) over the live listing. Tapping a folder
+///     descends; tapping
 ///     a file opens it in the editor. Each row carries rename/delete affordances.
 ///     A determinate transfer bar shows during a transfer; a typed failure is
 ///     surfaced as an ARB-localized message (FR-FILES-3), never a raw code.
@@ -29,6 +30,8 @@ import 'package:pyble/app/providers.dart';
 import 'package:pyble/blocks/blocks.dart'
     show pythonBlocksFlowBusyProvider, showBoardFileAsBlocksConversion;
 import 'package:pyble/editor/editor.dart' show SmartPunctuationFormatter;
+import 'package:pyble/github_import/github_import.dart'
+    show showGithubImportBrowser;
 import 'package:pyble/localization/localization.dart';
 import 'package:pyble/pble/pble.dart';
 import 'package:pyble/theme/theme.dart';
@@ -56,7 +59,7 @@ class FilesView extends ConsumerWidget {
             detail: l10n.filesDisconnectedDetail,
           );
         }
-        return const _Explorer();
+        return _Explorer(connState: connState);
       },
     );
   }
@@ -64,11 +67,28 @@ class FilesView extends ConsumerWidget {
 
 /// The connected explorer body: action bar + transfer progress + error banner +
 /// the live listing. Reads (and thereby builds) the [fileExplorerProvider].
-class _Explorer extends ConsumerWidget {
-  const _Explorer();
+class _Explorer extends ConsumerStatefulWidget {
+  const _Explorer({required this.connState});
+
+  final ConnState connState;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_Explorer> createState() => _ExplorerState();
+}
+
+class _ExplorerState extends ConsumerState<_Explorer> {
+  final FocusNode _githubImportFocus = FocusNode(
+    debugLabel: 'Files GitHub import action',
+  );
+
+  @override
+  void dispose() {
+    _githubImportFocus.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final FileExplorerState state = ref.watch(fileExplorerProvider);
     final FileExplorerController ctrl = ref.read(fileExplorerProvider.notifier);
     final bool pythonBlocksBusy = ref.watch(pythonBlocksFlowBusyProvider);
@@ -77,7 +97,22 @@ class _Explorer extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        _ActionBar(state: state, ctrl: ctrl, l10n: l10n),
+        _ActionBar(
+          state: state,
+          ctrl: ctrl,
+          l10n: l10n,
+          githubImportFocus: _githubImportFocus,
+          githubImportEnabled: widget.connState == ConnState.ready,
+          openGithubImport: () async {
+            await showGithubImportBrowser(
+              context,
+              ref,
+              cwd: state.cwd,
+              refreshFiles: ctrl.refresh,
+            );
+            if (mounted) _githubImportFocus.requestFocus();
+          },
+        ),
         if (state.progress != null)
           _TransferBar(
             progress: state.progress!,
@@ -107,11 +142,17 @@ class _ActionBar extends StatelessWidget {
     required this.state,
     required this.ctrl,
     required this.l10n,
+    required this.githubImportFocus,
+    required this.githubImportEnabled,
+    required this.openGithubImport,
   });
 
   final FileExplorerState state;
   final FileExplorerController ctrl;
   final AppLocalizations l10n;
+  final FocusNode githubImportFocus;
+  final bool githubImportEnabled;
+  final Future<void> Function() openGithubImport;
 
   @override
   Widget build(BuildContext context) {
@@ -172,6 +213,14 @@ class _ActionBar extends StatelessWidget {
                   tooltip: l10n.filesActionUpload,
                   icon: const Icon(Icons.upload_file_outlined),
                   onPressed: () => ctrl.uploadCurrentBuffer(),
+                ),
+                IconButton(
+                  focusNode: githubImportFocus,
+                  tooltip: githubImportEnabled
+                      ? l10n.githubImportAction
+                      : l10n.githubImportRequiresReady,
+                  icon: const Icon(Icons.cloud_download_outlined),
+                  onPressed: githubImportEnabled ? openGithubImport : null,
                 ),
               ],
             ),

@@ -291,7 +291,11 @@ class PbleConnectionManager implements ConnectionManager {
 /// never changes; it mirrors the currently-attached live board's `state`,
 /// forwards its `console`/`runState`, and delegates every verb to it — or throws
 /// [NotConnectedException] (never a silent success) when none is attached.
-class _StableFacade implements Connection, ConnectionSessionStampSource {
+class _StableFacade
+    implements
+        Connection,
+        ConnectionSessionStampSource,
+        ConnectionDirectoryListingSource {
   final ValueNotifier<ConnState> _state = ValueNotifier<ConnState>(
     ConnState.disconnected,
   );
@@ -302,6 +306,7 @@ class _StableFacade implements Connection, ConnectionSessionStampSource {
 
   Connection? _live;
   Object _connectionSessionStamp = Object();
+  bool _liveSessionEstablished = false;
   VoidCallback? _liveStateListener;
   StreamSubscription<RunState>? _liveRunStateSub;
   StreamSubscription<ConsoleEvent>? _liveConsoleSub;
@@ -312,7 +317,20 @@ class _StableFacade implements Connection, ConnectionSessionStampSource {
     detach();
     _live = live;
     _connectionSessionStamp = Object();
-    _liveStateListener = () => _state.value = live.state.value;
+    _liveSessionEstablished = false;
+    _liveStateListener = () {
+      final ConnState next = live.state.value;
+      final bool nextEstablished =
+          next == ConnState.ready || next == ConnState.running;
+      if (_liveSessionEstablished && !nextEstablished) {
+        // An in-place reconnect creates a successor link session without a
+        // facade detach/attach. Rotate before mirroring the non-ready state so
+        // a multi-step action captured by the old link cannot resume later.
+        _connectionSessionStamp = Object();
+      }
+      _liveSessionEstablished = nextEstablished;
+      _state.value = next;
+    };
     live.state.addListener(_liveStateListener!);
     _liveStateListener!(); // sync the facade to the board's current state
     _liveRunStateSub = live.runState.listen((RunState rs) {
@@ -338,6 +356,7 @@ class _StableFacade implements Connection, ConnectionSessionStampSource {
     _liveConsoleSub = null;
     _live = null;
     _connectionSessionStamp = Object();
+    _liveSessionEstablished = false;
     _state.value = ConnState.disconnected;
   }
 
@@ -385,6 +404,15 @@ class _StableFacade implements Connection, ConnectionSessionStampSource {
   @override
   Future<List<RemoteEntry>> listDir(String path) async =>
       _required.listDir(path);
+
+  @override
+  Future<DirectoryListing> listDirWithMetadata(String path) async {
+    final Connection live = _required;
+    if (live case final ConnectionDirectoryListingSource source) {
+      return source.listDirWithMetadata(path);
+    }
+    return DirectoryListing(entries: await live.listDir(path), truncated: true);
+  }
 
   @override
   Future<Uint8List> getFile(String path, {ProgressCb? onProgress}) async =>

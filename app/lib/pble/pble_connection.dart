@@ -38,7 +38,7 @@ import 'types.dart'; // re-exports pble_exception.dart (the neutral type family)
 /// table to a distinct typed exception (FR-PBLE-13). `lib/pble` is the ONLY layer
 /// that knows the wire; the UI binds to this via [Connection] and never sees a
 /// frame or opcode.
-class PbleConnection implements Connection {
+class PbleConnection implements Connection, ConnectionDirectoryListingSource {
   PbleConnection({
     required PbleEngine engine,
     required String appName,
@@ -234,7 +234,11 @@ class PbleConnection implements Connection {
   // --- A-12 file operations --------------------------------------------------
 
   @override
-  Future<List<RemoteEntry>> listDir(String path) async {
+  Future<List<RemoteEntry>> listDir(String path) async =>
+      (await listDirWithMetadata(path)).entries;
+
+  @override
+  Future<DirectoryListing> listDirWithMetadata(String path) async {
     // FILE_LIST 0x10 [plen][path] → RSP [status][more:u8][count:u16] + entries.
     final PbleFrame rsp = await _engine.request(
       _cmd(PbleOpcode.fileList, _pathField(path)),
@@ -243,7 +247,8 @@ class PbleConnection implements Connection {
 
     final Uint8List p = rsp.payload;
     int off = 1; // skip [status]
-    off += 1; // [more]: truncation-only — never re-issued (A-30/S7 surfaces it)
+    final int more = p[off];
+    off += 1; // truncation-only — the wire has no continuation cursor
     final int count = _readU16(p, off);
     off += 2;
 
@@ -259,7 +264,9 @@ class PbleConnection implements Connection {
       off += nlen;
       entries.add(RemoteEntry(name: name, isDir: etype == 1, size: esize));
     }
-    return entries;
+    // Only 0 is proof of completeness. Any unexpected non-zero value must fail
+    // closed for callers that infer name absence from this listing.
+    return DirectoryListing(entries: entries, truncated: more != 0);
   }
 
   @override
