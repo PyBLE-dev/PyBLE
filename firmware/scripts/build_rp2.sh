@@ -372,7 +372,6 @@ PYBLE_UPSTREAM_DIR="$CANONICAL_UPSTREAM" "$SHA_DRIFT" || {
   echo "build_rp2.sh: canonical MicroPython checkout disagrees with versions.lock" >&2
   exit 1
 }
-assert_source_graph "$CANONICAL_UPSTREAM" canonical || exit 1
 
 # 2. The PINNED ARM GNU toolchain must be installed and match the lock
 # (BLD-4 equivalent). Never a silent substitution of whatever
@@ -411,6 +410,12 @@ case "$GOT_GCC" in
     ;;
 esac
 echo "build_rp2.sh: pinned ARM toolchain OK — $GOT_GCC"
+
+# A missing or mismatched pinned compiler is the first actionable build
+# prerequisite. Validate the complete nested source graph only after that
+# prerequisite passes, so a fresh checkout cannot mask the install guidance
+# with a later source-dependency error.
+assert_source_graph "$CANONICAL_UPSTREAM" canonical || exit 1
 
 # Release provenance may say clean=true only after this check.
 assert_pyble_source_state || exit 1
