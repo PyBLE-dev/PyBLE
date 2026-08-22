@@ -154,6 +154,24 @@ final class _FailingPutConnection extends RecordingConnection {
   }
 }
 
+final class _HoldingPutConnection extends RecordingConnection {
+  _HoldingPutConnection() : super(initial: ConnState.ready);
+
+  final Completer<void> putSettled = Completer<void>();
+  final Completer<void> releasePut = Completer<void>();
+
+  @override
+  Future<void> putFile(
+    String path,
+    Uint8List bytes, {
+    ProgressCb? onProgress,
+  }) async {
+    await super.putFile(path, bytes, onProgress: onProgress);
+    putSettled.complete();
+    await releasePut.future;
+  }
+}
+
 Key _entryKey(String remotePath) => ValueKey<String>('githubEntry_$remotePath');
 
 Key _selectionKey(String remotePath) =>
@@ -476,5 +494,77 @@ void main() {
         );
       },
     );
+
+    testWidgets('editing repository or ref invalidates the pinned selection', (
+      WidgetTester tester,
+    ) async {
+      final RecordingConnection connection = RecordingConnection(
+        initial: ConnState.ready,
+      );
+      final _FakeGithubApi api = _FakeGithubApi();
+      addTearDown(connection.dispose);
+
+      await _openImport(tester, connection, api);
+      await _browse(tester);
+      await tester.tap(find.byKey(_selectionKey('hello.py')));
+      await tester.pump();
+      expect(
+        tester
+            .widget<CheckboxListTile>(find.byKey(_selectionKey('hello.py')))
+            .value,
+        isTrue,
+      );
+
+      await tester.enterText(find.byKey(kGithubRefFieldKey), 'other-branch');
+      await tester.pump();
+
+      expect(find.textContaining(_commitSha), findsNothing);
+      expect(find.byKey(_selectionKey('hello.py')), findsNothing);
+      expect(
+        tester
+            .widget<FilledButton>(find.byKey(kGithubReviewButtonKey))
+            .onPressed,
+        isNull,
+      );
+    });
+
+    testWidgets('an in-flight PUT cannot dismiss and hide its final result', (
+      WidgetTester tester,
+    ) async {
+      final _HoldingPutConnection connection = _HoldingPutConnection();
+      final _FakeGithubApi api = _FakeGithubApi(
+        entries: const <GithubEntry>[_helloEntry],
+      );
+      addTearDown(() async {
+        if (!connection.releasePut.isCompleted) {
+          connection.releasePut.complete();
+        }
+        await connection.dispose();
+      });
+
+      await _openImport(tester, connection, api);
+      await _browse(tester);
+      await tester.tap(find.byKey(_selectionKey('hello.py')));
+      await tester.pump();
+      await tester.tap(find.byKey(kGithubReviewButtonKey));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(kGithubCommitButtonKey));
+      await connection.putSettled.future;
+      await tester.pump();
+
+      final Finder close = find.ancestor(
+        of: find.byTooltip(l10nOf(tester).githubImportClose),
+        matching: find.byType(IconButton),
+      );
+      expect(tester.widget<IconButton>(close).onPressed, isNull);
+      expect(find.byType(Dialog), findsOneWidget);
+
+      connection.releasePut.complete();
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey<String>('githubImportResult')),
+        findsOneWidget,
+      );
+    });
   });
 }

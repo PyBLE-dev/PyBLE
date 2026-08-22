@@ -162,6 +162,36 @@ void main() {
         );
       },
     );
+
+    test(
+      'preserves more==1 through the neutral completeness capability',
+      () async {
+        final Future<DirectoryListing> pending =
+            (conn as ConnectionDirectoryListingSource).listDirWithMetadata(
+              '/big',
+            );
+        await pumpEventQueue();
+        final PbleFrame sent = transport.sentFrames.single;
+
+        transport.deliverFrame(
+          rsp(
+            PbleOpcode.fileList,
+            sent.id,
+            fileListOkPayload(
+              more: true,
+              entries: <List<int>>[
+                fileEntry(isDir: false, size: 1, name: 'a.py'),
+              ],
+            ),
+          ),
+        );
+
+        final DirectoryListing listing = await pending;
+        expect(listing.truncated, isTrue);
+        expect(listing.entries.single.name, 'a.py');
+        expect(sentOf(PbleOpcode.fileList), hasLength(1));
+      },
+    );
   });
 
   group('A-12 getFile — CRC-verified download streaming (FR-PBLE-9)', () {
