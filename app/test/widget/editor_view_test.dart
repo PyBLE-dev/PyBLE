@@ -97,6 +97,43 @@ void main() {
       );
     });
 
+    testWidgets('opening, zooming, and editing preserve literal tab bytes', (
+      WidgetTester tester,
+    ) async {
+      final FakeConnection fake = FakeConnection(initial: ConnState.ready);
+      addTearDown(fake.dispose);
+      await pumpSurface(tester, const EditorView(), connection: fake);
+      const String source = 'if True:\n\tprint(1)\n';
+      containerOf(tester)
+          .read(editorDocumentProvider.notifier)
+          .openFromBoard(path: '/main.py', content: source);
+      await tester.pump();
+
+      EditableText editable = tester.widget<EditableText>(
+        find.byType(EditableText),
+      );
+      expect(editable.controller.text, source);
+
+      await tester.tap(find.byKey(kEditorIncreaseFontSizeButtonKey));
+      await tester.pump();
+      editable = tester.widget<EditableText>(find.byType(EditableText));
+      expect(editable.controller.text, source);
+
+      editable.controller.value = const TextEditingValue(
+        text: '${source}# unrelated edit\n',
+        selection: TextSelection.collapsed(
+          offset: '${source}# unrelated edit\n'.length,
+        ),
+      );
+      await tester.pump();
+
+      expect(
+        containerOf(tester).read(editorDocumentProvider).content,
+        '${source}# unrelated edit\n',
+        reason: 'valid tab indentation is source data, never display state',
+      );
+    });
+
     testWidgets('font buttons are localized and disable at their bounds', (
       WidgetTester tester,
     ) async {
@@ -139,6 +176,41 @@ void main() {
             .onPressed,
         isNull,
       );
+    });
+
+    testWidgets('maximum zoom composes with 2x accessibility text scaling', (
+      WidgetTester tester,
+    ) async {
+      final FakeConnection fake = FakeConnection(initial: ConnState.ready);
+      addTearDown(fake.dispose);
+      await pumpSurface(
+        tester,
+        const MediaQuery(
+          data: MediaQueryData(textScaler: TextScaler.linear(2)),
+          child: EditorView(),
+        ),
+        connection: fake,
+      );
+      containerOf(tester)
+          .read(editorDisplaySettingsProvider.notifier)
+          .setFontSize(kEditorMaxFontSize);
+      containerOf(tester)
+          .read(editorDocumentProvider.notifier)
+          .openFromBoard(
+            path: '/main.py',
+            content: List<String>.generate(
+              120,
+              (int index) => 'value_${index + 1} = ${index + 1}',
+            ).join('\n'),
+          );
+      await tester.pump();
+
+      expect(
+        tester.widget<EditableText>(find.byType(EditableText)).style.fontSize,
+        kEditorMaxFontSize,
+      );
+      expect(find.text('120'), findsOneWidget);
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('compact editor exposes font sizing without overflowing', (
