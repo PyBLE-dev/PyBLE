@@ -37,7 +37,7 @@ GithubEntry _helloEntry() => const GithubEntry(
   remotePath: 'examples/hello.py',
   kind: GithubEntryKind.regularFile,
   objectSha: _helloBlobSha,
-  declaredSize: 18,
+  declaredSize: 15,
 );
 
 void _expectGitHubRequest(http.Request request) {
@@ -550,6 +550,55 @@ void main() {
   });
 
   group('GithubRepositoryClient failures', () {
+    test('enforces one absolute deadline against a trickling body', () async {
+      final StreamController<List<int>> body = StreamController<List<int>>();
+      final Completer<void> abortObserved = Completer<void>();
+      Timer? trickle;
+      final MockClient httpClient = MockClient.streaming((
+        http.BaseRequest request,
+        http.ByteStream requestBody,
+      ) async {
+        expect(request, isA<http.AbortableRequest>());
+        final http.AbortableRequest abortable =
+            request as http.AbortableRequest;
+        trickle = Timer.periodic(const Duration(milliseconds: 10), (_) {
+          if (!body.isClosed) body.add(const <int>[0x20]);
+        });
+        unawaited(
+          abortable.abortTrigger!.then((_) async {
+            if (!abortObserved.isCompleted) abortObserved.complete();
+            trickle?.cancel();
+            if (!body.isClosed) await body.close();
+          }),
+        );
+        return http.StreamedResponse(body.stream, HttpStatus.ok);
+      });
+      final GithubRepositoryClient api = GithubRepositoryClient(
+        httpClient: httpClient,
+        timeout: const Duration(milliseconds: 80),
+      );
+      final Stopwatch elapsed = Stopwatch()..start();
+
+      try {
+        await expectLater(
+          api
+              .resolve(_locator(), ref: 'main')
+              .timeout(const Duration(seconds: 1)),
+          throwsA(_githubFailure(GithubFailureKind.offline)),
+        );
+        expect(elapsed.elapsed, lessThan(const Duration(milliseconds: 500)));
+        await expectLater(
+          abortObserved.future.timeout(const Duration(milliseconds: 200)),
+          completes,
+        );
+      } finally {
+        elapsed.stop();
+        trickle?.cancel();
+        if (!body.isClosed) await body.close();
+        httpClient.close();
+      }
+    });
+
     test(
       'cancels response bodies rejected by status or declared length',
       () async {

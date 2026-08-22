@@ -9,10 +9,10 @@
 
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:pyble/files/files.dart';
@@ -245,6 +245,17 @@ Future<void> _browse(
   await tester.pumpAndSettle();
 }
 
+Future<void> _activateButtonWithEnter(WidgetTester tester, Key key) async {
+  final Finder button = find.byKey(key);
+  final Finder label = find.descendant(of: button, matching: find.byType(Text));
+  final FocusNode focusNode = Focus.of(tester.element(label));
+  focusNode.requestFocus();
+  await tester.pump();
+  expect(focusNode.hasFocus, isTrue);
+  await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+  await tester.pumpAndSettle();
+}
+
 void main() {
   group('A-33 GitHub import — adaptive connected Files workflow', () {
     testWidgets(
@@ -329,6 +340,34 @@ void main() {
       expect(find.byType(Dialog), findsNothing);
       expect(find.byKey(kGithubRepositoryFieldKey), findsOneWidget);
       expect(find.byKey(kGithubRefFieldKey), findsOneWidget);
+    });
+
+    testWidgets('hardware Enter activates Browse and Review', (
+      WidgetTester tester,
+    ) async {
+      final RecordingConnection connection = RecordingConnection(
+        initial: ConnState.ready,
+      );
+      final _FakeGithubApi api = _FakeGithubApi(
+        entries: const <GithubEntry>[_helloEntry],
+      );
+      addTearDown(connection.dispose);
+
+      await _openImport(tester, connection, api);
+      await tester.enterText(
+        find.byKey(kGithubRepositoryFieldKey),
+        'https://github.com/PyBLE-dev/examples',
+      );
+      await _activateButtonWithEnter(tester, kGithubBrowseButtonKey);
+
+      expect(api.resolveCalls, hasLength(1));
+      expect(api.listedRemotePaths, <String>['']);
+      await tester.tap(find.byKey(_selectionKey('hello.py')));
+      await tester.pump();
+      await _activateButtonWithEnter(tester, kGithubReviewButtonKey);
+
+      expect(find.text(l10nOf(tester).githubImportReviewTitle), findsOneWidget);
+      expect(connection.putFileCalls, isEmpty);
     });
 
     testWidgets(
@@ -450,6 +489,20 @@ void main() {
             hasFocusAction: true,
           ),
         );
+        Finder failureLiveRegions() => find.descendant(
+          of: failure,
+          matching: find.byWidgetPredicate(
+            (Widget widget) =>
+                widget is Semantics && widget.properties.liveRegion == true,
+          ),
+        );
+        expect(failureLiveRegions(), findsOneWidget);
+        final int failureNodeId = tester.getSemantics(failureLiveRegions()).id;
+        tester.platformDispatcher.textScaleFactorTestValue = 1.1;
+        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+        await tester.pump();
+        expect(failureLiveRegions(), findsOneWidget);
+        expect(tester.getSemantics(failureLiveRegions()).id, failureNodeId);
         expect(find.text(l10nOf(tester).githubImportRetry), findsNothing);
         expect(
           tester
@@ -571,10 +624,23 @@ void main() {
           const ValueKey<String>('githubImportResult'),
         );
         expect(result, findsOneWidget);
+        Finder resultLiveRegions() => find.byWidgetPredicate(
+          (Widget widget) =>
+              widget is Semantics &&
+              widget.key == const ValueKey<String>('githubImportResult') &&
+              widget.properties.liveRegion == true,
+        );
+        expect(resultLiveRegions(), findsOneWidget);
         expect(
           tester.getSemantics(result),
           matchesSemantics(isLiveRegion: true),
         );
+        final int resultNodeId = tester.getSemantics(resultLiveRegions()).id;
+        tester.platformDispatcher.textScaleFactorTestValue = 1.1;
+        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+        await tester.pumpAndSettle();
+        expect(resultLiveRegions(), findsOneWidget);
+        expect(tester.getSemantics(resultLiveRegions()).id, resultNodeId);
       },
     );
 
@@ -710,6 +776,42 @@ void main() {
         find.byKey(const ValueKey<String>('githubImportResult')),
         findsOneWidget,
       );
+    });
+
+    testWidgets('a size failure identifies its safe repository path', (
+      WidgetTester tester,
+    ) async {
+      const GithubEntry oversized = GithubEntry(
+        name: 'oversized.py',
+        remotePath: 'examples/oversized.py',
+        kind: GithubEntryKind.regularFile,
+        objectSha: _helloBlobSha,
+        declaredSize: 21,
+      );
+      final RecordingConnection connection = RecordingConnection(
+        initial: ConnState.ready,
+      );
+      final _FakeGithubApi api = _FakeGithubApi(
+        entries: const <GithubEntry>[oversized],
+        fetchFailuresRemaining: 1,
+        fetchFailure: const GithubFailure(
+          GithubFailureKind.fileTooLarge,
+          path: 'examples/oversized.py',
+        ),
+      );
+      addTearDown(connection.dispose);
+
+      await _openImport(tester, connection, api);
+      await _browse(tester);
+      await tester.tap(find.byKey(_selectionKey('examples/oversized.py')));
+      await tester.pump();
+      await tester.tap(find.byKey(kGithubReviewButtonKey));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(kGithubCommitButtonKey));
+      await tester.pumpAndSettle();
+
+      expect(connection.putFileCalls, isEmpty);
+      expect(find.textContaining('examples/oversized.py'), findsOneWidget);
     });
 
     testWidgets('a rate-limited blob retry waits without writing', (
