@@ -7,6 +7,7 @@
 // Connection seam; no GitHub account, radio, or proprietary implementation is
 // involved.
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -73,6 +74,9 @@ final class _FakeGithubApi implements GithubApi {
       'hello.py': "print('hello')\n",
       'blink.py': 'print(1)\n',
     },
+    this.resolveFailure,
+    this.resolveGate,
+    this.listGate,
   }) : _bytesByRemotePath = <String, Uint8List>{
          for (final MapEntry<String, String> source
              in sourceByRemotePath.entries)
@@ -81,6 +85,9 @@ final class _FakeGithubApi implements GithubApi {
 
   final List<GithubEntry> entries;
   final Map<String, Uint8List> _bytesByRemotePath;
+  final GithubFailure? resolveFailure;
+  final Completer<void>? resolveGate;
+  final Completer<void>? listGate;
   final List<(RepositoryLocator, String)> resolveCalls =
       <(RepositoryLocator, String)>[];
   final List<String> listedRemotePaths = <String>[];
@@ -92,6 +99,8 @@ final class _FakeGithubApi implements GithubApi {
     String ref = '',
   }) async {
     resolveCalls.add((locator, ref));
+    await resolveGate?.future;
+    if (resolveFailure case final GithubFailure failure) throw failure;
     return PinnedRepository(
       locator: locator,
       requestedRef: ref,
@@ -108,6 +117,7 @@ final class _FakeGithubApi implements GithubApi {
     required String remotePath,
   }) async {
     listedRemotePaths.add(remotePath);
+    await listGate?.future;
     return GithubDirectory(
       treeSha: treeSha,
       remotePath: remotePath,
@@ -122,6 +132,25 @@ final class _FakeGithubApi implements GithubApi {
   ) async {
     fetchedRemotePaths.add(entry.remotePath);
     return Uint8List.fromList(_bytesByRemotePath[entry.remotePath]!);
+  }
+}
+
+final class _FailingPutConnection extends RecordingConnection {
+  _FailingPutConnection() : super(initial: ConnState.ready);
+
+  int _putAttempt = 0;
+
+  @override
+  Future<void> putFile(
+    String path,
+    Uint8List bytes, {
+    ProgressCb? onProgress,
+  }) async {
+    _putAttempt += 1;
+    if (_putAttempt == 2) {
+      injectError(const EIo('scripted second PUT failure'));
+    }
+    await super.putFile(path, bytes, onProgress: onProgress);
   }
 }
 
@@ -306,6 +335,145 @@ void main() {
         );
         expect(connection.runFileCalls, isEmpty);
         expect(connection.runSourceCalls, isEmpty);
+      },
+    );
+
+    testWidgets(
+      'resolve, folder loading, rate guidance, and error focus are explicit',
+      (WidgetTester tester) async {
+        final RecordingConnection connection = RecordingConnection(
+          initial: ConnState.ready,
+        );
+        final Completer<void> resolveGate = Completer<void>();
+        final Completer<void> listGate = Completer<void>();
+        final _FakeGithubApi loadingApi = _FakeGithubApi(
+          resolveGate: resolveGate,
+          listGate: listGate,
+        );
+        addTearDown(connection.dispose);
+
+        await _openImport(tester, connection, loadingApi);
+        await tester.enterText(
+          find.byKey(kGithubRepositoryFieldKey),
+          'https://github.com/PyBLE-dev/examples',
+        );
+        await tester.tap(find.byKey(kGithubBrowseButtonKey));
+        await tester.pump();
+        expect(find.text('Resolving repository…'), findsOneWidget);
+
+        resolveGate.complete();
+        await tester.pump();
+        expect(find.text('Loading repository folder…'), findsOneWidget);
+        listGate.complete();
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byTooltip(l10nOf(tester).githubImportClose));
+        await tester.pumpAndSettle();
+
+        final _FakeGithubApi rateLimitedApi = _FakeGithubApi(
+          resolveFailure: const GithubFailure(
+            GithubFailureKind.rateLimited,
+            rateLimitRemaining: 0,
+            retryAfter: Duration(seconds: 120),
+          ),
+        );
+        await _openImport(tester, connection, rateLimitedApi);
+        await _browse(tester);
+
+        expect(find.textContaining('120'), findsOneWidget);
+        final Finder failure = find.byKey(
+          const ValueKey<String>('githubImportFailure'),
+        );
+        expect(failure, findsOneWidget);
+        expect(tester.widget<Focus>(failure).focusNode?.hasFocus, isTrue);
+        expect(
+          tester.getSemantics(failure),
+          matchesSemantics(isLiveRegion: true),
+        );
+      },
+    );
+
+    testWidgets('dismissal returns focus to the invoking Files action', (
+      WidgetTester tester,
+    ) async {
+      final RecordingConnection connection = RecordingConnection(
+        initial: ConnState.ready,
+      );
+      final _FakeGithubApi api = _FakeGithubApi();
+      addTearDown(connection.dispose);
+      await pumpSurface(
+        tester,
+        const FilesView(),
+        connection: connection,
+        extra: <Override>[githubApiProvider.overrideWithValue(api)],
+      );
+      await tester.pumpAndSettle();
+
+      final Finder tooltip = find.byTooltip(l10nOf(tester).githubImportAction);
+      final Finder buttonFinder = find.ancestor(
+        of: tooltip,
+        matching: find.byType(IconButton),
+      );
+      final FocusNode? invokingFocus = tester
+          .widget<IconButton>(buttonFinder)
+          .focusNode;
+      expect(invokingFocus, isNotNull);
+
+      await tester.tap(tooltip);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip(l10nOf(tester).githubImportClose));
+      await tester.pumpAndSettle();
+
+      expect(invokingFocus!.hasFocus, isTrue);
+    });
+
+    testWidgets(
+      'partial result labels succeeded, failed, and unattempted paths and announces once',
+      (WidgetTester tester) async {
+        final _FailingPutConnection connection = _FailingPutConnection();
+        final GithubEntry third = GithubEntry(
+          name: 'third.py',
+          remotePath: 'third.py',
+          kind: GithubEntryKind.regularFile,
+          objectSha: '7777777777777777777777777777777777777777',
+          declaredSize: 9,
+        );
+        final _FakeGithubApi api = _FakeGithubApi(
+          entries: <GithubEntry>[_helloEntry, _blinkEntry, third],
+          sourceByRemotePath: const <String, String>{
+            'hello.py': "print('hello')\n",
+            'blink.py': 'print(1)\n',
+            'third.py': 'print(3)\n',
+          },
+        );
+        addTearDown(connection.dispose);
+
+        await _openImport(tester, connection, api);
+        await _browse(tester);
+        for (final String path in <String>[
+          'hello.py',
+          'blink.py',
+          'third.py',
+        ]) {
+          await tester.tap(find.byKey(_selectionKey(path)));
+        }
+        await tester.pump();
+        await tester.tap(find.byKey(kGithubReviewButtonKey));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(kGithubCommitButtonKey));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Downloaded'), findsOneWidget);
+        expect(find.text('Failed'), findsOneWidget);
+        expect(find.text('Not attempted'), findsOneWidget);
+        final Finder result = find.byKey(
+          const ValueKey<String>('githubImportResult'),
+        );
+        expect(result, findsOneWidget);
+        expect(
+          tester.getSemantics(result),
+          matchesSemantics(isLiveRegion: true),
+        );
       },
     );
   });

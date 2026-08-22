@@ -477,6 +477,30 @@ void main() {
         );
       }
     });
+
+    test(
+      'rejects a blob size that disagrees with its selected tree entry',
+      () async {
+        final GithubRepositoryClient api = GithubRepositoryClient(
+          httpClient: MockClient(
+            (http.Request request) async => http.Response(
+              jsonEncode(<String, Object?>{
+                'sha': _helloBlobSha,
+                'size': 3,
+                'encoding': 'base64',
+                'content': base64.encode(utf8.encode('abc')),
+              }),
+              200,
+            ),
+          ),
+        );
+
+        await expectLater(
+          api.fetchFile(_pinned(), _helloEntry()),
+          throwsA(_githubFailure(GithubFailureKind.malformedResponse)),
+        );
+      },
+    );
   });
 
   group('GithubRepositoryClient failures', () {

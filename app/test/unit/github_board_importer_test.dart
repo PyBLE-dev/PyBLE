@@ -56,8 +56,7 @@ final class _FakeGithubApi extends Fake implements GithubApi {
 
 final class _SessionRecordingConnection extends RecordingConnection
     implements ConnectionSessionStampSource {
-  _SessionRecordingConnection(
-    this.operationLog, {
+  _SessionRecordingConnection({
     List<List<RemoteEntry>>? directoryListings,
     this.failPutAt,
     this.holdPutAt,
@@ -66,7 +65,6 @@ final class _SessionRecordingConnection extends RecordingConnection
        _sessionStamp = Object(),
        super(initial: ConnState.ready);
 
-  final List<String> operationLog;
   final List<List<RemoteEntry>> directoryListings;
   final int? failPutAt;
   final int? holdPutAt;
@@ -140,15 +138,15 @@ final class _Harness {
   }) {
     // Share one chronological log so tests can prove that no PUT races ahead
     // of a pending or unvalidated Git blob.
-    final List<String> operationLog = <String>[];
+    final _SessionRecordingConnection connection = _SessionRecordingConnection(
+      directoryListings: directoryListings,
+      failPutAt: failPutAt,
+      holdPutAt: holdPutAt,
+    );
+    final List<String> operationLog = connection.operationLog;
     return _Harness._(
       operationLog: operationLog,
-      connection: _SessionRecordingConnection(
-        operationLog,
-        directoryListings: directoryListings,
-        failPutAt: failPutAt,
-        holdPutAt: holdPutAt,
-      ),
+      connection: connection,
       api: _FakeGithubApi(operationLog),
       cwd: cwd,
     );
@@ -330,6 +328,23 @@ void main() {
         expect(over.operationLog, isEmpty);
       },
     );
+
+    test('rejects a selection spanning more than one remote folder', () async {
+      final _Harness h = harness();
+
+      await expectLater(
+        h.importer.review(_repository, <GithubEntry>[
+          _file('alpha.py', remotePath: 'examples/alpha.py', object: 30),
+          _file('beta.py', remotePath: 'other/beta.py', object: 31),
+        ]),
+        throwsA(_failure(GithubFailureKind.invalidTarget)),
+      );
+      expect(
+        h.operationLog,
+        isEmpty,
+        reason: 'folder scope is target validation and must precede board I/O',
+      );
+    });
 
     test('a directory at an exact target is a blocking conflict', () async {
       final _Harness h = harness(
