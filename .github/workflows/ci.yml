@@ -134,10 +134,11 @@ jobs:
         with:
           fetch-depth: 0
           submodules: true
-      - name: Initialize pinned MicroPython host dependency
+      - name: Initialize pinned MicroPython host dependencies
         run: |
           git -C firmware/upstream/micropython submodule update --init --depth 1 \
-            lib/micropython-lib
+            lib/micropython-lib \
+            lib/cyw43-driver
       - name: Firmware shell and conformance gates
         run: tests/firmware_tests/run_tests.sh
       - name: Complete firmware host and release suite
