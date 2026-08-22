@@ -231,6 +231,52 @@ void main() {
         reason: 'reattaching the same device id is a new local session',
       );
     });
+
+    test(
+      'local session stamp rotates once when an attached link reconnects',
+      () async {
+        final r = _rig();
+        addTearDown(r.manager.dispose);
+        final Connection facade = r.manager.connection;
+
+        await r.manager.connect(_hitA.id);
+        r.board.emit(ConnState.ready);
+        await pumpEventQueue();
+        final Object establishedStamp = connectionSessionStampOf(facade);
+
+        r.board.emit(ConnState.running);
+        r.board.emit(ConnState.ready);
+        await pumpEventQueue();
+        expect(
+          identical(connectionSessionStampOf(facade), establishedStamp),
+          isTrue,
+          reason: 'ordinary ready/running transitions retain one link session',
+        );
+
+        r.board.emit(ConnState.connecting);
+        await pumpEventQueue();
+        final Object successorStamp = connectionSessionStampOf(facade);
+        expect(identical(successorStamp, establishedStamp), isFalse);
+
+        r.board.emit(ConnState.disconnected);
+        r.board.emit(ConnState.connecting);
+        r.board.emit(ConnState.ready);
+        await pumpEventQueue();
+        expect(
+          identical(connectionSessionStampOf(facade), successorStamp),
+          isTrue,
+          reason: 'one departure rotates once for the complete reconnect',
+        );
+
+        r.board.emit(ConnState.disconnected);
+        await pumpEventQueue();
+        expect(
+          identical(connectionSessionStampOf(facade), successorStamp),
+          isFalse,
+          reason: 'a later established-session departure rotates again',
+        );
+      },
+    );
   });
 
   group('A-22 ConnectionManager — not-connected + failure', () {
