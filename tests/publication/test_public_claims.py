@@ -83,28 +83,27 @@ class PublicClaimsTest(unittest.TestCase):
             REPO_ROOT / "tools" / "web" / "README.md"
         ).read_text(encoding="utf-8")
 
-    def test_readme_identifies_the_exact_hardware_tested_public_beta(self) -> None:
+    def test_readme_identifies_the_qualified_v060_release(self) -> None:
         firmware = markdown_section(self.readme, "What works")
         normalized = " ".join(firmware.split())
 
         self.assertIn(
-            "public browser installer currently offers the exact v0.4.2 hardware-tested beta",
+            "qualified public v0.6.0 release",
             normalized,
         )
-        self.assertIn("Production Chrome erase/install", firmware)
-        self.assertIn("interrupted-flash recovery passed", firmware)
-        self.assertIn("Complete release qualification continues", firmware)
+        self.assertIn("all five exact release profiles", normalized)
+        self.assertIn("four ESP profiles use Web Serial", normalized)
+        self.assertIn("verified UF2", firmware)
+        self.assertIn("BOOTSEL", firmware)
         self.assertIn("`esp32-4mb`", firmware)
-        self.assertIn("Classic ESP32, 4 MiB external SPI flash", firmware)
         self.assertIn("`esp32-s3-n16r8`", firmware)
-        self.assertIn("16 MiB flash / 8 MiB Octal PSRAM", firmware)
-        self.assertIn(
-            "v0.4.2 hardware-tested beta; browser install/recovery passed",
-            firmware,
-        )
-        self.assertIn("Planned; unavailable", firmware)
-        self.assertNotIn("currently offers qualified images", firmware)
-        self.assertNotIn("full HIL pending", firmware)
+        self.assertIn("`waveshare-esp32-s3-lcd-147b`", firmware)
+        self.assertIn("`esp32-c3-4mb`", firmware)
+        self.assertIn("`rpi-pico2-w`", firmware)
+        self.assertEqual(firmware.count("Qualified v0.6.0"), 5)
+        self.assertNotIn("v0.4.2 hardware-tested beta", firmware)
+        self.assertNotIn("Planned; unavailable", firmware)
+        self.assertNotIn("in-progress `0.6.0`", firmware)
 
     def test_readme_caption_describes_only_the_visible_app(self) -> None:
         caption_start = self.readme.index("<em>Actual PyBLE app")
@@ -116,23 +115,22 @@ class PublicClaimsTest(unittest.TestCase):
         self.assertIn("generated MicroPython", caption)
         self.assertNotRegex(caption, r"(?i)pictured|board|module")
 
-    def test_readme_try_steps_use_the_hardware_tested_beta_safely(self) -> None:
+    def test_readme_try_steps_use_the_qualified_v060_release_safely(self) -> None:
         try_section = markdown_section(self.readme, "Try PyBLE")
         normalized = " ".join(try_section.split())
 
-        self.assertIn("v0.4.2 hardware-tested beta", normalized)
-        self.assertIn(
-            "Browser installation and interrupted-flash recovery passed",
-            normalized,
-        )
-        self.assertIn("complete release qualification continues", normalized)
-        self.assertNotIn("full HIL pending", try_section)
+        self.assertIn("qualified v0.6.0 release", normalized)
+        self.assertIn("four ESP profiles", normalized)
+        self.assertIn("Web Serial", try_section)
+        self.assertIn("Pico 2 W", try_section)
+        self.assertIn("verified UF2", try_section)
+        self.assertIn("BOOTSEL", try_section)
+        self.assertIn("iPadOS cannot perform", normalized)
         self.assertNotIn("use it at your own risk", try_section)
         self.assertIn("exact profile", try_section)
         self.assertIn("back up", try_section)
-        self.assertIn("enabled install action", try_section)
         self.assertIn("Flashing erases the board", try_section)
-        self.assertNotIn("wait for that page", try_section.lower())
+        self.assertNotIn("v0.4.2 hardware-tested beta", try_section)
 
     def test_current_public_surfaces_agree_on_beta_and_c3_state(self) -> None:
         combined = "\n".join(
@@ -232,7 +230,31 @@ class PublicClaimsTest(unittest.TestCase):
 
     def test_public_surfaces_link_the_release_evidence_and_changelog(self) -> None:
         self.assertIn(
-            "(docs/validation/browser-flashing/v0.4.2-production.md)",
+            "https://pyble.dev/firmware/v0.6.0/release.json",
+            self.readme,
+        )
+        self.assertIn(
+            "https://pyble.dev/firmware/v0.6.0/RELEASE_NOTES.md",
+            self.readme,
+        )
+        self.assertIn(
+            "https://pyble.dev/firmware/v0.6.0/SHA256SUMS",
+            self.readme,
+        )
+        self.assertIn(
+            "https://pyble.dev/firmware/v0.6.0/RECOVERY.md",
+            self.readme,
+        )
+        self.assertIn(
+            "https://github.com/PyBLE-dev/PyBLE/tree/firmware-v0.6.0",
+            self.readme,
+        )
+        self.assertIn(
+            "c2940281a14feddb55c48de15ac18087e9317d1b7130e514fab5a209b046a1e6",
+            self.readme,
+        )
+        self.assertIn(
+            "0c7230d6708797c241160ba71fbd37e6b22f180a",
             self.readme,
         )
         self.assertIn(
@@ -248,6 +270,36 @@ class PublicClaimsTest(unittest.TestCase):
         self.assertIn("interrupted-flash recovery", release)
         self.assertIn("complete release qualification remains pending", release)
         self.assertNotIn("qualified release", release)
+
+        v060 = markdown_section(
+            self.changelog, "Firmware 0.6.0 — 2026-08-21"
+        )
+        for wording in (
+            "qualified five-profile release",
+            "`esp32-4mb`",
+            "`esp32-s3-n16r8`",
+            "`waveshare-esp32-s3-lcd-147b`",
+            "`esp32-c3-4mb`",
+            "`rpi-pico2-w`",
+            "firmware-v0.6.0",
+            "0c7230d6708797c241160ba71fbd37e6b22f180a",
+            "MicroPython v1.28.0",
+            "ESP-IDF v5.5.1",
+            "four ESP profiles",
+            "verified UF2",
+            "BOOTSEL",
+            "all five HIL rows passed",
+            "https://pyble.dev/flash",
+        ):
+            self.assertIn(wording, v060)
+
+        unreleased = markdown_section(self.changelog, "Unreleased")
+        for stale in (
+            "Abandoned the unpublished local `firmware-v0.6.0` candidate",
+            "Pico remains absent from public release metadata",
+            "all candidate/HIL gates restart",
+        ):
+            self.assertNotIn(stale, unreleased)
 
     def test_public_specifications_describe_the_exact_beta_without_overclaim(
         self,
