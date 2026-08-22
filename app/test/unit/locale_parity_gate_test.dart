@@ -50,11 +50,13 @@ String _arb(String locale, Map<String, String> entries) {
 String _json(String s) =>
     '"${s.replaceAll(r'\', r'\\').replaceAll('"', r'\"')}"';
 
-/// Lays out a throwaway app-package root with ARB bundles + optional lib/app
-/// widget sources.
+/// Lays out a throwaway app-package root with ARB bundles + optional Dart
+/// sources beneath `lib/`.
 Directory _fixtureApp({
   required Map<String, String> arbs, // locale -> file body
   Map<String, String> appDart = const <String, String>{}, // relPath -> source
+  Map<String, String> libDart =
+      const <String, String>{}, // lib relPath -> source
 }) {
   final Directory tmp = Directory.systemTemp.createTempSync('pyble_locale_');
   arbs.forEach((locale, body) {
@@ -64,6 +66,11 @@ Directory _fixtureApp({
   });
   appDart.forEach((rel, source) {
     File('${tmp.path}/lib/app/$rel')
+      ..createSync(recursive: true)
+      ..writeAsStringSync(source);
+  });
+  libDart.forEach((rel, source) {
+    File('${tmp.path}/lib/$rel')
       ..createSync(recursive: true)
       ..writeAsStringSync(source);
   });
@@ -200,6 +207,48 @@ void main() {
         runGate(app),
         0,
         reason: 'strings sourced from AppLocalizations are the sanctioned path',
+      );
+    });
+
+    test('HARD-CODED TEXT: GitHub-import display literals also fail', () {
+      requireGate();
+      final Directory app = _fixtureApp(
+        arbs: <String, String>{
+          'en': _arb('en', <String, String>{'greet': 'Hello'}),
+        },
+        libDart: <String, String>{
+          'github_import/bad_widget.dart':
+              '${_spdx}import "package:flutter/material.dart";\n'
+              'Widget build() => const Text("Unlocalized import action");\n',
+        },
+      );
+      addTearDown(() => app.deleteSync(recursive: true));
+      expect(
+        runGate(app),
+        isNonZero,
+        reason:
+            'feature-package UI is subject to the same ARB-only display-copy '
+            'contract as lib/app (FR-I18N-3)',
+      );
+    });
+
+    test('HARD-CODED TEXT: touched Files-package literals also fail', () {
+      requireGate();
+      final Directory app = _fixtureApp(
+        arbs: <String, String>{
+          'en': _arb('en', <String, String>{'greet': 'Hello'}),
+        },
+        libDart: <String, String>{
+          'files/bad_widget.dart':
+              '${_spdx}import "package:flutter/material.dart";\n'
+              'Widget build() => const Text("Unlocalized Files action");\n',
+        },
+      );
+      addTearDown(() => app.deleteSync(recursive: true));
+      expect(
+        runGate(app),
+        isNonZero,
+        reason: 'Files UI must remain ARB-only after adding the import action',
       );
     });
 

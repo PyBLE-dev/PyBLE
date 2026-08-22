@@ -43,6 +43,29 @@ void main() {
   Key blocksKey(String n) => ValueKey<String>('fileOpenBlocks_$n');
 
   group('A-30 FilesView — connected listing + navigation', () {
+    testWidgets('exposes GitHub import only for a ready board session', (
+      WidgetTester tester,
+    ) async {
+      final FakeConnection fake = FakeConnection(initial: ConnState.ready);
+      addTearDown(fake.dispose);
+      await pumpSurface(tester, const FilesView(), connection: fake);
+      await tester.pumpAndSettle();
+
+      Finder action = find.byTooltip(l10nOf(tester).githubImportAction);
+      expect(action, findsOneWidget);
+      expect(tester.widget<IconButton>(action).onPressed, isNotNull);
+
+      fake.emitRunState(RunState.running);
+      await tester.pump();
+      action = find.byTooltip(l10nOf(tester).githubImportAction);
+      expect(action, findsOneWidget);
+      expect(
+        tester.widget<IconButton>(action).onPressed,
+        isNull,
+        reason: 'a running board cannot accept import PUTs',
+      );
+    });
+
     testWidgets('lists the fsRoot entries when connected', (
       WidgetTester tester,
     ) async {
@@ -158,6 +181,7 @@ void main() {
         expect(find.text(l10n.filesDisconnectedTitle), findsOneWidget);
         expect(find.byTooltip(l10n.filesActionUpload), findsNothing);
         expect(find.byTooltip(l10n.filesActionRefresh), findsNothing);
+        expect(find.byTooltip(l10n.githubImportAction), findsNothing);
       },
     );
   });
