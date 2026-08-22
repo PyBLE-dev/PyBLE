@@ -11,6 +11,10 @@ its annotated tag rather than from the newer branch tip.
 
 ### App source
 
+- Added the connected board's PBLE/1 board ID and PyBLE agent firmware version
+  to Board info and retained both in the ready/running status pill, with
+  localized missing-value handling, full accessibility context, and
+  connection-session-safe updates.
 - Added fail-closed Android upload signing and signed App Bundle CI contracts,
   while retaining invited Google Play testing as distinct from a public Play
   release.
