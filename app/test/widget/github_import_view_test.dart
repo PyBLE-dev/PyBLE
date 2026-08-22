@@ -79,6 +79,7 @@ final class _FakeGithubApi implements GithubApi {
     this.resolveGate,
     this.listGate,
     this.fetchFailuresRemaining = 0,
+    this.fetchFailure = const GithubFailure(GithubFailureKind.offline),
     this.listFailuresRemaining = 0,
   }) : _bytesByRemotePath = <String, Uint8List>{
          for (final MapEntry<String, String> source
@@ -93,6 +94,7 @@ final class _FakeGithubApi implements GithubApi {
   final Completer<void>? resolveGate;
   final Completer<void>? listGate;
   int fetchFailuresRemaining;
+  final GithubFailure fetchFailure;
   int listFailuresRemaining;
   final List<(RepositoryLocator, String)> resolveCalls =
       <(RepositoryLocator, String)>[];
@@ -150,7 +152,7 @@ final class _FakeGithubApi implements GithubApi {
     fetchedRemotePaths.add(entry.remotePath);
     if (fetchFailuresRemaining > 0) {
       fetchFailuresRemaining -= 1;
-      throw GithubFailure(GithubFailureKind.offline, path: entry.remotePath);
+      throw fetchFailure;
     }
     return Uint8List.fromList(_bytesByRemotePath[entry.remotePath]!);
   }
@@ -689,6 +691,61 @@ void main() {
       await tester.tap(find.text(l10nOf(tester).githubImportRetry));
       await tester.pumpAndSettle();
 
+      expect(connection.putFileCalls, hasLength(1));
+      expect(
+        find.byKey(const ValueKey<String>('githubImportResult')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a rate-limited blob retry waits without writing', (
+      WidgetTester tester,
+    ) async {
+      final RecordingConnection connection = RecordingConnection(
+        initial: ConnState.ready,
+      );
+      final _FakeGithubApi api = _FakeGithubApi(
+        entries: const <GithubEntry>[_helloEntry],
+        fetchFailuresRemaining: 1,
+        fetchFailure: const GithubFailure(
+          GithubFailureKind.rateLimited,
+          retryAfter: Duration(seconds: 60),
+        ),
+      );
+      addTearDown(connection.dispose);
+
+      await _openImport(tester, connection, api);
+      await _browse(tester);
+      await tester.tap(
+        find.byKey(const ValueKey<String>('githubSelect_hello.py')),
+      );
+      await tester.pump();
+      await tester.tap(find.byKey(kGithubReviewButtonKey));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(kGithubCommitButtonKey));
+      await tester.pumpAndSettle();
+
+      expect(connection.putFileCalls, isEmpty);
+      expect(find.textContaining('60'), findsOneWidget);
+      expect(find.text(l10nOf(tester).githubImportRetry), findsNothing);
+      expect(
+        tester
+            .widget<FilledButton>(find.byKey(kGithubCommitButtonKey))
+            .onPressed,
+        isNull,
+      );
+
+      await tester.pump(const Duration(seconds: 60));
+      expect(find.text(l10nOf(tester).githubImportRetry), findsOneWidget);
+      expect(
+        tester
+            .widget<FilledButton>(find.byKey(kGithubCommitButtonKey))
+            .onPressed,
+        isNotNull,
+      );
+
+      await tester.tap(find.text(l10nOf(tester).githubImportRetry));
+      await tester.pumpAndSettle();
       expect(connection.putFileCalls, hasLength(1));
       expect(
         find.byKey(const ValueKey<String>('githubImportResult')),
