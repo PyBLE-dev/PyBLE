@@ -766,7 +766,10 @@ disabled (or independently revalidated and rejected unless the destination is
 the same exact host). It sends GitHub's required API version/accept/user-agent
 headers but no authorization, token, cookie, board fact, or user source. It
 does not follow `download_url`, HTML links, or any arbitrary URL returned in a
-response (SEC-10).
+response. A response rejected from headers alone (including status or declared
+body length) has its body stream cancelled before the adapter publishes the
+typed failure, so repeated hostile responses cannot strand transport resources
+(SEC-10).
 
 Resolution is a two-step logical operation:
 
@@ -782,6 +785,10 @@ from that tree. Thus every object is derived from the resolved commit without
 reading through the original moving ref or trusting a response URL. An
 explicit **Refresh ref** starts a new operation generation, resolves again, and
 clears directories, selection, candidate bytes, conflicts, and consent.
+Tree response bodies are capped at 2 MiB and each decoded non-recursive tree is
+rejected above 512 direct entries before the directory model reaches the eager
+tablet view. These are hard resource ceilings, not pagination: the subset never
+silently presents a partial folder.
 
 ### 10.3 Lazy browse, selection, and adaptive state
 
@@ -795,9 +802,10 @@ enterRepository → resolving → browsing → selecting → reviewing
 
 The implementation does not introduce a second Riverpod workflow controller.
 The adaptive `StatefulWidget` owns presentation-only state: a
-`browse | review | result` surface step, `resolving | loadingDirectory`
-network phase, directory stack, selection, failure/retry/focus data, and the
-current progress/result. Resolve/list operations capture the view's increasing
+`browse | review | result` surface step,
+`resolving | loadingDirectory | checkingBoardTargets` operation phase,
+directory stack, selection, failure/retry/focus data, and the current
+progress/result. Resolve/list operations capture the view's increasing
 epoch and a `GithubCancellation`; cancel, ref refresh, directory change, or
 disposal advances that epoch, and a late completion cannot repopulate the
 view. `GithubBoardImporter` separately owns its fetch/commit generation,
@@ -942,9 +950,14 @@ never echo fetched bytes.
 For `403`/`429`, the REST adapter captures bounded numeric rate-limit metadata
 (`remaining`, reset instant or retry delay when valid). The view explains the
 unauthenticated public limit and offers a user-driven retry after the supplied
-time. There is no automatic tight loop; transient retries, if later admitted,
-must be separately bounded and cancellable. Ordinary GitHub failure does not
-disable Files, Editor, Run, or any offline workflow (NFR-OFF-2).
+time. A positive supplied delay establishes one surface-wide not-before
+deadline independent of the currently rendered error object. Repository/ref
+edits, folder navigation, selection changes, review entry/cancellation, and
+other local state transitions cannot shorten or clear it; every action that can
+start a GitHub request is disabled and guarded until it expires. There is no
+automatic tight loop; transient retries, if later admitted, must be separately
+bounded and cancellable. Ordinary GitHub failure does not disable Files,
+Editor, Run, or any offline workflow (NFR-OFF-2).
 
 ### 10.7 Explicit deferred full-A-33 design
 
