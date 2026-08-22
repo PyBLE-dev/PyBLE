@@ -79,6 +79,7 @@ final class _FakeGithubApi implements GithubApi {
     this.resolveGate,
     this.listGate,
     this.fetchFailuresRemaining = 0,
+    this.listFailuresRemaining = 0,
   }) : _bytesByRemotePath = <String, Uint8List>{
          for (final MapEntry<String, String> source
              in sourceByRemotePath.entries)
@@ -92,6 +93,7 @@ final class _FakeGithubApi implements GithubApi {
   final Completer<void>? resolveGate;
   final Completer<void>? listGate;
   int fetchFailuresRemaining;
+  int listFailuresRemaining;
   final List<(RepositoryLocator, String)> resolveCalls =
       <(RepositoryLocator, String)>[];
   final List<String> listedRemotePaths = <String>[];
@@ -124,8 +126,12 @@ final class _FakeGithubApi implements GithubApi {
   }) async {
     listedRemotePaths.add(remotePath);
     await listGate?.future;
-    if (remotePath.isNotEmpty && childListFailure
-        case final GithubFailure failure) {
+    if (listFailuresRemaining > 0) {
+      listFailuresRemaining -= 1;
+      throw GithubFailure(GithubFailureKind.offline, path: remotePath);
+    }
+    final GithubFailure? failure = childListFailure;
+    if (remotePath.isNotEmpty && failure != null) {
       throw failure;
     }
     return GithubDirectory(
@@ -421,8 +427,54 @@ void main() {
         expect(tester.widget<Focus>(failure).focusNode?.hasFocus, isTrue);
         expect(
           tester.getSemantics(failure),
-          matchesSemantics(isLiveRegion: true),
+          matchesSemantics(
+            isLiveRegion: true,
+            isFocusable: true,
+            isFocused: true,
+            hasFocusAction: true,
+          ),
         );
+        expect(find.text(l10nOf(tester).githubImportRetry), findsNothing);
+        expect(
+          tester
+              .widget<FilledButton>(find.byKey(kGithubBrowseButtonKey))
+              .onPressed,
+          isNull,
+        );
+
+        await tester.pump(const Duration(seconds: 120));
+        expect(find.text(l10nOf(tester).githubImportRetry), findsOneWidget);
+        expect(
+          tester
+              .widget<FilledButton>(find.byKey(kGithubBrowseButtonKey))
+              .onPressed,
+          isNotNull,
+        );
+      },
+    );
+
+    testWidgets(
+      'a failed root listing keeps its pin and retries only that listing',
+      (WidgetTester tester) async {
+        final RecordingConnection connection = RecordingConnection(
+          initial: ConnState.ready,
+        );
+        final _FakeGithubApi api = _FakeGithubApi(listFailuresRemaining: 1);
+        addTearDown(connection.dispose);
+
+        await _openImport(tester, connection, api);
+        await _browse(tester);
+
+        expect(api.resolveCalls, hasLength(1));
+        expect(api.listedRemotePaths, <String>['']);
+        expect(find.textContaining(_commitSha), findsOneWidget);
+
+        await tester.tap(find.text(l10nOf(tester).githubImportRetry));
+        await tester.pumpAndSettle();
+
+        expect(api.resolveCalls, hasLength(1));
+        expect(api.listedRemotePaths, <String>['', '']);
+        expect(find.text('hello.py'), findsOneWidget);
       },
     );
 
@@ -606,7 +658,7 @@ void main() {
             .value,
         isTrue,
       );
-      expect(find.text('/'), findsOneWidget);
+      expect(find.text('/'), findsNWidgets(2));
     });
 
     testWidgets('a zero-write blob failure retries from the same review', (
