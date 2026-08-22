@@ -1074,6 +1074,17 @@ class AppLocalizationsEn extends AppLocalizations {
   String get editorHintText => 'Write MicroPython here…';
 
   @override
+  String get editorDecreaseFontSize => 'Decrease code font size';
+
+  @override
+  String get editorIncreaseFontSize => 'Increase code font size';
+
+  @override
+  String editorFontSizeValue(int size) {
+    return 'Code font size $size';
+  }
+
+  @override
   String get editorUnsavedLabel => 'Unsaved changes';
 
   @override

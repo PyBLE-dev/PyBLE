@@ -1857,6 +1857,24 @@ abstract class AppLocalizations {
   /// **'Write MicroPython here…'**
   String get editorHintText;
 
+  /// Accessible label and tooltip for decreasing only the editor code and line-number font size.
+  ///
+  /// In en, this message translates to:
+  /// **'Decrease code font size'**
+  String get editorDecreaseFontSize;
+
+  /// Accessible label and tooltip for increasing only the editor code and line-number font size.
+  ///
+  /// In en, this message translates to:
+  /// **'Increase code font size'**
+  String get editorIncreaseFontSize;
+
+  /// Accessible label for the current editor code font size. The size is the integer decimal value of the editor-only setting.
+  ///
+  /// In en, this message translates to:
+  /// **'Code font size {size}'**
+  String editorFontSizeValue(int size);
+
   /// Indicator shown when the current editor document has unsaved edits (EditorDocument.dirty).
   ///
   /// In en, this message translates to:

@@ -10,14 +10,21 @@
 /// ([EditorView]). Every board action crosses the abstract `Connection` seam
 /// (CON-8); nothing here imports `lib/ble/`.
 ///
-/// Deferred (recorded, not dropped): Drift persistence (A-24); syntax
-/// highlighting, multi-file tabs, find/replace, external-keyboard shortcuts, and
-/// a line-number gutter (FR-EDIT-1..4, OI-1).
+/// ADR-0012 puts the rich and plain editing implementations behind the exported
+/// EditorSurface seam. The rich default supplies Python highlighting and line
+/// numbers; session display settings resize code and gutter together. Deferred
+/// (recorded, not dropped): Drift persistence (A-24), multi-file tabs,
+/// app-owned find/replace, and the remaining external-keyboard shortcuts.
 library;
 
+export 'editor_display_settings.dart';
 export 'editor_document.dart';
+export 'editor_surface.dart';
+export 'editor_surface_factory.dart';
 export 'editor_view.dart';
+export 'plain_editor_surface.dart' show kEditorPlainSurfaceKey;
 export 'program_actions.dart';
+export 'rich_editor_surface.dart' show kEditorRichSurfaceKey;
 export 'run_controller.dart';
 export 'save_controller.dart';
 export 'smart_punctuation.dart';
