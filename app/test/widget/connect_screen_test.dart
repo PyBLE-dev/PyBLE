@@ -10,8 +10,9 @@
 // Renders (Signal design system, frozen contract ADR-0009 §3):
 //   readiness banner (adapter-off/unauthorized/unsupported + localized rationale)
 //   → scan CTA → live ScanHit list (name + RSSI) → connecting indicator →
-//   connected Board-info card (chip / MicroPython / free-mem = the PROOF) →
-//   disconnect; an error state; and a live diagnostics panel for HIL debugging.
+//   connected Board-info card (board ID / PyBLE firmware / chip / MicroPython /
+//   free-mem = the PROOF) → disconnect; an error state; and a live diagnostics
+//   panel for HIL debugging.
 //
 // NEVER pumpAndSettle: a scanning/connecting progress indicator animates forever
 // and would time out; pump explicit frames after each scripted transition.
@@ -180,6 +181,23 @@ void main() {
 
       final AppLocalizations l10n = _l10n(tester);
       expect(find.text(l10n.connectDeviceInfoTitle), findsOneWidget);
+      expect(find.text(l10n.connectDeviceBoardId), findsOneWidget);
+      expect(
+        find.text('5646'),
+        findsOneWidget,
+        reason: 'the PBLE/1 board ID is rendered verbatim',
+      );
+      expect(
+        find.text(_hitA.id),
+        findsNothing,
+        reason: 'the platform scan identifier is never exposed as Board ID',
+      );
+      expect(find.text(l10n.connectDeviceAgentVersion), findsOneWidget);
+      expect(
+        find.text('0.6.0'),
+        findsOneWidget,
+        reason: 'the PyBLE agent firmware version is rendered verbatim',
+      );
       expect(
         find.text('esp32-s3'),
         findsOneWidget,
@@ -188,6 +206,39 @@ void main() {
       expect(find.text('1.28.0'), findsOneWidget);
       expect(find.text(l10n.connectFreeMemBytes(48000)), findsOneWidget);
       expect(find.byKey(_disconnectKey), findsOneWidget);
+    });
+
+    testWidgets('missing identity metadata is reported without gating use', (
+      WidgetTester tester,
+    ) async {
+      final FakeConnection board = FakeConnection(
+        initial: ConnState.connecting,
+        deviceInfo: connectedBoardInfo(deviceId: '', agentVersion: ''),
+      );
+      final ConnectRig rig = ConnectRig(board: board);
+      addTearDown(rig.dispose);
+      await pumpConnect(tester, rig);
+
+      await tester.tap(find.byKey(_scanKey));
+      await tester.pump();
+      rig.scanner.emit(<ScanHit>[_hitA]);
+      await tester.pump();
+      await tester.tap(find.byKey(_hitKey(_hitA.id)));
+      await tester.pump();
+
+      board.emit(ConnState.ready);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 20));
+
+      final AppLocalizations l10n = _l10n(tester);
+      expect(find.text(l10n.connectDeviceBoardId), findsOneWidget);
+      expect(find.text(l10n.connectDeviceAgentVersion), findsOneWidget);
+      expect(find.text(l10n.connectDeviceNotReported), findsNWidgets(2));
+      expect(
+        find.byKey(_disconnectKey),
+        findsOneWidget,
+        reason: 'missing additive metadata must not gate the connection',
+      );
     });
 
     testWidgets('disconnect returns to the scan state', (

@@ -44,11 +44,15 @@ DeviceInfo connectedBoardInfo({
   String mpyVersion = '1.28.0',
   int freeMem = 48000,
   String fsRoot = '/',
+  String deviceId = '5646',
+  String agentVersion = '0.6.0',
 }) => DeviceInfo(
   chip: chip,
   mpyVersion: mpyVersion,
   freeMem: freeMem,
   fsRoot: fsRoot,
+  deviceId: deviceId,
+  agentVersion: agentVersion,
 );
 
 /// The neutral fakes bound into one runtime [ConnectionManager], so a test can
