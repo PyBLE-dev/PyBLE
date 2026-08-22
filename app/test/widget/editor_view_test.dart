@@ -29,6 +29,137 @@ const Key _newKey = ValueKey<String>('editorNewButton');
 
 void main() {
   group('A-20 EditorView — editable surface', () {
+    testWidgets('shows one-based logical line numbers including a blank tail', (
+      WidgetTester tester,
+    ) async {
+      final FakeConnection fake = FakeConnection(initial: ConnState.ready);
+      addTearDown(fake.dispose);
+      await pumpSurface(tester, const EditorView(), connection: fake);
+
+      containerOf(tester)
+          .read(editorDocumentProvider.notifier)
+          .openFromBoard(path: '/main.py', content: 'alpha\nbeta\n');
+      await tester.pump();
+
+      expect(find.byKey(kEditorRichSurfaceKey), findsOneWidget);
+      expect(find.text('1'), findsOneWidget);
+      expect(find.text('2'), findsOneWidget);
+      expect(
+        find.text('3'),
+        findsOneWidget,
+        reason: 'a trailing newline creates a numbered blank logical line',
+      );
+
+      await tester.enterText(find.byType(EditableText), 'alpha');
+      await tester.pump();
+      expect(find.text('1'), findsOneWidget);
+      expect(find.text('2'), findsNothing);
+      expect(find.text('3'), findsNothing);
+    });
+
+    testWidgets('font controls resize code and gutter without editing', (
+      WidgetTester tester,
+    ) async {
+      final FakeConnection fake = FakeConnection(initial: ConnState.ready);
+      addTearDown(fake.dispose);
+      await pumpSurface(tester, const EditorView(), connection: fake);
+      containerOf(tester)
+          .read(editorDocumentProvider.notifier)
+          .openFromBoard(path: '/main.py', content: 'alpha\nbeta');
+      await tester.pump();
+
+      final EditableText before = tester.widget<EditableText>(
+        find.byType(EditableText),
+      );
+      before.controller.selection = const TextSelection.collapsed(offset: 3);
+      final EditorDocument documentBefore = containerOf(
+        tester,
+      ).read(editorDocumentProvider);
+
+      expect(before.style.fontSize, kEditorDefaultFontSize);
+      expect(tester.widget<Text>(find.text('1')).style?.fontSize, 14);
+
+      await tester.tap(find.byKey(kEditorIncreaseFontSizeButtonKey));
+      await tester.pump();
+
+      final EditableText after = tester.widget<EditableText>(
+        find.byType(EditableText),
+      );
+      expect(after.style.fontSize, 15);
+      expect(tester.widget<Text>(find.text('1')).style?.fontSize, 15);
+      expect(
+        after.controller.selection,
+        const TextSelection.collapsed(offset: 3),
+      );
+      expect(
+        containerOf(tester).read(editorDocumentProvider),
+        same(documentBefore),
+      );
+    });
+
+    testWidgets('font buttons are localized and disable at their bounds', (
+      WidgetTester tester,
+    ) async {
+      final FakeConnection fake = FakeConnection(initial: ConnState.ready);
+      addTearDown(fake.dispose);
+      await pumpSurface(tester, const EditorView(), connection: fake);
+      final AppLocalizations l10n = l10nOf(tester);
+
+      expect(
+        tester
+            .widget<IconButton>(find.byKey(kEditorDecreaseFontSizeButtonKey))
+            .tooltip,
+        l10n.editorDecreaseFontSize,
+      );
+      expect(
+        tester
+            .widget<IconButton>(find.byKey(kEditorIncreaseFontSizeButtonKey))
+            .tooltip,
+        l10n.editorIncreaseFontSize,
+      );
+
+      containerOf(tester)
+          .read(editorDisplaySettingsProvider.notifier)
+          .setFontSize(kEditorMinFontSize);
+      await tester.pump();
+      expect(
+        tester
+            .widget<IconButton>(find.byKey(kEditorDecreaseFontSizeButtonKey))
+            .onPressed,
+        isNull,
+      );
+
+      containerOf(tester)
+          .read(editorDisplaySettingsProvider.notifier)
+          .setFontSize(kEditorMaxFontSize);
+      await tester.pump();
+      expect(
+        tester
+            .widget<IconButton>(find.byKey(kEditorIncreaseFontSizeButtonKey))
+            .onPressed,
+        isNull,
+      );
+    });
+
+    testWidgets('compact editor exposes font sizing without overflowing', (
+      WidgetTester tester,
+    ) async {
+      final FakeConnection fake = FakeConnection(initial: ConnState.ready);
+      addTearDown(fake.dispose);
+      await pumpSurface(
+        tester,
+        const EditorView(),
+        connection: fake,
+        size: const Size(390, 844),
+      );
+
+      expect(find.byKey(kEditorCompactFontSizeButtonKey), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.tap(find.byKey(kEditorCompactFontSizeButtonKey));
+      await tester.pumpAndSettle();
+      expect(find.byKey(kEditorCompactFontSizeIncreaseKey), findsOneWidget);
+    });
+
     testWidgets('exposes the app-layer Python to Blocks action', (
       WidgetTester tester,
     ) async {
@@ -72,6 +203,11 @@ void main() {
         find.text(l10n.editorHintText),
         findsOneWidget,
         reason: 'the empty buffer shows the localized MicroPython hint',
+      );
+      expect(
+        find.text('1'),
+        findsOneWidget,
+        reason: 'the empty buffer still has logical line one',
       );
     });
 
