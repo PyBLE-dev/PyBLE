@@ -91,7 +91,10 @@ empty value, the card shows a localized **Not reported** fallback and keeps the
 connection usable. When the ready/running shell replaces the pre-connection
 Connect surface, its always-visible connection-status pill retains a compact
 board-ID + PyBLE-firmware summary from the same `DeviceInfo`; the state word
-remains fully visible and the complete labeled values remain in semantics.
+remains fully visible and the complete labeled values remain in semantics. A
+pending `DeviceInfo` response belongs only to the local connection session that
+requested it: after detach/reconnect, the app discards any late prior-session
+response and shows state alone until the current board reports its own info.
 
 `DeviceInfo.chip == "esp32-s3"` does not identify which provisioning image is
 installed and cannot distinguish the lean `esp32-s3-n16r8` image from the
