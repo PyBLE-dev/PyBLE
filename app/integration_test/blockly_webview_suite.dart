@@ -287,7 +287,12 @@ Future<void> _tapVisible(WidgetTester tester, Finder finder) async {
   // A real Android IME can keep the footer below the resized render surface
   // even after ensureVisible scrolls its RenderBox. Commit the field edit and
   // restore the full viewport before resolving the action's tap position.
+  // The integration binding also retains its focusedEditable pointer after a
+  // modal closes even though Android has closed that text-input connection.
+  // Clear the pointer with the focus so a later enterText on the same field
+  // requests a fresh connection instead of sending the edit to the stale one.
   FocusManager.instance.primaryFocus?.unfocus();
+  tester.binding.focusedEditable = null;
   await SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
   await tester.pumpAndSettle();
   await tester.ensureVisible(finder);
@@ -775,8 +780,23 @@ pixels.write()
         find.byKey(const ValueKey<String>('blocksExampleCard-blink-led')),
       );
       await tester.pumpAndSettle();
-      await tester.enterText(find.widgetWithText(TextField, 'LED GPIO'), '17');
+      final Finder labelledLedGpioField = find.widgetWithText(
+        TextField,
+        'LED GPIO',
+      );
+      expect(labelledLedGpioField, findsOneWidget);
+      final Key? ledGpioFieldKey = tester
+          .widget<TextField>(labelledLedGpioField)
+          .key;
+      expect(
+        ledGpioFieldKey,
+        isNotNull,
+        reason: 'the responsive chooser must retain a stable GPIO field key',
+      );
+      final Finder ledGpioField = find.byKey(ledGpioFieldKey!);
+      await tester.enterText(ledGpioField, '17');
       await tester.pumpAndSettle();
+      expect(tester.widget<TextField>(ledGpioField).controller?.text, '17');
       expect(
         find.textContaining('Pin(17, Pin.OUT'),
         findsNothing,
@@ -801,13 +821,22 @@ pixels.write()
       // -> sealed Blockly generator path with a real MicroPython named pin.
       // Editing remains local until Preview, and the active workspace and
       // connected board remain untouched by the disposable scratch run.
-      final Finder ledGpioField = find.widgetWithText(TextField, 'LED GPIO');
       await tester.enterText(ledGpioField, 'LED');
       await tester.pumpAndSettle();
+      expect(
+        tester.widget<TextField>(ledGpioField).controller?.text,
+        'LED',
+        reason: 'the fresh Android text connection must commit the named pin',
+      );
       expect(
         find.textContaining('Pin("LED", Pin.OUT'),
         findsNothing,
         reason: 'named GPIO editing must not generate before Preview',
+      );
+      expect(
+        find.textContaining('Pin(17, Pin.OUT'),
+        findsNothing,
+        reason: 'the named edit must invalidate the cached numeric preview',
       );
       expect(
         tester
@@ -824,6 +853,13 @@ pixels.write()
         () => find.textContaining('Pin("LED", Pin.OUT').evaluate().isNotEmpty,
         reason:
             'the real scratch Blockly workspace did not quote the named LED pin',
+        diagnostics: () =>
+            'gpio=${tester.widget<TextField>(ledGpioField).controller?.text}; '
+            'numericPreviewMatches='
+            '${find.textContaining('Pin(17, Pin.OUT').evaluate().length}; '
+            'namedPreviewMatches='
+            '${find.textContaining('Pin("LED", Pin.OUT').evaluate().length}; '
+            'dialogs=${find.byType(AlertDialog).evaluate().length}',
       );
       await tester.tap(
         find.descendant(
