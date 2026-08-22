@@ -11,6 +11,18 @@ its annotated tag rather than from the newer branch tip.
 
 ### App source
 
+- Added Python syntax highlighting and synchronized one-based line numbers to
+  the editor while retaining the plain-field fallback, offline boundary,
+  smart-punctuation protection, and safe external-keyboard Tab behavior.
+- Added localized, adaptive editor font-size controls with a 10–24 point
+  editor-only app-session range. Code and gutter resize together, platform
+  accessibility scaling remains active, and size changes preserve the document,
+  board path, dirty state, selection, and undo history. Persistence remains
+  intentionally deferred to the planned single Drift settings store.
+- Pinned `flutter_code_editor` 0.3.5 behind the app-owned editor seam and
+  recorded its complete dependency and licence closure, including the
+  owner-ratified shipped `autotrie` 2.0.0 MPL-2.0 exception. Optional network,
+  error, find, and autocomplete surfaces remain disabled.
 - Added a connected Files action for browsing a canonical public GitHub
   repository without an account or token, resolving the requested ref once to
   a displayed immutable commit SHA, and lazily browsing bounded non-recursive
@@ -26,6 +38,9 @@ its annotated tag rather than from the newer branch tip.
   with adaptive, keyboard-accessible, localized, and golden-tested states.
 - Advanced the independently versioned app source build from `0.1.0+2` to
   `0.1.0+3`, distinguishing this development build from TestFlight build 2.
+- Advanced the independently versioned app source build from `0.1.0+3` to
+  `0.1.0+4`, distinguishing this numbered-editor development build from build
+  3.
 - Added the connected board's PBLE/1 board ID and PyBLE agent firmware version
   to Board info and retained both in the ready/running status pill, with
   localized missing-value handling, full accessibility context, and

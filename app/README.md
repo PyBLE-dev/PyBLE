@@ -7,7 +7,9 @@ Low Energy.
 ## Current capabilities
 
 - BLE discovery, connection, reconnect, and capability negotiation
-- Python editing, save, run, stop, soft reboot, and live console
+- Python editing with syntax highlighting, synchronized one-based line numbers,
+  adjustable 10–24 point code sizing, save, run, stop, soft reboot, and live
+  console
 - Wireless filesystem browsing and integrity-checked transfer
 - Optional public, unauthenticated GitHub browsing with immutable commit
   pinning, exact board-target review, and bounded `.py` import into the current
@@ -49,7 +51,7 @@ flutter test --tags golden
 ```
 
 Install a standalone development build on a connected device (the current
-source build is `0.1.0+3`):
+source build is `0.1.0+4`):
 
 ```sh
 flutter run --release -d <device-id>

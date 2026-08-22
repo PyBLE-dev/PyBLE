@@ -41,7 +41,9 @@ The Flutter app currently provides:
 - filtered BLE discovery and PBLE/1 connection;
 - connected-board details with the PBLE/1 board ID and PyBLE agent firmware
   version retained in the always-visible connection status;
-- a MicroPython editor with save, run, stop, soft reboot, and live console;
+- a Python-highlighted MicroPython editor with always-visible, one-based line
+  numbers, an adjustable 10–24 point code font, save, run, stop, soft reboot,
+  and live console;
 - wireless file browsing and transfer with integrity checks;
 - an optional public GitHub example browser that resolves a repository/ref to
   an immutable commit, previews exact `.py` source-to-board paths, and imports
