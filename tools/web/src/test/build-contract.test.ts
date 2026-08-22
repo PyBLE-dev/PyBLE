@@ -147,6 +147,47 @@ describe("production build contract", () => {
     ).toEqual([]);
   });
 
+  it("hardens and attributes the image parser bundled inside vinext", async () => {
+    const bundledParserPath = join(
+      process.cwd(),
+      "node_modules",
+      "vinext",
+      "dist",
+      "deps",
+      ".pnpm",
+      "image-size@2.0.2",
+      "deps",
+      "image-size",
+      "dist",
+      "index.js",
+    );
+    const [packageJson, parserSource, notice] = await Promise.all([
+      readFile(join(process.cwd(), "package.json"), "utf8").then(JSON.parse),
+      readFile(bundledParserPath, "utf8"),
+      readFile(
+        join(process.cwd(), "public", "WEBSITE_THIRD_PARTY_LICENSES.txt"),
+        "utf8",
+      ),
+    ]);
+
+    expect(packageJson.scripts?.postinstall).toBe(
+      "node scripts/patch-vinext-image-size.js",
+    );
+    expect(parserSource).toContain(
+      'if (imageHeader[1] <= 0) throw new TypeError("Invalid ICNS, zero-length image entry");',
+    );
+    expect(parserSource).toContain(
+      'if (ispeBox.size <= 0) throw new TypeError("Invalid HEIF, zero-length ispe box");',
+    );
+    expect(parserSource).toContain(
+      'if (jxlpBox.size <= 0) throw new TypeError("Invalid JXL, zero-length jxlp box");',
+    );
+    expect(notice).toContain("image-size 2.0.2");
+    expect(notice).toContain(
+      "Copyright © 2013-Present Aditya Yadav, http://netroy.in",
+    );
+  });
+
   it("checks and publishes a deterministic notice for the exact website dependency closure", async () => {
     const [packageJson, notice] = await Promise.all([
       readFile(join(process.cwd(), "package.json"), "utf8").then(
