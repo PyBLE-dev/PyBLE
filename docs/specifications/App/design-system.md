@@ -157,6 +157,8 @@ Material 3 type scale on the **default sans** (Roboto / platform default — no 
 
 **`code` role (`SignalType.code`, offline mono).** `TextStyle(fontFamilyFallback: ['Menlo', 'monospace'], fontSize: 14, height: 1.45)`; apply the color via `SignalType.codeOn(scheme)` (`onSurface`) or a `SignalCodeColors` stream color.
 
+**Editor zoom — FROZEN (`[docs]` 2026-08-22, ADR-0012).** The shared `code` token remains 14 sp so console output and technical identifiers do not change. The editor alone derives a copy with a session-selected size: default 14 sp, inclusive 10–24 sp, one-point steps. The one-based gutter uses the identical font family, size, and line height with `SignalCodeColors.gutter`, so numbers stay aligned as the editor scrolls. Wide editor chrome exposes the current numeric value plus ≥ 48 dp decrease/increase actions; constrained layouts may collapse those into one localized, accessible size menu rather than overflow. The lower/upper action disables at its bound. This preference never marks or rewrites the document and is not durable until A-24's Drift `SettingsStore`; no second settings backend is introduced.
+
 - **Apple-platform correctness (folded from review).** The family list leads with **`Menlo`** (the guaranteed-installed mono on iOS/iPadOS), then the Android generic **`monospace`**. It deliberately does **not** name `monospace` first: on iOS/iPadOS the generic can resolve to the default *proportional* face (breaking indentation/column alignment on a first-class target, NFR-COMPAT-1), whereas `Menlo` always resolves there. On Android `Menlo` is absent, so resolution falls through to the real `monospace`.
 - **Offline-first guardrail.** The list contains only genuinely-resolvable families (Apple `Menlo`, Android `monospace`); `RobotoMono`/`Consolas` were **removed** (not bundled by Flutter, silent no-ops that invite a `google_fonts` "fix"). The list must **not** be completed with `google_fonts` or any runtime/network font. If a guaranteed iPad mono glyph ever proves necessary, **bundle a mono font as a local asset** (offline) and record its license in `app/DEPENDENCIES.md` — never `google_fonts`.
 
@@ -166,7 +168,7 @@ paths, PBLE/1 status names — never localized, FR-I18N-4). The pin-reference pa
 renders target identifiers in this role and falls back to generic board-
 documentation guidance for an unknown value.
 
-**Respect text scaling:** never fix heights that clip at large `textScaleFactor`; the shell's no-overflow contract holds to `textScaleFactor 2.0` (§9). Purely-cosmetic chrome text (the toolbar wordmark and the pill label) may clamp its scaler to ≤ 1.3 so the top chrome stays bounded while body/content text scales fully.
+**Respect text scaling:** never fix heights that clip at large `textScaleFactor`; the shell's no-overflow contract holds to `textScaleFactor 2.0` (§9). Editor zoom selects the base code size and the platform `TextScaler` then applies in full to both code and gutter; zoom MUST NOT replace, disable, or clamp accessibility scaling. Purely-cosmetic chrome text (the toolbar wordmark and the pill label) may clamp its scaler to ≤ 1.3 so the top chrome stays bounded while body/content text scales fully.
 
 ---
 
