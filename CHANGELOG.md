@@ -11,6 +11,21 @@ its annotated tag rather than from the newer branch tip.
 
 ### App source
 
+- Added a connected Files action for browsing a canonical public GitHub
+  repository without an account or token, resolving the requested ref once to
+  a displayed immutable commit SHA, and lazily browsing bounded non-recursive
+  Git trees.
+- Added exact review and separate overwrite consent for importing selected
+  ordinary lowercase `.py` files into the captured board folder. The complete
+  size-bounded, strict-UTF-8 batch is fetched before sequential PBLE/1 writes;
+  partial results identify succeeded, failed, and unattempted paths, refresh
+  Files honestly, and never auto-open or auto-run downloaded code.
+- Hardened GitHub import against redirects, unexpected hosts and object
+  identities, incomplete board listings, reconnect/session races, response
+  resource exhaustion, slow-trickle requests, and public API retry deadlines,
+  with adaptive, keyboard-accessible, localized, and golden-tested states.
+- Advanced the independently versioned app source build from `0.1.0+2` to
+  `0.1.0+3`, distinguishing this development build from TestFlight build 2.
 - Added the connected board's PBLE/1 board ID and PyBLE agent firmware version
   to Board info and retained both in the ready/running status pill, with
   localized missing-value handling, full accessibility context, and
@@ -57,8 +72,9 @@ its annotated tag rather than from the newer branch tip.
 
 ## Firmware 0.6.0 — 2026-08-21
 
-_Firmware release only. The app is versioned independently and remains
-`0.1.0+2` in this source tree._
+_Firmware release only. At release qualification, the independently versioned
+app source was `0.1.0+2`; later app-source work does not alter firmware
+v0.6.0._
 
 - Published and deployed the qualified five-profile release at
   [pyble.dev/flash](https://pyble.dev/flash): `esp32-4mb`,
