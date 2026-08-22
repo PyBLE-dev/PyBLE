@@ -11,6 +11,7 @@ library;
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:webview_flutter/webview_flutter.dart';
@@ -21,8 +22,27 @@ import 'blocks_document.dart';
 import 'blocks_examples.dart';
 
 const String _assetPath = 'assets/blockly/index.html';
+@visibleForTesting
+const String kAndroidBlocklyAssetFilePath =
+    '/android_asset/flutter_assets/assets/blockly/index.html';
 const String _channelName = 'PybleBlocks';
 const Duration _firstSnapshotTimeout = Duration(seconds: 15);
+
+/// Loads the sealed host through the platform path that can read its relative
+/// bundled resources.
+///
+/// Android's high-target-SDK WebView defaults file access off. Its public
+/// [WebViewController.loadFile] adapter enables that setting before loading
+/// the exact `/android_asset` document; `loadFlutterAsset` does not. WKWebView
+/// continues to resolve the ordinary Flutter asset path directly.
+@visibleForTesting
+Future<void> loadBlocklyAssetForPlatform({
+  required TargetPlatform platform,
+  required Future<void> Function(String path) loadFile,
+  required Future<void> Function(String path) loadFlutterAsset,
+}) => platform == TargetPlatform.android
+    ? loadFile(kAndroidBlocklyAssetFilePath)
+    : loadFlutterAsset(_assetPath);
 
 /// Routing decision for one JavaScript-channel message during host startup.
 enum BlocklyHostChannelDisposition { initialise, forward, ignore, reject }
@@ -234,6 +254,7 @@ Map<String, Object?> blocklyHostMessages(AppLocalizations l10n) =>
         'read-button': l10n.blocksExampleReadButtonTitle,
         'button-controls-led': l10n.blocksExampleButtonLedTitle,
         'reusable-function': l10n.blocksExampleFunctionTitle,
+        'waveshare-esp32-s3-lcd-147b': l10n.blocksExampleTftTitle,
       },
       'timeCategory': l10n.blocksTimeCategory,
       'timeBlockMessage': l10n.blocksTimeWait('%1'),
@@ -260,6 +281,64 @@ Map<String, Object?> blocklyHostMessages(AppLocalizations l10n) =>
       'neopixelStripRequiredError': l10n.blocksNeoPixelStripRequired,
       'neopixelIndexRequiredError': l10n.blocksNeoPixelIndexRequired,
       'neopixelColorRequiredError': l10n.blocksNeoPixelColorRequired,
+      'tftCategory': l10n.blocksTftCategory,
+      'tftCreateMessage': l10n.blocksTftCreate(
+        '%1',
+        '%2',
+        '%3',
+        '%4',
+        '%5',
+        '%6',
+        '%7',
+        '%8',
+        '%9',
+        '%10',
+        '%11',
+        '%12',
+        '%13',
+        '%14',
+        '%15',
+        '%16',
+      ),
+      'tftRgb565Message': l10n.blocksTftRgb565('%1', '%2', '%3'),
+      'tftFillMessage': l10n.blocksTftFill('%1', '%2'),
+      'tftPixelMessage': l10n.blocksTftPixel('%1', '%2', '%3', '%4'),
+      'tftRectMessage': l10n.blocksTftRect(
+        '%1',
+        '%2',
+        '%3',
+        '%4',
+        '%5',
+        '%6',
+        '%7',
+      ),
+      'tftTextMessage': l10n.blocksTftText('%1', '%2', '%3', '%4', '%5'),
+      'tftShowMessage': l10n.blocksTftShow('%1'),
+      'tftBacklightMessage': l10n.blocksTftBacklight('%1', '%2'),
+      'tftRectOutline': l10n.blocksTftRectOutline,
+      'tftRectFilled': l10n.blocksTftRectFilled,
+      'tftCreateTooltip': l10n.blocksTftCreateTooltip,
+      'tftRgb565Tooltip': l10n.blocksTftRgb565Tooltip,
+      'tftFillTooltip': l10n.blocksTftFillTooltip,
+      'tftPixelTooltip': l10n.blocksTftPixelTooltip,
+      'tftRectTooltip': l10n.blocksTftRectTooltip,
+      'tftTextTooltip': l10n.blocksTftTextTooltip,
+      'tftShowTooltip': l10n.blocksTftShowTooltip,
+      'tftBacklightTooltip': l10n.blocksTftBacklightTooltip,
+      'tftCreateInputRequiredError': l10n.blocksTftCreateInputRequired,
+      'tftSpiIdInvalidError': l10n.blocksTftSpiIdInvalid,
+      'tftBaudrateInvalidError': l10n.blocksTftBaudrateInvalid,
+      'tftSpiModeInvalidError': l10n.blocksTftSpiModeInvalid,
+      'tftGeometryInvalidError': l10n.blocksTftGeometryInvalid,
+      'tftOffsetInvalidError': l10n.blocksTftOffsetInvalid,
+      'tftColorComponentRequiredError': l10n.blocksTftColorComponentRequired,
+      'tftDisplayRequiredError': l10n.blocksTftDisplayRequired,
+      'tftColorRequiredError': l10n.blocksTftColorRequired,
+      'tftCoordinateRequiredError': l10n.blocksTftCoordinateRequired,
+      'tftTextRequiredError': l10n.blocksTftTextRequired,
+      'tftBacklightRequiredError': l10n.blocksTftBacklightRequired,
+      'tftRectStyleInvalidError': l10n.blocksTftRectStyleInvalid,
+      'tftRestoreStyleInvalidError': l10n.blocksTftRestoreStyleInvalid,
       'gpioCategory': l10n.blocksGpioCategory,
       'gpioPinMessage': l10n.blocksGpioPin('%1', '%2', '%3'),
       'gpioWriteMessage': l10n.blocksGpioWrite('%1', '%2'),
@@ -366,7 +445,11 @@ class _BlocklyWebViewState extends ConsumerState<BlocklyWebView> {
         setup: controllerSetup,
         waitUntilLoadAllowed: () => _startupLoadAllowed.future,
         isCancelled: startupIsCancelled,
-        load: () => _controller.loadFlutterAsset(_assetPath),
+        load: () => loadBlocklyAssetForPlatform(
+          platform: defaultTargetPlatform,
+          loadFile: _controller.loadFile,
+          loadFlutterAsset: _controller.loadFlutterAsset,
+        ),
       ),
       waitUntilFailureCanBeReported: () => _startupLoadAllowed.future,
       isCancelled: startupIsCancelled,

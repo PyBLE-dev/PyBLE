@@ -6,7 +6,10 @@
 // Runs the REAL engine over an in-memory [FakeByteTransport], asserting:
 //   • nextId() rolls 1..255, never 0 (0 is reserved for EVT), and is distinct
 //     across a full cycle;
-//   • request(cmd) resolves with the RSP that carries the matching ID;
+//   • request(cmd) resolves only with TYPE=RSP carrying the exact originating
+//     opcode + ID, even when an ID is reused;
+//   • wrong-opcode and non-RSP frames cannot complete a request or hide the
+//     exact response in either arrival order;
 //   • EVT frames (ID == 0) are routed onto events, keyed by opcode, and never
 //     mistaken for a response;
 //   • an unanswered request times out with PbleTimeoutException.
@@ -14,6 +17,8 @@
 // CURRENTLY RED: `lib/pble/{engine,frame,pble_constants,pble_exception}.dart`
 // do not exist yet. HAND-OFF: `lib/pble/**` → app-protocol-engineer.
 
+import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -77,6 +82,164 @@ void main() {
       expect(rsp.opcode, PbleOpcode.deviceInfo.code);
     });
 
+    test(
+      'wrong-opcode same-ID RSP before the exact RSP cannot complete it',
+      () async {
+        final PbleFrame cmd = PbleFrame(
+          type: Pble.typeCmd,
+          opcode: PbleOpcode.run.code,
+          id: engine.nextId(),
+          payload: Uint8List(0),
+        );
+        final Future<PbleFrame> pending = engine.request(cmd);
+        await pumpEventQueue();
+
+        transport.deliverFrame(
+          PbleFrame(
+            type: Pble.typeRsp,
+            opcode: PbleOpcode.hello.code,
+            id: cmd.id,
+            payload: Uint8List.fromList(<int>[PbleStatus.ok.code, 0x11]),
+          ),
+        );
+        transport.deliverFrame(
+          PbleFrame(
+            type: Pble.typeRsp,
+            opcode: cmd.opcode,
+            id: cmd.id,
+            payload: Uint8List.fromList(<int>[PbleStatus.ok.code, 0x22]),
+          ),
+        );
+
+        final PbleFrame rsp = await pending;
+        expect(rsp.type, Pble.typeRsp);
+        expect(rsp.opcode, cmd.opcode);
+        expect(rsp.payload, <int>[PbleStatus.ok.code, 0x22]);
+      },
+    );
+
+    test(
+      'exact RSP before a wrong-opcode same-ID RSP remains authoritative',
+      () async {
+        final PbleFrame cmd = PbleFrame(
+          type: Pble.typeCmd,
+          opcode: PbleOpcode.run.code,
+          id: engine.nextId(),
+          payload: Uint8List(0),
+        );
+        final Future<PbleFrame> pending = engine.request(cmd);
+        await pumpEventQueue();
+
+        transport.deliverFrame(
+          PbleFrame(
+            type: Pble.typeRsp,
+            opcode: cmd.opcode,
+            id: cmd.id,
+            payload: Uint8List.fromList(<int>[PbleStatus.ok.code, 0x33]),
+          ),
+        );
+        transport.deliverFrame(
+          PbleFrame(
+            type: Pble.typeRsp,
+            opcode: PbleOpcode.hello.code,
+            id: cmd.id,
+            payload: Uint8List.fromList(<int>[PbleStatus.ok.code, 0x44]),
+          ),
+        );
+
+        final PbleFrame rsp = await pending;
+        expect(rsp.type, Pble.typeRsp);
+        expect(rsp.opcode, cmd.opcode);
+        expect(rsp.payload, <int>[PbleStatus.ok.code, 0x33]);
+      },
+    );
+
+    test('non-RSP frame with a nonzero ID cannot complete a request', () async {
+      final PbleFrame cmd = PbleFrame(
+        type: Pble.typeCmd,
+        opcode: PbleOpcode.deviceInfo.code,
+        id: engine.nextId(),
+        payload: Uint8List(0),
+      );
+      final Future<PbleFrame> pending = engine.request(cmd);
+      await pumpEventQueue();
+
+      transport.deliverFrame(
+        PbleFrame(
+          type: Pble.typeCmd,
+          opcode: cmd.opcode,
+          id: cmd.id,
+          payload: Uint8List.fromList(<int>[0x55]),
+        ),
+      );
+      transport.deliverFrame(
+        PbleFrame(
+          type: Pble.typeRsp,
+          opcode: cmd.opcode,
+          id: cmd.id,
+          payload: Uint8List.fromList(<int>[PbleStatus.ok.code, 0x66]),
+        ),
+      );
+
+      final PbleFrame rsp = await pending;
+      expect(rsp.type, Pble.typeRsp);
+      expect(rsp.payload, <int>[PbleStatus.ok.code, 0x66]);
+    });
+
+    test(
+      'reused ID rejects the stale prior-opcode RSP and accepts the new one',
+      () async {
+        const int reusedId = 91;
+        final PbleFrame oldCmd = PbleFrame(
+          type: Pble.typeCmd,
+          opcode: PbleOpcode.hello.code,
+          id: reusedId,
+          payload: Uint8List(0),
+        );
+        final Future<PbleFrame> oldPending = engine.request(oldCmd);
+        await pumpEventQueue();
+        transport.deliverFrame(
+          PbleFrame(
+            type: Pble.typeRsp,
+            opcode: oldCmd.opcode,
+            id: reusedId,
+            payload: Uint8List.fromList(<int>[PbleStatus.ok.code, 0x77]),
+          ),
+        );
+        expect((await oldPending).opcode, oldCmd.opcode);
+
+        final PbleFrame newCmd = PbleFrame(
+          type: Pble.typeCmd,
+          opcode: PbleOpcode.run.code,
+          id: reusedId,
+          payload: Uint8List(0),
+        );
+        final Future<PbleFrame> newPending = engine.request(newCmd);
+        await pumpEventQueue();
+        transport.deliverFrame(
+          PbleFrame(
+            type: Pble.typeRsp,
+            opcode: oldCmd.opcode,
+            id: reusedId,
+            payload: Uint8List.fromList(<int>[PbleStatus.ok.code, 0x88]),
+          ),
+        );
+        transport.deliverFrame(
+          PbleFrame(
+            type: Pble.typeRsp,
+            opcode: newCmd.opcode,
+            id: reusedId,
+            payload: Uint8List.fromList(<int>[PbleStatus.ok.code, 0x99]),
+          ),
+        );
+
+        final PbleFrame rsp = await newPending;
+        expect(rsp.type, Pble.typeRsp);
+        expect(rsp.opcode, newCmd.opcode);
+        expect(rsp.payload, <int>[PbleStatus.ok.code, 0x99]);
+      },
+    );
+
     test('EVT frames (id==0) route onto events by opcode', () async {
       final Future<PbleFrame> evt = engine.events.first;
       transport.deliverFrame(
@@ -104,6 +267,288 @@ void main() {
       await expectLater(
         engine.request(cmd, timeout: const Duration(milliseconds: 50)),
         throwsA(isA<PbleTimeoutException>()),
+      );
+    });
+
+    test('request acknowledges every outbound fragment', () async {
+      final PbleFrame cmd = PbleFrame(
+        type: Pble.typeCmd,
+        opcode: PbleOpcode.run.code,
+        id: engine.nextId(),
+        payload: Uint8List.fromList(List<int>.filled(500, 0x78)),
+      );
+      final Future<PbleFrame> pending = engine.request(cmd);
+      await pumpEventQueue();
+      transport.deliverFrame(
+        PbleFrame(
+          type: Pble.typeRsp,
+          opcode: cmd.opcode,
+          id: cmd.id,
+          payload: Uint8List.fromList(<int>[PbleStatus.ok.code]),
+        ),
+      );
+      await pending;
+
+      expect(transport.sentAcknowledged, hasLength(greaterThan(1)));
+      expect(transport.sentAcknowledged, everyElement(isTrue));
+    });
+
+    test('fire keeps every outbound fragment write-without-response', () async {
+      final PbleFrame cmd = PbleFrame(
+        type: Pble.typeCmd,
+        opcode: PbleOpcode.consoleInput.code,
+        id: Pble.evtId,
+        payload: Uint8List.fromList(List<int>.filled(500, 0x78)),
+      );
+      await engine.fire(cmd);
+
+      expect(transport.sentAcknowledged, hasLength(greaterThan(1)));
+      expect(transport.sentAcknowledged, everyElement(isFalse));
+    });
+
+    test(
+      'request timeout includes time spent in acknowledged writes',
+      () async {
+        await engine.dispose();
+        await transport.dispose();
+        transport = FakeByteTransport(
+          mtu: Pble.mtuRequest,
+          sendDelay: const Duration(milliseconds: 200),
+        );
+        engine = PbleEngine(transport);
+        final PbleFrame cmd = PbleFrame(
+          type: Pble.typeCmd,
+          opcode: PbleOpcode.hello.code,
+          id: engine.nextId(),
+          payload: Uint8List(0),
+        );
+        final Stopwatch elapsed = Stopwatch()..start();
+
+        await expectLater(
+          engine.request(cmd, timeout: const Duration(milliseconds: 25)),
+          throwsA(isA<PbleTimeoutException>()),
+        );
+        elapsed.stop();
+
+        expect(
+          elapsed.elapsed,
+          lessThan(const Duration(milliseconds: 100)),
+          reason: 'the command deadline begins before its first fragment write',
+        );
+      },
+    );
+
+    test(
+      'one deadline bounds aggregate acknowledged multi-fragment writes',
+      () async {
+        await engine.dispose();
+        await transport.dispose();
+        transport = FakeByteTransport(
+          mtu: 23,
+          sendDelay: const Duration(milliseconds: 40),
+        );
+        engine = PbleEngine(transport);
+        final PbleFrame cmd = PbleFrame(
+          type: Pble.typeCmd,
+          opcode: PbleOpcode.run.code,
+          id: engine.nextId(),
+          payload: Uint8List.fromList(List<int>.filled(64, 0x78)),
+        );
+        final Stopwatch elapsed = Stopwatch()..start();
+
+        await expectLater(
+          engine.request(cmd, timeout: const Duration(milliseconds: 70)),
+          throwsA(isA<PbleTimeoutException>()),
+        );
+        elapsed.stop();
+
+        expect(transport.sentPackets, isNotEmpty);
+        expect(transport.sentPackets.length, lessThan(4));
+        expect(
+          elapsed.elapsed,
+          lessThan(const Duration(milliseconds: 110)),
+          reason: 'each fragment must consume the same absolute request budget',
+        );
+      },
+    );
+
+    test(
+      'on-time exact RSP wins when its acknowledged write completes late',
+      () async {
+        await engine.dispose();
+        await transport.dispose();
+        const int requestId = 92;
+        var delivered = false;
+        transport = FakeByteTransport(
+          sendDelay: const Duration(milliseconds: 40),
+          onSendStarted: () {
+            if (delivered) return;
+            delivered = true;
+            transport.deliverFrame(
+              PbleFrame(
+                type: Pble.typeRsp,
+                opcode: PbleOpcode.hello.code,
+                id: requestId,
+                payload: Uint8List.fromList(<int>[PbleStatus.ok.code, 0xa1]),
+              ),
+            );
+          },
+        );
+        engine = PbleEngine(transport);
+        final PbleFrame cmd = PbleFrame(
+          type: Pble.typeCmd,
+          opcode: PbleOpcode.hello.code,
+          id: requestId,
+          payload: Uint8List(0),
+        );
+
+        final PbleFrame response = await engine.request(
+          cmd,
+          timeout: const Duration(milliseconds: 15),
+        );
+
+        expect(response.opcode, cmd.opcode);
+        expect(response.id, cmd.id);
+        expect(response.payload, <int>[PbleStatus.ok.code, 0xa1]);
+      },
+    );
+
+    test(
+      'exact RSP arriving after a pending write deadline still times out',
+      () async {
+        await engine.dispose();
+        await transport.dispose();
+        const int requestId = 93;
+        Timer? lateResponse;
+        transport = FakeByteTransport(
+          sendDelay: const Duration(milliseconds: 30),
+          onSendStarted: () {
+            lateResponse ??= Timer(const Duration(milliseconds: 20), () {
+              transport.deliverFrame(
+                PbleFrame(
+                  type: Pble.typeRsp,
+                  opcode: PbleOpcode.hello.code,
+                  id: requestId,
+                  payload: Uint8List.fromList(<int>[PbleStatus.ok.code, 0xa2]),
+                ),
+              );
+            });
+          },
+        );
+        engine = PbleEngine(transport);
+        final PbleFrame cmd = PbleFrame(
+          type: Pble.typeCmd,
+          opcode: PbleOpcode.hello.code,
+          id: requestId,
+          payload: Uint8List(0),
+        );
+
+        await expectLater(
+          engine.request(cmd, timeout: const Duration(milliseconds: 8)),
+          throwsA(isA<PbleTimeoutException>()),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 35));
+        lateResponse?.cancel();
+      },
+    );
+
+    test(
+      'backend TimeoutException after an on-time exact RSP is not masked',
+      () async {
+        await engine.dispose();
+        await transport.dispose();
+        const int requestId = 94;
+        var delivered = false;
+        transport = FakeByteTransport(
+          sendDelay: const Duration(milliseconds: 5),
+          sendError: TimeoutException('backend acknowledged write timeout'),
+          onSendStarted: () {
+            if (delivered) return;
+            delivered = true;
+            transport.deliverFrame(
+              PbleFrame(
+                type: Pble.typeRsp,
+                opcode: PbleOpcode.hello.code,
+                id: requestId,
+                payload: Uint8List.fromList(<int>[PbleStatus.ok.code, 0xa3]),
+              ),
+            );
+          },
+        );
+        engine = PbleEngine(transport);
+        final PbleFrame cmd = PbleFrame(
+          type: Pble.typeCmd,
+          opcode: PbleOpcode.hello.code,
+          id: requestId,
+          payload: Uint8List(0),
+        );
+
+        await expectLater(
+          engine.request(cmd, timeout: const Duration(milliseconds: 100)),
+          throwsA(
+            isA<TimeoutException>().having(
+              (TimeoutException error) => error.message,
+              'message',
+              'backend acknowledged write timeout',
+            ),
+          ),
+        );
+      },
+    );
+
+    test(
+      'backend non-timeout error after an exact RSP is not masked',
+      () async {
+        await engine.dispose();
+        await transport.dispose();
+        const int requestId = 95;
+        var delivered = false;
+        transport = FakeByteTransport(
+          sendDelay: const Duration(milliseconds: 5),
+          sendError: StateError('backend acknowledged write failed'),
+          onSendStarted: () {
+            if (delivered) return;
+            delivered = true;
+            transport.deliverFrame(
+              PbleFrame(
+                type: Pble.typeRsp,
+                opcode: PbleOpcode.hello.code,
+                id: requestId,
+                payload: Uint8List.fromList(<int>[PbleStatus.ok.code, 0xa4]),
+              ),
+            );
+          },
+        );
+        engine = PbleEngine(transport);
+        final PbleFrame cmd = PbleFrame(
+          type: Pble.typeCmd,
+          opcode: PbleOpcode.hello.code,
+          id: requestId,
+          payload: Uint8List(0),
+        );
+
+        await expectLater(
+          engine.request(cmd, timeout: const Duration(milliseconds: 100)),
+          throwsA(
+            isA<StateError>().having(
+              (StateError error) => error.message,
+              'message',
+              'backend acknowledged write failed',
+            ),
+          ),
+        );
+      },
+    );
+
+    test('the exact deadline remains inside the response window', () {
+      final String source = File('lib/pble/engine.dart').readAsStringSync();
+
+      expect(
+        source,
+        matches(
+          RegExp(r'bool get expired\s*=>\s*elapsed\.elapsed\s*>\s*timeout\s*;'),
+        ),
+        reason: 'protocol.md accepts an exact RSP recorded at the deadline',
       );
     });
   });

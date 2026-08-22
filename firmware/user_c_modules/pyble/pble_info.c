@@ -56,18 +56,22 @@ size_t pble_info_device_info(uint8_t *out, size_t cap) {
     return ((size_t)n < cap) ? (size_t)n : cap;
 }
 
-uint8_t pble_info_hello(const pble_frame_t *req, uint8_t *rsp, size_t *rsp_len, uint16_t conn) {
+uint8_t pble_info_hello(const pble_frame_t *req, uint8_t *rsp,
+                        size_t *rsp_len,
+                        const pble_session_token_t *session) {
     (void)req;
-    (void)conn;
+    (void)session;
     // §9 VER guard (frame VER != 0x01) already rejected in dispatch; v1.0 is the
     // single supported version, so a well-formed HELLO is served the caps.
     *rsp_len = pble_info_device_info(rsp, PBLE_RSP_MAX);
     return PBLE_OK;
 }
 
-uint8_t pble_info_device_info_cmd(const pble_frame_t *req, uint8_t *rsp, size_t *rsp_len, uint16_t conn) {
+uint8_t pble_info_device_info_cmd(const pble_frame_t *req, uint8_t *rsp,
+                                  size_t *rsp_len,
+                                  const pble_session_token_t *session) {
     (void)req;
-    (void)conn;
+    (void)session;
     *rsp_len = pble_info_device_info(rsp, PBLE_RSP_MAX);
     return PBLE_OK;
 }

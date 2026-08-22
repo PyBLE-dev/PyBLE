@@ -17,7 +17,7 @@ abstract interface class ByteTransport {
   Stream<Uint8List> get inbound;
 
   /// Sends one outbound GATT packet (a single RX write).
-  Future<void> send(Uint8List packet);
+  Future<void> send(Uint8List packet, {required bool acknowledged});
 
   /// The negotiated ATT MTU; the fragmenter sizes packets to `mtu - 4`.
   int get mtu;

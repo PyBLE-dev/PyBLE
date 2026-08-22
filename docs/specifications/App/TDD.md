@@ -1,6 +1,6 @@
 # PyBLE App — Technical Design Document (TDD)
 
-Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-07-30
+Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-08-19
 
 ## 0. Naming note (acronym clash)
 
@@ -31,6 +31,13 @@ The design covers the **entire Flutter app**: the BLE adapter (`lib/ble/`), the 
 The decisions below are the load-bearing choices the rest of the design rests on. Each cites the requirement(s) it serves.
 
 ### 2.1 The `Connection` API is the single seam
+
+> **Frozen acknowledged command-write amendment (2026-08-15, `[docs]`):**
+> [§7.2](#72-byte-boundary), [§8.2](#82-fragmentation--reassembly), and
+> [§8.3](#83-requestresponse-correlation--event-routing) bind response-bearing
+> requests to acknowledged GATT writes while fire-and-forget traffic retains
+> Write-Without-Response. Existing request durations remain one absolute
+> end-to-end deadline.
 
 **Decision (D1):** every UI widget binds **only** to the abstract `Connection` interface ([app.md §3](../app.md#3-the-connection-api-the-seam-every-widget-binds-to), [§5](#5-the-connection-api-design)) or to narrow callbacks derived from it. The wire format lives **only** in `lib/pble/`; no widget imports `lib/ble/`. This is enforced by an import-boundary lint ([§15.6](#156-import-boundary--no-leak-gates)). — *(satisfies FR-CONN-*, FR-PBLE-14, FR-BLE-8, NFR-MAINT-1, CON-8; the whole-document binding principle of [specs.md §1.4](specs.md).)*
 
@@ -85,7 +92,7 @@ Rationale: a single approach keeps the strict layering observable (state flows d
 |   file-transfer state machine (window+resume) · console stream ·     |
 |   HELLO/caps · status-byte -> typed PbleException                    |
 +-----------------------------+----------------------------------------+
-            Stream<List<int>> in   |   write(bytes) out
+            Stream<List<int>> in   |   mode-explicit write(bytes) out
                               v
 +----------------------------------------------------------------------+
 | lib/ble/    BLE adapter  ── scan(filter UUID) · connect · MTU 247 ·  |
@@ -140,7 +147,7 @@ Each subsection states **responsibility · public API/type sketch · key data st
 
 ### 4.1 `lib/ble/` — BLE adapter
 
-**Responsibility:** the thin, mockable `flutter_blue_plus` seam: scan filtered to the PyBLE service UUID, connect, MTU negotiation to 247, a byte-stream boundary (`Stream<List<int>>` in / `write(bytes)` out), connection-state transitions, reconnect, and platform permission/adapter-state handling. It knows **nothing** about PBLE/1.
+**Responsibility:** the thin, mockable `flutter_blue_plus` seam: scan filtered to the PyBLE service UUID, connect, MTU negotiation to 247, a byte-stream boundary (`Stream<List<int>>` in / mode-explicit `write(bytes)` out), connection-state transitions, reconnect, and platform permission/adapter-state handling. It knows **nothing** about PBLE/1.
 
 **Public interface (sketch):**
 
@@ -153,7 +160,7 @@ abstract interface class BleTransport {
 }
 abstract interface class BleSession {
   Stream<List<int>> get inbound;                // TX notifications (FR-BLE-3)
-  Future<void> write(List<int> bytes);          // RX Write / Write-Without-Response (FR-BLE-3)
+  Future<void> write(List<int> bytes, {required bool withoutResponse}); // RX write mode (FR-BLE-3)
   int get mtu;                                   // negotiated, down to default (FR-BLE-2)
   ValueListenable<BleLinkState> get link;        // up/down transitions (FR-BLE-4)
   Future<void> reconnect();                      // by remembered id (FR-BLE-4)
@@ -169,7 +176,7 @@ abstract interface class BleSession {
 
 ### 4.2 `lib/pble/` — PBLE/1 client + `Connection` implementation
 
-**Responsibility:** the only layer that knows the wire. It encodes/decodes [protocol.md §3.1](../protocol.md#3-framing) frames with IEEE CRC-32, fragments/reassembles across `MTU − 4` ([protocol.md §3.2](../protocol.md#3-framing)), correlates `CMD`↔`RSP` by `ID`, routes `EVT`s, runs the file-transfer window+resume state machine ([protocol.md §5](../protocol.md#5-file-transfer-the-reliability-core)), exposes the console stream, performs HELLO/caps negotiation ([protocol.md §7](../protocol.md#7-hello--capabilities)), and maps each [protocol.md §8](../protocol.md#8-status--error-codes-1-byte-status-in-rsp) status byte to a typed exception. It implements the `Connection` interface ([§5](#5-the-connection-api-design)).
+**Responsibility:** the only layer that knows the wire. It encodes/decodes [protocol.md §3.1](../protocol.md#3-framing) frames with IEEE CRC-32, fragments/reassembles across `MTU − 4` ([protocol.md §3.2](../protocol.md#3-framing)), correlates each `CMD` only to `TYPE=RSP` with its exact `{OPCODE, ID}`, routes `EVT`s, runs the file-transfer window+resume state machine ([protocol.md §5](../protocol.md#5-file-transfer-the-reliability-core)), exposes the console stream, performs HELLO/caps negotiation ([protocol.md §7](../protocol.md#7-hello--capabilities)), and maps each [protocol.md §8](../protocol.md#8-status--error-codes-1-byte-status-in-rsp) status byte to a typed exception. It implements the `Connection` interface ([§5](#5-the-connection-api-design)).
 
 **Public interface (sketch):** internal codec types (`Frame`, `Fragmenter`, `Reassembler`, `Crc32`, `Correlator`, `FileTransfer`, `HelloNegotiator`) plus the public `PbleConnection implements Connection` ([§5.1](#51-the-connection-interface)).
 
@@ -177,7 +184,7 @@ abstract interface class BleSession {
 
 **Dependencies:** `lib/ble/` (byte transport) below; presents `Connection` (neutral types) above. Authored fresh, clean-room (FR-PBLE-15).
 
-**Satisfies:** FR-PBLE-1..15, FR-CONN-1..9 (implementation), IF-1, IF-2, SEC-1/2/7.
+**Satisfies:** FR-PBLE-1..16, FR-CONN-1..9 (implementation), IF-1, IF-2, SEC-1/2/7.
 
 ### 4.3 `lib/editor/` — code editor
 
@@ -219,14 +226,18 @@ abstract interface class BleSession {
 
 **Responsibility:** host Blockly in a WebView, generating MicroPython for
 an inspectable, board-neutral subset with no board-specific defaults, including
-the current numeric-GPIO `machine.Pin` and NeoPixel surface initially validated
-on ESP32-family firmware, plus paced programs through standard
-`time.sleep_ms`; expose generated code as inspectable plain `.py`; route it
+explicit integer-or-bounded-name `machine.Pin`, NeoPixel, and explicit
+`pyble_st7789`
+TFT surfaces, plus paced programs
+through standard `time.sleep_ms`; expose generated code as inspectable plain `.py`; route it
 through the same upload/run/save path as the text editor; and load editable
-copies of the bundled beginner examples without automatic execution. Numeric
-pin identifiers and NeoPixel availability are not claimed for every
-MicroPython port; broader target support requires an explicit capability and
-block contract.
+copies of the bundled beginner examples without automatic execution. A
+syntactically accepted pin identity and NeoPixel availability are not claimed
+for every MicroPython port. The TFT surface remains bundled regardless of target, while its generated
+import requires the exact `waveshare-esp32-s3-lcd-147b` firmware or a
+user-installed API-compatible module; lean `esp32-s3-n16r8` firmware does not
+bundle it. No `DeviceInfo` or provisioning-profile gate controls the category,
+example, or connection.
 Persist an exact Blocks-origin reopen record beside generated Python, and
 convert only ADR-0017's bounded beginner Python subset into a new workspace,
 offline and all-or-nothing.
@@ -238,7 +249,7 @@ publishes `{message, workspaceJson, revision}` without actionable source so
 invalid intermediate edits remain restorable. `BlocksController` owns
 loading/error/busy state, serializes all fresh-source consumers, and delegates
 Save/Run to the shared Connection-only `ProgramActions`; no board action exists
-on the bridge. `BlocksExampleCatalog` decodes the local version-1 manifest into
+on the bridge. `BlocksExampleCatalog` decodes the local version-3 manifest into
 immutable example/role records. An example-candidate service deep-clones and
 materializes a fixture, asks the pinned production generator for source in an
 isolated scratch workspace, and commits that candidate only after an explicit
@@ -284,7 +295,7 @@ step therefore writes each such token as the JavaScript template interpolation
 packaged file remains ordinary data. The build refuses any vendored asset that
 the host `file` classifier reports as `script text executable` (BLD-11).
 
-**Satisfies:** FR-BLOCKS-1..13, CON-6/7.
+**Satisfies:** FR-BLOCKS-1/1A/1B/2..14, CON-6/7.
 
 ### 4.7 `lib/plots/` — live plots
 
@@ -471,7 +482,13 @@ Implements the byte boundary; references [protocol.md §2](../protocol.md#2-ble-
 
 ### 7.2 Byte boundary
 
-`inbound` is a `Stream<List<int>>` of raw TX notification payloads; `write(bytes)` writes to RX (Write / Write-Without-Response). The adapter never interprets frame contents (FR-BLE-3) — fragmentation/reassembly is entirely `lib/pble/`'s job ([§8.2](#82-fragmentation--reassembly)).
+`inbound` is a `Stream<List<int>>` of raw TX notification payloads;
+`write(bytes, {required withoutResponse})` writes to RX and maps the flag
+directly to the platform GATT mode. `BleByteTransport.send(packet,
+{required acknowledged})` maps to `withoutResponse: !acknowledged`. The adapter
+never interprets frame contents (FR-BLE-3) — fragmentation/reassembly and the
+choice between response-bearing and fire-and-forget traffic are entirely
+`lib/pble/`'s job ([§8.2](#82-fragmentation--reassembly)).
 
 ### 7.3 Reconnect
 
@@ -497,7 +514,7 @@ Implements the byte boundary; references [protocol.md §2](../protocol.md#2-ble-
 
 ## 8. PBLE/1 client design (`lib/pble/`)
 
-References [protocol.md](../protocol.md) throughout; redefines nothing. — *(satisfies FR-PBLE-1..15.)*
+References [protocol.md](../protocol.md) throughout; redefines nothing. — *(satisfies FR-PBLE-1..16.)*
 
 ### 8.1 Frame codec
 
@@ -505,11 +522,24 @@ Encode/decode the [protocol.md §3.1](../protocol.md#3-framing) message (`VER`/`
 
 ### 8.2 Fragmentation / reassembly
 
-Outbound messages are split across `MTU − 4` boundaries with the [protocol.md §3.2](../protocol.md#3-framing) `FRAG_HDR` (`bit7 FIRST`, `bit6 LAST`, `bits5..0 index mod 64`); inbound packets are concatenated from FIRST through LAST to reproduce the original message byte-identically (FR-PBLE-2). The per-fragment payload tracks the negotiated MTU from `lib/ble/`.
+Outbound messages are split across `MTU − 4` boundaries with the [protocol.md §3.2](../protocol.md#3-framing) `FRAG_HDR` (`bit7 FIRST`, `bit6 LAST`, `bits5..0 index mod 64`); inbound packets are concatenated from FIRST through LAST to reproduce the original message byte-identically (FR-PBLE-2). The per-fragment payload tracks the negotiated MTU from `lib/ble/`. `PbleEngine.request` sends every fragment through `ByteTransport.send(..., acknowledged: true)`; `PbleEngine.fire` sends every fragment with `acknowledged: false` (FR-PBLE-16).
 
 ### 8.3 Request/response correlation & event routing
 
-A pending-request table keyed by the 1-byte `ID` (1–255, app-chosen) matches each `CMD` to its `RSP`; `EVT` frames (`ID = 0`) route by opcode to the console stream, run-state notifier, or file-transfer ack/data handlers (FR-PBLE-4). Each pending request carries a completer + timeout.
+A connection-local pending-request entry retains the originating `OPCODE` as
+well as the 1-byte `ID` (1–255, app-chosen). It completes only for `TYPE=RSP`
+with that exact pair. A wrong-opcode response carrying a reused ID and a
+non-response carrying a nonzero ID are unrelated; neither may complete the
+entry nor overwrite or remove an exact response already received, regardless
+of arrival order. Thus a keyed implementation uses `{OPCODE, ID}`, or performs
+equivalent exact validation without allowing an unrelated frame to consume the
+entry. `EVT` frames (`ID = 0`) route by opcode to the console stream, run-state
+notifier, or file-transfer ack/data handlers (FR-PBLE-4). Each pending request
+carries a completer plus one absolute deadline created before its first
+acknowledged fragment write. Every fragment write and the response wait
+receives only the residual duration; an exact response records its arrival
+against that same deadline, while neither a successful write, an unrelated
+frame, nor other progress resets or extends the timeout (FR-PBLE-16).
 
 ### 8.4 File-transfer state machine
 
@@ -608,9 +638,12 @@ Drift schema versions with explicit `MigrationStrategy` step migrations (forward
 
 Blockly in a `webview_flutter` WebView, generating an inspectable,
 board-neutral MicroPython subset with no board-specific defaults
-(FR-BLOCKS-1), including the current numeric digital `machine.Pin`
-construction/read/write surface initially validated on ESP32-family firmware
-(FR-BLOCKS-5). Generated code is inspectable plain `.py` and flows through the
+(FR-BLOCKS-1), including explicit integer-or-bounded-name digital
+`machine.Pin` construction/read/write, standard NeoPixel, and explicit
+`pyble_st7789` TFT surfaces (FR-BLOCKS-1B/5/13/14). The TFT authoring surface is always bundled; its
+runtime is supplied by exact `waveshare-esp32-s3-lcd-147b` firmware or a
+user-installed API-compatible module, not lean `esp32-s3-n16r8` firmware.
+Generated code is inspectable plain `.py` and flows through the
 same upload/run/save path as the editor (FR-BLOCKS-2/3) via the `Connection`.
 The JS-channel bridge carries only neutral types and no board profile, copied
 curriculum/catalog, domain-specific lesson flow, or proprietary/classroom
@@ -688,6 +721,21 @@ normal launcher package. The normal package is always built from
 `integration` explicitly. The Android CI device job also compiles a production
 release APK after host tests, catching stale dev-plugin registration without
 shipping the integration-test plugin.
+
+Android's authored local document is loaded through the public absolute-file
+controller path at exactly
+`file:///android_asset/flutter_assets/assets/blockly/index.html`. That path
+must enable native WebView file access before navigation; the generic
+`loadFlutterAsset` adapter is insufficient on current target-SDK defaults
+because it can load the main `/android_asset` document while leaving its
+relative CSS and JavaScript unreadable. iPadOS continues to use the ordinary
+Flutter-asset loader. Enabling Android file access does not broaden PyBLE's
+content authority: the exact main-frame navigation allowlist, relative-only
+audited resource graph, bundled-asset existence checks, and deny-by-default
+CSP remain mandatory, including `connect-src 'none'`. The real Android WebView
+gate must observe this exact file URL and an accepted post-`hostReady` snapshot
+before the startup watchdog expires; a 200 response for the main HTML alone is
+not success.
 Blockly's own serializer emits `{}` for a canonical workspace with no blocks or
 variables. Native semantic-empty detection accepts that exact object as empty,
 as well as the expanded empty-block-list form, so a loaded blank workspace gets
@@ -721,20 +769,25 @@ changes retain the Blocks destination and provider snapshot; if Flutter
 recreates the platform view, the existing host-epoch restore handshake must
 publish a fresh revision before source actions re-enable.
 
-**A-31 generic digital GPIO — FROZEN (`[docs]` 2026-07-28,
-[ADR-0015](../../decisions/0015-generic-micropython-gpio-blocks.md)).**
+**A-31 generic digital GPIO, extended by A-38 named pins — FROZEN (`[docs]`
+2026-08-12, [ADR-0015](../../decisions/0015-generic-micropython-gpio-blocks.md),
+[ADR-0031](../../decisions/0031-explicit-named-micropython-pins.md)).**
 The fresh MIT GPIO extension registers its custom blocks and Python generators
 before workspace injection, then adds one GPIO category to the local toolbox:
 
 | Type | Shape | Generated MicroPython |
 |---|---|---|
-| `pyble_gpio_pin` | output `Pin`; required `GPIO` input checked `Number`; `MODE` field `IN|OUT`; `PULL` field `NONE|UP|DOWN` | `Pin(gpio, Pin.IN|Pin.OUT, None|Pin.PULL_UP|Pin.PULL_DOWN)`; explicit `None` disables any prior pull |
+| `pyble_gpio_pin` | output `Pin`; required `GPIO` input checked `Number|String`; `MODE` field `IN|OUT`; `PULL` field `NONE|UP|DOWN` | bare `Pin(2, ...)` or quoted `Pin("LED", ...)`; explicit `None` disables any prior pull |
 | `pyble_gpio_write` | statement; required `PIN` input checked `Pin`; `LEVEL` field `LOW|HIGH` | `pin.value(0|1)` |
 | `pyble_gpio_read` | output `Number`; required `PIN` input checked `Pin` | `pin.value()` |
 
-The constructor has no GPIO shadow/default. Users connect an explicit
-non-negative integral numeric literal and may store the returned object with
-standard variable set/get blocks. The Python generator installs
+The constructor has no GPIO shadow/default. Users connect either an explicit
+non-negative integral numeric literal through `math_number` or a
+case-sensitive name matching `^[A-Za-z][A-Za-z0-9_]{0,15}$` through `text`,
+and may store the returned object with standard variable set/get blocks. The
+generator independently validates the produced literal, keeps an integer bare,
+normalizes an accepted name to a double-quoted string, and rejects every other
+string/expression through the existing invalid-GPIO path. The Python generator installs
 `from machine import Pin` in its definitions/preamble map under one stable key
 and reserves `Pin` before name allocation; therefore any number of constructors
 produce one import and a user variable/procedure cannot shadow it. A workspace
@@ -745,8 +798,10 @@ composable. Constructing `Pin.OUT` does not choose an initial level; a
 deterministic level requires an explicit write.
 
 Definitions enforce the declared Blockly connection checks. Generators also
-reject disconnected sockets, non-finite/fractional/negative GPIO literals, and
-unknown restored enum tokens; they never substitute GPIO 0, a level, or a pull.
+reject disconnected sockets, non-finite/fractional/negative GPIO literals,
+empty/digit-led/non-ASCII/overlength or otherwise invalid names, arbitrary
+expressions, and unknown restored enum tokens; they never substitute GPIO 0, a
+name, a level, or a pull.
 Such failures publish the normal correlated generator error, retain the
 editable/serializable workspace, and disable Preview/Open/Save/Run until a
 fresh repaired snapshot arrives. Concretely, snapshot publication serializes
@@ -774,7 +829,8 @@ Node/unit tests execute the actual custom definitions and generators for every
 mode/pull/level branch, exact-once/no-import behavior, reserved-name
 sanitization, variable composition, required-input failures, invalid restored
 state, and workspace/revision retention across a generator-error host
-recreation. Asset-policy tests pin the IDs/category and exclude a pin catalog. A
+recreation. Asset-policy tests pin the IDs/category, integer/name grammar and
+generation, and exclusion of a pin catalog. A
 real WebView integration test serializes the GPIO workspace,
 recreates/restores it (including rotation), compares generated source before and
 after, then exercises Preview/Save/Run through the existing acknowledged
@@ -810,8 +866,72 @@ variable, RGB/index, fill/write composition; invalid workspace retention; and
 the absence of board profiles/defaults/custom driver or network access. A real
 WebView test restores and generates the new catalog fixture on both platforms.
 
-**A-31 beginner examples and Time block — FROZEN (`[docs]` 2026-07-28,
-[ADR-0016](../../decisions/0016-offline-beginner-blockly-examples.md)).**
+**A-31 explicit ST7789 TFT — FROZEN (`[docs]` 2026-08-01,
+[ADR-0023](../../decisions/0023-explicit-st7789-user-runtime.md)).**
+The fresh MIT TFT Display category targets the separately frozen
+`pyble_st7789` user runtime; it adds no Flutter runtime dependency, PBLE/1
+operation, or board-detection path:
+
+The exact `waveshare-esp32-s3-lcd-147b` provisioning image freezes that
+runtime; the lean `esp32-s3-n16r8` image deliberately omits it. Users may
+install an API-compatible module separately. The app does not inspect, persist,
+or infer either profile, and toolbox/example visibility never changes with
+`DeviceInfo`; an absent module remains an ordinary MicroPython import/runtime
+error.
+
+| Type | Shape | Generated MicroPython |
+|---|---|---|
+| `pyble_tft_create` | output `ST7789`; required `SPI_ID`, `BAUDRATE`, `POLARITY`, `PHASE`: Number; required `SCK`, `MOSI`, `CS`, `DC`, `RESET`, `BACKLIGHT`: Pin; required `WIDTH`, `HEIGHT`, `X_OFFSET`, `Y_OFFSET`: Number; required `BGR`, `INVERSION`: Boolean | `ST7789(spi_id, baudrate, polarity, phase, sck, mosi, cs, dc, reset, backlight, width, height, x_offset, y_offset, bgr, inversion)` |
+| `pyble_tft_rgb565` | output `TFTColor`; required `RED`, `GREEN`, `BLUE`: Number | `rgb565(red, green, blue)` |
+| `pyble_tft_fill` | statement; required `DISPLAY: ST7789`, `COLOR: TFTColor` | `display.fill(color)` |
+| `pyble_tft_pixel` | statement; required `DISPLAY: ST7789`, `X`, `Y`: Number, `COLOR: TFTColor` | `display.pixel(x, y, color)` |
+| `pyble_tft_rect` | statement; required `DISPLAY: ST7789`, `X`, `Y`, `WIDTH`, `HEIGHT`: Number, `COLOR: TFTColor`; `STYLE=OUTLINE\|FILLED` | `display.rect(x, y, width, height, color)` or `display.fill_rect(x, y, width, height, color)` |
+| `pyble_tft_text` | statement; required `DISPLAY: ST7789`, `TEXT: String`, `X`, `Y`: Number, `COLOR: TFTColor` | `display.text(text, x, y, color)` |
+| `pyble_tft_show` | statement; required `DISPLAY: ST7789` | `display.show()` |
+| `pyble_tft_backlight` | statement; required `DISPLAY: ST7789`, `ON: Boolean` | `display.backlight(on)` |
+
+No required input has a shadow/default. The constructor accepts only finite
+integral literals for SPI ID, baudrate, polarity, phase, dimensions, and
+offsets; SPI ID and offsets are non-negative, baudrate/dimensions are positive,
+and polarity/phase are each 0 or 1. Its pin inputs reuse ordinary explicit
+`pyble_gpio_pin` values. BGR, inversion, and backlight remain required Boolean
+expressions. Coordinates, rectangle dimensions, text, RGB channels, and colour
+are composable single-line expressions whose dynamic range is owned by the
+runtime. `OUTLINE` and `FILLED` are the only restored rectangle enum values.
+
+The constructor reserves `ST7789` and installs exactly
+`from pyble_st7789 import ST7789`; the colour block reserves `rgb565` and
+installs exactly `from pyble_st7789 import rgb565`. Each appears at most once,
+only when its owning block is present, and in deterministic
+`ST7789`-then-`rgb565` definition order when both occur. Nested GPIO
+constructors remain the sole owners of `from machine import Pin`; generated TFT
+source never imports `SPI`, because `pyble_st7789.ST7789` constructs the bus
+from its explicit positional configuration only when user code calls it.
+
+Fill, pixel, rectangle, and text mutate only the framebuffer. Only Show
+transfers it, and only Backlight changes backlight state; neither action is
+implicit in construction or drawing. Missing inputs, invalid literals,
+multiline expressions, unknown restored enum values, and tampered connection
+types use the existing workspace-bearing repairable generator error. No block
+contains a pin, bus, geometry, offset, colour-order, inversion, controller, or
+board default, consults `DeviceInfo`, or claims that the connected board has a
+display.
+
+Unit/asset tests execute all eight definitions and generators, every
+outline/filled and backlight branch, the positional argument order, literal
+boundaries, import use/ordering/name reservation, variable receiver
+composition, no-implicit-show/backlight behavior, invalid-workspace retention,
+and absence of routing profiles or board gates. Tests also prove that a generic
+S3 connection neither hides the category nor auto-selects the example and that
+an unavailable module is surfaced without changing connection eligibility. A
+real WebView test restores,
+generates, and rotates a composed TFT workspace on iPadOS and Android before
+using the normal Preview/Save/Run path.
+
+**A-31 beginner examples and Time block, extended by A-38 named pins — FROZEN
+(`[docs]` 2026-08-12,
+[ADR-0016](../../decisions/0016-offline-beginner-blockly-examples.md),
+[ADR-0031](../../decisions/0031-explicit-named-micropython-pins.md)).**
 
 The PyBLE extension registers one additional statement before workspace
 injection:
@@ -832,7 +952,7 @@ escape hatch.
 
 ```text
 {
-  "version": 2,
+  "version": 3,
   "examples": [{
     "id": stable-id,
     "titleKey": ARB-key,
@@ -852,11 +972,11 @@ escape hatch.
 
 Catalog order and IDs are fixed as `hello-pyble`, `count-repeatedly`,
 `blink-led`, `blink-neopixel`, `read-button`, `button-controls-led`, and
-`reusable-function`.
+`reusable-function`, followed by `waveshare-esp32-s3-lcd-147b`.
 The decoder rejects an unknown catalog version, duplicate/unknown IDs or roles,
 missing ARB keys, non-object workspaces, duplicate block IDs, role bindings that
 do not resolve to a disconnected `pyble_gpio_pin.GPIO`, extra GPIO constructor
-sockets without a role, and catalog GPIO number blocks connected to those
+sockets without a role, and catalog GPIO value blocks connected to those
 sockets. It never treats catalog text as executable source. The manifest does
 not contain `source` or `sourceTemplate`; tests pin expected output while the
 production generator remains the runtime source authority.
@@ -873,23 +993,47 @@ and calls a procedure with a parameter. A repeating example's localized summary
 says that it continues until Stop. No program is run merely by choosing or
 loading it.
 
+The eighth workspace is manually named **ESP32-S3-LCD-1.47B TFT display** and
+uses the complete ordinary TFT block surface to draw a bounded colour, corner,
+and text pattern, call Show explicitly, and turn the backlight on explicitly.
+Its six connected `pyble_gpio_pin` blocks have disconnected `GPIO` sockets
+bound to the stable SCLK, MOSI, CS, D/C, reset, and backlight roles. Their
+`OUT`/`NONE` choices are visible, while the fixture supplies no pin identity.
+All other constructor choices are visible ordinary blocks: SPI ID 1,
+40,000,000 baud, polarity 0, phase 0, width 172, height 320, X offset 34,
+Y offset 0, BGR `True`, and inversion `True`. Localized wiring copy gives the
+documented B-board GPIO values 40, 45, 42, 41, 39, and 46 in the same role
+order, warns that the similarly named non-B board differs, and requires the
+user to type each value rather than materializing it from the note.
+
+The exact-board title and wiring guidance are chooser content, never a device
+registry. The catalog controller neither reads `DeviceInfo` nor filters,
+selects, enables, disables, or auto-loads the fixture based on chip, capability,
+advertised name, or identity. The example remains previewable/editable offline
+and produces the connected runtime's normal import/runtime error when its
+explicit API is unavailable; that error never changes connection eligibility.
+Localized compatibility copy names `waveshare-esp32-s3-lcd-147b` as the
+firmware that bundles the runtime, says lean `esp32-s3-n16r8` omits it, and
+allows a separately user-installed API-compatible module.
+
 The candidate pipeline is isolated from the active workspace:
 
 ```text
 catalog entry + ephemeral role values
   → schema/role validation
   → deep-cloned ordinary workspace
-  → connect ordinary math_number blocks for every GPIO role
+  → connect ordinary math_number or text blocks for every GPIO role
   → load into disposable scratch Blockly.Workspace
   → production Python generator
   → immutable {workspaceJson, source} candidate
   → Preview only, or explicit commit to the rendered workspace
 ```
 
-Role values are decimal finite, non-negative integers and are pairwise distinct
-when an example declares multiple roles. The UI supplies no
+Role values are non-negative exact-safe integers or names matching
+`^[A-Za-z][A-Za-z0-9_]{0,15}$`; mixed forms are valid and canonical typed
+values are pairwise distinct when an example declares multiple roles. The UI supplies no
 initial/suggested/remembered value and consults neither `DeviceInfo` nor a board
-profile. A duplicate numeric value shows a localized error on the conflicting
+profile. A duplicate integer or exact case-sensitive name shows a localized error on the conflicting
 role fields and keeps/returns focus to the first conflict; it is not presented
 as physical board-pin validation. The same validated candidate supplies both
 the read-only Python shown in the chooser and the subsequent copy, so the
@@ -1051,14 +1195,21 @@ parser, validator, and typed v1 subset model. It accepts only source within
 Indentation uses spaces, source contains no semicolon statement packing,
 identifiers are non-keyword ASCII Python identifiers, and integral Blockly
 literals fit `±9007199254740991`. Decimal float syntax is admitted only when
-its finite value is non-integral; integer-only `range`/GPIO/Time positions
-require decimal integer syntax, and raw U+0000 string content is rejected.
+its finite value is non-integral; integer-only `range`/Time positions require
+decimal integer syntax. A `Pin` identity is either the existing non-negative
+decimal integer or a single-/double-quoted name matching
+`^[A-Za-z][A-Za-z0-9_]{0,15}$`; raw U+0000 string content is rejected.
 
 Only the exact, unaliased, use-dependent leading imports
 `from machine import Pin`, `from time import sleep_ms`, and
-`from neopixel import NeoPixel` are admitted. The statement/expression/function/
-range grammar and complete rejection list are normative in ADR-0017 §5 as
-extended by ADR-0018. The key mappings are:
+`from neopixel import NeoPixel`, plus the separate
+`from pyble_st7789 import ST7789` and
+`from pyble_st7789 import rgb565` lines, are admitted. Each TFT line is
+required exactly when its symbol is used, occurs at most once, and the
+constructor line precedes the colour line when both occur. The
+statement/expression/function/range grammar and complete rejection list are
+normative in ADR-0017 §5 as extended by ADR-0018, ADR-0023, and ADR-0031. The
+key mappings are:
 
 | Python subset node | Ordinary Blockly representation |
 |---|---|
@@ -1070,11 +1221,15 @@ extended by ADR-0018. The key mappings are:
 | `while condition` | `controls_whileUntil` in `WHILE` mode |
 | literal `range(start, stop, step)` | `controls_for`, positive endpoint `stop - 1` or negative endpoint `stop + 1`, positive `BY = abs(step)` |
 | top-level function/call/final return | standard `procedures_defnoreturn`/`procedures_defreturn` and matching call block |
-| `Pin(...)`, `.value(0\|1)`, `.value()` | `pyble_gpio_pin`, `pyble_gpio_write`, `pyble_gpio_read` |
+| `Pin(integer-or-quoted-name, ...)`, `.value(0\|1)`, `.value()` | `pyble_gpio_pin` with `math_number` or `text`, `pyble_gpio_write`, `pyble_gpio_read` |
 | `sleep_ms(N)` | `pyble_time_sleep_ms` |
 | `NeoPixel(Pin(...), count)` | nested `pyble_neopixel_create` + `pyble_gpio_pin` |
 | `(red, green, blue)` in a NeoPixel colour position | `pyble_neopixel_rgb` |
 | `strip[index] = rgb`, `strip.fill(rgb)`, `strip.write()` | `pyble_neopixel_set_pixel`, `pyble_neopixel_fill`, `pyble_neopixel_write` |
+| positional `ST7789(spi_id, baudrate, polarity, phase, sck, mosi, cs, dc, reset, backlight, width, height, x_offset, y_offset, bgr, inversion)` | `pyble_tft_create`; each of the six Pin arguments maps through `pyble_gpio_pin` |
+| `rgb565(red, green, blue)` | `pyble_tft_rgb565` |
+| `display.fill(color)`, `.pixel(x, y, color)`, `.rect(x, y, width, height, color)`, `.fill_rect(x, y, width, height, color)` | `pyble_tft_fill`, `pyble_tft_pixel`, or `pyble_tft_rect` with exact outline/filled state |
+| `display.text(text, x, y, color)`, `.show()`, `.backlight(on)` | `pyble_tft_text`, `pyble_tft_show`, `pyble_tft_backlight` |
 | sole `pass` in a suite | empty statement connection; no placeholder block |
 
 Range values are literal, exact-safe, non-zero-step, direction-consistent, and
@@ -1087,12 +1242,17 @@ from inserting range/global semantics that differ from the input.
 
 Definite binding is a control-flow property, not a first-iteration shortcut.
 Branch exits are intersected; loop bodies and conditions are revalidated across
-their backedges until the assigned, `Pin`, and `NeoPixel` binding sets stabilize.
+their backedges until the assigned, `Pin`, `NeoPixel`, and `ST7789` binding sets
+stabilize.
 A `while` may execute zero times, so its post-loop state is the intersection of
 entry and stabilized body exit. A literal non-empty `range` executes at least
 once, but a multi-iteration range still validates its backedge before exporting
-the final body-exit state. A receiver that may cease to be a `Pin` or
-`NeoPixel` therefore rejects the complete conversion.
+the final body-exit state. A receiver that may cease to be a `Pin`, `NeoPixel`,
+or `ST7789` therefore rejects the complete conversion. TFT construction
+additionally requires the exact 16 positional arguments, six definitely-`Pin`
+values, valid integral SPI/mode/geometry/offset literals, and Boolean
+BGR/inversion values. Keywords, aliases, wrong order or arity, and all unlisted
+display methods reject the whole source rather than producing partial blocks.
 
 Construction assigns fresh unique block/variable/procedure IDs and a
 deterministic non-overlapping top-level layout. Those visual choices are not
@@ -1121,7 +1281,11 @@ captured source
 
 Model equality includes imports, literal values, identifiers, operators,
 statement/branch order, adjusted range semantics, function signatures/call
-kind, GPIO/Time choices, and definite NeoPixel bindings/indices/RGB operations;
+kind, GPIO/Time choices, definite NeoPixel bindings/indices/RGB operations, TFT
+import order, complete constructor configuration, definite display bindings,
+RGB565 calls, draw operations, outline/filled choice, explicit Show, and
+Boolean backlight state, and each Pin identity's integer/name kind and exact
+value;
 it ignores only disclosed formatting, redundant parentheses/blank lines, quote
 spelling, and visual layout. Any error at any
 stage discards the whole workspace. Comments/docstrings and every unsupported
@@ -1403,15 +1567,15 @@ This is where the Technical Design meets **Test-Driven Development** ([§0](#0-n
 
 | Package | unit | widget | golden | conformance | integration | locale |
 |---|---|---|---|---|---|---|
-| `lib/ble/` | scan filter, connect, MTU, reconnect (mocked transport) | — | — | — | on-device scan/connect/MTU per chip | — |
-| `lib/pble/` | codec, CRC32, correlation, error mapping | — | — | frame round-trip, fragmentation matrix, window+resume vs fake transport | resume across simulated drop | — |
+| `lib/ble/` | scan filter, connect, MTU, reconnect, acknowledged-vs-WWR mapping (mocked transport) | — | — | — | on-device scan/connect/MTU per chip | — |
+| `lib/pble/` | codec, CRC32, correlation, error mapping, request-ack/fire-WWR modes, absolute write+RSP deadline | — | — | frame round-trip, fragmentation matrix, window+resume vs fake transport | default-MTU HELLO; resume across simulated drop | — |
 | `Connection`/`FakeConnection` | every method against FakeConnection | — | — | both ends of shared corpus | — | — |
 | `lib/data/` | DAO CRUD, migrations, schema version | — | — | — | offline create→run→log | — |
 | `lib/editor/` | EditorSurface, tabs, save | tabs/find/run actions (FakeConnection) | landscape/portrait/phone | — | save→upload→run loop | strings from ARB |
 | `lib/console/` | line buffer, error explainer table | stream render, stdin, tab-switch persistence | stdout/stderr/system + traceback | — | observe-anywhere | explainer strings |
 | `lib/files/` | path/forbidden predicate, `.py` filter | list/upload/download/rename/delete (FakeConnection) | — | — | progress + CRC success | status-code messages |
 | `lib/connect/` | saved-board store | scan list (label/PyBLE-XXXX + RSSI), diagnostics, unsupported-version prompt, rename privacy-warn + length bound, Identify shown iff has_identify, configure-LED prompt when identify_led null, EUNSUPPORTED surfaced | — | — | scan→connect→HELLO→DeviceInfo; setLabel/setIdentifyLed/identify round-trips | permission rationale, rename warning |
-| `lib/blocks/` | bridge decode/limits, host epochs, fresh-snapshot correlation, action lock, restore state; GPIO/Time/NeoPixel definitions, codegen, validation, imports, and name safety; catalog schema/IDs/distinct-role materialization; production-generation of all seven fixtures (no pin/default/profile); target adoption/path derivation/128-byte preflight, sidecar v1 codec/CRC/exact-source and scratch-round-trip validation; bounded tokenizer/parser/model precedence, imports, names, numeric/range/function/NeoPixel/resource limits, supported/rejected grammar, all-or-nothing and semantic reparse equality | focused layout, sole Run ownership, off-canvas notices, inspector threshold, console expansion; shared adaptive example/import chooser; Preview non-mutation; empty Create; confirmed/cancelled/failed Replace with workspace+target rollback and host-acknowledged success; duplicate-role/diagnostic/stale-document errors; non-destructive optional/invalid toolbox IDs; no implicit board action; keyboard/semantics | wide landscape with inspector; narrower landscape without; stacked portrait; empty Examples state; exact-reopen/import diagnostics, target paths, and source preview; compact bottom sheet, wider dialog, constrained action overflow, large text, and keyboard inset | source-first/sidecar-last write ordering, no-PUT overlength preflight, local-session stamp lifecycle, board-swap/disconnect refusal before the next sidecar/Run verb, and CRC anchor reuse | every catalog workspace restore→generate; exact pair reopen preserving serialization/target; composed bound-document Python subset→workspace→generate→semantic reparse; torn-pair failures; GPIO/NeoPixel workspace pair Save→Run on iPadOS + Android | all Blocks/example/import/actions/wiring/diagnostic/validation/semantics labels |
+| `lib/blocks/` | bridge decode/limits, host epochs, fresh-snapshot correlation, action lock, restore state; GPIO/Time/NeoPixel/TFT definitions, codegen, validation, imports, and name safety; catalog schema/IDs/distinct-role materialization; production-generation of all eight fixtures (no pin/default/profile or device gate); target adoption/path derivation/128-byte preflight, sidecar v1 codec/CRC/exact-source and scratch-round-trip validation; bounded tokenizer/parser/model precedence, imports, names, numeric/range/function/NeoPixel/TFT/resource limits, supported/rejected grammar, all-or-nothing and semantic reparse equality | focused layout, sole Run ownership, off-canvas notices, inspector threshold, console expansion; shared adaptive example/import chooser; Preview non-mutation; empty Create; confirmed/cancelled/failed Replace with workspace+target rollback and host-acknowledged success; duplicate-role/diagnostic/stale-document errors; non-destructive optional/invalid toolbox IDs; no implicit board action; keyboard/semantics | wide landscape with inspector; narrower landscape without; stacked portrait; empty Examples state; exact-reopen/import diagnostics, target paths, and source preview; compact bottom sheet, wider dialog, constrained action overflow, large text, and keyboard inset | source-first/sidecar-last write ordering, no-PUT overlength preflight, local-session stamp lifecycle, board-swap/disconnect refusal before the next sidecar/Run verb, and CRC anchor reuse | every catalog workspace restore→generate; exact pair reopen preserving serialization/target; composed bound-document Python subset→workspace→generate→semantic reparse; torn-pair failures; GPIO/NeoPixel/TFT workspace pair Save→Run on iPadOS + Android | all Blocks/example/import/actions/wiring/diagnostic/validation/semantics labels |
 | `lib/plots/` | SeriesParser | plot render | plot golden | — | live plot from console | — |
 | `lib/github_import/` | `.py` filter, provenance | preview/conflict | — | — | fetch→putFile→record | — |
 | `lib/localization/` | key registry | — | — | — | — | parity gate (en vs locale) |
@@ -1496,8 +1660,9 @@ hosted runner while preserving the single-entrypoint, single-binary device-test
 contract and a separately compiled production artifact.
 
 The Blockly suite verifies the offline asset, JavaScript channel,
-restore/recreation, source generation, examples, sidecar reopen, bounded Python
-import, and fake-Connection Save/Run flow in Android's actual WebView rather
+restore/recreation, integer/named-pin source generation, example
+materialization, sidecar reopen, bounded Python import, and fake-Connection
+Save/Run flow in Android's actual WebView rather
 than a host widget substitute. When an example GPIO field opens Android's real
 IME, the test keeps that reduced viewport and scrolls the footer action into a
 hit-testable region before tapping it; an off-screen coordinate is not accepted
@@ -1549,6 +1714,26 @@ been applied. This is deliberately stricter than `codesign --deep --strict`,
 which can validate the enclosing framework while Apple's server independently
 reclassifies a script-like resource as nested code (BLD-11).
 
+### 15.8 Android release signing and App Bundle gate
+
+The Android Gradle build owns one `release` signing configuration. It reads the
+keystore path, keystore password, key alias, and key password only from the
+four `PYBLE_ANDROID_*` environment variables frozen by BLD-12. Configuration
+of any Gradle task whose name contains `Release` validates that all four values
+are non-empty and that the keystore is a regular file; absence is a hard build
+error. No release path names `signingConfigs.debug`, and secret values are
+never committed, written to build output, or passed as command-line project
+arguments.
+
+The public Android CI job creates a disposable PKCS#12 key under the runner's
+temporary directory, exports the four environment variables, and builds the
+production APK and AAB through the same Gradle configuration. It verifies the
+AAB as a signed JAR and discards the key with the runner. The owner build uses
+a separately generated Play upload key held outside the repository. Its gate
+records the clean source commit, version name/code, bundle SHA-256, and public
+upload-certificate SHA-256; the two certificate fingerprints extracted from
+the AAB and upload keystore MUST match before upload (BLD-12).
+
 ## 16. Traceability
 
 Design element → satisfied requirement IDs. Each `FR-*`/`NFR-*`/`CON-*`/`DAT-*` family has at least one design home.
@@ -1556,13 +1741,13 @@ Design element → satisfied requirement IDs. Each `FR-*`/`NFR-*`/`CON-*`/`DAT-*
 | Design element (section) | Package(s) | Requirement IDs |
 |---|---|---|
 | BLE adapter, scan filter, MTU, reconnect, permissions ([§4.1](#41-libble--ble-adapter), [§7](#7-ble-transport-design-libble)) | lib/ble | FR-BLE-1..8, IF-1/5, NFR-COMPAT-2/3, CON-1/2 |
-| PBLE/1 codec, fragmentation, correlation, transfer, HELLO, errors ([§4.2](#42-libpble--pble1-client--connection-implementation), [§8](#8-pble1-client-design-libpble)) | lib/pble | FR-PBLE-1..15, IF-1/2 |
+| PBLE/1 codec, fragmentation, correlation, acknowledged request writes, absolute deadlines, transfer, HELLO, errors ([§4.2](#42-libpble--pble1-client--connection-implementation), [§8](#8-pble1-client-design-libpble)) | lib/pble | FR-PBLE-1..16, IF-1/2 |
 | Connection interface + FakeConnection ([§5](#5-the-connection-api-design)) | lib/pble, test | FR-CONN-1..12, NFR-MAINT-3/4, CON-8 |
 | State management & data flow, single-writer, runtime connection session ([§6](#6-state-management--data-flow), [ADR-0009](../../decisions/0009-runtime-connection-manager.md)) | (app-wide), lib/pble | FR-CONN-5, FR-RUN-3, NFR-MAINT-1/2, CON-8, SEC-2 |
 | Editor ([§4.3](#43-libeditor--code-editor), [§11.1](#111-editor)) | lib/editor | FR-EDIT-1..7, FR-RUN-1/4, NFR-A11Y-3 |
 | Console + error explanation ([§4.4](#44-libconsole--console-panel), [§11.4](#114-console--error-explanation), [§14.2](#142-traceback-annotation-beginner-errors)) | lib/console | FR-CONSOLE-1..7, FR-ERR-1..4, DAT-5 |
 | File explorer ([§4.5](#45-libfiles--workspace-file-explorer)) | lib/files | FR-FILES-1..8, FR-CONN-4/9, CON-3, SEC-7 |
-| Blocks ([§4.6](#46-libblocks--blockly-block-editor), [§11.2](#112-blocks)) | lib/blocks | FR-BLOCKS-1..13, CON-6/7 |
+| Blocks ([§4.6](#46-libblocks--blockly-block-editor), [§11.2](#112-blocks), [ADR-0031](../../decisions/0031-explicit-named-micropython-pins.md)) | lib/blocks | FR-BLOCKS-1/1A/1B/2..14, CON-6/7 |
 | Plots ([§4.7](#47-libplots--live-plots), [§11.3](#113-plots)) | lib/plots | FR-PLOTS-1..3, CON-7, OI-5 |
 | Connect flow + runtime `ConnectionManager` session ([§4.8](#48-libconnect--scanconnect-flow-ui), [ADR-0009](../../decisions/0009-runtime-connection-manager.md)) | lib/connect, lib/pble | FR-CONNECT-1..6, FR-CONN-6, FR-UI-3, FR-BLE-8, CON-8, SEC-6, NFR-USE-1 |
 | Screenless identity — label/identify caps, scan-list name, rename + Identify UI, privacy ([§4.8](#48-libconnect--scanconnect-flow-ui), [§7.1](#71-scan--connect), [§8.6](#86-hello--capabilities), [§8.9](#89-screenless-identity--identify-control-commands), [§11.5](#115-screenless-identity--rename--identify)) | lib/connect, lib/pble | FR-CONN-10/11/12, FR-CONNECT-1, FR-CONN-1/6, SEC-8/9 |
@@ -1575,13 +1760,13 @@ Design element → satisfied requirement IDs. Each `FR-*`/`NFR-*`/`CON-*`/`DAT-*
 | Error handling & mapping ([§14](#14-error-handling--mapping)) | lib/pble + UI | FR-PBLE-13, FR-ERR-*, FR-FILES-3, NFR-USE-3, NFR-REL-4 |
 | Reliability (resume, CRC, preserve-on-drop) ([§8.4](#84-file-transfer-state-machine), [§9.2](#92-migrations--hydration)) | lib/pble, lib/data | NFR-REL-1..4, NFR-PERF-1/2, FR-PROJ-6 |
 | Test design, shared corpus, gates ([§15](#15-test-design)) | all | NFR-MAINT-1/3/4, BLD-5/8, CON-6/8 |
-| Build/versioning/distribution ([§15.6](#156-import-boundary--no-leak-gates), [§15.7](#157-launcher-identity-and-platform-assets), [§8.6](#86-hello--capabilities)) | all | BLD-1..11, IF-6, NFR-COMPAT-1 |
+| Build/versioning/distribution ([§15.6](#156-import-boundary--no-leak-gates), [§15.7](#157-launcher-identity-and-platform-assets), [§15.8](#158-android-release-signing-and-app-bundle-gate), [§8.6](#86-hello--capabilities)) | all | BLD-1..12, IF-6, NFR-COMPAT-1 |
 | Security & privacy ([§5.1](#51-the-connection-interface), [§6.3](#63-single-active-writer--serialization), [§8.9](#89-screenless-identity--identify-control-commands), [§9.1](#91-schema), [§11.5](#115-screenless-identity--rename--identify)) | lib/pble, lib/connect, lib/data | SEC-1..9 |
 
 **Requirements with no dedicated design element:** none functional. Notes:
 
 - **NFR-PERF-3/4** and **OI-4** have design *levers* (MTU 247, window `W`, bounded console buffer, time-to-connect via saved `board_ref`) but the concrete ceilings are HIL-frozen later — by intent, not a gap.
-- **BLD-1/2/3/4/6/10/11** (single Flutter codebase, `pubspec` governance + lock, SemVer, free dual-store-at-parity distribution, generated notices + in-app Open-Source Notices screen / IF-6, platform launcher packaging, and store-signable embedded data) are project/build-pipeline obligations: this TDD honors them (single codebase, ASCII identifiers, notices screen surfaced in UI, shared vector launcher source, deterministic Blockly asset transform) but the release pipeline is owned by the build/infra stories (X-03/X-11). Flagged here for completeness.
+- **BLD-1/2/3/4/6/10/11/12** (single Flutter codebase, `pubspec` governance + lock, SemVer, free dual-store-at-parity distribution, generated notices + in-app Open-Source Notices screen / IF-6, platform launcher packaging, store-signable embedded data, and fail-closed Android upload signing) are project/build-pipeline obligations: this TDD honors them (single codebase, ASCII identifiers, notices screen surfaced in UI, shared vector launcher source, deterministic Blockly asset transform, and the signed AAB gate) but the release pipeline is owned by the build/infra stories (X-03/X-11). Flagged here for completeness.
 - **BLD-9** (previous-protocol-major compatibility window) is forward-looking: no PBLE/2 exists yet, but its design home is the version-negotiation seam ([§8.6](#86-hello--capabilities)) — the same HELLO `proto_versions[]` exchange that refuses an unsupported version (FR-PBLE-5/6) is where a future app would select a previous major, so deployed boards are never bricked by an app update.
 - **OI-1** (editor widget) and **OI-2** (state-management ADR) are reflected as D3 and the `EditorSurface` fallback ([§11.1](#111-editor)); both await their ADRs ([§17](#17-risks--open-questions)).
 

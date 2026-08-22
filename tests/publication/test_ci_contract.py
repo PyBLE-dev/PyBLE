@@ -10,7 +10,9 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 class CiContractTest(unittest.TestCase):
-    def test_firmware_host_checks_out_pinned_submodules(self) -> None:
+    def test_firmware_host_checks_out_full_history_and_pinned_submodules(
+        self,
+    ) -> None:
         workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(
             encoding="utf-8"
         )
@@ -21,15 +23,17 @@ class CiContractTest(unittest.TestCase):
         self.assertIn(
             "      - uses: actions/checkout@v4\n"
             "        with:\n"
+            "          fetch-depth: 0\n"
             "          submodules: true\n",
             firmware_host,
         )
         self.assertIn(
-            "      - name: Initialize pinned MicroPython host dependency\n"
+            "      - name: Initialize pinned MicroPython host dependencies\n"
             "        run: |\n"
             "          git -C firmware/upstream/micropython submodule update "
             "--init --depth 1 \\\n"
-            "            lib/micropython-lib\n",
+            "            lib/micropython-lib \\\n"
+            "            lib/cyw43-driver\n",
             firmware_host,
         )
 
@@ -342,6 +346,7 @@ class CiContractTest(unittest.TestCase):
         tap_visible = suite[tap_visible_start:tap_visible_end]
         preview_snippets = (
             "FocusManager.instance.primaryFocus?.unfocus();",
+            "tester.binding.focusedEditable = null;",
             "SystemChannels.textInput.invokeMethod<void>('TextInput.hide');",
             "await tester.ensureVisible(finder);",
             "expect(finder.hitTestable(), findsOneWidget);",
@@ -357,9 +362,11 @@ class CiContractTest(unittest.TestCase):
             preview_positions.append(tap_visible.index(snippet))
         self.assertEqual(preview_positions, sorted(preview_positions))
 
+        stable_field = suite.index(
+            "final Finder ledGpioField = find.byKey(ledGpioFieldKey!);"
+        )
         enter_gpio = suite.index(
-            "await tester.enterText("
-            "find.widgetWithText(TextField, 'LED GPIO'), '17');"
+            "await tester.enterText(ledGpioField, '17');", stable_field
         )
         required_snippets = (
             "final Finder replaceWorkspaceAction = find.byKey(",

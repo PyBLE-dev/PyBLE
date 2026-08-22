@@ -1,0 +1,13 @@
+Exact attribution statements retained from the linked MicroPython Mbed TLS
+support sources at commit e0e9fbb17ed6fd06bb76e266ae554784c9c80804.
+
+extmod/mbedtls/mbedtls_alt.c:
+
+Copyright The Mbed TLS Contributors
+Copyright (c) 2024 Damien P. George
+SPDX-License-Identifier: Apache-2.0
+
+lib/mbedtls_errors/mp_mbedtls_errors.c:
+
+Copyright (C) 2006-2015, ARM Limited, All Rights Reserved
+SPDX-License-Identifier: Apache-2.0

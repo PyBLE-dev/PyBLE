@@ -75,6 +75,11 @@ RELEASE_BUNDLE_TEST = Path(__file__).with_name("test_release_bundle.py")
 PROFILE_TARGETS = (
     ("esp32-4mb", "esp32", "esp32"),
     ("esp32-s3-n16r8", "esp32-s3", "esp32s3"),
+    (
+        "waveshare-esp32-s3-lcd-147b",
+        "waveshare-esp32-s3-lcd-147b",
+        "esp32s3",
+    ),
     ("esp32-c3-4mb", "esp32-c3", "esp32c3"),
 )
 PROFILE_ROLES = tuple(
@@ -900,7 +905,7 @@ NOTICE_TEXTS = {
 
 
 class ReleaseLicenseFixture:
-    """A realistic, legally neutral six-inventory BLD-8 fixture."""
+    """A realistic, legally neutral eight-inventory BLD-8 fixture."""
 
     def __init__(self):
         self._temporary = tempfile.TemporaryDirectory(prefix="pyble-bld8-license-")
@@ -1511,7 +1516,7 @@ class ReleaseLicenseFixture:
             {"profile_id": profile_id, "role": "bootloader"}
             for profile_id, _target, _idf_target in PROFILE_TARGETS
         ]
-        all_six = application + bootloader
+        all_roles = application + bootloader
         first_build = self.build_root / "esp32"
         records = [
             self._record(
@@ -1657,7 +1662,7 @@ class ReleaseLicenseFixture:
                     match_kind="archive",
                     match_path=(self.firmware / "fixture-toolchain" / "libgcc.a"),
                     spdx_expression=("GPL-3.0-or-later WITH GCC-exception-3.1"),
-                    applicability=all_six,
+                    applicability=all_roles,
                     license_files=[
                         "GPL-3.0-or-later.fixture.txt",
                         "GCC-exception-3.1.fixture.txt",
@@ -1675,7 +1680,7 @@ class ReleaseLicenseFixture:
                     match_kind="archive",
                     match_path=(self.firmware / "fixture-toolchain" / "libc.a"),
                     spdx_expression=("LicenseRef-PyBLE-Test-Newlib-Multilicense"),
-                    applicability=all_six,
+                    applicability=all_roles,
                     license_files=["COPYING.NEWLIB.fixture.txt"],
                     notice_file="runtime.txt",
                 ),
@@ -2453,6 +2458,17 @@ def referenced_hashed_files(record: object) -> list[tuple[str, str]]:
 class RepositoryLicenseAuditInputsTests(unittest.TestCase):
     """Current repository inputs fail independently of the production seam."""
 
+    def test_repository_policy_covers_four_builds_and_eight_profile_roles(self):
+        policy = json.loads(LICENSE_POLICY.read_text(encoding="utf-8"))
+        self.assertEqual(policy["schema_version"], 2)
+        self.assertEqual(
+            {
+                (document["profile_id"], document["role"])
+                for document in policy["raw_documents"]
+            },
+            set(PROFILE_ROLES),
+        )
+
     def test_repository_policy_freezes_hydrated_managed_component_metadata(self):
         policy = json.loads(LICENSE_POLICY.read_text(encoding="utf-8"))
         documents = {
@@ -2578,6 +2594,20 @@ class RepositoryLicenseAuditInputsTests(unittest.TestCase):
             raw_package("esp32-s3-n16r8", project_id)["copyrightText"],
         )
         self.assertEqual(
+            raw_package(
+                "waveshare-esp32-s3-lcd-147b",
+                project_id,
+            )["licenseConcluded"],
+            s3_project_expression,
+        )
+        self.assertIn(
+            "2020 Diego Elio Pettenò",
+            raw_package(
+                "waveshare-esp32-s3-lcd-147b",
+                project_id,
+            )["copyrightText"],
+        )
+        self.assertEqual(
             raw_package("esp32-4mb", project_id)["licenseConcluded"],
             base_project_expression,
         )
@@ -2608,7 +2638,14 @@ class RepositoryLicenseAuditInputsTests(unittest.TestCase):
             ]["resolved_input_expression"],
             base_project_expression,
         )
-        s3_resolution = resolution_by_profiles[frozenset({"esp32-s3-n16r8"})]
+        s3_resolution = resolution_by_profiles[
+            frozenset(
+                {
+                    "esp32-s3-n16r8",
+                    "waveshare-esp32-s3-lcd-147b",
+                }
+            )
+        ]
         self.assertEqual(
             s3_resolution["resolved_input_expression"],
             s3_project_expression,
@@ -2828,7 +2865,10 @@ class SyntheticFixtureSelfCheckTests(unittest.TestCase):
                 self.assertTrue(any(name.endswith("/WHEEL") for name in names))
 
     def test_archives_maps_compile_commands_and_roles_are_realistic(self):
-        self.assertEqual(len(self.fixture.project_descriptions()), 6)
+        self.assertEqual(
+            len(self.fixture.project_descriptions()),
+            len(PROFILE_ROLES),
+        )
         identities = {
             self.fixture.identity_for_description(path)
             for path in self.fixture.project_descriptions()
@@ -3052,7 +3092,7 @@ class SyntheticFixtureSelfCheckTests(unittest.TestCase):
             },
         )
 
-    def test_all_six_spdx_documents_are_valid_distinct_and_role_specific(self):
+    def test_all_eight_spdx_documents_are_valid_distinct_and_role_specific(self):
         runner = FakeOfflineSbomRunner(self.fixture)
         approved = set(self.fixture.policy()["approved_license_refs"])
         documents = {}
@@ -3064,7 +3104,7 @@ class SyntheticFixtureSelfCheckTests(unittest.TestCase):
                 approved_license_refs=approved,
             )
             documents[(profile_id, role)] = document
-        self.assertEqual(len(documents), 6)
+        self.assertEqual(len(documents), 8)
         for profile_id, _target, _idf_target in PROFILE_TARGETS:
             app_names = {
                 item["name"]
@@ -3119,6 +3159,17 @@ class SyntheticFixtureSelfCheckTests(unittest.TestCase):
 
 
 class ReleaseLicenseAuditProductionGateTest(unittest.TestCase):
+    def test_production_audit_has_four_builds_and_eight_profile_roles(self):
+        self.assertIsNotNone(RELEASE, RELEASE_LOAD_ERROR)
+        if RELEASE is None:
+            return
+        self.assertEqual(tuple(RELEASE.LICENSE_AUDIT_PROFILES), PROFILE_TARGETS)
+        self.assertEqual(
+            tuple(RELEASE.LICENSE_AUDIT_ROLES),
+            ("application", "bootloader"),
+        )
+        self.assertEqual(len(PROFILE_ROLES), 8)
+
     def test_complete_license_audit_entrypoint_exists(self):
         self.assertIsNotNone(RELEASE, RELEASE_LOAD_ERROR)
         if RELEASE is not None:
@@ -3465,8 +3516,11 @@ class ProductionAuditPublicationTests(unittest.TestCase):
             build.mkdir()
             repo.mkdir()
             wheelhouse.mkdir()
-            evidence = root / "evidence"
-            notice = root / "THIRD_PARTY_LICENSES.txt"
+            outputs = root / "outputs"
+            outputs.mkdir()
+            publication = outputs / "license-audit"
+            evidence = publication / "evidence"
+            notice = publication / "THIRD_PARTY_LICENSES.txt"
 
             class FakeLockedRunner:
                 def __init__(self, **_kwargs):
@@ -3508,8 +3562,9 @@ class ProductionAuditPublicationTests(unittest.TestCase):
             )
             self.assertTrue((evidence / "audit-receipt.json").is_file())
 
-            failed_evidence = root / "failed-evidence"
-            failed_notice = root / "FAILED_THIRD_PARTY_LICENSES.txt"
+            failed_publication = outputs / "failed-license-audit"
+            failed_evidence = failed_publication / "evidence"
+            failed_notice = failed_publication / "THIRD_PARTY_LICENSES.txt"
             with mock.patch.object(
                 RELEASE,
                 "LockedWheelSbomRunner",
@@ -3544,8 +3599,11 @@ class ProductionAuditPublicationTests(unittest.TestCase):
             build.mkdir()
             repo.mkdir()
             wheelhouse.mkdir()
-            evidence = root / "evidence"
-            notice = root / "THIRD_PARTY_LICENSES.txt"
+            outputs = root / "outputs"
+            outputs.mkdir()
+            publication = outputs / "license-audit"
+            evidence = publication / "evidence"
+            notice = publication / "THIRD_PARTY_LICENSES.txt"
 
             class FakeLockedRunner:
                 def __init__(self, **_kwargs):
@@ -3563,6 +3621,7 @@ class ProductionAuditPublicationTests(unittest.TestCase):
                     "{}\n",
                     encoding="utf-8",
                 )
+                publication.mkdir()
                 evidence.mkdir()
                 (evidence / "contender.txt").write_text(
                     "do not replace\n",
@@ -3943,7 +4002,7 @@ class ReleaseLicenseAuditBehaviorTests(unittest.TestCase):
 
     def test_tool_runs_offline_from_the_complete_locked_hash_receipt(self):
         _notice, _result, runner = self.run_audit()
-        self.assertEqual(len(runner.calls), 6)
+        self.assertEqual(len(runner.calls), len(PROFILE_ROLES))
         receipt = json.loads(
             (self.fixture.evidence / "audit-receipt.json").read_text(encoding="utf-8")
         )
@@ -4514,8 +4573,8 @@ class ReleaseLicenseAuditBehaviorTests(unittest.TestCase):
             spdx_documents = nested_spdx_documents(first_reviewed)
             self.assertGreaterEqual(
                 len(spdx_documents),
-                6,
-                "all six normalized SPDX inventories must be retained",
+                8,
+                "all eight normalized SPDX inventories must be retained",
             )
             self.assertEqual(
                 {document.get("name") for document in spdx_documents},
@@ -4537,7 +4596,7 @@ class ReleaseLicenseAuditBehaviorTests(unittest.TestCase):
             self.assertTrue(normalized_namespaces)
             self.assertEqual(
                 len(set(normalized_namespaces)),
-                6,
+                8,
                 "normalized SPDX namespaces must remain identity-unique",
             )
             for namespace in normalized_namespaces:
@@ -4558,8 +4617,14 @@ class ReleaseLicenseAuditBehaviorTests(unittest.TestCase):
                 },
                 sort_keys=True,
             )
-            self.assertEqual(len(first_runner.raw_namespaces), 6)
-            self.assertEqual(len(second_runner.raw_namespaces), 6)
+            self.assertEqual(
+                len(first_runner.raw_namespaces),
+                len(PROFILE_ROLES),
+            )
+            self.assertEqual(
+                len(second_runner.raw_namespaces),
+                len(PROFILE_ROLES),
+            )
             for raw_namespace in first_runner.raw_namespaces:
                 self.assertIn(raw_namespace, first_raw)
                 self.assertNotIn(raw_namespace, reviewed_serialized)
@@ -4817,6 +4882,7 @@ class RealFormatLicenseAuditRegressionTests(unittest.TestCase):
             "uasyncio.py",
             "neopixel.py",
             "_boot.py",
+            "_version.py",
             "pyble/__init__.py",
             "pyble/pyble_ble.py",
             "pyble/pyble_proto.py",

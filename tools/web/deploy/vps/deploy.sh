@@ -69,6 +69,12 @@ if [[ -n ${PYBLE_FLASH_SELECTION_FILE:-} ]]; then
 fi
 unset PYBLE_FLASH_SELECTION_FILE
 
+if [[ ${PYBLE_FIRMWARE_VALIDATION_MODE+x} == x ]]; then
+    printf 'Refusing deployment: PYBLE_FIRMWARE_VALIDATION_MODE is derived only from authenticated carry-forward.\n' >&2
+    exit 65
+fi
+unset PYBLE_FIRMWARE_VALIDATION_MODE
+
 readonly explicitly_disable_public_installer=$(
     printf '%s' "${PYBLE_EXPLICITLY_DISABLE_PUBLIC_INSTALLER:-0}"
 )
@@ -484,6 +490,7 @@ REMOTE
             PYBLE_FIRMWARE_STAGED_ROOT="${trusted_firmware_snapshot}" \
                 node "${web_directory}/scripts/stage-firmware-release.js" \
                 --verify-preserved-staged
+            export PYBLE_FIRMWARE_VALIDATION_MODE=preserved-public
 
             staged_firmware_root="${trusted_firmware_snapshot}"
             staged_selection="${staged_firmware_root}/.pyble-firmware-release-selection.json"
@@ -824,6 +831,7 @@ find "${incoming_release}" -type f -exec chmod 0644 {} +
 for required_file in \
     index.html \
     404.html \
+    app.html \
     privacy.html \
     support.html \
     flash.html \
@@ -1115,9 +1123,10 @@ cleanup_smoke() {
 }
 trap cleanup_smoke EXIT
 
-for route in / /privacy /support /flash; do
+for route in / /app /privacy /support /flash; do
     case "${route}" in
         /) route_file=index.html ;;
+        /app) route_file=app.html ;;
         /privacy) route_file=privacy.html ;;
         /support) route_file=support.html ;;
         /flash) route_file=flash.html ;;
@@ -1262,9 +1271,11 @@ firmware_not_found_paths=(
 if [[ "${expected_installer_state}" == active ]]; then
     selected_firmware_root=${firmware_release_json_path%/release.json}
     test "${selected_firmware_root}" != "${firmware_release_json_path}"
-    firmware_not_found_paths+=(
-        "${selected_firmware_root}/esp32-c3-4mb/manifest.json"
-    )
+    if [[ "${firmware_deployment}" == public-beta ]]; then
+        firmware_not_found_paths+=(
+            "${selected_firmware_root}/esp32-c3-4mb/manifest.json"
+        )
+    fi
 fi
 firmware_not_found_methods=( GET HEAD )
 firmware_not_found_index=0

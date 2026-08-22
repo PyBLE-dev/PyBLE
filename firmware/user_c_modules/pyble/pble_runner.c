@@ -17,10 +17,11 @@
 //     NFR-SAFE-2, NFR-REL-1).
 //   - The 0x20/0x21/0x22 handlers run on the NimBLE host task and NEVER execute
 //     user Python inline. RUN reserves (or refuses EBUSY), captures [mode][data],
-//     wakes the worker, and returns a §8 status. STOP writes a KeyboardInterrupt
-//     into the WORKER's OWN VM state (NOT mp_sched_keyboard_interrupt(), which
-//     targets the MAIN/REPL thread) so it lands inside the worker's tight loop.
-//     SOFT_REBOOT stops the worker then marshals a VM soft-reset to the MAIN task.
+//     and wakes the worker only after the bounded specialized RSP{OK} submission
+//     succeeds. STOP writes a KeyboardInterrupt into the WORKER's OWN
+//     VM state (NOT mp_sched_keyboard_interrupt(), which targets the MAIN/REPL
+//     thread) so it lands inside the worker's tight loop. SOFT_REBOOT stops the
+//     worker then marshals a VM soft-reset to the MAIN task.
 //   - RUN_STATE (0x40) is emitted on EVERY transition via pble_proto_emit (EVT,
 //     ID=0) -> pble_ble_notify; the app never polls (FR-RUN-7, FR-MODE-3).
 //
@@ -34,6 +35,9 @@
 #include "freertos/task.h"
 #include "freertos/semphr.h"
 
+#include "esp_timer.h"
+#include "esp_system.h"
+
 #include "py/runtime.h"      // nlr, mp_call_function_0, mp_handle_pending, mp_sched_exception
 #include "py/obj.h"          // mp_obj_new_exception, mp_type_SystemExit, mp_obj_print_exception
 #include "py/mpstate.h"      // MP_STATE_VM / MP_STATE_THREAD, mp_state_thread_t
@@ -43,19 +47,14 @@
 #include "py/compile.h"      // mp_compile
 
 #include "pble_runner.h"
+#include "pble_ble.h"        // PBLE_TX_OK for transactional RUN admission
 #include "pble_console.h"    // tee stdout/stderr, worker-origin gate
+#include "pble_fs.h"         // non-blocking SOFT_REBOOT quiescence gate
+#include "pble_vm_lifecycle.h"
 
 // Port hook: wake the MAIN task out of a blocked readline so a marshalled
 // soft-reset (SystemExit) is serviced promptly. Present on all esp32 variants.
 extern void mp_hal_wake_main_task(void);
-
-// --- Frozen wire numbers (mirror protocol.md §4/§8 — never redefined here) ----
-// STOP/SOFT_REBOOT opcodes are frozen in §4; their §6 semantics freeze at S4.
-// These consts move into pble_proto.h once protocol-engineer adds them.
-#define PBLE_OP_STOP        0x21   // §4 STOP
-#define PBLE_OP_SOFT_REBOOT 0x22   // §4 SOFT_REBOOT
-// (PBLE_OP_RUN 0x20 / PBLE_OP_RUN_STATE 0x40 and the §8 status codes come from
-//  pble_proto.h.)
 
 // --- Payload bounds (bounded; C3-lean) --------------------------------------
 // §6-DRAFT: the RUN payload wire ([mode][data]) freezes at S4; isolated here so
@@ -64,10 +63,17 @@ extern void mp_hal_wake_main_task(void);
 #define PBLE_RUN_PATH_MAX   128
 #define PBLE_RUN_BUF_MAX    2048
 
+// A successful NimBLE Notify submission can still be queued below ATT. Keep
+// the VM alive for several negotiated connection intervals after RSP{OK} so
+// the central can actually receive it before MicroPython tears its heap down.
+#define PBLE_SOFT_REBOOT_GRACE_US 250000ULL
+
 // --- Module state ------------------------------------------------------------
 static pble_rsm_t g_rsm;                 // the run-state machine (single owner)
 static portMUX_TYPE g_mux = portMUX_INITIALIZER_UNLOCKED;  // guards g_rsm
 static SemaphoreHandle_t g_run_sem;      // host-task -> worker hand-off
+static SemaphoreHandle_t g_control_resolution_sem;
+static volatile bool g_control_unresolved;
 
 // Captured at worker entry so STOP can target the WORKER's own pending-exception
 // slot (a single volatile-word store — the same mechanism as mp_sched_exception,
@@ -79,6 +85,13 @@ static volatile bool g_stop_requested;
 static uint8_t g_run_mode;
 static size_t  g_run_len;
 static char    g_run_buf[PBLE_RUN_BUF_MAX];
+
+// Created once from pble_runner_register(). The IDF timer task is independent
+// of the NimBLE host task, so the host never sleeps while honoring the delivery
+// grace. The pending flag is guarded by g_mux across the two tasks.
+static esp_timer_handle_t g_soft_reboot_timer;
+static volatile bool g_soft_reboot_pending;
+static uint64_t g_soft_reboot_epoch;
 
 // Pre-created SystemExit for SOFT_REBOOT's main-task VM reset (rooted below).
 MP_REGISTER_ROOT_POINTER(mp_obj_t pble_runner_sysexit);
@@ -136,13 +149,80 @@ int pble_rsm_on_stopped(pble_rsm_t *m) {
 
 static void runner_emit_state(int st) {
     uint8_t b = (uint8_t)st;
+    pble_session_token_t event_session;
+    if (!pble_ble_session_snapshot_current(&event_session)) {
+        return;
+    }
     // Both call sites are on the runner worker with the GIL held; release it
     // across the bounded wait so the REPL + fs-worker keep running (the same
     // discipline as pble_fs.c's worker mailbox wait).
     MP_THREAD_GIL_EXIT();
-    (void)pble_proto_emit_paced(PBLE_OP_RUN_STATE, &b, 1,
-                                PBLE_RUNSTATE_TX_BUDGET_MS);
+    (void)pble_proto_emit_control_paced(PBLE_OP_RUN_STATE, &b, 1,
+                                        PBLE_RUNSTATE_TX_BUDGET_MS,
+                                        &event_session);
     MP_THREAD_GIL_ENTER();
+}
+
+// Mark a control response unresolved before leaving the runner domain for the
+// bounded TX-boundary attempt. Drain a prior unused binary give first; a worker
+// that was already released always loops and rechecks the predicate under g_mux.
+static void runner_control_attempt_begin(void) {
+    configASSERT(g_control_resolution_sem != NULL);
+    while (xSemaphoreTake(g_control_resolution_sem, 0) == pdTRUE) {
+    }
+    taskENTER_CRITICAL(&g_mux);
+    configASSERT(!g_control_unresolved);
+    g_control_unresolved = true;
+    taskEXIT_CRITICAL(&g_mux);
+}
+
+// Inject a KeyboardInterrupt into the WORKER's own VM state while the caller
+// holds g_mux. The worker raises at its next VM pending-exception check
+// (GIL_VM_DIVISOR=32), landing inside `while True: pass`.
+static void inject_worker_kbd_interrupt(void) {
+    mp_state_thread_t *ws = g_worker_state;
+    if (ws != NULL) {
+        MP_STATE_VM(mp_kbd_exception).traceback_data = NULL;
+        ws->mp_pending_exception = MP_OBJ_FROM_PTR(&MP_STATE_VM(mp_kbd_exception));
+    }
+}
+
+// Resolve both TX outcomes in one runner-domain cut. Only local response
+// acceptance publishes stop intent; either outcome wakes a pickup waiter after
+// the predicate is final and the runner lock has been released.
+static void runner_control_attempt_resolve(bool accepted) {
+    taskENTER_CRITICAL(&g_mux);
+    configASSERT(g_control_unresolved);
+    if (accepted) {
+        g_stop_requested = true;
+        inject_worker_kbd_interrupt();
+    }
+    g_control_unresolved = false;
+    taskEXIT_CRITICAL(&g_mux);
+
+    BaseType_t gave = xSemaphoreGive(g_control_resolution_sem);
+    configASSERT(gave == pdTRUE);
+    (void)gave;
+}
+
+bool pble_runner_stop_requested(void) {
+    for (;;) {
+        bool unresolved;
+        bool requested;
+        taskENTER_CRITICAL(&g_mux);
+        unresolved = g_control_unresolved;
+        requested = g_stop_requested;
+        taskEXIT_CRITICAL(&g_mux);
+        if (!unresolved) {
+            return requested;
+        }
+        if (g_control_resolution_sem == NULL) {
+            return true;
+        }
+        MP_THREAD_GIL_EXIT();
+        (void)xSemaphoreTake(g_control_resolution_sem, portMAX_DELAY);
+        MP_THREAD_GIL_ENTER();
+    }
 }
 
 // ============================================================================
@@ -173,21 +253,69 @@ static bool runner_exec(uint8_t mode, const char *data, size_t len) {
         nlr_pop();
         ok = true;
     } else {
-        // Uncaught exception -> traceback to CONSOLE_DATA(stderr) (FR-RUN-9).
-        mp_obj_print_exception(&pble_console_stderr_print, MP_OBJ_FROM_PTR(nlr.ret_val));
+        // STOP's injected KeyboardInterrupt is expected lifecycle control, not
+        // a user failure. Suppress its traceback so it cannot compete with the
+        // ordered STOP response and terminal idle event. Real exceptions keep
+        // the frozen stderr traceback behavior (FR-RUN-9).
+        if (!pble_runner_stop_requested()) {
+            mp_obj_print_exception(&pble_console_stderr_print, MP_OBJ_FROM_PTR(nlr.ret_val));
+        }
         ok = false;
     }
-    // Never let a pending exception leak into the next run.
-    MP_STATE_THREAD(mp_pending_exception) = MP_OBJ_NULL;
     return ok;
+}
+
+// Linearize natural completion against an in-flight STOP/SOFT_REBOOT response.
+// A control whose begin cut came first owns the terminal decision; wait for its
+// resolution without the GIL or runner lock, then classify and commit in one
+// runner-domain cut so the resolver cannot slip between snapshot and mutation.
+static int runner_terminal_transition(bool ok) {
+    configASSERT(g_control_resolution_sem != NULL);
+
+    for (;;) {
+        bool unresolved;
+        int term = PBLE_RUN_ERROR;
+
+        taskENTER_CRITICAL(&g_mux);
+        unresolved = g_control_unresolved;
+        if (!unresolved) {
+            bool stopped = g_stop_requested;
+            term = stopped ? pble_rsm_on_stopped(&g_rsm)
+                           : pble_rsm_on_finished(&g_rsm, ok);
+            if (g_worker_state != NULL) {
+                g_worker_state->mp_pending_exception = MP_OBJ_NULL;
+            }
+        }
+        taskEXIT_CRITICAL(&g_mux);
+
+        if (!unresolved) {
+            return term;
+        }
+        MP_THREAD_GIL_EXIT();
+        (void)xSemaphoreTake(g_control_resolution_sem, portMAX_DELAY);
+        MP_THREAD_GIL_ENTER();
+    }
 }
 
 // ============================================================================
 // Worker loop — MicroPython _thread entry (valid VM thread state)
 // ============================================================================
 void pble_runner_worker(void) {
+    uint64_t worker_epoch = pble_vm_epoch_current();
     g_worker_state = mp_thread_get_state();
     pble_console_set_worker((void *)g_worker_state);
+
+    // Announce entry while holding the GIL, then release it so the main task's
+    // final vm_ready() call can observe both workers and open admission. An
+    // auto-run may already own the semaphore, but it cannot be consumed until
+    // final boot wiring has crossed this barrier.
+    pble_vm_worker_ready(PBLE_VM_WORKER_RUNNER);
+    MP_THREAD_GIL_EXIT();
+    bool epoch_ready = pble_vm_wait_ready_epoch(worker_epoch);
+    MP_THREAD_GIL_ENTER();
+    if (!epoch_ready) {
+        return;
+    }
 
     for (;;) {
         // Block until a RUN is reserved. Release the GIL while idle so the
@@ -208,31 +336,35 @@ void pble_runner_worker(void) {
         memcpy(local, g_run_buf, len);
         local[len] = '\0';
 
-        // Fresh run: clear stop intent + any stale pending exception.
-        g_stop_requested = false;
-        MP_STATE_THREAD(mp_pending_exception) = MP_OBJ_NULL;
-
-        runner_emit_state(pble_rsm_on_started(&g_rsm));   // RUN_STATE(running)
-
-        bool ok = runner_exec(mode, local, len);
+        // Resolve any STOP/SOFT_REBOOT whose response attempt began before
+        // pickup. An accepted control owns this reservation before any RUN event
+        // or user-code effect; a failed attempt releases pickup unchanged.
+        bool stopped_before_start = pble_runner_stop_requested();
+        bool ok = false;
+        if (!stopped_before_start) {
+            runner_emit_state(pble_rsm_on_started(&g_rsm));
+            // STOP may have been accepted while the paced RUN_STATE event was
+            // in flight. Recheck through the same resolution gate before exec.
+            if (!pble_runner_stop_requested()) {
+                ok = runner_exec(mode, local, len);
+            }
+        }
 
         // Terminal transition: STOP -> idle; otherwise done/error. try/finally is
         // implicit — runner_exec always returns, so we always emit a terminal.
-        int term;
-        taskENTER_CRITICAL(&g_mux);
-        term = g_stop_requested ? pble_rsm_on_stopped(&g_rsm)
-                                : pble_rsm_on_finished(&g_rsm, ok);
-        taskEXIT_CRITICAL(&g_mux);
-        runner_emit_state(term);   // RUN_STATE(idle | done | error)
+        int term = runner_terminal_transition(ok);
+        if (!stopped_before_start) {
+            runner_emit_state(term);   // RUN_STATE(idle | done | error)
+        }
     }
 }
 
 // ============================================================================
 // Dispatch surface (NimBLE host task) — RUN / STOP / SOFT_REBOOT
 // ============================================================================
-uint8_t pble_runner_run(const pble_frame_t *req, uint8_t *rsp, size_t *rlen, uint16_t conn) {
+uint8_t pble_runner_run(const pble_frame_t *req, uint8_t *rsp, size_t *rlen,
+                        const pble_session_token_t *conn) {
     (void)rsp;
-    (void)conn;
     if (rlen) {
         *rlen = 0;   // RSP{status} carries no extra bytes
     }
@@ -240,7 +372,7 @@ uint8_t pble_runner_run(const pble_frame_t *req, uint8_t *rsp, size_t *rlen, uin
     // §6-DRAFT: RUN payload = [mode:u8][data]. Validate BEFORE reserving so a bad
     // request can never wedge the reservation. This is the only place the RUN
     // payload is parsed, so freezing §6 touches just this block.
-    if (req == NULL || req->payload == NULL || req->len < 1) {
+    if (req == NULL || conn == NULL || req->payload == NULL || req->len < 1) {
         return PBLE_EBADREQ;   // need at least the mode byte
     }
     uint8_t mode = req->payload[0];
@@ -255,13 +387,27 @@ uint8_t pble_runner_run(const pble_frame_t *req, uint8_t *rsp, size_t *rlen, uin
     } else if (dlen > PBLE_RUN_BUF_MAX) {
         return PBLE_ERANGE;
     }
+    if (g_run_sem == NULL) {
+        return PBLE_EINTERNAL;
+    }
 
-    // Reserve the run (or refuse) under the single-writer critical section. STOP
-    // and read-only commands are never starved: the section only brackets the
-    // tiny state test/transition.
+    // Reserve provisionally (or refuse) under the single-writer critical
+    // section. Remember the exact runnable state so every local TX failure can
+    // roll back without manufacturing IDLE from DONE or ERROR.
     uint8_t status;
+    int prior_state;
     taskENTER_CRITICAL(&g_mux);
+    prior_state = g_rsm.state;
     status = pble_rsm_on_run(&g_rsm);
+    if (status == PBLE_OK) {
+        // Consume only STOP intent that predates this reservation. A later
+        // accepted control writes both fields under this same mux and survives
+        // until worker pickup.
+        g_stop_requested = false;
+        if (g_worker_state != NULL) {
+            g_worker_state->mp_pending_exception = MP_OBJ_NULL;
+        }
+    }
     taskEXIT_CRITICAL(&g_mux);
     if (status != PBLE_OK) {
         return status;   // EBUSY: no capture, no wake, no RUN_STATE (FR-RUN-4)
@@ -273,56 +419,152 @@ uint8_t pble_runner_run(const pble_frame_t *req, uint8_t *rsp, size_t *rlen, uin
     if (dlen) {
         memcpy(g_run_buf, req->payload + 1, dlen);
     }
-    xSemaphoreGive(g_run_sem);   // RUN_STATE(running) follows from the worker
-    return PBLE_OK;
-}
 
-// Inject a KeyboardInterrupt into the WORKER's own VM state. Single volatile-word
-// store; safe from the (non-MP) NimBLE host task because it targets the captured
-// worker thread state, not the current thread. The worker raises at its next VM
-// pending-exception check (GIL_VM_DIVISOR=32), landing inside `while True: pass`.
-static void inject_worker_kbd_interrupt(void) {
-    mp_state_thread_t *ws = g_worker_state;
-    if (ws != NULL) {
-        MP_STATE_VM(mp_kbd_exception).traceback_data = NULL;
-        ws->mp_pending_exception = MP_OBJ_FROM_PTR(&MP_STATE_VM(mp_kbd_exception));
+    // The exact RSP{OK} is the admission cut. This call may wait under one
+    // absolute 15 ms deadline only for the current complete-message TX boundary,
+    // then rechecks the originating connection and attempts one local Notify.
+    // Suppress generic dispatch fallback on both success and failure: a failed
+    // local submission is a side-effect-free timeout, not a second response.
+    int tx_rc = pble_proto_emit_rsp_status_try(req->opcode, req->id,
+                                                PBLE_OK, conn);
+    if (tx_rc != PBLE_TX_OK) {
+        taskENTER_CRITICAL(&g_mux);
+        g_rsm.state = prior_state;
+        taskEXIT_CRITICAL(&g_mux);
+        return PBLE_NO_RSP;
     }
+
+    BaseType_t gave = xSemaphoreGive(g_run_sem);
+    configASSERT(gave == pdTRUE);  // single reservation => binary sem was empty
+    (void)gave;
+    return PBLE_NO_RSP;
 }
 
-uint8_t pble_runner_stop(const pble_frame_t *req, uint8_t *rsp, size_t *rlen, uint16_t conn) {
-    (void)req;
+uint8_t pble_runner_stop(const pble_frame_t *req, uint8_t *rsp, size_t *rlen,
+                         const pble_session_token_t *conn) {
     (void)rsp;
-    (void)conn;
     if (rlen) {
         *rlen = 0;
     }
-    // Idempotent: STOP while idle is a no-op OK (the flag is cleared at next run
-    // start). If running, the worker unwinds to RUN_STATE(idle) (FR-RUN-5/6/10).
-    g_stop_requested = true;
-    inject_worker_kbd_interrupt();
-    return PBLE_OK;   // returns immediately from the host task (FR-BLE-11)
+    if (req == NULL || conn == NULL) {
+        return PBLE_NO_RSP;
+    }
+
+    // Bridge pickup across the TX attempt without nesting runner and TX locks.
+    runner_control_attempt_begin();
+    int tx_rc = pble_proto_emit_rsp_status_try(req->opcode, req->id,
+                                                PBLE_OK, conn);
+    if (tx_rc != PBLE_TX_OK) {
+        runner_control_attempt_resolve(false);
+        return PBLE_NO_RSP;
+    }
+    runner_control_attempt_resolve(true);
+    return PBLE_NO_RSP;   // exact RSP already submitted; never duplicate it
 }
 
-uint8_t pble_runner_soft_reboot(const pble_frame_t *req, uint8_t *rsp, size_t *rlen, uint16_t conn) {
-    (void)req;
-    (void)rsp;
-    (void)conn;
-    if (rlen) {
-        *rlen = 0;
+static void soft_reboot_timer_cb(void *arg) {
+    (void)arg;
+    bool reset;
+    uint64_t epoch;
+    taskENTER_CRITICAL(&g_mux);
+    reset = g_soft_reboot_pending;
+    epoch = g_soft_reboot_epoch;
+    taskEXIT_CRITICAL(&g_mux);
+    if (!reset) {
+        return;
     }
-    // Stop the worker first (per-worker KBI), then marshal a VM soft-reset to the
-    // MAIN task — the only VM-safe mp_deinit/mp_init site. Raise the pre-created
-    // SystemExit in the REPL so the esp32 main loop soft-resets and re-runs
-    // _boot.py; init_agent() is idempotent, so the BLE link is kept where
-    // possible (FR-RUN-8). Terminal RUN_STATE(idle) comes from the worker unwind.
-    g_stop_requested = true;
-    inject_worker_kbd_interrupt();
+
+    pble_vm_activity_t activity = {0};
+    if (!pble_vm_callback_enter(epoch, &activity)) {
+        return;
+    }
+
+    // The SystemExit object is pre-created and rooted while the current VM is
+    // valid. Schedule it only after the delivery grace; the main task remains
+    // the sole mp_deinit/mp_init site.
     mp_obj_t se = MP_STATE_VM(pble_runner_sysexit);
     if (se != MP_OBJ_NULL) {
-        mp_sched_exception(se);   // -> MAIN thread's pending exception
+        mp_sched_exception(se);
+        mp_hal_wake_main_task();
     }
-    mp_hal_wake_main_task();
-    return PBLE_OK;
+    pble_vm_callback_leave(&activity);
+}
+
+static void runner_reboot_provisional_abort(uint64_t vm_epoch) {
+    pble_vm_reboot_abort(vm_epoch);
+    pble_fs_quiesce_abort();
+}
+
+uint8_t pble_runner_soft_reboot(const pble_frame_t *req, uint8_t *rsp,
+                                size_t *rlen,
+                                const pble_session_token_t *conn) {
+    (void)rsp;
+    if (rlen) {
+        *rlen = 0;
+    }
+    if (req == NULL || conn == NULL) {
+        return PBLE_NO_RSP;
+    }
+    if (MP_STATE_VM(pble_runner_sysexit) == MP_OBJ_NULL ||
+        g_soft_reboot_timer == NULL) {
+        return PBLE_EINTERNAL;
+    }
+
+    taskENTER_CRITICAL(&g_mux);
+    if (g_soft_reboot_pending) {
+        taskEXIT_CRITICAL(&g_mux);
+        return PBLE_EBUSY;
+    }
+    taskEXIT_CRITICAL(&g_mux);
+
+    // The FS gate is the first provisional cut. It closes enqueue only if the
+    // worker and queue are atomically idle; otherwise it reopens itself and the
+    // generic reserved response reports EBUSY with no reboot effect.
+    if (!pble_fs_quiesce_try()) {
+        return PBLE_EBUSY;
+    }
+
+    if (!pble_vm_reboot_close(conn->vm_epoch)) {
+        runner_reboot_provisional_abort(conn->vm_epoch);
+        return PBLE_NO_RSP;
+    }
+
+    taskENTER_CRITICAL(&g_mux);
+    g_soft_reboot_pending = true;
+    g_soft_reboot_epoch = conn->vm_epoch;
+    taskEXIT_CRITICAL(&g_mux);
+
+    // Only a provisionally quiesced reboot participates in the pickup gate.
+    // Keep the TX domain outside g_mux, then resolve success/failure exactly
+    // once after all failure rollback needed before worker wake.
+    runner_control_attempt_begin();
+    int tx_rc = pble_proto_emit_rsp_status_try(req->opcode, req->id,
+                                               PBLE_OK, conn);
+    if (tx_rc != PBLE_TX_OK) {
+        taskENTER_CRITICAL(&g_mux);
+        g_soft_reboot_pending = false;
+        g_soft_reboot_epoch = 0;
+        taskEXIT_CRITICAL(&g_mux);
+        pble_vm_reboot_abort(conn->vm_epoch);
+        pble_fs_quiesce_abort();
+        runner_control_attempt_resolve(false);
+        return PBLE_NO_RSP;
+    }
+    runner_control_attempt_resolve(true);
+
+    // A valid, inactive, pre-created one-shot is an invariant while pending was
+    // false. Once RSP{OK} was locally accepted, gates never reopen: if IDF
+    // nevertheless refuses the arm, restart immediately rather than strand an
+    // acknowledged reboot in an ambiguous live VM.
+    if (esp_timer_start_once(g_soft_reboot_timer, PBLE_SOFT_REBOOT_GRACE_US) != ESP_OK) {
+        esp_restart();
+        return PBLE_NO_RSP;
+    }
+
+    // The accepted resolver already stopped the worker. The one-shot later
+    // marshals a VM soft-reset to the MAIN task; init_agent() is idempotent, so
+    // the BLE link is kept where possible (FR-RUN-8).
+    return PBLE_NO_RSP;
 }
 
 // Auto-run entry (F-12): hand a file path to the WORKER exactly as pble_runner_run
@@ -343,6 +585,12 @@ uint8_t pble_runner_run_file(const char *path) {
     uint8_t status;
     taskENTER_CRITICAL(&g_mux);
     status = pble_rsm_on_run(&g_rsm);
+    if (status == PBLE_OK) {
+        g_stop_requested = false;
+        if (g_worker_state != NULL) {
+            g_worker_state->mp_pending_exception = MP_OBJ_NULL;
+        }
+    }
     taskEXIT_CRITICAL(&g_mux);
     if (status != PBLE_OK) {
         return status;
@@ -364,19 +612,85 @@ int pble_runner_state(void) {
     return s;
 }
 
+bool pble_runner_vm_timer_disarm(int64_t deadline_us) {
+    if (esp_timer_get_time() >= deadline_us) {
+        return false;
+    }
+    esp_err_t rc = ESP_ERR_INVALID_STATE;
+    if (g_soft_reboot_timer != NULL) {
+        rc = esp_timer_stop(g_soft_reboot_timer);
+    }
+    if (rc != ESP_OK && rc != ESP_ERR_INVALID_STATE) {
+        return false;
+    }
+    taskENTER_CRITICAL(&g_mux);
+    g_soft_reboot_pending = false;
+    g_soft_reboot_epoch = 0;
+    taskEXIT_CRITICAL(&g_mux);
+    return esp_timer_get_time() < deadline_us;
+}
+
+void pble_runner_vm_detach(void) {
+    taskENTER_CRITICAL(&g_mux);
+    g_worker_state = NULL;
+    taskEXIT_CRITICAL(&g_mux);
+}
+
+void pble_runner_vm_reset(void) {
+    taskENTER_CRITICAL(&g_mux);
+    pble_rsm_init(&g_rsm);
+    g_stop_requested = false;
+    g_control_unresolved = false;
+    g_soft_reboot_pending = false;
+    g_soft_reboot_epoch = 0;
+    g_worker_state = NULL;
+    g_run_mode = 0;
+    g_run_len = 0;
+    taskEXIT_CRITICAL(&g_mux);
+    // Epoch begin runs with admission closed after old VM workers were deleted;
+    // keep the interrupt-disabled section above bounded to scalar state.
+    memset(g_run_buf, 0, sizeof(g_run_buf));
+    if (g_run_sem != NULL) {
+        while (xSemaphoreTake(g_run_sem, 0) == pdTRUE) {
+        }
+    }
+    if (g_control_resolution_sem != NULL) {
+        while (xSemaphoreTake(g_control_resolution_sem, 0) == pdTRUE) {
+        }
+    }
+}
+
 void pble_runner_register(void) {
     if (g_run_sem == NULL) {
         g_run_sem = xSemaphoreCreateBinary();
     }
-    pble_rsm_init(&g_rsm);
+    if (g_control_resolution_sem == NULL) {
+        g_control_resolution_sem = xSemaphoreCreateBinary();
+    }
+    if (g_run_sem == NULL || g_control_resolution_sem == NULL) {
+        mp_raise_msg(&mp_type_RuntimeError,
+                     MP_ERROR_TEXT("runner semaphore alloc failed"));
+    }
+    if (g_soft_reboot_timer == NULL) {
+        const esp_timer_create_args_t timer_args = {
+            .callback = soft_reboot_timer_cb,
+            .arg = NULL,
+            .dispatch_method = ESP_TIMER_TASK,
+            .name = "pble-soft-reboot",
+        };
+        if (esp_timer_create(&timer_args, &g_soft_reboot_timer) != ESP_OK) {
+            mp_raise_msg(&mp_type_RuntimeError,
+                         MP_ERROR_TEXT("soft reboot timer alloc failed"));
+        }
+    }
     // Pre-create the SOFT_REBOOT SystemExit while on a valid VM thread (register
     // runs from init_agent at boot). Rooted via the root pointer above.
     if (MP_STATE_VM(pble_runner_sysexit) == MP_OBJ_NULL) {
         MP_STATE_VM(pble_runner_sysexit) = mp_obj_new_exception(&mp_type_SystemExit);
     }
-    pble_proto_register(PBLE_OP_RUN, pble_runner_run);
-    pble_proto_register(PBLE_OP_STOP, pble_runner_stop);
-    pble_proto_register(PBLE_OP_SOFT_REBOOT, pble_runner_soft_reboot);
+    pble_proto_register_special(PBLE_OP_RUN, pble_runner_run);
+    pble_proto_register_special(PBLE_OP_STOP, pble_runner_stop);
+    pble_proto_register_special(PBLE_OP_SOFT_REBOOT, pble_runner_soft_reboot);
 }
 
 // ============================================================================

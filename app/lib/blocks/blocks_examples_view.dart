@@ -209,10 +209,10 @@ class _BlocksExamplesDialogState extends State<_BlocksExamplesDialog> {
       );
   }
 
-  Map<String, int>? get _gpioValues {
-    final Map<String, int> values = <String, int>{};
+  Map<String, Object>? get _gpioValues {
+    final Map<String, Object> values = <String, Object>{};
     for (final BlocksExampleGpioRole role in _selected.gpioRoles) {
-      final int? gpio = parseBlocksExampleGpio(
+      final Object? gpio = parseBlocksExampleGpio(
         _gpioControllers[role.role]!.text,
       );
       if (gpio == null) return null;
@@ -226,14 +226,14 @@ class _BlocksExamplesDialogState extends State<_BlocksExamplesDialog> {
 
   bool get _gpioValuesConflict {
     if (_selected.gpioRoles.length < 2) return false;
-    final List<int?> values = _selected.gpioRoles
+    final List<Object?> values = _selected.gpioRoles
         .map(
           (BlocksExampleGpioRole role) =>
               parseBlocksExampleGpio(_gpioControllers[role.role]!.text),
         )
         .toList(growable: false);
-    return values.every((int? value) => value != null) &&
-        values.whereType<int>().toSet().length != values.length;
+    return values.every((Object? value) => value != null) &&
+        values.nonNulls.toSet().length != values.length;
   }
 
   String? _gpioError(AppLocalizations l10n, BlocksExampleGpioRole role) {
@@ -269,13 +269,13 @@ class _BlocksExamplesDialogState extends State<_BlocksExamplesDialog> {
   }
 
   Future<BlocksExamplePreview?> _generatePreview() async {
-    final Map<String, int>? gpioValues = _gpioValues;
+    final Map<String, Object>? gpioValues = _gpioValues;
     if (_selected.requiresGpio && gpioValues == null) return null;
     final int epoch = ++_generationEpoch;
     final String workspaceJson;
     try {
       workspaceJson = _selected.materializeWorkspaceJson(
-        gpioValues ?? const <String, int>{},
+        gpioValues ?? const <String, Object>{},
       );
     } catch (error) {
       if (!mounted || epoch != _generationEpoch) return null;
@@ -559,7 +559,12 @@ class _BlocksExamplesDialogState extends State<_BlocksExamplesDialog> {
                 child: TextField(
                   key: _gpioFieldKeys[role.role],
                   controller: _gpioControllers[role.role],
-                  keyboardType: TextInputType.number,
+                  // Pin identities are numbers OR names (FR-BLOCKS-1B), so
+                  // the field needs a full keyboard; names are technical
+                  // identifiers, never autocorrected (FR-I18N-4).
+                  keyboardType: TextInputType.text,
+                  autocorrect: false,
+                  enableSuggestions: false,
                   textInputAction: TextInputAction.next,
                   decoration: InputDecoration(
                     labelText: _catalogMessage(l10n, role.labelKey),
@@ -802,6 +807,7 @@ IconData _iconFor(String id) => switch (id) {
   'read-button' => Icons.radio_button_checked,
   'button-controls-led' => Icons.alt_route,
   'reusable-function' => Icons.functions,
+  'waveshare-esp32-s3-lcd-147b' => Icons.screenshot_monitor_outlined,
   _ => Icons.account_tree_outlined,
 };
 
@@ -820,14 +826,23 @@ String _catalogMessage(AppLocalizations l10n, String key) => switch (key) {
   'blocksExampleButtonLedSummary' => l10n.blocksExampleButtonLedSummary,
   'blocksExampleFunctionTitle' => l10n.blocksExampleFunctionTitle,
   'blocksExampleFunctionSummary' => l10n.blocksExampleFunctionSummary,
+  'blocksExampleTftTitle' => l10n.blocksExampleTftTitle,
+  'blocksExampleTftSummary' => l10n.blocksExampleTftSummary,
   'blocksExampleNoWiring' => l10n.blocksExampleNoWiring,
   'blocksExampleBlinkWiring' => l10n.blocksExampleBlinkWiring,
   'blocksExampleNeoPixelWiring' => l10n.blocksExampleNeoPixelWiring,
   'blocksExampleButtonWiring' => l10n.blocksExampleButtonWiring,
   'blocksExampleButtonLedWiring' => l10n.blocksExampleButtonLedWiring,
+  'blocksExampleTftWiring' => l10n.blocksExampleTftWiring,
   'blocksExampleLedGpio' => l10n.blocksExampleLedGpio,
   'blocksExampleButtonGpio' => l10n.blocksExampleButtonGpio,
   'blocksExampleNeoPixelGpio' => l10n.blocksExampleNeoPixelGpio,
+  'blocksExampleTftSckGpio' => l10n.blocksExampleTftSckGpio,
+  'blocksExampleTftMosiGpio' => l10n.blocksExampleTftMosiGpio,
+  'blocksExampleTftCsGpio' => l10n.blocksExampleTftCsGpio,
+  'blocksExampleTftDcGpio' => l10n.blocksExampleTftDcGpio,
+  'blocksExampleTftResetGpio' => l10n.blocksExampleTftResetGpio,
+  'blocksExampleTftBacklightGpio' => l10n.blocksExampleTftBacklightGpio,
   'blocksExampleConceptText' => l10n.blocksExampleConceptText,
   'blocksExampleConceptConsole' => l10n.blocksExampleConceptConsole,
   'blocksExampleConceptVariables' => l10n.blocksExampleConceptVariables,
@@ -840,5 +855,6 @@ String _catalogMessage(AppLocalizations l10n, String key) => switch (key) {
   'blocksExampleConceptConditions' => l10n.blocksExampleConceptConditions,
   'blocksExampleConceptFunctions' => l10n.blocksExampleConceptFunctions,
   'blocksExampleConceptParameters' => l10n.blocksExampleConceptParameters,
+  'blocksExampleConceptTft' => l10n.blocksExampleConceptTft,
   _ => throw BlocksExampleFormatException('unknown localized catalog key $key'),
 };

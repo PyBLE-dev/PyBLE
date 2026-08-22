@@ -20,20 +20,23 @@
 // `lib/pble/ble_byte_transport.dart` → app-protocol-engineer;
 // `lib/ble/**` → app-ble-engineer.
 
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:pyble/pble/ble_byte_transport.dart';
+import 'package:pyble/pble/byte_transport.dart';
 
 import '../support/fake_ble.dart';
+import '../support/repo_paths.dart';
 
 void main() {
   group('A-02 BleByteTransport pass-through (FR-BLE-3)', () {
     test('send() writes the exact bytes to RX (no interpretation)', () async {
       final FakeBleLink link = FakeBleLink(mtu: 247);
       addTearDown(link.dispose);
-      final BleByteTransport transport = BleByteTransport(link);
+      final ByteTransport transport = BleByteTransport(link);
 
       final Uint8List packet = Uint8List.fromList(<int>[
         0x80,
@@ -44,7 +47,7 @@ void main() {
         0x00,
         0x00,
       ]);
-      await transport.send(packet);
+      await transport.send(packet, acknowledged: false);
 
       expect(link.writes, hasLength(1));
       expect(
@@ -52,6 +55,46 @@ void main() {
         equals(packet),
         reason: 'the transport moves bytes verbatim; it never parses frames',
       );
+    });
+
+    test(
+      'send maps acknowledged mode to the inverse GATT write flag',
+      () async {
+        final FakeBleLink link = FakeBleLink(mtu: 247);
+        addTearDown(link.dispose);
+        final ByteTransport transport = BleByteTransport(link);
+        final Uint8List packet = Uint8List.fromList(<int>[0x80, 0x01]);
+
+        await transport.send(packet, acknowledged: true);
+        await transport.send(packet, acknowledged: false);
+
+        expect(link.writesWithoutResponse, <bool>[false, true]);
+      },
+    );
+
+    test('production and fake byte seams require an explicit write mode', () {
+      final Map<String, RegExp> contracts = <String, RegExp>{
+        'lib/pble/ble_byte_transport.dart': RegExp(
+          r'Future<void>\s+send\s*\([\s\S]*?required bool acknowledged',
+        ),
+        'test/support/fake_byte_transport.dart': RegExp(
+          r'Future<void>\s+send\s*\([\s\S]*?required bool acknowledged',
+        ),
+        'test/support/fake_ble.dart': RegExp(
+          r'Future<void>\s+write\s*\([\s\S]*?required bool withoutResponse',
+        ),
+      };
+
+      for (final MapEntry<String, RegExp> contract in contracts.entries) {
+        final String source = File(
+          '${appPackageRoot().path}/${contract.key}',
+        ).readAsStringSync();
+        expect(
+          source,
+          matches(contract.value),
+          reason: '${contract.key} must not supply an implicit write mode',
+        );
+      }
     });
 
     test('inbound surfaces TX notifications byte-for-byte', () async {

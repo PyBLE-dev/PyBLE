@@ -5,8 +5,9 @@ G0** is the build-machinery slice (`test_*.sh` gate tests); **S2 / M1 / G1** add
 the PBLE/1 protocol + BLE agent slice as **CPython host unit + conformance tests**
 under `host/`. No hardware, no ESP-IDF, and no MicroPython submodule fetch are
 required — these run on a plain host and pin the *behaviour* the `[green]`
-production modules must satisfy. The three-chip cross-compile and the HIL demo run
-later on a toolchain machine / real hardware and are reported as **DEFERRED**.
+production modules must satisfy. The four-variant/three-chip cross-compile and
+the HIL demo run later on a toolchain machine / real hardware and are reported
+as **DEFERRED**.
 
 ## Layout (S2 additions)
 
@@ -58,7 +59,7 @@ Exit code is non-zero while any gate is unmet (expected at S1).
 | F-15 | `test_upgrade_workflow.sh` | `upgrade_micropython.sh` bumps `versions.lock` in its own commit (dry-run) (BLD-9). |
 | F-15 | `test_submodule_idf.sh` | `.gitmodules` declares the pinned micropython submodule; ESP-IDF is gitignored, not a submodule (CON-1/2, BLD-11). |
 | X-03 | `test_sha_drift.sh` | Build prep refuses on submodule-SHA vs `versions.lock` mismatch, proceeds on match (BLD-1/2). |
-| X-03 | `test_build_matrix.sh` | `build.sh` maps `esp32-s3→esp32s3` / `esp32-c3→esp32c3`, rejects unknown target, plans the artifact set, never fakes a build; `build_all.sh` drives all three (BLD-3/4/5, CON-11). |
+| X-03 | `test_build_matrix.sh` | `build.sh` maps the generic and exact-board S3 variants to `esp32s3`, maps `esp32-c3→esp32c3`, rejects unknown targets, plans the artifact set, and never fakes a build; `build_all.sh` drives all four variants over three chips (BLD-3/4/5, CON-11). |
 | F-01 | `host/test_pyble_ble.py` | PURE host helpers only: `PyBLE-XXXX` name from the last 2 MAC bytes uppercase hex (FR-BLE-5), advertised-name = label-else-default (FR-BLE-5/12), INFO read = DEVICE_INFO payload verbatim (FR-BLE-4), payload sizing = MTU−4 (FR-BLE-8). NimBLE peripheral (GATT/adv/scan-filter/MTU-247/subscribe) is **HIL-DEFERRED** (`gates/g1_check.sh`). |
 | F-02 | `host/test_pyble_proto.py` | §3.1 frame encode/decode vs the shared corpus (FR-PROTO-2), IEEE CRC-32 over VER…PAYLOAD (FR-PROTO-3), CRC-fail→`EVT ERROR(ECRC)` ref opcode + drop (FR-PROTO-3), ID correlation / EVT ID=0 (FR-PROTO-4), opcode dispatch (FR-PROTO-5), full §4 opcode set (FR-PROTO-1) + §8 status set (FR-PROTO-6), malformed→`EBADREQ` (FR-PROTO-8), unknown→`EUNSUPPORTED` (FR-PROTO-9, fwd F-16), fragment/reassemble byte-identical over the MTU matrix incl. index-mod-64 wrap (FR-BLE-8/10). |
 | F-11 | `hil/f11_reliability_bench.py` | **HIL bench** (firmware-test-author, no firmware `[green]`): uploads N files back-to-back at MTU 247 over BLE (`bleak`) and asserts every file's whole-file CRC (`FILE_PUT_END`) + an independent `FILE_STAT` re-verify (NFR-REL-5, FR-FS-6/14); reports a throughput baseline (NFR-PERF-1 / NFR-FP-TPUT) — **never** a hardcoded ceiling (OI-1: floor applied only via `--tput-floor-bps`). `--relabel` proves identity never gates access (SEC-11). HIL-only. |
@@ -82,7 +83,7 @@ CI-scoped, several accept env/flag overrides:
 | `tools/ci/sha_drift.sh` | Honours `$PYBLE_LOCK_FILE` / `$PYBLE_UPSTREAM_DIR`; non-zero on SHA mismatch or uninitialized submodule. |
 | `tools/ci/patches_policy.sh [DIR]` | Non-zero if any `*.patch` lacks a sibling non-empty `REASON.md`; zero on empty. |
 | `firmware/scripts/build.sh` | `--plan <target>` prints `idf_target=<mapped>`, `board_overlays/<target>`, and the `firmware.bin`/bootloader/partition artifact set; unknown target non-zero; a real build with no ESP-IDF exits non-zero with an actionable message (never fakes success). |
-| `firmware/scripts/build_all.sh` | `--plan` drives all three targets. |
+| `firmware/scripts/build_all.sh` | `--plan` drives all four variants over three chips. |
 | `firmware/scripts/upgrade_micropython.sh` | `--dry-run <ref> <commit>` prints a plan naming `versions.lock` and an "own commit"; mutates nothing. |
 | `firmware/pyble/pyble_proto.py` (**protocol-engineer**) | `VER`, `OPCODES`/`STATUS` (frozen §4/§8 maps), `crc32`, `encode`, `decode(→Frame)`, `fragment`/`reassemble`, `Dispatcher.register`/`.on_message` (RSP echoes id+opcode; CRC-fail→EVT ECRC id=0; unknown→EUNSUPPORTED; malformed→EBADREQ). Interface pinned by `host/test_pyble_proto.py`. |
 | `firmware/pyble/pyble_ble.py` (**ble-transport-engineer**) | PURE helpers `device_id_from_mac(mac)→"XXXX"`, `advertised_name(device_id,label="")`, `payload_size(mtu)=mtu−4`, `info_read_value(payload)` (verbatim). Guard/defer `import bluetooth` so these import on the host. Interface pinned by `host/test_pyble_ble.py`. Peripheral itself is HIL. |

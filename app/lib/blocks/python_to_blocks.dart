@@ -68,6 +68,8 @@ const Set<String> _generatorReservedNames = <String>{
   ..._pythonKeywords,
   'Pin',
   'NeoPixel',
+  'ST7789',
+  'rgb565',
   'sleep_ms',
   'print',
   'NotImplemented',
@@ -613,6 +615,18 @@ class _PythonSubsetParser {
       _index += 1;
       return _budget.node(
         _ImportStmt(line.number, line.contentColumn, _ImportKind.neoPixel),
+      );
+    }
+    if (text == 'from pyble_st7789 import ST7789') {
+      _index += 1;
+      return _budget.node(
+        _ImportStmt(line.number, line.contentColumn, _ImportKind.st7789),
+      );
+    }
+    if (text == 'from pyble_st7789 import rgb565') {
+      _index += 1;
+      return _budget.node(
+        _ImportStmt(line.number, line.contentColumn, _ImportKind.rgb565),
       );
     }
     if (text == 'from time import sleep_ms') {
@@ -1471,7 +1485,7 @@ abstract class _Stmt extends _Node {
   const _Stmt(super.line, super.column);
 }
 
-enum _ImportKind { pin, neoPixel, sleepMs }
+enum _ImportKind { pin, neoPixel, st7789, rgb565, sleepMs }
 
 class _ImportStmt extends _Stmt {
   const _ImportStmt(super.line, super.column, this.kind);
@@ -1994,15 +2008,18 @@ class _BuildScope {
     Set<String>? definitelyAssigned,
     Set<String>? definitelyPins,
     Set<String>? definitelyNeoPixels,
+    Set<String>? definitelyTfts,
   }) : definitelyAssigned = definitelyAssigned ?? <String>{},
        definitelyPins = definitelyPins ?? <String>{},
-       definitelyNeoPixels = definitelyNeoPixels ?? <String>{};
+       definitelyNeoPixels = definitelyNeoPixels ?? <String>{},
+       definitelyTfts = definitelyTfts ?? <String>{};
 
   final Map<String, String> variables;
   final bool insideFunction;
   final Set<String> definitelyAssigned;
   final Set<String> definitelyPins;
   final Set<String> definitelyNeoPixels;
+  final Set<String> definitelyTfts;
 
   _BuildScope fork() => _BuildScope(
     variables: variables,
@@ -2010,6 +2027,7 @@ class _BuildScope {
     definitelyAssigned: <String>{...definitelyAssigned},
     definitelyPins: <String>{...definitelyPins},
     definitelyNeoPixels: <String>{...definitelyNeoPixels},
+    definitelyTfts: <String>{...definitelyTfts},
   );
 }
 
@@ -2297,6 +2315,11 @@ class _WorkspaceBuilder {
       } else {
         scope.definitelyNeoPixels.remove(statement.target);
       }
+      if (_isTftConstructor(statement.value)) {
+        scope.definitelyTfts.add(statement.target);
+      } else {
+        scope.definitelyTfts.remove(statement.target);
+      }
       return;
     }
     if (statement is _SubscriptAssignStmt) {
@@ -2322,12 +2345,14 @@ class _WorkspaceBuilder {
       if (!scope.definitelyAssigned.contains(statement.target) ||
           scope.definitelyPins.contains(statement.target) ||
           scope.definitelyNeoPixels.contains(statement.target) ||
+          scope.definitelyTfts.contains(statement.target) ||
           !_isNumericExpression(statement.value)) {
         _fail('invalid_numeric_change', statement.line, statement.column);
       }
       _validateExpression(statement.value, scope);
       scope.definitelyPins.remove(statement.target);
       scope.definitelyNeoPixels.remove(statement.target);
+      scope.definitelyTfts.remove(statement.target);
       return;
     }
     if (statement is _ExprStmt) {
@@ -2418,6 +2443,7 @@ class _WorkspaceBuilder {
     scope.definitelyAssigned.add(variable);
     scope.definitelyPins.remove(variable);
     scope.definitelyNeoPixels.remove(variable);
+    scope.definitelyTfts.remove(variable);
   }
 
   bool _rangeHasMultipleIterations(({int start, int stop, int step}) bounds) {
@@ -2432,7 +2458,8 @@ class _WorkspaceBuilder {
   bool _hasSameDefiniteFacts(_BuildScope left, _BuildScope right) =>
       _setsEqual(left.definitelyAssigned, right.definitelyAssigned) &&
       _setsEqual(left.definitelyPins, right.definitelyPins) &&
-      _setsEqual(left.definitelyNeoPixels, right.definitelyNeoPixels);
+      _setsEqual(left.definitelyNeoPixels, right.definitelyNeoPixels) &&
+      _setsEqual(left.definitelyTfts, right.definitelyTfts);
 
   bool _setsEqual(Set<String> left, Set<String> right) =>
       left.length == right.length && left.containsAll(right);
@@ -2447,6 +2474,9 @@ class _WorkspaceBuilder {
     target.definitelyNeoPixels
       ..clear()
       ..addAll(source.definitelyNeoPixels);
+    target.definitelyTfts
+      ..clear()
+      ..addAll(source.definitelyTfts);
   }
 
   void _retainDefiniteIntersection(
@@ -2456,10 +2486,12 @@ class _WorkspaceBuilder {
     final Set<String> assigned = <String>{...paths.first.definitelyAssigned};
     final Set<String> pins = <String>{...paths.first.definitelyPins};
     final Set<String> neoPixels = <String>{...paths.first.definitelyNeoPixels};
+    final Set<String> tfts = <String>{...paths.first.definitelyTfts};
     for (final _BuildScope path in paths.skip(1)) {
       assigned.retainAll(path.definitelyAssigned);
       pins.retainAll(path.definitelyPins);
       neoPixels.retainAll(path.definitelyNeoPixels);
+      tfts.retainAll(path.definitelyTfts);
     }
     target.definitelyAssigned
       ..clear()
@@ -2470,6 +2502,9 @@ class _WorkspaceBuilder {
     target.definitelyNeoPixels
       ..clear()
       ..addAll(neoPixels);
+    target.definitelyTfts
+      ..clear()
+      ..addAll(tfts);
   }
 
   void _validateExpressionStatement(_ExprStmt statement, _BuildScope scope) {
@@ -2529,6 +2564,10 @@ class _WorkspaceBuilder {
         if (level != 0 && level != 1) {
           _fail('invalid_gpio', expression.line, expression.column);
         }
+        return;
+      }
+      if (_isDefinitelyBoundTft(attribute.target, scope)) {
+        _validateTftMethodCall(expression, attribute.member, scope);
         return;
       }
       if (!_isDefinitelyBoundNeoPixel(attribute.target, scope)) {
@@ -2596,6 +2635,14 @@ class _WorkspaceBuilder {
         }
         if (target.name == 'NeoPixel') {
           _validateNeoPixelCall(expression);
+          return;
+        }
+        if (target.name == 'ST7789') {
+          _validateTftConstructorCall(expression, scope);
+          return;
+        }
+        if (target.name == 'rgb565') {
+          _validateTftColorCall(expression, scope);
           return;
         }
         final _Procedure? procedure = _procedures[target.name];
@@ -2679,6 +2726,7 @@ class _WorkspaceBuilder {
         return attribute.member == 'value' && expression.arguments.isEmpty;
       }
       if (expression.target case final _NameExpr target) {
+        if (target.name == 'rgb565') return true;
         return _procedures[target.name]?.returnsValue ?? false;
       }
     }
@@ -2689,11 +2737,7 @@ class _WorkspaceBuilder {
     if (expression.arguments.length < 2 || expression.arguments.length > 3) {
       _fail('invalid_gpio', expression.line, expression.column);
     }
-    final int? gpio = _integerLiteral(
-      expression.arguments[0],
-      requireIntegerSyntax: true,
-    );
-    if (gpio == null || gpio < 0) {
+    if (_pinIdentity(expression.arguments[0]) == null) {
       _fail('invalid_gpio', expression.line, expression.column);
     }
     final String? mode = _pinConstant(expression.arguments[1]);
@@ -2745,6 +2789,191 @@ class _WorkspaceBuilder {
     }
   }
 
+  void _validateTftConstructorCall(_CallExpr expression, _BuildScope scope) {
+    if (expression.arguments.length != 16) {
+      _fail('invalid_tft_constructor', expression.line, expression.column);
+    }
+
+    final List<int> literalIndexes = <int>[0, 1, 2, 3, 10, 11, 12, 13];
+    final List<int> values = <int>[];
+    for (final int index in literalIndexes) {
+      final _Expr argument = expression.arguments[index];
+      final int? value = _integerLiteral(argument, requireIntegerSyntax: true);
+      if (value == null) {
+        _fail('invalid_tft_constructor', argument.line, argument.column);
+      }
+      values.add(value);
+    }
+    final int spiId = values[0];
+    final int baudrate = values[1];
+    final int polarity = values[2];
+    final int phase = values[3];
+    final int width = values[4];
+    final int height = values[5];
+    final int xOffset = values[6];
+    final int yOffset = values[7];
+    if (spiId < 0 ||
+        baudrate <= 0 ||
+        (polarity != 0 && polarity != 1) ||
+        (phase != 0 && phase != 1) ||
+        width <= 0 ||
+        height <= 0 ||
+        xOffset < 0 ||
+        yOffset < 0) {
+      _fail('invalid_tft_constructor', expression.line, expression.column);
+    }
+
+    for (int index = 4; index <= 9; index += 1) {
+      final _Expr pin = expression.arguments[index];
+      if (pin is! _CallExpr ||
+          pin.target is! _NameExpr ||
+          (pin.target as _NameExpr).name != 'Pin') {
+        _fail('invalid_tft_pin', pin.line, pin.column);
+      }
+      _validatePinCall(pin);
+    }
+
+    for (final int index in <int>[14, 15]) {
+      final _Expr flag = expression.arguments[index];
+      _validateExpression(flag, scope);
+      if (!_isBooleanExpression(flag, scope)) {
+        _fail('invalid_tft_boolean', flag.line, flag.column);
+      }
+    }
+  }
+
+  void _validateTftColorCall(_CallExpr expression, _BuildScope scope) {
+    if (expression.arguments.length != 3) {
+      _fail('invalid_tft_color', expression.line, expression.column);
+    }
+    for (final _Expr channel in expression.arguments) {
+      _validateExpression(channel, scope);
+      if (!_isNumericExpression(channel)) {
+        _fail('invalid_tft_color', channel.line, channel.column);
+      }
+    }
+  }
+
+  void _validateTftColor(_Expr expression, _BuildScope scope) {
+    if (expression is! _CallExpr ||
+        expression.target is! _NameExpr ||
+        (expression.target as _NameExpr).name != 'rgb565') {
+      _fail('invalid_tft_color', expression.line, expression.column);
+    }
+    _validateTftColorCall(expression, scope);
+  }
+
+  void _validateTftMethodCall(
+    _CallExpr expression,
+    String member,
+    _BuildScope scope,
+  ) {
+    final List<_Expr> arguments = expression.arguments;
+    if (member == 'fill') {
+      if (arguments.length != 1) {
+        _fail('invalid_tft_fill', expression.line, expression.column);
+      }
+      _validateTftColor(arguments[0], scope);
+      return;
+    }
+    if (member == 'pixel') {
+      if (arguments.length != 3) {
+        _fail('invalid_tft_pixel', expression.line, expression.column);
+      }
+      _validateNumericTftArguments(arguments.take(2), scope);
+      _validateTftColor(arguments[2], scope);
+      return;
+    }
+    if (member == 'rect' || member == 'fill_rect') {
+      if (arguments.length != 5) {
+        _fail('invalid_tft_rect', expression.line, expression.column);
+      }
+      _validateNumericTftArguments(arguments.take(4), scope);
+      _validateTftColor(arguments[4], scope);
+      return;
+    }
+    if (member == 'text') {
+      if (arguments.length != 4) {
+        _fail('invalid_tft_text', expression.line, expression.column);
+      }
+      _validateExpression(arguments[0], scope);
+      if (!_isTextExpression(arguments[0], scope)) {
+        _fail('invalid_tft_text', arguments[0].line, arguments[0].column);
+      }
+      _validateNumericTftArguments(arguments.skip(1).take(2), scope);
+      _validateTftColor(arguments[3], scope);
+      return;
+    }
+    if (member == 'show') {
+      if (arguments.isNotEmpty) {
+        _fail('invalid_tft_show', expression.line, expression.column);
+      }
+      return;
+    }
+    if (member == 'backlight') {
+      if (arguments.length != 1) {
+        _fail('invalid_tft_backlight', expression.line, expression.column);
+      }
+      _validateExpression(arguments[0], scope);
+      if (!_isBooleanExpression(arguments[0], scope)) {
+        _fail('invalid_tft_backlight', arguments[0].line, arguments[0].column);
+      }
+      return;
+    }
+    _fail('unsupported_call', expression.line, expression.column);
+  }
+
+  void _validateNumericTftArguments(
+    Iterable<_Expr> arguments,
+    _BuildScope scope,
+  ) {
+    for (final _Expr argument in arguments) {
+      _validateExpression(argument, scope);
+      if (!_isNumericExpression(argument)) {
+        _fail('invalid_tft_numeric', argument.line, argument.column);
+      }
+    }
+  }
+
+  bool _isBooleanExpression(_Expr expression, _BuildScope scope) {
+    if (expression is _BooleanExpr) return true;
+    if (expression is _NameExpr) {
+      return scope.variables.containsKey(expression.name) &&
+          scope.definitelyAssigned.contains(expression.name);
+    }
+    if (expression is _UnaryExpr) return expression.operator == 'not';
+    if (expression is _BinaryExpr) {
+      return <String>{
+        'and',
+        'or',
+        '==',
+        '!=',
+        '<',
+        '<=',
+        '>',
+        '>=',
+      }.contains(expression.operator);
+    }
+    if (expression is _CallExpr && expression.target is _NameExpr) {
+      return _procedures[(expression.target as _NameExpr).name]?.returnsValue ??
+          false;
+    }
+    return false;
+  }
+
+  bool _isTextExpression(_Expr expression, _BuildScope scope) {
+    if (expression is _StringExpr) return true;
+    if (expression is _NameExpr) {
+      return scope.variables.containsKey(expression.name) &&
+          scope.definitelyAssigned.contains(expression.name);
+    }
+    if (expression is _CallExpr && expression.target is _NameExpr) {
+      return _procedures[(expression.target as _NameExpr).name]?.returnsValue ??
+          false;
+    }
+    return false;
+  }
+
   void _validateNeoPixelIndex(_Expr expression, _BuildScope scope) {
     _validateExpression(expression, scope);
     if (!_isNumericExpression(expression)) {
@@ -2771,7 +3000,19 @@ class _WorkspaceBuilder {
       scope.definitelyAssigned.contains(expression.name) &&
       scope.definitelyNeoPixels.contains(expression.name);
 
+  bool _isDefinitelyBoundTft(_Expr expression, _BuildScope scope) =>
+      expression is _NameExpr &&
+      !scope.insideFunction &&
+      scope.variables.containsKey(expression.name) &&
+      scope.definitelyAssigned.contains(expression.name) &&
+      scope.definitelyTfts.contains(expression.name);
+
   bool _isBoundNeoPixelName(_Expr expression, _BuildScope scope) =>
+      expression is _NameExpr &&
+      !scope.insideFunction &&
+      scope.variables.containsKey(expression.name);
+
+  bool _isBoundTftName(_Expr expression, _BuildScope scope) =>
       expression is _NameExpr &&
       !scope.insideFunction &&
       scope.variables.containsKey(expression.name);
@@ -2786,6 +3027,11 @@ class _WorkspaceBuilder {
       expression.target is _NameExpr &&
       (expression.target as _NameExpr).name == 'NeoPixel';
 
+  bool _isTftConstructor(_Expr expression) =>
+      expression is _CallExpr &&
+      expression.target is _NameExpr &&
+      (expression.target as _NameExpr).name == 'ST7789';
+
   void _validateImports() {
     final Set<_ImportKind> actual = statements
         .whereType<_ImportStmt>()
@@ -2793,12 +3039,16 @@ class _WorkspaceBuilder {
         .toSet();
     bool usesPin = false;
     bool usesNeoPixel = false;
+    bool usesSt7789 = false;
+    bool usesRgb565 = false;
     bool usesSleep = false;
     for (final _Node node in _allNodes(statements)) {
       if (node is _CallExpr && node.target is _NameExpr) {
         final String name = (node.target as _NameExpr).name;
         usesPin |= name == 'Pin';
         usesNeoPixel |= name == 'NeoPixel';
+        usesSt7789 |= name == 'ST7789';
+        usesRgb565 |= name == 'rgb565';
         usesSleep |= name == 'sleep_ms';
       }
     }
@@ -2811,6 +3061,16 @@ class _WorkspaceBuilder {
       _ImportKind.neoPixel,
       used: usesNeoPixel,
       present: actual.contains(_ImportKind.neoPixel),
+    );
+    _requireImport(
+      _ImportKind.st7789,
+      used: usesSt7789,
+      present: actual.contains(_ImportKind.st7789),
+    );
+    _requireImport(
+      _ImportKind.rgb565,
+      used: usesRgb565,
+      present: actual.contains(_ImportKind.rgb565),
     );
     _requireImport(
       _ImportKind.sleepMs,
@@ -2847,6 +3107,8 @@ class _WorkspaceBuilder {
   String _importName(_ImportKind kind) => switch (kind) {
     _ImportKind.pin => 'Pin',
     _ImportKind.neoPixel => 'NeoPixel',
+    _ImportKind.st7789 => 'ST7789',
+    _ImportKind.rgb565 => 'rgb565',
     _ImportKind.sleepMs => 'sleep_ms',
   };
 
@@ -3265,6 +3527,26 @@ class _WorkspaceBuilder {
           },
         );
       }
+      if (<String>{
+            'pixel',
+            'rect',
+            'fill_rect',
+            'text',
+            'show',
+            'backlight',
+          }.contains(attribute.member) ||
+          attribute.member == 'fill' &&
+              expression.arguments.length == 1 &&
+              _isTftColorCall(expression.arguments.single)) {
+        if (!_isBoundTftName(attribute.target, scope)) {
+          _fail(
+            'invalid_tft_receiver',
+            attribute.target.line,
+            attribute.target.column,
+          );
+        }
+        return _tftStatementBlock(expression, attribute, scope);
+      }
       if (!_isBoundNeoPixelName(attribute.target, scope)) {
         _fail(
           'invalid_neopixel_receiver',
@@ -3453,6 +3735,14 @@ class _WorkspaceBuilder {
           (expression.target as _NameExpr).name == 'NeoPixel') {
         return _neoPixelCreateBlock(expression);
       }
+      if (expression.target is _NameExpr &&
+          (expression.target as _NameExpr).name == 'ST7789') {
+        return _tftCreateBlock(expression, scope);
+      }
+      if (expression.target is _NameExpr &&
+          (expression.target as _NameExpr).name == 'rgb565') {
+        return _tftColorBlock(expression, scope);
+      }
       if (expression.target is _AttributeExpr) {
         final _AttributeExpr attribute = expression.target as _AttributeExpr;
         if (attribute.member == 'value' &&
@@ -3518,6 +3808,156 @@ class _WorkspaceBuilder {
     );
   }
 
+  Map<String, Object?> _tftCreateBlock(
+    _CallExpr expression,
+    _BuildScope scope,
+  ) {
+    _validateTftConstructorCall(expression, scope);
+    const List<String> numericNames = <String>[
+      'SPI_ID',
+      'BAUDRATE',
+      'POLARITY',
+      'PHASE',
+    ];
+    const List<String> pinNames = <String>[
+      'SCK',
+      'MOSI',
+      'CS',
+      'DC',
+      'RESET',
+      'BACKLIGHT',
+    ];
+    const List<String> geometryNames = <String>[
+      'WIDTH',
+      'HEIGHT',
+      'X_OFFSET',
+      'Y_OFFSET',
+    ];
+    final Map<String, Object?> inputs = <String, Object?>{};
+    for (int index = 0; index < numericNames.length; index += 1) {
+      inputs[numericNames[index]] = _input(
+        _numberBlock(
+          _integerLiteral(
+            expression.arguments[index],
+            requireIntegerSyntax: true,
+          )!,
+        ),
+      );
+    }
+    for (int index = 0; index < pinNames.length; index += 1) {
+      inputs[pinNames[index]] = _input(
+        _pinBlock(expression.arguments[index + 4] as _CallExpr),
+      );
+    }
+    for (int index = 0; index < geometryNames.length; index += 1) {
+      inputs[geometryNames[index]] = _input(
+        _numberBlock(
+          _integerLiteral(
+            expression.arguments[index + 10],
+            requireIntegerSyntax: true,
+          )!,
+        ),
+      );
+    }
+    inputs['BGR'] = _input(_expressionBlock(expression.arguments[14], scope));
+    inputs['INVERSION'] = _input(
+      _expressionBlock(expression.arguments[15], scope),
+    );
+    return _block('pyble_tft_create', inputs: inputs);
+  }
+
+  Map<String, Object?> _tftColorBlock(_CallExpr expression, _BuildScope scope) {
+    _validateTftColorCall(expression, scope);
+    return _block(
+      'pyble_tft_rgb565',
+      inputs: <String, Object?>{
+        'RED': _input(_expressionBlock(expression.arguments[0], scope)),
+        'GREEN': _input(_expressionBlock(expression.arguments[1], scope)),
+        'BLUE': _input(_expressionBlock(expression.arguments[2], scope)),
+      },
+    );
+  }
+
+  Map<String, Object?> _tftStatementBlock(
+    _CallExpr expression,
+    _AttributeExpr attribute,
+    _BuildScope scope,
+  ) {
+    final Map<String, Object?> display = _input(
+      _expressionBlock(attribute.target, scope),
+    );
+    final List<_Expr> arguments = expression.arguments;
+    if (attribute.member == 'fill') {
+      return _block(
+        'pyble_tft_fill',
+        inputs: <String, Object?>{
+          'DISPLAY': display,
+          'COLOR': _input(_tftColorBlock(arguments[0] as _CallExpr, scope)),
+        },
+      );
+    }
+    if (attribute.member == 'pixel') {
+      return _block(
+        'pyble_tft_pixel',
+        inputs: <String, Object?>{
+          'DISPLAY': display,
+          'X': _input(_expressionBlock(arguments[0], scope)),
+          'Y': _input(_expressionBlock(arguments[1], scope)),
+          'COLOR': _input(_tftColorBlock(arguments[2] as _CallExpr, scope)),
+        },
+      );
+    }
+    if (attribute.member == 'rect' || attribute.member == 'fill_rect') {
+      return _block(
+        'pyble_tft_rect',
+        fields: <String, Object?>{
+          'STYLE': attribute.member == 'fill_rect' ? 'FILLED' : 'OUTLINE',
+        },
+        inputs: <String, Object?>{
+          'DISPLAY': display,
+          'X': _input(_expressionBlock(arguments[0], scope)),
+          'Y': _input(_expressionBlock(arguments[1], scope)),
+          'WIDTH': _input(_expressionBlock(arguments[2], scope)),
+          'HEIGHT': _input(_expressionBlock(arguments[3], scope)),
+          'COLOR': _input(_tftColorBlock(arguments[4] as _CallExpr, scope)),
+        },
+      );
+    }
+    if (attribute.member == 'text') {
+      return _block(
+        'pyble_tft_text',
+        inputs: <String, Object?>{
+          'DISPLAY': display,
+          'TEXT': _input(_expressionBlock(arguments[0], scope)),
+          'X': _input(_expressionBlock(arguments[1], scope)),
+          'Y': _input(_expressionBlock(arguments[2], scope)),
+          'COLOR': _input(_tftColorBlock(arguments[3] as _CallExpr, scope)),
+        },
+      );
+    }
+    if (attribute.member == 'show') {
+      return _block(
+        'pyble_tft_show',
+        inputs: <String, Object?>{'DISPLAY': display},
+      );
+    }
+    if (attribute.member == 'backlight') {
+      return _block(
+        'pyble_tft_backlight',
+        inputs: <String, Object?>{
+          'DISPLAY': display,
+          'ON': _input(_expressionBlock(arguments[0], scope)),
+        },
+      );
+    }
+    _fail('unsupported_call', expression.line, expression.column);
+  }
+
+  bool _isTftColorCall(_Expr expression) =>
+      expression is _CallExpr &&
+      expression.target is _NameExpr &&
+      (expression.target as _NameExpr).name == 'rgb565';
+
   Map<String, Object?> _neoPixelColorBlock(
     _Expr expression,
     _BuildScope scope,
@@ -3537,10 +3977,7 @@ class _WorkspaceBuilder {
 
   Map<String, Object?> _pinBlock(_CallExpr expression) {
     _validatePinCall(expression);
-    final int gpio = _integerLiteral(
-      expression.arguments[0],
-      requireIntegerSyntax: true,
-    )!;
+    final Object gpio = _pinIdentity(expression.arguments[0])!;
     final String? mode = _pinConstant(expression.arguments[1]);
     if (mode != 'IN' && mode != 'OUT') {
       _fail('invalid_gpio', expression.line, expression.column);
@@ -3564,9 +4001,31 @@ class _WorkspaceBuilder {
     return _block(
       'pyble_gpio_pin',
       fields: <String, Object?>{'MODE': mode, 'PULL': pull},
-      inputs: <String, Object?>{'GPIO': _input(_numberBlock(gpio))},
+      inputs: <String, Object?>{
+        'GPIO': _input(
+          gpio is String
+              ? _block('text', fields: <String, Object?>{'TEXT': gpio})
+              : _numberBlock(gpio as int),
+        ),
+      },
     );
   }
+
+  /// FR-BLOCKS-1B pin identity: a non-negative integer literal (`int`), a
+  /// quoted `machine.Pin` name under the frozen grammar (`String`), or
+  /// `null` for anything else (the existing invalid-pin path).
+  Object? _pinIdentity(_Expr expression) {
+    if (expression is _StringExpr) {
+      return _pinNamePattern.hasMatch(expression.value)
+          ? expression.value
+          : null;
+    }
+    final int? gpio = _integerLiteral(expression, requireIntegerSyntax: true);
+    if (gpio == null || gpio < 0) return null;
+    return gpio;
+  }
+
+  static final RegExp _pinNamePattern = RegExp(r'^[A-Za-z][A-Za-z0-9_]{0,15}$');
 
   String? _pinConstant(_Expr expression) {
     if (expression is! _AttributeExpr ||

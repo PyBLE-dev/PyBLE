@@ -682,28 +682,28 @@ abstract class AppLocalizations {
   /// **'Wiring'**
   String get blocksExamplesWiring;
 
-  /// Safety guidance shown before a hardware example can be previewed or copied.
+  /// Safety guidance shown before a hardware example can be previewed or copied; PyBLE never suggests board-specific pin names.
   ///
   /// In en, this message translates to:
-  /// **'GPIO numbers vary by board. Enter every GPIO number to generate a preview; PyBLE never assumes a safe pin.'**
+  /// **'GPIO numbers vary by board, and pin names do too. Enter every GPIO number or exact pin name to generate a preview; PyBLE never assumes a safe pin.'**
   String get blocksExamplesChoosePins;
 
-  /// Helper text below each hardware-example GPIO input.
+  /// Helper text below each hardware-example GPIO input; a slot accepts a GPIO number or a MicroPython pin name (FR-BLOCKS-1B). PyBLE never suggests board-specific names.
   ///
   /// In en, this message translates to:
-  /// **'Use a non-negative GPIO number from your board documentation.'**
+  /// **'Use a non-negative GPIO number or the exact pin name from your board documentation.'**
   String get blocksExamplesPinHint;
 
-  /// Validation message for a missing, negative, fractional, or non-numeric example GPIO.
+  /// Validation message when an example GPIO entry is neither a non-negative integer nor a pin name under the frozen FR-BLOCKS-1B grammar.
   ///
   /// In en, this message translates to:
-  /// **'Enter a non-negative whole GPIO number.'**
+  /// **'Enter a non-negative whole GPIO number, or a pin name that starts with a letter and uses up to 16 letters, digits, or underscores.'**
   String get blocksExamplesPinInvalid;
 
-  /// Cross-field validation message when separate hardware roles use the same GPIO number.
+  /// Cross-field validation message when separate hardware roles use the same GPIO number or pin name.
   ///
   /// In en, this message translates to:
-  /// **'Choose different GPIO numbers for the button and LED.'**
+  /// **'Choose a different GPIO or pin name for the button and the LED.'**
   String get blocksExamplesPinsMustDiffer;
 
   /// Non-mutating action that opens a larger view of Python generated for the selected example.
@@ -790,6 +790,42 @@ abstract class AppLocalizations {
   /// **'NeoPixel data GPIO'**
   String get blocksExampleNeoPixelGpio;
 
+  /// Input label for the explicit ST7789 SPI clock GPIO role.
+  ///
+  /// In en, this message translates to:
+  /// **'LCD clock (SCK) GPIO'**
+  String get blocksExampleTftSckGpio;
+
+  /// Input label for the explicit ST7789 SPI MOSI GPIO role.
+  ///
+  /// In en, this message translates to:
+  /// **'LCD data (MOSI) GPIO'**
+  String get blocksExampleTftMosiGpio;
+
+  /// Input label for the explicit ST7789 chip-select GPIO role.
+  ///
+  /// In en, this message translates to:
+  /// **'LCD chip select (CS) GPIO'**
+  String get blocksExampleTftCsGpio;
+
+  /// Input label for the explicit ST7789 data/command GPIO role.
+  ///
+  /// In en, this message translates to:
+  /// **'LCD data/command (DC) GPIO'**
+  String get blocksExampleTftDcGpio;
+
+  /// Input label for the explicit ST7789 reset GPIO role.
+  ///
+  /// In en, this message translates to:
+  /// **'LCD reset (RST) GPIO'**
+  String get blocksExampleTftResetGpio;
+
+  /// Input label for the explicit active-high LCD backlight GPIO role.
+  ///
+  /// In en, this message translates to:
+  /// **'LCD backlight (BL) GPIO'**
+  String get blocksExampleTftBacklightGpio;
+
   /// Wiring note for examples that only use the console and standard language blocks.
   ///
   /// In en, this message translates to:
@@ -819,6 +855,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Connect the button between its pull-up input GPIO and ground. Connect an external LED through an appropriate current-limiting resistor. Verify both GPIOs, voltage, polarity, and wiring against your board documentation.'**
   String get blocksExampleButtonLedWiring;
+
+  /// Exact-board wiring guidance for the ESP32-S3-LCD-1.47B TFT example, including the required warning that the non-B variant differs. Technical board and signal identifiers remain verbatim.
+  ///
+  /// In en, this message translates to:
+  /// **'For the exact ESP32-S3-LCD-1.47B (B version), the documented LCD wiring is SCK GPIO40, MOSI GPIO45, CS GPIO42, DC GPIO41, RST GPIO39, and BL GPIO46. The non-B ESP32-S3-LCD-1.47 uses different wiring; verify the full board name and schematic before entering any GPIO.'**
+  String get blocksExampleTftWiring;
 
   /// Title of the first beginner Blocks example.
   ///
@@ -904,6 +946,18 @@ abstract class AppLocalizations {
   /// **'Define a message-printing function and call it with an argument.'**
   String get blocksExampleFunctionSummary;
 
+  /// Title of the manually selected exact-board ST7789 display example.
+  ///
+  /// In en, this message translates to:
+  /// **'ESP32-S3-LCD-1.47B TFT pattern'**
+  String get blocksExampleTftTitle;
+
+  /// Summary of the exact ESP32-S3-LCD-1.47B TFT framebuffer example.
+  ///
+  /// In en, this message translates to:
+  /// **'Configure the 172 × 320 ST7789 display explicitly, draw a color-and-text test pattern, show it, and then enable its backlight.'**
+  String get blocksExampleTftSummary;
+
   /// Concept chip for text values.
   ///
   /// In en, this message translates to:
@@ -951,6 +1005,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Addressable RGB'**
   String get blocksExampleConceptAddressableRgb;
+
+  /// Concept chip for explicit framebuffer drawing on an ST7789 TFT display.
+  ///
+  /// In en, this message translates to:
+  /// **'TFT graphics'**
+  String get blocksExampleConceptTft;
 
   /// Concept chip for conditional branching.
   ///
@@ -1054,16 +1114,16 @@ abstract class AppLocalizations {
   /// **'Read 0 or 1 from a digital input pin.'**
   String get blocksGpioReadTooltip;
 
-  /// Generator validation shown when a GPIO constructor has no pin number.
+  /// Generator validation shown when a GPIO constructor has no number or named-pin input.
   ///
   /// In en, this message translates to:
-  /// **'GPIO pin number is required.'**
+  /// **'A GPIO number or pin name is required.'**
   String get blocksGpioPinRequired;
 
-  /// Generator validation shown when a GPIO constructor pin number is invalid.
+  /// Generator validation shown when a GPIO input is neither a valid non-negative integer nor a name under the FR-BLOCKS-1B grammar.
   ///
   /// In en, this message translates to:
-  /// **'GPIO pin number must be a finite non-negative integer literal.'**
+  /// **'GPIO must be a finite non-negative integer, or a pin name that starts with a letter and uses up to 16 letters, digits, or underscores.'**
   String get blocksGpioPinInvalid;
 
   /// Generator validation shown when a GPIO constructor mode token is invalid.
@@ -1269,6 +1329,235 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'NeoPixel operation requires an RGB color.'**
   String get blocksNeoPixelColorRequired;
+
+  /// Localized Blockly toolbox category containing explicit ST7789 framebuffer blocks.
+  ///
+  /// In en, this message translates to:
+  /// **'TFT Display'**
+  String get blocksTftCategory;
+
+  /// Localized explicit ST7789 constructor label. All placeholders are required Blockly value sockets and their order is the frozen runtime constructor order.
+  ///
+  /// In en, this message translates to:
+  /// **'ST7789 SPI ID {spiId} baud rate {baudrate} polarity {polarity} phase {phase} SCK {sck} MOSI {mosi} CS {cs} DC {dc} reset {reset} backlight {backlight} width {width} height {height} x offset {xOffset} y offset {yOffset} BGR {bgr} inversion {inversion}'**
+  String blocksTftCreate(
+    String spiId,
+    String baudrate,
+    String polarity,
+    String phase,
+    String sck,
+    String mosi,
+    String cs,
+    String dc,
+    String reset,
+    String backlight,
+    String width,
+    String height,
+    String xOffset,
+    String yOffset,
+    String bgr,
+    String inversion,
+  );
+
+  /// Localized RGB565 color constructor label. Placeholders are Blockly Number sockets.
+  ///
+  /// In en, this message translates to:
+  /// **'RGB565 red {red} green {green} blue {blue}'**
+  String blocksTftRgb565(String red, String green, String blue);
+
+  /// Localized ST7789 framebuffer-fill label.
+  ///
+  /// In en, this message translates to:
+  /// **'fill display {display} with {color}'**
+  String blocksTftFill(String display, String color);
+
+  /// Localized ST7789 framebuffer pixel label.
+  ///
+  /// In en, this message translates to:
+  /// **'display {display} pixel x {x} y {y} color {color}'**
+  String blocksTftPixel(String display, String x, String y, String color);
+
+  /// Localized ST7789 outline-or-filled rectangle label.
+  ///
+  /// In en, this message translates to:
+  /// **'display {display} {style} rectangle x {x} y {y} width {width} height {height} color {color}'**
+  String blocksTftRect(
+    String display,
+    String style,
+    String x,
+    String y,
+    String width,
+    String height,
+    String color,
+  );
+
+  /// Localized ST7789 framebuffer text label.
+  ///
+  /// In en, this message translates to:
+  /// **'display {display} text {text} x {x} y {y} color {color}'**
+  String blocksTftText(
+    String display,
+    String text,
+    String x,
+    String y,
+    String color,
+  );
+
+  /// Localized explicit ST7789 framebuffer-transfer label.
+  ///
+  /// In en, this message translates to:
+  /// **'show display {display}'**
+  String blocksTftShow(String display);
+
+  /// Localized explicit ST7789 Boolean backlight label.
+  ///
+  /// In en, this message translates to:
+  /// **'display {display} backlight on {on}'**
+  String blocksTftBacklight(String display, String on);
+
+  /// Rectangle style dropdown label for an outline.
+  ///
+  /// In en, this message translates to:
+  /// **'outline'**
+  String get blocksTftRectOutline;
+
+  /// Rectangle style dropdown label for a filled rectangle.
+  ///
+  /// In en, this message translates to:
+  /// **'filled'**
+  String get blocksTftRectFilled;
+
+  /// Tooltip for the explicit ST7789 constructor block.
+  ///
+  /// In en, this message translates to:
+  /// **'Create an ST7789 framebuffer from an explicit SPI configuration, six Pins, panel geometry, offsets, color order, and inversion setting. The backlight remains off.'**
+  String get blocksTftCreateTooltip;
+
+  /// Tooltip for the composable RGB565 color block.
+  ///
+  /// In en, this message translates to:
+  /// **'Convert red, green, and blue channel values to the display\'s RGB565 color format.'**
+  String get blocksTftRgb565Tooltip;
+
+  /// Tooltip for the ST7789 framebuffer fill block.
+  ///
+  /// In en, this message translates to:
+  /// **'Fill the framebuffer with one color. Use Show to transfer the change to the display.'**
+  String get blocksTftFillTooltip;
+
+  /// Tooltip for the ST7789 pixel block.
+  ///
+  /// In en, this message translates to:
+  /// **'Draw one pixel in the framebuffer. Use Show to transfer the change to the display.'**
+  String get blocksTftPixelTooltip;
+
+  /// Tooltip for the ST7789 rectangle block.
+  ///
+  /// In en, this message translates to:
+  /// **'Draw an outline or filled rectangle in the framebuffer without transferring it automatically.'**
+  String get blocksTftRectTooltip;
+
+  /// Tooltip for the ST7789 text block.
+  ///
+  /// In en, this message translates to:
+  /// **'Draw text in the framebuffer. Use Show to transfer the change to the display.'**
+  String get blocksTftTextTooltip;
+
+  /// Tooltip for the sole explicit ST7789 framebuffer transfer block.
+  ///
+  /// In en, this message translates to:
+  /// **'Transfer the complete framebuffer to the display.'**
+  String get blocksTftShowTooltip;
+
+  /// Tooltip for the explicit Boolean ST7789 backlight block.
+  ///
+  /// In en, this message translates to:
+  /// **'Set the display backlight from an explicit Boolean value.'**
+  String get blocksTftBacklightTooltip;
+
+  /// Generator validation shown when any ST7789 constructor socket is disconnected.
+  ///
+  /// In en, this message translates to:
+  /// **'ST7789 construction requires every explicit input.'**
+  String get blocksTftCreateInputRequired;
+
+  /// Generator validation shown when the explicit ST7789 SPI bus ID is invalid.
+  ///
+  /// In en, this message translates to:
+  /// **'SPI ID must be a safe non-negative integer literal.'**
+  String get blocksTftSpiIdInvalid;
+
+  /// Generator validation shown when the explicit ST7789 baud rate is invalid.
+  ///
+  /// In en, this message translates to:
+  /// **'SPI baud rate must be a safe positive integer literal.'**
+  String get blocksTftBaudrateInvalid;
+
+  /// Generator validation shown when the explicit ST7789 SPI polarity or phase is invalid.
+  ///
+  /// In en, this message translates to:
+  /// **'SPI polarity and phase must each be the integer literal 0 or 1.'**
+  String get blocksTftSpiModeInvalid;
+
+  /// Generator validation shown when explicit ST7789 panel geometry is invalid.
+  ///
+  /// In en, this message translates to:
+  /// **'Display width and height must be safe positive integer literals.'**
+  String get blocksTftGeometryInvalid;
+
+  /// Generator validation shown when an explicit ST7789 RAM offset is invalid.
+  ///
+  /// In en, this message translates to:
+  /// **'Display offsets must be safe non-negative integer literals.'**
+  String get blocksTftOffsetInvalid;
+
+  /// Generator validation shown when an RGB565 color component is missing.
+  ///
+  /// In en, this message translates to:
+  /// **'RGB565 requires red, green, and blue values.'**
+  String get blocksTftColorComponentRequired;
+
+  /// Generator validation shown when a TFT operation has no ST7789 receiver.
+  ///
+  /// In en, this message translates to:
+  /// **'This TFT operation requires a display input.'**
+  String get blocksTftDisplayRequired;
+
+  /// Generator validation shown when a TFT drawing operation has no RGB565 color.
+  ///
+  /// In en, this message translates to:
+  /// **'This TFT drawing operation requires an RGB565 color.'**
+  String get blocksTftColorRequired;
+
+  /// Generator validation shown when a TFT coordinate or rectangle size socket is disconnected.
+  ///
+  /// In en, this message translates to:
+  /// **'This TFT drawing operation requires every coordinate and size value.'**
+  String get blocksTftCoordinateRequired;
+
+  /// Generator validation shown when a TFT text block has no String input.
+  ///
+  /// In en, this message translates to:
+  /// **'TFT text drawing requires a text value.'**
+  String get blocksTftTextRequired;
+
+  /// Generator validation shown when a TFT backlight block has no Boolean input.
+  ///
+  /// In en, this message translates to:
+  /// **'TFT backlight control requires a Boolean value.'**
+  String get blocksTftBacklightRequired;
+
+  /// Generator validation shown when the live TFT rectangle style is outside the frozen enum.
+  ///
+  /// In en, this message translates to:
+  /// **'TFT rectangle style is invalid.'**
+  String get blocksTftRectStyleInvalid;
+
+  /// Restore validation shown when serialized TFT rectangle style is outside the frozen enum.
+  ///
+  /// In en, this message translates to:
+  /// **'Restored TFT rectangle style is invalid.'**
+  String get blocksTftRestoreStyleInvalid;
 
   /// Connect surface readiness banner title, shown when the Bluetooth adapter is powered off (BleReadiness.adapterOff).
   ///

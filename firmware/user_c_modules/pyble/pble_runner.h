@@ -5,7 +5,7 @@
 // on a MicroPython _thread WORKER that is SEPARATE from both the NimBLE host task
 // and the main-task REPL, emit RUN_STATE (0x40) on every transition, enforce
 // single-active-program EBUSY, and service STOP / SOFT_REBOOT from the host task
-// without ever blocking the link (protocol.md §4/§6/§8; FR-RUN-1..10, FR-BLE-11,
+// with only bounded link work (protocol.md §4/§6/§8; FR-RUN-1..10, FR-BLE-11,
 // FR-MODE-3, NFR-SAFE-1/2, NFR-REL-1, SEC-3).
 //
 // EXECUTION MODEL (frozen by the runtime owner — VM-thread, NOT appliance):
@@ -14,10 +14,11 @@
 //     The worker has valid VM thread state; a user `while True: pass` blocks ONLY
 //     the worker — the NimBLE host task and the main-task REPL stay live.
 //   - The 0x20/0x21/0x22 handlers run on the NimBLE host task (pble_proto_dispatch)
-//     and NEVER execute user Python inline. RUN reserves + hands off + returns a
-//     §8 status; STOP stores a KeyboardInterrupt into the WORKER's own VM state;
-//     SOFT_REBOOT stops the worker then marshals a VM soft-reset to the MAIN task
-//     (the only VM-safe site for mp_deinit/mp_init).
+//     and NEVER execute user Python inline. RUN reserves + copies, admits only
+//     after the bounded specialized RSP{OK} submission succeeds, then hands off;
+//     STOP stores a KeyboardInterrupt into the WORKER's own VM state; SOFT_REBOOT
+//     stops the worker then marshals a VM soft-reset to the MAIN task (the only
+//     VM-safe site for mp_deinit/mp_init).
 //   - RUN_STATE (0x40) is emitted on EVERY transition via pble_proto_emit (EVT,
 //     ID=0) -> pble_ble_notify; the app never polls (FR-RUN-7, FR-MODE-3).
 //
@@ -65,15 +66,20 @@ int     pble_rsm_on_finished(pble_rsm_t *m, bool ok);  // -> DONE/ERROR; returns
 int     pble_rsm_on_stopped(pble_rsm_t *m);            // -> IDLE (STOP terminal); returns new state
 
 // --- Dispatch surface (registered into pble_proto; run on the NimBLE host task)
-// 0x20 RUN — reserve/refuse (EBUSY), parse [mode][data], hand off to the worker,
-// RSP{status} only. RUN_STATE(running) follows from the worker.
-uint8_t pble_runner_run(const pble_frame_t *req, uint8_t *rsp, size_t *rlen, uint16_t conn);
+// 0x20 RUN — validate/reserve/copy, submit the matching RSP{OK} once without
+// waiting, then hand off only on local acceptance. RUN_STATE(running) follows
+// from the worker. Admission failure rolls back and suppresses response fallback.
+uint8_t pble_runner_run(const pble_frame_t *req, uint8_t *rsp, size_t *rlen,
+                        const pble_session_token_t *conn);
 // 0x21 STOP — idempotent; RSP{OK} always. If running, inject KeyboardInterrupt
 // into the WORKER's own VM state (FR-RUN-5/6/10). Link stays live (FR-BLE-11).
-uint8_t pble_runner_stop(const pble_frame_t *req, uint8_t *rsp, size_t *rlen, uint16_t conn);
+uint8_t pble_runner_stop(const pble_frame_t *req, uint8_t *rsp, size_t *rlen,
+                         const pble_session_token_t *conn);
 // 0x22 SOFT_REBOOT — RSP{OK}; stop the worker then marshal a VM soft-reset to the
 // MAIN task; terminal -> RUN_STATE(idle) (FR-RUN-8).
-uint8_t pble_runner_soft_reboot(const pble_frame_t *req, uint8_t *rsp, size_t *rlen, uint16_t conn);
+uint8_t pble_runner_soft_reboot(const pble_frame_t *req, uint8_t *rsp,
+                                size_t *rlen,
+                                const pble_session_token_t *conn);
 
 // Auto-run hand-off (F-12): run a workspace file on the WORKER from a NON-dispatch
 // caller — pble_boot's opt-in /main.py auto-run. Reserves the single run (or refuses
@@ -87,9 +93,20 @@ uint8_t pble_runner_run_file(const char *path);
 // Current lifecycle state (0 idle / 1 running / 2 done / 3 error).
 int  pble_runner_state(void);
 
+// True only while STOP/soft-reboot is unwinding the active worker. Console
+// output uses this read-only signal to abandon the remainder of a flood.
+bool pble_runner_stop_requested(void);
+
 // Register 0x20/0x21/0x22 into pble_proto and provision the hand-off primitives.
 // Idempotent; call once at boot from init_agent() BEFORE the worker is launched.
 void pble_runner_register(void);
+
+// Retained-VM lifecycle hooks. Timer disarm consumes only the residual of the
+// wrapper's absolute deadline; reset drains stale hand-offs and retained state;
+// detach prevents old worker pointers surviving upstream thread deletion.
+bool pble_runner_vm_timer_disarm(int64_t deadline_us);
+void pble_runner_vm_reset(void);
+void pble_runner_vm_detach(void);
 
 // MicroPython _thread WORKER entry — launched ONCE from _boot.py via
 // `_thread.start_new_thread(pble_runner.worker, ())` AFTER init_agent(). Captures

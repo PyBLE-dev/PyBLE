@@ -1,0 +1,17 @@
+Exact retained-source provenance for the selected MicroPython uzlib compiler
+dependencies at commit e0e9fbb17ed6fd06bb76e266ae554784c9c80804.
+The complete SPDX Zlib license text is retained separately.
+
+The following observed files are assigned to this owner:
+
+lib/uzlib/adler32.c
+lib/uzlib/crc32.c
+lib/uzlib/header.c
+lib/uzlib/tinflate.c
+lib/uzlib/uzlib.h
+lib/uzlib/uzlib_conf.h
+
+Copyright (c) 1998-2003 Joergen Ibsen / Jibz.
+Copyright (C) 1995-1998 Jean-loup Gailly and Mark Adler.
+Copyright (c) 2014-2018 Paul Sokolovsky.
+Copyright (c) 2023 Jim Mussared.

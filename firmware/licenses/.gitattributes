@@ -1,2 +1,4 @@
 texts/*.txt -diff
 evidence/* -diff
+evidence/rp2/** -diff
+notices/rp2/** -diff

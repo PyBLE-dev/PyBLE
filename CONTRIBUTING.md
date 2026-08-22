@@ -104,8 +104,23 @@ flutter drive --flavor integration \
   -d <android-device>
 ```
 
-The current local production-flavor release build uses Gradle's debug signing
-configuration for device testing. It is not a distributable beta artifact.
+Debug runs use the normal Android development key. Every release task fails
+closed unless the owner or CI supplies the BLD-12 signing environment:
+
+```sh
+export PYBLE_ANDROID_KEYSTORE_PATH=/absolute/path/to/upload-key.p12
+export PYBLE_ANDROID_KEYSTORE_PASSWORD='<from secret manager>'
+export PYBLE_ANDROID_KEY_ALIAS='<from secret manager>'
+export PYBLE_ANDROID_KEY_PASSWORD='<from secret manager>'
+
+flutter build apk --release --flavor production --target lib/main.dart
+flutter build appbundle --release --flavor production --target lib/main.dart
+```
+
+Never commit or print these values. The public CI job uses a disposable CI-only
+key to exercise the same release path; it never receives the Play upload key.
+Before uploading an AAB, verify its JAR signature and compare its signer
+SHA-256 certificate fingerprint with the owner-controlled upload certificate.
 
 ### Firmware
 

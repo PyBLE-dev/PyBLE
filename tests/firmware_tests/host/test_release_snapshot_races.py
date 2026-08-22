@@ -240,8 +240,12 @@ class LicenseAuditSnapshotRaceTests(unittest.TestCase):
     def tearDown(self):
         self.fixture.close()
 
-    def test_six_role_audit_rejects_input_changed_after_sbom_generation(self):
+    def test_full_role_audit_rejects_input_changed_after_sbom_generation(self):
         runner = LICENSE_FIXTURES.FakeOfflineSbomRunner(self.fixture)
+        expected_calls = (
+            len(RELEASE.LICENSE_AUDIT_PROFILES)
+            * len(RELEASE.LICENSE_AUDIT_ROLES)
+        )
         observed_archive = Path(
             next(
                 item
@@ -254,7 +258,7 @@ class LicenseAuditSnapshotRaceTests(unittest.TestCase):
         class RacingRunner:
             def __call__(inner_self, *args, **kwargs):
                 result = runner(*args, **kwargs)
-                if len(runner.calls) == 6:
+                if len(runner.calls) == expected_calls:
                     observed_archive.write_bytes(original + b"\n")
                 return result
 
@@ -268,11 +272,20 @@ class LicenseAuditSnapshotRaceTests(unittest.TestCase):
         self.assertFalse(any(self.fixture.evidence.iterdir()))
 
     def test_main_observation_context_is_rebuilt_after_sbom_generation(self):
+        expected_calls = (
+            len(RELEASE.LICENSE_AUDIT_PROFILES)
+            * len(RELEASE.LICENSE_AUDIT_ROLES)
+        )
         selectors = {
             "metadata header": lambda topology: topology[
                 "generated_headers"
             ][0],
-            "link command": lambda topology: topology["link_path"],
+            "Ninja build graph": lambda topology: topology[
+                "build_ninja_path"
+            ],
+            "Ninja rules graph": lambda topology: topology[
+                "rules_ninja_path"
+            ],
             "direct object": lambda topology: (
                 topology["role_root"]
                 / topology["direct_loads"]["project"]
@@ -293,7 +306,7 @@ class LicenseAuditSnapshotRaceTests(unittest.TestCase):
                     class RacingRunner:
                         def __call__(inner_self, *args, **kwargs):
                             result = runner(*args, **kwargs)
-                            if len(runner.calls) == 6:
+                            if len(runner.calls) == expected_calls:
                                 mutation_path.write_bytes(
                                     original + b"\n"
                                 )
@@ -311,7 +324,7 @@ class LicenseAuditSnapshotRaceTests(unittest.TestCase):
                                     evidence_dir=self.fixture.evidence,
                                     runner=RacingRunner(),
                                 )
-                        self.assertEqual(len(runner.calls), 6)
+                        self.assertEqual(len(runner.calls), expected_calls)
                         self.assertFalse(any(self.fixture.evidence.iterdir()))
                     finally:
                         mutation_path.write_bytes(original)

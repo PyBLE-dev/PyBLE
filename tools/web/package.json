@@ -10,9 +10,12 @@
   "scripts": {
     "dev": "next dev",
     "build": "npm run build:static && npm run build:sites",
-    "build:static": "next build",
-    "build:sites": "vinext build && node scripts/prepare-sites-output.js",
+    "build:static": "node scripts/assert-no-local-firmware-preview.js && next build",
+    "build:sites": "node scripts/assert-no-local-firmware-preview.js && vinext build && node scripts/prepare-sites-output.js",
     "firmware:stage": "node scripts/stage-firmware-release.js",
+    "firmware:preview": "node scripts/stage-local-firmware-preview.js",
+    "postinstall": "node scripts/patch-vinext-image-size.js",
+    "audit:dependencies": "npm audit --audit-level=high",
     "licenses:web": "node scripts/generate-website-third-party-licenses.js --check",
     "start": "vinext start",
     "lint": "eslint . --max-warnings=0",
@@ -21,7 +24,7 @@
     "test:watch": "vitest",
     "vinext:check": "vinext check",
     "format:check": "prettier --check .",
-    "check": "npm run format:check && npm run lint && npm run typecheck && npm run licenses:web && npm test && npm run vinext:check && npm run build"
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm run audit:dependencies && npm run licenses:web && npm test && npm run vinext:check && npm run build"
   },
   "dependencies": {
     "@material/web": "2.2.0",
@@ -30,7 +33,7 @@
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "react-server-dom-webpack": "19.2.8",
-    "vinext": "1.0.0-beta.4"
+    "vinext": "1.0.0-beta.8"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
@@ -41,7 +44,7 @@
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "6.0.4",
-    "@vitejs/plugin-rsc": "0.5.32",
+    "@vitejs/plugin-rsc": "0.5.34",
     "eslint": "10.8.0",
     "eslint-plugin-react-hooks": "7.1.1",
     "globals": "17.8.0",
@@ -54,7 +57,7 @@
   },
   "overrides": {
     "next": {
-      "postcss": "8.5.24",
+      "postcss": "8.5.26",
       "sharp": "0.35.3"
     }
   }

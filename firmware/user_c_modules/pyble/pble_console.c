@@ -17,9 +17,9 @@
 //     pble_console_stderr_print, so it is correctly tagged (FR-CON-2) without
 //     passing through the platform printer (which would mis-tag it stdout).
 //   - CONSOLE_INPUT bytes land in a bounded ring (host task); the worker's
-//     input()/sys.stdin drain it via pble_console_stdin_getchar() (wired by the
-//     same board-overlay stdin HAL hook, worker-gated). Fire-and-forget: the 0x31
-//     handler returns PBLE_NO_RSP so dispatch emits no reply frame (FR-CON-3).
+//     input()/sys.stdin drains it through the installed native os.dupterm
+//     stream, whose read path is worker-gated. Fire-and-forget: the 0x31 handler
+//     returns PBLE_NO_RSP so dispatch emits no reply frame (FR-CON-3).
 //
 // Clean-room: authored fresh against protocol.md + the public MicroPython/ESP-IDF
 // API. No proprietary source is referenced.
@@ -29,6 +29,7 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "esp_timer.h"
 
 #include "py/runtime.h"
 #include "py/obj.h"
@@ -37,6 +38,8 @@
 #include "py/mpthread.h"   // mp_thread_get_state — worker-origin gate
 
 #include "pble_console.h"
+#include "pble_ble.h"
+#include "pble_runner.h"
 
 // --- Frozen wire numbers (mirror protocol.md §4 — never redefined here) -------
 // §4 CONSOLE_DATA/CONSOLE_INPUT opcodes are frozen; their §6 payloads freeze at
@@ -53,6 +56,7 @@
 // CONSOLE_DATA payload = [stream] + up to CHUNK bytes; fits one 247-MTU Notify
 // with PBLE/1 framing, so a run's output streams without per-char fragmentation.
 #define PBLE_CONSOLE_CHUNK 200
+#define PBLE_CONSOLE_FRAME_OVERHEAD 15
 #define PBLE_STDIN_RING    256   // bounded stdin staging (power-of-two)
 
 // Per-chunk TX budget for CONSOLE_DATA. A tight `for i in range(80): print(...)`
@@ -64,6 +68,13 @@
 // program must never become unstoppable because a client stopped reading.
 #define PBLE_CONSOLE_TX_BUDGET_MS 250u
 
+// Local Notify acceptance can queue console traffic ahead of later control
+// notifications. Limit that accepted backlog without catch-up credit: the next
+// console attempt begins only after this interval from the preceding attempt's
+// actual completion. This is console-only; control and filesystem TX are not
+// paced here (ADR-0032 / C3-G2).
+#define PBLE_CONSOLE_NOTIFY_INTERVAL_MS 40u
+
 // --- Module state ------------------------------------------------------------
 static void *volatile g_worker;   // worker mp_state_thread_t*, else NULL
 
@@ -74,6 +85,7 @@ static uint8_t g_ring[PBLE_STDIN_RING];
 static uint16_t g_ring_head;   // next write
 static uint16_t g_ring_tail;   // next read
 static uint16_t g_ring_count;
+static int64_t g_console_next_notify_us;
 
 // Emit staging: [stream][chunk]. Built only on the worker thread (single-writer),
 // so no lock is needed here.
@@ -91,10 +103,57 @@ static inline bool on_worker(void) {
     return w != NULL && (void *)mp_thread_get_state() == w;
 }
 
+// The deadline is 64-bit on 32-bit ESP targets. All accesses share the stdin
+// ring's tiny critical section so reset cannot tear a worker read or write.
+static int64_t console_notify_deadline(void) {
+    int64_t deadline_us;
+    taskENTER_CRITICAL(&g_ring_mux);
+    deadline_us = g_console_next_notify_us;
+    taskEXIT_CRITICAL(&g_ring_mux);
+    return deadline_us;
+}
+
+static void console_reset_notify_interval(void) {
+    taskENTER_CRITICAL(&g_ring_mux);
+    g_console_next_notify_us = 0;
+    taskEXIT_CRITICAL(&g_ring_mux);
+}
+
+// Caller has released the MicroPython GIL and has not entered the BLE TX path,
+// so this bounded delay owns neither the GIL nor the physical TX mutex. Recheck
+// monotonic time after every delay: coarse FreeRTOS ticks may wake early.
+static void console_wait_notify_interval(void) {
+    int64_t deadline_us = console_notify_deadline();
+    int64_t now_us = esp_timer_get_time();
+    while (now_us < deadline_us) {
+        int64_t remaining_us = deadline_us - now_us;
+        uint32_t remaining_ms =
+            (uint32_t)((remaining_us + INT64_C(999)) / INT64_C(1000));
+        TickType_t delay_ticks = pdMS_TO_TICKS(remaining_ms);
+        if (delay_ticks == 0) {
+            delay_ticks = 1;
+        }
+        vTaskDelay(delay_ticks);
+        now_us = esp_timer_get_time();
+    }
+}
+
+// Mint from actual completion rather than advancing the old deadline. A paced
+// TX retry or scheduler oversleep therefore cannot accumulate catch-up credit.
+// Every returned TX outcome calls this helper, including timeout/no-connection.
+static void console_complete_notify_attempt(void) {
+    taskENTER_CRITICAL(&g_ring_mux);
+    g_console_next_notify_us = esp_timer_get_time() +
+                               (int64_t)PBLE_CONSOLE_NOTIFY_INTERVAL_MS *
+                                   INT64_C(1000);
+    taskEXIT_CRITICAL(&g_ring_mux);
+}
+
 // ============================================================================
 // stdout/stderr tee -> CONSOLE_DATA (0x30) — the single emit chokepoint
 // ============================================================================
 void pble_console_out(uint8_t stream_tag, const char *buf, size_t len) {
+    pble_session_token_t event_session;
     if (len == 0 || buf == NULL) {
         return;
     }
@@ -102,28 +161,49 @@ void pble_console_out(uint8_t stream_tag, const char *buf, size_t len) {
     if (!on_worker()) {
         return;
     }
+    size_t max_chunk = pble_ble_mtu();
+    if (max_chunk <= PBLE_CONSOLE_FRAME_OVERHEAD) {
+        return;
+    }
+    max_chunk -= PBLE_CONSOLE_FRAME_OVERHEAD;
+    if (max_chunk > PBLE_CONSOLE_CHUNK) {
+        max_chunk = PBLE_CONSOLE_CHUNK;
+    }
+
     g_stage[0] = stream_tag;
     size_t off = 0;
-    while (off < len) {
+    while (off < len && !pble_runner_stop_requested()) {
         size_t n = len - off;
-        if (n > PBLE_CONSOLE_CHUNK) {
-            n = PBLE_CONSOLE_CHUNK;
+        if (n > max_chunk) {
+            n = max_chunk;
         }
         memcpy(g_stage + 1, buf + off, n);
+        if (!pble_ble_session_snapshot_current(&event_session)) {
+            console_reset_notify_interval();
+            off = off + n;
+            continue;
+        }
         // pble_proto_emit_paced encodes [stream][bytes] as an EVT (ID=0) and
         // Notifies, parking on the NOTIFY_TX drain event when NimBLE's msys pool
         // is momentarily empty instead of discarding the chunk. Still bounded —
         // on a dead link the budget expires and we drop, so we never grow the
         // heap and never wedge the program (NFR-PERF-3).
         //
-        // The GIL is released across the wait: we are on the run worker, and the
-        // whole point is to throttle THIS program while the REPL, the fs-worker
-        // and the NimBLE host task keep running (same discipline as pble_fs.c).
-        // g_stage stays safe — the on_worker() gate above means the worker is
-        // the only task that ever fills or emits it.
+        // Both the fixed interval and capacity waits release the GIL: throttle
+        // this program while the REPL, fs-worker, and NimBLE host keep running.
+        // The interval wait happens before the BLE helper can own its TX mutex.
+        // g_stage stays safe because on_worker() leaves one writer. Retain the
+        // exact token across the wait so reconnect never retargets old output.
+        MP_THREAD_GIL_EXIT();
+        console_wait_notify_interval();
+        MP_THREAD_GIL_ENTER();
+        if (pble_runner_stop_requested()) {
+            break;
+        }
         MP_THREAD_GIL_EXIT();
         (void)pble_proto_emit_paced(PBLE_OP_CONSOLE_DATA, g_stage, 1 + n,
-                                    PBLE_CONSOLE_TX_BUDGET_MS);
+                                    PBLE_CONSOLE_TX_BUDGET_MS, &event_session);
+        console_complete_notify_attempt();
         MP_THREAD_GIL_ENTER();
         off += n;
     }
@@ -141,9 +221,10 @@ const mp_print_t pble_console_stderr_print = { NULL, console_stderr_strn };
 // ============================================================================
 // 0x31 host task: append bytes, dropping any overflow (bounded — never grows the
 // heap, never blocks the host task). Fire-and-forget: no RSP frame.
-uint8_t pble_console_input(const pble_frame_t *req, uint8_t *rsp, size_t *rlen, uint16_t conn) {
+uint8_t pble_console_input(const pble_frame_t *req, uint8_t *rsp, size_t *rlen,
+                           const pble_session_token_t *session) {
     (void)rsp;
-    (void)conn;
+    (void)session;
     if (rlen) {
         *rlen = 0;
     }
@@ -175,14 +256,38 @@ int pble_console_stdin_getchar(void) {
     return c;
 }
 
+static bool stdin_ring_readable(void) {
+    bool readable;
+    taskENTER_CRITICAL(&g_ring_mux);
+    readable = g_ring_count > 0;
+    taskEXIT_CRITICAL(&g_ring_mux);
+    return readable;
+}
+
+void pble_console_vm_detach(void) {
+    g_worker = NULL;
+}
+
+void pble_console_vm_reset(void) {
+    taskENTER_CRITICAL(&g_ring_mux);
+    g_ring_head = 0;
+    g_ring_tail = 0;
+    g_ring_count = 0;
+    g_worker = NULL;
+    taskEXIT_CRITICAL(&g_ring_mux);
+    console_reset_notify_interval();
+    memset(g_ring, 0, sizeof(g_ring));
+    memset(g_stage, 0, sizeof(g_stage));
+}
+
 // ============================================================================
-// Native os.dupterm tee stream (write-only stdout tee)
+// Native os.dupterm console stream (worker stdin + stdout tee)
 // ============================================================================
 // esp32 os.dupterm requires a NATIVE stream (C stream protocol), not a Python
-// class. This write-only stream forwards every stdout byte to pble_console_out
-// (which self-gates to the worker), so the worker's print() tees to BLE while the
-// primary UART/USB output is untouched. read() never yields, so the dupterm never
-// feeds the REPL (worker stdin is a separate path via the CONSOLE_INPUT ring).
+// class. Writes forward to pble_console_out(), which self-gates to the worker.
+// Reads drain the CONSOLE_INPUT ring only on that same worker, so the main REPL
+// cannot consume a running program's input. Empty reads are EAGAIN, never EOF:
+// returning zero would make upstream deactivate this dupterm slot.
 typedef struct _pble_tee_obj_t {
     mp_obj_base_t base;
 } pble_tee_obj_t;
@@ -195,15 +300,26 @@ static mp_uint_t tee_write(mp_obj_t self_in, const void *buf, mp_uint_t size, in
 }
 static mp_uint_t tee_read(mp_obj_t self_in, void *buf, mp_uint_t size, int *errcode) {
     (void)self_in;
-    (void)buf;
-    (void)size;
-    *errcode = MP_EAGAIN;      // never feeds REPL input from this slot
-    return MP_STREAM_ERROR;
+    if (!on_worker() || buf == NULL || size == 0) {
+        *errcode = MP_EAGAIN;
+        return MP_STREAM_ERROR;
+    }
+    int c = pble_console_stdin_getchar();
+    if (c < 0) {
+        *errcode = MP_EAGAIN;
+        return MP_STREAM_ERROR;
+    }
+    ((uint8_t *)buf)[0] = (uint8_t)c;
+    return 1;
 }
 static mp_uint_t tee_ioctl(mp_obj_t self_in, mp_uint_t request, uintptr_t arg, int *errcode) {
     (void)self_in;
     if (request == MP_STREAM_POLL) {
-        return arg & MP_STREAM_POLL_WR;   // writable only, never readable
+        uintptr_t ready = arg & MP_STREAM_POLL_WR;
+        if ((arg & MP_STREAM_POLL_RD) && on_worker() && stdin_ring_readable()) {
+            ready |= MP_STREAM_POLL_RD;
+        }
+        return ready;
     }
     *errcode = MP_EINVAL;
     return MP_STREAM_ERROR;
@@ -221,7 +337,7 @@ static const pble_tee_obj_t pble_tee_obj = { { &pble_tee_type } };
 // Registration + thin MicroPython surface (boot wiring + HIL)
 // ============================================================================
 void pble_console_register(void) {
-    pble_proto_register(PBLE_OP_CONSOLE_INPUT, pble_console_input);
+    pble_proto_register_no_response(PBLE_OP_CONSOLE_INPUT, pble_console_input);
 }
 
 static mp_obj_t mod_pble_console_register(void) {
@@ -230,8 +346,8 @@ static mp_obj_t mod_pble_console_register(void) {
 }
 static MP_DEFINE_CONST_FUN_OBJ_0(mod_pble_console_register_obj, mod_pble_console_register);
 
-// HIL helper: drain one stdin byte (or -1). Lets the board-overlay stdin HAL hook
-// or a bring-up script pull the ring without a native call.
+// HIL helper: drain one stdin byte (or -1) through the same primitive used by
+// the native dupterm stream.
 static mp_obj_t mod_pble_console_stdin_getchar(void) {
     return mp_obj_new_int(pble_console_stdin_getchar());
 }

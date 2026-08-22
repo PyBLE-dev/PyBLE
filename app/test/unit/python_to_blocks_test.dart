@@ -914,6 +914,99 @@ for iteration in range(2):
     });
   });
 
+  group('ADR-0023 bounded ST7789 imports and bindings', () {
+    const String imports = '''
+from machine import Pin
+from pyble_st7789 import ST7789
+from pyble_st7789 import rgb565
+''';
+
+    test('maps the complete generated TFT subset to ordinary blocks', () {
+      final Map<String, dynamic> workspace = _workspaceOf('''
+$imports
+display = ST7789(2, 40000000, 0, 0, Pin(40, Pin.OUT), Pin(45, Pin.OUT), Pin(42, Pin.OUT), Pin(41, Pin.OUT), Pin(39, Pin.OUT), Pin(46, Pin.OUT), 172, 320, 34, 0, True, True)
+display.fill(rgb565(8, 18, 40))
+display.pixel(0, 0, rgb565(255, 0, 0))
+display.rect(8, 8, 156, 304, rgb565(0, 180, 216))
+display.fill_rect(12, 12, 8, 8, rgb565(0, 255, 0))
+display.text("Hello PyBLE", 24, 150, rgb565(255, 255, 255))
+display.show()
+display.backlight(True)
+''');
+
+      for (final String type in <String>[
+        'pyble_tft_create',
+        'pyble_tft_fill',
+        'pyble_tft_pixel',
+        'pyble_tft_text',
+        'pyble_tft_show',
+        'pyble_tft_backlight',
+      ]) {
+        expect(_onlyType(workspace, type), isNotEmpty, reason: type);
+      }
+      final List<Map<String, dynamic>> rectangles = _objects(workspace)
+          .where(
+            (Map<String, dynamic> value) => value['type'] == 'pyble_tft_rect',
+          )
+          .toList(growable: false);
+      expect(rectangles, hasLength(2));
+      expect(
+        rectangles.map(
+          (Map<String, dynamic> value) =>
+              (value['fields']! as Map<String, dynamic>)['STYLE'],
+        ),
+        containsAll(<String>['OUTLINE', 'FILLED']),
+      );
+      expect(
+        _objects(workspace)
+            .where(
+              (Map<String, dynamic> value) =>
+                  value['type'] == 'pyble_tft_rgb565',
+            )
+            .length,
+        5,
+      );
+      expect(
+        _objects(workspace)
+            .where(
+              (Map<String, dynamic> value) => value['type'] == 'pyble_gpio_pin',
+            )
+            .length,
+        6,
+      );
+    });
+
+    test('accepts a display definitely constructed on every branch', () {
+      final PythonBlocksConversion result = const PythonToBlocksConverter()
+          .convert('''
+from machine import Pin
+from pyble_st7789 import ST7789
+
+if True:
+    display = ST7789(2, 40000000, 0, 0, Pin(40, Pin.OUT), Pin(45, Pin.OUT), Pin(42, Pin.OUT), Pin(41, Pin.OUT), Pin(39, Pin.OUT), Pin(46, Pin.OUT), 172, 320, 34, 0, True, True)
+else:
+    display = ST7789(2, 20000000, 0, 0, Pin(1, Pin.OUT), Pin(2, Pin.OUT), Pin(3, Pin.OUT), Pin(4, Pin.OUT), Pin(5, Pin.OUT), Pin(6, Pin.OUT), 128, 128, 0, 0, False, False)
+display.show()
+''');
+      expect(result.diagnostics, isEmpty);
+      expect(result.workspaceJson, isNotNull);
+    });
+
+    test('rejects malformed constructors and uncertain display receivers', () {
+      for (final String source in <String>[
+        '$imports\ndisplay = ST7789(2, 40000000)\n',
+        '$imports\ndisplay = ST7789(spi_id=2)\n',
+        '$imports\ndisplay.show()\n',
+        '$imports\nif True:\n    display = ST7789(2, 40000000, 0, 0, Pin(40, Pin.OUT), Pin(45, Pin.OUT), Pin(42, Pin.OUT), Pin(41, Pin.OUT), Pin(39, Pin.OUT), Pin(46, Pin.OUT), 172, 320, 34, 0, True, True)\ndisplay.show()\n',
+      ]) {
+        final PythonBlocksConversion result = const PythonToBlocksConverter()
+            .convert(source);
+        expect(result.workspaceJson, isNull, reason: source);
+        expect(result.hasErrors, isTrue, reason: source);
+      }
+    });
+  });
+
   group('ADR-0017 normalized statements and control flow', () {
     test('accepts the pinned generator two-space suite indentation', () {
       final PythonBlocksConversion result = const PythonToBlocksConverter()
@@ -1235,5 +1328,108 @@ strip.write()
     expect(output.diagnostics, isEmpty);
     expect(input.semanticFingerprint, isNotNull);
     expect(output.semanticFingerprint, input.semanticFingerprint);
+  });
+
+  group('A-38 named pins in the bounded importer', () {
+    test('imports double- and single-quoted pin names as quoted-name '
+        'blocks', () {
+      final Map<String, dynamic> workspace = _workspaceOf('''
+from machine import Pin
+
+led = Pin("LED", Pin.OUT)
+sensor = Pin('WL_GPIO0', Pin.IN)
+led.value(1)
+print(sensor.value())
+''');
+      final List<Map<String, dynamic>> pins = _objects(workspace)
+          .where(
+            (Map<String, dynamic> value) => value['type'] == 'pyble_gpio_pin',
+          )
+          .toList(growable: false);
+      expect(pins, hasLength(2));
+      expect(
+        pins.map((Map<String, dynamic> value) => value['fields']),
+        containsAll(<Map<String, Object?>>[
+          <String, Object?>{'MODE': 'OUT', 'PULL': 'NONE'},
+          <String, Object?>{'MODE': 'IN', 'PULL': 'NONE'},
+        ]),
+      );
+      final List<Object?> names = pins
+          .map((Map<String, dynamic> pin) {
+            final Map<String, dynamic> gpio =
+                ((pin['inputs']! as Map<String, dynamic>)['GPIO']!
+                        as Map<String, dynamic>)['block']!
+                    as Map<String, dynamic>;
+            expect(
+              gpio['type'],
+              'text',
+              reason:
+                  'a named pin imports as the stock Blockly string literal '
+                  'block, exactly the shape example materialization produces',
+            );
+            return (gpio['fields']! as Map<String, dynamic>)['TEXT'];
+          })
+          .toList(growable: false);
+      expect(names, containsAll(<String>['LED', 'WL_GPIO0']));
+    });
+
+    const Map<String, String> rejectedNamedPins = <String, String>{
+      'a space inside the name':
+          'from machine import Pin\n\nled = Pin("led led", Pin.OUT)\n',
+      'a leading digit':
+          "from machine import Pin\n\nled = Pin('2x', Pin.OUT)\n",
+      'an empty name': 'from machine import Pin\n\nled = Pin("", Pin.OUT)\n',
+      'a seventeen-character name':
+          'from machine import Pin\n\n'
+          'led = Pin("ABCDEFGHIJKLMNOPQ", Pin.OUT)\n',
+      'a digits-only string':
+          'from machine import Pin\n\nled = Pin("2", Pin.OUT)\n',
+      'a variable pin identity':
+          'from machine import Pin\n\nx = 1\nled = Pin(x, Pin.OUT)\n',
+      'a valid name next to an invalid one (all-or-nothing)':
+          'from machine import Pin\n\n'
+          'led = Pin("LED", Pin.OUT)\nbad = Pin("led led", Pin.OUT)\n',
+    };
+    for (final MapEntry<String, String> entry in rejectedNamedPins.entries) {
+      test('rejects ${entry.key} without producing a workspace', () {
+        final PythonBlocksConversion result = const PythonToBlocksConverter()
+            .convert(entry.value);
+
+        expect(result.workspaceJson, isNull);
+        expect(result.hasErrors, isTrue);
+        expect(result.diagnostics.first.code, 'invalid_gpio');
+      });
+    }
+
+    test('semantic fingerprint preserves canonical named-pin round trips', () {
+      const String original = '''
+from machine import Pin
+
+led = Pin("LED", Pin.OUT)
+button = Pin(23, Pin.IN)
+led.value(1)
+print(button.value())
+''';
+      const String generated = '''
+from machine import Pin
+
+led = None
+button = None
+
+led = Pin('LED', Pin.OUT, None)
+button = Pin(23, Pin.IN, None)
+led.value(1)
+print(button.value())
+''';
+      final PythonBlocksConversion input = const PythonToBlocksConverter()
+          .convert(original);
+      final PythonBlocksConversion output = const PythonToBlocksConverter()
+          .convert(generated, productionGenerated: true);
+
+      expect(input.diagnostics, isEmpty);
+      expect(output.diagnostics, isEmpty);
+      expect(input.semanticFingerprint, isNotNull);
+      expect(output.semanticFingerprint, input.semanticFingerprint);
+    });
   });
 }

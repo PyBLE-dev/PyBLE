@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://pyble.dev/firmware/release.schema.json",
-  "title": "PyBLE firmware release metadata v2",
+  "title": "PyBLE firmware release metadata v4",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -14,7 +14,7 @@
   ],
   "properties": {
     "schema_version": {
-      "const": 2
+      "const": 4
     },
     "identity": {
       "type": "object",
@@ -159,141 +159,116 @@
     },
     "profiles": {
       "type": "array",
-      "minItems": 2,
-      "maxItems": 2,
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "id",
-          "chip_family",
-          "requirements",
-          "flash",
-          "silicon_revision",
-          "hil_status",
-          "manifest",
-          "install",
-          "components"
-        ],
-        "properties": {
-          "id": {
-            "enum": ["esp32-4mb", "esp32-s3-n16r8"]
-          },
-          "chip_family": {
-            "enum": ["ESP32", "ESP32-S3"]
-          },
-          "silicon_revision": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["minimum_full", "maximum_full"],
-            "properties": {
-              "minimum_full": {
-                "type": "integer",
-                "minimum": 0
-              },
-              "maximum_full": {
-                "type": "integer",
-                "minimum": 0
+      "minItems": 5,
+      "maxItems": 5,
+      "prefixItems": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "target",
+            "provisioning_kind",
+            "chip_family",
+            "requirements",
+            "flash",
+            "silicon_revision",
+            "hil_status",
+            "manifest",
+            "install",
+            "components"
+          ],
+          "properties": {
+            "id": {
+              "const": "esp32-4mb"
+            },
+            "chip_family": {
+              "const": "ESP32"
+            },
+            "silicon_revision": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["minimum_full", "maximum_full"],
+              "properties": {
+                "minimum_full": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "maximum_full": {
+                  "type": "integer",
+                  "minimum": 0
+                }
               }
-            }
-          },
-          "requirements": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["flash_size_bytes", "psram"],
-            "properties": {
-              "flash_size_bytes": {
-                "type": "integer",
-                "minimum": 1
-              },
-              "psram": {
-                "type": "object",
-                "additionalProperties": false,
-                "required": ["required", "size_bytes", "type"],
-                "properties": {
-                  "required": {
-                    "type": "boolean"
-                  },
-                  "size_bytes": {
-                    "type": "integer",
-                    "minimum": 0
-                  },
-                  "type": {
-                    "enum": ["not-required", "octal"]
+            },
+            "requirements": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["flash_size_bytes", "psram"],
+              "properties": {
+                "flash_size_bytes": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "psram": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["required", "size_bytes", "type"],
+                  "properties": {
+                    "required": {
+                      "type": "boolean"
+                    },
+                    "size_bytes": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "type": {
+                      "enum": ["not-required", "octal"]
+                    }
                   }
                 }
               }
-            }
-          },
-          "flash": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["mode", "frequency_hz"],
-            "properties": {
-              "mode": {
-                "const": "dio"
-              },
-              "frequency_hz": {
-                "type": "integer",
-                "minimum": 1
-              }
-            }
-          },
-          "hil_status": {
-            "enum": ["pending", "passed"]
-          },
-          "manifest": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["path", "size", "sha256"],
-            "properties": {
-              "path": {
-                "type": "string",
-                "minLength": 1,
-                "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?(?:/|$))(?!.*[\\\\?#])(?!.*://).+$"
-              },
-              "size": {
-                "type": "integer",
-                "minimum": 1
-              },
-              "sha256": {
-                "type": "string",
-                "pattern": "^[0-9a-f]{64}$"
-              }
-            }
-          },
-          "install": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["path", "size", "sha256", "offset"],
-            "properties": {
-              "path": {
-                "type": "string",
-                "minLength": 1,
-                "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?(?:/|$))(?!.*[\\\\?#])(?!.*://).+$"
-              },
-              "size": {
-                "type": "integer",
-                "minimum": 1
-              },
-              "sha256": {
-                "type": "string",
-                "pattern": "^[0-9a-f]{64}$"
-              },
-              "offset": {
-                "type": "integer",
-                "minimum": 0
-              }
-            }
-          },
-          "components": {
-            "type": "array",
-            "minItems": 3,
-            "maxItems": 3,
-            "items": {
+            },
+            "flash": {
               "type": "object",
               "additionalProperties": false,
-              "required": ["role", "path", "size", "sha256", "offset"],
+              "required": ["mode", "frequency_hz"],
+              "properties": {
+                "mode": {
+                  "const": "dio"
+                },
+                "frequency_hz": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
+            "hil_status": {
+              "enum": ["pending", "passed"]
+            },
+            "manifest": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["path", "size", "sha256"],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?(?:/|$))(?!.*[\\\\?#])(?!.*://).+$"
+                },
+                "size": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              }
+            },
+            "install": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["path", "size", "sha256", "offset"],
               "properties": {
                 "path": {
                   "type": "string",
@@ -311,15 +286,628 @@
                 "offset": {
                   "type": "integer",
                   "minimum": 0
+                }
+              }
+            },
+            "components": {
+              "type": "array",
+              "minItems": 3,
+              "maxItems": 3,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["role", "path", "size", "sha256", "offset"],
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?(?:/|$))(?!.*[\\\\?#])(?!.*://).+$"
+                  },
+                  "size": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  },
+                  "offset": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "role": {
+                    "enum": ["bootloader", "partition-table", "application"]
+                  }
+                }
+              }
+            },
+            "target": {
+              "const": "esp32"
+            },
+            "provisioning_kind": {
+              "const": "esp-web-serial"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "target",
+            "provisioning_kind",
+            "chip_family",
+            "requirements",
+            "flash",
+            "silicon_revision",
+            "hil_status",
+            "manifest",
+            "install",
+            "components"
+          ],
+          "properties": {
+            "id": {
+              "const": "esp32-s3-n16r8"
+            },
+            "chip_family": {
+              "const": "ESP32-S3"
+            },
+            "silicon_revision": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["minimum_full", "maximum_full"],
+              "properties": {
+                "minimum_full": {
+                  "type": "integer",
+                  "minimum": 0
                 },
-                "role": {
-                  "enum": ["bootloader", "partition-table", "application"]
+                "maximum_full": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            },
+            "requirements": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["flash_size_bytes", "psram"],
+              "properties": {
+                "flash_size_bytes": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "psram": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["required", "size_bytes", "type"],
+                  "properties": {
+                    "required": {
+                      "type": "boolean"
+                    },
+                    "size_bytes": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "type": {
+                      "enum": ["not-required", "octal"]
+                    }
+                  }
+                }
+              }
+            },
+            "flash": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["mode", "frequency_hz"],
+              "properties": {
+                "mode": {
+                  "const": "dio"
+                },
+                "frequency_hz": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
+            "hil_status": {
+              "enum": ["pending", "passed"]
+            },
+            "manifest": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["path", "size", "sha256"],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?(?:/|$))(?!.*[\\\\?#])(?!.*://).+$"
+                },
+                "size": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              }
+            },
+            "install": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["path", "size", "sha256", "offset"],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?(?:/|$))(?!.*[\\\\?#])(?!.*://).+$"
+                },
+                "size": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "offset": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            },
+            "components": {
+              "type": "array",
+              "minItems": 3,
+              "maxItems": 3,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["role", "path", "size", "sha256", "offset"],
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?(?:/|$))(?!.*[\\\\?#])(?!.*://).+$"
+                  },
+                  "size": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  },
+                  "offset": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "role": {
+                    "enum": ["bootloader", "partition-table", "application"]
+                  }
+                }
+              }
+            },
+            "target": {
+              "const": "esp32-s3"
+            },
+            "provisioning_kind": {
+              "const": "esp-web-serial"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "target",
+            "provisioning_kind",
+            "chip_family",
+            "requirements",
+            "flash",
+            "silicon_revision",
+            "hil_status",
+            "manifest",
+            "install",
+            "components"
+          ],
+          "properties": {
+            "id": {
+              "const": "waveshare-esp32-s3-lcd-147b"
+            },
+            "chip_family": {
+              "const": "ESP32-S3"
+            },
+            "silicon_revision": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["minimum_full", "maximum_full"],
+              "properties": {
+                "minimum_full": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "maximum_full": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            },
+            "requirements": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["flash_size_bytes", "psram"],
+              "properties": {
+                "flash_size_bytes": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "psram": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["required", "size_bytes", "type"],
+                  "properties": {
+                    "required": {
+                      "type": "boolean"
+                    },
+                    "size_bytes": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "type": {
+                      "enum": ["not-required", "octal"]
+                    }
+                  }
+                }
+              }
+            },
+            "flash": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["mode", "frequency_hz"],
+              "properties": {
+                "mode": {
+                  "const": "dio"
+                },
+                "frequency_hz": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
+            "hil_status": {
+              "enum": ["pending", "passed"]
+            },
+            "manifest": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["path", "size", "sha256"],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?(?:/|$))(?!.*[\\\\?#])(?!.*://).+$"
+                },
+                "size": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              }
+            },
+            "install": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["path", "size", "sha256", "offset"],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?(?:/|$))(?!.*[\\\\?#])(?!.*://).+$"
+                },
+                "size": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "offset": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            },
+            "components": {
+              "type": "array",
+              "minItems": 3,
+              "maxItems": 3,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["role", "path", "size", "sha256", "offset"],
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?(?:/|$))(?!.*[\\\\?#])(?!.*://).+$"
+                  },
+                  "size": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  },
+                  "offset": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "role": {
+                    "enum": ["bootloader", "partition-table", "application"]
+                  }
+                }
+              }
+            },
+            "target": {
+              "const": "waveshare-esp32-s3-lcd-147b"
+            },
+            "provisioning_kind": {
+              "const": "esp-web-serial"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "target",
+            "provisioning_kind",
+            "chip_family",
+            "requirements",
+            "flash",
+            "silicon_revision",
+            "hil_status",
+            "manifest",
+            "install",
+            "components"
+          ],
+          "properties": {
+            "id": {
+              "const": "esp32-c3-4mb"
+            },
+            "chip_family": {
+              "const": "ESP32-C3"
+            },
+            "silicon_revision": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["minimum_full", "maximum_full"],
+              "properties": {
+                "minimum_full": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "maximum_full": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            },
+            "requirements": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["flash_size_bytes", "psram"],
+              "properties": {
+                "flash_size_bytes": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "psram": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["required", "size_bytes", "type"],
+                  "properties": {
+                    "required": {
+                      "type": "boolean"
+                    },
+                    "size_bytes": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "type": {
+                      "enum": ["not-required", "octal"]
+                    }
+                  }
+                }
+              }
+            },
+            "flash": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["mode", "frequency_hz"],
+              "properties": {
+                "mode": {
+                  "const": "dio"
+                },
+                "frequency_hz": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
+            "hil_status": {
+              "enum": ["pending", "passed"]
+            },
+            "manifest": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["path", "size", "sha256"],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?(?:/|$))(?!.*[\\\\?#])(?!.*://).+$"
+                },
+                "size": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              }
+            },
+            "install": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["path", "size", "sha256", "offset"],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?(?:/|$))(?!.*[\\\\?#])(?!.*://).+$"
+                },
+                "size": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "offset": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            },
+            "components": {
+              "type": "array",
+              "minItems": 3,
+              "maxItems": 3,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["role", "path", "size", "sha256", "offset"],
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?(?:/|$))(?!.*[\\\\?#])(?!.*://).+$"
+                  },
+                  "size": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  },
+                  "offset": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "role": {
+                    "enum": ["bootloader", "partition-table", "application"]
+                  }
+                }
+              }
+            },
+            "target": {
+              "const": "esp32-c3"
+            },
+            "provisioning_kind": {
+              "const": "esp-web-serial"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "target",
+            "provisioning_kind",
+            "board",
+            "hil_status",
+            "install",
+            "resource_image"
+          ],
+          "properties": {
+            "id": {
+              "const": "rpi-pico2-w"
+            },
+            "target": {
+              "const": "rpi-pico2-w"
+            },
+            "provisioning_kind": {
+              "const": "verified-uf2-bootsel"
+            },
+            "board": {
+              "const": "RPI_PICO2_W"
+            },
+            "hil_status": {
+              "enum": ["pending", "passed"]
+            },
+            "install": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["path", "size", "sha256", "format"],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?(?:/|$))(?!.*[\\\\?#])(?!.*://).+$"
+                },
+                "size": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "format": {
+                  "const": "uf2"
+                }
+              }
+            },
+            "resource_image": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["path", "size", "sha256", "image_limit_bytes"],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?(?:/|$))(?!.*[\\\\?#])(?!.*://).+$"
+                },
+                "size": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "image_limit_bytes": {
+                  "const": 1572864
                 }
               }
             }
           }
         }
-      }
+      ],
+      "items": false
     },
     "documents": {
       "type": "object",

@@ -1,56 +1,133 @@
 {
   "baseline_evidence": {
-    "path": "docs/validation/firmware/oi1/2f38c43838b0f8cfbd10fab8e6561ae523927968.json",
-    "sha256": "deee0f1630c781ee38a9887a5df5388f2d1ec8879fdb8570886555bf5f4f8be5"
+    "path": "docs/validation/firmware/oi1/a8be631df46590166307aa41afaea30b39e29230.json",
+    "sha256": "8a7dbf328ba8d70f5161582b56d1566821f20b7a259ff29dc7d6fe6bb75a6044"
   },
-  "deferred_profiles": [
-    "esp32-c3-4mb"
-  ],
   "derivation": {
     "application_headroom": "factory-minus-application-v1",
     "application_image": "exact-byte-identical-two-root-v1",
-    "boot_ceiling": "ceil-max-10-v1",
-    "goodput_floor": "floor-min-100-v1",
-    "heap_floor": "floor-min-1024-v1"
+    "boot_ceiling": "fixed-profile-product-slo-esp3000-pico7000-v4",
+    "goodput_floor": "fixed-product-slo-64k-under-10s-6600-v3",
+    "heap_floor": "floor-min-1024-waveshare-block-98304-v2"
   },
   "profile_order": [
     "esp32-4mb",
-    "esp32-s3-n16r8"
+    "esp32-s3-n16r8",
+    "waveshare-esp32-s3-lcd-147b",
+    "esp32-c3-4mb",
+    "rpi-pico2-w"
   ],
   "profiles": [
     {
       "profile_id": "esp32-4mb",
+      "resource_kind": "esp-idf",
       "target": "esp32",
       "thresholds": {
-        "application_headroom_min_bytes": 332624,
-        "application_image_max_bytes": 1698992,
-        "gc_free_min_bytes": 139264,
-        "get_verified_goodput_min_bytes_per_second": 13700,
-        "idf_internal_free_min_bytes": 86016,
-        "idf_internal_largest_block_min_bytes": 86016,
-        "idf_internal_minimum_free_min_bytes": 86016,
-        "put_committed_goodput_min_bytes_per_second": 7400,
-        "reset_to_service_advertisement_max_ms": 2380
+        "application_headroom_min_bytes": 315360,
+        "application_image_max_bytes": 1716256,
+        "gc_free_min_bytes": 108544,
+        "get_verified_goodput_min_bytes_per_second": 6600,
+        "idf_internal_free_min_bytes": 81920,
+        "idf_internal_largest_block_min_bytes": 55296,
+        "idf_internal_minimum_free_min_bytes": 81920,
+        "put_committed_goodput_min_bytes_per_second": 6600,
+        "reset_to_service_advertisement_max_ms": 3000
+      },
+      "transport": {
+        "link_facts_kind": "nimble-settled-v1",
+        "required_att_mtu": 247,
+        "required_chunk_bytes": 229,
+        "required_put_window": 8
       }
     },
     {
       "profile_id": "esp32-s3-n16r8",
+      "resource_kind": "esp-idf",
       "target": "esp32-s3",
       "thresholds": {
-        "application_headroom_min_bytes": 404704,
-        "application_image_max_bytes": 1692448,
-        "gc_free_min_bytes": 8318976,
-        "get_verified_goodput_min_bytes_per_second": 20600,
-        "idf_internal_free_min_bytes": 181248,
-        "idf_internal_largest_block_min_bytes": 106496,
-        "idf_internal_minimum_free_min_bytes": 181248,
-        "put_committed_goodput_min_bytes_per_second": 13000,
-        "reset_to_service_advertisement_max_ms": 1190
+        "application_headroom_min_bytes": 384064,
+        "application_image_max_bytes": 1713088,
+        "gc_free_min_bytes": 8317952,
+        "get_verified_goodput_min_bytes_per_second": 6600,
+        "idf_internal_free_min_bytes": 177152,
+        "idf_internal_largest_block_min_bytes": 102400,
+        "idf_internal_minimum_free_min_bytes": 177152,
+        "put_committed_goodput_min_bytes_per_second": 6600,
+        "reset_to_service_advertisement_max_ms": 3000
+      },
+      "transport": {
+        "link_facts_kind": "nimble-settled-v1",
+        "required_att_mtu": 247,
+        "required_chunk_bytes": 229,
+        "required_put_window": 8
+      }
+    },
+    {
+      "profile_id": "waveshare-esp32-s3-lcd-147b",
+      "resource_kind": "esp-idf",
+      "target": "waveshare-esp32-s3-lcd-147b",
+      "thresholds": {
+        "application_headroom_min_bytes": 377024,
+        "application_image_max_bytes": 1720128,
+        "gc_free_min_bytes": 8316928,
+        "get_verified_goodput_min_bytes_per_second": 6600,
+        "idf_internal_free_min_bytes": 177152,
+        "idf_internal_largest_block_min_bytes": 98304,
+        "idf_internal_minimum_free_min_bytes": 177152,
+        "put_committed_goodput_min_bytes_per_second": 6600,
+        "reset_to_service_advertisement_max_ms": 3000
+      },
+      "transport": {
+        "link_facts_kind": "nimble-settled-v1",
+        "required_att_mtu": 247,
+        "required_chunk_bytes": 229,
+        "required_put_window": 8
+      }
+    },
+    {
+      "profile_id": "esp32-c3-4mb",
+      "resource_kind": "esp-idf",
+      "target": "esp32-c3",
+      "thresholds": {
+        "application_headroom_min_bytes": 352880,
+        "application_image_max_bytes": 1678736,
+        "gc_free_min_bytes": 117760,
+        "get_verified_goodput_min_bytes_per_second": 6600,
+        "idf_internal_free_min_bytes": 66560,
+        "idf_internal_largest_block_min_bytes": 57344,
+        "idf_internal_minimum_free_min_bytes": 63488,
+        "put_committed_goodput_min_bytes_per_second": 6600,
+        "reset_to_service_advertisement_max_ms": 3000
+      },
+      "transport": {
+        "link_facts_kind": "nimble-settled-v1",
+        "required_att_mtu": 247,
+        "required_chunk_bytes": 229,
+        "required_put_window": 8
+      }
+    },
+    {
+      "profile_id": "rpi-pico2-w",
+      "resource_kind": "rp2",
+      "target": "rpi-pico2-w",
+      "thresholds": {
+        "firmware_bin_max_bytes": 848216,
+        "firmware_image_headroom_min_bytes": 724648,
+        "gc_free_min_bytes": 433152,
+        "get_verified_goodput_min_bytes_per_second": 6600,
+        "put_committed_goodput_min_bytes_per_second": 6600,
+        "reset_to_service_advertisement_max_ms": 7000
+      },
+      "transport": {
+        "link_facts_kind": "btstack-observed-v1",
+        "required_att_mtu": 247,
+        "required_chunk_bytes": 229,
+        "required_put_window": 4
       }
     }
   ],
-  "qualification_scope": "pre-v1",
-  "schema_version": 1,
+  "qualification_scope": "v0.6.0-five-profile",
+  "schema_version": 3,
   "workload": {
     "advertising_timeout_ms": 15000,
     "payload_generator": "sha256-counter-v1",
@@ -61,7 +138,6 @@
     "reliability_files": 20,
     "required_att_mtu": 247,
     "required_chunk_bytes": 229,
-    "required_put_window": 8,
     "reset_hold_ms": 1000,
     "reset_samples": 10,
     "roundtrip_payload_bytes": 65536,

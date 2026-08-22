@@ -20,10 +20,14 @@ extern "C" {
 size_t  pble_info_device_info(uint8_t *out, size_t cap);
 
 // 0x01 HELLO handler — returns OK + the caps payload (HELLO is the first exchange).
-uint8_t pble_info_hello(const pble_frame_t *req, uint8_t *rsp, size_t *rsp_len, uint16_t conn);
+uint8_t pble_info_hello(const pble_frame_t *req, uint8_t *rsp,
+                        size_t *rsp_len,
+                        const pble_session_token_t *session);
 
 // 0x02 DEVICE_INFO handler — returns OK + the same caps payload.
-uint8_t pble_info_device_info_cmd(const pble_frame_t *req, uint8_t *rsp, size_t *rsp_len, uint16_t conn);
+uint8_t pble_info_device_info_cmd(const pble_frame_t *req, uint8_t *rsp,
+                                  size_t *rsp_len,
+                                  const pble_session_token_t *session);
 
 #ifdef __cplusplus
 }

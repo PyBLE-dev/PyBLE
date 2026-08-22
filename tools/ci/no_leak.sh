@@ -61,6 +61,7 @@ if ! scan_forbidden_files < <(
   find "${scan_dirs[@]}" \
     \( -path '*/upstream' \
        -o -path '*/.esp-idf' \
+       -o -path "$ROOT/firmware/.arm-gnu" \
        -o -path '*/build' \
        -o -path '*/__pycache__' \
        -o -path '*/managed_components' \

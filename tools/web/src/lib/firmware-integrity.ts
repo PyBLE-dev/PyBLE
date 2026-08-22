@@ -4,13 +4,70 @@
 import {
   firmwareProfileDescriptors,
   firmwareProfileTable,
+  historicalFirmwareProfileDescriptors,
+  historicalFirmwareProfileTable,
+  firmwareVersionUsesFiveProfiles,
   isExactPublicBetaFirmwareRelease,
+  publicBetaFirmwareVersion,
   type FirmwareProfileDescriptor,
   type FirmwareProfileId,
   type FirmwareReleaseDescriptor,
   type VerifiedFirmwareProfile,
 } from "@/lib/firmware-release";
 import canonicalReleaseSchema from "@/lib/firmware-release-schema.json";
+
+interface MutableEspSchema {
+  required: string[];
+  properties: Record<string, unknown>;
+}
+
+interface MutableReleaseSchema {
+  title: string;
+  properties: {
+    schema_version: { const: number };
+    profiles: {
+      type: string;
+      minItems: number;
+      maxItems: number;
+      prefixItems?: MutableEspSchema[];
+      items?: unknown;
+    };
+  };
+}
+
+function releaseSchemaForVersion(schemaVersion: 2 | 3 | 4) {
+  if (schemaVersion === 4) {
+    return canonicalReleaseSchema;
+  }
+  const schema = structuredClone(
+    canonicalReleaseSchema,
+  ) as unknown as MutableReleaseSchema;
+  const profileIds =
+    schemaVersion === 2
+      ? ["esp32-4mb", "esp32-s3-n16r8"]
+      : ["esp32-4mb", "esp32-s3-n16r8", "waveshare-esp32-s3-lcd-147b"];
+  const firstProfile = schema.properties.profiles.prefixItems?.[0];
+  if (!firstProfile) {
+    fail("Canonical release schema has no ESP profile discriminator");
+  }
+  const espProfile = structuredClone(firstProfile);
+  espProfile.required = espProfile.required.filter(
+    (key: string) => key !== "target" && key !== "provisioning_kind",
+  );
+  delete espProfile.properties.target;
+  delete espProfile.properties.provisioning_kind;
+  espProfile.properties.id = { enum: profileIds };
+  espProfile.properties.chip_family = { enum: ["ESP32", "ESP32-S3"] };
+  schema.title = `PyBLE firmware release metadata v${schemaVersion}`;
+  schema.properties.schema_version.const = schemaVersion;
+  schema.properties.profiles = {
+    type: "array",
+    minItems: profileIds.length,
+    maxItems: profileIds.length,
+    items: espProfile,
+  };
+  return schema;
+}
 
 type JsonObject = Record<string, unknown>;
 type Fetcher = (
@@ -37,16 +94,35 @@ interface InstallRecord extends ArtifactRecord {
 }
 
 interface ValidatedProfile {
-  chipFamily: string;
+  provisioningKind?: "esp-web-serial" | "verified-uf2-bootsel";
+  chipFamily?: string;
   hilStatus: "pending" | "passed";
-  install: InstallRecord;
-  manifest: ArtifactRecord;
+  install: ArtifactRecord | InstallRecord;
+  manifest?: ArtifactRecord;
 }
 
 interface ValidatedRelease {
   builtAt: string;
   profiles: Map<FirmwareProfileId, ValidatedProfile>;
   version: string;
+}
+
+interface FirmwareProfileContract {
+  readonly id: FirmwareProfileId;
+  readonly target: string;
+  readonly chipFamily?: string;
+  readonly offset?: number;
+  readonly flashSizeBytes?: number;
+  readonly flashFrequencyHz?: number;
+  readonly siliconRevision?: {
+    readonly minimumFull: number;
+    readonly maximumFull: number;
+  };
+  readonly psram?: {
+    readonly required: boolean;
+    readonly sizeBytes: number;
+    readonly type: string;
+  };
 }
 
 export class FirmwareIntegrityError extends Error {
@@ -112,8 +188,9 @@ function sameJsonValue(left: unknown, right: unknown): boolean {
   );
 }
 
-function validateReleaseSchema(value: unknown) {
-  if (!sameJsonValue(value, canonicalReleaseSchema)) {
+function validateReleaseSchema(value: unknown, schemaVersion: 2 | 3 | 4) {
+  const expected = releaseSchemaForVersion(schemaVersion);
+  if (!sameJsonValue(value, expected)) {
     fail("Release schema does not match the canonical PyBLE release schema");
   }
 }
@@ -223,6 +300,20 @@ function validateDescriptorProfile(
   equal(actual.id, expected.id, `${expected.id} descriptor ID`);
   equal(actual.label, expected.label, `${expected.id} descriptor label`);
   equal(
+    actual.provisioningKind,
+    expected.provisioningKind,
+    `${expected.id} descriptor provisioning`,
+  );
+  equal(actual.target, expected.target, `${expected.id} descriptor target`);
+  equal(
+    actual.firmwarePath,
+    expected.firmwarePath,
+    `${expected.id} descriptor firmware`,
+  );
+  if (expected.provisioningKind === "verified-uf2-bootsel") {
+    return;
+  }
+  equal(
     actual.chipFamily,
     expected.chipFamily,
     `${expected.id} descriptor family`,
@@ -231,11 +322,6 @@ function validateDescriptorProfile(
     actual.manifestPath,
     expected.manifestPath,
     `${expected.id} descriptor manifest`,
-  );
-  equal(
-    actual.firmwarePath,
-    expected.firmwarePath,
-    `${expected.id} descriptor firmware`,
   );
   equal(actual.offset, expected.offset, `${expected.id} descriptor offset`);
   equal(
@@ -268,6 +354,21 @@ function validateDescriptorProfile(
     expected.psram.type,
     `${expected.id} descriptor PSRAM type`,
   );
+}
+
+function usesHistoricalReleaseContract(
+  descriptor: FirmwareReleaseDescriptor,
+): boolean {
+  return descriptor.version === publicBetaFirmwareVersion;
+}
+
+function releaseSchemaVersion(
+  descriptor: FirmwareReleaseDescriptor,
+): 2 | 3 | 4 {
+  if (usesHistoricalReleaseContract(descriptor)) {
+    return 2;
+  }
+  return firmwareVersionUsesFiveProfiles(descriptor.version) ? 4 : 3;
 }
 
 function validateDescriptor(
@@ -319,10 +420,14 @@ function validateDescriptor(
     fail("Release metadata must use the selected same-origin version path");
   }
 
-  const expectedProfiles = firmwareProfileDescriptors(descriptor.version);
+  const expectedProfiles = usesHistoricalReleaseContract(descriptor)
+    ? historicalFirmwareProfileDescriptors(descriptor.version)
+    : firmwareProfileDescriptors(descriptor.version);
   if (descriptor.profiles.length !== expectedProfiles.length) {
     fail(
-      "Selected release descriptor must contain exactly the two current release profiles",
+      usesHistoricalReleaseContract(descriptor)
+        ? "Historical v0.4.2 descriptor must contain exactly two profiles"
+        : "Selected release descriptor must contain exactly the three current release profiles",
     );
   }
   descriptor.profiles.forEach((profile, index) => {
@@ -437,17 +542,116 @@ function validateComponents(
 function validateProfile(
   value: unknown,
   index: number,
+  profileTable: readonly FirmwareProfileContract[],
+  schemaVersion: 2 | 3 | 4,
 ): [FirmwareProfileId, ValidatedProfile] {
-  const expected = firmwareProfileTable[index];
+  const expected = profileTable[index];
   if (!expected) {
     fail("Release contains an unexpected profile");
   }
   const label = `release.profiles[${index}]`;
   const profile = object(value, label);
+  if (expected.id === "rpi-pico2-w") {
+    exactKeys(
+      profile,
+      [
+        "id",
+        "target",
+        "provisioning_kind",
+        "board",
+        "hil_status",
+        "install",
+        "resource_image",
+      ],
+      label,
+    );
+    equal(profile.id, expected.id, `${label}.id`);
+    equal(profile.target, expected.target, `${label}.target`);
+    equal(
+      profile.provisioning_kind,
+      "verified-uf2-bootsel",
+      `${label}.provisioning_kind`,
+    );
+    equal(profile.board, "RPI_PICO2_W", `${label}.board`);
+    const hilStatus = string(profile.hil_status, `${label}.hil_status`);
+    if (hilStatus !== "pending" && hilStatus !== "passed") {
+      fail(`${label}.hil_status must be pending or passed`);
+    }
+    const installValue = object(profile.install, `${label}.install`);
+    exactKeys(
+      installValue,
+      ["path", "size", "sha256", "format"],
+      `${label}.install`,
+    );
+    equal(installValue.format, "uf2", `${label}.install.format`);
+    const install = artifactRecord(
+      {
+        path: installValue.path,
+        size: installValue.size,
+        sha256: installValue.sha256,
+      },
+      `${label}.install`,
+    );
+    equal(install.path, "rpi-pico2-w/firmware.uf2", `${label}.install.path`);
+    const resourceValue = object(
+      profile.resource_image,
+      `${label}.resource_image`,
+    );
+    exactKeys(
+      resourceValue,
+      ["path", "size", "sha256", "image_limit_bytes"],
+      `${label}.resource_image`,
+    );
+    const resource = artifactRecord(
+      {
+        path: resourceValue.path,
+        size: resourceValue.size,
+        sha256: resourceValue.sha256,
+      },
+      `${label}.resource_image`,
+    );
+    equal(
+      resource.path,
+      "rpi-pico2-w/firmware.bin",
+      `${label}.resource_image.path`,
+    );
+    equal(
+      integer(
+        resourceValue.image_limit_bytes,
+        `${label}.resource_image.image_limit_bytes`,
+        1,
+      ),
+      1_572_864,
+      `${label}.resource_image.image_limit_bytes`,
+    );
+    if (resource.size > 1_572_864) {
+      fail(`${label}.resource_image exceeds its frozen limit`);
+    }
+    return [
+      expected.id,
+      {
+        provisioningKind: "verified-uf2-bootsel",
+        hilStatus,
+        install,
+      },
+    ];
+  }
+
+  if (
+    expected.chipFamily === undefined ||
+    expected.offset === undefined ||
+    expected.flashSizeBytes === undefined ||
+    expected.flashFrequencyHz === undefined ||
+    !expected.siliconRevision ||
+    !expected.psram
+  ) {
+    fail(`${label} ESP profile contract is incomplete`);
+  }
   exactKeys(
     profile,
     [
       "id",
+      ...(schemaVersion === 4 ? ["target", "provisioning_kind"] : []),
       "chip_family",
       "requirements",
       "flash",
@@ -460,6 +664,14 @@ function validateProfile(
     label,
   );
   equal(profile.id, expected.id, `${label}.id`);
+  if (schemaVersion === 4) {
+    equal(profile.target, expected.target, `${label}.target`);
+    equal(
+      profile.provisioning_kind,
+      "esp-web-serial",
+      `${label}.provisioning_kind`,
+    );
+  }
   equal(profile.chip_family, expected.chipFamily, `${label}.chip_family`);
 
   const requirements = object(profile.requirements, `${label}.requirements`);
@@ -546,6 +758,7 @@ function validateProfile(
   return [
     expected.id,
     {
+      provisioningKind: schemaVersion === 4 ? "esp-web-serial" : undefined,
       chipFamily: expected.chipFamily,
       hilStatus,
       install,
@@ -586,7 +799,8 @@ function validateRelease(
     ],
     "release",
   );
-  equal(release.schema_version, 2, "Release schema version");
+  const schemaVersion = releaseSchemaVersion(descriptor);
+  equal(release.schema_version, schemaVersion, "Release schema version");
 
   const identity = object(release.identity, "release.identity");
   exactKeys(
@@ -615,11 +829,25 @@ function validateRelease(
   equal(installer.version, "10.4.0", "Installer package version");
 
   const profileValues = array(release.profiles, "release.profiles");
-  if (profileValues.length !== firmwareProfileTable.length) {
-    fail("Release must contain exactly the two current release profiles");
+  const historical = usesHistoricalReleaseContract(descriptor);
+  const profileTable = (
+    historical
+      ? historicalFirmwareProfileTable
+      : firmwareVersionUsesFiveProfiles(descriptor.version)
+        ? firmwareProfileTable
+        : firmwareProfileTable.slice(0, 3)
+  ) as readonly FirmwareProfileContract[];
+  if (profileValues.length !== profileTable.length) {
+    fail(
+      historical
+        ? "Historical v0.4.2 release must contain exactly two profiles"
+        : "Release must contain exactly the three current release profiles",
+    );
   }
   const profiles = new Map(
-    profileValues.map((profile, index) => validateProfile(profile, index)),
+    profileValues.map((profile, index) =>
+      validateProfile(profile, index, profileTable, schemaVersion),
+    ),
   );
   const statuses = [...profiles.values()].map(({ hilStatus }) => hilStatus);
   if (
@@ -767,7 +995,7 @@ function validateManifest(
   const build = object(builds[0], "manifest.builds[0]");
   exactKeys(build, ["chipFamily", "parts"], "manifest.builds[0]");
   const selected = release.profiles.get(profileId);
-  if (!selected) {
+  if (!selected || !selected.chipFamily || !("offset" in selected.install)) {
     fail("Selected profile is absent from release metadata");
   }
   equal(build.chipFamily, selected.chipFamily, "Manifest chip family");
@@ -787,6 +1015,73 @@ function validateManifest(
     selected.install.offset,
     "Manifest merged-image offset",
   );
+}
+
+function validateRp2350Uf2(bytes: Uint8Array) {
+  if (bytes.byteLength === 0 || bytes.byteLength % 512 !== 0) {
+    fail("Pico 2 W artifact is not a complete UF2 stream");
+  }
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const rp2350Blocks: Array<{
+    address: number;
+    blockNumber: number;
+    payloadBytes: number;
+    totalBlocks: number;
+  }> = [];
+  let extensionBlocks = 0;
+  for (let offset = 0; offset < bytes.byteLength; offset += 512) {
+    if (
+      view.getUint32(offset, true) !== 0x0a324655 ||
+      view.getUint32(offset + 4, true) !== 0x9e5d5157 ||
+      view.getUint32(offset + 508, true) !== 0x0ab16f30
+    ) {
+      fail("Pico 2 W UF2 block magic is invalid");
+    }
+    const payloadBytes = view.getUint32(offset + 16, true);
+    if (payloadBytes === 0 || payloadBytes > 476) {
+      fail("Pico 2 W UF2 payload length is invalid");
+    }
+    const flags = view.getUint32(offset + 8, true);
+    const family = view.getUint32(offset + 28, true);
+    if (flags === 0x00002000 && family === 0xe48bff59) {
+      rp2350Blocks.push({
+        address: view.getUint32(offset + 12, true),
+        blockNumber: view.getUint32(offset + 20, true),
+        payloadBytes,
+        totalBlocks: view.getUint32(offset + 24, true),
+      });
+    } else if (
+      flags === 0x0000a000 &&
+      family === 0xe48bff57 &&
+      view.getUint32(offset + 12, true) === 0x10ffff00 &&
+      payloadBytes === 256 &&
+      view.getUint32(offset + 20, true) === 0 &&
+      view.getUint32(offset + 24, true) === 2
+    ) {
+      extensionBlocks += 1;
+    } else {
+      fail("Pico 2 W UF2 contains an unexpected family block");
+    }
+  }
+  const totalBlocks = rp2350Blocks[0]?.totalBlocks ?? 0;
+  const payloadBytes = rp2350Blocks[0]?.payloadBytes ?? 0;
+  const baseAddress = rp2350Blocks[0]?.address ?? 0;
+  if (
+    rp2350Blocks.length === 0 ||
+    extensionBlocks !== 1 ||
+    totalBlocks !== rp2350Blocks.length ||
+    payloadBytes !== 256 ||
+    baseAddress !== 0x10000000 ||
+    rp2350Blocks.some(
+      (block, index) =>
+        block.totalBlocks !== totalBlocks ||
+        block.payloadBytes !== payloadBytes ||
+        block.blockNumber !== index ||
+        block.address !== baseAddress + index * payloadBytes,
+    )
+  ) {
+    fail("Pico 2 W UF2 RP2350 Arm block sequence is incomplete");
+  }
 }
 
 export async function verifyFirmwareProfile({
@@ -821,7 +1116,10 @@ export async function verifyFirmwareProfile({
     "Release schema",
     descriptor.releaseJson.sha256,
   );
-  validateReleaseSchema(parseJson(schemaBytes, "Release schema"));
+  validateReleaseSchema(
+    parseJson(schemaBytes, "Release schema"),
+    releaseSchemaVersion(descriptor),
+  );
   const release = validateRelease(
     parseJson(releaseBytes, "Release metadata"),
     descriptor,
@@ -832,6 +1130,43 @@ export async function verifyFirmwareProfile({
   }
 
   const releaseRoot = `/firmware/v${release.version}/`;
+  if (selected.provisioningKind === "verified-uf2-bootsel") {
+    const firmwarePath = `${releaseRoot}${selected.install.path}`;
+    equal(
+      firmwarePath,
+      descriptorProfile.firmwarePath,
+      "Selected firmware path",
+    );
+    const firmwareBytes = await fetchExactBytes(
+      fetcher,
+      origin,
+      firmwarePath,
+      "Selected Pico UF2",
+      descriptor.releaseJson.sha256,
+    );
+    await verifyArtifact(
+      firmwareBytes,
+      selected.install,
+      subtle,
+      "Selected Pico UF2",
+    );
+    validateRp2350Uf2(firmwareBytes);
+    const verifiedFirmwareBytes = firmwareBytes.slice().buffer;
+    const downloadUrl = URL.createObjectURL(
+      new Blob([verifiedFirmwareBytes], { type: "application/octet-stream" }),
+    );
+    return {
+      profileId: "rpi-pico2-w",
+      provisioningKind: "verified-uf2-bootsel",
+      firmwarePath,
+      version: release.version,
+      downloadUrl,
+      verifiedFirmwareBytes,
+    } as unknown as VerifiedFirmwareProfile;
+  }
+  if (!selected.manifest || !selected.chipFamily) {
+    fail("Selected ESP profile is incomplete");
+  }
   const manifestPath = `${releaseRoot}${selected.manifest.path}`;
   equal(manifestPath, descriptorProfile.manifestPath, "Selected manifest path");
   const manifestBytes = await fetchExactBytes(
@@ -871,6 +1206,7 @@ export async function verifyFirmwareProfile({
 
   return {
     profileId,
+    provisioningKind: selected.provisioningKind,
     chipFamily: selected.chipFamily,
     manifestPath,
     manifestBuildCount: 1,

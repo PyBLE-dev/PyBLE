@@ -1,0 +1,1153 @@
+{
+  "profile_id": "rpi-pico2-w",
+  "schema_version": 2,
+  "source_owners": [
+    {
+      "component_kind": "build-tool",
+      "copyright": "Copyright (C) 1990-2024 Free Software Foundation, Inc.",
+      "disposition": "allow",
+      "id": "arm-gnu-binutils-build-tools",
+      "license_texts": [
+        {
+          "identifier": "GPL-3.0-or-later",
+          "path": "firmware/licenses/texts/GPL-3.0-or-later.txt",
+          "sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903"
+        }
+      ],
+      "notice_files": [
+        {
+          "path": "firmware/licenses/evidence/rp2/arm-gnu-toolchain/14.2.rel1/runtime-attribution-v1.json",
+          "sha256": "69d9dc56335dc27ddb9d9adde7775c339afe1259ecb2a3a0bcd48db83ff2ef9a"
+        },
+        {
+          "path": "firmware/licenses/evidence/rp2/arm-gnu-toolchain/14.2.rel1/source-manifest.txt",
+          "sha256": "470cdb8bae9f5fed96c17b10834bbd22820e933cfad99914c3f37997cae36745"
+        },
+        {
+          "path": "firmware/licenses/evidence/rp2/arm-gnu-toolchain/14.2.rel1/source-sha256.txt",
+          "sha256": "453b10cec11a2cc603d9485b0b7cb409c17dd250da3d4f390c17cece7ebf4ff5"
+        }
+      ],
+      "selected_spdx_expression": "GPL-3.0-or-later",
+      "source_ref": "14.2.Rel1",
+      "source_roots": [
+        {
+          "namespace": "arm-gnu-toolchain",
+          "path": "arm-none-eabi/bin/as"
+        },
+        {
+          "namespace": "arm-gnu-toolchain",
+          "path": "arm-none-eabi/bin/ld"
+        }
+      ],
+      "source_spdx_expression": "GPL-3.0-or-later",
+      "source_url": "https://sourceware.org/git/binutils-gdb.git"
+    },
+    {
+      "component_kind": "build-tool",
+      "copyright": "Copyright (C) 1989-2024 Free Software Foundation, Inc.",
+      "disposition": "allow",
+      "id": "arm-gnu-gcc-build-tools",
+      "license_texts": [
+        {
+          "identifier": "GPL-3.0-or-later",
+          "path": "firmware/licenses/texts/GPL-3.0-or-later.txt",
+          "sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903"
+        }
+      ],
+      "notice_files": [
+        {
+          "path": "firmware/licenses/evidence/rp2/arm-gnu-toolchain/14.2.rel1/runtime-attribution-v1.json",
+          "sha256": "69d9dc56335dc27ddb9d9adde7775c339afe1259ecb2a3a0bcd48db83ff2ef9a"
+        },
+        {
+          "path": "firmware/licenses/evidence/rp2/arm-gnu-toolchain/14.2.rel1/source-manifest.txt",
+          "sha256": "470cdb8bae9f5fed96c17b10834bbd22820e933cfad99914c3f37997cae36745"
+        },
+        {
+          "path": "firmware/licenses/evidence/rp2/arm-gnu-toolchain/14.2.rel1/source-sha256.txt",
+          "sha256": "453b10cec11a2cc603d9485b0b7cb409c17dd250da3d4f390c17cece7ebf4ff5"
+        }
+      ],
+      "selected_spdx_expression": "GPL-3.0-or-later",
+      "source_ref": "14.2.Rel1",
+      "source_roots": [
+        {
+          "namespace": "arm-gnu-toolchain",
+          "path": "bin/arm-none-eabi-g++"
+        },
+        {
+          "namespace": "arm-gnu-toolchain",
+          "path": "bin/arm-none-eabi-gcc"
+        },
+        {
+          "namespace": "arm-gnu-toolchain",
+          "path": "libexec/gcc/arm-none-eabi/14.2.1/collect2"
+        }
+      ],
+      "source_spdx_expression": "GPL-3.0-or-later",
+      "source_url": "https://gcc.gnu.org/git/gcc.git"
+    },
+    {
+      "component_kind": "runtime",
+      "copyright": "Copyright (C) 1989-2024 Free Software Foundation, Inc.",
+      "disposition": "allow",
+      "id": "arm-gnu-gcc-runtime",
+      "license_texts": [
+        {
+          "identifier": "GCC-exception-3.1",
+          "path": "firmware/licenses/texts/GCC-exception-3.1.txt",
+          "sha256": "9d6b43ce4d8de0c878bf16b54d8e7a10d9bd42b75178153e3af6a815bdc90f74"
+        },
+        {
+          "identifier": "GPL-3.0-or-later",
+          "path": "firmware/licenses/texts/GPL-3.0-or-later.txt",
+          "sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903"
+        }
+      ],
+      "notice_files": [
+        {
+          "path": "firmware/licenses/evidence/rp2/arm-gnu-toolchain/14.2.rel1/runtime-attribution-v1.json",
+          "sha256": "69d9dc56335dc27ddb9d9adde7775c339afe1259ecb2a3a0bcd48db83ff2ef9a"
+        },
+        {
+          "path": "firmware/licenses/evidence/rp2/arm-gnu-toolchain/14.2.rel1/source-manifest.txt",
+          "sha256": "470cdb8bae9f5fed96c17b10834bbd22820e933cfad99914c3f37997cae36745"
+        },
+        {
+          "path": "firmware/licenses/evidence/rp2/arm-gnu-toolchain/14.2.rel1/source-sha256.txt",
+          "sha256": "453b10cec11a2cc603d9485b0b7cb409c17dd250da3d4f390c17cece7ebf4ff5"
+        },
+        {
+          "path": "firmware/licenses/notices/gcc-runtime.txt",
+          "sha256": "a802c58332092fe03d2e1746e940f212d12335e8c66ad1e50697b3cbb7b977ac"
+        },
+        {
+          "path": "firmware/licenses/notices/rp2/arm-gnu-toolchain-14.2.rel1-selected-runtime.txt",
+          "sha256": "6c88b3ed73bac10b85416aebfba654e7a9fb59a43c73cefc5e657f806d765316"
+        }
+      ],
+      "selected_spdx_expression": "GPL-3.0-or-later WITH GCC-exception-3.1",
+      "source_ref": "14.2.Rel1",
+      "source_roots": [
+        {
+          "namespace": "arm-gnu-toolchain",
+          "path": "arm-none-eabi/include/c++/14.2.1"
+        },
+        {
+          "namespace": "arm-gnu-toolchain",
+          "path": "arm-none-eabi/lib/thumb/v8-m.main+fp/softfp/libstdc++.a"
+        },
+        {
+          "namespace": "arm-gnu-toolchain",
+          "path": "lib/gcc/arm-none-eabi/14.2.1/include"
+        },
+        {
+          "namespace": "arm-gnu-toolchain",
+          "path": "lib/gcc/arm-none-eabi/14.2.1/thumb/v8-m.main+fp/softfp/crtbegin.o"
+        },
+        {
+          "namespace": "arm-gnu-toolchain",
+          "path": "lib/gcc/arm-none-eabi/14.2.1/thumb/v8-m.main+fp/softfp/crtend.o"
+        },
+        {
+          "namespace": "arm-gnu-toolchain",
+          "path": "lib/gcc/arm-none-eabi/14.2.1/thumb/v8-m.main+fp/softfp/crti.o"
+        },
+        {
+          "namespace": "arm-gnu-toolchain",
+          "path": "lib/gcc/arm-none-eabi/14.2.1/thumb/v8-m.main+fp/softfp/crtn.o"
+        },
+        {
+          "namespace": "arm-gnu-toolchain",
+          "path": "lib/gcc/arm-none-eabi/14.2.1/thumb/v8-m.main+fp/softfp/libgcc.a"
+        }
+      ],
+      "source_spdx_expression": "GPL-3.0-or-later WITH GCC-exception-3.1",
+      "source_url": "https://gcc.gnu.org/git/gcc.git"
+    },
+    {
+      "component_kind": "runtime",
+      "copyright": "Newlib/Libgloss contributors; exact terms retained in COPYING.LIBGLOSS",
+      "disposition": "allow",
+      "id": "arm-gnu-libgloss-runtime",
+      "license_texts": [
+        {
+          "identifier": "LicenseRef-PyBLE-Libgloss-Multilicense",
+          "path": "firmware/licenses/texts/COPYING.LIBGLOSS.arm-gnu-14.2.rel1.txt",
+          "sha256": "bdaffd5fff30cb5fc7a239a4fa0b95f703590f7b3813ca7f4e76ff46437aeb81"
+        }
+      ],
+      "notice_files": [
+        {
+          "path": "firmware/licenses/evidence/rp2/arm-gnu-toolchain/14.2.rel1/runtime-attribution-v1.json",
+          "sha256": "69d9dc56335dc27ddb9d9adde7775c339afe1259ecb2a3a0bcd48db83ff2ef9a"
+        },
+        {
+          "path": "firmware/licenses/evidence/rp2/arm-gnu-toolchain/14.2.rel1/source-manifest.txt",
+          "sha256": "470cdb8bae9f5fed96c17b10834bbd22820e933cfad99914c3f37997cae36745"
+        },
+        {
+          "path": "firmware/licenses/evidence/rp2/arm-gnu-toolchain/14.2.rel1/source-sha256.txt",
+          "sha256": "453b10cec11a2cc603d9485b0b7cb409c17dd250da3d4f390c17cece7ebf4ff5"
+        }
+      ],
+      "selected_spdx_expression": "LicenseRef-PyBLE-Libgloss-Multilicense",
+      "source_ref": "14.2.Rel1",
+      "source_roots": [
+        {
+          "namespace": "arm-gnu-toolchain",
+          "path": "arm-none-eabi/lib/nosys.specs"
+        },
+        {
+          "namespace": "arm-gnu-toolchain",
+          "path": "arm-none-eabi/lib/thumb/v8-m.main+fp/softfp/crt0.o"
+        },
+        {
+          "namespace": "arm-gnu-toolchain",
+          "path": "arm-none-eabi/lib/thumb/v8-m.main+fp/softfp/libnosys.a"
+        }
+      ],
+      "source_spdx_expression": "LicenseRef-PyBLE-Libgloss-Multilicense",
+      "source_url": "https://sourceware.org/git/newlib-cygwin.git"
+    },
+    {
+      "component_kind": "runtime",
+      "copyright": "Newlib contributors; exact component-wise notices retained in COPYING.NEWLIB",
+      "disposition": "allow",
+      "id": "arm-gnu-newlib-runtime",
+      "license_texts": [
+        {
+          "identifier": "LicenseRef-PyBLE-Newlib-Multilicense",
+          "path": "firmware/licenses/texts/COPYING.NEWLIB.arm-gnu-14.2.rel1.txt",
+          "sha256": "fcfb5ec69b6ab52676dcc4dab7cf4338c8000ef97812dadd35b8592a640a8419"
+        }
+      ],
+      "notice_files": [
+        {
+          "path": "firmware/licenses/evidence/rp2/arm-gnu-toolchain/14.2.rel1/runtime-attribution-v1.json",
+          "sha256": "69d9dc56335dc27ddb9d9adde7775c339afe1259ecb2a3a0bcd48db83ff2ef9a"
+        },
+        {
+          "path": "firmware/licenses/evidence/rp2/arm-gnu-toolchain/14.2.rel1/source-manifest.txt",
+          "sha256": "470cdb8bae9f5fed96c17b10834bbd22820e933cfad99914c3f37997cae36745"
+        },
+        {
+          "path": "firmware/licenses/evidence/rp2/arm-gnu-toolchain/14.2.rel1/source-sha256.txt",
+          "sha256": "453b10cec11a2cc603d9485b0b7cb409c17dd250da3d4f390c17cece7ebf4ff5"
+        },
+        {
+          "path": "firmware/licenses/notices/newlib.txt",
+          "sha256": "86e513fa6b578911be0efd6ccf304ca9afe91820ef2f75497636e8b7485ab2f4"
+        },
+        {
+          "path": "firmware/licenses/notices/rp2/arm-gnu-toolchain-14.2.rel1-selected-runtime.txt",
+          "sha256": "6c88b3ed73bac10b85416aebfba654e7a9fb59a43c73cefc5e657f806d765316"
+        }
+      ],
+      "selected_spdx_expression": "LicenseRef-PyBLE-Newlib-Multilicense",
+      "source_ref": "14.2.Rel1",
+      "source_roots": [
+        {
+          "namespace": "arm-gnu-toolchain",
+          "path": "arm-none-eabi/include"
+        },
+        {
+          "namespace": "arm-gnu-toolchain",
+          "path": "arm-none-eabi/lib/thumb/v8-m.main+fp/softfp/libc.a"
+        },
+        {
+          "namespace": "arm-gnu-toolchain",
+          "path": "arm-none-eabi/lib/thumb/v8-m.main+fp/softfp/libg.a"
+        },
+        {
+          "namespace": "arm-gnu-toolchain",
+          "path": "arm-none-eabi/lib/thumb/v8-m.main+fp/softfp/libm.a"
+        }
+      ],
+      "source_spdx_expression": "LicenseRef-PyBLE-Newlib-Multilicense",
+      "source_url": "https://sourceware.org/git/newlib-cygwin.git"
+    },
+    {
+      "copyright": "Copyright (C) 2009, 2014, 2016-2018 BlueKitchen GmbH",
+      "disposition": "allow",
+      "id": "btstack",
+      "license_texts": [
+        {
+          "identifier": "LicenseRef-PyBLE-BTstack-Noncommercial",
+          "path": "firmware/licenses/evidence/rp2/micropython/lib/btstack/LICENSE",
+          "sha256": "10aa5f952979a9fa2f58bf63c1390c9795b41f8eca405ab975ab926e4d14fc5a"
+        },
+        {
+          "identifier": "LicenseRef-PyBLE-BTstack-Raspberry-Pi",
+          "path": "firmware/licenses/evidence/rp2/micropython/lib/pico-sdk/src/rp2_common/pico_btstack/LICENSE.RP",
+          "sha256": "3b9280bbfedf57d9f7793d2f9af7beb5d5c45f16b587fa3c3568aaedd16fedf4"
+        }
+      ],
+      "notice_files": [],
+      "selected_spdx_expression": "LicenseRef-PyBLE-BTstack-Raspberry-Pi",
+      "source_ref": "77e752abd6a0992334047a48038a5a3960e5c6bc",
+      "source_roots": [
+        {
+          "namespace": "micropython",
+          "path": "lib/btstack"
+        }
+      ],
+      "source_spdx_expression": "(LicenseRef-PyBLE-BTstack-Noncommercial OR LicenseRef-PyBLE-BTstack-Raspberry-Pi)",
+      "source_url": "https://github.com/bluekitchen/btstack.git"
+    },
+    {
+      "copyright": "Exact selected Bluetooth firmware copyright/licensor unresolved",
+      "disposition": "allow",
+      "id": "cyw43-bt-firmware-payload",
+      "license_texts": [
+        {
+          "identifier": "LicenseRef-PyBLE-CYW43-Noncommercial",
+          "path": "firmware/licenses/evidence/rp2/micropython/lib/cyw43-driver/LICENSE",
+          "sha256": "0ce42360898b7c3f168317b559d4783b55c892751580c2a12c76b548aa5858fb"
+        },
+        {
+          "identifier": "LicenseRef-PyBLE-CYW43-Raspberry-Pi",
+          "path": "firmware/upstream/micropython/lib/cyw43-driver/LICENSE.RP",
+          "sha256": "67aca4f10d9edf489871f64cd8f0dcd6c5df3e4ce75bd39e1914fc54f99e40b3"
+        }
+      ],
+      "notice_files": [],
+      "selected_spdx_expression": "LicenseRef-PyBLE-CYW43-Raspberry-Pi",
+      "source_ref": "055d64274b014dd7b1c2fc94d26e8a18face7124",
+      "source_roots": [
+        {
+          "namespace": "micropython",
+          "path": "lib/cyw43-driver/firmware/cyw43_btfw_43439.h"
+        }
+      ],
+      "source_spdx_expression": "(LicenseRef-PyBLE-CYW43-Noncommercial OR LicenseRef-PyBLE-CYW43-Raspberry-Pi)",
+      "source_url": "https://github.com/georgerobotics/cyw43-driver.git"
+    },
+    {
+      "copyright": "Copyright (C) 2019-2022 George Robotics Pty Ltd",
+      "disposition": "allow",
+      "id": "cyw43-driver-code",
+      "license_texts": [
+        {
+          "identifier": "LicenseRef-PyBLE-CYW43-Noncommercial",
+          "path": "firmware/licenses/evidence/rp2/micropython/lib/cyw43-driver/LICENSE",
+          "sha256": "0ce42360898b7c3f168317b559d4783b55c892751580c2a12c76b548aa5858fb"
+        },
+        {
+          "identifier": "LicenseRef-PyBLE-CYW43-Raspberry-Pi",
+          "path": "firmware/upstream/micropython/lib/cyw43-driver/LICENSE.RP",
+          "sha256": "67aca4f10d9edf489871f64cd8f0dcd6c5df3e4ce75bd39e1914fc54f99e40b3"
+        }
+      ],
+      "notice_files": [],
+      "selected_spdx_expression": "LicenseRef-PyBLE-CYW43-Raspberry-Pi",
+      "source_ref": "055d64274b014dd7b1c2fc94d26e8a18face7124",
+      "source_roots": [
+        {
+          "namespace": "micropython",
+          "path": "lib/cyw43-driver"
+        }
+      ],
+      "source_spdx_expression": "(LicenseRef-PyBLE-CYW43-Noncommercial OR LicenseRef-PyBLE-CYW43-Raspberry-Pi)",
+      "source_url": "https://github.com/georgerobotics/cyw43-driver.git"
+    },
+    {
+      "copyright": "Copyright Broadcom Corporation",
+      "disposition": "allow",
+      "id": "cyw43-nvram-payload",
+      "license_texts": [
+        {
+          "identifier": "LicenseRef-PyBLE-CYW43-Noncommercial",
+          "path": "firmware/licenses/evidence/rp2/micropython/lib/cyw43-driver/LICENSE",
+          "sha256": "0ce42360898b7c3f168317b559d4783b55c892751580c2a12c76b548aa5858fb"
+        },
+        {
+          "identifier": "LicenseRef-PyBLE-CYW43-Raspberry-Pi",
+          "path": "firmware/upstream/micropython/lib/cyw43-driver/LICENSE.RP",
+          "sha256": "67aca4f10d9edf489871f64cd8f0dcd6c5df3e4ce75bd39e1914fc54f99e40b3"
+        }
+      ],
+      "notice_files": [
+        {
+          "path": "firmware/licenses/notices/rp2/cyw43-nvram.txt",
+          "sha256": "82beaf1060fc1f2ea334f42e0902453507b8073bda8dc82df3f05301b66eb715"
+        }
+      ],
+      "selected_spdx_expression": "LicenseRef-PyBLE-CYW43-Raspberry-Pi",
+      "source_ref": "055d64274b014dd7b1c2fc94d26e8a18face7124",
+      "source_roots": [
+        {
+          "namespace": "micropython",
+          "path": "lib/cyw43-driver/firmware/wifi_nvram_43439.h"
+        }
+      ],
+      "source_spdx_expression": "(LicenseRef-PyBLE-CYW43-Noncommercial OR LicenseRef-PyBLE-CYW43-Raspberry-Pi)",
+      "source_url": "https://github.com/georgerobotics/cyw43-driver.git"
+    },
+    {
+      "copyright": "Exact selected Wi-Fi/CLM firmware copyright/licensor unresolved",
+      "disposition": "allow",
+      "id": "cyw43-wifi-clm-payload",
+      "license_texts": [
+        {
+          "identifier": "LicenseRef-PyBLE-CYW43-Noncommercial",
+          "path": "firmware/licenses/evidence/rp2/micropython/lib/cyw43-driver/LICENSE",
+          "sha256": "0ce42360898b7c3f168317b559d4783b55c892751580c2a12c76b548aa5858fb"
+        },
+        {
+          "identifier": "LicenseRef-PyBLE-CYW43-Raspberry-Pi",
+          "path": "firmware/upstream/micropython/lib/cyw43-driver/LICENSE.RP",
+          "sha256": "67aca4f10d9edf489871f64cd8f0dcd6c5df3e4ce75bd39e1914fc54f99e40b3"
+        }
+      ],
+      "notice_files": [],
+      "selected_spdx_expression": "LicenseRef-PyBLE-CYW43-Raspberry-Pi",
+      "source_ref": "055d64274b014dd7b1c2fc94d26e8a18face7124",
+      "source_roots": [
+        {
+          "namespace": "micropython",
+          "path": "lib/cyw43-driver/firmware/wb43439A0_7_95_49_00_combined.h"
+        }
+      ],
+      "source_spdx_expression": "(LicenseRef-PyBLE-CYW43-Noncommercial OR LicenseRef-PyBLE-CYW43-Raspberry-Pi)",
+      "source_url": "https://github.com/georgerobotics/cyw43-driver.git"
+    },
+    {
+      "copyright": "Copyright (C) 1993 by Sun Microsystems, Inc.; Copyright (c) 2013-2026 Damien P. George",
+      "disposition": "allow",
+      "id": "libm-fdlibm-sun",
+      "license_texts": [
+        {
+          "identifier": "LicenseRef-PyBLE-Fdlibm-Sun",
+          "path": "firmware/licenses/texts/LicenseRef-PyBLE-Fdlibm-Sun.txt",
+          "sha256": "a8af75f945e13c583b21d53b09a2adf757e7ef6e1521ad67d0d8648dd2b765a8"
+        },
+        {
+          "identifier": "MIT",
+          "path": "firmware/licenses/texts/MIT.txt",
+          "sha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5"
+        }
+      ],
+      "notice_files": [
+        {
+          "path": "firmware/licenses/notices/rp2/libm-fdlibm.txt",
+          "sha256": "2cc41aa28a9045578afbdf4b53cafdc5fc8cad46a352869a565502f04464b8ca"
+        }
+      ],
+      "selected_spdx_expression": "LicenseRef-PyBLE-Fdlibm-Sun AND MIT",
+      "source_ref": "e0e9fbb17ed6fd06bb76e266ae554784c9c80804",
+      "source_roots": [
+        {
+          "namespace": "micropython",
+          "path": "lib/libm/ef_rem_pio2.c"
+        },
+        {
+          "namespace": "micropython",
+          "path": "lib/libm/ef_sqrt.c"
+        },
+        {
+          "namespace": "micropython",
+          "path": "lib/libm/erf_lgamma.c"
+        },
+        {
+          "namespace": "micropython",
+          "path": "lib/libm/fdlibm.h"
+        },
+        {
+          "namespace": "micropython",
+          "path": "lib/libm/kf_cos.c"
+        },
+        {
+          "namespace": "micropython",
+          "path": "lib/libm/kf_rem_pio2.c"
+        },
+        {
+          "namespace": "micropython",
+          "path": "lib/libm/kf_sin.c"
+        },
+        {
+          "namespace": "micropython",
+          "path": "lib/libm/kf_tan.c"
+        },
+        {
+          "namespace": "micropython",
+          "path": "lib/libm/libm.h"
+        },
+        {
+          "namespace": "micropython",
+          "path": "lib/libm/sf_cos.c"
+        },
+        {
+          "namespace": "micropython",
+          "path": "lib/libm/sf_erf.c"
+        },
+        {
+          "namespace": "micropython",
+          "path": "lib/libm/sf_frexp.c"
+        },
+        {
+          "namespace": "micropython",
+          "path": "lib/libm/sf_ldexp.c"
+        },
+        {
+          "namespace": "micropython",
+          "path": "lib/libm/sf_modf.c"
+        },
+        {
+          "namespace": "micropython",
+          "path": "lib/libm/sf_sin.c"
+        },
+        {
+          "namespace": "micropython",
+          "path": "lib/libm/sf_tan.c"
+        },
+        {
+          "namespace": "micropython",
+          "path": "lib/libm/wf_lgamma.c"
+        },
+        {
+          "namespace": "micropython",
+          "path": "lib/libm/wf_tgamma.c"
+        }
+      ],
+      "source_spdx_expression": "LicenseRef-PyBLE-Fdlibm-Sun AND MIT",
+      "source_url": "https://github.com/micropython/micropython"
+    },
+    {
+      "copyright": "Copyright © 2005-2014 Rich Felker, et al.; Copyright (c) 2013-2026 Damien P. George",
+      "disposition": "allow",
+      "id": "libm-musl",
+      "license_texts": [
+        {
+          "identifier": "MIT",
+          "path": "firmware/licenses/texts/MIT.txt",
+          "sha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5"
+        }
+      ],
+      "notice_files": [
+        {
+          "path": "firmware/licenses/evidence/rp2/musl/v0.9.15/COPYRIGHT",
+          "sha256": "3d6f953fd6af9b22396aaad9629e01fc67f8bfc0a9abd509d25cd38e32e7f003"
+        },
+        {
+          "path": "firmware/licenses/evidence/rp2/musl/v1.1.16/COPYRIGHT",
+          "sha256": "70ca142d257e2690a1f8eda8a296e64a6d1b16d8aee6784f8ddcf67f3163635d"
+        }
+      ],
+      "selected_spdx_expression": "MIT",
+      "source_ref": "e0e9fbb17ed6fd06bb76e266ae554784c9c80804",
+      "source_roots": [
+        {
+          "namespace": "micropython",
+          "path": "lib/libm/acoshf.c"
+        },
+        {
+          "namespace": "micropython",
+          "path": "lib/libm/asinhf.c"
+        },
+        {
+          "namespace": "micropython",
+          "path": "lib/libm/atanhf.c"
+        },
+        {
+          "namespace": "micropython",
+          "path": "lib/libm/fmodf.c"
+        },
+        {
+          "namespace": "micropython",
+          "path": "lib/libm/nearbyintf.c"
+        },
+        {
+          "namespace": "micropython",
+          "path": "lib/libm/roundf.c"
+        }
+      ],
+      "source_spdx_expression": "MIT",
+      "source_url": "https://github.com/micropython/micropython"
+    },
+    {
+      "copyright": "Copyright © musl contributors; Copyright (C) 1993 by Sun Microsystems, Inc.; Copyright (c) 2013-2026 Damien P. George",
+      "disposition": "allow",
+      "id": "libm-musl-sun",
+      "license_texts": [
+        {
+          "identifier": "LicenseRef-PyBLE-Fdlibm-Sun",
+          "path": "firmware/licenses/texts/LicenseRef-PyBLE-Fdlibm-Sun.txt",
+          "sha256": "a8af75f945e13c583b21d53b09a2adf757e7ef6e1521ad67d0d8648dd2b765a8"
+        },
+        {
+          "identifier": "MIT",
+          "path": "firmware/licenses/texts/MIT.txt",
+          "sha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5"
+        }
+      ],
+      "notice_files": [
+        {
+          "path": "firmware/licenses/evidence/rp2/musl/v0.9.15/COPYRIGHT",
+          "sha256": "3d6f953fd6af9b22396aaad9629e01fc67f8bfc0a9abd509d25cd38e32e7f003"
+        },
+        {
+          "path": "firmware/licenses/notices/rp2/libm-fdlibm.txt",
+          "sha256": "2cc41aa28a9045578afbdf4b53cafdc5fc8cad46a352869a565502f04464b8ca"
+        }
+      ],
+      "selected_spdx_expression": "LicenseRef-PyBLE-Fdlibm-Sun AND MIT",
+      "source_ref": "e0e9fbb17ed6fd06bb76e266ae554784c9c80804",
+      "source_roots": [
+        {
+          "namespace": "micropython",
+          "path": "lib/libm/asinfacosf.c"
+        },
+        {
+          "namespace": "micropython",
+          "path": "lib/libm/atan2f.c"
+        },
+        {
+          "namespace": "micropython",
+          "path": "lib/libm/atanf.c"
+        },
+        {
+          "namespace": "micropython",
+          "path": "lib/libm/log1pf.c"
+        }
+      ],
+      "source_spdx_expression": "LicenseRef-PyBLE-Fdlibm-Sun AND MIT",
+      "source_url": "https://github.com/micropython/micropython"
+    },
+    {
+      "copyright": "Copyright (c) 2017 Arm Limited; Copyright (c) 2022 The littlefs authors",
+      "disposition": "allow",
+      "id": "littlefs",
+      "license_texts": [
+        {
+          "identifier": "BSD-3-Clause",
+          "path": "firmware/licenses/texts/BSD-3-Clause.txt",
+          "sha256": "5a93d5831e1297ab10fe643e1a631e83be392896da14ee2951285a79012df69d"
+        }
+      ],
+      "notice_files": [
+        {
+          "path": "firmware/licenses/notices/rp2/littlefs.txt",
+          "sha256": "6281af84613eed8831001590c368faf6b932b8f2f414e71bac866367f926172c"
+        }
+      ],
+      "selected_spdx_expression": "BSD-3-Clause",
+      "source_ref": "e0e9fbb17ed6fd06bb76e266ae554784c9c80804",
+      "source_roots": [
+        {
+          "namespace": "micropython",
+          "path": "lib/littlefs"
+        }
+      ],
+      "source_spdx_expression": "BSD-3-Clause",
+      "source_url": "https://github.com/micropython/micropython"
+    },
+    {
+      "copyright": "Copyright (c) 2001, 2002 Swedish Institute of Computer Science",
+      "disposition": "allow",
+      "id": "lwip",
+      "license_texts": [
+        {
+          "identifier": "BSD-3-Clause",
+          "path": "firmware/licenses/evidence/rp2/micropython/lib/lwip/COPYING",
+          "sha256": "ef4aac92e05e87cd1cdc140870ed52206ba03d4a7fe46c1e11d7ffa6c87d252b"
+        }
+      ],
+      "notice_files": [],
+      "selected_spdx_expression": "BSD-3-Clause",
+      "source_ref": "77dcd25a72509eb83f72b033d219b1d40cd8eb95",
+      "source_roots": [
+        {
+          "namespace": "micropython",
+          "path": "lib/lwip"
+        }
+      ],
+      "source_spdx_expression": "BSD-3-Clause",
+      "source_url": "https://github.com/lwip-tcpip/lwip.git"
+    },
+    {
+      "copyright": "Copyright The Mbed TLS Contributors",
+      "disposition": "allow",
+      "id": "mbedtls",
+      "license_texts": [
+        {
+          "identifier": "Apache-2.0",
+          "path": "firmware/licenses/texts/Apache-2.0.txt",
+          "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+        },
+        {
+          "identifier": "GPL-2.0-or-later",
+          "path": "firmware/licenses/texts/GPL-2.0-or-later.txt",
+          "sha256": "aaf135472f81c5b4a0dca9367e5bb5e9750032b5bebe5442b36e4c0a47430df3"
+        }
+      ],
+      "notice_files": [
+        {
+          "path": "firmware/licenses/evidence/mbedtls-LICENSE.txt",
+          "sha256": "9b405ef4c89342f5eae1dd828882f931747f71001cfba7d114801039b52ad09b"
+        }
+      ],
+      "selected_spdx_expression": "Apache-2.0",
+      "source_ref": "107ea89daaefb9867ea9121002fbbdf926780e98",
+      "source_roots": [
+        {
+          "namespace": "micropython",
+          "path": "lib/mbedtls"
+        }
+      ],
+      "source_spdx_expression": "(Apache-2.0 OR GPL-2.0-or-later)",
+      "source_url": "https://github.com/ARMmbed/mbedtls.git"
+    },
+    {
+      "copyright": "Copyright (c) 2013-2026 Damien P. George",
+      "disposition": "allow",
+      "id": "micropython-core",
+      "license_texts": [
+        {
+          "identifier": "MIT",
+          "path": "firmware/licenses/evidence/micropython-LICENSE.txt",
+          "sha256": "c7273a4675e28b40547b4814bf68da41954632ebbc38b3fff69f22d69850f690"
+        }
+      ],
+      "notice_files": [],
+      "selected_spdx_expression": "MIT",
+      "source_ref": "e0e9fbb17ed6fd06bb76e266ae554784c9c80804",
+      "source_roots": [
+        {
+          "namespace": "micropython",
+          "path": "drivers"
+        },
+        {
+          "namespace": "micropython",
+          "path": "extmod"
+        },
+        {
+          "namespace": "micropython",
+          "path": "py"
+        },
+        {
+          "namespace": "micropython",
+          "path": "shared"
+        }
+      ],
+      "source_spdx_expression": "MIT",
+      "source_url": "https://github.com/micropython/micropython"
+    },
+    {
+      "copyright": "Copyright (c) 2013, 2014 Damien P. George",
+      "disposition": "allow",
+      "id": "micropython-libm-mit",
+      "license_texts": [
+        {
+          "identifier": "MIT",
+          "path": "firmware/licenses/texts/MIT.txt",
+          "sha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5"
+        }
+      ],
+      "notice_files": [],
+      "selected_spdx_expression": "MIT",
+      "source_ref": "e0e9fbb17ed6fd06bb76e266ae554784c9c80804",
+      "source_roots": [
+        {
+          "namespace": "micropython",
+          "path": "lib/libm/math.c"
+        }
+      ],
+      "source_spdx_expression": "MIT",
+      "source_url": "https://github.com/micropython/micropython"
+    },
+    {
+      "copyright": "Copyright The Mbed TLS Contributors; Copyright (c) 2024 Damien P. George; Copyright (C) 2006-2015 ARM Limited",
+      "disposition": "allow",
+      "id": "micropython-mbedtls-apache",
+      "license_texts": [
+        {
+          "identifier": "Apache-2.0",
+          "path": "firmware/licenses/texts/Apache-2.0.txt",
+          "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+        }
+      ],
+      "notice_files": [
+        {
+          "path": "firmware/licenses/notices/rp2/micropython-mbedtls-apache.txt",
+          "sha256": "15348d5b16db9a60297b5c5a76e7dc5865706e5db2abe817791454e22233214a"
+        }
+      ],
+      "selected_spdx_expression": "Apache-2.0",
+      "source_ref": "e0e9fbb17ed6fd06bb76e266ae554784c9c80804",
+      "source_roots": [
+        {
+          "namespace": "micropython",
+          "path": "extmod/mbedtls"
+        },
+        {
+          "namespace": "micropython",
+          "path": "lib/mbedtls_errors"
+        }
+      ],
+      "source_spdx_expression": "Apache-2.0",
+      "source_url": "https://github.com/micropython/micropython"
+    },
+    {
+      "copyright": "Copyright (c) 2020 Raspberry Pi (Trading) Ltd.; other MicroPython contributors",
+      "disposition": "allow",
+      "id": "micropython-rp2",
+      "license_texts": [
+        {
+          "identifier": "MIT",
+          "path": "firmware/licenses/evidence/micropython-LICENSE.txt",
+          "sha256": "c7273a4675e28b40547b4814bf68da41954632ebbc38b3fff69f22d69850f690"
+        }
+      ],
+      "notice_files": [],
+      "selected_spdx_expression": "MIT",
+      "source_ref": "e0e9fbb17ed6fd06bb76e266ae554784c9c80804",
+      "source_roots": [
+        {
+          "namespace": "micropython",
+          "path": "ports/rp2"
+        }
+      ],
+      "source_spdx_expression": "MIT",
+      "source_url": "https://github.com/micropython/micropython"
+    },
+    {
+      "copyright": "Copyright (c) 2020 Raspberry Pi (Trading) Ltd.",
+      "disposition": "allow",
+      "id": "micropython-rp2-bsd",
+      "license_texts": [
+        {
+          "identifier": "BSD-3-Clause",
+          "path": "firmware/licenses/texts/BSD-3-Clause.txt",
+          "sha256": "5a93d5831e1297ab10fe643e1a631e83be392896da14ee2951285a79012df69d"
+        }
+      ],
+      "notice_files": [
+        {
+          "path": "firmware/licenses/notices/rp2/micropython-rp2-bsd.txt",
+          "sha256": "934b10d013efe4124fb1bb654e7f088fd8685c2ca60f5c5c75d975ae40199a23"
+        }
+      ],
+      "selected_spdx_expression": "BSD-3-Clause",
+      "source_ref": "e0e9fbb17ed6fd06bb76e266ae554784c9c80804",
+      "source_roots": [
+        {
+          "namespace": "micropython",
+          "path": "ports/rp2/clocks_extra.c"
+        },
+        {
+          "namespace": "micropython",
+          "path": "ports/rp2/mutex_extra.c"
+        }
+      ],
+      "source_spdx_expression": "BSD-3-Clause",
+      "source_url": "https://github.com/micropython/micropython"
+    },
+    {
+      "copyright": "Copyright (C) 2018 ChaN",
+      "disposition": "allow",
+      "id": "oofatfs",
+      "license_texts": [
+        {
+          "identifier": "BSD-1-Clause",
+          "path": "firmware/licenses/texts/BSD-1-Clause.txt",
+          "sha256": "244e17b6f02493de568a8ddfd7f4349996a6c332c0585d304ceaf5394becea52"
+        }
+      ],
+      "notice_files": [
+        {
+          "path": "firmware/licenses/notices/rp2/oofatfs.txt",
+          "sha256": "32f727e7a395a41e93bab9316011f5296daaa3f45918d7162d7bc8b16433d4f4"
+        }
+      ],
+      "selected_spdx_expression": "BSD-1-Clause",
+      "source_ref": "e0e9fbb17ed6fd06bb76e266ae554784c9c80804",
+      "source_roots": [
+        {
+          "namespace": "micropython",
+          "path": "lib/oofatfs"
+        }
+      ],
+      "source_spdx_expression": "BSD-1-Clause",
+      "source_url": "https://github.com/micropython/micropython"
+    },
+    {
+      "copyright": "Copyright 2020 (c) 2020 Raspberry Pi (Trading) Ltd.",
+      "disposition": "allow",
+      "id": "pico-sdk",
+      "license_texts": [
+        {
+          "identifier": "BSD-3-Clause",
+          "path": "firmware/upstream/micropython/lib/pico-sdk/LICENSE.TXT",
+          "sha256": "483f865953435b66c443dee7558debe3cc3cf8fcbb6a112fd9fc6a795d53f1f6"
+        }
+      ],
+      "notice_files": [],
+      "selected_spdx_expression": "BSD-3-Clause",
+      "source_ref": "a1438dff1d38bd9c65dbd693f0e5db4b9ae91779",
+      "source_roots": [
+        {
+          "namespace": "micropython",
+          "path": "lib/pico-sdk/src"
+        }
+      ],
+      "source_spdx_expression": "BSD-3-Clause",
+      "source_url": "https://github.com/raspberrypi/pico-sdk.git"
+    },
+    {
+      "copyright": "Copyright (c) 2009-2021 Arm Limited; Copyright (c) 2020 Raspberry Pi (Trading) Ltd.",
+      "disposition": "allow",
+      "id": "pico-sdk-cmsis",
+      "license_texts": [
+        {
+          "identifier": "Apache-2.0",
+          "path": "firmware/upstream/micropython/lib/pico-sdk/src/rp2_common/cmsis/stub/CMSIS/LICENSE.txt",
+          "sha256": "b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1"
+        },
+        {
+          "identifier": "BSD-3-Clause",
+          "path": "firmware/licenses/texts/BSD-3-Clause.txt",
+          "sha256": "5a93d5831e1297ab10fe643e1a631e83be392896da14ee2951285a79012df69d"
+        }
+      ],
+      "notice_files": [
+        {
+          "path": "firmware/licenses/notices/rp2/pico-sdk-cmsis.txt",
+          "sha256": "aa75834c3b76535c4b92d171f67c467f36c2caf712a15762e732c41086a34dd9"
+        }
+      ],
+      "selected_spdx_expression": "Apache-2.0 AND BSD-3-Clause",
+      "source_ref": "a1438dff1d38bd9c65dbd693f0e5db4b9ae91779",
+      "source_roots": [
+        {
+          "namespace": "micropython",
+          "path": "lib/pico-sdk/src/rp2_common/cmsis/stub/CMSIS/Device/RP2350/Include/system_RP2350.h"
+        },
+        {
+          "namespace": "micropython",
+          "path": "lib/pico-sdk/src/rp2_common/cmsis/stub/CMSIS/Device/RP2350/Source/system_RP2350.c"
+        }
+      ],
+      "source_spdx_expression": "Apache-2.0 AND BSD-3-Clause",
+      "source_url": "https://github.com/raspberrypi/pico-sdk.git"
+    },
+    {
+      "copyright": "Copyright (c) 2009-2024 Arm Limited",
+      "disposition": "allow",
+      "id": "pico-sdk-cmsis-core",
+      "license_texts": [
+        {
+          "identifier": "Apache-2.0",
+          "path": "firmware/upstream/micropython/lib/pico-sdk/src/rp2_common/cmsis/stub/CMSIS/LICENSE.txt",
+          "sha256": "b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1"
+        }
+      ],
+      "notice_files": [],
+      "selected_spdx_expression": "Apache-2.0",
+      "source_ref": "a1438dff1d38bd9c65dbd693f0e5db4b9ae91779",
+      "source_roots": [
+        {
+          "namespace": "micropython",
+          "path": "lib/pico-sdk/src/rp2_common/cmsis/stub/CMSIS/Core/Include"
+        }
+      ],
+      "source_spdx_expression": "Apache-2.0",
+      "source_url": "https://github.com/raspberrypi/pico-sdk.git"
+    },
+    {
+      "copyright": "Copyright (c) 2024 Raspberry Pi Ltd.",
+      "disposition": "allow",
+      "id": "pico-sdk-cmsis-rp2350",
+      "license_texts": [
+        {
+          "identifier": "BSD-3-Clause",
+          "path": "firmware/licenses/texts/BSD-3-Clause.txt",
+          "sha256": "5a93d5831e1297ab10fe643e1a631e83be392896da14ee2951285a79012df69d"
+        }
+      ],
+      "notice_files": [],
+      "selected_spdx_expression": "BSD-3-Clause",
+      "source_ref": "a1438dff1d38bd9c65dbd693f0e5db4b9ae91779",
+      "source_roots": [
+        {
+          "namespace": "micropython",
+          "path": "lib/pico-sdk/src/rp2_common/cmsis/stub/CMSIS/Device/RP2350/Include/RP2350.h"
+        }
+      ],
+      "source_spdx_expression": "BSD-3-Clause",
+      "source_url": "https://github.com/raspberrypi/pico-sdk.git"
+    },
+    {
+      "copyright": "Copyright (c) 2014-2019 Marco Paland, PALANDesign Hannover, Germany",
+      "disposition": "allow",
+      "id": "pico-sdk-printf",
+      "license_texts": [
+        {
+          "identifier": "MIT",
+          "path": "firmware/licenses/texts/MIT.txt",
+          "sha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5"
+        }
+      ],
+      "notice_files": [
+        {
+          "path": "firmware/licenses/notices/rp2/pico-sdk-printf.txt",
+          "sha256": "cbbd39c2ede4d3c48255129616874b74a158826036acb34ae1349434354d6e75"
+        }
+      ],
+      "selected_spdx_expression": "MIT",
+      "source_ref": "a1438dff1d38bd9c65dbd693f0e5db4b9ae91779",
+      "source_roots": [
+        {
+          "namespace": "micropython",
+          "path": "lib/pico-sdk/src/rp2_common/pico_printf/printf.c"
+        }
+      ],
+      "source_spdx_expression": "MIT",
+      "source_url": "https://github.com/raspberrypi/pico-sdk.git"
+    },
+    {
+      "copyright": "Copyright (c) 2026 Viwat Vchirawongkwin (a SciLabPro open-source project)",
+      "disposition": "project-owned",
+      "id": "pyble-first-party",
+      "license_texts": [
+        {
+          "identifier": "MIT",
+          "path": "LICENSE",
+          "sha256": "111f57019eee239fe43e52fb59fa5424a7d89d7a7b1a6f538bb9610798909de6"
+        }
+      ],
+      "notice_files": [],
+      "selected_spdx_expression": "MIT",
+      "source_ref": "0.6.0",
+      "source_roots": [
+        {
+          "namespace": "repo",
+          "path": "firmware/board_overlays/rpi-pico2-w"
+        },
+        {
+          "namespace": "repo",
+          "path": "firmware/pyble"
+        },
+        {
+          "namespace": "repo",
+          "path": "firmware/user_c_modules/pyble"
+        }
+      ],
+      "source_spdx_expression": "MIT",
+      "source_url": "https://github.com/PyBLE-dev/PyBLE"
+    },
+    {
+      "copyright": "Copyright (c) 2007-2009 Russ Cox, Google Inc.; Copyright 2014 Paul Sokolovsky; MicroPython contributors",
+      "disposition": "allow",
+      "id": "re1.5-bsd",
+      "license_texts": [
+        {
+          "identifier": "BSD-3-Clause",
+          "path": "firmware/licenses/evidence/rp2/re1.5/v0.8.2/LICENSE",
+          "sha256": "df5c6cd09a47c05bd8529b3188b0daa5f5ffbd5c73398fd76bafb64b75663fab"
+        }
+      ],
+      "notice_files": [
+        {
+          "path": "firmware/licenses/notices/rp2/re1.5-bsd.txt",
+          "sha256": "4736c9db06d75eafa9d07f2b5555e20ec46b9cc8b87c36c4e1104758dfbcacf5"
+        }
+      ],
+      "selected_spdx_expression": "BSD-3-Clause",
+      "source_ref": "e0e9fbb17ed6fd06bb76e266ae554784c9c80804",
+      "source_roots": [
+        {
+          "namespace": "micropython",
+          "path": "lib/re1.5/charclass.c"
+        },
+        {
+          "namespace": "micropython",
+          "path": "lib/re1.5/compilecode.c"
+        },
+        {
+          "namespace": "micropython",
+          "path": "lib/re1.5/re1.5.h"
+        },
+        {
+          "namespace": "micropython",
+          "path": "lib/re1.5/recursiveloop.c"
+        }
+      ],
+      "source_spdx_expression": "BSD-3-Clause",
+      "source_url": "https://github.com/micropython/micropython"
+    },
+    {
+      "copyright": "Copyright (c) 2018 hathach (tinyusb.org)",
+      "disposition": "allow",
+      "id": "tinyusb",
+      "license_texts": [
+        {
+          "identifier": "MIT",
+          "path": "firmware/licenses/evidence/tinyusb-LICENSE.txt",
+          "sha256": "b171720e8a442e7a3957d83c62cd3299dbb29da3db534cc626f9dded0de2ca44"
+        }
+      ],
+      "notice_files": [],
+      "selected_spdx_expression": "MIT",
+      "source_ref": "aa0fc2e08f1c2dd6f026a431e8989357fbb4c5bf",
+      "source_roots": [
+        {
+          "namespace": "micropython",
+          "path": "lib/tinyusb"
+        }
+      ],
+      "source_spdx_expression": "MIT",
+      "source_url": "https://github.com/hathach/tinyusb"
+    },
+    {
+      "copyright": "Copyright (c) 1998-2003 Joergen Ibsen / Jibz; Copyright (C) 1995-1998 Jean-loup Gailly and Mark Adler; Copyright (c) 2014-2018 Paul Sokolovsky; Copyright (c) 2023 Jim Mussared",
+      "disposition": "allow",
+      "id": "uzlib-zlib",
+      "license_texts": [
+        {
+          "identifier": "Zlib",
+          "path": "firmware/licenses/texts/Zlib.txt",
+          "sha256": "bfb1112d49db5b1daecdfef24bd7e2f3ea0bafb33aa67aa0ab51e2bf8407c03d"
+        }
+      ],
+      "notice_files": [
+        {
+          "path": "firmware/licenses/notices/rp2/uzlib-zlib.txt",
+          "sha256": "32745fdb77191c2f1d911e67c4f6c972bd70a1f6f1988ba3071a4c8a32fb5174"
+        }
+      ],
+      "selected_spdx_expression": "Zlib",
+      "source_ref": "e0e9fbb17ed6fd06bb76e266ae554784c9c80804",
+      "source_roots": [
+        {
+          "namespace": "micropython",
+          "path": "lib/uzlib/adler32.c"
+        },
+        {
+          "namespace": "micropython",
+          "path": "lib/uzlib/crc32.c"
+        },
+        {
+          "namespace": "micropython",
+          "path": "lib/uzlib/header.c"
+        },
+        {
+          "namespace": "micropython",
+          "path": "lib/uzlib/tinflate.c"
+        },
+        {
+          "namespace": "micropython",
+          "path": "lib/uzlib/uzlib.h"
+        },
+        {
+          "namespace": "micropython",
+          "path": "lib/uzlib/uzlib_conf.h"
+        }
+      ],
+      "source_spdx_expression": "Zlib",
+      "source_url": "https://github.com/micropython/micropython"
+    }
+  ],
+  "target": "rpi-pico2-w"
+}

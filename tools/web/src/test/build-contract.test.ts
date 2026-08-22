@@ -2,9 +2,10 @@
 // Part of PyBLE (https://pyble.dev) — see /LICENSE.
 
 import { execFile as execFileCallback } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
 import { describe, expect, it } from "vitest";
@@ -16,6 +17,20 @@ import {
 } from "@/test/fixtures/firmware-release";
 
 const execFile = promisify(execFileCallback);
+
+async function authoredFiles(root: string, relative = ""): Promise<string[]> {
+  const entries = await readdir(join(root, relative), { withFileTypes: true });
+  const paths: string[] = [];
+  for (const entry of entries) {
+    const child = join(relative, entry.name);
+    if (entry.isDirectory()) {
+      paths.push(...(await authoredFiles(root, child)));
+    } else {
+      paths.push(child);
+    }
+  }
+  return paths;
+}
 
 function noticeSection(notice: string, installedPath: string) {
   const marker = `Installed path: ${installedPath}`;
@@ -30,6 +45,26 @@ function noticeSection(notice: string, installedPath: string) {
 }
 
 describe("production build contract", () => {
+  it("refuses loopback preview artifacts before either production build", async () => {
+    const [packageJson, guardSource] = await Promise.all([
+      readFile(join(process.cwd(), "package.json"), "utf8").then(JSON.parse),
+      readFile(
+        join(process.cwd(), "scripts", "assert-no-local-firmware-preview.js"),
+        "utf8",
+      ),
+    ]);
+
+    expect(packageJson.scripts["build:static"]).toMatch(
+      /^node scripts\/assert-no-local-firmware-preview\.js && /,
+    );
+    expect(packageJson.scripts["build:sites"]).toMatch(
+      /^node scripts\/assert-no-local-firmware-preview\.js && /,
+    );
+    expect(guardSource).toContain(".pyble-local-preview");
+    expect(guardSource).toMatch(/lstat|stat/);
+    expect(guardSource).toMatch(/refus|forbid|local preview/i);
+  });
+
   it("builds the portable export and the Sites vinext artifact", async () => {
     const packageJson = JSON.parse(
       await readFile(join(process.cwd(), "package.json"), "utf8"),
@@ -39,8 +74,10 @@ describe("production build contract", () => {
 
     expect(packageJson.scripts).toMatchObject({
       build: "npm run build:static && npm run build:sites",
-      "build:static": "next build",
-      "build:sites": "vinext build && node scripts/prepare-sites-output.js",
+      "build:static":
+        "node scripts/assert-no-local-firmware-preview.js && next build",
+      "build:sites":
+        "node scripts/assert-no-local-firmware-preview.js && vinext build && node scripts/prepare-sites-output.js",
     });
   });
 
@@ -60,6 +97,224 @@ describe("production build contract", () => {
         "sha512-3pwkeFFm5Fj7UQo8SJNYK5RXrtNCpq6X9QoI6bMT4GBZWgrJqjn0YvM9ihG74BtMoSFYXfmDtkehuxe50PTMPQ==",
       license: "Apache-2.0",
     });
+  });
+
+  it("pins the audited build closure and excludes the vulnerable image parser package", async () => {
+    const [packageJson, packageLock, appFiles, sourceFiles] = await Promise.all(
+      [
+        readFile(join(process.cwd(), "package.json"), "utf8").then(JSON.parse),
+        readFile(join(process.cwd(), "package-lock.json"), "utf8").then(
+          JSON.parse,
+        ),
+        authoredFiles(join(process.cwd(), "src", "app")),
+        authoredFiles(join(process.cwd(), "src")),
+      ],
+    );
+
+    expect(packageJson.dependencies?.vinext).toBe("1.0.0-beta.8");
+    expect(packageJson.devDependencies?.["@vitejs/plugin-rsc"]).toBe("0.5.34");
+    expect(packageJson.scripts?.["audit:dependencies"]).toBe(
+      "npm audit --audit-level=high",
+    );
+    expect(packageJson.scripts?.check).toContain("npm run audit:dependencies");
+    expect(packageJson.overrides?.next?.postcss).toBe("8.5.26");
+    expect(packageLock.packages?.["node_modules/vinext"]?.version).toBe(
+      "1.0.0-beta.8",
+    );
+    expect(
+      packageLock.packages?.["node_modules/@vitejs/plugin-rsc"]?.version,
+    ).toBe("0.5.34");
+    expect(packageLock.packages?.["node_modules/postcss"]?.version).toBe(
+      "8.5.26",
+    );
+    expect(packageLock.packages?.["node_modules/nanoid"]?.version).toBe(
+      "3.3.18",
+    );
+    expect(packageLock.packages?.["node_modules/image-size"]).toBeUndefined();
+    expect(
+      (
+        Object.values(packageLock.packages ?? {}) as Array<{
+          dependencies?: Record<string, string>;
+          optionalDependencies?: Record<string, string>;
+        }>
+      ).some(
+        (entry) =>
+          entry?.dependencies?.["image-size"] !== undefined ||
+          entry?.optionalDependencies?.["image-size"] !== undefined,
+      ),
+    ).toBe(false);
+
+    const metadataImageRoute =
+      /^(?:favicon|icon|apple-icon|opengraph-image|twitter-image)(?:\..+)?$/;
+    expect(
+      appFiles.filter((path) => metadataImageRoute.test(basename(path))),
+    ).toEqual([]);
+
+    const sourceImageImport = [
+      /\bfrom\s*["'][^"']+\.(?:avif|gif|ico|icns|jpe?g|jxl|png|svg|webp)(?:\?[^"']*)?["']/,
+      /\bimport\s*["'][^"']+\.(?:avif|gif|ico|icns|jpe?g|jxl|png|svg|webp)(?:\?[^"']*)?["']/,
+      /\bimport\s*\(\s*["'][^"']+\.(?:avif|gif|ico|icns|jpe?g|jxl|png|svg|webp)(?:\?[^"']*)?["']\s*\)/,
+      /\brequire\s*\(\s*["'][^"']+\.(?:avif|gif|ico|icns|jpe?g|jxl|png|svg|webp)(?:\?[^"']*)?["']\s*\)/,
+    ];
+    const sourceImageImports = (
+      await Promise.all(
+        sourceFiles
+          .filter((path) => /\.(?:js|jsx|ts|tsx)$/.test(path))
+          .map(async (path) => ({
+            path,
+            source: await readFile(join(process.cwd(), "src", path), "utf8"),
+          })),
+      )
+    )
+      .filter(({ source }) =>
+        sourceImageImport.some((pattern) => pattern.test(source)),
+      )
+      .map(({ path }) => path);
+    expect(sourceImageImports).toEqual([]);
+  });
+
+  it("hardens and attributes the image parser bundled inside vinext", async () => {
+    const bundledParserPath = join(
+      process.cwd(),
+      "node_modules",
+      "vinext",
+      "dist",
+      "deps",
+      ".pnpm",
+      "image-size@2.0.2",
+      "deps",
+      "image-size",
+      "dist",
+      "index.js",
+    );
+    const [packageJson, parserSource, notice] = await Promise.all([
+      readFile(join(process.cwd(), "package.json"), "utf8").then(JSON.parse),
+      readFile(bundledParserPath, "utf8"),
+      readFile(
+        join(process.cwd(), "public", "WEBSITE_THIRD_PARTY_LICENSES.txt"),
+        "utf8",
+      ),
+    ]);
+
+    expect(packageJson.scripts?.postinstall).toBe(
+      "node scripts/patch-vinext-image-size.js",
+    );
+    expect(parserSource).toContain(
+      'if (imageHeader[1] <= 0) throw new TypeError("Invalid ICNS, zero-length image entry");',
+    );
+    expect(parserSource).toContain(
+      'if (ispeBox.size <= 0) throw new TypeError("Invalid HEIF, zero-length ispe box");',
+    );
+    expect(parserSource).toContain(
+      'if (jxlpBox.size <= 0) throw new TypeError("Invalid JXL, zero-length jxlp box");',
+    );
+    expect(notice).toContain("image-size 2.0.2");
+    expect(notice).toContain(
+      "Copyright © 2013-Present Aditya Yadav, http://netroy.in",
+    );
+  });
+
+  it("applies all bundled parser guards idempotently and rejects upstream drift", async () => {
+    const vulnerableFragments = [
+      "\t\t\tconst imageHeader = readImageHeader(input, imageOffset);\n\t\t\tconst imageSize2 = getImageSize2(imageHeader[0]);",
+      '\t\t\tconst ispeBox = findBox(input, "ispe", currentOffset);\n\t\t\tif (!ispeBox) break;\n\t\t\tconst rawWidth = readUInt32BE(input, ispeBox.offset + 12);',
+      '\t\tconst jxlpBox = findBox(input, "jxlp", offset);\n\t\tif (!jxlpBox) break;\n\t\tpartialStreams.push(input.slice(jxlpBox.offset + 12, jxlpBox.offset + jxlpBox.size));',
+    ].join("\n");
+
+    const patcherUrl = pathToFileURL(
+      join(process.cwd(), "scripts", "patch-vinext-image-size.js"),
+    ).href;
+    const childSource = `
+      import { hardenBundledImageSize } from ${JSON.stringify(patcherUrl)};
+      const vulnerable = ${JSON.stringify(vulnerableFragments)};
+      const hardened = hardenBundledImageSize(vulnerable);
+      for (const marker of [
+        "Invalid ICNS, zero-length image entry",
+        "Invalid HEIF, zero-length ispe box",
+        "Invalid JXL, zero-length jxlp box",
+      ]) {
+        if (!hardened.includes(marker)) throw new Error(\`missing \${marker}\`);
+      }
+      if (hardenBundledImageSize(hardened) !== hardened) {
+        throw new Error("hardening is not idempotent");
+      }
+      let driftRejected = false;
+      try {
+        hardenBundledImageSize("upstream source drift");
+      } catch (error) {
+        driftRejected = String(error).includes(
+          "Cannot apply GHSA-w3rx-r6r6-pgpr hardening",
+        );
+      }
+      if (!driftRejected) throw new Error("upstream drift was not rejected");
+      console.log("ok");
+    `;
+    const result = await execFile(
+      process.execPath,
+      ["--input-type=module", "--eval", childSource],
+      { timeout: 2_000 },
+    );
+    expect(result.stderr).toBe("");
+    expect(result.stdout).toBe("ok\n");
+  });
+
+  it("terminates safely for all three bundled parser advisory inputs", async () => {
+    const bundledParserUrl = pathToFileURL(
+      join(
+        process.cwd(),
+        "node_modules/vinext/dist/deps/.pnpm/image-size@2.0.2/deps/image-size/dist/index.js",
+      ),
+    ).href;
+    const parserPocs = [
+      {
+        name: "ICNS",
+        expected: "Invalid ICNS, zero-length image entry",
+        bytes: [
+          0x69, 0x63, 0x6e, 0x73, 0x00, 0x00, 0x00, 0x10, 0x69, 0x73, 0x33,
+          0x32, 0x00, 0x00, 0x00, 0x00,
+        ],
+      },
+      {
+        name: "HEIF/AVIF",
+        expected: "Invalid HEIF, zero-length ispe box",
+        bytes: [
+          0, 0, 0, 16, 0x66, 0x74, 0x79, 0x70, 0x61, 0x76, 0x69, 0x66, 0, 0, 0,
+          0, 0, 0, 0, 36, 0x6d, 0x65, 0x74, 0x61, 0, 0, 0, 0, 0, 0, 0, 8, 0x69,
+          0x70, 0x72, 0x70, 0, 0, 0, 20, 0x69, 0x70, 0x63, 0x6f, 0, 0, 0, 0,
+          0x69, 0x73, 0x70, 0x65, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        ],
+      },
+      {
+        name: "JXL",
+        expected: "Invalid JXL, zero-length jxlp box",
+        bytes: [
+          0, 0, 0, 12, 0x4a, 0x58, 0x4c, 0x20, 0x0d, 0x0a, 0x87, 0x0a, 0, 0, 0,
+          12, 0x66, 0x74, 0x79, 0x70, 0x6a, 0x78, 0x6c, 0x20, 0, 0, 0, 0, 0x6a,
+          0x78, 0x6c, 0x70,
+        ],
+      },
+    ] as const;
+
+    for (const poc of parserPocs) {
+      const childSource = `
+        import { imageSize } from ${JSON.stringify(bundledParserUrl)};
+        try {
+          imageSize(Uint8Array.from(${JSON.stringify(poc.bytes)}));
+          console.error("unexpected parser success");
+          process.exit(3);
+        } catch (error) {
+          if (!(error instanceof TypeError)) throw error;
+          console.log(error.message);
+        }
+      `;
+      const result = await execFile(
+        process.execPath,
+        ["--input-type=module", "--eval", childSource],
+        { timeout: 2_000 },
+      );
+      expect(result.stderr, poc.name).toBe("");
+      expect(result.stdout.trim(), poc.name).toBe(poc.expected);
+    }
   });
 
   it("checks and publishes a deterministic notice for the exact website dependency closure", async () => {

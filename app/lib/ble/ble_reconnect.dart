@@ -87,8 +87,9 @@ class ReconnectingBleLink implements BleLink {
   Stream<List<int>> get inbound => _inbound.stream;
 
   @override
-  Future<void> write(List<int> bytes) =>
-      _inner?.write(bytes) ?? Future<void>.value();
+  Future<void> write(List<int> bytes, {required bool withoutResponse}) =>
+      _inner?.write(bytes, withoutResponse: withoutResponse) ??
+      Future<void>.value();
 
   @override
   int get mtu => _inner?.mtu ?? 0;

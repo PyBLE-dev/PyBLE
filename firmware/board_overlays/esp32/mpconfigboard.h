@@ -16,6 +16,15 @@
 #define PBLE_AGENT_VERSION "0.0.0-dev"
 #endif
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+void pble_vm_epoch_begin(void);
+#ifdef __cplusplus
+}
+#endif
+#define MICROPY_PORT_INIT_FUNC pble_vm_epoch_begin()
+
 #define PBLE_TARGET_ID "esp32"
 #define MICROPY_HW_BOARD_NAME "PyBLE v" PBLE_AGENT_VERSION " esp32"
 #define MICROPY_HW_MCU_NAME   "ESP32"

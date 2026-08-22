@@ -54,6 +54,24 @@ FRAG_LAST = 0x40
 FRAG_INDEX_MASK = 0x3F
 FRAG_INDEX_MOD = 64
 
+# Reassembled-message cap (ports/rpi-pico2-w.md P6, FROZEN): covers RUN source
+# <= 2048 plus headers with margin. An oversize message is dropped and reported
+# via `on_oversize` so the agent can answer RSP ERANGE with an opcode/id echo.
+RX_MAX = 4096
+
+
+def _noop_published():
+    pass
+
+# MicroPython BLE IRQ event codes, module-local by REQUIREMENT (port spec P7):
+# rp2 modbluetooth exports NO `_IRQ_*` attributes (hardware-verified
+# 2026-08-11), so reading `bluetooth._IRQ_*` raises AttributeError on device.
+# These are the stable numeric codes MicroPython documents for all ports.
+_IRQ_CENTRAL_CONNECT = 1
+_IRQ_CENTRAL_DISCONNECT = 2
+_IRQ_GATTS_WRITE = 3
+_IRQ_MTU_EXCHANGED = 21
+
 
 # ---------------------------------------------------------------------------
 # PURE, BLE-INDEPENDENT helpers (host-testable — no `bluetooth`/`machine`).
@@ -111,6 +129,7 @@ class BleLink:
     def __init__(self):
         self._ble = None            # bluetooth.BLE(), bound in start()
         self._conn_handle = None
+        self._session_generation = 0
         self._mtu = DEFAULT_MTU     # until the central negotiates upward
         self._mac = b"\x00" * 6     # raw BLE MAC, read from the stack in start()
         self._info_payload = b""
@@ -128,6 +147,7 @@ class BleLink:
         self._on_message = None
         self._on_connect = None
         self._on_disconnect = None
+        self._on_oversize = None
 
     # -- frozen ble<->proto contract ---------------------------------------
 
@@ -142,6 +162,14 @@ class BleLink:
     def on_disconnect(self, cb):
         self._on_disconnect = cb
 
+    def on_oversize(self, cb):
+        """Register the P6 oversize-report callback: cb(head: bytes) fires ONCE
+        per reassembled message exceeding RX_MAX, with `head` carrying at least
+        the §3.1 header bytes (head[2]=opcode, head[3]=id) so the agent can
+        echo RSP ERANGE. The oversize message itself is dropped, never
+        delivered; reassembly recovers on the next FIRST fragment."""
+        self._on_oversize = cb
+
     def mtu(self):
         """FR-BLE-7/8: the negotiated ATT MTU (247 once the central requests it,
         the BLE default until then). Sizes proto/storage buffers and the
@@ -152,6 +180,12 @@ class BleLink:
         """Raw 6-byte BLE MAC. Exposed to pyble_info/identity for device_id
         derivation (FR-BLE-5) — pyble_ble never derives device_id itself."""
         return self._mac
+
+    def session_token(self):
+        """Current immutable RP2 event-session identity, or None offline."""
+        if self._conn_handle is None:
+            return None
+        return (self._conn_handle, self._session_generation)
 
     def set_info_payload(self, payload):
         """FR-BLE-4: update the INFO characteristic's served bytes (authored by
@@ -168,14 +202,46 @@ class BleLink:
         if self._ble is not None and self._conn_handle is None:
             self._start_advertising()
 
-    def send_message(self, msg):
+    def _notify_fragment(self, frag):
+        self._ble.gatts_notify(self._conn_handle, self._tx_handle, frag)
+        return True
+
+    def _omit_fragment(self, frag):
+        return False
+
+    def _notify_final(self, frag, published):
+        # Branch-free local-acceptance -> receipt cut; see send_message().
+        self._ble.gatts_notify(self._conn_handle, self._tx_handle, frag)
+        published()
+        return True
+
+    def _omit_final(self, frag, published):
+        return False
+
+    def send_message(self, msg, on_published=None, expected_session=None):
         """Sole TX path: fragment `msg` to `payload_size(mtu)` and Notify each
         §3.2 fragment on TX (FR-BLE-3/10). `msg` is already-encoded PBLE/1 bytes
-        from pyble_proto — never inspected/decoded here."""
-        if self._ble is None or self._conn_handle is None:
-            return
-        for frag in _fragment(msg, payload_size(self._mtu)):
-            self._ble.gatts_notify(self._conn_handle, self._tx_handle, frag)
+        from pyble_proto — never inspected/decoded here. An optional receipt is
+        called immediately after local acceptance of the final fragment."""
+        current_session = self.session_token()
+        if self._ble is None or current_session is None:
+            return False
+        if expected_session is None:
+            expected_session = current_session
+        published = (_noop_published if on_published is None
+                     else on_published)
+        fragments = tuple(_fragment(msg, payload_size(self._mtu)))
+        for frag in fragments[:-1]:
+            accepted = (self._omit_fragment, self._notify_fragment)[
+                expected_session == self.session_token()](frag)
+            if not accepted:
+                return False
+        # Selection, final Notify, and receipt are branch-adjacent. The pinned
+        # VM runs connection callbacks/pending exceptions only at branches, so
+        # a reused handle cannot slip between the exact-session check and TX.
+        return (self._omit_final, self._notify_final)[
+            expected_session == self.session_token()](
+                fragments[-1], published)
 
     def start(self, info_payload=b""):
         """Boot the NimBLE peripheral: bind the stack, read the MAC, register the
@@ -188,6 +254,8 @@ class BleLink:
         self._info_payload = info_read_value(info_payload)
         self._ble = bluetooth.BLE()
         self._ble.active(True)
+        # P7: pin the ATT MTU ceiling to 247 — only accepted AFTER active(True).
+        self._ble.config(mtu=PREFERRED_MTU)
         self._ble.irq(self._irq)
 
         # Per-chip overlay hook (M3): the BLE MAC is the only chip-varying value
@@ -204,6 +272,13 @@ class BleLink:
         ((self._rx_handle, self._tx_handle, self._info_handle),) = \
             self._ble.gatts_register_services((service,))
 
+        # P7 (hardware-verified): the default ~20-byte GATTS attribute buffer
+        # SILENTLY TRUNCATES writes — arm RX for one full MTU-247 write
+        # immediately after registration, BEFORE the board is connectable.
+        # append=False: one-chunk-one-packet stays the default (the blob
+        # reframer is a HIL-evidence contingency only).
+        self._ble.gatts_set_buffer(self._rx_handle, PREFERRED_MTU, False)
+
         self._ble.gatts_write(self._info_handle, self._info_payload)
         self._start_advertising()
 
@@ -217,26 +292,37 @@ class BleLink:
         self._ble.gap_advertise(100_000, adv_data=adv, resp_data=resp)
 
     def _irq(self, event, data):
-        import bluetooth  # DEFERRED: IRQ constants live in the NimBLE module.
-
-        if event == bluetooth._IRQ_CENTRAL_CONNECT:
-            self._conn_handle, _, _ = data
-            self._reset_reassembly()
-            if self._on_connect is not None:
-                self._on_connect()
-        elif event == bluetooth._IRQ_CENTRAL_DISCONNECT:
-            self._conn_handle = None
-            self._mtu = DEFAULT_MTU
-            self._reset_reassembly()
-            if self._on_disconnect is not None:
-                self._on_disconnect()
-            self._start_advertising()  # link outlives the session (FR-BLE-11)
-        elif event == bluetooth._IRQ_MTU_EXCHANGED:
-            _, self._mtu = data       # FR-BLE-7: accept the negotiated MTU (247)
-        elif event == bluetooth._IRQ_GATTS_WRITE:
-            _, attr_handle = data
-            if attr_handle == self._rx_handle:
-                self._on_rx(self._ble.gatts_read(self._rx_handle))
+        # Module-local NUMERIC event codes only (port spec P7): rp2 modbluetooth
+        # exports no `_IRQ_*` attributes, so `bluetooth._IRQ_*` reads raise on
+        # device. The ENTIRE dispatch is try/except-wrapped — an exception
+        # escaping a BLE irq handler permanently disables it (and on rp2 the
+        # scheduled-callback exception would be swallowed silently), so nothing
+        # may ever propagate from here.
+        try:
+            if event == _IRQ_CENTRAL_CONNECT:
+                self._session_generation += 1
+                self._conn_handle = data[0]
+                self._reset_reassembly()
+                if self._on_connect is not None:
+                    self._on_connect()
+            elif event == _IRQ_CENTRAL_DISCONNECT:
+                self._conn_handle = None
+                self._mtu = DEFAULT_MTU
+                self._reset_reassembly()
+                if self._on_disconnect is not None:
+                    try:
+                        self._on_disconnect()
+                    except Exception:
+                        pass  # a faulting up-call must not block re-advertising
+                self._start_advertising()  # link outlives session (FR-BLE-11)
+            elif event == _IRQ_MTU_EXCHANGED:
+                self._mtu = data[1]   # FR-BLE-7: accept the negotiated MTU (247)
+            elif event == _IRQ_GATTS_WRITE:
+                if data[1] == self._rx_handle:
+                    self._on_rx(self._ble.gatts_read(self._rx_handle))
+            # Unknown event codes are ignored (forward-compatible).
+        except Exception:
+            pass
 
     # -- §3.2 byte transport (fragment on TX, reassemble on RX) ------------
 
@@ -266,6 +352,18 @@ class BleLink:
 
         self._rx_buf += packet[1:]
         self._rx_next_index = (index + 1) % FRAG_INDEX_MOD
+
+        if len(self._rx_buf) > RX_MAX:
+            # P6: oversize — report ONCE (head carries the §3.1 header bytes so
+            # the agent can echo opcode/id in RSP ERANGE), drop the message,
+            # and recover on the next FIRST fragment. Trailing fragments of the
+            # same message fall into the inactive/gap branch above and stay
+            # silent (no further report).
+            head = bytes(self._rx_buf[:8])
+            self._reset_reassembly()
+            if self._on_oversize is not None:
+                self._on_oversize(head)
+            return
 
         if last:
             msg = bytes(self._rx_buf)

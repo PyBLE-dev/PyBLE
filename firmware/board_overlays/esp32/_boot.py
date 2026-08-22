@@ -27,6 +27,7 @@ try:
     import pble_ble
 
     pble_ble.init_agent()
+
     # S4 (VM-thread model): run user code on a _thread WORKER so the main task
     # keeps the REPL + banner. Launched once, after the agent is up.
     import _thread
@@ -55,6 +56,10 @@ try:
     import pble_boot
 
     pble_boot.maybe_autorun()
+
+    # Open VM command admission only after every worker and boot-time binding
+    # above is complete. A preceding exception intentionally leaves it closed.
+    pble_ble.vm_ready()
 except Exception:
     pass
 

@@ -24,12 +24,14 @@ NEOPIXEL_PACKAGE_DIR = (
 )
 PINNED_NEOPIXEL_SOURCE = (NEOPIXEL_PACKAGE_DIR / "neopixel.py").resolve()
 PINNED_NEOPIXEL_MANIFEST = (NEOPIXEL_PACKAGE_DIR / "manifest.py").resolve()
+CANONICAL_ST7789_SOURCE = FIRMWARE_DIR / "python_modules" / "pyble_st7789.py"
 UPSTREAM_ESP32_MANIFEST = (
     UPSTREAM_DIR / "ports" / "esp32" / "boards" / "manifest.py"
 )
 TARGETS = {
     "esp32": "PYBLE_ESP32",
     "esp32-s3": "PYBLE_ESP32_S3",
+    "waveshare-esp32-s3-lcd-147b": "PYBLE_WAVESHARE_ESP32_S3_LCD_147B",
     "esp32-c3": "PYBLE_ESP32_C3",
 }
 
@@ -116,11 +118,20 @@ class NeoPixelManifestContractTest(unittest.TestCase):
                 )
 
     def test_pyble_does_not_copy_or_implement_a_neopixel_driver(self):
-        copied_drivers = []
-        for path in FIRMWARE_DIR.rglob("neopixel.py"):
-            resolved = path.resolve()
-            if UPSTREAM_DIR.resolve() not in resolved.parents:
-                copied_drivers.append(path.relative_to(REPO_ROOT).as_posix())
+        # Release source is the Git-tracked tree.  Retained build checkouts are
+        # intentionally ignored and may contain their own pristine upstream
+        # neopixel.py; scanning the ambient filesystem would misclassify those
+        # generated inputs as PyBLE-authored/shipped copies.
+        tracked_paths = _git(
+            REPO_ROOT,
+            "ls-files",
+            "-z",
+            "--",
+            "firmware",
+        ).decode("utf-8").split("\0")
+        copied_drivers = sorted(
+            path for path in tracked_paths if path.endswith("/neopixel.py")
+        )
         self.assertEqual(
             copied_drivers,
             [],
@@ -141,6 +152,11 @@ class NeoPixelManifestContractTest(unittest.TestCase):
                     board_dir,
                 )
                 shutil.copytree(FIRMWARE_DIR / "pyble", board_dir / "pyble")
+                if target == "waveshare-esp32-s3-lcd-147b":
+                    shutil.copy2(
+                        CANONICAL_ST7789_SOURCE,
+                        board_dir / "pyble_st7789.py",
+                    )
 
                 resolver = manifestfile.ManifestFile(
                     manifestfile.MODE_FREEZE,

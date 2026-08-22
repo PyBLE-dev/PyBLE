@@ -31,7 +31,8 @@ export function SiteFooter() {
         <p className="site-footer__legal">
           © 2026 PyBLE contributors.
           <br />
-          MIT licensed · A SciLabPro open-source project.
+          Independent MIT-licensed project · maintained under the SciLabPro
+          project name.
         </p>
       </div>
     </footer>

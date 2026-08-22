@@ -7,12 +7,12 @@
 # pins. See docs/specifications/firmware.md §6 (Build & distribution) and the
 # sibling note in firmware/upstream/README.md.
 #
-# BASELINE-SELECTED for firmware v0.4.2. These exact bytes select the public
-# source baseline's MicroPython and ESP-IDF inputs before reproducible builds
-# and OI-1 measurement. The subsequent evidence/policy commit candidate-freezes
-# them before release builds, license audit, and HIL. The commit SHAs are
-# authoritative, and the build gate verifies both upstream checkouts against
-# this file.
+# SOURCE-SELECTED for agent v0.6.0. These exact bytes pin the MicroPython and
+# ESP-IDF source inputs, but do not freeze or qualify a release candidate.
+# Candidate status requires fresh reproducible builds, license audit, OI-1
+# measurement, and HIL; retained v0.4.2 binaries or evidence cannot substitute.
+# The commit SHAs are authoritative, and the build gate verifies both upstream
+# checkouts against this file.
 #
 # Update only via the controlled upgrade workflow
 # (firmware/scripts/upgrade_micropython.sh) — never by hand during a build.
@@ -27,12 +27,13 @@ repo   = "https://github.com/espressif/esp-idf"
 ref    = "v5.5.1"
 commit = "fcae32885b0296b32044cb99ecbdc50d98dddb83"
 
-# Build targets — one MicroPython + ESP-IDF pin drives all three chips.
-# Maps the PyBLE target name to its ESP-IDF target. Per-chip differences live
+# Build targets — one MicroPython + ESP-IDF pin drives four variants/three chips.
+# Maps each PyBLE target name to its ESP-IDF target. Build differences live
 # in the board overlays (Layer 2: firmware/board_overlays/<target>/), not here.
 [targets]
 "esp32"    = "esp32"
 "esp32-s3" = "esp32s3"
+"waveshare-esp32-s3-lcd-147b" = "esp32s3"
 "esp32-c3" = "esp32c3"
 
 [toolchain]
@@ -42,8 +43,44 @@ source    = "pinned-esp-idf"
 mpy_cross = "rebuilt-from-pinned-micropython"
 
 [pyble]
-# Deliberately no board/board_profile/routing fields: PyBLE targets generic
-# ESP32 boards and exposes hardware to user code via standard MicroPython
-# (machine), not via the agent.
-agent_version    = "0.4.2"
+# Board identity remains in [targets] and board overlays rather than protocol
+# routing fields; generic and exact-board variants share the PBLE/1 contract.
+agent_version    = "0.6.0"
 protocol_version = "PBLE/1"
+
+# --- rpi-pico2-w port (ADR-0030) --------------------------------------------
+# Additive sections consumed only by firmware/scripts/build_rp2.sh and
+# prepare.sh's rp2 branch. The already-integrated four-variant ESP source
+# inputs remain independently selected; this combined source identity requires
+# fresh version-bound build and qualification evidence before publication.
+# pico-sdk / BTstack / cyw43-driver are pinned transitively as lib/ submodules
+# of the [micropython] commit; the SHA-drift gate already covers them.
+
+# Maps the PyBLE target name to its upstream MicroPython rp2 board.
+[targets_rp2]
+"rpi-pico2-w" = "RPI_PICO2_W"
+
+[arm_gnu_toolchain]
+# Pinned ARM GNU release for the bare-metal rp2 build (BLD-4 equivalent:
+# build_rp2.sh verifies `arm-none-eabi-gcc --version` and fails cleanly).
+release     = "14.2.Rel1"
+gcc_version = "14.2.1 20241119"
+sha256      = "c7c78ffab9bebfce91d99d3c24da6bf4b81c01e16cf551eb2ff9f25b9e0a3818"
+url         = "https://developer.arm.com/-/media/Files/downloads/gnu/14.2.rel1/binrel/arm-gnu-toolchain-14.2.rel1-darwin-arm64-arm-none-eabi.tar.xz"
+archive_filename = "arm-gnu-toolchain-14.2.rel1-darwin-arm64-arm-none-eabi.tar.xz"
+archive_bytes = 134812148
+archive_format = "tar.xz"
+archive_root = "arm-gnu-toolchain-14.2.rel1-darwin-arm64-arm-none-eabi"
+release_manifest_path = "14.2.rel1-darwin-arm64-arm-none-eabi-manifest.txt"
+release_manifest_sha256 = "ddbbdcc4a90e892515252184db4fe6b8bbf90a3fd77c9ea76d11bd3903b9b29e"
+c_asm_frontend_path = "bin/arm-none-eabi-gcc"
+c_asm_frontend_sha256 = "07bfe9e74cfe028af639bf38703b2259c608aedee6ff991752084a10b82da614"
+cxx_frontend_path = "bin/arm-none-eabi-g++"
+cxx_frontend_sha256 = "1217329890aab103c6af8d08a24c1d9b2be4b8da67748e7704c5c7131c1f5d1d"
+source_archive_url = "https://developer.arm.com/-/media/Files/downloads/gnu/14.2.rel1/srcrel/arm-gnu-toolchain-src-snapshot-14.2.rel1.tar.xz"
+source_archive_filename = "arm-gnu-toolchain-src-snapshot-14.2.rel1.tar.xz"
+source_archive_bytes = 311500280
+source_archive_format = "tar.xz"
+source_archive_sha256 = "e6405f20f8a817a50d92dbf7974d0ee77708dfdf9e79900a59c5d343b464ef9c"
+source_manifest_path = "firmware/licenses/evidence/rp2/arm-gnu-toolchain/14.2.rel1/source-manifest.txt"
+source_manifest_sha256 = "470cdb8bae9f5fed96c17b10834bbd22820e933cfad99914c3f37997cae36745"

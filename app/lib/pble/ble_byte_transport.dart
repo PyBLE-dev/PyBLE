@@ -39,7 +39,8 @@ class BleByteTransport implements ByteTransport {
   );
 
   @override
-  Future<void> send(Uint8List packet) => _link.write(packet);
+  Future<void> send(Uint8List packet, {required bool acknowledged}) =>
+      _link.write(packet, withoutResponse: !acknowledged);
 
   @override
   int get mtu => _link.mtu;

@@ -18,6 +18,7 @@ const List<String> _exampleIds = <String>[
   'read-button',
   'button-controls-led',
   'reusable-function',
+  'waveshare-esp32-s3-lcd-147b',
 ];
 
 const Map<String, Set<String>> _requiredBlockTypes = <String, Set<String>>{
@@ -69,6 +70,18 @@ const Map<String, Set<String>> _requiredBlockTypes = <String, Set<String>>{
     'procedures_callnoreturn',
     'variables_get',
   },
+  'waveshare-esp32-s3-lcd-147b': <String>{
+    'variables_set',
+    'variables_get',
+    'pyble_gpio_pin',
+    'pyble_tft_create',
+    'pyble_tft_rgb565',
+    'pyble_tft_fill',
+    'pyble_tft_rect',
+    'pyble_tft_text',
+    'pyble_tft_show',
+    'pyble_tft_backlight',
+  },
 };
 
 const Map<String, Set<String>> _expectedGpioRoles = <String, Set<String>>{
@@ -79,6 +92,14 @@ const Map<String, Set<String>> _expectedGpioRoles = <String, Set<String>>{
   'read-button': <String>{'button'},
   'button-controls-led': <String>{'button', 'led'},
   'reusable-function': <String>{},
+  'waveshare-esp32-s3-lcd-147b': <String>{
+    'sck',
+    'mosi',
+    'cs',
+    'dc',
+    'reset',
+    'backlight',
+  },
 };
 
 Iterable<Map<String, dynamic>> _objects(Object? value) sync* {
@@ -126,9 +147,9 @@ void main() {
   });
 
   group('A-31 beginner Blockly catalog', () {
-    test('ships exactly the seven ordered, stable beginner examples', () {
+    test('ships exactly the eight ordered, stable beginner examples', () {
       expect(catalog['license'], 'SPDX-License-Identifier: MIT');
-      expect(catalog['version'], 2);
+      expect(catalog['version'], 3);
       expect(
         examples.map((Map<String, dynamic> value) => value['id']),
         orderedEquals(_exampleIds),
@@ -218,6 +239,7 @@ void main() {
         '"Read a button"',
         '"Button controls LED"',
         '"Reusable function"',
+        '"ESP32-S3-LCD-1.47B TFT display"',
       ]) {
         expect(
           script,
@@ -251,6 +273,7 @@ void main() {
         'blocksExampleReadButtonTitle',
         'blocksExampleButtonLedTitle',
         'blocksExampleFunctionTitle',
+        'blocksExampleTftTitle',
       ]) {
         expect(
           blocksDart,
@@ -305,6 +328,66 @@ void main() {
           isNot(contains('"NUM":48')),
           reason: 'catalog fixtures never encode a board-specific GPIO',
         );
+      },
+    );
+
+    test(
+      '1.47B TFT example keeps six GPIO roles empty and settings visible',
+      () {
+        final Map<String, dynamic> example = examples.singleWhere(
+          (Map<String, dynamic> value) =>
+              value['id'] == 'waveshare-esp32-s3-lcd-147b',
+        );
+        final List<Map<String, dynamic>> objects = _objects(
+          example['workspace'],
+        ).toList(growable: false);
+        final List<Map<String, dynamic>> pins = objects
+            .where(
+              (Map<String, dynamic> value) => value['type'] == 'pyble_gpio_pin',
+            )
+            .toList(growable: false);
+        expect(pins, hasLength(6));
+        for (final Map<String, dynamic> pin in pins) {
+          final Object? rawInputs = pin['inputs'];
+          expect(
+            rawInputs is Map<String, dynamic> ? rawInputs['GPIO'] : null,
+            isNull,
+            reason: 'every exact-board signal remains an explicit user choice',
+          );
+        }
+
+        final Map<String, dynamic> spiId = objects.singleWhere(
+          (Map<String, dynamic> value) => value['id'] == 'tft-spi-id',
+        );
+        expect(
+          (spiId['fields'] as Map<String, dynamic>)['NUM'],
+          1,
+          reason: 'the exact board is hardware-qualified on machine.SPI(1)',
+        );
+
+        final String workspace = jsonEncode(example['workspace']);
+        for (final num visibleSetting in <num>[1, 40000000, 0, 172, 320, 34]) {
+          expect(
+            workspace,
+            contains('"NUM":$visibleSetting'),
+            reason:
+                '$visibleSetting must remain inspectable ordinary block data',
+          );
+        }
+        expect(workspace, contains('"id":"tft-bgr","fields":{"BOOL":"TRUE"}'));
+        expect(
+          workspace,
+          contains('"id":"tft-inversion","fields":{"BOOL":"TRUE"}'),
+        );
+        expect(workspace, contains('"STYLE":"OUTLINE"'));
+        expect(
+          workspace,
+          contains('"id":"tft-backlight-enabled","fields":{"BOOL":"TRUE"}'),
+        );
+        expect(workspace, isNot(contains('"NUM":45')));
+        expect(workspace, isNot(contains('"NUM":46')));
+        expect(jsonEncode(example), isNot(contains('DeviceInfo')));
+        expect(jsonEncode(example), isNot(contains('boardProfile')));
       },
     );
 

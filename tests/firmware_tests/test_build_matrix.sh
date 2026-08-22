@@ -4,11 +4,15 @@
 #
 # [red] X-03 — Build matrix + target mapping (BLD-3/4/5, CON-11).
 # AC:
-#  - build.sh <target> builds exactly one of esp32 / esp32-s3 / esp32-c3;
-#    build_all.sh builds all three.
-#  - Each PyBLE target maps to its IDF target (esp32->esp32, esp32-s3->esp32s3,
-#    esp32-c3->esp32c3) with the matching overlay; no silent toolchain sub.
+#  - build.sh <target> builds exactly one of esp32 / esp32-s3 /
+#    waveshare-esp32-s3-lcd-147b / esp32-c3; build_all.sh builds all four
+#    variants over three ESP-IDF chip targets.
+#  - Each PyBLE build variant maps to its IDF target (esp32->esp32,
+#    esp32-s3->esp32s3, waveshare-esp32-s3-lcd-147b->esp32s3,
+#    esp32-c3->esp32c3) with its own overlay; no silent toolchain sub.
 #  - Each successful per-target build emits firmware.bin + bootloader + partition.
+#  - CI cross-compiles the same four logical variants; sharing the esp32s3
+#    toolchain never permits the exact-board image to disappear from the matrix.
 #
 # Contract asserted for the production scripts (HAND-OFF: build-smith,
 # firmware/scripts/build.sh + build_all.sh):
@@ -18,7 +22,7 @@
 #     partition-table, firmware.bin). Unknown target -> exit non-zero.
 #   build.sh <target>  — a REAL build with no ESP-IDF/submodule MUST exit
 #     non-zero with an actionable message and MUST NOT print success (never fake).
-#   build_all.sh --plan  — plans all three targets.
+#   build_all.sh --plan  — plans all four build variants.
 #
 # RED NOW: firmware/scripts/build.sh + build_all.sh do not exist.
 
@@ -50,6 +54,7 @@ run() {
   # Target -> IDF mapping, no silent substitution.
   assert_plan_maps "esp32"    "esp32"
   assert_plan_maps "esp32-s3" "esp32s3"
+  assert_plan_maps "waveshare-esp32-s3-lcd-147b" "esp32s3"
   assert_plan_maps "esp32-c3" "esp32c3"
 
   # Planned artifact set (BLD-5) surfaced in the plan.
@@ -76,14 +81,47 @@ run() {
     && pass "build.sh emits an actionable missing-toolchain message" \
     || fail "build.sh must explain the missing ESP-IDF/submodule (actionable)"
 
-  # build_all plans all three targets.
+  # build_all plans all four variants, including both distinct S3 overlays.
   if require_gate "$BUILD_ALL" "build-smith · firmware/scripts/build_all.sh"; then
     local all; all="$("$BUILD_ALL" --plan 2>&1)"
-    printf '%s\n' "$all" | grep -qiE 'esp32([^0-9a-z-]|$)' && \
-    printf '%s\n' "$all" | grep -qiE 'esp32s3' && \
-    printf '%s\n' "$all" | grep -qiE 'esp32c3' \
-      && pass "build_all.sh --plan drives all three targets (esp32, esp32s3, esp32c3)" \
-      || fail "build_all.sh --plan must drive all three targets"
+    printf '%s\n' "$all" | grep -qiE 'target[[:space:]]*=[[:space:]]*esp32([^0-9a-z-]|$)' && \
+    printf '%s\n' "$all" | grep -qiE 'target[[:space:]]*=[[:space:]]*esp32-s3([^0-9a-z-]|$)' && \
+    printf '%s\n' "$all" | grep -qiE 'target[[:space:]]*=[[:space:]]*waveshare-esp32-s3-lcd-147b([^0-9a-z-]|$)' && \
+    printf '%s\n' "$all" | grep -qiE 'target[[:space:]]*=[[:space:]]*esp32-c3([^0-9a-z-]|$)' \
+      && pass "build_all.sh --plan drives all four logical variants" \
+      || fail "build_all.sh --plan must drive esp32, lean S3, exact Waveshare S3, and C3"
+
+    if grep -qF 'all three targets' "$BUILD_ALL"; then
+      fail "build_all.sh must not describe four firmware variants as three targets"
+    else
+      pass "build_all.sh consistently describes the four-variant matrix"
+    fi
+  fi
+
+  # The production CI matrix is an independent release gate. Both S3 variants
+  # must be named even though they share one ESP-IDF chip target.
+  local ci_workflow ci_targets
+  ci_workflow="$REPO_ROOT/.github/workflows/ci.yml"
+  ci_targets="$(awk '
+    /^  build:/ { in_build = 1; next }
+    in_build && /^  [[:alnum:]_-]+:/ { exit }
+    in_build && /^[[:space:]]+target:[[:space:]]*\[/ {
+      line = $0
+      sub(/^[^[]*\[/, "", line)
+      sub(/\].*$/, "", line)
+      gsub(/,/, " ", line)
+      gsub(/[[:space:]]+/, " ", line)
+      sub(/^ /, "", line)
+      sub(/ $/, "", line)
+      print line
+      exit
+    }
+  ' "$ci_workflow")"
+  if [ "$ci_targets" = \
+      "esp32 esp32-s3 waveshare-esp32-s3-lcd-147b esp32-c3" ]; then
+    pass "CI cross-compiles all four logical firmware variants"
+  else
+    fail "CI build matrix must list classic, lean S3, exact Waveshare S3, and C3"
   fi
 }
 

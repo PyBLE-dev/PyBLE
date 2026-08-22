@@ -8,11 +8,24 @@
   const maxRevision = 0xffffffff;
   const gpioColour = 190;
   const neopixelColour = 315;
+  const tftColour = 230;
   const timeColour = 30;
   const examplesColour = 45;
   const gpioPinType = "Pin";
   const neopixelType = "NeoPixel";
   const neopixelColorType = "NeoPixelColor";
+  const tftType = "TFT";
+  const tftColorType = "TFTColor";
+  const tftBlockTypes = Object.freeze([
+    "pyble_tft_create",
+    "pyble_tft_rgb565",
+    "pyble_tft_fill",
+    "pyble_tft_pixel",
+    "pyble_tft_rect",
+    "pyble_tft_text",
+    "pyble_tft_show",
+    "pyble_tft_backlight",
+  ]);
   const beginnerExampleIds = Object.freeze([
     "hello-pyble",
     "count-repeatedly",
@@ -21,6 +34,7 @@
     "read-button",
     "button-controls-led",
     "reusable-function",
+    "waveshare-esp32-s3-lcd-147b",
   ]);
   let hostMessages;
   const gpioModes = Object.freeze({
@@ -35,6 +49,15 @@
   const gpioLevels = Object.freeze({
     LOW: "0",
     HIGH: "1",
+  });
+  // FR-BLOCKS-1B: every GPIO slot accepts either a bare non-negative integer
+  // or a standard MicroPython machine.Pin name matching this frozen grammar.
+  // Names are always user-entered; the sealed asset ships no per-board name
+  // list, suggestion, or default (CON-7).
+  const gpioPinNamePattern = /^[A-Za-z][A-Za-z0-9_]{0,15}$/u;
+  const tftRectStyles = Object.freeze({
+    OUTLINE: "rect",
+    FILLED: "fill_rect",
   });
 
   function hasOwn(object, key) {
@@ -77,7 +100,48 @@
     return code;
   }
 
-  function gpioNumberCode(block, generator) {
+  function nonNegativeIntegerCode(
+    block,
+    generator,
+    inputName,
+    requiredMessage,
+    invalidMessage,
+  ) {
+    const code = requiredValueCode(
+      block,
+      generator,
+      inputName,
+      python.Order.NONE,
+      requiredMessage,
+    );
+    const value = Number(code);
+    if (!/^(?:0|[1-9][0-9]*)$/u.test(code) || !Number.isSafeInteger(value)) {
+      throw new Error(invalidMessage);
+    }
+    return code;
+  }
+
+  function binaryIntegerCode(
+    block,
+    generator,
+    inputName,
+    requiredMessage,
+    invalidMessage,
+  ) {
+    const code = requiredValueCode(
+      block,
+      generator,
+      inputName,
+      python.Order.NONE,
+      requiredMessage,
+    );
+    if (code !== "0" && code !== "1") {
+      throw new Error(invalidMessage);
+    }
+    return code;
+  }
+
+  function gpioSlotValue(block, generator) {
     const code = requiredValueCode(
       block,
       generator,
@@ -85,10 +149,18 @@
       python.Order.NONE,
       hostMessages.gpioPinRequiredError,
     );
-    if (!/^(?:0|[1-9][0-9]*)$/u.test(code) || !Number.isFinite(Number(code))) {
-      throw new Error(hostMessages.gpioPinInvalidError);
+    if (/^(?:0|[1-9][0-9]*)$/u.test(code) && Number.isFinite(Number(code))) {
+      return { number: code };
     }
-    return code;
+    // A connected value block generates a Python expression; only a plain
+    // single- or double-quoted string literal whose content matches the
+    // frozen pin-name grammar is a named pin. Anything else keeps the
+    // existing invalid-pin error path.
+    const quotedName = /^(["'])([A-Za-z0-9_]*)\1$/u.exec(code);
+    if (quotedName !== null && gpioPinNamePattern.test(quotedName[2])) {
+      return { name: quotedName[2] };
+    }
+    throw new Error(hostMessages.gpioPinInvalidError);
   }
 
   function millisecondsCode(block, generator) {
@@ -122,7 +194,7 @@
           {
             type: "input_value",
             name: "GPIO",
-            check: "Number",
+            check: ["Number", "String"],
           },
           {
             type: "field_dropdown",
@@ -197,7 +269,7 @@
     python.pythonGenerator.addReservedWords("Pin");
 
     python.pythonGenerator.forBlock.pyble_gpio_pin = (block, generator) => {
-      const gpio = gpioNumberCode(block, generator);
+      const gpio = gpioSlotValue(block, generator);
       const mode = selectedValue(
         block,
         "MODE",
@@ -211,8 +283,17 @@
         hostMessages.gpioPullInvalidError,
       );
       generator.definitions_["import_machine_pin"] = "from machine import Pin";
-      const args = [gpio, mode, pull];
-      return [`Pin(${args.join(", ")})`, python.Order.FUNCTION_CALL];
+      if (gpio.name !== undefined) {
+        // A named pin travels as a quoted Python string literal.
+        return [
+          `Pin("${gpio.name}", ${mode}, ${pull})`,
+          python.Order.FUNCTION_CALL,
+        ];
+      }
+      return [
+        `Pin(${gpio.number}, ${mode}, ${pull})`,
+        python.Order.FUNCTION_CALL,
+      ];
     };
 
     python.pythonGenerator.forBlock.pyble_gpio_write = (block, generator) => {
@@ -477,6 +558,382 @@
     };
   }
 
+  function installTftImport(generator, symbol) {
+    const st7789Key = "import_pyble_st7789_st7789";
+    const rgb565Key = "import_pyble_st7789_rgb565";
+    let st7789Import = generator.definitions_[st7789Key];
+    let rgb565Import = generator.definitions_[rgb565Key];
+    if (symbol === "ST7789") {
+      st7789Import = "from pyble_st7789 import ST7789";
+    } else if (symbol === "rgb565") {
+      rgb565Import = "from pyble_st7789 import rgb565";
+    } else {
+      throw new Error("Unknown TFT import symbol.");
+    }
+
+    // Reinsert both stable keys together so traversal order cannot reverse the
+    // public ST7789-then-rgb565 import order.
+    delete generator.definitions_[st7789Key];
+    delete generator.definitions_[rgb565Key];
+    if (st7789Import !== undefined) {
+      generator.definitions_[st7789Key] = st7789Import;
+    }
+    if (rgb565Import !== undefined) {
+      generator.definitions_[rgb565Key] = rgb565Import;
+    }
+  }
+
+  function registerTftBlocks() {
+    Blockly.defineBlocksWithJsonArray([
+      {
+        type: "pyble_tft_create",
+        message0: hostMessages.tftCreateMessage,
+        args0: [
+          { type: "input_value", name: "SPI_ID", check: "Number" },
+          { type: "input_value", name: "BAUDRATE", check: "Number" },
+          { type: "input_value", name: "POLARITY", check: "Number" },
+          { type: "input_value", name: "PHASE", check: "Number" },
+          { type: "input_value", name: "SCK", check: gpioPinType },
+          { type: "input_value", name: "MOSI", check: gpioPinType },
+          { type: "input_value", name: "CS", check: gpioPinType },
+          { type: "input_value", name: "DC", check: gpioPinType },
+          { type: "input_value", name: "RESET", check: gpioPinType },
+          { type: "input_value", name: "BACKLIGHT", check: gpioPinType },
+          { type: "input_value", name: "WIDTH", check: "Number" },
+          { type: "input_value", name: "HEIGHT", check: "Number" },
+          { type: "input_value", name: "X_OFFSET", check: "Number" },
+          { type: "input_value", name: "Y_OFFSET", check: "Number" },
+          { type: "input_value", name: "BGR", check: "Boolean" },
+          { type: "input_value", name: "INVERSION", check: "Boolean" },
+        ],
+        inputsInline: false,
+        output: tftType,
+        colour: tftColour,
+        tooltip: hostMessages.tftCreateTooltip,
+        helpUrl: "",
+      },
+      {
+        type: "pyble_tft_rgb565",
+        message0: hostMessages.tftRgb565Message,
+        args0: [
+          { type: "input_value", name: "RED", check: "Number" },
+          { type: "input_value", name: "GREEN", check: "Number" },
+          { type: "input_value", name: "BLUE", check: "Number" },
+        ],
+        inputsInline: true,
+        output: tftColorType,
+        colour: tftColour,
+        tooltip: hostMessages.tftRgb565Tooltip,
+        helpUrl: "",
+      },
+      {
+        type: "pyble_tft_fill",
+        message0: hostMessages.tftFillMessage,
+        args0: [
+          { type: "input_value", name: "DISPLAY", check: tftType },
+          { type: "input_value", name: "COLOR", check: tftColorType },
+        ],
+        inputsInline: true,
+        previousStatement: null,
+        nextStatement: null,
+        colour: tftColour,
+        tooltip: hostMessages.tftFillTooltip,
+        helpUrl: "",
+      },
+      {
+        type: "pyble_tft_pixel",
+        message0: hostMessages.tftPixelMessage,
+        args0: [
+          { type: "input_value", name: "DISPLAY", check: tftType },
+          { type: "input_value", name: "X", check: "Number" },
+          { type: "input_value", name: "Y", check: "Number" },
+          { type: "input_value", name: "COLOR", check: tftColorType },
+        ],
+        inputsInline: true,
+        previousStatement: null,
+        nextStatement: null,
+        colour: tftColour,
+        tooltip: hostMessages.tftPixelTooltip,
+        helpUrl: "",
+      },
+      {
+        type: "pyble_tft_rect",
+        message0: hostMessages.tftRectMessage,
+        args0: [
+          { type: "input_value", name: "DISPLAY", check: tftType },
+          {
+            type: "field_dropdown",
+            name: "STYLE",
+            options: () => [
+              [hostMessages.tftRectOutline, "OUTLINE"],
+              [hostMessages.tftRectFilled, "FILLED"],
+            ],
+          },
+          { type: "input_value", name: "X", check: "Number" },
+          { type: "input_value", name: "Y", check: "Number" },
+          { type: "input_value", name: "WIDTH", check: "Number" },
+          { type: "input_value", name: "HEIGHT", check: "Number" },
+          { type: "input_value", name: "COLOR", check: tftColorType },
+        ],
+        inputsInline: false,
+        previousStatement: null,
+        nextStatement: null,
+        colour: tftColour,
+        tooltip: hostMessages.tftRectTooltip,
+        helpUrl: "",
+      },
+      {
+        type: "pyble_tft_text",
+        message0: hostMessages.tftTextMessage,
+        args0: [
+          { type: "input_value", name: "DISPLAY", check: tftType },
+          { type: "input_value", name: "TEXT", check: "String" },
+          { type: "input_value", name: "X", check: "Number" },
+          { type: "input_value", name: "Y", check: "Number" },
+          { type: "input_value", name: "COLOR", check: tftColorType },
+        ],
+        inputsInline: false,
+        previousStatement: null,
+        nextStatement: null,
+        colour: tftColour,
+        tooltip: hostMessages.tftTextTooltip,
+        helpUrl: "",
+      },
+      {
+        type: "pyble_tft_show",
+        message0: hostMessages.tftShowMessage,
+        args0: [{ type: "input_value", name: "DISPLAY", check: tftType }],
+        inputsInline: true,
+        previousStatement: null,
+        nextStatement: null,
+        colour: tftColour,
+        tooltip: hostMessages.tftShowTooltip,
+        helpUrl: "",
+      },
+      {
+        type: "pyble_tft_backlight",
+        message0: hostMessages.tftBacklightMessage,
+        args0: [
+          { type: "input_value", name: "DISPLAY", check: tftType },
+          { type: "input_value", name: "ON", check: "Boolean" },
+        ],
+        inputsInline: true,
+        previousStatement: null,
+        nextStatement: null,
+        colour: tftColour,
+        tooltip: hostMessages.tftBacklightTooltip,
+        helpUrl: "",
+      },
+    ]);
+
+    python.pythonGenerator.addReservedWords("ST7789,rgb565");
+
+    python.pythonGenerator.forBlock.pyble_tft_create = (block, generator) => {
+      const spiId = nonNegativeIntegerCode(
+        block,
+        generator,
+        "SPI_ID",
+        hostMessages.tftCreateInputRequiredError,
+        hostMessages.tftSpiIdInvalidError,
+      );
+      const baudrate = positiveIntegerCode(
+        block,
+        generator,
+        "BAUDRATE",
+        hostMessages.tftCreateInputRequiredError,
+        hostMessages.tftBaudrateInvalidError,
+      );
+      const polarity = binaryIntegerCode(
+        block,
+        generator,
+        "POLARITY",
+        hostMessages.tftCreateInputRequiredError,
+        hostMessages.tftSpiModeInvalidError,
+      );
+      const phase = binaryIntegerCode(
+        block,
+        generator,
+        "PHASE",
+        hostMessages.tftCreateInputRequiredError,
+        hostMessages.tftSpiModeInvalidError,
+      );
+      const pins = ["SCK", "MOSI", "CS", "DC", "RESET", "BACKLIGHT"].map(
+        (inputName) =>
+          requiredValueCode(
+            block,
+            generator,
+            inputName,
+            python.Order.NONE,
+            hostMessages.tftCreateInputRequiredError,
+          ),
+      );
+      const width = positiveIntegerCode(
+        block,
+        generator,
+        "WIDTH",
+        hostMessages.tftCreateInputRequiredError,
+        hostMessages.tftGeometryInvalidError,
+      );
+      const height = positiveIntegerCode(
+        block,
+        generator,
+        "HEIGHT",
+        hostMessages.tftCreateInputRequiredError,
+        hostMessages.tftGeometryInvalidError,
+      );
+      const xOffset = nonNegativeIntegerCode(
+        block,
+        generator,
+        "X_OFFSET",
+        hostMessages.tftCreateInputRequiredError,
+        hostMessages.tftOffsetInvalidError,
+      );
+      const yOffset = nonNegativeIntegerCode(
+        block,
+        generator,
+        "Y_OFFSET",
+        hostMessages.tftCreateInputRequiredError,
+        hostMessages.tftOffsetInvalidError,
+      );
+      const bgr = requiredValueCode(
+        block,
+        generator,
+        "BGR",
+        python.Order.NONE,
+        hostMessages.tftCreateInputRequiredError,
+      );
+      const inversion = requiredValueCode(
+        block,
+        generator,
+        "INVERSION",
+        python.Order.NONE,
+        hostMessages.tftCreateInputRequiredError,
+      );
+      installTftImport(generator, "ST7789");
+      const args = [
+        spiId,
+        baudrate,
+        polarity,
+        phase,
+        ...pins,
+        width,
+        height,
+        xOffset,
+        yOffset,
+        bgr,
+        inversion,
+      ];
+      return [`ST7789(${args.join(", ")})`, python.Order.FUNCTION_CALL];
+    };
+
+    python.pythonGenerator.forBlock.pyble_tft_rgb565 = (block, generator) => {
+      const components = ["RED", "GREEN", "BLUE"].map((inputName) =>
+        requiredValueCode(
+          block,
+          generator,
+          inputName,
+          python.Order.NONE,
+          hostMessages.tftColorComponentRequiredError,
+        ),
+      );
+      installTftImport(generator, "rgb565");
+      return [`rgb565(${components.join(", ")})`, python.Order.FUNCTION_CALL];
+    };
+
+    const displayCode = (block, generator) =>
+      requiredValueCode(
+        block,
+        generator,
+        "DISPLAY",
+        python.Order.MEMBER,
+        hostMessages.tftDisplayRequiredError,
+      );
+    const colorCode = (block, generator) =>
+      requiredValueCode(
+        block,
+        generator,
+        "COLOR",
+        python.Order.NONE,
+        hostMessages.tftColorRequiredError,
+      );
+    const coordinateCode = (block, generator, inputName) =>
+      requiredValueCode(
+        block,
+        generator,
+        inputName,
+        python.Order.NONE,
+        hostMessages.tftCoordinateRequiredError,
+      );
+
+    python.pythonGenerator.forBlock.pyble_tft_fill = (block, generator) => {
+      const display = displayCode(block, generator);
+      const color = colorCode(block, generator);
+      return `${display}.fill(${color})\n`;
+    };
+
+    python.pythonGenerator.forBlock.pyble_tft_pixel = (block, generator) => {
+      const display = displayCode(block, generator);
+      const x = coordinateCode(block, generator, "X");
+      const y = coordinateCode(block, generator, "Y");
+      const color = colorCode(block, generator);
+      return `${display}.pixel(${x}, ${y}, ${color})\n`;
+    };
+
+    python.pythonGenerator.forBlock.pyble_tft_rect = (block, generator) => {
+      const display = displayCode(block, generator);
+      const method = selectedValue(
+        block,
+        "STYLE",
+        tftRectStyles,
+        hostMessages.tftRectStyleInvalidError,
+      );
+      const x = coordinateCode(block, generator, "X");
+      const y = coordinateCode(block, generator, "Y");
+      const width = coordinateCode(block, generator, "WIDTH");
+      const height = coordinateCode(block, generator, "HEIGHT");
+      const color = colorCode(block, generator);
+      if (method === "fill_rect") {
+        return `${display}.fill_rect(${x}, ${y}, ${width}, ${height}, ${color})\n`;
+      }
+      return `${display}.rect(${x}, ${y}, ${width}, ${height}, ${color})\n`;
+    };
+
+    python.pythonGenerator.forBlock.pyble_tft_text = (block, generator) => {
+      const display = displayCode(block, generator);
+      const text = requiredValueCode(
+        block,
+        generator,
+        "TEXT",
+        python.Order.NONE,
+        hostMessages.tftTextRequiredError,
+      );
+      const x = coordinateCode(block, generator, "X");
+      const y = coordinateCode(block, generator, "Y");
+      const color = colorCode(block, generator);
+      return `${display}.text(${text}, ${x}, ${y}, ${color})\n`;
+    };
+
+    python.pythonGenerator.forBlock.pyble_tft_show = (block, generator) => {
+      const display = displayCode(block, generator);
+      return `${display}.show()\n`;
+    };
+
+    python.pythonGenerator.forBlock.pyble_tft_backlight = (
+      block,
+      generator,
+    ) => {
+      const display = displayCode(block, generator);
+      const on = requiredValueCode(
+        block,
+        generator,
+        "ON",
+        python.Order.NONE,
+        hostMessages.tftBacklightRequiredError,
+      );
+      return `${display}.backlight(${on})\n`;
+    };
+  }
+
   function registerTimeBlocks() {
     Blockly.defineBlocksWithJsonArray([
       {
@@ -638,6 +1095,12 @@
         },
         {
           kind: "category",
+          name: hostMessages.tftCategory,
+          colour: tftColour,
+          contents: tftBlockTypes.map((type) => ({ kind: "block", type })),
+        },
+        {
+          kind: "category",
           name: hostMessages.timeCategory,
           colour: timeColour,
           contents: [{ kind: "block", type: "pyble_time_sleep_ms" }],
@@ -778,13 +1241,13 @@
     }
   }
 
-  function validateSerializedGpioState(value) {
+  function validateSerializedExtensionState(value) {
     if (!value || typeof value !== "object") {
       return;
     }
     if (Array.isArray(value)) {
       for (const item of value) {
-        validateSerializedGpioState(item);
+        validateSerializedExtensionState(item);
       }
       return;
     }
@@ -809,10 +1272,17 @@
         gpioLevels,
         hostMessages.gpioRestoreLevelInvalidError,
       );
+    } else if (value.type === "pyble_tft_rect") {
+      validateSerializedChoice(
+        value,
+        "STYLE",
+        tftRectStyles,
+        hostMessages.tftRestoreStyleInvalidError,
+      );
     }
 
     for (const child of Object.values(value)) {
-      validateSerializedGpioState(child);
+      validateSerializedExtensionState(child);
     }
   }
 
@@ -829,7 +1299,7 @@
     ) {
       throw new TypeError("Workspace state must be a JSON object.");
     }
-    validateSerializedGpioState(workspaceState);
+    validateSerializedExtensionState(workspaceState);
 
     const baseRevision =
       Number.isSafeInteger(priorRevision) &&
@@ -1044,6 +1514,81 @@
         messages,
         "neopixelColorRequiredError",
       ),
+      tftCategory: requiredHostMessage(messages, "tftCategory"),
+      tftCreateMessage: requiredHostMessage(messages, "tftCreateMessage"),
+      tftRgb565Message: requiredHostMessage(messages, "tftRgb565Message"),
+      tftFillMessage: requiredHostMessage(messages, "tftFillMessage"),
+      tftPixelMessage: requiredHostMessage(messages, "tftPixelMessage"),
+      tftRectMessage: requiredHostMessage(messages, "tftRectMessage"),
+      tftTextMessage: requiredHostMessage(messages, "tftTextMessage"),
+      tftShowMessage: requiredHostMessage(messages, "tftShowMessage"),
+      tftBacklightMessage: requiredHostMessage(messages, "tftBacklightMessage"),
+      tftRectOutline: requiredHostMessage(messages, "tftRectOutline"),
+      tftRectFilled: requiredHostMessage(messages, "tftRectFilled"),
+      tftCreateTooltip: requiredHostMessage(messages, "tftCreateTooltip"),
+      tftRgb565Tooltip: requiredHostMessage(messages, "tftRgb565Tooltip"),
+      tftFillTooltip: requiredHostMessage(messages, "tftFillTooltip"),
+      tftPixelTooltip: requiredHostMessage(messages, "tftPixelTooltip"),
+      tftRectTooltip: requiredHostMessage(messages, "tftRectTooltip"),
+      tftTextTooltip: requiredHostMessage(messages, "tftTextTooltip"),
+      tftShowTooltip: requiredHostMessage(messages, "tftShowTooltip"),
+      tftBacklightTooltip: requiredHostMessage(messages, "tftBacklightTooltip"),
+      tftCreateInputRequiredError: requiredHostMessage(
+        messages,
+        "tftCreateInputRequiredError",
+      ),
+      tftSpiIdInvalidError: requiredHostMessage(
+        messages,
+        "tftSpiIdInvalidError",
+      ),
+      tftBaudrateInvalidError: requiredHostMessage(
+        messages,
+        "tftBaudrateInvalidError",
+      ),
+      tftSpiModeInvalidError: requiredHostMessage(
+        messages,
+        "tftSpiModeInvalidError",
+      ),
+      tftGeometryInvalidError: requiredHostMessage(
+        messages,
+        "tftGeometryInvalidError",
+      ),
+      tftOffsetInvalidError: requiredHostMessage(
+        messages,
+        "tftOffsetInvalidError",
+      ),
+      tftColorComponentRequiredError: requiredHostMessage(
+        messages,
+        "tftColorComponentRequiredError",
+      ),
+      tftDisplayRequiredError: requiredHostMessage(
+        messages,
+        "tftDisplayRequiredError",
+      ),
+      tftColorRequiredError: requiredHostMessage(
+        messages,
+        "tftColorRequiredError",
+      ),
+      tftCoordinateRequiredError: requiredHostMessage(
+        messages,
+        "tftCoordinateRequiredError",
+      ),
+      tftTextRequiredError: requiredHostMessage(
+        messages,
+        "tftTextRequiredError",
+      ),
+      tftBacklightRequiredError: requiredHostMessage(
+        messages,
+        "tftBacklightRequiredError",
+      ),
+      tftRectStyleInvalidError: requiredHostMessage(
+        messages,
+        "tftRectStyleInvalidError",
+      ),
+      tftRestoreStyleInvalidError: requiredHostMessage(
+        messages,
+        "tftRestoreStyleInvalidError",
+      ),
       multilineValueError: requiredHostMessage(messages, "multilineValueError"),
     });
     const hasWorkspace = workspaceJson !== undefined;
@@ -1058,6 +1603,7 @@
       : undefined;
     registerGpioBlocks();
     registerNeopixelBlocks();
+    registerTftBlocks();
     registerTimeBlocks();
     hostEpoch = dartHostEpoch;
     pendingRestore = initialRestore;

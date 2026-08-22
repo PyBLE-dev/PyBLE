@@ -1,6 +1,6 @@
 {
   "license": "SPDX-License-Identifier: MIT",
-  "version": 2,
+  "version": 3,
   "examples": [
     {
       "id": "hello-pyble",
@@ -1019,6 +1019,514 @@
                     "id": "function-call-message",
                     "fields": {
                       "TEXT": "PyBLE"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "waveshare-esp32-s3-lcd-147b",
+      "titleKey": "blocksExampleTftTitle",
+      "summaryKey": "blocksExampleTftSummary",
+      "conceptKeys": [
+        "blocksExampleConceptTft",
+        "blocksExampleConceptVariables",
+        "blocksExampleConceptText"
+      ],
+      "wiringNotesKey": "blocksExampleTftWiring",
+      "gpioRoles": [
+        {
+          "role": "sck",
+          "labelKey": "blocksExampleTftSckGpio",
+          "blockId": "tft-sck-pin",
+          "input": "GPIO"
+        },
+        {
+          "role": "mosi",
+          "labelKey": "blocksExampleTftMosiGpio",
+          "blockId": "tft-mosi-pin",
+          "input": "GPIO"
+        },
+        {
+          "role": "cs",
+          "labelKey": "blocksExampleTftCsGpio",
+          "blockId": "tft-cs-pin",
+          "input": "GPIO"
+        },
+        {
+          "role": "dc",
+          "labelKey": "blocksExampleTftDcGpio",
+          "blockId": "tft-dc-pin",
+          "input": "GPIO"
+        },
+        {
+          "role": "reset",
+          "labelKey": "blocksExampleTftResetGpio",
+          "blockId": "tft-reset-pin",
+          "input": "GPIO"
+        },
+        {
+          "role": "backlight",
+          "labelKey": "blocksExampleTftBacklightGpio",
+          "blockId": "tft-backlight-pin",
+          "input": "GPIO"
+        }
+      ],
+      "workspace": {
+        "variables": [
+          {
+            "name": "display",
+            "id": "tft-display-variable"
+          }
+        ],
+        "blocks": {
+          "languageVersion": 0,
+          "blocks": [
+            {
+              "type": "variables_set",
+              "id": "tft-display-set",
+              "x": 48,
+              "y": 48,
+              "fields": {
+                "VAR": {
+                  "id": "tft-display-variable"
+                }
+              },
+              "inputs": {
+                "VALUE": {
+                  "block": {
+                    "type": "pyble_tft_create",
+                    "id": "tft-create",
+                    "inputs": {
+                      "SPI_ID": {
+                        "block": {
+                          "type": "math_number",
+                          "id": "tft-spi-id",
+                          "fields": {
+                            "NUM": 1
+                          }
+                        }
+                      },
+                      "BAUDRATE": {
+                        "block": {
+                          "type": "math_number",
+                          "id": "tft-baudrate",
+                          "fields": {
+                            "NUM": 40000000
+                          }
+                        }
+                      },
+                      "POLARITY": {
+                        "block": {
+                          "type": "math_number",
+                          "id": "tft-polarity",
+                          "fields": {
+                            "NUM": 0
+                          }
+                        }
+                      },
+                      "PHASE": {
+                        "block": {
+                          "type": "math_number",
+                          "id": "tft-phase",
+                          "fields": {
+                            "NUM": 0
+                          }
+                        }
+                      },
+                      "SCK": {
+                        "block": {
+                          "type": "pyble_gpio_pin",
+                          "id": "tft-sck-pin",
+                          "fields": {
+                            "MODE": "OUT",
+                            "PULL": "NONE"
+                          }
+                        }
+                      },
+                      "MOSI": {
+                        "block": {
+                          "type": "pyble_gpio_pin",
+                          "id": "tft-mosi-pin",
+                          "fields": {
+                            "MODE": "OUT",
+                            "PULL": "NONE"
+                          }
+                        }
+                      },
+                      "CS": {
+                        "block": {
+                          "type": "pyble_gpio_pin",
+                          "id": "tft-cs-pin",
+                          "fields": {
+                            "MODE": "OUT",
+                            "PULL": "NONE"
+                          }
+                        }
+                      },
+                      "DC": {
+                        "block": {
+                          "type": "pyble_gpio_pin",
+                          "id": "tft-dc-pin",
+                          "fields": {
+                            "MODE": "OUT",
+                            "PULL": "NONE"
+                          }
+                        }
+                      },
+                      "RESET": {
+                        "block": {
+                          "type": "pyble_gpio_pin",
+                          "id": "tft-reset-pin",
+                          "fields": {
+                            "MODE": "OUT",
+                            "PULL": "NONE"
+                          }
+                        }
+                      },
+                      "BACKLIGHT": {
+                        "block": {
+                          "type": "pyble_gpio_pin",
+                          "id": "tft-backlight-pin",
+                          "fields": {
+                            "MODE": "OUT",
+                            "PULL": "NONE"
+                          }
+                        }
+                      },
+                      "WIDTH": {
+                        "block": {
+                          "type": "math_number",
+                          "id": "tft-width",
+                          "fields": {
+                            "NUM": 172
+                          }
+                        }
+                      },
+                      "HEIGHT": {
+                        "block": {
+                          "type": "math_number",
+                          "id": "tft-height",
+                          "fields": {
+                            "NUM": 320
+                          }
+                        }
+                      },
+                      "X_OFFSET": {
+                        "block": {
+                          "type": "math_number",
+                          "id": "tft-x-offset",
+                          "fields": {
+                            "NUM": 34
+                          }
+                        }
+                      },
+                      "Y_OFFSET": {
+                        "block": {
+                          "type": "math_number",
+                          "id": "tft-y-offset",
+                          "fields": {
+                            "NUM": 0
+                          }
+                        }
+                      },
+                      "BGR": {
+                        "block": {
+                          "type": "logic_boolean",
+                          "id": "tft-bgr",
+                          "fields": {
+                            "BOOL": "TRUE"
+                          }
+                        }
+                      },
+                      "INVERSION": {
+                        "block": {
+                          "type": "logic_boolean",
+                          "id": "tft-inversion",
+                          "fields": {
+                            "BOOL": "TRUE"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "next": {
+                "block": {
+                  "type": "pyble_tft_fill",
+                  "id": "tft-fill",
+                  "inputs": {
+                    "DISPLAY": {
+                      "block": {
+                        "type": "variables_get",
+                        "id": "tft-display-get-fill",
+                        "fields": {
+                          "VAR": {
+                            "id": "tft-display-variable"
+                          }
+                        }
+                      }
+                    },
+                    "COLOR": {
+                      "block": {
+                        "type": "pyble_tft_rgb565",
+                        "id": "tft-background-colour",
+                        "inputs": {
+                          "RED": {
+                            "block": {
+                              "type": "math_number",
+                              "id": "tft-background-red",
+                              "fields": {
+                                "NUM": 8
+                              }
+                            }
+                          },
+                          "GREEN": {
+                            "block": {
+                              "type": "math_number",
+                              "id": "tft-background-green",
+                              "fields": {
+                                "NUM": 18
+                              }
+                            }
+                          },
+                          "BLUE": {
+                            "block": {
+                              "type": "math_number",
+                              "id": "tft-background-blue",
+                              "fields": {
+                                "NUM": 40
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "next": {
+                    "block": {
+                      "type": "pyble_tft_rect",
+                      "id": "tft-border",
+                      "fields": {
+                        "STYLE": "OUTLINE"
+                      },
+                      "inputs": {
+                        "DISPLAY": {
+                          "block": {
+                            "type": "variables_get",
+                            "id": "tft-display-get-border",
+                            "fields": {
+                              "VAR": {
+                                "id": "tft-display-variable"
+                              }
+                            }
+                          }
+                        },
+                        "X": {
+                          "block": {
+                            "type": "math_number",
+                            "id": "tft-border-x",
+                            "fields": {
+                              "NUM": 8
+                            }
+                          }
+                        },
+                        "Y": {
+                          "block": {
+                            "type": "math_number",
+                            "id": "tft-border-y",
+                            "fields": {
+                              "NUM": 8
+                            }
+                          }
+                        },
+                        "WIDTH": {
+                          "block": {
+                            "type": "math_number",
+                            "id": "tft-border-width",
+                            "fields": {
+                              "NUM": 156
+                            }
+                          }
+                        },
+                        "HEIGHT": {
+                          "block": {
+                            "type": "math_number",
+                            "id": "tft-border-height",
+                            "fields": {
+                              "NUM": 304
+                            }
+                          }
+                        },
+                        "COLOR": {
+                          "block": {
+                            "type": "pyble_tft_rgb565",
+                            "id": "tft-border-colour",
+                            "inputs": {
+                              "RED": {
+                                "block": {
+                                  "type": "math_number",
+                                  "id": "tft-border-red",
+                                  "fields": {
+                                    "NUM": 0
+                                  }
+                                }
+                              },
+                              "GREEN": {
+                                "block": {
+                                  "type": "math_number",
+                                  "id": "tft-border-green",
+                                  "fields": {
+                                    "NUM": 180
+                                  }
+                                }
+                              },
+                              "BLUE": {
+                                "block": {
+                                  "type": "math_number",
+                                  "id": "tft-border-blue",
+                                  "fields": {
+                                    "NUM": 216
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      },
+                      "next": {
+                        "block": {
+                          "type": "pyble_tft_text",
+                          "id": "tft-text",
+                          "inputs": {
+                            "DISPLAY": {
+                              "block": {
+                                "type": "variables_get",
+                                "id": "tft-display-get-text",
+                                "fields": {
+                                  "VAR": {
+                                    "id": "tft-display-variable"
+                                  }
+                                }
+                              }
+                            },
+                            "TEXT": {
+                              "block": {
+                                "type": "text",
+                                "id": "tft-text-value",
+                                "fields": {
+                                  "TEXT": "Hello PyBLE!"
+                                }
+                              }
+                            },
+                            "X": {
+                              "block": {
+                                "type": "math_number",
+                                "id": "tft-text-x",
+                                "fields": {
+                                  "NUM": 24
+                                }
+                              }
+                            },
+                            "Y": {
+                              "block": {
+                                "type": "math_number",
+                                "id": "tft-text-y",
+                                "fields": {
+                                  "NUM": 150
+                                }
+                              }
+                            },
+                            "COLOR": {
+                              "block": {
+                                "type": "pyble_tft_rgb565",
+                                "id": "tft-text-colour",
+                                "inputs": {
+                                  "RED": {
+                                    "block": {
+                                      "type": "math_number",
+                                      "id": "tft-text-red",
+                                      "fields": {
+                                        "NUM": 255
+                                      }
+                                    }
+                                  },
+                                  "GREEN": {
+                                    "block": {
+                                      "type": "math_number",
+                                      "id": "tft-text-green",
+                                      "fields": {
+                                        "NUM": 255
+                                      }
+                                    }
+                                  },
+                                  "BLUE": {
+                                    "block": {
+                                      "type": "math_number",
+                                      "id": "tft-text-blue",
+                                      "fields": {
+                                        "NUM": 255
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          },
+                          "next": {
+                            "block": {
+                              "type": "pyble_tft_show",
+                              "id": "tft-show",
+                              "inputs": {
+                                "DISPLAY": {
+                                  "block": {
+                                    "type": "variables_get",
+                                    "id": "tft-display-get-show",
+                                    "fields": {
+                                      "VAR": {
+                                        "id": "tft-display-variable"
+                                      }
+                                    }
+                                  }
+                                }
+                              },
+                              "next": {
+                                "block": {
+                                  "type": "pyble_tft_backlight",
+                                  "id": "tft-backlight-on",
+                                  "inputs": {
+                                    "DISPLAY": {
+                                      "block": {
+                                        "type": "variables_get",
+                                        "id": "tft-display-get-backlight",
+                                        "fields": {
+                                          "VAR": {
+                                            "id": "tft-display-variable"
+                                          }
+                                        }
+                                      }
+                                    },
+                                    "ON": {
+                                      "block": {
+                                        "type": "logic_boolean",
+                                        "id": "tft-backlight-enabled",
+                                        "fields": {
+                                          "BOOL": "TRUE"
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
                     }
                   }
                 }

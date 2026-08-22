@@ -60,9 +60,10 @@ uint8_t pble_boot_set_autorun(bool enable) {
 }
 
 uint8_t pble_boot_set_autorun_cmd(const pble_frame_t *req, uint8_t *rsp,
-                                  size_t *rsp_len, uint16_t conn) {
+                                  size_t *rsp_len,
+                                  const pble_session_token_t *session) {
     (void)rsp;
-    (void)conn;
+    (void)session;
     if (rsp_len) {
         *rsp_len = 0;                   // RSP{status} carries no extra bytes
     }

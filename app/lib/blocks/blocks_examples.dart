@@ -11,8 +11,11 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 const String kBlocksExamplesAssetPath = 'assets/blockly/examples/catalog.json';
-const int kBlocksExamplesCatalogVersion = 2;
+const int kBlocksExamplesCatalogVersion = 3;
 const int _maxJavaScriptSafeInteger = 9007199254740991;
+
+/// FR-BLOCKS-1B frozen grammar for MicroPython `machine.Pin` names.
+final RegExp _pinNamePattern = RegExp(r'^[A-Za-z][A-Za-z0-9_]{0,15}$');
 
 const List<String> kBlocksExampleIds = <String>[
   'hello-pyble',
@@ -22,6 +25,7 @@ const List<String> kBlocksExampleIds = <String>[
   'read-button',
   'button-controls-led',
   'reusable-function',
+  'waveshare-esp32-s3-lcd-147b',
 ];
 
 const Set<String> _blocksExampleTitleKeys = <String>{
@@ -32,6 +36,7 @@ const Set<String> _blocksExampleTitleKeys = <String>{
   'blocksExampleReadButtonTitle',
   'blocksExampleButtonLedTitle',
   'blocksExampleFunctionTitle',
+  'blocksExampleTftTitle',
 };
 
 const Set<String> _blocksExampleSummaryKeys = <String>{
@@ -42,6 +47,7 @@ const Set<String> _blocksExampleSummaryKeys = <String>{
   'blocksExampleReadButtonSummary',
   'blocksExampleButtonLedSummary',
   'blocksExampleFunctionSummary',
+  'blocksExampleTftSummary',
 };
 
 const Set<String> _blocksExampleConceptKeys = <String>{
@@ -56,6 +62,7 @@ const Set<String> _blocksExampleConceptKeys = <String>{
   'blocksExampleConceptConditions',
   'blocksExampleConceptFunctions',
   'blocksExampleConceptParameters',
+  'blocksExampleConceptTft',
 };
 
 const Set<String> _blocksExampleWiringKeys = <String>{
@@ -64,12 +71,19 @@ const Set<String> _blocksExampleWiringKeys = <String>{
   'blocksExampleNeoPixelWiring',
   'blocksExampleButtonWiring',
   'blocksExampleButtonLedWiring',
+  'blocksExampleTftWiring',
 };
 
 const Set<String> _blocksExampleGpioLabelKeys = <String>{
   'blocksExampleLedGpio',
   'blocksExampleButtonGpio',
   'blocksExampleNeoPixelGpio',
+  'blocksExampleTftSckGpio',
+  'blocksExampleTftMosiGpio',
+  'blocksExampleTftCsGpio',
+  'blocksExampleTftDcGpio',
+  'blocksExampleTftResetGpio',
+  'blocksExampleTftBacklightGpio',
 };
 
 /// A malformed bundled catalog or unsafe materialization request.
@@ -119,10 +133,13 @@ class BlocksExampleTemplate {
 
   bool get requiresGpio => gpioRoles.isNotEmpty;
 
-  /// Produces an ordinary Blockly workspace with explicit number blocks.
+  /// Produces an ordinary Blockly workspace with explicit pin value blocks.
   ///
-  /// The immutable catalog template remains untouched.
-  String materializeWorkspaceJson(Map<String, int> gpioValues) {
+  /// Every GPIO role value is either a non-negative safe `int` (materialized
+  /// as a `math_number` block) or a `machine.Pin` name matching the frozen
+  /// FR-BLOCKS-1B grammar (materialized as a stock `text` block so the sealed
+  /// generator quotes it). The immutable catalog template remains untouched.
+  String materializeWorkspaceJson(Map<String, Object> gpioValues) {
     if (gpioValues.keys
             .toSet()
             .difference(
@@ -139,7 +156,7 @@ class BlocksExampleTemplate {
     if (gpioValues.length > 1 &&
         gpioValues.values.toSet().length != gpioValues.length) {
       throw const BlocksExampleFormatException(
-        'GPIO roles in one example must use different numbers',
+        'GPIO roles in one example must use different pins',
       );
     }
 
@@ -155,10 +172,14 @@ class BlocksExampleTemplate {
         .whereType<String>()
         .toSet();
     for (final BlocksExampleGpioRole binding in gpioRoles) {
-      final int? gpio = gpioValues[binding.role];
-      if (gpio == null || gpio < 0 || gpio > _maxJavaScriptSafeInteger) {
+      final Object? gpio = gpioValues[binding.role];
+      final bool validInteger =
+          gpio is int && gpio >= 0 && gpio <= _maxJavaScriptSafeInteger;
+      final bool validName = gpio is String && _pinNamePattern.hasMatch(gpio);
+      if (!validInteger && !validName) {
         throw BlocksExampleFormatException(
-          '${binding.role} GPIO must be a non-negative safe integer',
+          '${binding.role} GPIO must be a non-negative safe integer or a '
+          'pin name',
         );
       }
       final List<Map<String, dynamic>> targets = _objects(clonedValue)
@@ -195,18 +216,24 @@ class BlocksExampleTemplate {
         );
       }
 
-      final String numberId = '$id-${binding.role}-gpio-value';
-      if (!usedIds.add(numberId)) {
+      final String valueId = '$id-${binding.role}-gpio-value';
+      if (!usedIds.add(valueId)) {
         throw BlocksExampleFormatException(
-          'materialized block ID collides with $numberId',
+          'materialized block ID collides with $valueId',
         );
       }
       inputs['GPIO'] = <String, Object?>{
-        'block': <String, Object?>{
-          'type': 'math_number',
-          'id': numberId,
-          'fields': <String, Object?>{'NUM': gpio},
-        },
+        'block': gpio is String
+            ? <String, Object?>{
+                'type': 'text',
+                'id': valueId,
+                'fields': <String, Object?>{'TEXT': gpio},
+              }
+            : <String, Object?>{
+                'type': 'math_number',
+                'id': valueId,
+                'fields': <String, Object?>{'NUM': gpio},
+              },
       };
     }
     return jsonEncode(clonedValue);
@@ -459,14 +486,21 @@ Iterable<Map<String, dynamic>> _objects(Object? value) sync* {
 }
 
 /// Parses the exact GPIO grammar admitted by the production generator.
-int? parseBlocksExampleGpio(String value) {
+///
+/// Returns an `int` for a non-negative safe integer, a `String` for a pin
+/// name matching the frozen FR-BLOCKS-1B grammar, or `null` for anything
+/// else (the existing invalid-pin path).
+Object? parseBlocksExampleGpio(String value) {
   final String trimmed = value.trim();
-  if (!RegExp(r'^(?:0|[1-9][0-9]*)$').hasMatch(trimmed)) return null;
-  final int? parsed = int.tryParse(trimmed);
-  if (parsed == null || parsed < 0 || parsed > _maxJavaScriptSafeInteger) {
-    return null;
+  if (RegExp(r'^(?:0|[1-9][0-9]*)$').hasMatch(trimmed)) {
+    final int? parsed = int.tryParse(trimmed);
+    if (parsed == null || parsed < 0 || parsed > _maxJavaScriptSafeInteger) {
+      return null;
+    }
+    return parsed;
   }
-  return parsed;
+  if (_pinNamePattern.hasMatch(trimmed)) return trimmed;
+  return null;
 }
 
 /// Semantic emptiness includes variables as well as top-level block graphs.

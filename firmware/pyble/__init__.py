@@ -3,11 +3,13 @@
 #
 # PyBLE agent — Layer 3 frozen-Python package (chip-agnostic).
 #
-# EMPTY PLACEHOLDER at S1. This package exists so the per-chip board overlays
-# have a frozen manifest target and the build can freeze *something* for the
-# empty-agent bring-up. The agent modules (pyble_agent, pyble_ble, pyble_proto,
-# pyble_runner, pyble_fs, pyble_console, pyble_info) are authored per-story from
-# S2 onward by their owning engineers — see TDD §10.5. Do NOT add agent logic
-# here (that is out of scope for build-smith).
+# Package identity is generated from versions.lock into the frozen top-level
+# _version module by every ESP and RP2 build. Source-only/dev imports retain an
+# explicit non-release fallback; no maintained board carries a release override.
 
-__version__ = "0.4.2"  # mirrors versions.lock [pyble] agent_version (SemVer, BLD-12)
+try:
+    import _version
+
+    __version__ = _version.AGENT_VERSION
+except (ImportError, AttributeError):
+    __version__ = "0.0.0-dev"

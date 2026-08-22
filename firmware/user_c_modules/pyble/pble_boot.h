@@ -38,7 +38,8 @@ uint8_t pble_boot_set_autorun(bool enable);
 // 0x23 SET_AUTORUN dispatch handler (registered into pble_proto). Payload
 // [enable:u8] (0=off, non-zero=on) -> persist -> RSP{status}. Short payload -> EBADREQ.
 uint8_t pble_boot_set_autorun_cmd(const pble_frame_t *req, uint8_t *rsp,
-                                  size_t *rsp_len, uint16_t conn);
+                                  size_t *rsp_len,
+                                  const pble_session_token_t *session);
 
 // If auto-run is enabled AND /main.py exists at fs_root, hand it to the runner as
 // RUN{mode=file, path="/main.py"} on the WORKER — NON-BLOCKING, fail-safe, self-guarded,

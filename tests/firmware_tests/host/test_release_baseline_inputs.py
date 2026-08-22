@@ -31,8 +31,17 @@ RELEASE = bundle_fixture.RELEASE
 RELEASE_LOAD_ERROR = bundle_fixture.RELEASE_LOAD_ERROR
 HAVE_RELEASE = RELEASE is not None
 RELEASE_SCRIPT = bundle_fixture.RELEASE_SCRIPT
-TARGETS = ("esp32", "esp32-s3", "esp32-c3")
-PROFILE_ORDER = ("esp32-4mb", "esp32-s3-n16r8")
+TARGETS = (
+    "esp32",
+    "esp32-s3",
+    "waveshare-esp32-s3-lcd-147b",
+    "esp32-c3",
+)
+PROFILE_ORDER = (
+    "esp32-4mb",
+    "esp32-s3-n16r8",
+    "waveshare-esp32-s3-lcd-147b",
+)
 EXPECTED_FILES = {
     "%s/%s" % (profile_id, filename)
     for profile_id in PROFILE_ORDER
@@ -242,7 +251,7 @@ class BaselineInputsProductionGateTest(unittest.TestCase):
 
 @unittest.skipUnless(HAVE_RELEASE, RELEASE_LOAD_ERROR)
 class BaselineInputsCreationTests(unittest.TestCase):
-    def test_creates_exact_pre_policy_two_profile_measurement_tree(self) -> None:
+    def test_creates_exact_pre_policy_three_profile_measurement_tree(self) -> None:
         fixture = BaselineInputFixture()
         try:
             fixture.assert_roots_are_valid_and_reproducible()
@@ -278,8 +287,9 @@ class BaselineInputsCreationTests(unittest.TestCase):
                 if len(call.args) == 2
             ]
             for expected in (
-                ("0.4.1", "esp32-4mb"),
-                ("0.4.1", "esp32-s3-n16r8"),
+                ("0.5.1", "esp32-4mb"),
+                ("0.5.1", "esp32-s3-n16r8"),
+                ("0.5.1", "waveshare-esp32-s3-lcd-147b"),
             ):
                 self.assertIn(
                     expected,
@@ -296,7 +306,7 @@ class BaselineInputsCreationTests(unittest.TestCase):
                     expected_manifest = (
                         json.dumps(
                             bundle_fixture.exact_manifest(
-                                "0.4.1",
+                                "0.5.1",
                                 profile_id,
                             ),
                             indent=2,

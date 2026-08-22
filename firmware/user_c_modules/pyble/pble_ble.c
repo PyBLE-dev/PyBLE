@@ -30,13 +30,25 @@
 
 #include "py/runtime.h"
 #include "py/obj.h"
-
+#include "py/mpthread.h"
+#ifndef PBLE_ENABLE_SPLASH_READINESS
+#define PBLE_ENABLE_SPLASH_READINESS 0
+#endif
+#ifndef PBLE_ENABLE_OI1_LINK_FACTS
+#define PBLE_ENABLE_OI1_LINK_FACTS 0
+#endif
 #include "esp_log.h"
+#include "esp_system.h"
+#include "esp_timer.h"
 // FreeRTOS: the TX path is the sole exit for PBLE/1 bytes and is now called from
 // several tasks (NimBLE host task for RSPs, the MicroPython worker _thread for
 // CONSOLE_DATA/RUN_STATE). A recursive mutex serializes whole-message
 // fragmentation so §3.2 fragments from concurrent senders never interleave.
 #include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#if PBLE_ENABLE_SPLASH_READINESS
+#include "freertos/event_groups.h"
+#endif
 #include "freertos/semphr.h"
 // The ESP-IDF NimBLE MYNEWT_VAL_* config maps CONFIG_BT_NIMBLE_* -> the values
 // syscfg.h uses; the bt component force-includes it for its own sources, so we
@@ -46,12 +58,15 @@
 #include "nimble/nimble_port_freertos.h"
 #include "nimble/nimble_npl.h"   // ble_npl_callout: deferred link-tune (G5-impl)
 #include "os/os_mbuf.h"
+#include "os/os_mempool.h"
 #include "host/ble_hs.h"
 #include "host/util/util.h"
 #include "services/gap/ble_svc_gap.h"
 #include "services/gatt/ble_svc_gatt.h"
 
 #include "pble_ble.h"
+#include "pble_termination.h"
+#include "pble_vm_lifecycle.h"
 
 #define PBLE_TAG "pble"
 
@@ -67,6 +82,20 @@
 #define PBLE_FRAG_LAST      0x40
 #define PBLE_FRAG_IDX_MASK  0x3F
 #define PBLE_FRAG_IDX_MOD   64
+
+// An acknowledged STOP transaction concurrently owns four msys_1 blocks while
+// its RX callback submits the PBLE/1 response: the incoming request, NimBLE's
+// preallocated ATT write response, the PBLE/1 response data, and its ATT Notify
+// wrapper. Bulk traffic must leave all four available. The terminal
+// RUN_STATE(idle) reuses returned blocks after that transaction drains.
+#define PBLE_TX_BULK_RESERVE_BLOCKS 4
+#define PBLE_TX_ATT_WRAPPER_BLOCKS  1
+#define PBLE_CONTROL_TX_BOUNDARY_BUDGET_MS 15u
+
+#if PBLE_ENABLE_SPLASH_READINESS
+// Boot-internal readiness snapshot (ADR-0024 / FR-SPLASH-4), exact image only.
+#define PBLE_READY_BIT      BIT0
+#endif
 
 // --- Transport sizing (module-local design, not wire) ------------------------
 // Bounded static reassembly buffer for a whole §3.1 message (D3: no per-message
@@ -119,9 +148,71 @@
 #define PBLE_CONN_CE_LEN         24    // max_ce_len hint, 0.625 ms units = 15 ms:
                                        // let the controller extend the connection
                                        // event instead of closing after one PDU.
+#define PBLE_DLE_ATTEMPT_MAX     4     // bounded timer-progressed DLE submissions.
+#define PBLE_PHY_ATTEMPT_MAX     4     // bounded timer-progressed 2M submissions.
 #define PBLE_CP_ATTEMPT_MAX      3     // bounded re-fires after a CONN_UPDATE
                                        // collision (HCI 0x2A, seen as status=554
                                        // ~50% of the time on macOS).
+
+#if PBLE_ENABLE_OI1_LINK_FACTS
+#define PBLE_OI1_PHY_UPDATE_CAP 8
+#define PBLE_OI1_CP_UPDATE_CAP 8
+
+typedef struct {
+    uint32_t status;
+    uint8_t tx;
+    uint8_t rx;
+} pble_oi1_phy_update_t;
+
+typedef struct {
+    uint32_t status;
+    uint16_t interval_units;
+} pble_oi1_cp_update_t;
+
+typedef struct {
+    bool valid;
+    bool final;
+    bool overflow;
+    uint64_t epoch;
+    uint8_t dle_request_attempts;
+    uint16_t dle_max_tx_octets;
+    uint16_t dle_max_tx_time_us;
+    uint8_t phy_request_attempts;
+    uint8_t phy_update_count;
+    pble_oi1_phy_update_t phy_updates[PBLE_OI1_PHY_UPDATE_CAP];
+    uint8_t settled_tx;
+    uint8_t settled_rx;
+    uint8_t cp_return_code_count;
+    uint32_t cp_return_codes[PBLE_CP_ATTEMPT_MAX];
+    uint8_t cp_update_count;
+    pble_oi1_cp_update_t cp_updates[PBLE_OI1_CP_UPDATE_CAP];
+    uint16_t settled_interval_units;
+    uint32_t tx_mbuf_starve_count;
+} pble_oi1_link_record_t;
+
+typedef struct {
+    pble_oi1_link_record_t active;
+    pble_oi1_link_record_t last_ended;
+    bool epoch_exhausted;
+    uint64_t current_epoch;
+    bool active_handle_valid;
+} pble_oi1_link_snapshot_t;
+
+typedef struct {
+    uint16_t conn_handle;
+    uint64_t epoch;
+} pble_oi1_session_token_t;
+
+// Qualification-only retained POD. The existing live pble_conn_handle remains
+// the runtime transport owner; no handle, address, or identifier enters these
+// records. Every mutation and getter copy shares this short critical section.
+static pble_oi1_link_record_t pble_oi1_active;
+static pble_oi1_link_record_t pble_oi1_last_ended;
+static uint64_t pble_oi1_epoch;
+static bool pble_oi1_epoch_exhausted;
+static uint16_t pble_oi1_active_handle = BLE_HS_CONN_HANDLE_NONE;
+static portMUX_TYPE pble_oi1_mux = portMUX_INITIALIZER_UNLOCKED;
+#endif
 
 // --- Peer modules (native cross-module contract; in the build as of S3) -------
 // The protocol engine + identity modules are compiled alongside pble_ble now:
@@ -169,16 +260,60 @@ static bool     pble_started = false;
 static bool     pble_synced = false;
 
 static uint16_t pble_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+static uint64_t pble_conn_generation;
+static uint64_t pble_conn_generation_counter;
+static uint64_t pble_session_vm_epoch;
+static uint64_t pble_vm_epoch_seed;
+static portMUX_TYPE pble_session_mux = portMUX_INITIALIZER_UNLOCKED;
+static pble_term_state_t pble_term_state;
+static bool pble_term_initialized;
+static esp_timer_handle_t pble_term_watchdog;
+static pble_term_watchdog_ticket_t pble_term_armed_ticket;
 static uint16_t pble_mtu_val = PBLE_MTU_DEFAULT;    // negotiated ATT MTU
 static uint16_t pble_tx_val_handle;                 // cached for Notifications
 
-// G5-impl deferred link-tune (Phase B): a one-shot NimBLE callout, armed per
-// CONNECT, fires rungs 2+3 (2M PHY + conn-param) PBLE_LINK_TUNE_DELAY_MS later on
-// the host-task context. conn_param_sent records whether the current request
-// was accepted so completion-event recovery does not duplicate a live update.
+#if PBLE_ENABLE_SPLASH_READINESS
+// Native-static so the object and observed state survive a MicroPython soft
+// reset. Allocation is best-effort: BLE remains fully functional if this stays
+// NULL, while the boot-only wait_ready API deterministically returns false.
+static EventGroupHandle_t pble_ready_events;
+
+static void pble_ready_set(void) {
+    if (pble_ready_events != NULL) {
+        xEventGroupSetBits(pble_ready_events, PBLE_READY_BIT);
+    }
+}
+
+static void pble_ready_clear(void) {
+    if (pble_ready_events != NULL) {
+        xEventGroupClearBits(pble_ready_events, PBLE_READY_BIT);
+    }
+}
+
+static void pble_ready_refresh(void) {
+    if (pble_conn_handle != BLE_HS_CONN_HANDLE_NONE || ble_gap_adv_active()) {
+        pble_ready_set();
+    } else {
+        pble_ready_clear();
+    }
+}
+#else
+// Generic images compile every splash-only transition and allocation to zero.
+#define pble_ready_set()     ((void)0)
+#define pble_ready_clear()   ((void)0)
+#define pble_ready_refresh() ((void)0)
+#endif
+
+// ADR-0027 deferred link settlement: one NimBLE callout advances exactly one
+// submitted phase at a time. Completion events can re-arm it, but the timer is
+// the progress guarantee when a controller omits an event.
 static struct ble_npl_callout pble_link_tune_co;
-static bool     pble_conn_param_sent = false;
-static uint8_t  pble_cp_attempts = 0;   // bounded CONN_UPDATE-collision re-fires
+static struct ble_npl_callout pble_rsp_callout;
+static portMUX_TYPE pble_rsp_callout_mux = portMUX_INITIALIZER_UNLOCKED;
+static bool pble_rsp_callout_enabled;
+static bool pble_vm_tx_locked;
+
+static void pble_termination_watchdog_cb(void *arg);
 
 // Rung-1 (DLE) confirmation latch. NimBLE serializes LL control procedures: a
 // set_data_len issued while the central runs its OWN early procedure (a BLE-5
@@ -190,18 +325,57 @@ static uint8_t  pble_cp_attempts = 0;   // bounded CONN_UPDATE-collision re-fire
 // right after a completed CONN_UPDATE procedure).
 static bool    pble_dle_confirmed = false;
 static uint8_t pble_dle_attempts = 0;
-#define PBLE_DLE_ATTEMPT_MAX 4
+static bool    pble_phy_confirmed_2m = false;
+static uint8_t pble_phy_attempts = 0;
+static bool    pble_cp_confirmed = false;
+static uint8_t pble_cp_attempts = 0;
+#if !PBLE_HAS_2M_PHY
+static bool    pble_phy_classic_skip_logged = false;
+#endif
 
-static void pble_request_dle(uint16_t conn, const char *ctx) {
+#if PBLE_ENABLE_OI1_LINK_FACTS
+static void pble_oi1_begin_session(uint16_t conn_handle);
+static void pble_oi1_note_dle_request(uint16_t conn_handle, uint8_t attempts);
+static void pble_oi1_note_phy_request(uint16_t conn_handle, uint8_t attempts);
+static void pble_oi1_note_cp_request(uint16_t conn_handle, int rc);
+static void pble_oi1_note_dle(uint16_t conn_handle, uint16_t octets,
+                              uint16_t time_us);
+static void pble_oi1_note_phy(uint16_t conn_handle, int status,
+                              uint8_t tx, uint8_t rx);
+static void pble_oi1_note_cp(uint16_t conn_handle, int status,
+                             uint16_t interval_units);
+static pble_oi1_session_token_t pble_oi1_session_token(uint16_t conn_handle);
+static void pble_oi1_note_starve(pble_oi1_session_token_t token);
+static void pble_oi1_end_session(uint16_t conn_handle);
+static void pble_oi1_invalidate_active(void);
+#else
+#define pble_oi1_begin_session(conn) ((void)(conn))
+#define pble_oi1_note_dle_request(conn, attempts) ((void)(conn), (void)(attempts))
+#define pble_oi1_note_phy_request(conn, attempts) ((void)(conn), (void)(attempts))
+#define pble_oi1_note_cp_request(conn, rc) ((void)(conn), (void)(rc))
+#define pble_oi1_note_dle(conn, octets, time_us) ((void)(conn), (void)(octets), (void)(time_us))
+#define pble_oi1_note_phy(conn, status, tx, rx) ((void)(conn), (void)(status), (void)(tx), (void)(rx))
+#define pble_oi1_note_cp(conn, status, interval) ((void)(conn), (void)(status), (void)(interval))
+typedef uint16_t pble_oi1_session_token_t;
+#define pble_oi1_session_token(conn) (conn)
+#define pble_oi1_note_starve(token) ((void)(token), pble_tx_mbuf_starve++)
+#define pble_oi1_end_session(conn) ((void)(conn))
+#define pble_oi1_invalidate_active() ((void)0)
+#endif
+
+static int pble_request_dle(uint16_t conn, const char *ctx) {
     if (pble_dle_confirmed || pble_dle_attempts >= PBLE_DLE_ATTEMPT_MAX) {
-        return;
+        return 0;
     }
     pble_dle_attempts++;
     int rc = ble_gap_set_data_len(conn, 251, 2120);
+    pble_oi1_note_dle_request(conn, pble_dle_attempts);
     // ERROR level: this build strips everything below ERROR
     // (CONFIG_LOG_DEFAULT_LEVEL=1), and the link-fact lines ARE the no-sniffer
     // bench evidence (§G5-impl G5i.4) — invisible evidence is none.
-    ESP_LOGE(PBLE_TAG, "dle req(%s) #%u rc=%d", ctx, pble_dle_attempts, rc);
+    ESP_LOGE(PBLE_TAG, "link tune req phase=dle attempt=%u context=%s rc=%d",
+             pble_dle_attempts, ctx, rc);
+    return rc;
 }
 
 // GAP-2 instrumentation (gates the G5i.2 host/controller pool bumps, applied by
@@ -210,11 +384,175 @@ static void pble_request_dle(uint16_t conn, const char *ctx) {
 // it never changes the paced-TX pump's behavior.
 static volatile uint32_t pble_tx_mbuf_starve = 0;
 
+#if PBLE_ENABLE_OI1_LINK_FACTS
+static void pble_oi1_begin_session(uint16_t conn_handle) {
+    taskENTER_CRITICAL(&pble_oi1_mux);
+    if (pble_oi1_active.valid || pble_oi1_epoch_exhausted ||
+        pble_oi1_epoch == UINT64_MAX) {
+        // A duplicate active connect or a forbidden successor would make the
+        // snapshot ambiguous. Latch exhaustion so the getter raises forever
+        // for this boot rather than manufacturing an epoch.
+        pble_oi1_epoch_exhausted = true;
+        memset(&pble_oi1_active, 0, sizeof(pble_oi1_active));
+        pble_oi1_active_handle = BLE_HS_CONN_HANDLE_NONE;
+    } else {
+        pble_oi1_epoch++;
+        memset(&pble_oi1_active, 0, sizeof(pble_oi1_active));
+        pble_oi1_active.valid = true;
+        pble_oi1_active.epoch = pble_oi1_epoch;
+        pble_oi1_active_handle = conn_handle;
+    }
+    taskEXIT_CRITICAL(&pble_oi1_mux);
+}
+
+static void pble_oi1_note_dle_request(uint16_t conn_handle, uint8_t attempts) {
+    taskENTER_CRITICAL(&pble_oi1_mux);
+    if (pble_oi1_active.valid && pble_oi1_active_handle == conn_handle) {
+        pble_oi1_active.dle_request_attempts = attempts;
+    }
+    taskEXIT_CRITICAL(&pble_oi1_mux);
+}
+
+static void pble_oi1_note_phy_request(uint16_t conn_handle, uint8_t attempts) {
+    taskENTER_CRITICAL(&pble_oi1_mux);
+    if (pble_oi1_active.valid && pble_oi1_active_handle == conn_handle) {
+        pble_oi1_active.phy_request_attempts = attempts;
+    }
+    taskEXIT_CRITICAL(&pble_oi1_mux);
+}
+
+static void pble_oi1_note_cp_request(uint16_t conn_handle, int rc) {
+    taskENTER_CRITICAL(&pble_oi1_mux);
+    if (pble_oi1_active.valid && pble_oi1_active_handle == conn_handle) {
+        if (rc < 0) {
+            pble_oi1_active.overflow = true;
+        } else if (pble_oi1_active.cp_return_code_count < PBLE_CP_ATTEMPT_MAX) {
+            pble_oi1_active.cp_return_codes[
+                pble_oi1_active.cp_return_code_count++] = (uint32_t)rc;
+        } else {
+            pble_oi1_active.overflow = true;
+        }
+    }
+    taskEXIT_CRITICAL(&pble_oi1_mux);
+}
+
+static void pble_oi1_note_dle(uint16_t conn_handle, uint16_t octets, uint16_t time_us) {
+    taskENTER_CRITICAL(&pble_oi1_mux);
+    if (pble_oi1_active.valid && pble_oi1_active_handle == conn_handle) {
+        pble_oi1_active.dle_max_tx_octets = octets;
+        pble_oi1_active.dle_max_tx_time_us = time_us;
+    }
+    taskEXIT_CRITICAL(&pble_oi1_mux);
+}
+
+static void pble_oi1_note_phy(uint16_t conn_handle, int status,
+                              uint8_t tx, uint8_t rx) {
+    taskENTER_CRITICAL(&pble_oi1_mux);
+    if (pble_oi1_active.valid && pble_oi1_active_handle == conn_handle) {
+        if (status < 0) {
+            pble_oi1_active.overflow = true;
+        } else if (pble_oi1_active.phy_update_count < PBLE_OI1_PHY_UPDATE_CAP) {
+            pble_oi1_phy_update_t *update = &pble_oi1_active.phy_updates[
+                pble_oi1_active.phy_update_count++];
+            update->status = (uint32_t)status;
+            update->tx = tx;
+            update->rx = rx;
+        } else {
+            pble_oi1_active.overflow = true;
+        }
+        if (status == 0 && tx == 2 && rx == 2) {
+            pble_oi1_active.settled_tx = tx;
+            pble_oi1_active.settled_rx = rx;
+        } else {
+            pble_oi1_active.settled_tx = 0;
+            pble_oi1_active.settled_rx = 0;
+        }
+    }
+    taskEXIT_CRITICAL(&pble_oi1_mux);
+}
+
+static void pble_oi1_note_cp(uint16_t conn_handle, int status,
+                             uint16_t interval_units) {
+    taskENTER_CRITICAL(&pble_oi1_mux);
+    if (pble_oi1_active.valid && pble_oi1_active_handle == conn_handle) {
+        if (status < 0) {
+            pble_oi1_active.overflow = true;
+        } else if (pble_oi1_active.cp_update_count < PBLE_OI1_CP_UPDATE_CAP) {
+            pble_oi1_cp_update_t *update = &pble_oi1_active.cp_updates[
+                pble_oi1_active.cp_update_count++];
+            update->status = (uint32_t)status;
+            update->interval_units = interval_units;
+        } else {
+            pble_oi1_active.overflow = true;
+        }
+        if (status == 0 && interval_units >= PBLE_CONN_ITVL_MIN &&
+            interval_units <= PBLE_CONN_ITVL_MAX) {
+            pble_oi1_active.settled_interval_units = interval_units;
+        } else {
+            pble_oi1_active.settled_interval_units = 0;
+        }
+    }
+    taskEXIT_CRITICAL(&pble_oi1_mux);
+}
+
+static pble_oi1_session_token_t pble_oi1_session_token(uint16_t conn_handle) {
+    pble_oi1_session_token_t token = {
+        .conn_handle = conn_handle,
+        .epoch = 0,
+    };
+    taskENTER_CRITICAL(&pble_oi1_mux);
+    if (pble_oi1_active.valid && pble_oi1_active_handle == conn_handle) {
+        token.epoch = pble_oi1_active.epoch;
+    }
+    taskEXIT_CRITICAL(&pble_oi1_mux);
+    return token;
+}
+
+static void pble_oi1_note_starve(pble_oi1_session_token_t token) {
+    taskENTER_CRITICAL(&pble_oi1_mux);
+    if (pble_oi1_active.valid &&
+        pble_oi1_active_handle == token.conn_handle &&
+        pble_oi1_active.epoch == token.epoch && token.epoch != 0 &&
+        token.conn_handle != BLE_HS_CONN_HANDLE_NONE) {
+        if (pble_tx_mbuf_starve == UINT32_MAX ||
+            pble_oi1_active.tx_mbuf_starve_count == UINT32_MAX) {
+            pble_oi1_active.overflow = true;
+        } else {
+            pble_tx_mbuf_starve++;
+            pble_oi1_active.tx_mbuf_starve_count++;
+        }
+    }
+    taskEXIT_CRITICAL(&pble_oi1_mux);
+}
+
+static void pble_oi1_end_session(uint16_t conn_handle) {
+    taskENTER_CRITICAL(&pble_oi1_mux);
+    if (pble_oi1_active.valid && pble_oi1_active_handle == conn_handle) {
+        pble_oi1_active.final = true;
+        pble_oi1_last_ended = pble_oi1_active;
+        memset(&pble_oi1_active, 0, sizeof(pble_oi1_active));
+        pble_oi1_active_handle = BLE_HS_CONN_HANDLE_NONE;
+    }
+    taskEXIT_CRITICAL(&pble_oi1_mux);
+}
+
+static void pble_oi1_invalidate_active(void) {
+    taskENTER_CRITICAL(&pble_oi1_mux);
+    if (pble_oi1_active.valid) {
+        pble_oi1_epoch_exhausted = true;
+    }
+    memset(&pble_oi1_active, 0, sizeof(pble_oi1_active));
+    pble_oi1_active_handle = BLE_HS_CONN_HANDLE_NONE;
+    taskEXIT_CRITICAL(&pble_oi1_mux);
+}
+#endif
+
 // TX serialization: guards the whole fragment-and-Notify sequence in
 // pble_ble_notify so a multi-fragment message goes out atomically relative to
 // any other sender (host task RSP vs. worker-thread CONSOLE_DATA/RUN_STATE).
 // Recursive so an unforeseen same-thread nesting can never self-deadlock.
 static SemaphoreHandle_t pble_tx_mutex;
+static uint32_t pble_tx_stream_generation = 1;
 
 // TX-drain signal for the paced notify path: BLE_GAP_EVENT_NOTIFY_TX (a
 // notification actually left / controller space freed) gives this binary
@@ -223,6 +561,33 @@ static SemaphoreHandle_t pble_tx_mutex;
 // retry at a 100 Hz tick truncates to zero and busy-spins, and every blind
 // whole-message retry consumes more of the very mbuf pool it is waiting on.
 static SemaphoreHandle_t pble_tx_drain_sem;
+
+// A specialized RUN/STOP/SOFT_REBOOT response owns the next complete-message
+// boundary while it waits for pble_tx_mutex. The specialized path releases this
+// predicate's short spinlock before waiting for TX; ordinary senders only read
+// it briefly after TX acquisition, so there is no reverse nested wait edge.
+static portMUX_TYPE pble_control_tx_boundary_mux = portMUX_INITIALIZER_UNLOCKED;
+static bool pble_control_tx_boundary_active;
+
+static void pble_control_tx_boundary_begin(void) {
+    taskENTER_CRITICAL(&pble_control_tx_boundary_mux);
+    pble_control_tx_boundary_active = true;
+    taskEXIT_CRITICAL(&pble_control_tx_boundary_mux);
+}
+
+static bool pble_control_tx_boundary_pending(void) {
+    bool pending;
+    taskENTER_CRITICAL(&pble_control_tx_boundary_mux);
+    pending = pble_control_tx_boundary_active;
+    taskEXIT_CRITICAL(&pble_control_tx_boundary_mux);
+    return pending;
+}
+
+static void pble_control_tx_boundary_end(void) {
+    taskENTER_CRITICAL(&pble_control_tx_boundary_mux);
+    pble_control_tx_boundary_active = false;
+    taskEXIT_CRITICAL(&pble_control_tx_boundary_mux);
+}
 
 // §3.2 reassembly accumulator (single static buffer).
 static uint8_t  pble_rx_buf[PBLE_MSG_MAX];
@@ -264,7 +629,8 @@ static void pble_reset_reassembly(void) {
 // complete §3.1 message up to the protocol engine. CRC/structure validation is
 // pble_proto's — never done here. Gap/out-of-order fragments reset the buffer
 // (the app retransmits); an over-long message is dropped, not truncated.
-static void pble_rx_ingest(const uint8_t *pkt, size_t len, uint16_t conn) {
+static void pble_rx_ingest(const uint8_t *pkt, size_t len,
+                           const pble_session_token_t *session) {
     if (len == 0) {
         return;
     }
@@ -302,8 +668,7 @@ static void pble_rx_ingest(const uint8_t *pkt, size_t len, uint16_t conn) {
         uint8_t op = pble_rx_hdr_op, id = pble_rx_hdr_id;
         pble_reset_reassembly();
         if (answerable) {
-            uint8_t status = PBLE_ERANGE;
-            pble_proto_emit_id(PBLE_TYPE_RSP, op, id, &status, 1);
+            pble_proto_refuse(op, id, PBLE_ERANGE, session);
         }
         return;
     }
@@ -314,7 +679,7 @@ static void pble_rx_ingest(const uint8_t *pkt, size_t len, uint16_t conn) {
     if (last) {
         size_t msg_len = pble_rx_len;
         pble_reset_reassembly();
-        pble_proto_dispatch(pble_rx_buf, msg_len, conn);
+        pble_proto_dispatch(pble_rx_buf, msg_len, session->conn);
     }
 }
 
@@ -323,14 +688,61 @@ static void pble_rx_ingest(const uint8_t *pkt, size_t len, uint16_t conn) {
 // (abort) from transient host/controller backpressure (retry). A NULL mbuf means
 // the host mbuf pool is drained by in-flight notifications — that is transient
 // backpressure, and nothing was sent for this packet.
-static int pble_notify_packet(const uint8_t *pkt, size_t len) {
+static int pble_msys1_num_free(void) {
+    struct os_mempool *pool = NULL;
+    struct os_mempool_info info;
+    while ((pool = os_mempool_info_get_next(pool, &info)) != NULL) {
+        if (strcmp(info.omi_name, "msys_1") == 0) {
+            return info.omi_num_free;
+        }
+    }
+    // Fail closed for bulk admission if the pinned pool cannot be identified.
+    return 0;
+}
+
+static bool pble_tx_mutex_owned(void) {
+    return pble_tx_mutex != NULL &&
+           xSemaphoreGetMutexHolder(pble_tx_mutex) ==
+               xTaskGetCurrentTaskHandle();
+}
+
+static int pble_notify_packet(const uint8_t *pkt, size_t len,
+                              uint8_t reserve_blocks,
+                              const pble_session_token_t *session) {
+    if (!pble_tx_mutex_owned()) {
+        return PBLE_TX_NO_CONN;
+    }
+    bool admitted;
+    taskENTER_CRITICAL(&pble_session_mux);
+    admitted = session != NULL &&
+               pble_term_admits(&pble_term_state, session->conn,
+                                session->generation) &&
+               session->vm_epoch != 0 &&
+               session->vm_epoch == pble_session_vm_epoch;
+    taskEXIT_CRITICAL(&pble_session_mux);
+    if (!admitted) {
+        return PBLE_TX_NO_CONN;
+    }
+    pble_oi1_session_token_t session_token =
+        pble_oi1_session_token(session->conn);
     struct os_mbuf *om = ble_hs_mbuf_from_flat(pkt, (uint16_t)len);
     if (om == NULL) {
-        pble_tx_mbuf_starve++;   // GAP-2: host msys pool drained (pool-starve gate)
+        pble_oi1_note_starve(session_token);  // GAP-2 pool-starve gate
+        return PBLE_TX_AGAIN;
+    }
+    // The data chain above is already charged to msys_1. Before a BULK submit,
+    // preserve one block for this packet's ATT wrapper plus all four blocks an
+    // acknowledged STOP transaction needs through its response Notify. Query
+    // msys_1 specifically: aggregate msys_1+msys_2 free space cannot satisfy
+    // these allocations.
+    if (reserve_blocks > 0 &&
+        pble_msys1_num_free() < PBLE_TX_ATT_WRAPPER_BLOCKS + reserve_blocks) {
+        os_mbuf_free_chain(om);
+        pble_oi1_note_starve(session_token);
         return PBLE_TX_AGAIN;
     }
     // ble_gatts_notify_custom consumes the mbuf on both success and failure.
-    int rc = ble_gatts_notify_custom(pble_conn_handle, pble_tx_val_handle, om);
+    int rc = ble_gatts_notify_custom(session->conn, pble_tx_val_handle, om);
     if (rc == 0) {
         return PBLE_TX_OK;
     }
@@ -344,11 +756,173 @@ static int pble_notify_packet(const uint8_t *pkt, size_t len) {
 
 // --- Frozen ble<->proto contract (exported, see pble_ble.h) ------------------
 
+static bool pble_session_matches_locked(const pble_session_token_t *session) {
+    return session != NULL && session->conn != BLE_HS_CONN_HANDLE_NONE &&
+           session->generation != 0 && session->vm_epoch != 0 &&
+           pble_conn_handle == session->conn &&
+           pble_conn_generation == session->generation &&
+           pble_session_vm_epoch == session->vm_epoch;
+}
+
+bool pble_ble_session_snapshot(uint16_t expected_conn,
+                               pble_session_token_t *session) {
+    bool live;
+    taskENTER_CRITICAL(&pble_session_mux);
+    live = session != NULL && expected_conn != BLE_HS_CONN_HANDLE_NONE &&
+           pble_conn_handle == expected_conn &&
+           pble_term_admits(&pble_term_state, pble_conn_handle,
+                            pble_conn_generation) &&
+           pble_session_vm_epoch != 0;
+    if (live) {
+        session->conn = pble_conn_handle;
+        session->generation = pble_conn_generation;
+        session->vm_epoch = pble_session_vm_epoch;
+    }
+    taskEXIT_CRITICAL(&pble_session_mux);
+    return live;
+}
+
+bool pble_ble_session_snapshot_current(pble_session_token_t *session) {
+    bool live;
+    taskENTER_CRITICAL(&pble_session_mux);
+    live = session != NULL &&
+           pble_conn_handle != BLE_HS_CONN_HANDLE_NONE &&
+           pble_conn_generation != 0 &&
+           pble_term_admits(&pble_term_state, pble_conn_handle,
+                            pble_conn_generation) &&
+           pble_session_vm_epoch != 0;
+    if (live) {
+        session->conn = pble_conn_handle;
+        session->generation = pble_conn_generation;
+        session->vm_epoch = pble_session_vm_epoch;
+    }
+    taskEXIT_CRITICAL(&pble_session_mux);
+    return live;
+}
+
+bool pble_ble_session_live(const pble_session_token_t *session) {
+    bool live;
+    taskENTER_CRITICAL(&pble_session_mux);
+    live = pble_session_matches_locked(session) &&
+           pble_term_admits(&pble_term_state, session->conn,
+                            session->generation);
+    taskEXIT_CRITICAL(&pble_session_mux);
+    return live;
+}
+
+bool pble_ble_session_closing(void) {
+    bool closing;
+    taskENTER_CRITICAL(&pble_session_mux);
+    closing = pble_term_state.phase == PBLE_TERM_PHASE_CLOSING ||
+              pble_term_state.phase == PBLE_TERM_PHASE_RESTARTING;
+    taskEXIT_CRITICAL(&pble_session_mux);
+    return closing;
+}
+
+void pble_ble_terminate_session(const pble_session_token_t *session) {
+    if (session == NULL || pble_tx_mutex == NULL) {
+        return;
+    }
+    int64_t begin_now_us = esp_timer_get_time();
+    pble_term_effects_t effect = PBLE_TERM_EFFECT_NONE;
+    if (xSemaphoreTakeRecursive(pble_tx_mutex, portMAX_DELAY) != pdTRUE) {
+        esp_restart();
+        return;
+    }
+    taskENTER_CRITICAL(&pble_session_mux);
+    if (pble_session_matches_locked(session)) {
+        effect = pble_term_begin(&pble_term_state, session->conn,
+                                 session->generation, begin_now_us);
+        if (effect == PBLE_TERM_EFFECT_ARM_WATCHDOG &&
+            pble_term_watchdog_ticket(&pble_term_state, session->conn,
+                                      session->generation,
+                                      &pble_term_armed_ticket)) {
+            int64_t initial_remaining_us = pble_term_remaining_us(
+                &pble_term_state, &pble_term_armed_ticket,
+                esp_timer_get_time());
+            esp_err_t arm_rc = ESP_FAIL;
+            if (initial_remaining_us <= 0) {
+                arm_rc = ESP_FAIL;
+            } else {
+                arm_rc = esp_timer_start_once(pble_term_watchdog,
+                                              initial_remaining_us);
+            }
+            effect = pble_term_watchdog_armed(
+                &pble_term_state, session->conn, session->generation,
+                arm_rc == ESP_OK);
+        }
+    }
+    taskEXIT_CRITICAL(&pble_session_mux);
+    xSemaphoreGiveRecursive(pble_tx_mutex);
+
+    if (effect == PBLE_TERM_EFFECT_RESTART) {
+        esp_restart();
+        return;
+    }
+    if (effect == PBLE_TERM_EFFECT_CALL_GAP) {
+        int rc = ble_gap_terminate(session->conn, BLE_ERR_REM_USER_CONN_TERM);
+        taskENTER_CRITICAL(&pble_session_mux);
+        effect = pble_term_gap_result(
+            &pble_term_state, session->conn, session->generation,
+            rc == 0 || rc == BLE_HS_EALREADY);
+        taskEXIT_CRITICAL(&pble_session_mux);
+        if (effect == PBLE_TERM_EFFECT_RESTART) {
+            esp_restart();
+        }
+    }
+}
+
+static void pble_termination_watchdog_cb(void *arg) {
+    const pble_term_watchdog_ticket_t *ticket =
+        (const pble_term_watchdog_ticket_t *)arg;
+    int64_t now_us = esp_timer_get_time();
+    pble_term_effects_t effect;
+    taskENTER_CRITICAL(&pble_session_mux);
+    effect = pble_term_watchdog_fired(&pble_term_state, ticket, now_us);
+    if (effect == PBLE_TERM_EFFECT_REARM_WATCHDOG) {
+        int64_t remaining_us =
+            pble_term_remaining_us(&pble_term_state, ticket, now_us);
+        esp_err_t rearm_rc = remaining_us > 0
+                                 ? esp_timer_start_once(pble_term_watchdog,
+                                                        remaining_us)
+                                 : ESP_FAIL;
+        effect = pble_term_watchdog_rearmed(&pble_term_state, ticket,
+                                            rearm_rc == ESP_OK);
+    }
+    taskEXIT_CRITICAL(&pble_session_mux);
+    if (effect == PBLE_TERM_EFFECT_RESTART) {
+        esp_restart();
+    }
+}
+
+static bool pble_rsp_owner_active(void) {
+    return pble_rsp_tx_owned();
+}
+
+static bool pble_rsp_owner_release_if_idle(void) {
+    bool owned = pble_rsp_release_owner_if_idle();
+    if (!owned && pble_tx_drain_sem != NULL) {
+        xSemaphoreGive(pble_tx_drain_sem);
+    }
+    return owned;
+}
+
+void pble_ble_rsp_kick(void) {
+    bool enabled;
+    taskENTER_CRITICAL(&pble_rsp_callout_mux);
+    enabled = pble_rsp_callout_enabled;
+    taskEXIT_CRITICAL(&pble_rsp_callout_mux);
+    if (enabled) {
+        ble_npl_callout_reset(&pble_rsp_callout, 0);
+    }
+}
+
 // Fragment + Notify one whole §3.1 message. Caller holds pble_tx_mutex so the
 // emitted §3.2 fragment run is atomic w.r.t. other senders. Returns a PBLE_TX_*
 // code: OK, NO_CONN (no link / link dropped), or AGAIN (transient backpressure).
-static int pble_notify_message(const uint8_t *msg, size_t len) {
-    if (pble_conn_handle == BLE_HS_CONN_HANDLE_NONE) {
+static int pble_notify_message(const uint8_t *msg, size_t len,
+                               const pble_session_token_t *session) {
+    if (session == NULL) {
         return PBLE_TX_NO_CONN;
     }
     size_t psize = pble_payload_size(pble_mtu_val);
@@ -356,7 +930,7 @@ static int pble_notify_message(const uint8_t *msg, size_t len) {
 
     if (len == 0) {
         pkt[0] = PBLE_FRAG_FIRST | PBLE_FRAG_LAST;  // one empty FIRST+LAST packet
-        return pble_notify_packet(pkt, 1);
+        return pble_notify_packet(pkt, 1, 0, session);
     }
 
     size_t offset = 0;
@@ -375,7 +949,7 @@ static int pble_notify_message(const uint8_t *msg, size_t len) {
         }
         pkt[0] = hdr;
         memcpy(pkt + 1, msg + offset, chunk);
-        int rc = pble_notify_packet(pkt, chunk + 1);
+        int rc = pble_notify_packet(pkt, chunk + 1, 0, session);
         if (rc != PBLE_TX_OK) {
             return rc;   // propagate NO_CONN (abort) vs AGAIN (retriable) verbatim
         }
@@ -385,92 +959,265 @@ static int pble_notify_message(const uint8_t *msg, size_t len) {
     return PBLE_TX_OK;
 }
 
-// Paced variant for STREAMING senders (fs-worker / MP runner — NEVER the NimBLE
-// host task, which must stay free to drain): identical fragmentation, but a
-// per-PACKET PBLE_TX_AGAIN blocks on the NOTIFY_TX drain semaphore (bounded
-// slices, overall [deadline]) and retries the SAME packet — earlier fragments
-// are never resent, so no reassembly poisoning and no mbuf re-consumption.
-// Caller holds pble_tx_mutex (the fragment run stays atomic on TX).
-static int pble_notify_message_paced(const uint8_t *msg, size_t len,
-                                     TickType_t deadline) {
-    if (pble_conn_handle == BLE_HS_CONN_HANDLE_NONE) {
+// Transactional RUN/STOP/SOFT_REBOOT admission: wait at most one absolute 15 ms
+// deadline for the current complete-message boundary, then make one local
+// Notify submission. Capacity pressure is never waited or retried. The response
+// is known to fit at the default MTU, but retain the exact one-fragment guard at
+// this transport boundary so future callers fail closed.
+int pble_ble_notify_control_try_for_conn(const uint8_t *msg, size_t len,
+                                         const pble_session_token_t *expected_conn) {
+    if (pble_tx_mutex == NULL) {
         return PBLE_TX_NO_CONN;
     }
-    size_t psize = pble_payload_size(pble_mtu_val);
-    uint8_t pkt[PBLE_FRAG_PKT_MAX];
-    size_t offset = 0;
-    uint8_t index = 0;
 
-    do {
-        size_t chunk = len - offset;
-        if (chunk > psize) {
-            chunk = psize;
+    int64_t deadline_us = esp_timer_get_time() +
+                          (int64_t)PBLE_CONTROL_TX_BOUNDARY_BUDGET_MS *
+                              INT64_C(1000);
+    pble_control_tx_boundary_begin();
+    int rc = PBLE_TX_AGAIN;
+    bool tx_locked = false;
+    int64_t now_us = esp_timer_get_time();
+    if (now_us < deadline_us) {
+        int64_t remaining_us = deadline_us - now_us;
+        TickType_t remaining_ticks = pdMS_TO_TICKS(
+            (uint32_t)((remaining_us + INT64_C(999)) / INT64_C(1000)));
+        if (remaining_ticks == 0) {
+            remaining_ticks = 1;
         }
-        uint8_t hdr = (uint8_t)(index % PBLE_FRAG_IDX_MOD);
-        if (index == 0) {
-            hdr |= PBLE_FRAG_FIRST;
+        if (xSemaphoreTakeRecursive(pble_tx_mutex, remaining_ticks) == pdTRUE) {
+            tx_locked = true;
+            if (esp_timer_get_time() < deadline_us) {
+                if (expected_conn == NULL ||
+                    pble_conn_handle != expected_conn->conn ||
+                    !pble_ble_session_live(expected_conn)) {
+                    rc = PBLE_TX_NO_CONN;
+                } else if (len > pble_payload_size(pble_mtu_val)) {
+                    rc = PBLE_TX_OVERSIZE;
+                } else {
+                    uint8_t pkt[PBLE_FRAG_PKT_MAX];
+                    pkt[0] = PBLE_FRAG_FIRST | PBLE_FRAG_LAST;
+                    if (len > 0) {
+                        memcpy(pkt + 1, msg, len);
+                    }
+                    rc = pble_notify_packet(pkt, len + 1, 0, expected_conn);
+                    if (rc == PBLE_TX_OK) {
+                        pble_tx_stream_generation++;
+                        if (pble_tx_stream_generation == 0) {
+                            pble_tx_stream_generation++;
+                        }
+                    }
+                }
+            }
         }
-        if (offset + chunk >= len) {
-            hdr |= PBLE_FRAG_LAST;
-        }
-        pkt[0] = hdr;
-        memcpy(pkt + 1, msg + offset, chunk);
+    }
 
-        for (;;) {
-            int rc = pble_notify_packet(pkt, chunk + 1);
-            if (rc == PBLE_TX_OK) {
-                break;
-            }
-            if (rc != PBLE_TX_AGAIN) {
-                return rc;              // NO_CONN: the link is gone — abort.
-            }
-            TickType_t now = xTaskGetTickCount();
-            if (now >= deadline) {
-                return PBLE_TX_AGAIN;   // budget exhausted — caller aborts.
-            }
-            // Wait for TX space in bounded slices; ≥1 tick so a coarse tick
-            // rate can never truncate the wait to a busy-spin. The slice is ONE
-            // connection interval (15 ms), not 100 ms: NOTIFY_TX is a submit-
-            // time event, so after an msys-NULL there is NO future drain edge
-            // to wake on — the controller frees mbufs silently as events tick.
-            // A 100 ms slice dead-slept about seven events per starvation
-            // burst; the bounded 15 ms cadence guarantees progress.
-            TickType_t slice = deadline - now;
-            const TickType_t max_slice = pdMS_TO_TICKS(15) ? pdMS_TO_TICKS(15) : 1;
-            if (slice > max_slice) {
-                slice = max_slice;
-            }
-            if (slice == 0) {
-                slice = 1;
-            }
-            xSemaphoreTake(pble_tx_drain_sem, slice);
-        }
-        offset += chunk;
-        index++;
-    } while (offset < len);
-    return PBLE_TX_OK;
+    if (tx_locked) {
+        xSemaphoreGiveRecursive(pble_tx_mutex);
+    }
+    pble_control_tx_boundary_end();
+    return rc;
 }
 
-// Exported paced TX for streaming callers (see pble_ble.h). Serialized with
-// every other sender by the same recursive mutex; the critical section is
-// bounded by [budget_ms].
-int pble_ble_notify_paced(const uint8_t *msg, size_t len, uint32_t budget_ms) {
-    if (pble_tx_mutex == NULL || pble_tx_drain_sem == NULL) {
+typedef struct {
+    uint32_t stream_generation;
+    uint16_t offset;
+    uint8_t index;
+    uint16_t accepted;
+} pble_rsp_attempt_t;
+
+// One response fragment attempt under the physical TX mutex. The session check,
+// stream-generation restart decision, and actual Notify share this zero-wait
+// critical path; the packet always targets the ticket's snapshotted handle.
+static int pble_rsp_submit_one(const pble_rsp_tx_t *tx,
+                               pble_rsp_attempt_t *attempt) {
+    if (tx == NULL || attempt == NULL || pble_tx_mutex == NULL) {
         return PBLE_TX_NO_CONN;
     }
-    TickType_t ticks = pdMS_TO_TICKS(budget_ms);
-    if (ticks == 0) {
-        ticks = 1;
+    if (xSemaphoreTakeRecursive(pble_tx_mutex, 0) != pdTRUE) {
+        return PBLE_TX_AGAIN;
     }
-    TickType_t deadline = xTaskGetTickCount() + ticks;
-    xSemaphoreTakeRecursive(pble_tx_mutex, portMAX_DELAY);
-    int rc = (len == 0) ? pble_notify_message(msg, len)
-                        : pble_notify_message_paced(msg, len, deadline);
+
+    int rc = PBLE_TX_NO_CONN;
+    if (pble_ble_session_live(&tx->ticket.session)) {
+        attempt->stream_generation = pble_tx_stream_generation;
+        attempt->offset = tx->stream_generation == pble_tx_stream_generation
+                              ? tx->offset
+                              : 0;
+        attempt->index = tx->stream_generation == pble_tx_stream_generation
+                             ? tx->index
+                             : 0;
+        if (attempt->offset < tx->frame_len) {
+            size_t payload_size = pble_payload_size(pble_mtu_val);
+            size_t chunk = (size_t)tx->frame_len - attempt->offset;
+            if (chunk > payload_size) {
+                chunk = payload_size;
+            }
+            uint8_t pkt[PBLE_FRAG_PKT_MAX];
+            uint8_t hdr = attempt->index & PBLE_FRAG_IDX_MASK;
+            if (attempt->index == 0) {
+                hdr |= PBLE_FRAG_FIRST;
+            }
+            if ((size_t)attempt->offset + chunk >= tx->frame_len) {
+                hdr |= PBLE_FRAG_LAST;
+            }
+            pkt[0] = hdr;
+            memcpy(pkt + 1, tx->frame + attempt->offset, chunk);
+            attempt->accepted = (uint16_t)chunk;
+            rc = pble_notify_packet(pkt, chunk + 1, 0,
+                                    &tx->ticket.session);
+        }
+    }
     xSemaphoreGiveRecursive(pble_tx_mutex);
     return rc;
 }
 
-// Sole TX path (FR-BLE-3/10): fragment already-encoded PBLE/1 bytes to
+// Pre-created NimBLE-host callout: validate and attempt exactly one fragment,
+// then rearm and return. No loop, delay, allocation, or capacity wait lives here.
+static void pble_rsp_pump_callout(struct ble_npl_event *ev) {
+    (void)ev;
+    uint64_t epoch = pble_vm_epoch_current();
+    pble_vm_activity_t activity;
+    if (!pble_vm_callback_enter(epoch, &activity)) {
+        return;
+    }
+    bool owned = false;
+    int submit_rc = PBLE_TX_AGAIN;
+    if (!pble_vm_admission_ready()) {
+        goto done;
+    }
+
+    pble_rsp_tx_t tx;
+    if (!pble_rsp_tx_peek(&tx)) {
+        (void)pble_rsp_owner_release_if_idle();
+        goto done;
+    }
+
+    uint32_t now = (uint32_t)xTaskGetTickCount();
+    uint32_t deadline = tx.deadline;
+    if (!pble_ble_session_live(&tx.ticket.session) ||
+        !pble_vm_epoch_valid(tx.ticket.vm_epoch)) {
+        pble_rsp_cancel_ticket(&tx.ticket);
+    } else if ((int32_t)(now - deadline) >= 0) {
+        pble_ble_terminate_session(&tx.ticket.session);
+        pble_rsp_cancel_ticket(&tx.ticket);
+    } else {
+        pble_rsp_attempt_t attempt = {
+            .stream_generation = tx.stream_generation,
+            .offset = tx.offset,
+            .index = tx.index,
+            .accepted = 0,
+        };
+        submit_rc = pble_rsp_submit_one(&tx, &attempt);
+        pble_rsp_tx_result(&tx, attempt.stream_generation, attempt.offset,
+                           attempt.index, attempt.accepted, submit_rc);
+        if (submit_rc != PBLE_TX_OK && submit_rc != PBLE_TX_AGAIN &&
+            pble_ble_session_live(&tx.ticket.session)) {
+            pble_ble_terminate_session(&tx.ticket.session);
+        }
+    }
+
+    owned = pble_rsp_owner_release_if_idle();
+done:
+    pble_vm_callback_leave(&activity);
+    if (owned) {
+        ble_npl_time_t delay = submit_rc == PBLE_TX_OK
+                                   ? 1
+                                   : ble_npl_time_ms_to_ticks32(
+                                         PBLE_RSP_RETRY_SLICE_MS);
+        bool enabled;
+        taskENTER_CRITICAL(&pble_rsp_callout_mux);
+        enabled = pble_rsp_callout_enabled;
+        taskEXIT_CRITICAL(&pble_rsp_callout_mux);
+        if (enabled) {
+            ble_npl_callout_reset(&pble_rsp_callout, delay ? delay : 1);
+        }
+    }
+}
+
+// Paced one-fragment TX. A retry serializes exactly one Notify attempt, releases
+// the mutex, and only then waits. Complete PBLE messages therefore remain atomic
+// while a control sender can acquire the mutex during bulk backpressure.
+static int pble_ble_notify_paced_with_reserve(const uint8_t *msg, size_t len,
+                                              uint32_t budget_ms,
+                                              const pble_session_token_t *session,
+                                              uint8_t reserve_blocks) {
+    if (pble_tx_mutex == NULL || pble_tx_drain_sem == NULL) {
+        return PBLE_TX_NO_CONN;
+    }
+    if (!pble_ble_session_live(session)) {
+        return PBLE_TX_NO_CONN;
+    }
+    if (len > pble_payload_size(pble_mtu_val)) {
+        return PBLE_TX_OVERSIZE;
+    }
+
+    uint8_t pkt[PBLE_FRAG_PKT_MAX];
+    pkt[0] = PBLE_FRAG_FIRST | PBLE_FRAG_LAST;
+    if (len > 0) {
+        memcpy(pkt + 1, msg, len);
+    }
+
+    TickType_t ticks = pdMS_TO_TICKS(budget_ms);
+    if (ticks == 0) {
+        ticks = 1;
+    }
+    TickType_t started = xTaskGetTickCount();
+    const TickType_t max_slice = pdMS_TO_TICKS(15) ? pdMS_TO_TICKS(15) : 1;
+
+    for (;;) {
+        TickType_t elapsed = xTaskGetTickCount() - started;  // wrap-safe
+        if (elapsed >= ticks) {
+            return PBLE_TX_AGAIN;
+        }
+        TickType_t remaining = ticks - elapsed;
+        if (xSemaphoreTakeRecursive(pble_tx_mutex, remaining) != pdTRUE) {
+            return PBLE_TX_AGAIN;
+        }
+        int rc;
+        if (pble_control_tx_boundary_pending()) {
+            rc = PBLE_TX_AGAIN;
+        } else {
+            rc = pble_rsp_owner_active()
+                     ? PBLE_TX_AGAIN
+                     : pble_notify_packet(pkt, len + 1, reserve_blocks,
+                                          session);
+        }
+        xSemaphoreGiveRecursive(pble_tx_mutex);
+        if (rc != PBLE_TX_AGAIN) {
+            return rc;
+        }
+
+        elapsed = xTaskGetTickCount() - started;
+        if (elapsed >= ticks) {
+            return PBLE_TX_AGAIN;
+        }
+        TickType_t slice = ticks - elapsed;
+        if (slice > max_slice) {
+            slice = max_slice;
+        }
+        xSemaphoreTake(pble_tx_drain_sem, slice);
+    }
+}
+
+int pble_ble_notify_paced(const uint8_t *msg, size_t len, uint32_t budget_ms,
+                          const pble_session_token_t *session) {
+    return pble_ble_notify_paced_with_reserve(
+        msg, len, budget_ms, session, PBLE_TX_BULK_RESERVE_BLOCKS);
+}
+
+int pble_ble_notify_paced_for_session(
+    const uint8_t *msg, size_t len, uint32_t budget_ms,
+    const pble_session_token_t *session) {
+    return pble_ble_notify_paced(msg, len, budget_ms, session);
+}
+
+int pble_ble_notify_control_paced(const uint8_t *msg, size_t len,
+                                  uint32_t budget_ms,
+                                  const pble_session_token_t *session) {
+    return pble_ble_notify_paced_with_reserve(msg, len, budget_ms, session, 0);
+}
+
+// General TX path (FR-BLE-3/10): fragment already-encoded PBLE/1 bytes to
 // payload_size(mtu) and Notify each §3.2 packet on TX. Byte-identical to the
 // receiver's reassembly. Returns PBLE_TX_OK / PBLE_TX_NO_CONN / PBLE_TX_AGAIN.
 //
@@ -486,14 +1233,182 @@ int pble_ble_notify_paced(const uint8_t *msg, size_t len, uint32_t budget_ms) {
 // the streaming caller paces/retries on its own task (never on the host task);
 // on an absent/dropped link it returns PBLE_TX_NO_CONN and the caller aborts.
 // Either way there is no unbounded buffering (NFR-PERF-2).
-int pble_ble_notify(const uint8_t *msg, size_t len) {
+int pble_ble_notify(const uint8_t *msg, size_t len,
+                    const pble_session_token_t *session) {
     if (pble_tx_mutex == NULL) {
         return PBLE_TX_NO_CONN;          // not brought up yet — no link to send on.
     }
     xSemaphoreTakeRecursive(pble_tx_mutex, portMAX_DELAY);
-    int rc = pble_notify_message(msg, len);
+    int rc;
+    if (pble_control_tx_boundary_pending()) {
+        rc = PBLE_TX_AGAIN;
+    } else {
+        rc = pble_rsp_owner_active() ? PBLE_TX_AGAIN
+                                     : pble_notify_message(msg, len, session);
+    }
     xSemaphoreGiveRecursive(pble_tx_mutex);
     return rc;
+}
+
+void pble_ble_vm_rx_reset(void) {
+    pble_reset_reassembly();
+}
+
+static void pble_ble_vm_seed_cold(uint64_t vm_epoch) {
+    taskENTER_CRITICAL(&pble_session_mux);
+    pble_vm_epoch_seed = vm_epoch;
+    pble_session_vm_epoch = 0;
+    taskEXIT_CRITICAL(&pble_session_mux);
+}
+
+void pble_ble_vm_reset(uint64_t vm_epoch) {
+    pble_ble_vm_rx_reset();
+    taskENTER_CRITICAL(&pble_rsp_callout_mux);
+    pble_rsp_callout_enabled = false;
+    taskEXIT_CRITICAL(&pble_rsp_callout_mux);
+
+    if (vm_epoch == 0) {
+        esp_restart();
+        return;
+    }
+
+    // The first port-init hook runs before cold BLE initialization.  There is
+    // no retained link or response pool to serialize in that case; seed the
+    // epoch which a later CONNECT will copy into its exact session token.
+    if (pble_tx_mutex == NULL) {
+        pble_ble_vm_seed_cold(vm_epoch);
+        pble_proto_vm_reset();
+        return;
+    }
+
+    if (xSemaphoreTakeRecursive(pble_tx_mutex, 0) != pdTRUE) {
+        esp_restart();
+        return;
+    }
+
+    pble_session_token_t old_session = {0};
+    bool restart_required = false;
+    taskENTER_CRITICAL(&pble_session_mux);
+    old_session.conn = pble_conn_handle;
+    old_session.generation = pble_conn_generation;
+    old_session.vm_epoch = pble_session_vm_epoch;
+    if (pble_term_state.phase == PBLE_TERM_PHASE_CLOSING ||
+        pble_term_state.phase == PBLE_TERM_PHASE_RESTARTING ||
+        pble_term_state.phase == PBLE_TERM_PHASE_CLEANING) {
+        restart_required = true;
+    } else if (pble_term_state.phase == PBLE_TERM_PHASE_OPEN) {
+        uint64_t old_generation = pble_conn_generation;
+        pble_conn_generation_counter++;
+        if (pble_conn_generation_counter == 0) {
+            pble_conn_generation_counter++;
+        }
+        if (!pble_term_rotate_open(&pble_term_state, pble_conn_handle,
+                                   old_generation,
+                                   pble_conn_generation_counter)) {
+            restart_required = true;
+        } else {
+            pble_conn_generation = pble_conn_generation_counter;
+            pble_session_vm_epoch = vm_epoch;
+            pble_vm_epoch_seed = vm_epoch;
+        }
+    } else if (pble_term_state.phase == PBLE_TERM_PHASE_CLOSED &&
+               pble_conn_handle == BLE_HS_CONN_HANDLE_NONE &&
+               pble_conn_generation == 0) {
+        pble_session_vm_epoch = 0;
+        pble_vm_epoch_seed = vm_epoch;
+    } else {
+        restart_required = true;
+    }
+    taskEXIT_CRITICAL(&pble_session_mux);
+
+    // Old exact tickets and every retained pool incarnation become unreachable
+    // before physical TX is exposed to the fresh VM session.
+    pble_rsp_cancel_session(&old_session);
+    pble_proto_vm_reset();
+    (void)pble_rsp_owner_release_if_idle();
+    xSemaphoreGiveRecursive(pble_tx_mutex);
+    if (restart_required) {
+        esp_restart();
+        return;
+    }
+}
+
+static bool pble_ble_vm_tx_try_nowait(void) {
+    if (pble_tx_mutex == NULL ||
+        xSemaphoreTakeRecursive(pble_tx_mutex, 0) != pdTRUE) {
+        esp_restart();
+        return false;
+    }
+    return true;
+}
+
+void pble_ble_vm_invalidate_session(void) {
+    if (!pble_ble_vm_tx_try_nowait()) {
+        return;
+    }
+    pble_session_token_t old_session = {0};
+    bool restart_required;
+    taskENTER_CRITICAL(&pble_session_mux);
+    old_session.conn = pble_conn_handle;
+    old_session.generation = pble_conn_generation;
+    old_session.vm_epoch = pble_session_vm_epoch;
+    restart_required = pble_term_state.phase == PBLE_TERM_PHASE_CLOSING ||
+                       pble_term_state.phase == PBLE_TERM_PHASE_RESTARTING ||
+                       pble_term_state.phase == PBLE_TERM_PHASE_CLEANING;
+    pble_session_vm_epoch = 0;
+    taskEXIT_CRITICAL(&pble_session_mux);
+    pble_rsp_cancel_session(&old_session);
+    (void)pble_rsp_owner_release_if_idle();
+    xSemaphoreGiveRecursive(pble_tx_mutex);
+    if (restart_required) {
+        esp_restart();
+    }
+}
+
+void pble_ble_vm_enable_response_callout(void) {
+    taskENTER_CRITICAL(&pble_rsp_callout_mux);
+    pble_rsp_callout_enabled = true;
+    taskEXIT_CRITICAL(&pble_rsp_callout_mux);
+}
+
+bool pble_ble_vm_stop_response_callout(int64_t deadline_us) {
+    if (esp_timer_get_time() >= deadline_us) {
+        return false;
+    }
+    taskENTER_CRITICAL(&pble_rsp_callout_mux);
+    pble_rsp_callout_enabled = false;
+    taskEXIT_CRITICAL(&pble_rsp_callout_mux);
+    ble_npl_callout_stop(&pble_rsp_callout);
+    return esp_timer_get_time() < deadline_us;
+}
+
+bool pble_ble_vm_tx_lock(int64_t deadline_us) {
+    int64_t now_us = esp_timer_get_time();
+    if (pble_tx_mutex == NULL || now_us >= deadline_us) {
+        return false;
+    }
+    int64_t residual_us = deadline_us - now_us;
+    TickType_t residual_ticks = pdMS_TO_TICKS(
+        (uint32_t)((residual_us + INT64_C(999)) / INT64_C(1000)));
+    if (residual_ticks == 0) {
+        residual_ticks = 1;
+    }
+    if (xSemaphoreTakeRecursive(pble_tx_mutex, residual_ticks) != pdTRUE) {
+        return false;
+    }
+    if (esp_timer_get_time() >= deadline_us) {
+        xSemaphoreGiveRecursive(pble_tx_mutex);
+        return false;
+    }
+    pble_vm_tx_locked = true;
+    return true;
+}
+
+void pble_ble_vm_tx_unlock(void) {
+    if (pble_vm_tx_locked && pble_tx_mutex != NULL) {
+        pble_vm_tx_locked = false;
+        xSemaphoreGiveRecursive(pble_tx_mutex);
+    }
 }
 
 // FR-BLE-7/8: the negotiated ATT MTU (247 once the central requests it, the BLE
@@ -531,15 +1446,37 @@ static int pble_rx_access(uint16_t conn_handle, uint16_t attr_handle,
     if (ctxt->op != BLE_GATT_ACCESS_OP_WRITE_CHR) {
         return BLE_ATT_ERR_UNLIKELY;
     }
+    pble_vm_activity_t activity;
+    if (!pble_vm_rx_callback_enter(&activity)) {
+        return BLE_ATT_ERR_UNLIKELY;
+    }
+    pble_session_token_t session;
+    bool admitted;
+    taskENTER_CRITICAL(&pble_session_mux);
+    admitted = pble_conn_handle == conn_handle &&
+               pble_term_admits(&pble_term_state, pble_conn_handle,
+                                pble_conn_generation) &&
+               pble_session_vm_epoch != 0;
+    session.conn = pble_conn_handle;
+    session.generation = pble_conn_generation;
+    session.vm_epoch = pble_session_vm_epoch;
+    taskEXIT_CRITICAL(&pble_session_mux);
+    if (!admitted) {
+        pble_vm_callback_leave(&activity);
+        return BLE_ATT_ERR_UNLIKELY;
+    }
     uint8_t frag[PBLE_FRAG_PKT_MAX];
     uint16_t copied = 0;
     if (OS_MBUF_PKTLEN(ctxt->om) > sizeof(frag)) {
+        pble_vm_callback_leave(&activity);
         return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
     }
     if (ble_hs_mbuf_to_flat(ctxt->om, frag, sizeof(frag), &copied) != 0) {
+        pble_vm_callback_leave(&activity);
         return BLE_ATT_ERR_UNLIKELY;
     }
-    pble_rx_ingest(frag, copied, conn_handle);
+    pble_rx_ingest(frag, copied, &session);
+    pble_vm_callback_leave(&activity);
     return 0;
 }
 
@@ -614,10 +1551,29 @@ static int pble_gatt_register(void) {
 
 // --- G5-impl deferred link-tune (Phase B) ------------------------------------
 
+// Rung 2 — request the 2M-capable preference on BLE-5 chips. The helper is
+// compiled out on classic ESP32 so that controller can never see the command.
+#if PBLE_HAS_2M_PHY
+static int pble_request_phy(uint16_t conn, const char *ctx) {
+    if (pble_phy_confirmed_2m || pble_phy_attempts >= PBLE_PHY_ATTEMPT_MAX) {
+        return 0;
+    }
+    pble_phy_attempts++;
+    int rc = ble_gap_set_prefered_le_phy(conn,
+                                         BLE_GAP_LE_PHY_1M_MASK | BLE_GAP_LE_PHY_2M_MASK,
+                                         BLE_GAP_LE_PHY_1M_MASK | BLE_GAP_LE_PHY_2M_MASK,
+                                         BLE_GAP_LE_PHY_CODED_ANY);
+    pble_oi1_note_phy_request(conn, pble_phy_attempts);
+    ESP_LOGE(PBLE_TAG, "link tune req phase=phy attempt=%u context=%s rc=%d",
+             pble_phy_attempts, ctx, rc);
+    return rc;
+}
+#endif
+
 // Rung 3 — request the Apple-fast connection-parameter range. update_params is
 // a 4.x procedure issued on ALL chips; a non-zero rc is non-fatal (the link keeps
 // whatever interval the central granted). Returns the NimBLE rc.
-static int pble_request_conn_param(uint16_t conn) {
+static int pble_request_conn_param(uint16_t conn, const char *ctx) {
     struct ble_gap_upd_params params = {
         .itvl_min = PBLE_CONN_ITVL_MIN,
         .itvl_max = PBLE_CONN_ITVL_MAX, // min+15ms span per the Apple accept rule
@@ -626,53 +1582,60 @@ static int pble_request_conn_param(uint16_t conn) {
         .min_ce_len = 0,
         .max_ce_len = PBLE_CONN_CE_LEN, // hint: pack the event, don't close early
     };
-    return ble_gap_update_params(conn, &params);
+    if (pble_cp_confirmed || pble_cp_attempts >= PBLE_CP_ATTEMPT_MAX) {
+        return 0;
+    }
+    pble_cp_attempts++;
+    int rc = ble_gap_update_params(conn, &params);
+    pble_oi1_note_cp_request(conn, rc);
+    ESP_LOGE(PBLE_TAG, "link tune req phase=conn-param attempt=%u context=%s rc=%d",
+             pble_cp_attempts, ctx, rc);
+    return rc;
 }
 
-// One-shot callout body: fires PBLE_LINK_TUNE_DELAY_MS after CONNECT on the host
-// task (default eventq — GAP APIs take the ble_hs lock, so calling them here is
-// safe). Rung 2 (2M PHY, S3/C3 only — compiled out on classic) then rung 3
-// (conn-param). Idempotent: a no-op if the link already dropped, so a stale
-// callout never touches a gone handle. transport-lessons §G5-impl.
+// One-shot callout body: each invocation submits at most one LL/GAP procedure,
+// then re-arms itself. That keeps DLE, PHY, and connection parameters in
+// separate settle windows and guarantees bounded progress even when an IDF /
+// controller pair omits a completion event. Idempotent after link teardown.
 static void pble_link_tune(struct ble_npl_event *ev) {
     (void)ev;
     uint16_t conn = pble_conn_handle;
     if (conn == BLE_HS_CONN_HANDLE_NONE) {
         return;                          // link already dropped — do nothing.
     }
-    // Rung 1 gate: DLE must be confirmed (or capped out) before the PHY/param
-    // rungs are attempted — a re-issued DLE needs the LL slot to itself, and
-    // throughput cannot move past ~1 chunk/event without it anyway. Re-arm this
-    // callout to give the retry its own settle window.
+    // Rung 1 gate: a re-issued DLE needs the LL slot to itself. Even the final
+    // submission re-arms the timer: with no completion event, the next callout
+    // observes the exhausted budget and advances to the following phase.
     if (!pble_dle_confirmed && pble_dle_attempts < PBLE_DLE_ATTEMPT_MAX) {
-        pble_request_dle(conn, "tune");
+        pble_request_dle(conn, "timer");
         ble_npl_callout_reset(&pble_link_tune_co,
             ble_npl_time_ms_to_ticks32(PBLE_LINK_TUNE_DELAY_MS));
         return;
     }
 #if PBLE_HAS_2M_PHY
-    // Rung 2 — 2M PHY: doubles the symbol rate -> halves per-PDU air time -> ~2x
-    // the ceiling. Best-effort; on 2M silicon a non-zero rc is unexpected, so log
-    // once at ERROR (classic never reaches here — the call is compiled out).
-    // 1M|2M (never 2M-only): the controller keeps a clean downshift path if the
-    // central or the RF environment cannot hold 2M — a failed 2M-only request
-    // otherwise leaves the LL procedure state sticky (G5 synthesis H5).
-    int rc_phy = ble_gap_set_prefered_le_phy(conn,
-                                             BLE_GAP_LE_PHY_1M_MASK | BLE_GAP_LE_PHY_2M_MASK,
-                                             BLE_GAP_LE_PHY_1M_MASK | BLE_GAP_LE_PHY_2M_MASK,
-                                             BLE_GAP_LE_PHY_CODED_ANY);
-    if (rc_phy != 0) {
-        ESP_LOGE(PBLE_TAG, "2M PHY request failed rc=%d", rc_phy);
+    if (!pble_phy_confirmed_2m && pble_phy_attempts < PBLE_PHY_ATTEMPT_MAX) {
+        const char *ctx = pble_phy_attempts == 0 ? "timer" : "retry";
+        pble_request_phy(conn, ctx);
+        ble_npl_callout_reset(&pble_link_tune_co,
+            ble_npl_time_ms_to_ticks32(PBLE_LINK_TUNE_DELAY_MS));
+        return;
+    }
+#else
+    if (!pble_phy_classic_skip_logged) {
+        ESP_LOGE(PBLE_TAG, "link tune skip phase=phy context=classic-compiled-out");
+        pble_phy_classic_skip_logged = true;
     }
 #endif
-    // Rung 3 — request 15..30 ms; HIL shows iOS grants the 15 ms floor. Deferred
-    // past MTU + CCCD subscribe so iOS does not silently ignore it. A non-zero rc is usually
-    // BLE_HS_EALREADY behind rung 2 (recovered from PHY_UPDATE_COMPLETE), so this
-    // is a WARN bench line, not an error.
-    int rc_up = pble_request_conn_param(conn);
-    pble_conn_param_sent = (rc_up == 0);
-    ESP_LOGE(PBLE_TAG, "conn-param req rc=%d itvl=%d..%d(x1.25ms)", rc_up,
-             PBLE_CONN_ITVL_MIN, PBLE_CONN_ITVL_MAX);
+    // Rung 3 — request 15..30 ms only after the preceding rung has had its own
+    // callout. Re-arm after every accepted or rejected submission so a missing
+    // CONN_UPDATE event cannot strand this terminal phase.
+    if (!pble_cp_confirmed && pble_cp_attempts < PBLE_CP_ATTEMPT_MAX) {
+        const char *ctx = pble_cp_attempts == 0 ? "timer" : "retry";
+        pble_request_conn_param(conn, ctx);
+        ble_npl_callout_reset(&pble_link_tune_co,
+            ble_npl_time_ms_to_ticks32(PBLE_LINK_TUNE_DELAY_MS));
+        return;
+    }
 }
 
 // --- GAP / advertising -------------------------------------------------------
@@ -682,11 +1645,40 @@ static int pble_gap_event(struct ble_gap_event *event, void *arg) {
     switch (event->type) {
         case BLE_GAP_EVENT_CONNECT:
             if (event->connect.status == 0) {
-                pble_conn_handle = event->connect.conn_handle;
-                pble_reset_reassembly();
-                pble_conn_param_sent = false;   // no accepted rung-3 request yet
-                pble_cp_attempts = 0;           // fresh collision-re-fire budget
                 pble_tx_mbuf_starve = 0;        // fresh per-session GAP-2 count
+                pble_oi1_begin_session(event->connect.conn_handle);
+                (void)xSemaphoreTakeRecursive(pble_tx_mutex, portMAX_DELAY);
+                taskENTER_CRITICAL(&pble_session_mux);
+                pble_conn_generation_counter++;
+                if (pble_conn_generation_counter == 0) {
+                    pble_conn_generation_counter++;
+                }
+                bool opened = pble_term_open(
+                    &pble_term_state, event->connect.conn_handle,
+                    pble_conn_generation_counter);
+                if (opened) {
+                    pble_conn_generation = pble_conn_generation_counter;
+                    pble_session_vm_epoch = pble_vm_epoch_seed;
+                    pble_conn_handle = event->connect.conn_handle;
+                }
+                taskEXIT_CRITICAL(&pble_session_mux);
+                xSemaphoreGiveRecursive(pble_tx_mutex);
+                if (!opened) {
+                    esp_restart();
+                    break;
+                }
+                pble_ready_refresh();
+                pble_reset_reassembly();
+                ble_npl_callout_stop(&pble_link_tune_co);
+                pble_dle_confirmed = false;
+                pble_dle_attempts = 0;
+                pble_phy_confirmed_2m = false;
+                pble_phy_attempts = 0;
+                pble_cp_confirmed = false;
+                pble_cp_attempts = 0;
+#if !PBLE_HAS_2M_PHY
+                pble_phy_classic_skip_logged = false;
+#endif
                 // Rung 1 — LE Data Length Extension, first attempt, ALL chips
                 // (classic 4.2 supports DLE). Without it a 229 B chunk shreds into
                 // ~9×27 B LL PDUs and streaming collapses to ~1 chunk per
@@ -694,46 +1686,93 @@ static int pble_gap_event(struct ble_gap_event *event, void *arg) {
                 // tune callout / post-CONN_UPDATE until confirmed or capped
                 // (the EALREADY collision with a BLE-5 central's own early LL
                 // procedures is the S3-only DLE-loss mode). §G5-impl rung 1.
-                pble_dle_confirmed = false;
-                pble_dle_attempts = 0;
                 pble_request_dle(pble_conn_handle, "connect");
-                // Rungs 2+3 (PHY + conn-param) are deferred to a one-shot
-                // callout, never chained off a completion event edge that a given
-                // NimBLE/IDF build may never deliver. DLE-first also sidesteps the
-                // NimBLE BLE_HS_EALREADY serialization race. transport-lessons
-                // §G5-impl G5i.1.
+                // The callout advances all remaining bounded submissions even
+                // when the controller emits no completion event.
                 ble_npl_callout_reset(&pble_link_tune_co,
                     ble_npl_time_ms_to_ticks32(PBLE_LINK_TUNE_DELAY_MS));
             } else {
+                pble_ready_clear();
                 pble_advertise();       // connection failed — keep advertising
             }
             break;
-        case BLE_GAP_EVENT_DISCONNECT:
-            // G5-impl: disarm any pending link-tune so no stale rung fires into
-            // the next session, and clear the conn-param latch.
+        case BLE_GAP_EVENT_DISCONNECT: {
+            // Disarm any pending link-tune so no stale rung fires into the next
+            // session, then clear every phase latch and submission budget.
             ble_npl_callout_stop(&pble_link_tune_co);
-            pble_conn_param_sent = false;
-            pble_cp_attempts = 0;
             pble_dle_confirmed = false;
             pble_dle_attempts = 0;
+            pble_phy_confirmed_2m = false;
+            pble_phy_attempts = 0;
+            pble_cp_confirmed = false;
+            pble_cp_attempts = 0;
+#if !PBLE_HAS_2M_PHY
+            pble_phy_classic_skip_logged = false;
+#endif
             // Link-fact evidence (ERROR level — this build strips below it): the
             // HCI disconnect REASON names the killer (0x08 supervision timeout,
             // 0x13 remote terminated, 0x16 local host), and the GAP-2 NULL-mbuf
             // starvation count gates the G5i.2 pool bumps. HIL 2026-07-04: iPad
             // GET sessions died undiagnosed because the reason was not logged.
-            ESP_LOGE(PBLE_TAG, "disconnect reason=%d (0x%02x); session tx mbuf-starve=%lu",
-                     event->disconnect.reason, (unsigned)event->disconnect.reason,
+            ESP_LOGE(PBLE_TAG, "disconnect reason=%d (0x%02x)",
+                     event->disconnect.reason, (unsigned)event->disconnect.reason);
+            ESP_LOGE(PBLE_TAG, "link tune session end tx_mbuf_starve_count=%lu",
                      (unsigned long)pble_tx_mbuf_starve);
-            pble_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+            pble_oi1_end_session(event->disconnect.conn.conn_handle);
+
+            pble_session_token_t ended = {0};
+            pble_term_effects_t effect = PBLE_TERM_EFFECT_NONE;
+            (void)xSemaphoreTakeRecursive(pble_tx_mutex, portMAX_DELAY);
+            taskENTER_CRITICAL(&pble_session_mux);
+            ended.conn = pble_conn_handle;
+            ended.generation = pble_conn_generation;
+            ended.vm_epoch = pble_session_vm_epoch;
+            effect = pble_term_disconnect(
+                &pble_term_state, event->disconnect.conn.conn_handle,
+                ended.generation);
+            taskEXIT_CRITICAL(&pble_session_mux);
+
+            if (effect == PBLE_TERM_EFFECT_STOP_WATCHDOG) {
+                esp_err_t stop_rc = esp_timer_stop(pble_term_watchdog);
+                taskENTER_CRITICAL(&pble_session_mux);
+                effect = pble_term_watchdog_stopped(
+                    &pble_term_state, ended.conn, ended.generation,
+                    stop_rc == ESP_OK);
+                taskEXIT_CRITICAL(&pble_session_mux);
+            }
+
+            bool cleanup_completed = false;
+            if (effect == PBLE_TERM_EFFECT_INVALIDATE) {
+                ble_npl_callout_stop(&pble_rsp_callout);
+                pble_rsp_cancel_session(&ended);
+                (void)pble_rsp_owner_release_if_idle();
+                pble_reset_reassembly();
+                pble_lock_on_disconnect(ended.conn);
+                pble_fs_on_disconnect();
+                taskENTER_CRITICAL(&pble_session_mux);
+                pble_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+                pble_conn_generation = 0;
+                pble_session_vm_epoch = 0;
+                effect = pble_term_cleanup_complete(
+                    &pble_term_state, ended.conn, ended.generation);
+                taskEXIT_CRITICAL(&pble_session_mux);
+                cleanup_completed = true;
+            }
+            bool restart_required = effect == PBLE_TERM_EFFECT_RESTART;
+            xSemaphoreGiveRecursive(pble_tx_mutex);
+            if (restart_required) {
+                esp_restart();
+                break;
+            }
+            if (!cleanup_completed) {
+                break;
+            }
+            pble_ready_clear();
             pble_mtu_val = PBLE_MTU_DEFAULT;
-            pble_reset_reassembly();
-            // F-18/SEC-3: release the single-writer token(s) and finalize any
-            // in-flight file transfer BEFORE re-advertising, so a resuming
-            // reconnect is never locked out by a stale writer (FR-FS-16). These
-            // are peer-owned; we only trigger them on teardown.
-            pble_lock_on_disconnect(event->disconnect.conn.conn_handle);
-            pble_fs_on_disconnect();
             pble_advertise();           // link outlives the session (FR-BLE-11)
+            break;
+        }
+        case BLE_GAP_EVENT_TERM_FAILURE:
             break;
         case BLE_GAP_EVENT_ENC_CHANGE:
             // F-18/SEC-1: the central initiated pairing/encryption. Encryption
@@ -744,39 +1783,60 @@ static int pble_gap_event(struct ble_gap_event *event, void *arg) {
                      event->enc_change.status, event->enc_change.conn_handle);
             break;
         case BLE_GAP_EVENT_ADV_COMPLETE:
-            pble_advertise();
+            if (pble_conn_handle == BLE_HS_CONN_HANDLE_NONE) {
+                pble_ready_clear();
+                pble_advertise();
+            }
             break;
         case BLE_GAP_EVENT_MTU:
             pble_mtu_val = event->mtu.value;   // FR-BLE-7: accept up to 247
             break;
         case BLE_GAP_EVENT_PHY_UPDATE_COMPLETE:
-            // Bench confirmation (ERROR level — the build strips below it):
-            // expect tx == 2 && rx == 2 on S3/C3. Never a ladder trigger — the
-            // 200 ms timer is the sole trigger (G5i.4).
-            ESP_LOGE(PBLE_TAG, "phy update status=%d tx=%u rx=%u",
+            ESP_LOGE(PBLE_TAG, "link tune complete phase=phy status=%d tx=%u rx=%u",
                      event->phy_updated.status,
                      event->phy_updated.tx_phy, event->phy_updated.rx_phy);
-            // Rung-3 recovery: if the conn-param update EALREADY'd behind the PHY
-            // procedure in the callout, re-fire it EXACTLY ONCE now the PHY
-            // procedure has completed (guarded by conn_param_sent; subsequent
-            // CONN_UPDATE collision recovery is separately bounded).
-            // transport-lessons §G5-impl G5i.1 step 5.
-            if (!pble_conn_param_sent &&
-                pble_conn_handle != BLE_HS_CONN_HANDLE_NONE) {
-                int rc_up = pble_request_conn_param(pble_conn_handle);
-                pble_conn_param_sent = (rc_up == 0);
-                ESP_LOGE(PBLE_TAG, "conn-param re-fire rc=%d", rc_up);
+            pble_oi1_note_phy(event->phy_updated.conn_handle,
+                              event->phy_updated.status,
+                              event->phy_updated.tx_phy,
+                              event->phy_updated.rx_phy);
+#if PBLE_HAS_2M_PHY
+            if (pble_phy_attempts > 0 &&
+                event->phy_updated.status == 0 &&
+                event->phy_updated.tx_phy == 2 &&
+                event->phy_updated.rx_phy == 2) {
+                pble_phy_confirmed_2m = true;
             }
+            // Completion can move the next timer window forward, but is never
+            // required: every submission already left a callout armed.
+            if (pble_conn_handle != BLE_HS_CONN_HANDLE_NONE) {
+                ble_npl_callout_reset(&pble_link_tune_co,
+                    ble_npl_time_ms_to_ticks32(PBLE_LINK_TUNE_DELAY_MS));
+            }
+#endif
             break;
-        case BLE_GAP_EVENT_DATA_LEN_CHG:
+        case BLE_GAP_EVENT_DATA_LEN_CHG: {
+            const uint16_t conn_handle = pble_conn_handle;
+            if (conn_handle == BLE_HS_CONN_HANDLE_NONE) {
+                break;
+            }
             // Rung-1 confirmation (ERROR level, G5i.4): DLE landed when
             // max_tx_octets >= 244; stuck near 27 = refused/lost — the retry
             // latch keeps re-issuing until confirmed or capped.
-            pble_dle_confirmed = (event->data_len_chg.max_tx_octets >= 244);
-            ESP_LOGE(PBLE_TAG, "data len chg max_tx_octets=%u max_tx_time=%u",
+            if (event->data_len_chg.max_tx_octets >= 244) {
+                pble_dle_confirmed = true;
+            }
+            ESP_LOGE(PBLE_TAG, "link tune complete phase=dle max_tx_octets=%u max_tx_time_us=%u",
                      event->data_len_chg.max_tx_octets,
                      event->data_len_chg.max_tx_time);
+            pble_oi1_note_dle(conn_handle,
+                              event->data_len_chg.max_tx_octets,
+                              event->data_len_chg.max_tx_time);
+            if (conn_handle != BLE_HS_CONN_HANDLE_NONE) {
+                ble_npl_callout_reset(&pble_link_tune_co,
+                    ble_npl_time_ms_to_ticks32(PBLE_LINK_TUNE_DELAY_MS));
+            }
             break;
+        }
         case BLE_GAP_EVENT_CONN_UPDATE: {
             // Bench confirmation (ERROR level): expect the 15 ms interval
             // (itvl 12) granted. The event carries only status, so read the
@@ -786,24 +1846,18 @@ static int pble_gap_event(struct ble_gap_event *event, void *arg) {
             if (ble_gap_conn_find(event->conn_update.conn_handle, &desc) == 0) {
                 itvl = desc.conn_itvl;
             }
-            ESP_LOGE(PBLE_TAG, "conn update status=%d itvl=%u(x1.25ms)",
+            ESP_LOGE(PBLE_TAG, "link tune complete phase=conn-param status=%d interval_units=%u",
                      event->conn_update.status, itvl);
-            // A completed LL procedure frees the serialization slot — the safest
-            // moment to re-issue an unconfirmed DLE request (bounded by the
-            // attempt cap; a no-op once DATA_LEN_CHG confirmed).
-            if (pble_conn_handle != BLE_HS_CONN_HANDLE_NONE) {
-                pble_request_dle(pble_conn_handle, "conn-update");
-            }
-            // Collision recovery (HCI 0x2A -> status=554, ~50% on macOS): our own
-            // update lost the LL slot to a central-initiated procedure and the link
-            // stays on the slow granted interval — HALVING throughput. Re-arm the
-            // tune callout (bounded) so rung 3 re-fires after a settle window; a
-            // successful update (status=0) or an exhausted budget ends the retries.
-            if (event->conn_update.status != 0 &&
-                pble_conn_handle != BLE_HS_CONN_HANDLE_NONE &&
-                pble_cp_attempts < PBLE_CP_ATTEMPT_MAX) {
-                pble_cp_attempts++;
-                pble_conn_param_sent = false;
+            pble_oi1_note_cp(event->conn_update.conn_handle,
+                             event->conn_update.status, itvl);
+            if (pble_cp_attempts > 0 &&
+                event->conn_update.status == 0 &&
+                itvl >= PBLE_CONN_ITVL_MIN &&
+                itvl <= PBLE_CONN_ITVL_MAX) {
+                pble_cp_confirmed = true;
+                ble_npl_callout_stop(&pble_link_tune_co);
+            } else if (pble_conn_handle != BLE_HS_CONN_HANDLE_NONE &&
+                       pble_cp_attempts < PBLE_CP_ATTEMPT_MAX) {
                 ble_npl_callout_reset(&pble_link_tune_co,
                     ble_npl_time_ms_to_ticks32(PBLE_LINK_TUNE_DELAY_MS));
             }
@@ -839,6 +1893,7 @@ static void pble_advertise(void) {
     fields.num_uuids128 = 1;
     fields.uuids128_is_complete = 1;
     if (ble_gap_adv_set_fields(&fields) != 0) {
+        pble_ready_refresh();
         return;
     }
 
@@ -847,13 +1902,21 @@ static void pble_advertise(void) {
     rsp.name = (uint8_t *)pble_name;
     rsp.name_len = strlen(pble_name);
     rsp.name_is_complete = 1;
-    ble_gap_adv_rsp_set_fields(&rsp);
+    if (ble_gap_adv_rsp_set_fields(&rsp) != 0) {
+        pble_ready_refresh();
+        return;
+    }
 
     memset(&advp, 0, sizeof(advp));
     advp.conn_mode = BLE_GAP_CONN_MODE_UND;   // connectable
     advp.disc_mode = BLE_GAP_DISC_MODE_GEN;   // general discoverable
-    ble_gap_adv_start(pble_addr_type, NULL, BLE_HS_FOREVER, &advp,
-                      pble_gap_event, NULL);
+    int rc = ble_gap_adv_start(pble_addr_type, NULL, BLE_HS_FOREVER, &advp,
+                               pble_gap_event, NULL);
+    if (rc == 0 || (rc == BLE_HS_EALREADY && ble_gap_adv_active())) {
+        pble_ready_set();
+    } else {
+        pble_ready_refresh();
+    }
 }
 
 // Resolve the advertised name: the persisted label (via pble_device_config, once
@@ -887,6 +1950,53 @@ static void pble_on_sync(void) {
 }
 
 static void pble_on_reset(int reason) {
+    pble_synced = false;
+    pble_oi1_invalidate_active();
+    pble_session_token_t reset_session = {0};
+    pble_term_effects_t effect = PBLE_TERM_EFFECT_NONE;
+    (void)xSemaphoreTakeRecursive(pble_tx_mutex, portMAX_DELAY);
+    taskENTER_CRITICAL(&pble_session_mux);
+    reset_session.conn = pble_conn_handle;
+    reset_session.generation = pble_conn_generation;
+    reset_session.vm_epoch = pble_session_vm_epoch;
+    effect = pble_term_reset(&pble_term_state);
+    taskEXIT_CRITICAL(&pble_session_mux);
+
+    if (effect == PBLE_TERM_EFFECT_STOP_WATCHDOG) {
+        esp_err_t stop_rc = esp_timer_stop(pble_term_watchdog);
+        taskENTER_CRITICAL(&pble_session_mux);
+        effect = pble_term_watchdog_stopped(
+            &pble_term_state, reset_session.conn, reset_session.generation,
+            stop_rc == ESP_OK);
+        taskEXIT_CRITICAL(&pble_session_mux);
+    }
+    bool cleanup_completed = false;
+    if (effect == PBLE_TERM_EFFECT_INVALIDATE) {
+        ble_npl_callout_stop(&pble_rsp_callout);
+        pble_rsp_cancel_session(&reset_session);
+        (void)pble_rsp_owner_release_if_idle();
+        pble_reset_reassembly();
+        pble_lock_on_disconnect(reset_session.conn);
+        pble_fs_on_disconnect();
+        taskENTER_CRITICAL(&pble_session_mux);
+        pble_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+        pble_conn_generation = 0;
+        pble_session_vm_epoch = 0;
+        effect = pble_term_cleanup_complete(
+            &pble_term_state, reset_session.conn, reset_session.generation);
+        taskEXIT_CRITICAL(&pble_session_mux);
+        cleanup_completed = true;
+    }
+    bool restart_required = effect == PBLE_TERM_EFFECT_RESTART;
+    xSemaphoreGiveRecursive(pble_tx_mutex);
+    if (restart_required) {
+        esp_restart();
+        return;
+    }
+    if (!cleanup_completed && reset_session.generation != 0) {
+        return;
+    }
+    pble_ready_clear();
     ESP_LOGW(PBLE_TAG, "nimble reset; reason=%d", reason);
 }
 
@@ -924,7 +2034,16 @@ static void pble_host_task(void *param) {
 // Bring up NimBLE + the GATT service + advertising. Idempotent; non-blocking
 // (the host task + on_sync run asynchronously). See pble_ble.h.
 void pble_ble_init(void) {
+#if PBLE_ENABLE_SPLASH_READINESS
+    // Retry a previous best-effort allocation before the idempotent fast path.
+    // If NimBLE already runs, refresh gives a newly recovered event truthful
+    // advertising/connection state instead of leaving its initial bit clear.
+    if (pble_ready_events == NULL) {
+        pble_ready_events = xEventGroupCreate();
+    }
+#endif
     if (pble_started) {
+        pble_ready_refresh();
         return;
     }
     // Create the TX serialization mutex before any task can call the notify
@@ -941,6 +2060,23 @@ void pble_ble_init(void) {
             mp_raise_msg(&mp_type_RuntimeError, MP_ERROR_TEXT("tx drain sem alloc failed"));
         }
     }
+    if (!pble_term_initialized) {
+        pble_term_init(&pble_term_state);
+        const esp_timer_create_args_t watchdog_args = {
+            .callback = pble_termination_watchdog_cb,
+            .arg = &pble_term_armed_ticket,
+            .dispatch_method = ESP_TIMER_TASK,
+            .name = "pble-term",
+            .skip_unhandled_events = false,
+        };
+        esp_err_t watchdog_rc = esp_timer_create(&watchdog_args,
+                                                 &pble_term_watchdog);
+        if (watchdog_rc != ESP_OK) {
+            mp_raise_msg(&mp_type_RuntimeError,
+                         MP_ERROR_TEXT("termination watchdog init failed"));
+        }
+        pble_term_initialized = true;
+    }
     if (nimble_port_init() != 0) {
         mp_raise_msg(&mp_type_RuntimeError, MP_ERROR_TEXT("nimble port init failed"));
     }
@@ -949,6 +2085,11 @@ void pble_ble_init(void) {
     // after the settle window. The eventq exists once nimble_port_init succeeds.
     ble_npl_callout_init(&pble_link_tune_co, nimble_port_get_dflt_eventq(),
                          pble_link_tune, NULL);
+    ble_npl_callout_init(&pble_rsp_callout, nimble_port_get_dflt_eventq(),
+                         pble_rsp_pump_callout, NULL);
+    taskENTER_CRITICAL(&pble_rsp_callout_mux);
+    pble_rsp_callout_enabled = false;
+    taskEXIT_CRITICAL(&pble_rsp_callout_mux);
     ble_hs_cfg.sync_cb = pble_on_sync;
     ble_hs_cfg.reset_cb = pble_on_reset;
     pble_ble_sm_config();           // F-18 SEC-1: Just-Works pairing, non-gating
@@ -969,6 +2110,7 @@ static mp_obj_t pble_ble_init_agent(void) {
     // Identity first (device_id + persisted label), then register the S3 opcode
     // handlers into pble_proto's dispatch, then bring up NimBLE + GATT + adv.
     pble_dc_init();
+    pble_proto_init();
     pble_lock_register();            // S6 F-18: single active-writer token (SEC-3)
     pble_proto_register(PBLE_OP_HELLO, pble_info_hello);
     pble_proto_register(PBLE_OP_DEVICE_INFO, pble_info_device_info_cmd);
@@ -983,9 +2125,223 @@ static mp_obj_t pble_ble_init_agent(void) {
 }
 static MP_DEFINE_CONST_FUN_OBJ_0(pble_ble_init_agent_obj, pble_ble_init_agent);
 
+static mp_obj_t pble_ble_vm_ready(void) {
+    int64_t deadline_us = esp_timer_get_time() +
+                          (int64_t)PBLE_VM_READY_BUDGET_MS * INT64_C(1000);
+    bool ready;
+    MP_THREAD_GIL_EXIT();
+    ready = pble_vm_ready(deadline_us);
+    MP_THREAD_GIL_ENTER();
+    return mp_obj_new_bool(ready);
+}
+static MP_DEFINE_CONST_FUN_OBJ_0(pble_ble_vm_ready_obj, pble_ble_vm_ready);
+
+#if PBLE_ENABLE_OI1_LINK_FACTS
+static mp_obj_t pble_oi1_u64(uint64_t value) {
+    return mp_obj_new_int_from_ull(value);
+}
+
+static mp_obj_t pble_oi1_make_update3(uint32_t status, uint8_t tx, uint8_t rx) {
+    mp_obj_t dict = mp_obj_new_dict(3);
+    mp_obj_dict_store(dict, MP_OBJ_NEW_QSTR(MP_QSTR_status),
+                      mp_obj_new_int_from_uint(status));
+    mp_obj_dict_store(dict, MP_OBJ_NEW_QSTR(MP_QSTR_tx),
+                      mp_obj_new_int_from_uint(tx));
+    mp_obj_dict_store(dict, MP_OBJ_NEW_QSTR(MP_QSTR_rx),
+                      mp_obj_new_int_from_uint(rx));
+    return dict;
+}
+
+static mp_obj_t pble_oi1_make_update2(uint32_t status, uint16_t interval) {
+    mp_obj_t dict = mp_obj_new_dict(2);
+    mp_obj_dict_store(dict, MP_OBJ_NEW_QSTR(MP_QSTR_status),
+                      mp_obj_new_int_from_uint(status));
+    mp_obj_dict_store(dict, MP_OBJ_NEW_QSTR(MP_QSTR_interval_units),
+                      mp_obj_new_int_from_uint(interval));
+    return dict;
+}
+
+static bool pble_oi1_record_settled(const pble_oi1_link_record_t *record) {
+    const pble_oi1_phy_update_t *final_phy = record->phy_update_count > 0
+        ? &record->phy_updates[record->phy_update_count - 1] : NULL;
+    const pble_oi1_cp_update_t *final_cp = record->cp_update_count > 0
+        ? &record->cp_updates[record->cp_update_count - 1] : NULL;
+    return record->dle_request_attempts >= 1 &&
+           record->dle_request_attempts <= PBLE_DLE_ATTEMPT_MAX &&
+           record->dle_max_tx_octets >= 244 &&
+           record->dle_max_tx_time_us > 0 &&
+           record->phy_request_attempts >= 1 &&
+           record->phy_request_attempts <= PBLE_PHY_ATTEMPT_MAX &&
+           record->phy_update_count > 0 &&
+           final_phy->status == 0 && final_phy->tx == 2 && final_phy->rx == 2 &&
+           record->settled_tx == 2 && record->settled_rx == 2 &&
+           record->cp_return_code_count >= 1 &&
+           record->cp_return_code_count <= PBLE_CP_ATTEMPT_MAX &&
+           record->cp_update_count > 0 &&
+           final_cp->status == 0 &&
+           final_cp->interval_units == record->settled_interval_units &&
+           record->settled_interval_units >= PBLE_CONN_ITVL_MIN &&
+           record->settled_interval_units <= PBLE_CONN_ITVL_MAX;
+}
+
+static mp_obj_t pble_oi1_make_record(const pble_oi1_link_record_t *record) {
+    if (!record->valid) {
+        return mp_const_none;
+    }
+    mp_obj_t phy_updates = mp_obj_new_list(0, NULL);
+    for (size_t i = 0; i < record->phy_update_count; i++) {
+        const pble_oi1_phy_update_t *update = &record->phy_updates[i];
+        mp_obj_list_append(
+            phy_updates, pble_oi1_make_update3(update->status, update->tx, update->rx));
+    }
+    mp_obj_t cp_codes = mp_obj_new_list(0, NULL);
+    for (size_t i = 0; i < record->cp_return_code_count; i++) {
+        mp_obj_list_append(cp_codes,
+            mp_obj_new_int_from_uint(record->cp_return_codes[i]));
+    }
+    mp_obj_t cp_updates = mp_obj_new_list(0, NULL);
+    for (size_t i = 0; i < record->cp_update_count; i++) {
+        const pble_oi1_cp_update_t *update = &record->cp_updates[i];
+        mp_obj_list_append(cp_updates,
+            pble_oi1_make_update2(update->status, update->interval_units));
+    }
+
+    mp_obj_t dle = mp_obj_new_dict(3);
+    mp_obj_dict_store(dle, MP_OBJ_NEW_QSTR(MP_QSTR_request_attempts),
+                      mp_obj_new_int_from_uint(record->dle_request_attempts));
+    mp_obj_dict_store(dle, MP_OBJ_NEW_QSTR(MP_QSTR_max_tx_octets),
+                      mp_obj_new_int_from_uint(record->dle_max_tx_octets));
+    mp_obj_dict_store(dle, MP_OBJ_NEW_QSTR(MP_QSTR_max_tx_time_us),
+                      mp_obj_new_int_from_uint(record->dle_max_tx_time_us));
+
+    mp_obj_t phy = mp_obj_new_dict(5);
+    mp_obj_dict_store(phy, MP_OBJ_NEW_QSTR(MP_QSTR_required_2m), mp_const_true);
+    mp_obj_dict_store(phy, MP_OBJ_NEW_QSTR(MP_QSTR_request_attempts),
+                      mp_obj_new_int_from_uint(record->phy_request_attempts));
+    mp_obj_dict_store(phy, MP_OBJ_NEW_QSTR(MP_QSTR_updates), phy_updates);
+    mp_obj_dict_store(phy, MP_OBJ_NEW_QSTR(MP_QSTR_settled_tx),
+                      mp_obj_new_int_from_uint(record->settled_tx));
+    mp_obj_dict_store(phy, MP_OBJ_NEW_QSTR(MP_QSTR_settled_rx),
+                      mp_obj_new_int_from_uint(record->settled_rx));
+
+    mp_obj_t cp = mp_obj_new_dict(3);
+    mp_obj_dict_store(cp, MP_OBJ_NEW_QSTR(MP_QSTR_request_return_codes), cp_codes);
+    mp_obj_dict_store(cp, MP_OBJ_NEW_QSTR(MP_QSTR_updates), cp_updates);
+    mp_obj_dict_store(cp, MP_OBJ_NEW_QSTR(MP_QSTR_settled_interval_units),
+                      mp_obj_new_int_from_uint(record->settled_interval_units));
+
+    mp_obj_t facts = mp_obj_new_dict(4);
+    mp_obj_dict_store(facts, MP_OBJ_NEW_QSTR(MP_QSTR_dle), dle);
+    mp_obj_dict_store(facts, MP_OBJ_NEW_QSTR(MP_QSTR_phy), phy);
+    mp_obj_dict_store(facts, MP_OBJ_NEW_QSTR(MP_QSTR_connection_parameters), cp);
+    mp_obj_dict_store(facts, MP_OBJ_NEW_QSTR(MP_QSTR_tx_mbuf_starve_count),
+                      mp_obj_new_int_from_uint(record->tx_mbuf_starve_count));
+
+    mp_obj_t result = mp_obj_new_dict(5);
+    mp_obj_dict_store(result, MP_OBJ_NEW_QSTR(MP_QSTR_epoch),
+                      pble_oi1_u64(record->epoch));
+    mp_obj_dict_store(result, MP_OBJ_NEW_QSTR(MP_QSTR_final),
+                      mp_obj_new_bool(record->final));
+    mp_obj_dict_store(result, MP_OBJ_NEW_QSTR(MP_QSTR_settled),
+                      mp_obj_new_bool(pble_oi1_record_settled(record)));
+    mp_obj_dict_store(result, MP_OBJ_NEW_QSTR(MP_QSTR_overflow),
+                      mp_obj_new_bool(record->overflow));
+    mp_obj_dict_store(result, MP_OBJ_NEW_QSTR(MP_QSTR_facts), facts);
+    return result;
+}
+
+static mp_obj_t pble_ble_oi1_link_facts(void) {
+    pble_oi1_link_snapshot_t snapshot;
+    taskENTER_CRITICAL(&pble_oi1_mux);
+    snapshot.active = pble_oi1_active;
+    snapshot.last_ended = pble_oi1_last_ended;
+    snapshot.epoch_exhausted = pble_oi1_epoch_exhausted;
+    snapshot.current_epoch = pble_oi1_epoch;
+    snapshot.active_handle_valid =
+        pble_oi1_active_handle != BLE_HS_CONN_HANDLE_NONE;
+    taskEXIT_CRITICAL(&pble_oi1_mux);
+
+    // The critical section above copies POD only. All MicroPython allocation
+    // and dictionary/list construction happens after it has been released.
+    bool bad_counts =
+        snapshot.active.dle_request_attempts > PBLE_DLE_ATTEMPT_MAX ||
+        snapshot.active.phy_request_attempts > PBLE_PHY_ATTEMPT_MAX ||
+        snapshot.active.phy_update_count > PBLE_OI1_PHY_UPDATE_CAP ||
+        snapshot.active.cp_return_code_count > PBLE_CP_ATTEMPT_MAX ||
+        snapshot.active.cp_update_count > PBLE_OI1_CP_UPDATE_CAP ||
+        snapshot.last_ended.phy_update_count > PBLE_OI1_PHY_UPDATE_CAP ||
+        snapshot.last_ended.dle_request_attempts > PBLE_DLE_ATTEMPT_MAX ||
+        snapshot.last_ended.phy_request_attempts > PBLE_PHY_ATTEMPT_MAX ||
+        snapshot.last_ended.cp_return_code_count > PBLE_CP_ATTEMPT_MAX ||
+        snapshot.last_ended.cp_update_count > PBLE_OI1_CP_UPDATE_CAP;
+    bool bad_shape =
+        (snapshot.active.valid && snapshot.active.final) ||
+        (!snapshot.active.valid && snapshot.active_handle_valid) ||
+        (snapshot.active.valid && !snapshot.active_handle_valid) ||
+        (snapshot.last_ended.valid && !snapshot.last_ended.final) ||
+        (snapshot.active.valid &&
+         snapshot.active.epoch != snapshot.current_epoch) ||
+        (!snapshot.active.valid && snapshot.last_ended.valid &&
+         snapshot.last_ended.epoch != snapshot.current_epoch) ||
+        (snapshot.active.valid && snapshot.last_ended.valid &&
+         (snapshot.last_ended.epoch == UINT64_MAX ||
+          snapshot.active.epoch != snapshot.last_ended.epoch + 1));
+    if (snapshot.epoch_exhausted || bad_counts || bad_shape ||
+        (snapshot.active.valid && snapshot.active.epoch == 0) ||
+        (snapshot.last_ended.valid && snapshot.last_ended.epoch == 0)) {
+        mp_raise_msg(&mp_type_RuntimeError,
+                     MP_ERROR_TEXT("OI-1 link snapshot inconsistent"));
+    }
+    mp_obj_t result = mp_obj_new_dict(2);
+    mp_obj_dict_store(result, MP_OBJ_NEW_QSTR(MP_QSTR_active),
+                      pble_oi1_make_record(&snapshot.active));
+    mp_obj_dict_store(result, MP_OBJ_NEW_QSTR(MP_QSTR_last_ended),
+                      pble_oi1_make_record(&snapshot.last_ended));
+    return result;
+}
+static MP_DEFINE_CONST_FUN_OBJ_0(pble_ble_oi1_link_facts_obj,
+                                 pble_ble_oi1_link_facts);
+#endif
+
+#if PBLE_ENABLE_SPLASH_READINESS
+static mp_obj_t pble_ble_wait_ready(mp_obj_t timeout_in) {
+    if (!mp_obj_is_int(timeout_in)) {
+        mp_raise_TypeError(MP_ERROR_TEXT("timeout_ms must be an integer"));
+    }
+    mp_int_t timeout_ms = mp_obj_get_int(timeout_in);
+    if (timeout_ms < 0 || timeout_ms > 1500) {
+        mp_raise_ValueError(MP_ERROR_TEXT("timeout_ms must be 0..1500"));
+    }
+    if (pble_ready_events == NULL) {
+        return mp_const_false;
+    }
+
+    TickType_t ticks = pdMS_TO_TICKS((uint32_t)timeout_ms);
+    if (timeout_ms > 0 && ticks == 0) {
+        ticks = 1;
+    }
+
+    EventBits_t observed;
+    MP_THREAD_GIL_EXIT();
+    observed = xEventGroupWaitBits(pble_ready_events, PBLE_READY_BIT,
+                                   pdFALSE, pdFALSE, ticks);
+    MP_THREAD_GIL_ENTER();
+    return mp_obj_new_bool((observed & PBLE_READY_BIT) != 0);
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(pble_ble_wait_ready_obj, pble_ble_wait_ready);
+#endif
+
 static const mp_rom_map_elem_t pble_ble_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR___name__), MP_ROM_QSTR(MP_QSTR_pble_ble) },
     { MP_ROM_QSTR(MP_QSTR_init_agent), MP_ROM_PTR(&pble_ble_init_agent_obj) },
+    { MP_ROM_QSTR(MP_QSTR_vm_ready), MP_ROM_PTR(&pble_ble_vm_ready_obj) },
+#if PBLE_ENABLE_SPLASH_READINESS
+    { MP_ROM_QSTR(MP_QSTR_wait_ready), MP_ROM_PTR(&pble_ble_wait_ready_obj) },
+#endif
+#if PBLE_ENABLE_OI1_LINK_FACTS
+    { MP_ROM_QSTR(MP_QSTR__oi1_link_facts),
+      MP_ROM_PTR(&pble_ble_oi1_link_facts_obj) },
+#endif
 };
 static MP_DEFINE_CONST_DICT(pble_ble_globals, pble_ble_globals_table);
 

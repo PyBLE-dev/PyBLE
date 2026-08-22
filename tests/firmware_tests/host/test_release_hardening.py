@@ -39,7 +39,17 @@ OVERLAYS = REPO_ROOT / "firmware" / "board_overlays"
 RELEASE = bundle_fixture.RELEASE
 HAVE_RELEASE = RELEASE is not None
 RELEASE_LOAD_ERROR = bundle_fixture.RELEASE_LOAD_ERROR
-TARGETS = ("esp32", "esp32-s3", "esp32-c3")
+TARGETS = (
+    "esp32",
+    "esp32-s3",
+    "waveshare-esp32-s3-lcd-147b",
+    "esp32-c3",
+)
+FORTY_MHZ_TARGETS = (
+    "esp32-s3",
+    "waveshare-esp32-s3-lcd-147b",
+    "esp32-c3",
+)
 MICROPYTHON_ORIGIN = "https://github.com/micropython/micropython"
 BUILD_PROVENANCE_KEYS = {
     "schema_version",
@@ -159,6 +169,27 @@ class BuildAllFixture:
               "${PYBLE_SOURCE_COMMIT:-}" \
               "${SOURCE_DATE_EPOCH:-}" \
               "$target" >> "$PYBLE_TEST_LOG"
+            compiler="$PYBLE_UPSTREAM_DIR/mpy-cross/build/mpy-cross"
+            mkdir -p "$(dirname "$compiler")"
+            case "${PYBLE_TEST_MUTATION:-}:$target" in
+              compiler-missing:esp32-c3)
+                ;;
+              compiler-symlink:esp32-c3)
+                ln -s "$PYBLE_TEST_REPO/firmware/source.txt" "$compiler"
+                ;;
+              compiler-divergent:esp32-c3)
+                printf 'divergent retained mpy-cross\n' > "$compiler"
+                chmod 755 "$compiler"
+                ;;
+              compiler-nonexec:esp32-c3)
+                printf 'current retained mpy-cross\n' > "$compiler"
+                chmod 644 "$compiler"
+                ;;
+              *)
+                printf 'current retained mpy-cross\n' > "$compiler"
+                chmod 755 "$compiler"
+                ;;
+            esac
             if [ -n "${PYBLE_UPSTREAM_DIR:-}" ] &&
                [ -d "$PYBLE_UPSTREAM_DIR/.git" ]; then
               mkdir -p "$PYBLE_UPSTREAM_DIR/ports/esp32/managed_components"
@@ -205,6 +236,12 @@ class BuildAllFixture:
             "origin",
             MICROPYTHON_ORIGIN,
         )
+        self.canonical_mpy_cross = (
+            self.canonical_upstream / "mpy-cross" / "build" / "mpy-cross"
+        )
+        self.canonical_mpy_cross.parent.mkdir(parents=True)
+        self.canonical_mpy_cross.write_bytes(b"previous admitted mpy-cross\n")
+        self.canonical_mpy_cross.chmod(0o755)
         (self.repo / "firmware" / "versions.lock").write_text(
             textwrap.dedent(
                 """
@@ -256,7 +293,7 @@ class BuildAllFixture:
             "PYBLE_TEST_REPO": str(self.repo),
             "PYBLE_TEST_MUTATION": mutation,
             "PYBLE_BUILD_ROOT": str(self.build_root),
-            # A caller must not be able to split the three builds by injection.
+            # A caller must not be able to split the four builds by injection.
             "PYBLE_SOURCE_COMMIT": "0" * 40,
             "SOURCE_DATE_EPOCH": "1",
         }
@@ -278,6 +315,42 @@ class BuildAllFixture:
 
 
 class BuildAllSourceFreezeTests(unittest.TestCase):
+    def test_complete_matrix_atomically_admits_the_identical_compiler(self):
+        fixture = BuildAllFixture()
+        try:
+            completed = fixture.execute()
+            self.assertEqual(completed.returncode, 0, completed.stdout)
+            self.assertFalse(fixture.canonical_mpy_cross.is_symlink())
+            self.assertEqual(
+                fixture.canonical_mpy_cross.read_bytes(),
+                b"current retained mpy-cross\n",
+            )
+            self.assertTrue(fixture.canonical_mpy_cross.stat().st_mode & 0o111)
+        finally:
+            fixture.cleanup()
+
+    def test_invalid_retained_compiler_preserves_prior_admission(self):
+        for mutation in (
+            "compiler-missing",
+            "compiler-symlink",
+            "compiler-divergent",
+            "compiler-nonexec",
+        ):
+            with self.subTest(mutation=mutation):
+                fixture = BuildAllFixture()
+                try:
+                    previous = fixture.canonical_mpy_cross.read_bytes()
+                    completed = fixture.execute(mutation)
+                    self.assertNotEqual(completed.returncode, 0, completed.stdout)
+                    self.assertFalse(fixture.canonical_mpy_cross.is_symlink())
+                    self.assertEqual(
+                        fixture.canonical_mpy_cross.read_bytes(),
+                        previous,
+                        "failed admission must preserve the prior compiler",
+                    )
+                finally:
+                    fixture.cleanup()
+
     def test_each_target_gets_an_exact_retained_isolated_source_checkout(self):
         fixture = BuildAllFixture()
         try:
@@ -364,7 +437,7 @@ class BuildAllSourceFreezeTests(unittest.TestCase):
         finally:
             fixture.cleanup()
 
-    def test_one_head_and_epoch_are_frozen_for_all_three_targets(self):
+    def test_one_head_and_epoch_are_frozen_for_all_four_build_variants(self):
         fixture = BuildAllFixture()
         try:
             completed = fixture.execute()
@@ -459,8 +532,10 @@ class PrepareFixture:
         )
         pyble = self.firmware / "pyble"
         pyble.mkdir()
-        (pyble / "__init__.py").write_text("VALUE = 1\n", encoding="utf-8")
-        (pyble / "agent.py").write_text("AGENT = 1\n", encoding="utf-8")
+        for name in ("__init__.py", "_version.py", "pyble_ble.py", "pyble_proto.py"):
+            (pyble / name).write_text(
+                "# synthetic reviewed ESP input\n", encoding="utf-8"
+            )
         (self.firmware / "patches").mkdir()
         (self.firmware / "versions.lock").write_text(
             textwrap.dedent(
@@ -1893,8 +1968,8 @@ class CandidateSourceStateTests(unittest.TestCase):
 
 
 class CrystalConfigurationGateTests(unittest.TestCase):
-    def test_s3_and_c3_select_exact_crystal_without_auto_detection(self):
-        for target in ("esp32-s3", "esp32-c3"):
+    def test_s3_variants_and_c3_select_exact_crystal_without_auto_detection(self):
+        for target in FORTY_MHZ_TARGETS:
             with self.subTest(target=target):
                 text = (OVERLAYS / target / "sdkconfig.board").read_text(
                     encoding="utf-8"
@@ -1904,7 +1979,7 @@ class CrystalConfigurationGateTests(unittest.TestCase):
 
     @unittest.skipUnless(HAVE_RELEASE, RELEASE_LOAD_ERROR)
     def test_resolved_auto_xtal_configuration_is_release_blocking(self):
-        for target in ("esp32-s3", "esp32-c3"):
+        for target in FORTY_MHZ_TARGETS:
             with self.subTest(target=target):
                 fixture = bundle_fixture.ReleaseFixture()
                 try:
@@ -1924,13 +1999,13 @@ class CrystalConfigurationGateTests(unittest.TestCase):
                     fixture.cleanup()
 
     @unittest.skipUnless(HAVE_RELEASE, RELEASE_LOAD_ERROR)
-    def test_resolved_s3_and_c3_crystal_is_exactly_40_mhz(self):
+    def test_resolved_s3_variants_and_c3_crystal_is_exactly_40_mhz(self):
         wrong_configs = (
             "CONFIG_XTAL_FREQ_40=y\nCONFIG_XTAL_FREQ=26\n",
             "CONFIG_XTAL_FREQ_26=y\nCONFIG_XTAL_FREQ=26\n",
             "",
         )
-        for target in ("esp32-s3", "esp32-c3"):
+        for target in FORTY_MHZ_TARGETS:
             for config in wrong_configs:
                 with self.subTest(target=target, config=config):
                     fixture = bundle_fixture.ReleaseFixture()

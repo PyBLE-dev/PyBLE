@@ -1,27 +1,12 @@
-# PyBLE ESP32-Family Browser Flashing and Release Bundle
+# PyBLE Firmware Browser Provisioning and Release Bundle
 
-Status: **FROZEN v1.28** · Owner: project maintainer · Frozen:
-2026-07-31 (`[docs]`; pre-v1 two-profile release eligibility and explicit
-C3 deferral; evidence-derived resource policy and exact HIL V2 records;
-pre-policy two-root baseline-input staging and mechanical baseline/policy
-assembly;
-exact-profile manifest, C3 silicon-revision,
-license-audit safety, candidate-finalization, and candidate pin-state
-amendments, plus the real-tool license-evidence and exact license-catalog
-models, trusted ESP-IDF tool-download-cache evidence, exact reviewed-source
-evidence catalog, stable generated-input matchers, exact license-choice
-semantics, relationship-bound aggregate-package evidence, an independent
-shipment-review ledger, exact multi-frontend toolchain identity, canonical
-literal-manifest evidence, byte-exact frozen-source reconstruction, and
-retained per-target source-checkout isolation, deterministic retained-root
-compiler path mapping, and fail-closed ESP-IDF described-source directory
-markers, generated-header inputs, and direct-object reconciliation, plus
-component-owned linked outputs, lexical exact-path validation, nested-build
-logical paths, shell-free compiler/linker command receipts, executable
-version-matched recovery-command syntax, and the canonical pre-v1 same-origin
-publication channel with an optional byte-identical mirror, plus bounded
-completed-HIL report assembly, plus the exact one-version unqualified public
-beta exception, on the same date)
+Status: **FROZEN v1.32** · Owner: project maintainer · Frozen:
+2026-08-20 (`[docs]`; ADR-0033 adds the exact five-profile v0.6.0 successor
+with release schema 4, HIL V5, OI policy schema 3, four ESP Web Serial images,
+and one verified-UF2/manual-BOOTSEL path; every new gate remains pending;
+ADR-0037 fixes replacement-era reset and transfer product SLOs; ADR-0038
+replaces an unpublished local v0.6.0 candidate by source ancestry; immutable
+v0.4.2, v0.5.1, and predecessor-v0.6.0 contracts are preserved)
 
 This document is the source of truth for the initial browser-provisioning
 release bundle. It refines
@@ -38,30 +23,108 @@ BLE and PBLE/1.
 
 ## 1. Release image profiles
 
-The current pre-v1 browser bundle contains exactly these two
-**provisioning image profiles**. The exact audited `v0.4.2` bytes may be offered
-only as the hardware-tested public beta defined in §10; that narrow validation
-does not make them qualified-release profiles.
-A later qualified public bundle uses the same exact profile definitions:
+The immutable v0.4.2 public-beta bundle contains exactly `esp32-4mb` and
+`esp32-s3-n16r8`; it MUST NOT acquire another profile. The unqualified v0.5.1
+source candidate targeted those two plus `waveshare-esp32-s3-lcd-147b`; its
+identity and evidence remain historical. ADR-0033 freezes the following four
+ESP profiles as the first four rows of the atomic v0.6.0 successor. This does
+not assert that candidate binaries exist or qualify them for publication:
 
-| Profile ID       | ESP Web Tools `chipFamily` | Required target configuration                                      | ESP image silicon window (`min_chip_rev_full`…`max_chip_rev_full`) | Merge settings      | Browser image and component map                                                                         |
-| ---------------- | -------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------ | ------------------- | ------------------------------------------------------------------------------------------------------- |
-| `esp32-4mb`      | `ESP32`                    | Classic ESP32 with 4 MiB external SPI flash; no PSRAM assumption   | `0`…`399`                                                          | DIO, 40 MHz, 4 MiB  | merged `firmware.bin` at `0x1000`; bootloader `0x1000`; partition table `0x8000`; application `0x10000` |
-| `esp32-s3-n16r8` | `ESP32-S3`                 | ESP32-S3 with 16 MiB flash and 8 MiB **Octal** PSRAM (N16R8-class) | `0`…`99`                                                           | DIO, 80 MHz, 16 MiB | merged `firmware.bin` at `0x0000`; bootloader `0x0000`; partition table `0x8000`; application `0x10000` |
+| Profile ID | ESP Web Tools `chipFamily` | Required target configuration | ESP image silicon window (`min_chip_rev_full`…`max_chip_rev_full`) | Merge settings | Browser image and component map |
+|---|---|---|---|---|---|
+| `esp32-4mb` | `ESP32` | Classic ESP32 with 4 MiB external SPI flash; no PSRAM assumption | `0`…`399` | DIO, 40 MHz, 4 MiB | merged `firmware.bin` at `0x1000`; bootloader `0x1000`; partition table `0x8000`; application `0x10000` |
+| `esp32-s3-n16r8` | `ESP32-S3` | Lean ESP32-S3 with 16 MiB flash and 8 MiB **Octal** PSRAM (N16R8-class); no bundled TFT driver, exact-board companion, splash hook, QR, or splash-only native readiness seam | `0`…`99` | DIO, 80 MHz, 16 MiB | merged `firmware.bin` at `0x0000`; bootloader `0x0000`; partition table `0x8000`; application `0x10000` |
+| `waveshare-esp32-s3-lcd-147b` | `ESP32-S3` | Exact Waveshare ESP32-S3-LCD-1.47B **B version** with 16 MiB flash and 8 MiB **Octal** PSRAM; includes the ST7789 runtime, companion, factory-enabled-after-erase splash hook/QR, persistent disable, and bounded native readiness seam | `0`…`99` | DIO, 80 MHz, 16 MiB | merged `firmware.bin` at `0x0000`; bootloader `0x0000`; partition table `0x8000`; application `0x10000` |
+| `esp32-c3-4mb` | `ESP32-C3` | ESP32-C3 revision v0.3 or newer with 4 MiB external flash; no PSRAM assumption | `3`…`199` | DIO, 80 MHz, 4 MiB | merged `firmware.bin` at `0x0000`; bootloader `0x0000`; partition table `0x8000`; application `0x10000` |
 
-`esp32-c3-4mb` remains a known provisioning profile and an initial v1
-firmware target, with this frozen future qualification:
+The fifth row is deliberately heterogeneous:
 
-| Deferred profile ID | ESP Web Tools `chipFamily` | Required target configuration                                                  | ESP image silicon window (`min_chip_rev_full`…`max_chip_rev_full`) | Merge settings     | Browser image and component map                                                                         |
-| ------------------- | -------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------ | ------------------ | ------------------------------------------------------------------------------------------------------- |
-| `esp32-c3-4mb`      | `ESP32-C3`                 | ESP32-C3 revision v0.3 or newer with 4 MiB external flash; no PSRAM assumption | `3`…`199`                                                          | DIO, 80 MHz, 4 MiB | merged `firmware.bin` at `0x0000`; bootloader `0x0000`; partition table `0x8000`; application `0x10000` |
+| Profile ID | Upstream target | Required hardware | Public install artifact and action |
+| --- | --- | --- | --- |
+| `rpi-pico2-w` | `rp2` / `RPI_PICO2_W` | Raspberry Pi Pico 2 W (RP2350 + CYW43439) | verified `firmware.uf2` download followed by manual copy to the BOOTSEL mass-storage volume |
 
-That deferred profile is **not** part of the current public release: it MUST
-NOT have an entry in `release.json`, a public manifest or binary directory, or
-an installer selection. The website MUST show it separately as unavailable
-pending exact-profile real-hardware validation. Re-enabling it requires a new
-SemVer candidate, the complete automated gates, its own HIL row, and a new
-immutable public bundle; it MUST NOT be added to an existing version.
+The exact profile order is `esp32-4mb`, `esp32-s3-n16r8`,
+`waveshare-esp32-s3-lcd-147b`, `esp32-c3-4mb`, `rpi-pico2-w`. All five are
+release-blocking. C3-G0…C3-G6 and Pico GP2 remain pending prerequisites; no
+profile becomes active until the complete exact-byte v0.6.0 matrix passes.
+
+### 1.1 Loopback-only five-target approval preview
+
+The website MAY provide a maintainer-only engineering harness for approving
+the pending five-target v0.6.0 selection experience and exercising exact local
+clean-build artifacts. This harness is not part of the release bundle described by this
+document. It does not add a profile to `release.json`, establish HIL, qualify a
+port, make firmware public, or relax any candidate, public-beta, qualified-
+release, activation, or rollback requirement.
+
+Its exact target catalog and provisioning contracts are:
+
+| Order | Target ID | Exact local artifact and action |
+| --- | --- | --- |
+| 1 | `esp32-4mb` | target-local single-build ESP Web Tools manifest; verified merged `firmware.bin` at `0x1000`; Web Serial |
+| 2 | `esp32-s3-n16r8` | target-local single-build ESP Web Tools manifest; verified merged `firmware.bin` at `0x0000`; Web Serial |
+| 3 | `waveshare-esp32-s3-lcd-147b` | target-local single-build ESP Web Tools manifest; verified exact-board merged `firmware.bin` at `0x0000`; Web Serial |
+| 4 | `esp32-c3-4mb` | target-local single-build ESP Web Tools manifest for `ESP32-C3`; verified merged `firmware.bin` at `0x0000`; Web Serial |
+| 5 | `rpi-pico2-w` | verified `firmware.uf2` download followed by manual copy to the board's BOOTSEL mass-storage volume |
+
+All five inputs MUST come from exact clean builds of one full PyBLE source
+commit and one firmware-agent version. A local preview descriptor MUST record
+that version and full commit plus, for every artifact, its target ID, safe
+relative preview path, exact byte size, and lowercase 64-hex SHA-256. Each ESP
+entry additionally records the ESP Web Tools chip family, base offset, and its
+own single-build manifest path and digest. The preview builder MUST reject a
+dirty, mixed-commit, mixed-version, missing, escaped, symlinked, or digest-
+mismatched input. It MUST NOT consume an arbitrary file merely because its name
+is `firmware.bin` or `firmware.uf2`.
+
+The four ESP paths retain the applicable manifest, image parsing, path,
+compatibility, verification, and consent rules in §§1, 4, 5, and 7. Their
+engineering manifests and artifacts live only in the local preview staging
+tree; they are not public manifests or release metadata. ESP Web Tools receives
+only the selected target's verified manifest. A connected chip-family match
+does not prove flash capacity, PSRAM topology, silicon revision, or exact-board
+wiring, and MUST NOT choose or substitute another target.
+
+Pico 2 W has a deliberately different approval path:
+
+1. the client fetches the local `firmware.uf2` with redirects rejected and
+   verifies its exact byte size and SHA-256 with Web Crypto;
+2. only after that verification and the visible overwrite/backup consent does
+   it offer **Download verified UF2**;
+3. that download is created from the verified in-memory bytes, not by navigating
+   to or refetching the artifact pathname;
+4. the page instructs the maintainer to disconnect the board, hold BOOTSEL
+   while reconnecting USB, copy the downloaded UF2 to the mounted BOOTSEL
+   mass-storage volume, wait for its automatic reboot, and then check for the
+   expected PyBLE BLE advertisement; and
+5. a verification failure removes the download action and does not offer an
+   unverified fallback.
+
+Pico 2 W MUST NOT receive an ESP Web Tools manifest, use the ESP installer
+element, or require `navigator.serial`. This increment does not implement or
+claim direct WebUSB, File System Access writes to the BOOTSEL volume, automatic
+drive discovery, or automatic browser-to-board flashing. Those would be a new
+provisioning backend requiring a later specification, threat review, tests,
+and physical recovery evidence.
+
+The preview starts only when `PYBLE_LOCAL_FLASH_PREVIEW=1` is explicitly set
+for a development process bound to a loopback interface, and it activates only
+for a document host of `localhost`, `127.0.0.1`, or `[::1]`. Its descriptor,
+metadata, manifests, binaries, and UF2 file MUST be generated below a dedicated
+gitignored, untracked staging directory. A production static export or Sites
+build MUST reject the preview flag and reject or omit the staging tree. No
+preview byte or descriptor may enter `out/`, `dist/`, the canonical versioned
+firmware tree, `release.json`, `SHA256SUMS`, a selected-release descriptor, an
+activation marker, a carry-forward marker, or a deployment upload.
+
+The page and every selected-target detail panel MUST visibly say **LOCAL
+ENGINEERING PREVIEW — UNQUALIFIED**. A successful local ESP flash or Pico UF2
+copy is approval evidence only. In particular, C3 remains unavailable in
+production until its existing exact-profile qualification and new-release
+gates pass, and Pico 2 W remains absent from every active production selector
+and support claim until GP2 plus the ADR-0033 RP2 publication contract pass. A
+production build with no audited beta or
+qualified selected release remains fail-closed.
 
 The offsets and flash settings above are frozen from the matching ESP-IDF
 `flasher_args.json` outputs. The release builder MUST compare generated
@@ -71,10 +134,13 @@ silently preserve stale or hand-copied offsets.
 These are image-layout profiles, not GPIO-routing profiles and not an
 app-runtime chip allowlist. ESP Web Tools detects the chip family, but that
 detection does **not** prove flash capacity, PSRAM type, board wiring, power
-quality, or silicon revision. In particular, the initial S3 image MUST be
-presented only as `esp32-s3-n16r8`; neither the website nor release notes may
-call it a generic image for every ESP32-S3 board. Any future C3 image MUST be
-presented as requiring ESP32-C3 revision v0.3 or newer.
+quality, silicon revision, or which of the two S3 images is appropriate. The
+lean image MUST be presented only as `esp32-s3-n16r8`; neither the website nor
+release notes may call it generic for every ESP32-S3 board or claim its TFT
+runtime. The exact image MUST be presented only as
+`waveshare-esp32-s3-lcd-147b` for the documented B-version board; matching
+N16R8 memory alone is insufficient. The C3 image MUST be presented as
+requiring ESP32-C3 revision v0.3 or newer.
 
 Before the install action appears, the user MUST explicitly select a profile
 and affirm that the connected module meets its stated flash/PSRAM
@@ -82,11 +148,15 @@ configuration. The installer MUST then give ESP Web Tools only that profile's
 single-build manifest. A family mismatch MUST therefore be rejected by ESP Web
 Tools after connection; a shared multi-family manifest is forbidden because it
 could silently select a different image than the profile the user affirmed. A
+family match between the two S3 profiles is not proof of board identity, so the
+exact-board action additionally requires an explicit B-version affirmation and
+MUST NOT alias or redirect to the lean S3 manifest. A
 USB VID/PID, serial-port name, browser user-agent, or previously saved BLE
 board identity MUST NOT be treated as proof of a profile.
 
-Adding or re-enabling a flash size, PSRAM topology, or chip family requires a
-new release candidate with the applicable profile ID, artifact set,
+Adding or re-enabling a flash size, PSRAM topology, chip family, or board-
+specific dependency set requires a new release candidate with the applicable
+profile ID, artifact set,
 compatibility copy, automated cases, and real-board HIL record. It MUST NOT
 broaden an existing profile or mutate a published bundle by implication.
 
@@ -117,20 +187,26 @@ relative source layout until the license audit, candidate validation, and
 two-root byte comparison have completed:
 
 ```text
-.sources/esp32/micropython/
-.sources/esp32-s3/micropython/
-.sources/esp32-c3/micropython/
+.sources/esp32-4mb/micropython/
+.sources/esp32-s3-n16r8/micropython/
+.sources/waveshare-esp32-s3-lcd-147b/micropython/
+.sources/esp32-c3-4mb/micropython/
+.sources/rpi-pico2-w/micropython/
 ```
 
-Each path is an independent MicroPython checkout for exactly the named target.
+Each path is an independent MicroPython checkout for exactly the named release
+profile. The generic and Waveshare S3 variants both compile IDF target
+`esp32s3`, but MUST NOT share mutable source/build state or collapse to one
+artifact.
 Its `HEAD` MUST equal the full `versions.lock [micropython].commit`, its
 `origin` URL MUST equal the canonical `versions.lock [micropython].repo`, and
 its tracked tree MUST be clean when admitted and validated. Each target's
 authoritative application `project_description.json` `project_path` MUST
 resolve to that target's retained checkout at `ports/esp32`, and the audit
 receipt MUST bind the project-description bytes and checkout commit/origin
-identity. A missing, escaped, symlinked, dirty, wrong-origin, wrong-commit, or
-cross-target checkout is fatal.
+identity. The RP2 row instead binds its CMake cache, ELF, board, and pinned ARM
+GNU provenance to its retained checkout at `ports/rp2`. A missing, escaped,
+symlinked, dirty, wrong-origin, wrong-commit, or cross-target checkout is fatal.
 
 Build preparation and ESP-IDF dependency materialization MUST be target-local.
 In particular, no target may share, overwrite, or delete another target's
@@ -167,9 +243,10 @@ as immutable inputs to one release candidate. Candidate-freezing MUST happen
 before the two clean release builds, license audit, candidate packaging,
 protected-site staging, or HIL. It is an input-selection state only: it does
 **not** assert that the pins work on hardware and does not approve them for a
-public release. Exact-profile HIL on both current release profiles,
-`esp32-4mb` and `esp32-s3-n16r8`, remains the pre-v1 public-release approval
-gate.
+public release. Exact-profile HIL on all five v0.6.0 profiles in §1 remains the
+successor public-release approval gate.
+The v0.4.2 two-profile browser attestation remains historical evidence only and
+MUST NOT satisfy this new candidate gate.
 
 Changing either upstream pin after candidate-freezing creates a new source
 state and a new candidate. The build, reproducibility comparison, license
@@ -177,11 +254,34 @@ audit, protected deployment, and complete current-release-profile HIL matrix
 MUST then start again; evidence from the abandoned candidate MUST NOT be
 carried forward.
 
-Before the first OI-1 policy can be committed, the release tool MUST provide a
+The local annotated `firmware-v0.6.0` tag object
+`d86eb6473a8d0269479061f03cd4a7b48bc8dabe`, which peels to
+`719b211345028e49aee9df9b11c4b5fd110913de`, is an abandoned unpublished
+candidate, not release authority. The 2026-08-20 pre-publication audit found no
+matching origin tag, GitHub Release, or canonical
+`/firmware/v0.6.0/release.json`. Therefore the replacement remains version
+`0.6.0`, but every old candidate byte, protected result, HIL result, and
+physical-fact lineage is invalid for it. Their identities and metadata remain
+retained as superseded history. The replacement tag may be created only after
+the replacement source and policy pass docs/RED/GREEN, clean build, two-root
+reproducibility, license, source, and audit gates. Candidate creation then
+requires that local annotated tag to peel to exact candidate `HEAD`. Fresh HIL
+and finalization follow candidate creation; only after they pass may the tag
+be considered for origin push, publication, or activation.
+
+The predecessor v0.6.0 source era ends at and includes
+`5620f2fdc672b440548119e3431cfa4f4ed3f5a3`; the replacement era contains
+only strict descendants. Qualification tooling selects the applicable
+derivation from the bound policy/candidate source commit's proven ancestry,
+never SemVer alone, the retained baseline's `source_commit`, or the validator
+checkout. Unknown or unrelated ancestry fails closed.
+
+For the historical v0.5.1 schema-2 OI contract, before the first OI-1 policy
+can be committed, the release tool MUST provide a
 `create-baseline-inputs` operation that breaks the policy/evidence dependency
 cycle without weakening candidate validation. It MUST bind two distinct,
 non-nested clean build roots to the clean PyBLE proof checkout, validate all
-three maintained ESP32 targets and their retained source checkouts, require
+four maintained build variants and their retained source checkouts, require
 the released inputs to compare byte-for-byte, and then atomically create one
 new no-replace, access-controlled output tree containing exactly:
 
@@ -196,29 +296,51 @@ esp32-s3-n16r8/
   firmware.bin
   application.bin
   partition-table.bin
+waveshare-esp32-s3-lcd-147b/
+  manifest.json
+  firmware.bin
+  application.bin
+  partition-table.bin
 ```
 
-The two manifest files MUST be generated by the same production manifest
+The three manifest files MUST be generated by the same production manifest
 function used by candidate packaging. The three binary files per profile MUST
-be copied from the validated primary build root. The deferred C3 build MUST
+be copied from the matching validated primary build variant. The generic and
+exact S3 application and merged-image hashes MUST differ and each manifest
+MUST bind only its owning bytes. The deferred C3 build MUST
 participate in validation and reproducibility comparison but MUST NOT be
 staged. This operation runs before, and therefore MUST NOT require, an OI-1
 policy, baseline-evidence file, release tag, license evidence, or HIL approval.
 Its output is measurement input only: it is not a release candidate and MUST
 NOT be accepted by the website or public release validator.
 
-After both exact-profile baseline runs succeed, the release tool MUST provide
+For v0.6.0, the same no-replace operation instead validates and stages exactly
+five ordered inputs: the three ESP directories above, an equivalent
+`esp32-c3-4mb/` directory, and
+`rpi-pico2-w/{firmware.uf2,firmware.bin}`. It accepts exactly five bench
+fragments, derives the target-discriminated schema-3 policy in
+[specs.md §5.3.5](specs.md#535-v060-five-profile-successor-policy-and-evidence),
+and never mixes a historical fragment or source commit into the set. The two
+clean roots must compare every released ESP part plus Pico `firmware.uf2`,
+`firmware.bin`, and `firmware.elf` byte-for-byte before staging.
+
+After all exact source-era profile baseline runs succeed, the release tool MUST provide
 an `assemble-oi1-baseline` operation. It accepts the immutable staged baseline
-input tree above, exactly two canonical single-profile fragments emitted by
-the OI-1 bench, the clean canonical PyBLE proof checkout, and one explicit UTC
+input tree above, exactly one canonical single-profile fragment for each
+source-era profile (five for the v0.6.0 schema) emitted by the OI-1 bench,
+the clean canonical PyBLE proof checkout, and one explicit UTC
 `created_at` value. It MUST derive `source_commit` from that checkout's exact
 `HEAD` and `firmware_version` from its `versions.lock`; operator-supplied
 substitutes for either identity are forbidden. Before writing, it MUST require
 the proof checkout to be clean, require exactly one fragment for each profile
 regardless of input order, validate every fragment and observation field,
 bind each fragment's firmware hash, manifest hash, and build measurements to
-the corresponding staged bytes, and mechanically derive all nine thresholds
-with the frozen formulas.
+the corresponding staged bytes, mechanically derive the static image/headroom
+and heap thresholds, and insert the source-era fixed reset/goodput values. For
+replacement v0.6.0 these are ESP `3000`/Pico `7000` ms and PUT/GET `6600`
+bytes/s for every row, with the exact ADR-0037 derivation identifiers. Reset
+and transfer samples remain mandatory diagnostics and every sample must pass;
+they do not fit either fixed threshold.
 
 The operation MUST canonicalize and create the baseline evidence at
 `docs/validation/firmware/oi1/<HEAD>.json`, compute the digest of those exact
@@ -228,6 +350,17 @@ no-replace: any existing destination is fatal. The policy update MUST be an
 atomic same-directory replacement, and both complete payloads MUST pass the
 production baseline/policy validator. This operation is evidence assembly
 only; it does not approve a release or mutate staged measurement inputs.
+
+The ADR-0037 pre-publication policy replacement does not rerun or rewrite that
+assembly. It reuses the exact immutable baseline at
+`docs/validation/firmware/oi1/a8be631df46590166307aa41afaea30b39e29230.json`
+and its existing policy pointer. Under the replacement policy/candidate source
+era, the release tool rederives static image/headroom and heap from those
+samples, retains reset/goodput samples diagnostically, and atomically writes
+the new derivation identifiers plus fixed five-row performance values. The
+baseline's own earlier `source_commit` MUST NOT select the predecessor
+derivation. This policy-only rederivation edits neither baseline byte nor any
+candidate/HIL result.
 
 The protected candidate site's build-selected SHA-256 of `release.json` is the
 root identity of the candidate exercised during HIL. The completed HIL
@@ -268,10 +401,32 @@ https://pyble.dev/firmware/v<version>/
     bootloader.bin
     partition-table.bin
     application.bin
+  waveshare-esp32-s3-lcd-147b/
+    manifest.json
+    firmware.bin
+    bootloader.bin
+    partition-table.bin
+    application.bin
+  esp32-c3-4mb/
+    manifest.json
+    firmware.bin
+    bootloader.bin
+    partition-table.bin
+    application.bin
+  rpi-pico2-w/
+    firmware.uf2
+    firmware.bin
 ```
 
-No `esp32-c3-4mb/` path exists in this release. Absence is intentional and is
-part of the immutable release contract, not a missing upload.
+This is the v0.6.0 schema-4 layout. Historical v0.4.2 and v0.5.1 source-era
+layouts remain unchanged and MUST NOT acquire either new directory.
+
+The two S3 directories are intentionally distinct. Their manifests use the
+same `ESP32-S3` family and offset but their component and merged-image bytes
+MUST differ: the lean directory excludes every display addition, while the
+exact-board directory alone contains the frozen ST7789 runtime, companion,
+splash-aware boot/QR, and native readiness seam. A symlink, hard link, copied
+generic image, redirect, or shared manifest between them is invalid.
 
 The profile's `firmware.bin` is the MicroPython/ESP-IDF-generated **merged**
 image and is the only binary its profile-scoped ESP Web Tools manifest
@@ -287,6 +442,11 @@ advanced recovery, but the browser manifest MUST NOT flash them separately.
 The release builder copies component bytes without transforming them and proves
 that `firmware.bin` is the deterministic merge of those authoritative
 components at the frozen settings and offsets.
+
+The Pico `firmware.bin` is the raw RP2 image used for provenance and resource
+measurement, not an ESP merged image or browser install fallback. The sole
+Pico install artifact is `firmware.uf2`; it has no manifest, flash offset,
+partition table, or component map.
 
 Every manifest part path MUST be relative to its profile directory, remain in
 that directory, and resolve on `https://pyble.dev`; absolute URLs, `..`,
@@ -338,8 +498,13 @@ one build for its owning profile. For example,
 ```
 
 `<version>` above is a template substitution, not literal released JSON.
+`waveshare-esp32-s3-lcd-147b/manifest.json` has the same schema, family, and
+offset, but it resides in the exact-board directory and references that
+profile's different local `firmware.bin`; the two manifests and firmware paths
+MUST never be substituted for one another.
 The `esp32-4mb` manifest has the same shape and exactly one `ESP32` build with
-offset `4096`. There is no C3 manifest in the current release. The website MUST
+offset `4096`; `esp32-c3-4mb` has exactly one `ESP32-C3` build at offset zero.
+Pico has no manifest. The website MUST
 set the custom element's manifest URL to the verified manifest for the selected
 profile only. It MUST NOT pass an all-family catalog to ESP Web Tools or change
 manifests after the browser has selected a serial device.
@@ -380,14 +545,15 @@ numerically-equal fractional value. This applies equally to build provenance,
 the release-tool lock, license policy and shipment ledger, audit receipts, HIL
 records, and `release.json`.
 
-`release.json` schema version 2 MUST contain (the version is the exact JSON
-integer `2`; booleans and numerically-equal fractional values are invalid).
-Version 2 is an intentional incompatible metadata revision: it freezes the
-two-profile pre-v1 release cardinality and MUST NOT validate the former
-three-profile candidate shape. Older immutable bundles retain their own schema
-beside their metadata:
+For historical split v0.5.x candidates, `release.json` schema version 3
+MUST contain the following (the
+version is the exact JSON integer `3`; booleans and numerically-equal
+fractional values are invalid). Version 3 is an intentional incompatible
+metadata revision: it freezes the exact three-profile order in §1 and MUST NOT
+validate a shared/two-profile v0.5 candidate shape. Older immutable bundles
+retain their own schema beside their metadata:
 
-- `schema_version` = `2`;
+- `schema_version` = `3`;
 - release identity: `version`, `tag`, `agent_version`, `protocol_version`, and
   UTC `built_at`;
 - provenance: full PyBLE commit and clean state; MicroPython ref/commit;
@@ -408,6 +574,37 @@ beside their metadata:
 - relative paths plus size/SHA-256 for `THIRD_PARTY_LICENSES.txt`,
   `RELEASE_NOTES.md`, `RECOVERY.md`, and `HIL_REPORT.md`; and
 - the exact locally bundled `esp-web-tools` version used by the site.
+
+The v0.6.0 successor MUST instead use release schema version `4` and exactly
+the five-profile order in §1. It retains all schema-3 release identity,
+provenance, document, and ESP profile fields and adds the required common
+profile keys `target`, `provisioning_kind`, and `hil_status`. The four ESP
+records use `provisioning_kind: "esp-web-serial"` and retain exact
+`chip_family`, silicon/memory requirements, `manifest`, merged-image `install`
+with offset, and three components. The Pico record uses
+`provisioning_kind: "verified-uf2-bootsel"`, has exact target
+`"rpi-pico2-w"`, and contains exactly:
+
+- `board: "RPI_PICO2_W"`;
+- `install: {path, size, sha256, format: "uf2"}` for
+  `rpi-pico2-w/firmware.uf2`; and
+- `resource_image: {path, size, sha256, image_limit_bytes: 1572864}` for
+  `rpi-pico2-w/firmware.bin`.
+
+The Pico record MUST reject `chip_family`, `silicon_revision`, `manifest`,
+`offset`, `components`, or ESP flash/PSRAM fields. ESP records MUST reject
+Pico `board`, `format`, `resource_image`, or BOOTSEL action fields. Schema 4
+MUST reject a missing, extra, duplicated, or reordered profile.
+
+The immutable public v0.4.2 bundle is the sole retained pre-split exception:
+it keeps release schema version 2, exactly the historical ordered profiles
+`esp32-4mb` and `esp32-s3-n16r8`, and its original files and hashes. Validation
+MUST select that contract from exact release identity `0.4.2`, MUST reject a
+third profile or schema 3 there, and MUST reject schema 2 or schema 3, any
+two-/three-profile order, or historical artifacts for v0.6.0 source. No
+validator, carry-forward
+deployment, or website descriptor may reinterpret or expand the immutable
+v0.4.2 tree.
 
 All values are required; placeholders, `unknown`, and abbreviated commits fail
 any bundle. `pending` is accepted only on an access-controlled candidate used
@@ -459,13 +656,19 @@ The reviewed top-level wheel is
 requires review and a new lock; an unpinned environment MUST NOT generate a
 public notice.
 
-The conservative build audit runs against all six authoritative ESP-IDF
+The conservative build audit runs against all eight authoritative ESP-IDF
 descriptions: application and bootloader `project_description.json` for each
-of the three initial build targets. This preserves the v1 three-target build
-and license gate even while the pre-v1 public bundle contains two profiles.
-The released notice MUST classify as redistributed only the dependency union
-of the two packaged profiles; C3-only observations remain retained review
-evidence and MUST NOT be represented as a shipped C3 image or shipped profile.
+of the four ESP build variants. The v0.6.0 released notice classifies the
+dependency union of all four packaged ESP profiles. A separate reviewed RP2
+policy and observer MUST reconcile the exact linked ELF inputs, literal frozen
+manifest, MicroPython core and `rp2` port, lwIP, Mbed TLS, littlefs, oofatfs,
+libm, pico-sdk, BTstack, CYW43, TinyUSB, and pinned ARM GNU runtime/license
+inputs. That inventory joins the released union without inventing or reusing
+ESP-IDF SBOM evidence for RP2.
+The immutable v0.4.2 replay instead retains its historical six descriptions
+over three build targets and the redistributed dependency union of its two
+packaged profiles. Validation MUST select the complete audit contract from
+source identity and MUST NOT invent a Waveshare audit for v0.4.2.
 The audit uses linked-only output (`--rem-unused --rem-config`) plus file tags,
 runs with network access disabled, an isolated temporary home, and a committed
 hash-pinned empty `SBOM_EXCLUDED_CVES_FILE`. UUIDs, timestamps, and absolute
@@ -504,16 +707,308 @@ The generator MUST:
   complete texts by their reviewed SHA-256, then produce byte-identical output
   in the second clean build.
 
-The following resolution rules are part of that fail-closed mapping:
+**Independent RP2 policy and observer.**
+`firmware/licenses/rp2-license-policy.json` is a separate reviewed, hash-bound
+input. Its exact top-level keys are `schema_version`, `profile_id`, `target`,
+and `source_owners`; `schema_version` is the exact JSON integer `1`, and the
+identity is exactly `rpi-pico2-w`. Each canonical, identifier-sorted owner has
+exactly `id`, `source_roots`, `source_ref`, `source_url`,
+`source_spdx_expression`, `selected_spdx_expression`, `copyright`,
+`license_texts`, `notice_files`, and `disposition`. A source root has exactly
+`namespace` and `path`, where the namespace is `repo`, `micropython`, or
+`arm-gnu-toolchain`; a license-text record has exactly `identifier`, `path`,
+and `sha256`; and a notice record has exactly `path` and `sha256`. Lists are
+nonempty where applicable, unique, and canonical. The most-specific lexical
+root in one namespace owns an input; no owner or equal-specificity ambiguity
+is fatal. Every owner MUST contribute an observed input, while every observed
+input has exactly one owner. Separate owners are required where one dependency
+contains linked subcomponents under different terms, and the source and
+selected expressions remain distinct (including the Mbed TLS choice and the
+compiler/newlib runtime classes). Thus the catalog represents every mandatory
+dependency class below but is not an unsafe fixed-count allowlist. A boolean
+or numerically equal fractional schema version is invalid. The policy MUST NOT
+import an ESP package identity or resolution as proof for an RP2 input.
 
-1. The audit retains all six **exact raw** `esp-idf-sbom` outputs and six
-   normalized reviewed SPDX documents. Raw tag/value files use `.spdx.tag`;
+The observer starts from the exact retained `firmware.elf`, its
+`CMakeFiles/firmware.dir/link.txt`, `firmware.elf.map`, CMake cache, build
+provenance, archives, and direct objects. All are regular non-symlink files
+below their admitted roots. It tokenizes `link.txt` as one shell-free argument
+serialization: quoting and escaping are decoded, but shell control,
+redirection, substitution, response-file syntax (including driver-wrapped
+forms), duplicate operands, path escape, an unknown operand shape, or a
+missing/extra link input is fatal. The GNU linker map is parsed structurally,
+never by substring or basename. Exact archive/member contributors and direct
+object `LOAD` records MUST reconcile one for one with the link arguments and
+existing bytes; command-listed non-contributors are recorded as such and are
+not presented as shipped. Every contributing object is owned by exactly one
+source and one reviewed dependency class. An unowned, ambiguously owned,
+duplicated, map-only, or link-only input is fatal.
+
+The pinned GCC driver may add its exact `libgcc.a` runtime without emitting a
+literal `-lgcc` or `libgcc` operand in retained `link.txt`. That literal is
+therefore neither required nor sufficient evidence. A map-only `libgcc.a` is
+admitted only when the unchanged retained argument vector is replayed through
+the exact pinned driver and resolved toolchain in the scrubbed environment,
+with scratch outputs, and the driver trace names the same regular,
+non-symlink archive beneath the pinned ARM GNU root that the structural map
+`LOAD`, archive/member allocation records, byte hashes, ownership, and Eligible
+Compilation evidence identify. An absent runtime, a different or unpinned
+archive, a misleading literal token, driver/map disagreement, or any drift when
+public verification repeats the semantic observation is fatal.
+
+The linked-object inventory also determines the complete compiler-dependency
+closure. Each C/C++ object named by the final firmware target has exactly the
+compiler depfile declared by its DependInfo record. Assembly records, for
+which CMake emits no `.o.d`, bind their source bytes directly; depfiles for
+unlinked host tools such as `pioasm` are not firmware inputs. Counts are
+derived from the build and are never a policy allowlist. The observer parses
+GNU Make depfile escaping and line continuation without invoking Make or a
+shell, requires the one declared target to equal the corresponding object, and
+hashes the depfile plus every unique dependency byte. A variable, function,
+directive, second rule/target, malformed escape, missing or extra target depfile,
+missing dependency, path escape, symlink, non-regular file, or dependency
+outside the admitted repository, retained checkout, selected build, and ARM
+GNU roots is fatal. Every dependency is attributed to one most-specific RP2
+policy owner. A generated build dependency is admitted only through an exact
+recorded derivation whose source/configuration inputs are themselves owned and
+hashed; generated bytes never create an inferred license owner. The semantic
+hash, all seven RP2 role documents where applicable, and public replay cover
+the depfile bytes, object/source relationship, ordered dependency records,
+owner identity, and dependency bytes.
+
+This closure MUST distinguish license classes that a source-only link
+inventory would collapse. In particular:
+
+- `lib/libm/libm.h` is a compiled dependency with its combined retained
+  musl/Sun attribution; it is not covered by the MIT-only `math.c` owner;
+- `lib/libm/fdlibm.h` retains the Sun fdlibm grant and MicroPython adaptation
+  terms and is owned with the exact fdlibm class, not a broad MicroPython or
+  MIT-only fallback;
+- the selected `lib/re1.5` compiler dependencies are BSD-3-Clause and the
+  selected `lib/uzlib` compiler dependencies are Zlib; each observed file is
+  assigned to its exact component owner rather than a broad `lib/` or
+  MicroPython owner (unobserved differently licensed files in either
+  directory cannot widen that root);
+- CMSIS Core headers carrying Apache-2.0, the dual-marked RP2350 system source
+  and system header, and Raspberry Pi BSD-3-Clause device/exception headers
+  are separately owned at their most-specific paths;
+- GCC built-in headers and newlib target headers are distinct ARM GNU owner
+  classes and are not covered merely because a runtime archive was linked;
+  and
+- the selected Pico 2 W CYW43 payload closure is exactly
+  `firmware/wb43439A0_7_95_49_00_combined.h` (Wi-Fi/CLM),
+  `firmware/cyw43_btfw_43439.h` (Bluetooth), and
+  `firmware/wifi_nvram_43439.h` (NVRAM), all below the selected retained
+  CYW43 checkout. All three MUST occur in the exact depfile graph, be
+  independently hashed and owned, and no same-directory alternate radio
+  payload may substitute or be added.
+
+The CYW43 directory is not one license owner. The ordinary driver sources are
+one exact owner selected under the Raspberry-Pi-device grant, while each of
+the three payload paths above is a separate, most-specific owner. For the
+exact `rpi-pico2-w` closure, the Wi-Fi/CLM payload, signed Bluetooth firmware,
+and Broadcom-attributed NVRAM are each selected under
+`LicenseRef-PyBLE-CYW43-Raspberry-Pi`. Each owner MUST remain `allow`, retain
+the complete non-commercial/Raspberry-Pi source choice and both exact license
+texts, and select only the Raspberry Pi arm. The Broadcom NVRAM attribution
+MUST also remain present.
+
+That selection is an engineering compliance decision for one deliberately
+narrow use, backed by the following frozen primary evidence:
+
+- MicroPython pins cyw43-driver tag `v1.1.1`, commit
+  `055d64274b014dd7b1c2fc94d26e8a18face7124`. Its 1,789-byte
+  `LICENSE.RP` has SHA-256
+  `67aca4f10d9edf489871f64cd8f0dcd6c5df3e4ce75bd39e1914fc54f99e40b3`
+  and is byte-identical to the file introduced by cyw43-driver commit
+  `195dfcc10bb6f379e3dea45147590db2203d3c7b`;
+- commit `195dfcc10bb6f379e3dea45147590db2203d3c7b` is the immediate child of
+  `92397a4b5954f02e17550d0b6a1d9597b4475adc`, which added the repository's
+  Wi-Fi/CLM and NVRAM payload directory. The same maintainer committed the
+  repository-wide Raspberry Pi grant nine seconds later, and the top-level
+  README applies its license choices to "this cyw43-driver" without excluding
+  `firmware/`;
+- Raspberry Pi's official documentation at commit
+  `41e21a979c608b2dcaaa38bc28cc994f1bcf6774` states that Raspberry Pi
+  negotiated the special commercial rights for `libcyw43`, expressly includes
+  the RP2350 + CYW43439 combination, and links cyw43-driver's `LICENSE.RP` as
+  the full commercial license. The exact 32,478-byte source
+  `documentation/asciidoc/microcontrollers/pico-series/about_pico.adoc` has
+  SHA-256
+  `34b7606e69e69a3786b81387f1cdf32a24319b02c9bbaf3185eab7b9ae1713ec`;
+  and
+- those official scope statements post-date the last selected payload-header
+  changes and the selected `v1.1.1` tree retains the same grant without a
+  file-specific conflicting license on any of the three selected paths.
+
+The decision applies only when the exact three hash-bound payloads are bundled
+with the pinned official cyw43-driver through the retained MicroPython/pico-sdk
+integration, built for `PICO_BOARD=pico2_w` and RP2350, and used with the
+board's CYW43439. The release MUST identify that hardware/profile restriction
+and reproduce the complete grant notice, conditions, and disclaimer in its
+third-party materials. It does not decide whether any blob may be redistributed
+standalone, with a third-party Wi-Fi stack, for another radio, or for a
+non-Raspberry-Pi semiconductor. cyw43-driver issue 1 asks that distinct
+standalone/third-party-stack question and supplies no contrary answer for this
+official-driver use. A target, driver, payload, or packaging-scope change
+returns the affected owner to `review-required` pending a new review.
+
+That no-gap ownership covers every linked or frozen input and, at minimum,
+the selected MicroPython core and `ports/rp2` sources, lwIP, Mbed TLS,
+littlefs (LFS1/LFS2), oofatfs, libm, pico-sdk, BTstack, CYW43 driver, TinyUSB,
+and ARM GNU runtime archives. The exact compiler-supplied `libgcc`, newlib
+`libc`/`libm`, and any other contributing runtime archive and its applicable
+runtime exception/terms are observed rather than inferred from the compiler
+name. A similarly named source tree, a configured but non-contributing
+library, or a directory-wide scan cannot fill a gap.
+
+The retained MicroPython checkout MUST equal the exact locked commit, clean
+tree, and canonical origin in build provenance. Every selected nested
+checkout—including `lib/lwip`, `lib/mbedtls`, `lib/pico-sdk`, `lib/btstack`,
+`lib/cyw43-driver`, and `lib/tinyusb`—is independently bound to its exact
+gitlink/submodule SHA, clean tree, canonical origin, and selected path. Nested
+copies below pico-sdk do not substitute for the selected MicroPython paths:
+the observer proves the actual CMake-selected checkout for each linked object.
+A dirty checkout, missing gitlink, origin drift, SHA mismatch, alternate
+worktree, symlink, or source path inconsistent with the CMake cache and map is
+fatal.
+
+The CMake identity is also exact rather than implied by a board-directory
+name. For the initial RP2 release the cache MUST select `PICO_BOARD=pico2_w`,
+`PICO_PLATFORM=rp2350-arm-s`, and the retained
+`PYBLE_RPI_PICO2_W` MicroPython board directory. Its C and ASM compiler
+frontends are the pinned `bin/arm-none-eabi-gcc`; its C++ frontend is the
+pinned `bin/arm-none-eabi-g++`; and the corresponding `PICO_COMPILER_CC`,
+`PICO_COMPILER_ASM`, and `PICO_COMPILER_CXX` values MUST agree. Every distinct
+frontend is a regular, symlink-free, hash-bound input below the one selected
+ARM GNU root. Missing, additional, mixed-root, PATH-selected, basename-only,
+or disagreeing CMake/Pico compiler identities are fatal.
+
+An absolute build path recorded by CMake MAY use the operating system's
+canonical spelling of the caller-selected build root, including macOS
+`/private/tmp` for `/tmp` and `/private/var` for `/var`. The observer admits
+that spelling only when the existing caller root and recorded path resolve to
+the same root and exact descendant. It MUST preserve the descendant's lexical
+components while checking the canonical root: a symlink at or below the
+selected root, an escaped or near-match path, a missing component, or any
+other merely resolving alias remains fatal. Canonicalizing the platform root
+therefore does not authorize a symlink traversal or weaken the final
+resolved-root containment check.
+
+An installed ARM GNU version string is not distribution provenance. The
+`[arm_gnu_toolchain]` lock binds the official binary-distribution HTTPS URL,
+URL-basename filename, size, SHA-256, archive format/root, the exact installed
+release-manifest relative path/SHA-256, and the required compiler frontend
+relative paths/SHA-256 values. The installer retains the verified official
+archive at the observer-derived
+`<toolchain-root>/.pyble-dist/<URL-basename>`; neither policy nor caller may
+supply another cache path. The observer safely parses that exact archive and
+byte-compares every observed frontend, compiler/newlib header, runtime input,
+and installed release manifest with its unique archive member below the
+pinned top-level root. Unsafe/duplicate archive entries, an absent cache,
+metadata disagreement, installed-only evidence, or any installed/archive byte
+drift is fatal. The separate official source snapshot remains the source and
+license-attribution proof; it does not replace this installed-binary proof.
+
+The RP2-specific grants are selected literally rather than approximated by a
+nearby license. In particular, BTstack retains both its stock non-commercial
+license and pico-sdk's complete supplemental `pico_btstack/LICENSE.RP` grant,
+and selects only that supplemental grant for use with Pico 2 W. The ordinary
+CYW43 driver sources and each of its three separately owned, exact selected
+payloads retain the complete Raspberry-Pi-device grant used for Pico 2 W and
+select that grant under the evidence and scope restriction above. Sharing that
+selection does not merge their owners or weaken their independent header and
+embedded-byte bindings. Neither dependency's generic non-commercial file, nor
+either Raspberry Pi grant, is relabelled as BSD or MIT.
+Mbed TLS retains its source choice while recording the reviewed Apache-2.0
+redistribution selection;
+littlefs, lwIP, pico-sdk, oofatfs, TinyUSB, MicroPython, fdlibm-derived libm,
+and each contributing ARM GNU/newlib class retain their own exact expressions,
+exceptions, copyright notices, and complete texts. One broad MicroPython MIT
+record or one toolchain expression cannot cover these distinct inputs.
+
+RP2 frozen inputs are resolved without executing manifest code. Only the
+reviewed literal manifest operations and literal arguments may select a
+manifest, module, package, source, destination, optimization, or metadata
+value. Imports, assignments, control flow, computed arguments, unknown calls,
+directory recursion, unresolved variables, duplicate destinations, path
+escape, and symlinks are fatal. Every traversed manifest and selected source
+is hashed, and the literal result MUST reconcile exactly with the generated
+frozen content and the linked object that contains it.
+
+For every resolved RP2 dependency the policy identifies the complete reviewed
+license bytes and every redistribution-required notice/attribution byte; a
+filename, SPDX label, package directory, installed copy, or upstream URL alone
+is not proof. Changed, missing, partial, ambiguous, incompatible, or
+unreviewed bytes fail closed. The final notice may deduplicate identical
+complete texts only by their reviewed SHA-256.
+
+Approval of a custom `LicenseRef` is owner-scoped and adds no global approval
+list to the schema. An `allow` or `project-owned` owner may use only the
+`LicenseRef` tokens occurring in that same owner's exact source/selected
+expressions and covered by that same owner's exact
+`license_texts.identifier/path/sha256` records. A matching token or text on a
+different owner grants no authority. A `review-required` owner remains fully
+observable, hash-bound, and eligible for engineering evidence, but it is
+release-blocking and generation publishes nothing until an independent review
+changes that exact owner to `allow`; changing the disposition changes the
+semantic hash.
+
+The RP2 observer records a canonical semantic hash plus every exact input
+path/SHA-256 before any of the eight v0.6 ESP SBOM executions. After those
+executions and immediately before evidence and notice publication, it repeats
+the complete observation and requires identical hashes and semantics. This
+second observation includes the ELF, link command, map, CMake cache,
+provenance, every archive/object/source, literal frozen inputs and generated
+output, checkout/git metadata, policy, license/notice bytes, and toolchain
+runtime inputs. Replacing bytes while restoring timestamps is therefore
+fatal.
+
+The v0.6 audit emits a canonical `audit-receipt.json` with exact JSON integer
+`schema_version: 2`. It binds the notice, complete input/evidence hashes,
+execution identity, release inventory, all eight ESP role identities, and
+exactly these seven RP2 evidence roles: `linked-inputs`, `frozen-modules`,
+`pico-sdk`, `btstack`, `cyw43`, `tinyusb`, and `arm-gnu-runtime`. The canonical
+schema-v1 `release-inventory.json` contains exactly the five release profiles
+in policy order, binds each packaged provenance, and distinguishes each ESP
+application/bootloader raw and reviewed document from the Pico role
+documents. A missing, extra, duplicated, reordered, cross-profile, or
+self-consistently rehashed substitution is fatal. Generation uses a new
+destination and publishes nothing unless the existing complete ESP audit and
+this independent RP2 audit both pass; public verification repeats both from
+the exact packaged builds.
+
+The generated evidence directory and `THIRD_PARTY_LICENSES.txt` are one
+publication unit, not two independently replaced paths. The production audit
+accepts a single new publication root whose exact children are `evidence/`
+and `THIRD_PARTY_LICENSES.txt`. It prepares and fsyncs both children in a
+same-filesystem hidden sibling and commits the absent publication root with
+one no-replace rename. The destination parent already exists and is a regular
+non-symlink directory, while the publication root itself MUST be absent. A
+crash before the rename leaves neither public child; a crash after it leaves
+both. A concurrent creator wins without any byte being overwritten. An API
+that accepts legacy evidence/notice paths MUST require those paths to have the
+same absent parent and the exact child basenames above; arbitrary sibling
+outputs below an existing mixed-content directory are rejected because POSIX
+cannot commit them as one crash-atomic unit.
+
+The following ESP-IDF resolution rules are part of that fail-closed mapping:
+
+1. The v0.6 audit retains all eight **exact raw** `esp-idf-sbom` outputs and
+   eight normalized reviewed SPDX documents. Retained source-era v0.5.1 and
+   v0.4.2 evidence keeps its frozen historical count and shape; it is never
+   expanded to resemble v0.6. Raw tag/value files use `.spdx.tag`;
    only normalized JSON files use `.spdx.json`. The receipt hashes both sets,
    the exact raw package-property sets and complete relationship multisets, the
    locked wheel closure and execution/isolation identity, and every exact
    build, policy, map, manifest, source, archive, license, and NOTICE input.
    Raw bytes are never overwritten by normalization or discarded after a
-   successful audit.
+   successful audit. Heterogeneous v0.6 composition MUST also preserve each
+   already-verified normalized ESP SPDX document byte-for-byte; it MUST NOT
+   parse and reserialize those documents into a different JSON encoding.
+   Public semantic replay reconstructs the ESP evidence subset in a separate
+   verification process and requires both semantic equality and the exact
+   normalized bytes emitted by the complete ESP audit.
 2. Frozen files are resolved without executing manifest code, from the literal
    `include`, `require`, `package`, `module`, and non-selecting `metadata`
    operations of the hash-bound pinned manifests. Imports, assignments,
@@ -552,8 +1047,8 @@ The following resolution rules are part of that fail-closed mapping:
    file, an admitted described directory marker, or a `CONFIG_ONLY` component
    root, except for these pinned application-`main` inputs:
 
-   - the nine repository-owned files
-     `firmware/user_c_modules/pyble/{pble_proto,pble_ble,pble_info,pble_device_config,pble_runner,pble_console,pble_fs,pble_lock,pble_boot}.c`;
+   - the eleven repository-owned files
+     `firmware/user_c_modules/pyble/{pble_proto,pble_ble,pble_info,pble_device_config,pble_runner,pble_console,pble_fs,pble_lock,pble_boot,pble_vm_lifecycle,pble_termination}.c`;
    - the fourteen files in the selected target's immutable retained
      `.sources/<target>/micropython/lib/berkeley-db-1.xx` tree:
      `btree/{bt_close,bt_conv,bt_debug,bt_delete,bt_get,bt_open,bt_overflow,bt_page,bt_put,bt_search,bt_seq,bt_split,bt_utils}.c`
@@ -591,7 +1086,7 @@ The following resolution rules are part of that fail-closed mapping:
    into the application ELF. The selected output-basename multiset MUST equal
    the parsed archive-member multiset exactly. Each selected source MUST also
    belong to that same component's exact described file or directory marker;
-   an application `main` archive may additionally own the exact nine pinned
+   an application `main` archive may additionally own the exact eleven pinned
    PyBLE sources above. A file or root described by one component MUST NOT
    authorize a linked output owned by another component, and the pinned
    Berkeley DB sources remain direct-object-only.
@@ -628,31 +1123,113 @@ The following resolution rules are part of that fail-closed mapping:
    - `CMakeFiles/<app-elf>.dir/project_elf_src_<idf-target>.c.obj` for the
      zero-byte role-root ELF anchor;
    - application `CMakeFiles/micropython.elf.dir/<absolute-PyBLE-source>.obj`
-     for the nine repository-owned PyBLE C sources; and
+     for the eleven repository-owned PyBLE C sources; and
    - application
      `esp-idf/main/CMakeFiles/micropy_extmod_btree.dir/<absolute-retained-source>.obj`
      for the fourteen retained Berkeley DB sources.
 
    Each direct output MUST be a regular, symlink-free file below the selected
-   role build, and the map MUST name its exact build-relative path once.
+   role build, and the map MUST name its exact build-relative path once after
+   the following one narrow lexical normalization. Within an otherwise exact
+   direct-object `LOAD` token, a segment whose complete value is `.` is
+   redundant and MUST be removed before build-root containment, component
+   symlink checks, exact compile-output matching, and duplicate accounting.
+   This syntax rule applies uniformly to every direct object; it is not a
+   Berkeley DB source or topology exception. The raw map bytes remain
+   receipt-bound. No other map-path normalization is permitted: `..`, an empty
+   segment (including repeated `/`), a backslash, an absolute path, a symlinked
+   component, or a normalized path absent from the exact compile-output set is
+   fatal.
    Exact generated-header, source-exception, anchor, and direct-output
    topologies MUST be checked lexically for symlink components before any
    canonical-path equality check; an alternate path resolving to the same
    bytes is not equivalent. Receipt records for files below the selected build
    root MUST use `build/<build-relative-path>` even when that build root is
    itself nested below the repository root.
-   The role's exact `CMakeFiles/<app-elf>.dir/link.txt` MUST also be a regular,
-   symlink-free receipt input. Its safely parsed direct `.o`/`.obj` argument
-   set MUST equal the map's direct-object `LOAD` set exactly. Response files,
-   including driver-wrapped forms, shell operators, duplicate object
-   arguments, and path escape are fatal.
+   ESP-IDF's Ninja generator does not emit
+   `CMakeFiles/<app-elf>.dir/link.txt`; absence of that Makefile-generator
+   artifact is not license evidence. The deterministic final-link source is
+   instead the exact role-root `build.ninja` and its one literal
+   `include CMakeFiles/rules.ninja`. The auditor MUST NOT execute Ninja, trust
+   the build invocation/environment/log, or fabricate a `link.txt`. It uses a
+   bounded, non-executing parser for only the pinned CMake-generated shape to
+   reconstruct the final linker argv and direct-object set. Both graph inputs
+   MUST be stable regular non-symlink files below the role build.
+
+   The admitted graph has exactly one edge whose sole explicit output is the
+   literal relative project-description `app_elf`, exactly one referenced rule
+   declaration in the literal role-relative rules file, exactly one `|` and
+   one `||` dependency separator, and the exact ten edge assignments `FLAGS`,
+   `LINK_FLAGS`, `LINK_LIBRARIES`, `LINK_PATH`, `OBJECT_DIR`, `POST_BUILD`,
+   `PRE_LINK`, `TARGET_COMPILE_PDB`, `TARGET_FILE`, and `TARGET_PDB`.
+   `TARGET_FILE` MUST equal `app_elf`; `PRE_LINK` and `POST_BUILD` MUST each be
+   the shell no-op `:`. The edge, assignments, and the rule's single `command`
+   template permit no continuation, quote, escape, embedded newline, response
+   file, substitution, or shell operator other than the rule's exact two `&&`
+   separators around those no-ops. Expansion is confined to the known edge
+   assignments plus Ninja's literal `$in`/`$out` values; no other variable or
+   Ninja construct is interpreted. Edge-assignment values cannot themselves
+   contain variables, which makes a variable cycle fatal; the rule's
+   non-command description/restat metadata cannot add command inputs.
+
+   After expansion, the safely tokenized command MUST contain one absolute
+   compiler frontend already admitted by the toolchain contract, one exact
+   `-o <app-elf>`, and a sorted-unique set of canonical build-relative
+   `.o`/`.obj` identities. Literal `$in` object operands MUST already be
+   canonical. ESP-IDF's generated `LINK_LIBRARIES` value may spell an object
+   with redundant complete `.` path components; only those complete
+   components are removed for object identity and map/compile reconciliation,
+   while the raw expanded token remains unchanged in the reconstructed argv.
+   Absolute/escaping objects, duplicate normalized identities, any other
+   noncanonical component, or any other output are fatal. That normalized set
+   MUST equal both the normalized map `LOAD` set and the exact linked subset of
+   compile outputs. Every map line matching the whitespace-tolerant lexical
+   form `^\s*LOAD\s+` MUST use the exact one-token spelling
+   `LOAD <single-token>` and classify as either a reconciled `.o`/`.obj` direct
+   object or a validated `.a` archive; a leading-space or tab-joined alias, an
+   unknown suffix, or any other unclassified `LOAD` is fatal. Every
+   reconstructed command word MUST likewise be consumed exactly
+   once as the admitted compiler frontend, a frozen option, the required
+   operand of a frozen option, the exact output, a reconciled direct object, or
+   a validated archive. A bare or otherwise unclassified positional word is
+   fatal; a `.a` suffix alone does not establish archive identity.
+
+   GNU-ld forwarding is closed to the exact generated catalog. The sole
+   admitted spelling is one `-Wl,<atom>` word containing exactly one atom. The
+   atom MUST be the exact observed-map selector, one of `--cref`,
+   `--gc-sections`, `--no-warn-rwx-segments`,
+   `--orphan-handling=warn`, or `--warn-common`, an exact
+   `--defsym=IDF_TARGET_<target>=0` for `ESP32`, `ESP32C3`, or `ESP32S3`, or
+   `--undefined=<C-identifier>` / `--wrap=<C-identifier>`. `-Xlinker` and both
+   joined and separate `--for-linker` forms are not emitted by the pinned graph
+   and are fatal. Every other forwarded atom is fatal, including file-reading
+   controls such as version/dynamic lists, retained/just-symbols files,
+   ordering/export/remap files, error-handling scripts, or Xtensa dynamic
+   configuration, and file-writing controls such as dependency or import
+   library outputs. Those inputs need not produce a map `LOAD` and cannot be
+   admitted merely because the atom begins with `-`.
+
+   The receipt binds SHA-256 of the exact two Ninja files and
+   `linker_command_sha256`, defined as SHA-256 of the raw reconstructed argv
+   encoded as canonical compact JSON plus one final LF. The same derivation is
+   repeated after all eight SBOM runs and during public replay. An alternate
+   include, nested `include`/`subninja`,
+   duplicate edge/output/rule/assignment, unknown escape or variable, path
+   escape, or any graph/map/compile/ELF mismatch is fatal. Parsing is
+   resource-bounded and never becomes a general Ninja interpreter. The sum of
+   the UTF-8 byte lengths of all fully expanded file-scope binding values held
+   by the parser MUST NOT exceed 8 MiB; the parser charges that budget when
+   each binding is stored and rejects the graph before retaining a value that
+   would exceed it.
    Basename-only matching is forbidden.
 
    One logical source may therefore have multiple compile outputs. Archive
    source records remain archive-only and unique by logical path. The role's
    generated `main` binding additionally contains:
 
-   - `linker_command_sha256`, the exact role `link.txt` digest;
+   - `linker_command_sha256`, the canonical reconstructed-argv digest,
+     `build_ninja_sha256`, and `rules_ninja_sha256` for the exact
+     `build.ninja` and `CMakeFiles/rules.ninja` bytes;
    - `metadata_inputs`, the canonical logical path/SHA-256 records for the six
      application `genhdr/` inputs (empty for bootloader); and
    - `direct_objects`, canonical records containing each direct output's
@@ -664,7 +1241,8 @@ The following resolution rules are part of that fail-closed mapping:
    archive/output multiset mismatch, or treating an unlinked output as
    redistributed is fatal.
 
-   `project_description.json`, `compile_commands.json`, and map SHA-256 values,
+   `project_description.json`, `compile_commands.json`, map, canonical link
+   command, and both Ninja-file SHA-256 values,
    generated source and auxiliary-input hashes, compile-output/direct-`LOAD`
    and linker-command reconciliation, direct object/source hashes, member
    lists, and the final archive SHA-256 are
@@ -678,11 +1256,12 @@ The following resolution rules are part of that fail-closed mapping:
    tree, or a compiler/runtime archive has no such exception: its digest is
    predeclared in reviewed policy and MUST match exactly.
 
-   After all six offline SBOM executions, the observer MUST rebuild this exact
-   generated-input context and require byte-for-byte equality with the initial
-   observations. Rechecking only archive/tree digests is insufficient:
-   project/compile/map/link documents, metadata inputs, archive sources, direct
-   outputs, and direct sources are all race-sensitive release inputs.
+   After all eight v0.6 offline SBOM executions, the observer MUST rebuild this
+   exact generated-input context and require byte-for-byte equality with the
+   initial observations. A source-era verifier uses its frozen historical
+   count. Rechecking only archive/tree digests is insufficient:
+   project/compile/map/link/Ninja documents, metadata inputs, archive sources,
+   direct outputs, and direct sources are all race-sensitive release inputs.
 
 6. An archive outside the repository and build roots is admitted only below
    one versioned toolchain root proven by the exact compile-command
@@ -884,6 +1463,27 @@ The following resolution rules are part of that fail-closed mapping:
    `frozen_content.c` MUST be byte-identical to the built file. Before that
    comparison, every generated board copy selected through `BOARD_DIR` MUST be
    byte-identical to its repository-logical overlay or `firmware/pyble` source.
+   For each isolated ESP release target, that `BOARD_DIR` is exactly
+   `<build-root>/.sources/<target>/micropython/ports/esp32/boards/<build-board>`
+   in the retained target-local checkout named by the admitted build. The
+   collector MUST audit that exact generated tree and record its paths in the
+   host-independent `build/.sources/<target>/micropython/...` namespace. A
+   missing, symlinked, or changed retained copy is fatal even if the ambient
+   canonical MicroPython checkout contains a matching or decoy generated board
+   tree; materializing such an ambient tree is neither an audit prerequisite
+   nor substitute evidence for bytes used by the build.
+
+   The collector MUST open every component of that exact retained `BOARD_DIR`
+   descriptor-relatively without following links, capture its complete bytes
+   and node identities, and materialize a byte-identical execution snapshot in
+   fresh private audit staging. Clean frozen-payload reconstruction MUST consume
+   only that immutable private snapshot; its temporary path is not evidence and
+   does not replace the original `build/.sources/...` logical identity recorded
+   above. After every `BOARD_DIR` consumer finishes, the collector MUST reopen
+   and resnapshot the exact retained namespace without following links and
+   require it to equal the initial capture. A component swap, transient symlink,
+   replacement, or byte change at any phase is fatal even if an attacker restores
+   the lexical path before a later path-based check.
 
    The collector then selects the unique compile-command entry whose exact
    source is this `frozen_content.c`, requires an unambiguous argument-vector
@@ -927,7 +1527,7 @@ The reviewed license catalog is identifier-exact. Every identifier and
 exception used by a raw, reviewed, resolved-input, or supplemental expression
 MUST name one hash-bound complete text record; a text for a different
 identifier is not interchangeable merely because both are permissive. The raw
-six-document union for the frozen tool includes `Apache-2.0`,
+v0.6 eight-document union for the frozen tool includes `Apache-2.0`,
 `BSD-2-Clause`, `BSD-2-Clause-Views`, `BSD-3-Clause`, `CC0-1.0`, `ISC`, `MIT`,
 `Unlicense`, and `LLVM-exception`. Linked or supplemental inputs additionally
 require `BSD-1-Clause`, `GPL-2.0-or-later`, `GPL-3.0-or-later`,
@@ -975,9 +1575,12 @@ The initial reviewed source closure also preserves:
 - the NimBLE NOTICE, ESP-IDF third-party copyright summary, per-family
   controller/coexistence/PHY/Wi-Fi binary-library attribution, and the
   Tensilica `libxt_hal.a` MIT attribution; and
-- exact managed-component lock/source/license identity for the linked LAN867x
-  and TinyUSB components. A diagnostic component-manager hash without the
-  fetched candidate source and license bytes is insufficient.
+- exact managed-component lock/source/license identity for the linked ESP-IDF
+  LAN867x and TinyUSB components. A diagnostic component-manager hash without
+  the fetched candidate source and license bytes is insufficient. These ESP
+  records do not prove the RP2 dependency: the Pico audit independently binds
+  its selected MicroPython `lib/tinyusb` checkout, contributing inputs, and
+  complete license/notice bytes in the required `tinyusb` role.
 
 Raw records for BLE Mesh and controller families not selected by a profile
 remain byte-exact in the raw graph and use `not-shipped` resolutions with
@@ -1008,29 +1611,31 @@ firmware image.
 memory requirements, agent/PBLE/1/MicroPython/ESP-IDF versions and commits,
 source/tag links, known limitations, destructive-install warning, upgrade
 notes, recovery link, and support contact. It MUST explicitly state that the
-S3 image is N16R8-class only.
+two S3 images are separate, N16R8-class only, and byte-distinct; the lean image
+has no bundled TFT/splash support and the exact-board image supports only the
+Waveshare B version.
 
 ## 7. Installer capability and consent
 
-The `/flash` document remains complete without JavaScript. The install control
-is a client-only enhancement and MUST be activated by feature detection:
-
-- a secure context;
-- `navigator.serial`;
-- Web Crypto `subtle.digest`; and
-- successful verification under §5.
+The `/flash` document remains complete without JavaScript. Every enhanced
+action requires a secure context, Web Crypto `subtle.digest`, and successful
+verification under §5. An ESP action additionally requires
+`navigator.serial`; a Pico verified download MUST NOT require it.
 
 The implementation MUST NOT infer support from the browser user-agent. Its
 unsupported state names a current desktop Chromium browser as the supported
 path and explicitly states that iPadOS cannot perform the wired provisioning
 step. The exact ESP Web Tools package is bundled locally; its activation button
 is exposed only after profile selection, verification, and consent.
+The Pico action offers only a download created from already verified in-memory
+UF2 bytes, followed by visible manual BOOTSEL-copy instructions.
 
 Before activation the user MUST affirm all of the following:
 
-1. the exact chip/flash/PSRAM profile matches the connected module;
+1. the exact selected hardware profile matches the connected board and, for
+   `waveshare-esp32-s3-lcd-147b`, the board is the exact B-version model;
 2. board files and any previous firmware have been backed up;
-3. installation erases the device;
+3. installation overwrites the board firmware and may erase user files;
 4. a data-capable USB cable and stable power are in use; and
 5. other serial monitors and applications using the port are closed.
 
@@ -1063,9 +1668,9 @@ cover, in plain language:
   model/module marking, browser/OS versions, stage and error text, while
   excluding secrets and personal device labels.
 
-A recovery instruction that has not itself been exercised on both current
-release profiles does not satisfy the release gate. The page MUST NOT offer a
-C3 recovery command or binary while that profile is deferred.
+A recovery instruction that has not itself been exercised on all five v0.6.0
+profiles does not satisfy the release gate. C3 remains inactive until C3-G0…G6
+pass; Pico remains inactive until GP2 passes.
 
 For the pinned ESP-IDF 5.5 tool environment (`esptool.py` v4.12.dev3), every
 generated and visible merged-image command MUST use the executable module form
@@ -1075,12 +1680,24 @@ underscore subcommand `write_flash`. The unsupported hyphenated spelling
 installer recovery section. An automated gate MUST exercise the selected
 subcommand against the pinned tool's command-line parser; rendering command-like
 text without proving that the pinned parser accepts it is insufficient.
+The v0.5 recovery document MUST emit separate commands for all three profiles;
+the two S3 commands both use `--chip esp32s3` and offset `0x0` but MUST name
+their distinct profile-local `firmware.bin` paths. A generic S3 path is never a
+recovery alias for the exact-board image or vice versa.
+
+The v0.6.0 recovery document adds the C3 command at offset `0x0` and a separate
+Pico procedure. Pico recovery re-enters BOOTSEL, re-verifies the same
+versioned UF2 size/SHA-256, recopies those verified bytes, waits for automatic
+reboot, and confirms the expected BLE advertisement. It MUST NOT show an
+`esptool`, offset, Web Serial, or random-image fallback for Pico. Physical HIL
+must exercise a deliberately interrupted/failed UF2 copy followed by this
+successful recovery using the final candidate bytes.
 
 ## 9. Automated and HIL acceptance
 
 Automated release tests MUST cover:
 
-- clean three-target build from one candidate-frozen pin set and commit;
+- clean five-profile/four-chip build from one candidate-frozen pin set and commit;
 - byte-for-byte second clean build;
 - `flasher_args.json` → profile component-offset and merge-setting agreement;
 - merged-image reproduction, ESP image target/role parsing, component placement,
@@ -1088,25 +1705,53 @@ Automated release tests MUST cover:
   flash-capacity checks;
 - exact manifest schema, paths, profile parity, and forbidden redirect/origin
   cases;
-- exact two-profile resource-policy and HIL V2 schema, baseline/policy/candidate
+- exact v0.6.0 five-profile resource-policy schema 3 and HIL V5 schema, plus
+  historical schema-2/V4 replay,
+  baseline/policy/candidate
   hash binding, derivation arithmetic, threshold-boundary and one-unit-crossing
-  fixtures, and rejection of any current C3 policy entry or HIL row;
+  fixtures, and rejection of cross-target resource/transport fields;
 - release-schema validation, SHA-256/size verification, corrupt/truncated/
   missing/swapped-part fixtures, and metadata/manifest disagreement;
 - mechanically complete third-party license output;
 - website feature-detection, unsupported/insecure/iPad copy, consent, fail-
   closed integrity states, keyboard accessibility, and no third-party request;
-  and
+- loopback-preview isolation, its exact five-target order and action-specific
+  capability gates, target-local manifest/UF2 size and SHA-256 verification,
+  verified-byte UF2 download, unqualified labelling, and rejection of dirty,
+  mixed-source, escaped, symlinked, or corrupt local inputs;
+- production rejection or exclusion of the preview flag and staging tree,
+  C3/Pico pending-state exclusion until their gates pass, and the unchanged
+  fail-closed no-release state; and
 - static-export and candidate/production-origin retrieval of every versioned
   byte.
 
-One HIL record MUST be completed for each of the two exact current release
-profiles using the final, hash-locked release candidate. The report contains
-exactly one embedded JSON object marked `PYBLE_HIL_RECORDS_V2`; a V1 marker,
-an additional marker, or keys not defined below are invalid.
+For a split-source v0.5.x release core, one HIL record MUST be completed for
+each of the three exact source-candidate profiles using the final, hash-locked
+candidate. The immutable v0.4.2 history retains exactly one
+embedded `PYBLE_HIL_RECORDS_V2` schema-2 object. Beginning with the `0.5.0`
+release core, including v0.5.1 and prereleases, the report MUST contain exactly
+one `PYBLE_HIL_RECORDS_V4` schema-4 object because the Waveshare functionality
+is an independent third profile. The abandoned shared-image V3 engineering
+shape MUST NOT qualify or publish a split-source release. A V1 marker, the
+wrong source-era marker, an additional marker, or keys not defined below are
+invalid. These are admission requirements; they do not assert that a v0.5.1
+HIL report or qualified public bundle exists.
+
+The v0.6.0 report instead contains exactly one
+`PYBLE_HIL_RECORDS_V5` schema-5 object with five records in §1 order and the
+target-discriminated contract in §9.5. V5 is required only for v0.6.0 and MUST
+NOT reclassify V2/V4 history.
 
 ```text
 <!-- PYBLE_HIL_RECORDS_V2
+{ ...one JSON object... }
+-->
+
+<!-- PYBLE_HIL_RECORDS_V4
+{ ...one JSON object... }
+-->
+
+<!-- PYBLE_HIL_RECORDS_V5
 { ...one JSON object... }
 -->
 ```
@@ -1117,18 +1762,22 @@ Candidate generation MUST read
 `firmware/qualification/oi1-gates.json`, verify it against the frozen
 [firmware requirements §5.3](specs.md#53-footprint-gates-nfr-fp), and embed
 both its parsed JSON object and the lowercase SHA-256 of its exact source
-bytes. The policy object has exactly these keys:
+bytes. For split-source release cores at or after `0.5.0`, the required policy
+object has exactly these keys:
 
-| Key                   | Exact value/type                                     |
-| --------------------- | ---------------------------------------------------- |
-| `schema_version`      | integer `1`                                          |
-| `qualification_scope` | string `"pre-v1"`                                    |
-| `profile_order`       | exact string array `["esp32-4mb", "esp32-s3-n16r8"]` |
-| `deferred_profiles`   | exact string array `["esp32-c3-4mb"]`                |
-| `workload`            | exact object defined below                           |
-| `derivation`          | exact object defined below                           |
-| `baseline_evidence`   | exact object `{path, sha256}`                        |
-| `profiles`            | two policy-entry objects, in `profile_order`         |
+| Key | Exact value/type |
+|---|---|
+| `schema_version` | integer `2` |
+| `qualification_scope` | string `"pre-v1"` |
+| `profile_order` | exact string array `["esp32-4mb", "esp32-s3-n16r8", "waveshare-esp32-s3-lcd-147b"]` |
+| `deferred_profiles` | exact string array `["esp32-c3-4mb"]` |
+| `workload` | exact object defined below |
+| `derivation` | exact object defined below |
+| `baseline_evidence` | exact object `{path, sha256}` |
+| `profiles` | three policy-entry objects, in `profile_order` |
+
+This is a qualification requirement for v0.5.1; it does not assert that the
+checked-in policy has been regenerated or that qualification has passed.
 
 `workload` has exactly these integer/string keys and values:
 
@@ -1158,16 +1807,45 @@ bytes. The policy object has exactly these keys:
   "application_image": "exact-byte-identical-two-root-v1",
   "application_headroom": "factory-minus-application-v1",
   "heap_floor": "floor-min-1024-v1",
-  "boot_ceiling": "ceil-max-10-v1",
-  "goodput_floor": "floor-min-100-v1"
+  "boot_ceiling": "fixed-product-slo-3000-v3",
+  "goodput_floor": "floor-95pct-min-100-v2"
 }
 ```
+
+This exact derivation object and policy schema 2 apply to v0.5.x split source
+releases. The retained `0.4.2` source era instead requires policy
+schema 1, its historical exact two-profile order, `ceil-max-10-v1`, and
+`floor-min-100-v1` values; validation selects the complete policy contract by
+firmware source era and never silently reinterprets published evidence.
+The three unpublished v0.6.0 source eras all retain policy schema 3 and the
+five-profile order, but they do not share a derivation object: §9.5 selects
+the predecessor V3/V2 identifiers, the first-replacement V4/V3 identifiers,
+or the second-replacement (ADR-0039) identifiers — which change exactly the
+heap-floor identifier to `floor-min-1024-waveshare-block-98304-v2` — from
+bound source ancestry. Version, schema, or operator input alone cannot
+select it.
 
 `baseline_evidence.path` MUST match
 `docs/validation/firmware/oi1/<40-lowercase-hex-source-commit>.json`;
 `baseline_evidence.sha256` MUST be the lowercase 64-hex SHA-256 of that exact
-canonical, redacted file. A profile policy entry has exactly
-`profile_id`, `target`, and `thresholds`. Targets are `esp32` then `esp32-s3`.
+canonical, redacted file. Retained baseline files are immutable history: a
+controlled refresh MUST add a new source-commit-scoped file, retain every
+earlier file, and replace the active evidence pointer and all three profile
+threshold objects together. It MUST NOT mix profiles or successful samples
+from different baselines. For a v0.5.x source release, the active baseline
+firmware release core MUST be at least `0.5.0` and MUST NOT be newer than the
+source release core; the retained pre-`0.5.0` contract keeps its historical
+baseline semantics. A refreshed engineering baseline does not approve a
+release: after the policy or source changes, the v0.5.x final candidate MUST
+be rebuilt and verify-mode HIL MUST pass on all three exact profiles. The
+successor v0.6.0 rules are in §9.5 and firmware specs §5.3.5.
+
+A profile policy entry has exactly
+`profile_id`, `target`, and `thresholds`. Targets are `esp32`, `esp32-s3`, then
+`waveshare-esp32-s3-lcd-147b`. The latter two logical builds share the
+underlying ESP-IDF `esp32s3` target, but their release targets and evidence
+MUST remain distinct so generic-S3 measurements can never qualify the
+exact-board image (or vice versa).
 `thresholds` has exactly these positive integer keys:
 
 ```text
@@ -1186,7 +1864,7 @@ Booleans MUST be rejected anywhere an integer is required. The policy MUST
 have no C3 policy entry, and neither the baseline nor a source/build/license
 result may be interpreted as C3 HIL qualification.
 
-### 9.2 Embedded `PYBLE_HIL_RECORDS_V2` shape
+### 9.2 Embedded `PYBLE_HIL_RECORDS_V2` historical shape
 
 The top-level object has exactly:
 
@@ -1342,7 +2020,20 @@ goodput integer MUST equal `floor(65536 * 10^9 / duration_ns)`.
 `5`; both round-trip failure counts are integer `0`.
 `physical_power_cycle_advertising` is string `passed`.
 `raw_log_sha256` is the lowercase 64-hex digest of the access-controlled,
-retained, redacted raw HIL log.
+retained, redacted raw HIL log. Before its first byte is written, that log MUST
+be created exclusively as a regular file with mode `0600`, independent of the
+caller's umask. A pre-existing path MUST be rejected.
+
+The physical power-cycle check MAY remove the same USB serial endpoint used
+for controlled resets. After the completed off-interval and fresh-advertising
+observations have been recorded, an operating-system "device disappeared"
+error while deasserting or closing that stale serial handle is expected
+cleanup, not a failed measurement. The harness MUST still close the handle,
+MUST independently attempt to deassert both control lines and close the
+underlying handle, MUST preserve and report the first non-disappearance cleanup
+error, and MUST retain the complete redacted raw log. Terminal cleanup is
+idempotent. This exception applies only to final cleanup after the physical
+power-cycle observation; controlled-reset failures remain fatal.
 
 Every heap snapshot object has exactly:
 
@@ -1381,7 +2072,102 @@ The first three values MUST all be 20, `bytes_per_file` MUST be 16,384,
 counts MUST be zero. Retransmit and rewind counts are reported but are not
 required to be zero.
 
-### 9.3 Required HIL demonstrations and evaluation
+### 9.3 `PYBLE_HIL_RECORDS_V4` three-profile exact-board release extension
+
+V4 preserves every V2 per-record field, type, and promotion rule except for
+the source-era-qualified `oi1_observation` addition below. It binds policy
+schema 2 and contains exactly three records in the §9.1 order. Its
+top-level object has exactly the five V2 keys plus
+`waveshare_lcd147b_qualification`, and `schema_version` is the exact integer
+`4`. A protected candidate and the completed three-profile operator report both
+carry JSON `null` in that field. Finalization MUST reject a non-null input;
+after admitting the private combined exact-board result, it alone replaces
+null in the staged public report with the validator-derived summary.
+
+For a split firmware source release core at or after `0.5.0`, each completed V4
+record's `oi1_observation` has the exact V2 keys from §9.2 plus the required
+`transfer_link_facts` object frozen in
+[firmware specs §5.3.1](specs.md#531-frozen-metric-definitions).
+The validator selects this shape from the report's bound firmware source era,
+not from the validator checkout. A historical V2 `0.4.2` observation retains
+the byte-exact §9.2 shape and MUST reject the extra field; a V4 `0.5.x`
+observation MUST reject its absence. Candidate observations remain JSON null.
+The abandoned two-profile V3 shared-image shape is retained only as rejected
+engineering history: it MUST NOT validate, finalize, or activate any release.
+
+The tenth reset owns the transfer session. Classic ESP32 retains the ADR-0027
+private-UART lifecycle: exact first-nine terminal drains, buffer isolation
+before reset ten, settlement before timing, and the final post-disconnect
+starvation record. Missing or duplicate termination fails closed. Generic S3
+and C3 retain their serial endpoints only as the mandatory RTS-to-EN reset and
+release adapters; received bytes are private diagnostics and never
+qualification authority.
+
+Generic S3, exact Waveshare, and C3 instead use the
+ADR-0034/ADR-0035/ADR-0036 retained diagnostic compiled only into those images.
+Through ordinary PBLE/1 RUN, a nonce-bound strict marker reads
+one atomic `{active,last_ended}` snapshot from
+`pble_ble._oi1_link_facts()`. Each of the first nine measured disconnects is
+followed by a diagnostic reconnect with separate 20-second connect, 5-second
+diagnostic-HELLO, and 8-second `pair` getter-RUN deadlines. The getter bound is
+one absolute transport ceiling over its command writes, response, bounded
+console pacing, and terminal state. It must show
+the ended epoch and its exact non-wrapping active successor; both records are
+discarded. Those first-nine boundary records may be unsettled because they are
+not transfer evidence; they still require exact structure, finality, epoch
+ordering, and no overflow. On reset ten, the exact `active` projection calls
+the native getter once and serializes only its active record plus
+`last_ended:null`. It binds the active epoch and settled facts under a separate
+5-second outer settlement deadline before timing, then checks them again with
+a separate 5-second `active` query after the workload but before disconnect.
+One final diagnostic reconnect retains the
+same three separate deadlines. Its `pair` getter RUN must expose that exact
+epoch as immutable and final, plus its active successor. Only the ended
+record's `facts` is sealed. Strict parsing rejects
+null, stale, wrapped, non-successor, overflowed, unsettled, malformed,
+duplicate, stderr, RUN-error, and timeout results, and discards arbitrary
+console output; `unsettled` applies to the reset-ten transfer record, not the
+discarded first-nine boundary pair. No serial endpoint, new opcode, public
+capability, BLE identifier, connection handle, path, label, user source, or
+console text enters any retained-link-fact report.
+
+Its DLE fact is independent of controller-handle allocation or connection
+history: DATA_LEN_CHG takes one cached live PBLE-handle snapshot, rejects NONE
+or a stale session, and never reads the pinned-IDF event member that real HCI
+conversion leaves unpopulated. Closing other BLE clients remains qualification
+isolation, not permission to assume a handle value; no ESP-IDF patch or
+MAX_CONNECTIONS restriction may mask this rule.
+
+For both transports, the final PHY update
+used to settle either S3 record MUST itself have status zero and `tx=2`, `rx=2`;
+the final connection-parameter update MUST itself have status zero and match
+the retained interval in the inclusive 12..24-unit range. Classic records
+MUST instead carry the explicit compiled-out PHY shape. No BLE identifier,
+serial path, device label, console text, or personal data enters the report.
+
+That summary has exactly the fourteen keys frozen in
+[TDD §14.3.1](TDD.md#1431-adr-0024-release-admission-boundary). It binds the
+pre-HIL candidate `release.json` digest; exact profile, board model, and
+firmware version; exact bundled
+`waveshare-esp32-s3-lcd-147b` merged-image size/SHA-256; recomputed
+immutable-span size/SHA-256; production-app evidence digest and canonical
+active release path; the terminal chain digest; and the complete canonical
+private-result digest. It contains no private result body, session, operator
+input, BLE address/identity, source, raw console, or detailed lifecycle
+record.
+
+`finalize-public` MUST accept the private-result path only as an input. For a
+V4-capable candidate it is mandatory. The finalizer MUST admit one bounded
+canonical strict-JSON file that is a stable one-link mode-`0600` regular
+non-symlink, validate it through the same pure schema implementation used by
+the exclusive HIL writer, compare it to the exact candidate
+`waveshare-esp32-s3-lcd-147b` install bytes,
+and prove the input remained unchanged through late public validation. It
+MUST NOT add the file to the release tree. V2 remains valid and byte-exact for
+historical `0.4.2` replay; V2 or V3 MUST NOT finalize a split candidate and V4
+MUST NOT reclassify an older release.
+
+### 9.4 Required HIL demonstrations and evaluation
 
 Besides the machine observations above, each completed record demonstrates:
 
@@ -1393,10 +2179,18 @@ Besides the machine observations above, each completed record demonstrates:
 4. app scan/connect plus edit, save, run, live console, STOP, soft reboot, and
    board-file round-trip;
 5. `from neopixel import NeoPixel` before and after soft reboot;
-6. every V2 application, heap, boot, transfer-reliability, and goodput gate for
+6. every applicable application, heap, boot, transfer-reliability, and goodput gate for
    the profile; and
 7. a deliberately interrupted browser flash followed by successful recovery
    using the published instructions and the same profile.
+
+The lean `esp32-s3-n16r8` record additionally MUST prove after install and
+soft reboot that `pyble_st7789` and `pyble_waveshare_lcd147b` are absent, no
+splash hook or splash-only native readiness API is exposed, and ordinary BLE,
+NeoPixel, and PBLE/1 workflows remain healthy. The
+`waveshare-esp32-s3-lcd-147b` record MUST prove both modules are present and
+MUST be accompanied by the exclusive TFT/splash/QR/driver-reuse qualification
+in §9.3. These observations and boards are not interchangeable.
 
 Simulation, a build-only result, a prior binary, or one ESP32-family board
 standing in for another does not count. The maintainer signs off each row; the
@@ -1436,14 +2230,256 @@ candidate unchanged. Exactly these changes are permitted:
 Every other byte MUST remain identical, including `THIRD_PARTY_LICENSES.txt`,
 `RELEASE_NOTES.md`, `RECOVERY.md`, `release.schema.json`, every manifest, and
 every firmware/component image. Finalization MUST revalidate the completed
-tree as public and compare every immutable path with the candidate. Within the
-V2 payload, only the candidate release digest, record status, physical-board
+tree as public and compare every immutable path with the candidate. Within
+either source-era payload, only the candidate release digest, record status,
+physical-board
 capacities and descriptions, time/operator/sign-off/environment strings,
 checks, `oi1_observation`, and redacted console log may change. The profile
 identity/hashes, `qualification_policy_sha256`, parsed policy, `oi1_policy`,
-and `oi1_build` MUST remain exactly equal. Publish nothing on any failure. A
+and `oi1_build` MUST remain exactly equal. V4 additionally permits only its
+null-to-derived-passed exact-board summary transition. Publish nothing on any
+failure. A
 different byte or semantic field outside this envelope is a new candidate and
-requires the complete two-profile HIL matrix again.
+requires the complete three-profile HIL matrix again.
+
+### 9.5 `PYBLE_HIL_RECORDS_V5` five-profile heterogeneous release
+
+V5 binds OI policy schema 3 and contains exactly five records in §1 order. Its
+top-level object has exactly:
+
+```text
+schema_version
+candidate_release_json_sha256
+qualification_policy_sha256
+qualification_policy
+records
+waveshare_lcd147b_qualification
+esp32_c3_qualification
+rpi_pico2_w_qualification
+```
+
+`schema_version` is integer `5`. The three qualification summaries are JSON
+`null` in both the protected candidate and operator-completed input. Only
+copy-on-write finalization may replace each with a strict validator-derived
+`passed` summary. Waveshare retains the §9.3 private-result contract. C3 binds
+C3-G0…C3-G6; Pico binds GP0, GP1, and complete GP2. A missing private result,
+non-null input summary, failed sub-gate, changed input, or identity/hash
+mismatch leaves no public output.
+
+The V5 envelope is unchanged across the unpublished v0.6.0 source eras,
+but its policy derivation is source-bound. A candidate source at or before
+`5620f2fdc672b440548119e3431cfa4f4ed3f5a3` retains
+`fixed-product-slo-3000-v3` and `floor-95pct-min-100-v2`. A strict
+descendant of that boundary at or before
+`7d853289815751c7381c9fd0b9a9a4409bdb6879` uses
+`fixed-profile-product-slo-esp3000-pico7000-v4` and
+`fixed-product-slo-64k-under-10s-6600-v3` with `floor-min-1024-v1` heap
+floors. A strict descendant of `7d853289…` (the second-replacement era,
+ADR-0039) additionally replaces exactly the heap-floor identifier with
+`floor-min-1024-waveshare-block-98304-v2`, whose single numeric effect is
+the fixed Waveshare `idf_internal_largest_block_min_bytes` of `98304`.
+Every replacement policy has reset ceilings `3000` for the four ESP rows and
+`7000` for Pico, and PUT/GET floors `6600` for all five rows. The bound
+replacement policy/candidate source must be a strict descendant of the
+applicable boundary. Missing, equal-to-boundary, unrelated, or
+ancestry-unprovable replacement identity fails closed. The immutable
+`a8be631…` baseline remains the exact input: its static/heap thresholds are
+rederived under the bound replacement policy/candidate era, while its
+reset/goodput values are diagnostic. Its own `source_commit` never routes the
+derivation and its bytes are never rewritten.
+
+Every one of the ten reset samples must meet its row's ceiling, and every one
+of five PUT and five GET samples must meet 6,600 bytes/s. No sample may be
+trimmed, replaced, or retried. The 15-second reset health timeout, exact
+service-callback endpoint, separate physical check, goodput-duration equality,
+integrity, reliability, disconnect, and target-specific settled-link facts
+remain exact. A failed run never rederives or widens a fixed SLO.
+
+Every V5 record has exactly the V2 identity/operator/environment keys, with
+`manifest_sha256` replaced by common `install_sha256`, plus these required
+keys:
+
+```text
+target
+resource_kind
+provisioning_kind
+app_hil
+profile_gate_summary
+```
+
+`checks` has exactly `provisioning_install`, `provisioning_recovery`,
+`advertising_info_hello`, `pble_workflow`, `safe_boot_reconnect`,
+`filesystem_resume_reliability`, and `footprint_reliability`. Every value is
+`pending` in a candidate and `passed` after validation. `app_hil` has exactly
+`ipad` and `android`; pending entries are JSON `null`, while each completed
+entry has exactly non-empty `app_version`, `app_build`, `os_major`, and
+`status: "passed"`. One platform cannot substitute for the other.
+
+V5 completion JSON MUST be produced mechanically; an operator MUST NOT copy a
+candidate record or hand-author its gate map. The release tool therefore
+provides a `create-hil-completion` operation before `assemble-hil-report`. It
+accepts exactly one pending candidate, one profile ID, that profile's
+verify-mode OI observation, one canonical operator-input object, the canonical
+qualification checkout, and one new no-replace output path. The
+operator-input object contains exactly the physical board descriptions and
+capacities, UTC test time, operator/sign-off and environment strings, the six
+operator checks other than `footprint_reliability`, both completed `app_hil`
+rows, and the redacted console log. It cannot contain status, release/source
+identity, artifact digests, policy, build measurements, OI thresholds,
+`footprint_reliability`, or `profile_gate_summary`.
+
+One narrowly scoped alternative may supply the verify-mode OI observation: a
+canonical `physical-fact-lineage-v1` record may carry forward only the boolean
+`physical_power_cycle_advertising: "passed"` fact from the real, retained
+engineering-baseline observation when the baseline and final candidate install
+artifacts are byte-for-byte identical. The record MUST state
+`claims_new_observation: false` and exactly
+`reuse_scope: ["physical_power_cycle_advertising"]`. It MUST bind the original
+baseline evidence, private fragment, and raw log by source commit, SHA-256,
+mode, and profile; bind the final candidate by release digest, source commit,
+profile, every install artifact's size and SHA-256, each ESP manifest component
+or the Pico raw BIN as applicable; and bind the fresh candidate automatic raw
+log and every reset, heap, transfer, reliability, and link fact reconstructed
+from it. The qualification checkout MUST prove that all source changes between
+the two commits are the exact frozen candidate set and that every bound
+candidate artifact equals its baseline counterpart. Source-diff membership
+alone never proves that a profile's install bytes are unchanged; the bound
+profile-local artifact comparison is authoritative.
+
+The earlier lineage from baseline source `a8be631…` to candidate source
+`719b211…`, including its frozen diff and all candidate-bound HIL, is
+superseded unpublished metadata and is explicitly ineligible for the
+replacement. It remains retained so the predecessor source era is auditable;
+it MUST NOT authorize any carried fact, candidate byte, or pass in the new
+era. ADR-0038 permits no physical-fact carry-forward into the replacement;
+every profile requires a fresh physical all-power-off observation on the new
+candidate.
+
+For `waveshare-esp32-s3-lcd-147b` and `rpi-pico2-w`, the fresh automatic reset
+samples use the frozen `pble-machine-reset` mechanism: PBLE RUN invokes the
+real `machine.reset()`, the central observes the expected link loss, and timing
+ends at the subsequent fresh service advertisement. This is a candidate reset
+measurement only. It is explicitly distinct from, and cannot replace, the
+retained physical all-power-off fact. Other profiles retain their frozen reset
+mechanisms.
+
+The lineage creator and finalizer are qualification executables, not candidate
+firmware inputs. A reviewed post-freeze qualification checkout MAY process the
+immutable candidate without rebuilding it. The replacement local
+`firmware-v0.6.0` tag is created after pre-candidate source/build/audit gates
+and must peel to candidate `HEAD`; it remains unpublished while HIL runs. The
+lineage record MUST bind the qualification checkout's source commit and the
+SHA-256 of every loaded qualification executable. Candidate source identity
+and all shipped artifact bytes remain those in the protected candidate;
+changing either invalidates the record.
+
+Lineage never promotes a baseline observation wholesale and never claims that
+the inherited fact was observed again. `create-hil-completion` MUST reconstruct
+all numeric, reset, heap, transfer, reliability, and link fields from the fresh
+candidate raw log, merge only the retained physical-power boolean, and include
+a digest-bound lineage summary in the completed observation. It MUST reject a
+baseline fragment supplied directly as verification, a fresh log missing any
+automatic phase, a changed or additional reuse scope, any identity, mode,
+permission, digest, size, component, policy, source-diff, sequence, or
+measurement mismatch, and every pre-existing output. Lineage records and
+completed fragments are exclusive canonical mode-`0600` files. This exception
+does not weaken, replace, or infer the operator inputs, both-platform `app_hil`,
+C3/Pico private results, profile gate maps, or any other finalization gate.
+
+For C3 and Pico the operation additionally requires that profile's exclusive
+mode-`0600` private qualification result. It validates the result against the
+candidate's exact `release.json` and install bytes and copies only the
+validator-derived gate map into the completion fragment. It rejects a private
+result for the other three profiles and rejects any operator-supplied gate
+map. It validates the observation against the embedded policy, creates one
+canonical exclusive mode-`0600` fragment without replacement, rereads it, and
+changes no candidate byte. `assemble-hil-report` then accepts exactly five of
+these fragments, in any input order, and still derives
+`footprint_reliability` itself.
+
+The C3/Pico gate module provides a separate `create-result` operation so the
+private result never requires hand-authored identity or digest fields. It
+accepts the immutable candidate directory, exact profile ID, one explicit
+`--passed-gate` occurrence for every gate frozen for that profile, and a new
+output path. The operation derives firmware version, candidate `release.json`
+SHA-256, candidate install SHA-256, schema, status, and gate ordering; writes
+canonical JSON as one exclusive mode-`0600` regular file; validates the file;
+and refuses missing, duplicate, extra, non-passed, mixed-profile, changed, or
+pre-existing inputs. Supplying the gate names is an operator attestation made
+only after the corresponding build, unit/conformance, HIL, app, provisioning,
+and physical-observation records have actually passed and remain retained.
+The operation does not run a gate, infer a pass from a build, create a
+threshold, or turn pending evidence into a result. This section freezes an
+evidence-writing workflow and records no passed result.
+
+For `esp32-c3-4mb`, `create-result` additionally requires three explicit
+post-OI NVS evidence paths — the canonical inventory receipt, the raw NVS
+slice, and its acquisition log; Pico rejects those inputs. Each MUST be a
+stable, exclusive mode-`0600` regular file, the receipt as canonical strict
+JSON. The receipt contains no NVS values or device identity: only
+namespace/key/type inventory and an exact summary with schema/profile,
+candidate `release.json` and merged firmware SHA-256, the verify-mode OI
+raw-log SHA-256, exactly 10 reset samples, NVS partition offset `0x9000` and
+size `0x6000`, integrity `passed`, the complete sorted written-namespace
+list, and the raw slice and acquisition log bound by exact SHA-256 and byte
+length. The slice was captured by the verify-mode runner immediately after
+the full OI workload — before numeric threshold evaluation and before any
+app/NVS setter — and MUST be exactly 24,576 bytes, all `0xff`, SHA-256
+`1df8949b2e345ab8c00cb81fb6b83686e20a4080f969e5cd8b8d520a07cdaba2`. The
+earlier single-receipt design is superseded as bypassable: no stage
+re-derived the embedded digest, size, or `integrity: passed` summary from
+real evidence bytes. The writer therefore reopens all three files, re-derives
+every digest and byte length from the reopened bytes, re-verifies the exact
+all-`0xff` slice identity, requires the summary to match both the inventory
+and the reopened evidence, rejects any written `phy` namespace/key, and
+copies only the summary plus receipt binding into the private result.
+Completion and finalization MUST again reopen and re-hash the same exclusive
+mode-`0600` evidence files and cross-check the retained OI raw-log digest
+against the completed C3 observation; they never trust a path, digest, size,
+or copied summary from a hand-written result. A threshold failure may retain
+the captured slice and log as private diagnostics but can never mint a
+passing result. The public C3 summary does not expose these private objects;
+`qualification_result_sha256` binds them transitively. The already-required
+`provisioning_install: passed` remains the separate full-chip-erase/install
+proof and is neither duplicated nor weakened.
+
+The four ESP records use `resource_kind: "esp-idf"` and
+`provisioning_kind: "esp-web-serial"`. Each additionally has exact
+`manifest_sha256`; the V4 ESP `oi1_build`, heap observations, and
+`transfer_link_facts` shapes remain unchanged. The C3 record's
+`profile_gate_summary` has exactly keys `C3-G0` through `C3-G6`, all `passed`.
+Other ESP records use JSON `null` except Waveshare, whose separate top-level
+summary remains authoritative.
+
+The Pico record uses `resource_kind: "rp2"` and
+`provisioning_kind: "verified-uf2-bootsel"`; `manifest_sha256` and all
+ESP-only keys are forbidden. Its install digest binds `firmware.uf2`; its
+`oi1_build`, heap snapshots, transport facts, and policy row use the exact
+[specs.md §5.3.5](specs.md#535-v060-five-profile-successor-policy-and-evidence)
+RP2 shapes. In particular, `console_tx_budget_ms` is exactly `103`, the
+source-derived empty-to-full refill horizon `ceil(2048 / 20)`; an operator
+cannot supply or override it. Its `profile_gate_summary` has exactly `GP0`,
+`GP1`, and `GP2`, all `passed`. Provisioning checks prove browser
+size/SHA verification, download
+from the verified in-memory bytes, manual BOOTSEL copy, automatic reboot, and
+recovery from a deliberately interrupted/failed copy using the same UF2.
+
+The C3 derived top-level summary has exactly `schema_version`, `status`,
+`profile_id`, `firmware_version`, `candidate_release_json_sha256`,
+`candidate_firmware_sha256`, `gates`, and `qualification_result_sha256`; Pico
+uses the same keys with `candidate_uf2_sha256`. Each schema version is `1`,
+status is `passed`, profile ID is exact, `gates` equals the record's exact gate
+summary, and every digest is lowercase 64-hex recomputed by the finalizer.
+Neither summary contains device serials, BLE addresses, labels, operator
+input, raw INFO, or console bytes.
+
+Candidate-to-public promotion retains the §9.4 three-file administrative
+envelope: only `HIL_REPORT.md`, the corresponding HIL statuses/report digest
+in `release.json`, and their `SHA256SUMS` entries may change. Every install,
+resource, component, manifest, schema, license, release-note, and recovery byte
+must equal the protected candidate. V5 finalization is atomic across all five
+records and three summaries; partial promotion is forbidden. This section
+freezes a contract and records no passed gate.
 
 ## 10. Activation and rollback
 
@@ -1461,11 +2497,13 @@ selector or staged-root environment variables MUST NOT reclassify public-page
 or no-firmware Sites fixtures. The test runner MUST exercise this isolation
 even when the surrounding release build exports candidate variables. The
 public action may become `active` only when every automated gate is green,
-both current-release HIL rows say `passed`, the maintainer approves the exact
-hashes, and the canonical same-origin bytes pass publication verification. If a
+all five v0.6.0 HIL rows say `passed`, the Waveshare, C3, and Pico derived
+summaries are present and passed, the maintainer approves the exact hashes,
+and the canonical same-origin bytes pass publication verification. If a
 pre-v1 mirror exists, its files and bytes MUST agree before activation; v1.0 and
-later require that mirror to be the matching GitHub Release. A C3 row MUST be
-absent, not marked passed without evidence. The activation deployment then
+later require that mirror to be the matching GitHub Release. A missing,
+pending, failed, extra, or substituted profile or summary blocks activation.
+The activation deployment then
 performs a non-destructive production-origin retrieval, redirect, size,
 SHA-256, CSP, and render smoke test; it does not require another physical flash
 after the public button is enabled.
@@ -1497,6 +2535,27 @@ separate reviewed operation requiring an explicit truth-valued disable flag
 and a production smoke test of the disabled state; absence of staging input
 alone is never authorization to disable it.
 
+The sole legacy-report replay is the already-active `v0.5.1` tree whose
+`release.json`, prose-only `HIL_REPORT.md`, and full-coverage `SHA256SUMS`
+SHA-256 digests are respectively
+`3d845ed231173b5917dfe70f301cf08c3ff870a3d15155ec64c7e7fe93e91fbc`,
+`f10f4fb67e8ec22a000017daa62bf58bd45d9f47f30481905c0844813be905aa`,
+and `aeeb1fbdf5be0e66f003a96197fb9fd884c4adce9da088249c04b23a02c8e815`.
+Canonical validation MAY skip only the structured HIL-marker parse for those
+three exact bytes and identity version `0.5.1`, and only under explicit
+`--previously-activated-public`. All ordinary-file, checksum coverage,
+release/schema/profile/artifact, per-profile passed-state, active-selector
+continuity, provenance-tag, packaging parity, and public retrieval checks
+remain mandatory. Fresh public, candidate, audited-candidate, preview, another
+version, any byte drift, and every `v0.6.0` path remain closed. This exception
+preserves an immutable active selection across a website-only deployment; it
+does not manufacture structured HIL evidence or authorize a new activation.
+
+The pre-public `v0.4.1` candidate path was exposed without the required access
+control and is permanently burned. The origin MUST quarantine
+`/firmware/v0.4.1/` with a non-cacheable not-found response, MUST NOT select or
+promote those bytes, and MUST retain any forensic copy outside public routing.
+
 As a one-time transitional exception, the fresh audited `v0.4.2` candidate MAY
 be published as a **hardware-tested public beta**. The selector deployment
 mode MUST be `public-beta`, `accessControlled` MUST be `false`, both profile HIL
@@ -1526,4 +2585,6 @@ profile-confirmation, consent, recovery, and production-smoke checks. The
 exception changes only publication policy; it does not allow byte mutation,
 substitute evidence, a different version/digest, or a new profile. A later
 qualified public release therefore starts at a new immutable version and still
-requires the complete gate above.
+requires the complete current-source gate above.
+
+<!-- SPDX-License-Identifier: MIT -->

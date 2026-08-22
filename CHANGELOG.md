@@ -5,9 +5,109 @@ are released independently from this monorepo.
 
 ## Unreleased
 
-- Established `PyBLE-dev/PyBLE` as the canonical public monorepo.
-- Added public contributor, security, architecture, protocol, and validation
-  documentation.
+These app, website, and repository-source changes do not designate a new app
+or firmware release. The qualified firmware release remains v0.6.0, built from
+its annotated tag rather than from the newer branch tip.
+
+### App source
+
+- Added fail-closed Android upload signing and signed App Bundle CI contracts,
+  while retaining invited Google Play testing as distinct from a public Play
+  release.
+- Extended every Blocks GPIO surface to accept explicit bounded MicroPython
+  pin names such as `LED` while preserving numeric GPIOs, offline operation,
+  and the app's board-neutral architecture.
+- Hardened the Android WebView integration path so a named-pin edit made after
+  preview is re-read from the live field before generated-code assertions.
+
+### Website and repository source
+
+- Established `PyBLE-dev/PyBLE` as the canonical public monorepo and added
+  contributor, security, architecture, protocol, and validation documentation.
+- Added an independent `/privacy` policy and stable `/app` landing page, with
+  invited Android testing and public TestFlight presented as distinct channels.
+- Patched the website PostCSS/Nanoid chain, upgraded vinext so `image-size` is
+  absent from the installed dependency graph, and made high/critical npm audit
+  findings fail the release gate.
+- Hardened vinext's internally bundled image parser against the ICNS, HEIF, and
+  JXL zero-length denial-of-service paths, with timeout-bounded regression
+  inputs, fail-closed upstream-drift checks, static-image import guards, and
+  complete MIT attribution while production remains a static-only deployment.
+- Made publication CI fetch the complete source history required by
+  ancestry-routed firmware gates, and made the RP2 runtime-closure fixture
+  hermetic instead of depending on a retained local archive.
+- Made RP2 builds report a missing or mismatched pinned Arm toolchain before
+  evaluating the nested source graph, while preserving fail-closed source
+  validation once the compiler is present.
+- Corrected two C3 ADR links for the public repository layout.
+
+## Website deployment — 2026-08-22
+
+- Activated the validated v0.6.0 release descriptor on `pyble.dev`, so the
+  home, flash, and support surfaces derive their current five-profile status
+  from the selected immutable release instead of hard-coded board copy.
+- Kept the exact-board Waveshare presentation separate from the lean generic
+  S3 profile and retained the real-hardware image on the flash page.
+- Published the firmware release notes, checksums, recovery instructions,
+  license inventory, and exact profile artifacts under `/firmware/v0.6.0/`.
+
+## Firmware 0.6.0 — 2026-08-21
+
+_Firmware release only. The app is versioned independently and remains
+`0.1.0+2` in this source tree._
+
+- Published and deployed the qualified five-profile release at
+  [pyble.dev/flash](https://pyble.dev/flash): `esp32-4mb`,
+  `esp32-s3-n16r8`, `waveshare-esp32-s3-lcd-147b`, `esp32-c3-4mb`, and
+  `rpi-pico2-w`.
+- Completed the exact-byte qualification matrix: all five HIL rows passed,
+  including install and recovery, PBLE/1 workflows, run/stop and console
+  behavior, filesystem reliability, fixed resource and timing limits, and app
+  operation on iPadOS and Android.
+- Provisioned the four ESP profiles through ESP Web Serial. Pico 2 W uses a
+  verified UF2 download followed by a manual BOOTSEL copy; it is not a Web
+  Serial target.
+- Added qualified ESP32-C3 revision v0.3-or-newer support for the exact 4 MiB
+  profile and qualified Raspberry Pi Pico 2 W support through the portable
+  frozen-Python RP2 agent.
+- Kept `esp32-s3-n16r8` lean and board-neutral while giving the exact
+  Waveshare B-version profile its ST7789 runtime and fresh-install splash with
+  persistent disable.
+- Hardened response delivery, VM and run lifecycle, STOP and soft-reboot
+  ordering, filesystem concurrency, and console flow across the ESP and RP2
+  ports.
+- Bound the immutable release to annotated tag `firmware-v0.6.0`, PyBLE source
+  `0c7230d6708797c241160ba71fbd37e6b22f180a`, MicroPython v1.28.0 and
+  ESP-IDF v5.5.1, agent `0.6.0`, protocol `PBLE/1`, and zero upstream patches.
+- Published schema-4 metadata with SHA-256
+  `c2940281a14feddb55c48de15ac18087e9317d1b7130e514fab5a209b046a1e6`
+  and independently hashed artifacts, notices, release notes, and recovery
+  instructions.
+- Admitted the characterized Waveshare single-page largest-block transient
+  with the fixed `98304` heap floor defined by ADR-0039; firmware bytes stayed
+  unchanged while the final qualification policy was corrected.
+
+## Firmware 0.5.1 — 2026-08-03
+
+- Published the qualified three-profile release for `esp32-4mb`, the lean
+  `esp32-s3-n16r8`, and the separate exact-board
+  `waveshare-esp32-s3-lcd-147b` profile.
+- Made the Waveshare PyBLE splash the fresh-install default while preserving a
+  stored opt-out; kept its ST7789 runtime and board pin map out of the generic
+  S3 image.
+- Bound the release to annotated tag `firmware-v0.5.1`, source
+  `bab472131f0a71c5c4a7efc689eab266189a1896`, MicroPython v1.28.0, and
+  ESP-IDF v5.5.1. ESP32-C3 and Pico 2 W were not included in this release.
+
+## Firmware 0.5.0 — 2026-08-03
+
+- Published the first qualified three-profile bundle, adding the exact
+  Waveshare ESP32-S3-LCD-1.47B B-version profile alongside the two generic ESP
+  profiles.
+- Added its isolated ST7789 MicroPython runtime and opt-in splash without
+  adding board-specific display code to `esp32-s3-n16r8`.
+- Bound the release to annotated tag `firmware-v0.5.0` and source
+  `4ac661e610a00207246bc9e9863d96085e77854f`.
 
 ## Firmware 0.4.2 — 2026-07-31
 
@@ -43,7 +143,7 @@ are released independently from this monorepo.
 
 The pre-publication development history is intentionally archived outside this
 repository. Public development starts from the audited source snapshot.
-Firmware 0.4.1 therefore remains a legacy pre-publication release; its source
+Firmware 0.4.1 therefore remains a legacy pre-publication release: its source
 is present here, but its original commit identifier is not part of the public
-history. The next firmware release will rebuild and requalify from a public
-commit.
+history. Later firmware entries identify the annotated public source tag and
+exact commit used for their immutable artifacts.

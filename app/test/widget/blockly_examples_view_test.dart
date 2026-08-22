@@ -2,6 +2,7 @@
 // Part of PyBLE (https://pyble.dev) — see /LICENSE.
 //
 // A-31 beginner examples increment [red] — native chooser and safety contract.
+// A-38 [red] — GPIO slots accept named MicroPython pins (FR-BLOCKS-1B).
 
 import 'dart:convert';
 import 'dart:io';
@@ -943,6 +944,152 @@ void main() {
           );
         }
         expect(tester.takeException(), isNull);
+      },
+    );
+  });
+
+  group('A-38 named MicroPython pins (FR-BLOCKS-1B)', () {
+    testWidgets(
+      'GPIO entry accepts the pin name LED and previews Pin("LED", ...)',
+      (WidgetTester tester) async {
+        final List<String> materialized = <String>[];
+        final RecordingConnection connection = await _pump(
+          tester,
+          empty: true,
+          previewer: (String workspaceJson) async {
+            materialized.add(workspaceJson);
+            return BlocksExamplePreview(
+              source: workspaceJson.contains('"LED"')
+                  ? 'led = Pin("LED", Pin.OUT)\n'
+                  : '# the materialized workspace lost the pin name\n',
+              workspaceJson: workspaceJson,
+            );
+          },
+        );
+        tester.widget<IconButton>(find.byKey(_examplesButtonKey)).onPressed!();
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey<String>('blocksExampleCard-blink-led')),
+        );
+        await tester.pumpAndSettle();
+
+        final Finder gpioField = _fieldWithLabel('LED GPIO');
+        final TextField gpioTextField = tester.widget<TextField>(gpioField);
+        expect(
+          gpioTextField.keyboardType,
+          TextInputType.text,
+          reason: 'named pins require the platform text keyboard',
+        );
+        expect(
+          gpioTextField.autocorrect,
+          isFalse,
+          reason: 'autocorrection must not rewrite MicroPython pin names',
+        );
+        expect(
+          gpioTextField.enableSuggestions,
+          isFalse,
+          reason: 'platform suggestions must not alter pin identifiers',
+        );
+
+        await tester.enterText(gpioField, 'LED');
+        await tester.pump();
+
+        expect(
+          tester.widget<TextField>(gpioField).decoration?.errorText,
+          isNull,
+          reason: 'a frozen-pattern pin name is a valid GPIO slot value',
+        );
+        expect(
+          tester.widget<ButtonStyleButton>(find.byKey(_previewKey)).onPressed,
+          isNotNull,
+          reason: 'a named pin must enable generation exactly like an integer',
+        );
+
+        await tester.tap(find.byKey(_previewKey));
+        await tester.pumpAndSettle();
+
+        expect(
+          materialized,
+          hasLength(1),
+          reason: 'the explicit preview action materializes exactly once',
+        );
+        expect(
+          materialized.single,
+          contains('"LED"'),
+          reason:
+              'the pin name must reach the sealed generator verbatim as a '
+              'quoted value inside the materialized workspace JSON',
+        );
+        expect(find.textContaining('Pin("LED"'), findsWidgets);
+        expect(connection.putFileCalls, isEmpty);
+        expect(connection.runFileCalls, isEmpty);
+        expect(connection.runSourceCalls, isEmpty);
+      },
+    );
+
+    testWidgets(
+      'invalid pin names keep the existing invalid-pin error path and '
+      'valid entries recover',
+      (WidgetTester tester) async {
+        await _pump(tester, empty: true);
+        final AppLocalizations l10n = l10nOf(tester);
+        tester.widget<IconButton>(find.byKey(_examplesButtonKey)).onPressed!();
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey<String>('blocksExampleCard-blink-led')),
+        );
+        await tester.pumpAndSettle();
+        final Finder gpioField = _fieldWithLabel('LED GPIO');
+
+        for (final String invalid in <String>[
+          // Names must start with a letter.
+          '_LED',
+          // Neither a non-negative integer nor a frozen-pattern name.
+          '9LED',
+          // No separators or spaces inside a name.
+          'LED PIN',
+          // The frozen pattern is ASCII-only.
+          'LÉD',
+          // Seventeen characters exceeds the 16-character name limit.
+          'A2345678901234567',
+          // Negative integers stay rejected.
+          '-1',
+        ]) {
+          await tester.enterText(gpioField, invalid);
+          await tester.pump();
+          expect(
+            tester.widget<TextField>(gpioField).decoration?.errorText,
+            l10n.blocksExamplesPinInvalid,
+            reason: 'rejected form must show the invalid-pin copy: $invalid',
+          );
+          expect(
+            tester.widget<ButtonStyleButton>(find.byKey(_previewKey)).onPressed,
+            isNull,
+            reason: 'rejected form must disable generation: $invalid',
+          );
+        }
+
+        for (final String valid in <String>[
+          // Boundary acceptance: sixteen characters matches the pattern.
+          'A234567890123456',
+          // Underscores and digits are valid after the leading letter.
+          'led_1',
+          // Numeric entry is unchanged.
+          '17',
+        ]) {
+          await tester.enterText(gpioField, valid);
+          await tester.pump();
+          expect(
+            tester.widget<TextField>(gpioField).decoration?.errorText,
+            isNull,
+            reason: 'accepted form must clear the invalid-pin copy: $valid',
+          );
+          expect(
+            tester.widget<ButtonStyleButton>(find.byKey(_previewKey)).onPressed,
+            isNotNull,
+            reason: 'accepted form must enable generation: $valid',
+          );
+        }
       },
     );
   });

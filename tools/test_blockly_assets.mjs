@@ -16,10 +16,13 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.dirname(scriptDir);
+const blocklyUpstream = process.env.PYBLE_BLOCKLY_UPSTREAM_DIR
+  ? path.resolve(process.env.PYBLE_BLOCKLY_UPSTREAM_DIR)
+  : path.join(repoRoot, "app/upstream/blockly");
 const puppeteerUrl = pathToFileURL(
   path.join(
-    repoRoot,
-    "app/upstream/blockly/node_modules/puppeteer-core/lib/puppeteer/puppeteer-core.js",
+    blocklyUpstream,
+    "node_modules/puppeteer-core/lib/puppeteer/puppeteer-core.js",
   ),
 );
 const { default: puppeteer } = await import(puppeteerUrl.href);
@@ -70,6 +73,7 @@ try {
       "read-button": "Localized input",
       "button-controls-led": "Localized control",
       "reusable-function": "Localized function",
+      "waveshare-esp32-s3-lcd-147b": "Localized TFT pattern",
     },
     timeCategory: "Localized timing",
     timeBlockMessage: "localized wait %1 milliseconds",
@@ -121,6 +125,43 @@ try {
     neopixelStripRequiredError: "Ruban NeoPixel local requis.",
     neopixelIndexRequiredError: "Index NeoPixel local requis.",
     neopixelColorRequiredError: "Couleur NeoPixel locale requise.",
+    tftCategory: "Écrans TFT localisés",
+    tftCreateMessage:
+      "ÉCRAN-LOCAL SPI %1 débit %2 polarité %3 phase %4 SCK %5 MOSI %6 CS %7 DC %8 reset %9 rétroéclairage %10 largeur %11 hauteur %12 décalage-x %13 décalage-y %14 BGR %15 inversion %16",
+    tftRgb565Message: "RGB565-LOCAL rouge %1 vert %2 bleu %3",
+    tftFillMessage: "REMPLIR-TFT-LOCAL écran %1 couleur %2",
+    tftPixelMessage: "PIXEL-TFT-LOCAL écran %1 x %2 y %3 couleur %4",
+    tftRectMessage:
+      "RECT-TFT-LOCAL écran %1 style %2 x %3 y %4 largeur %5 hauteur %6 couleur %7",
+    tftTextMessage: "TEXTE-TFT-LOCAL écran %1 texte %2 x %3 y %4 couleur %5",
+    tftShowMessage: "AFFICHER-TFT-LOCAL écran %1",
+    tftBacklightMessage: "RÉTROÉCLAIRAGE-TFT-LOCAL écran %1 actif %2",
+    tftRectOutline: "contour local",
+    tftRectFilled: "rempli local",
+    tftCreateTooltip: "Info-création ST7789 localisée.",
+    tftRgb565Tooltip: "Info-couleur RGB565 localisée.",
+    tftFillTooltip: "Info-remplissage TFT localisée.",
+    tftPixelTooltip: "Info-pixel TFT localisée.",
+    tftRectTooltip: "Info-rectangle TFT localisée.",
+    tftTextTooltip: "Info-texte TFT localisée.",
+    tftShowTooltip: "Info-transmission TFT localisée.",
+    tftBacklightTooltip: "Info-rétroéclairage TFT localisée.",
+    tftCreateInputRequiredError:
+      "Toutes les entrées ST7789 locales sont requises.",
+    tftSpiIdInvalidError: "Identifiant SPI local invalide.",
+    tftBaudrateInvalidError: "Débit SPI local invalide.",
+    tftSpiModeInvalidError: "Mode SPI local invalide.",
+    tftGeometryInvalidError: "Géométrie TFT locale invalide.",
+    tftOffsetInvalidError: "Décalage TFT local invalide.",
+    tftColorComponentRequiredError: "Composante RGB565 locale requise.",
+    tftDisplayRequiredError: "Écran TFT local requis.",
+    tftColorRequiredError: "Couleur TFT locale requise.",
+    tftCoordinateRequiredError: "Coordonnée TFT locale requise.",
+    tftTextRequiredError: "Texte TFT local requis.",
+    tftBacklightRequiredError: "Booléen de rétroéclairage local requis.",
+    tftRectStyleInvalidError: "Style de rectangle TFT local invalide.",
+    tftRestoreStyleInvalidError:
+      "Style de rectangle TFT restauré local invalide.",
     multilineValueError: "Valeur locale multiligne refusée.",
   };
   const indexUrl = pathToFileURL(
@@ -477,7 +518,9 @@ try {
     "pyble_gpio_pin connection and dropdown contract",
     gpioContract.shape.pin,
     {
-      gpioCheck: ["Number"],
+      // FR-BLOCKS-1B: the GPIO slot accepts a non-negative integer or a
+      // quoted machine.Pin name, so the input checks Number and String.
+      gpioCheck: ["Number", "String"],
       gpioConnected: false,
       outputCheck: ["Pin"],
       modes: ["IN", "OUT"],
@@ -594,6 +637,7 @@ try {
     "read-button",
     "button-controls-led",
     "reusable-function",
+    "waveshare-esp32-s3-lcd-147b",
   ];
   assertSameJson(
     "beginner example catalog IDs",
@@ -1496,6 +1540,384 @@ try {
     );
   }
 
+  const tftTypes = [
+    "pyble_tft_create",
+    "pyble_tft_rgb565",
+    "pyble_tft_fill",
+    "pyble_tft_pixel",
+    "pyble_tft_rect",
+    "pyble_tft_text",
+    "pyble_tft_show",
+    "pyble_tft_backlight",
+  ];
+  const tftRuntime = await page.evaluate(
+    ({ types, labels }) => {
+      const mainWorkspace = Blockly.getMainWorkspace();
+      const category = mainWorkspace
+        .getToolbox()
+        .getToolboxItems()
+        .find(
+          (item) =>
+            typeof item.getName === "function" &&
+            item.getName() === labels.tftCategory,
+        );
+      const contents =
+        category && Array.isArray(category.getContents())
+          ? category.getContents()
+          : [];
+      const toolboxBlocks = contents.filter((item) => item.kind === "block");
+      const definitions = Object.fromEntries(
+        types.map((type) => [type, Boolean(Blockly.Blocks[type])]),
+      );
+      const generators = Object.fromEntries(
+        types.map((type) => [
+          type,
+          typeof python.pythonGenerator.forBlock[type] === "function",
+        ]),
+      );
+
+      const shapeWorkspace = new Blockly.Workspace();
+      let shape;
+      let copy;
+      try {
+        const blocks = Object.fromEntries(
+          types.map((type) => [type, shapeWorkspace.newBlock(type)]),
+        );
+        const checks = (connection) =>
+          connection && connection.getCheck
+            ? [...(connection.getCheck() || [])].sort()
+            : null;
+        const inputChecks = (block) =>
+          Object.fromEntries(
+            block.inputList
+              .filter((input) => input.connection)
+              .map((input) => [input.name, checks(input.connection)]),
+          );
+        const allDisconnected = (block) =>
+          block.inputList
+            .filter((input) => input.connection)
+            .every((input) => !input.connection.targetConnection);
+        const rectField = blocks.pyble_tft_rect.getField("STYLE");
+        shape = {
+          create: {
+            inputs: inputChecks(blocks.pyble_tft_create),
+            output: checks(blocks.pyble_tft_create.outputConnection),
+            disconnected: allDisconnected(blocks.pyble_tft_create),
+          },
+          rgb565: {
+            inputs: inputChecks(blocks.pyble_tft_rgb565),
+            output: checks(blocks.pyble_tft_rgb565.outputConnection),
+            disconnected: allDisconnected(blocks.pyble_tft_rgb565),
+          },
+          fill: inputChecks(blocks.pyble_tft_fill),
+          pixel: inputChecks(blocks.pyble_tft_pixel),
+          rect: {
+            inputs: inputChecks(blocks.pyble_tft_rect),
+            styles: rectField
+              .getOptions(false)
+              .map((option) => option[1])
+              .sort(),
+            labels: rectField.getOptions(false).map((option) => option[0]),
+          },
+          text: inputChecks(blocks.pyble_tft_text),
+          show: inputChecks(blocks.pyble_tft_show),
+          backlight: inputChecks(blocks.pyble_tft_backlight),
+          statements: types
+            .slice(2)
+            .every(
+              (type) =>
+                blocks[type].previousConnection && blocks[type].nextConnection,
+            ),
+        };
+        copy = {
+          markers: types.map((type) => blocks[type].toString()),
+          tooltips: types.map((type) => blocks[type].getTooltip()),
+        };
+      } finally {
+        shapeWorkspace.dispose();
+      }
+
+      const generate = () => {
+        const scratch = new Blockly.Workspace();
+        try {
+          const connect = (parent, input, child) =>
+            parent.getInput(input).connection.connect(child.outputConnection);
+          const number = (value) => {
+            const block = scratch.newBlock("math_number");
+            block.setFieldValue(value, "NUM");
+            return block;
+          };
+          const bool = (value) => {
+            const block = scratch.newBlock("logic_boolean");
+            block.setFieldValue(value ? "TRUE" : "FALSE", "BOOL");
+            return block;
+          };
+          const text = (value) => {
+            const block = scratch.newBlock("text");
+            block.setFieldValue(value, "TEXT");
+            return block;
+          };
+          const pin = (gpio) => {
+            const block = scratch.newBlock("pyble_gpio_pin");
+            block.setFieldValue("OUT", "MODE");
+            block.setFieldValue("NONE", "PULL");
+            connect(block, "GPIO", number(gpio));
+            return block;
+          };
+          const rgb = (red, green, blue) => {
+            const block = scratch.newBlock("pyble_tft_rgb565");
+            connect(block, "RED", number(red));
+            connect(block, "GREEN", number(green));
+            connect(block, "BLUE", number(blue));
+            return block;
+          };
+          const create = () => {
+            const block = scratch.newBlock("pyble_tft_create");
+            for (const [input, value] of [
+              ["SPI_ID", 2],
+              ["BAUDRATE", 40000000],
+              ["POLARITY", 0],
+              ["PHASE", 0],
+            ]) {
+              connect(block, input, number(value));
+            }
+            for (const [input, gpio] of [
+              ["SCK", 40],
+              ["MOSI", 45],
+              ["CS", 42],
+              ["DC", 41],
+              ["RESET", 39],
+              ["BACKLIGHT", 46],
+            ]) {
+              connect(block, input, pin(gpio));
+            }
+            for (const [input, value] of [
+              ["WIDTH", 172],
+              ["HEIGHT", 320],
+              ["X_OFFSET", 34],
+              ["Y_OFFSET", 0],
+            ]) {
+              connect(block, input, number(value));
+            }
+            connect(block, "BGR", bool(true));
+            connect(block, "INVERSION", bool(true));
+            return block;
+          };
+
+          const variable = scratch
+            .getVariableMap()
+            .createVariable("display", "", "tft-display-runtime");
+          const getDisplay = () => {
+            const block = scratch.newBlock("variables_get");
+            block.setFieldValue(variable.getId(), "VAR");
+            return block;
+          };
+          const declaration = scratch.newBlock("variables_set");
+          declaration.setFieldValue(variable.getId(), "VAR");
+          connect(declaration, "VALUE", create());
+
+          const fill = scratch.newBlock("pyble_tft_fill");
+          connect(fill, "DISPLAY", getDisplay());
+          connect(fill, "COLOR", rgb(8, 18, 40));
+          const pixel = scratch.newBlock("pyble_tft_pixel");
+          connect(pixel, "DISPLAY", getDisplay());
+          connect(pixel, "X", number(0));
+          connect(pixel, "Y", number(1));
+          connect(pixel, "COLOR", rgb(255, 0, 0));
+          const outline = scratch.newBlock("pyble_tft_rect");
+          outline.setFieldValue("OUTLINE", "STYLE");
+          connect(outline, "DISPLAY", getDisplay());
+          connect(outline, "X", number(2));
+          connect(outline, "Y", number(3));
+          connect(outline, "WIDTH", number(4));
+          connect(outline, "HEIGHT", number(5));
+          connect(outline, "COLOR", rgb(0, 255, 0));
+          const filled = scratch.newBlock("pyble_tft_rect");
+          filled.setFieldValue("FILLED", "STYLE");
+          connect(filled, "DISPLAY", getDisplay());
+          connect(filled, "X", number(6));
+          connect(filled, "Y", number(7));
+          connect(filled, "WIDTH", number(8));
+          connect(filled, "HEIGHT", number(9));
+          connect(filled, "COLOR", rgb(0, 0, 255));
+          const drawText = scratch.newBlock("pyble_tft_text");
+          connect(drawText, "DISPLAY", getDisplay());
+          connect(drawText, "TEXT", text("PyBLE"));
+          connect(drawText, "X", number(10));
+          connect(drawText, "Y", number(11));
+          connect(drawText, "COLOR", rgb(255, 255, 255));
+          const show = scratch.newBlock("pyble_tft_show");
+          connect(show, "DISPLAY", getDisplay());
+          const backlight = scratch.newBlock("pyble_tft_backlight");
+          connect(backlight, "DISPLAY", getDisplay());
+          connect(backlight, "ON", bool(false));
+
+          const statements = [
+            declaration,
+            fill,
+            pixel,
+            outline,
+            filled,
+            drawText,
+            show,
+            backlight,
+          ];
+          for (let index = 1; index < statements.length; index += 1) {
+            statements[index - 1].nextConnection.connect(
+              statements[index].previousConnection,
+            );
+          }
+          return python.pythonGenerator.workspaceToCode(scratch);
+        } finally {
+          scratch.dispose();
+        }
+      };
+
+      const singleOutputSource = (type, inputs) => {
+        const scratch = new Blockly.Workspace();
+        try {
+          const block = scratch.newBlock(type);
+          for (const [input, value] of Object.entries(inputs)) {
+            const number = scratch.newBlock("math_number");
+            number.setFieldValue(value, "NUM");
+            block.getInput(input).connection.connect(number.outputConnection);
+          }
+          return python.pythonGenerator.workspaceToCode(scratch);
+        } finally {
+          scratch.dispose();
+        }
+      };
+
+      return {
+        categoryFound: Boolean(category),
+        toolboxTypes: toolboxBlocks.map((item) => item.type),
+        toolboxHasDefaults: toolboxBlocks.some((item) => item.inputs),
+        definitions,
+        generators,
+        shape,
+        copy,
+        source: generate(),
+        rgbOnlySource: singleOutputSource("pyble_tft_rgb565", {
+          RED: 1,
+          GREEN: 2,
+          BLUE: 3,
+        }),
+      };
+    },
+    { types: tftTypes, labels: localizedHostMessages },
+  );
+  assertSameJson("TFT toolbox block order", tftRuntime.toolboxTypes, tftTypes);
+  if (
+    !tftRuntime.categoryFound ||
+    tftRuntime.toolboxHasDefaults ||
+    !Object.values(tftRuntime.definitions).every(Boolean) ||
+    !Object.values(tftRuntime.generators).every(Boolean)
+  ) {
+    throw new Error(
+      `TFT Blockly runtime contract is incomplete: ${JSON.stringify(tftRuntime)}`,
+    );
+  }
+  assertSameJson("TFT block connection contract", tftRuntime.shape, {
+    create: {
+      inputs: {
+        SPI_ID: ["Number"],
+        BAUDRATE: ["Number"],
+        POLARITY: ["Number"],
+        PHASE: ["Number"],
+        SCK: ["Pin"],
+        MOSI: ["Pin"],
+        CS: ["Pin"],
+        DC: ["Pin"],
+        RESET: ["Pin"],
+        BACKLIGHT: ["Pin"],
+        WIDTH: ["Number"],
+        HEIGHT: ["Number"],
+        X_OFFSET: ["Number"],
+        Y_OFFSET: ["Number"],
+        BGR: ["Boolean"],
+        INVERSION: ["Boolean"],
+      },
+      output: ["TFT"],
+      disconnected: true,
+    },
+    rgb565: {
+      inputs: { RED: ["Number"], GREEN: ["Number"], BLUE: ["Number"] },
+      output: ["TFTColor"],
+      disconnected: true,
+    },
+    fill: { DISPLAY: ["TFT"], COLOR: ["TFTColor"] },
+    pixel: {
+      DISPLAY: ["TFT"],
+      X: ["Number"],
+      Y: ["Number"],
+      COLOR: ["TFTColor"],
+    },
+    rect: {
+      inputs: {
+        DISPLAY: ["TFT"],
+        X: ["Number"],
+        Y: ["Number"],
+        WIDTH: ["Number"],
+        HEIGHT: ["Number"],
+        COLOR: ["TFTColor"],
+      },
+      styles: ["FILLED", "OUTLINE"],
+      labels: [
+        localizedHostMessages.tftRectOutline,
+        localizedHostMessages.tftRectFilled,
+      ],
+    },
+    text: {
+      DISPLAY: ["TFT"],
+      TEXT: ["String"],
+      X: ["Number"],
+      Y: ["Number"],
+      COLOR: ["TFTColor"],
+    },
+    show: { DISPLAY: ["TFT"] },
+    backlight: { DISPLAY: ["TFT"], ON: ["Boolean"] },
+    statements: true,
+  });
+  const expectedTftSource =
+    "from machine import Pin\n" +
+    "from pyble_st7789 import ST7789\n" +
+    "from pyble_st7789 import rgb565\n\n" +
+    "display = None\n\n\n" +
+    "display = ST7789(2, 40000000, 0, 0, Pin(40, Pin.OUT, None), Pin(45, Pin.OUT, None), Pin(42, Pin.OUT, None), Pin(41, Pin.OUT, None), Pin(39, Pin.OUT, None), Pin(46, Pin.OUT, None), 172, 320, 34, 0, True, True)\n" +
+    "display.fill(rgb565(8, 18, 40))\n" +
+    "display.pixel(0, 1, rgb565(255, 0, 0))\n" +
+    "display.rect(2, 3, 4, 5, rgb565(0, 255, 0))\n" +
+    "display.fill_rect(6, 7, 8, 9, rgb565(0, 0, 255))\n" +
+    "display.text('PyBLE', 10, 11, rgb565(255, 255, 255))\n" +
+    "display.show()\n" +
+    "display.backlight(False)\n";
+  if (tftRuntime.source !== expectedTftSource) {
+    throw new Error(
+      `TFT frozen-API generation mismatch:\nexpected:\n${expectedTftSource}\nactual:\n${tftRuntime.source}`,
+    );
+  }
+  if (
+    tftRuntime.rgbOnlySource !==
+    "from pyble_st7789 import rgb565\n\n\nrgb565(1, 2, 3)\n"
+  ) {
+    throw new Error(
+      `TFT RGB-only import is not use-dependent: ${JSON.stringify(tftRuntime.rgbOnlySource)}`,
+    );
+  }
+  for (const [symbol, expectedCount] of [
+    ["from pyble_st7789 import ST7789", 1],
+    ["from pyble_st7789 import rgb565", 1],
+    [".show()", 1],
+    [".backlight(", 1],
+  ]) {
+    const count = tftRuntime.source.split(symbol).length - 1;
+    if (count !== expectedCount) {
+      throw new Error(
+        `TFT source expected ${expectedCount} occurrence(s) of ${symbol}, got ${count}`,
+      );
+    }
+  }
+
   const expectedExampleSources = {
     "hello-pyble": "print('Hello, PyBLE!')\n",
     "count-repeatedly":
@@ -1554,12 +1976,31 @@ try {
       "def greet(name):\n" +
       "  print('Hello, ' + str(name))\n\n\n" +
       "greet('PyBLE')\n",
+    "waveshare-esp32-s3-lcd-147b":
+      "from machine import Pin\n" +
+      "from pyble_st7789 import ST7789\n" +
+      "from pyble_st7789 import rgb565\n\n" +
+      "display = None\n\n\n" +
+      "display = ST7789(1, 40000000, 0, 0, Pin(40, Pin.OUT, None), Pin(45, Pin.OUT, None), Pin(42, Pin.OUT, None), Pin(41, Pin.OUT, None), Pin(39, Pin.OUT, None), Pin(46, Pin.OUT, None), 172, 320, 34, 0, True, True)\n" +
+      "display.fill(rgb565(8, 18, 40))\n" +
+      "display.rect(8, 8, 156, 304, rgb565(0, 180, 216))\n" +
+      "display.text('Hello PyBLE!', 24, 150, rgb565(255, 255, 255))\n" +
+      "display.show()\n" +
+      "display.backlight(True)\n",
   };
   const explicitTestPins = {
     "blink-led": { led: 17 },
     "blink-neopixel": { pixel: 48 },
     "read-button": { button: 23 },
     "button-controls-led": { led: 17, button: 23 },
+    "waveshare-esp32-s3-lcd-147b": {
+      sck: 40,
+      mosi: 45,
+      cs: 42,
+      dc: 41,
+      reset: 39,
+      backlight: 46,
+    },
   };
   const findBlockState = (value, id) => {
     if (!value || typeof value !== "object") return undefined;
@@ -1737,6 +2178,10 @@ try {
               const gpio = scratch.newBlock("math_number");
               gpio.setFieldValue(configuration.gpio, "NUM");
               block.getInput("GPIO").connection.connect(gpio.outputConnection);
+            } else if (configuration.gpioText !== undefined) {
+              const gpio = scratch.newBlock("text");
+              gpio.setFieldValue(configuration.gpioText, "TEXT");
+              block.getInput("GPIO").connection.connect(gpio.outputConnection);
             }
           }
           return Blockly.serialization.workspaces.save(scratch);
@@ -1826,6 +2271,28 @@ try {
       { gpioGenerator: "tampered" },
       "a tampered GPIO expression",
       `${localizedHostMessages.gpioPinRequiredError} ${localizedHostMessages.multilineValueError}`,
+    ],
+    // FR-BLOCKS-1B: anything outside ^[A-Za-z][A-Za-z0-9_]{0,15}$ keeps the
+    // existing invalid-pin error path.
+    [
+      { gpioText: "" },
+      "an empty named pin",
+      localizedHostMessages.gpioPinInvalidError,
+    ],
+    [
+      { gpioText: "0LED" },
+      "a named pin starting with a digit",
+      localizedHostMessages.gpioPinInvalidError,
+    ],
+    [
+      { gpioText: "WL-GPIO0" },
+      "a named pin with a forbidden character",
+      localizedHostMessages.gpioPinInvalidError,
+    ],
+    [
+      { gpioText: "ABCDEFGHIJKLMNOPQ" },
+      "a seventeen-character named pin",
+      localizedHostMessages.gpioPinInvalidError,
     ],
   ]) {
     gpioRevision = await expectGenerationError(
@@ -1965,6 +2432,47 @@ try {
   if (pinImportCount !== 1) {
     throw new Error(
       `GPIO source must contain exactly one machine.Pin import, got ${pinImportCount}`,
+    );
+  }
+
+  // FR-BLOCKS-1B: a machine.Pin NAME in the GPIO slot travels as a quoted
+  // Python string literal ("LED" is user-entered, never suggested).
+  const namedPinWorkspace = await page.evaluate(() => {
+    const scratch = new Blockly.Workspace();
+    try {
+      const led = scratch
+        .getVariableMap()
+        .createVariable("led", "", "named-gpio-led");
+      const name = scratch.newBlock("text");
+      name.setFieldValue("LED", "TEXT");
+      const pin = scratch.newBlock("pyble_gpio_pin");
+      pin.setFieldValue("OUT", "MODE");
+      pin.setFieldValue("NONE", "PULL");
+      pin.getInput("GPIO").connection.connect(name.outputConnection);
+      const declare = scratch.newBlock("variables_set");
+      declare.setFieldValue(led.getId(), "VAR");
+      declare.getInput("VALUE").connection.connect(pin.outputConnection);
+      return Blockly.serialization.workspaces.save(scratch);
+    } finally {
+      scratch.dispose();
+    }
+  });
+  const expectedNamedPinSource =
+    "from machine import Pin\n\n" +
+    "led = None\n\n\n" +
+    'led = Pin("LED", Pin.OUT, None)\n';
+  const namedPinSnapshot = await restoreWorkspace(
+    namedPinWorkspace,
+    gpioSnapshot.revision,
+  );
+  if (namedPinSnapshot.type !== "snapshot") {
+    throw new Error(
+      `valid named-pin workspace did not generate: ${JSON.stringify(namedPinSnapshot)}`,
+    );
+  }
+  if (namedPinSnapshot.source !== expectedNamedPinSource) {
+    throw new Error(
+      `named-pin MicroPython mismatch:\nexpected:\n${expectedNamedPinSource}\nactual:\n${namedPinSnapshot.source}`,
     );
   }
 

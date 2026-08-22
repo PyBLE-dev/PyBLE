@@ -352,19 +352,19 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get blocksExamplesChoosePins =>
-      'GPIO numbers vary by board. Enter every GPIO number to generate a preview; PyBLE never assumes a safe pin.';
+      'GPIO numbers vary by board, and pin names do too. Enter every GPIO number or exact pin name to generate a preview; PyBLE never assumes a safe pin.';
 
   @override
   String get blocksExamplesPinHint =>
-      'Use a non-negative GPIO number from your board documentation.';
+      'Use a non-negative GPIO number or the exact pin name from your board documentation.';
 
   @override
   String get blocksExamplesPinInvalid =>
-      'Enter a non-negative whole GPIO number.';
+      'Enter a non-negative whole GPIO number, or a pin name that starts with a letter and uses up to 16 letters, digits, or underscores.';
 
   @override
   String get blocksExamplesPinsMustDiffer =>
-      'Choose different GPIO numbers for the button and LED.';
+      'Choose a different GPIO or pin name for the button and the LED.';
 
   @override
   String get blocksExamplesPreview => 'Preview';
@@ -416,6 +416,24 @@ class AppLocalizationsEn extends AppLocalizations {
   String get blocksExampleNeoPixelGpio => 'NeoPixel data GPIO';
 
   @override
+  String get blocksExampleTftSckGpio => 'LCD clock (SCK) GPIO';
+
+  @override
+  String get blocksExampleTftMosiGpio => 'LCD data (MOSI) GPIO';
+
+  @override
+  String get blocksExampleTftCsGpio => 'LCD chip select (CS) GPIO';
+
+  @override
+  String get blocksExampleTftDcGpio => 'LCD data/command (DC) GPIO';
+
+  @override
+  String get blocksExampleTftResetGpio => 'LCD reset (RST) GPIO';
+
+  @override
+  String get blocksExampleTftBacklightGpio => 'LCD backlight (BL) GPIO';
+
+  @override
   String get blocksExampleNoWiring => 'No external wiring is required.';
 
   @override
@@ -433,6 +451,10 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get blocksExampleButtonLedWiring =>
       'Connect the button between its pull-up input GPIO and ground. Connect an external LED through an appropriate current-limiting resistor. Verify both GPIOs, voltage, polarity, and wiring against your board documentation.';
+
+  @override
+  String get blocksExampleTftWiring =>
+      'For the exact ESP32-S3-LCD-1.47B (B version), the documented LCD wiring is SCK GPIO40, MOSI GPIO45, CS GPIO42, DC GPIO41, RST GPIO39, and BL GPIO46. The non-B ESP32-S3-LCD-1.47 uses different wiring; verify the full board name and schematic before entering any GPIO.';
 
   @override
   String get blocksExampleHelloTitle => 'Hello PyBLE';
@@ -484,6 +506,13 @@ class AppLocalizationsEn extends AppLocalizations {
       'Define a message-printing function and call it with an argument.';
 
   @override
+  String get blocksExampleTftTitle => 'ESP32-S3-LCD-1.47B TFT pattern';
+
+  @override
+  String get blocksExampleTftSummary =>
+      'Configure the 172 × 320 ST7789 display explicitly, draw a color-and-text test pattern, show it, and then enable its backlight.';
+
+  @override
   String get blocksExampleConceptText => 'Text';
 
   @override
@@ -506,6 +535,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get blocksExampleConceptAddressableRgb => 'Addressable RGB';
+
+  @override
+  String get blocksExampleConceptTft => 'TFT graphics';
 
   @override
   String get blocksExampleConceptConditions => 'Conditions';
@@ -567,11 +599,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get blocksGpioReadTooltip => 'Read 0 or 1 from a digital input pin.';
 
   @override
-  String get blocksGpioPinRequired => 'GPIO pin number is required.';
+  String get blocksGpioPinRequired => 'A GPIO number or pin name is required.';
 
   @override
   String get blocksGpioPinInvalid =>
-      'GPIO pin number must be a finite non-negative integer literal.';
+      'GPIO must be a finite non-negative integer, or a pin name that starts with a letter and uses up to 16 letters, digits, or underscores.';
 
   @override
   String get blocksGpioModeInvalid => 'GPIO pin mode is invalid.';
@@ -703,6 +735,172 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get blocksNeoPixelColorRequired =>
       'NeoPixel operation requires an RGB color.';
+
+  @override
+  String get blocksTftCategory => 'TFT Display';
+
+  @override
+  String blocksTftCreate(
+    String spiId,
+    String baudrate,
+    String polarity,
+    String phase,
+    String sck,
+    String mosi,
+    String cs,
+    String dc,
+    String reset,
+    String backlight,
+    String width,
+    String height,
+    String xOffset,
+    String yOffset,
+    String bgr,
+    String inversion,
+  ) {
+    return 'ST7789 SPI ID $spiId baud rate $baudrate polarity $polarity phase $phase SCK $sck MOSI $mosi CS $cs DC $dc reset $reset backlight $backlight width $width height $height x offset $xOffset y offset $yOffset BGR $bgr inversion $inversion';
+  }
+
+  @override
+  String blocksTftRgb565(String red, String green, String blue) {
+    return 'RGB565 red $red green $green blue $blue';
+  }
+
+  @override
+  String blocksTftFill(String display, String color) {
+    return 'fill display $display with $color';
+  }
+
+  @override
+  String blocksTftPixel(String display, String x, String y, String color) {
+    return 'display $display pixel x $x y $y color $color';
+  }
+
+  @override
+  String blocksTftRect(
+    String display,
+    String style,
+    String x,
+    String y,
+    String width,
+    String height,
+    String color,
+  ) {
+    return 'display $display $style rectangle x $x y $y width $width height $height color $color';
+  }
+
+  @override
+  String blocksTftText(
+    String display,
+    String text,
+    String x,
+    String y,
+    String color,
+  ) {
+    return 'display $display text $text x $x y $y color $color';
+  }
+
+  @override
+  String blocksTftShow(String display) {
+    return 'show display $display';
+  }
+
+  @override
+  String blocksTftBacklight(String display, String on) {
+    return 'display $display backlight on $on';
+  }
+
+  @override
+  String get blocksTftRectOutline => 'outline';
+
+  @override
+  String get blocksTftRectFilled => 'filled';
+
+  @override
+  String get blocksTftCreateTooltip =>
+      'Create an ST7789 framebuffer from an explicit SPI configuration, six Pins, panel geometry, offsets, color order, and inversion setting. The backlight remains off.';
+
+  @override
+  String get blocksTftRgb565Tooltip =>
+      'Convert red, green, and blue channel values to the display\'s RGB565 color format.';
+
+  @override
+  String get blocksTftFillTooltip =>
+      'Fill the framebuffer with one color. Use Show to transfer the change to the display.';
+
+  @override
+  String get blocksTftPixelTooltip =>
+      'Draw one pixel in the framebuffer. Use Show to transfer the change to the display.';
+
+  @override
+  String get blocksTftRectTooltip =>
+      'Draw an outline or filled rectangle in the framebuffer without transferring it automatically.';
+
+  @override
+  String get blocksTftTextTooltip =>
+      'Draw text in the framebuffer. Use Show to transfer the change to the display.';
+
+  @override
+  String get blocksTftShowTooltip =>
+      'Transfer the complete framebuffer to the display.';
+
+  @override
+  String get blocksTftBacklightTooltip =>
+      'Set the display backlight from an explicit Boolean value.';
+
+  @override
+  String get blocksTftCreateInputRequired =>
+      'ST7789 construction requires every explicit input.';
+
+  @override
+  String get blocksTftSpiIdInvalid =>
+      'SPI ID must be a safe non-negative integer literal.';
+
+  @override
+  String get blocksTftBaudrateInvalid =>
+      'SPI baud rate must be a safe positive integer literal.';
+
+  @override
+  String get blocksTftSpiModeInvalid =>
+      'SPI polarity and phase must each be the integer literal 0 or 1.';
+
+  @override
+  String get blocksTftGeometryInvalid =>
+      'Display width and height must be safe positive integer literals.';
+
+  @override
+  String get blocksTftOffsetInvalid =>
+      'Display offsets must be safe non-negative integer literals.';
+
+  @override
+  String get blocksTftColorComponentRequired =>
+      'RGB565 requires red, green, and blue values.';
+
+  @override
+  String get blocksTftDisplayRequired =>
+      'This TFT operation requires a display input.';
+
+  @override
+  String get blocksTftColorRequired =>
+      'This TFT drawing operation requires an RGB565 color.';
+
+  @override
+  String get blocksTftCoordinateRequired =>
+      'This TFT drawing operation requires every coordinate and size value.';
+
+  @override
+  String get blocksTftTextRequired => 'TFT text drawing requires a text value.';
+
+  @override
+  String get blocksTftBacklightRequired =>
+      'TFT backlight control requires a Boolean value.';
+
+  @override
+  String get blocksTftRectStyleInvalid => 'TFT rectangle style is invalid.';
+
+  @override
+  String get blocksTftRestoreStyleInvalid =>
+      'Restored TFT rectangle style is invalid.';
 
   @override
   String get connectAdapterOffTitle => 'Bluetooth is off';

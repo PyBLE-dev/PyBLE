@@ -9,7 +9,11 @@ the exact profiles available today, publishes privacy and support information,
 and hosts the policy-gated browser installer. The live v0.4.2 selector offers a
 hardware-tested beta for `esp32-4mb` and `esp32-s3-n16r8`; browser installation
 and interrupted-flash recovery passed, while complete release qualification
-remains pending. ESP32-C3 is unavailable.
+remains pending, and that frozen exception remains exactly two profiles. A
+qualified v0.5.1 activation instead requires `esp32-4mb`, lean generic
+`esp32-s3-n16r8`, and the separate `waveshare-esp32-s3-lcd-147b` image; this
+contract does not claim that v0.5.1 is currently public. ESP32-C3 is
+unavailable.
 
 ## Why Next.js
 
@@ -31,6 +35,7 @@ introduce a second page source or an application backend.
 | Route      | Purpose                                                                    |
 | ---------- | -------------------------------------------------------------------------- |
 | `/`        | Product story, verified capabilities, platform vision, and current targets |
+| `/app`     | Stable app landing page for iPad and Android testing channels              |
 | `/privacy` | Separate app and website privacy disclosures                               |
 | `/support` | Beta quick start, troubleshooting, and report checklist                    |
 | `/flash`   | Fail-closed Web Serial installer, exact profiles, and recovery             |
@@ -55,15 +60,34 @@ The full release gate is:
 npm run check
 ```
 
-That command checks formatting, lint, strict types, unit/content contracts,
-vinext compatibility, the portable Next.js export, and the Sites preview
-artifact. Canonical VPS production files are written to `out/`; the
-host-specific owner-preview bundle is written to `dist/`, including fully
-prerendered launch routes, static discovery files, a static 404 boundary around
-the vinext handler, and the exact Sites project binding.
+That command checks formatting, lint, strict types, high/critical dependency
+advisories, exact third-party notices, unit/content contracts, vinext
+compatibility, the portable Next.js export, and the Sites preview artifact.
+Canonical VPS production files are written to `out/`; the host-specific
+owner-preview bundle is written to `dist/`, including fully prerendered launch
+routes, static discovery files, a static 404 boundary around the vinext handler,
+and the exact Sites project binding.
 
 No application backend, remote CMS, analytics service, or web-font request is
 needed. A normal build needs no runtime or build-time environment variables.
+
+### Build-dependency security boundary
+
+Vinext `1.0.0-beta.8` removes `image-size` from the installed npm dependency
+graph, so the exact lockfile passes `npm audit --audit-level=high`. Its
+published build tooling still embeds the affected `image-size` 2.0.2 parser,
+however. PyBLE's post-install step therefore adds reviewed fail-closed guards
+for the zero-length ICNS, HEIF, and JXL loops; installation fails if the pinned
+upstream source drifts. Timeout-bounded regression inputs exercise all three
+paths, and the generated notice explicitly retains the embedded parser's MIT
+attribution.
+
+The build contract also forbids static image module imports and filesystem
+metadata image routes; authored images remain static `public/` URLs with
+explicit dimensions. Production deploys only the checked `out/` tree and runs
+no Node.js website process. Keep these defenses until vinext publishes tooling
+with a patched parser, then remove the local hardening only alongside its
+contracts and notice review.
 
 ## Production deployment
 
@@ -84,21 +108,34 @@ Keep the copies synchronized; never edit the website mark independently.
 The checked-in `/flash` selection is `null`, so an ordinary source build remains
 fail-closed. A production deployment may inject only an explicitly staged and
 validated selector; the current live deployment uses the exact v0.4.2
-public-beta selector. ESP Web Tools 10.4.0 is bundled locally, and the browser
+public-beta selector. A qualified v0.5.1 selector would instead contain exactly
+three separate profiles; the v0.4.2 selector remains a digest-bound two-profile
+exception. ESP Web Tools 10.4.0 is bundled locally, and the browser
 loads it only after a selected profile's same-origin release metadata,
 single-build manifest, merged image, exact size, and SHA-256 digest pass the
 strict verifier. The website dependency closure and complete license texts are
 published in `public/WEBSITE_THIRD_PARTY_LICENSES.txt`.
 
 Enablement requires the release gate frozen in
-`docs/specifications/website.md`. The exact v0.4.2 public beta requires reviewed
-artifacts for both current exact profiles (`esp32-4mb` and
-`esp32-s3-n16r8`), the canonical audited-candidate and license gates, an
-annotated provenance tag, HTTPS, capability detection, and recovery
-instructions. Production Chrome install and interrupted-flash recovery passed
-on real hardware for both exact profiles; complete app, PBLE/1, resource, and
-remaining firmware release qualification continues. The S3 profile specifically
-requires an N16R8 module.
+`docs/specifications/website.md`. Activating v0.5.1 as a qualified public
+release requires reviewed, independently HIL-qualified artifacts for all three
+exact profiles:
+`esp32-4mb`, `esp32-s3-n16r8`, and
+`waveshare-esp32-s3-lcd-147b`. Both S3 profiles require N16R8 topology, but
+they have separate single-build manifests and different immutable firmware
+bytes. ESP Web Tools can identify their shared ESP32-S3 family but cannot
+identify the onboard display, so the exact-board action requires its own
+explicit B-version compatibility consent and never aliases the generic S3
+manifest.
+
+The live frozen v0.4.2 public beta instead requires reviewed artifacts for
+exactly its two profiles (`esp32-4mb` and `esp32-s3-n16r8`), the canonical
+audited-candidate and license gates, an annotated provenance tag, HTTPS,
+capability detection, and recovery instructions. Production Chrome install and
+interrupted-flash recovery passed on real hardware for both exact profiles;
+complete app, PBLE/1, resource, and remaining firmware release qualification
+continues. Its schema, digest, paths, and profile set remain immutable and MUST
+NOT be treated as the v0.5.1 contract.
 `esp32-c3-4mb` remains visibly unavailable and has no public release bytes
 until a later exact-profile HIL-qualified candidate.
 
@@ -139,3 +176,24 @@ confirmation transactions until the public smoke suite succeeds.
 MicroPython plus generic Bluetooth hardware is not itself a support claim.
 Every advertised target needs a conforming PBLE/1 BLE GATT peripheral agent
 port and the required build, conformance, resource/recovery, and HIL evidence.
+
+Qualified public firmware v0.5.1 or newer names the Waveshare
+ESP32-S3-LCD-1.47B as the separate
+`waveshare-esp32-s3-lcd-147b` provisioning profile with its own manifest and
+firmware binary. That exact-board image alone bundles `pyble_st7789`,
+`pyble_waveshare_lcd147b`, and the factory-enabled-after-erase, persistently
+disableable boot splash path. The lean `esp32-s3-n16r8` image retains the
+common PyBLE agent and standard runtime but omits those display modules,
+exact-board constants, and splash machinery. A provisioning profile selects
+explicit flash bytes; it is not a PBLE/1 capability, automatic board detector,
+or app connection gate. The exact v0.4.2 beta and all pending, protected,
+unavailable, or otherwise unqualified selectors make no active exact-board
+claim.
+
+The qualified home and `/flash` presentations share the project-owned actual
+board photograph at
+`public/boards/esp32-s3-lcd-1.47b-pyble-v0.5.0.jpg`. The reviewed derivative is
+a metadata-stripped `1600 × 1116` progressive JPEG (195079 bytes, SHA-256
+`b939abb9b7ac19c7be8f429faaa61d08aadc7f027eac181582e036fd22949d12`), served
+locally with an accurate caption and alternative text. It is omitted unless the
+same qualified v0.5.1-or-newer release gate enables the exact-board copy.

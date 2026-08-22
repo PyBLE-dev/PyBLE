@@ -501,21 +501,21 @@
   "@blocksExamplesWiring": {
     "description": "Heading above generic wiring guidance for a selected example."
   },
-  "blocksExamplesChoosePins": "GPIO numbers vary by board. Enter every GPIO number to generate a preview; PyBLE never assumes a safe pin.",
+  "blocksExamplesChoosePins": "GPIO numbers vary by board, and pin names do too. Enter every GPIO number or exact pin name to generate a preview; PyBLE never assumes a safe pin.",
   "@blocksExamplesChoosePins": {
-    "description": "Safety guidance shown before a hardware example can be previewed or copied."
+    "description": "Safety guidance shown before a hardware example can be previewed or copied; PyBLE never suggests board-specific pin names."
   },
-  "blocksExamplesPinHint": "Use a non-negative GPIO number from your board documentation.",
+  "blocksExamplesPinHint": "Use a non-negative GPIO number or the exact pin name from your board documentation.",
   "@blocksExamplesPinHint": {
-    "description": "Helper text below each hardware-example GPIO input."
+    "description": "Helper text below each hardware-example GPIO input; a slot accepts a GPIO number or a MicroPython pin name (FR-BLOCKS-1B). PyBLE never suggests board-specific names."
   },
-  "blocksExamplesPinInvalid": "Enter a non-negative whole GPIO number.",
+  "blocksExamplesPinInvalid": "Enter a non-negative whole GPIO number, or a pin name that starts with a letter and uses up to 16 letters, digits, or underscores.",
   "@blocksExamplesPinInvalid": {
-    "description": "Validation message for a missing, negative, fractional, or non-numeric example GPIO."
+    "description": "Validation message when an example GPIO entry is neither a non-negative integer nor a pin name under the frozen FR-BLOCKS-1B grammar."
   },
-  "blocksExamplesPinsMustDiffer": "Choose different GPIO numbers for the button and LED.",
+  "blocksExamplesPinsMustDiffer": "Choose a different GPIO or pin name for the button and the LED.",
   "@blocksExamplesPinsMustDiffer": {
-    "description": "Cross-field validation message when separate hardware roles use the same GPIO number."
+    "description": "Cross-field validation message when separate hardware roles use the same GPIO number or pin name."
   },
   "blocksExamplesPreview": "Preview",
   "@blocksExamplesPreview": {
@@ -579,6 +579,30 @@
   "@blocksExampleNeoPixelGpio": {
     "description": "Input label for the explicit addressable-pixel data GPIO role in the NeoPixel example."
   },
+  "blocksExampleTftSckGpio": "LCD clock (SCK) GPIO",
+  "@blocksExampleTftSckGpio": {
+    "description": "Input label for the explicit ST7789 SPI clock GPIO role."
+  },
+  "blocksExampleTftMosiGpio": "LCD data (MOSI) GPIO",
+  "@blocksExampleTftMosiGpio": {
+    "description": "Input label for the explicit ST7789 SPI MOSI GPIO role."
+  },
+  "blocksExampleTftCsGpio": "LCD chip select (CS) GPIO",
+  "@blocksExampleTftCsGpio": {
+    "description": "Input label for the explicit ST7789 chip-select GPIO role."
+  },
+  "blocksExampleTftDcGpio": "LCD data/command (DC) GPIO",
+  "@blocksExampleTftDcGpio": {
+    "description": "Input label for the explicit ST7789 data/command GPIO role."
+  },
+  "blocksExampleTftResetGpio": "LCD reset (RST) GPIO",
+  "@blocksExampleTftResetGpio": {
+    "description": "Input label for the explicit ST7789 reset GPIO role."
+  },
+  "blocksExampleTftBacklightGpio": "LCD backlight (BL) GPIO",
+  "@blocksExampleTftBacklightGpio": {
+    "description": "Input label for the explicit active-high LCD backlight GPIO role."
+  },
   "blocksExampleNoWiring": "No external wiring is required.",
   "@blocksExampleNoWiring": {
     "description": "Wiring note for examples that only use the console and standard language blocks."
@@ -598,6 +622,10 @@
   "blocksExampleButtonLedWiring": "Connect the button between its pull-up input GPIO and ground. Connect an external LED through an appropriate current-limiting resistor. Verify both GPIOs, voltage, polarity, and wiring against your board documentation.",
   "@blocksExampleButtonLedWiring": {
     "description": "Board-neutral safety note for the Button controls LED example."
+  },
+  "blocksExampleTftWiring": "For the exact ESP32-S3-LCD-1.47B (B version), the documented LCD wiring is SCK GPIO40, MOSI GPIO45, CS GPIO42, DC GPIO41, RST GPIO39, and BL GPIO46. The non-B ESP32-S3-LCD-1.47 uses different wiring; verify the full board name and schematic before entering any GPIO.",
+  "@blocksExampleTftWiring": {
+    "description": "Exact-board wiring guidance for the ESP32-S3-LCD-1.47B TFT example, including the required warning that the non-B variant differs. Technical board and signal identifiers remain verbatim."
   },
   "blocksExampleHelloTitle": "Hello PyBLE",
   "@blocksExampleHelloTitle": {
@@ -655,6 +683,14 @@
   "@blocksExampleFunctionSummary": {
     "description": "Summary of the Reusable function example."
   },
+  "blocksExampleTftTitle": "ESP32-S3-LCD-1.47B TFT pattern",
+  "@blocksExampleTftTitle": {
+    "description": "Title of the manually selected exact-board ST7789 display example."
+  },
+  "blocksExampleTftSummary": "Configure the 172 × 320 ST7789 display explicitly, draw a color-and-text test pattern, show it, and then enable its backlight.",
+  "@blocksExampleTftSummary": {
+    "description": "Summary of the exact ESP32-S3-LCD-1.47B TFT framebuffer example."
+  },
   "blocksExampleConceptText": "Text",
   "@blocksExampleConceptText": {
     "description": "Concept chip for text values."
@@ -686,6 +722,10 @@
   "blocksExampleConceptAddressableRgb": "Addressable RGB",
   "@blocksExampleConceptAddressableRgb": {
     "description": "Concept chip for a WS2812-compatible addressable RGB pixel using the standard NeoPixel API."
+  },
+  "blocksExampleConceptTft": "TFT graphics",
+  "@blocksExampleConceptTft": {
+    "description": "Concept chip for explicit framebuffer drawing on an ST7789 TFT display."
   },
   "blocksExampleConceptConditions": "Conditions",
   "@blocksExampleConceptConditions": {
@@ -785,13 +825,13 @@
   "@blocksGpioReadTooltip": {
     "description": "Tooltip for the generic digital GPIO read block."
   },
-  "blocksGpioPinRequired": "GPIO pin number is required.",
+  "blocksGpioPinRequired": "A GPIO number or pin name is required.",
   "@blocksGpioPinRequired": {
-    "description": "Generator validation shown when a GPIO constructor has no pin number."
+    "description": "Generator validation shown when a GPIO constructor has no number or named-pin input."
   },
-  "blocksGpioPinInvalid": "GPIO pin number must be a finite non-negative integer literal.",
+  "blocksGpioPinInvalid": "GPIO must be a finite non-negative integer, or a pin name that starts with a letter and uses up to 16 letters, digits, or underscores.",
   "@blocksGpioPinInvalid": {
-    "description": "Generator validation shown when a GPIO constructor pin number is invalid."
+    "description": "Generator validation shown when a GPIO input is neither a valid non-negative integer nor a name under the FR-BLOCKS-1B grammar."
   },
   "blocksGpioModeInvalid": "GPIO pin mode is invalid.",
   "@blocksGpioModeInvalid": {
@@ -988,6 +1028,194 @@
   "blocksNeoPixelColorRequired": "NeoPixel operation requires an RGB color.",
   "@blocksNeoPixelColorRequired": {
     "description": "Generator validation shown when a NeoPixel assignment or fill has no RGB color."
+  },
+  "blocksTftCategory": "TFT Display",
+  "@blocksTftCategory": {
+    "description": "Localized Blockly toolbox category containing explicit ST7789 framebuffer blocks."
+  },
+  "blocksTftCreate": "ST7789 SPI ID {spiId} baud rate {baudrate} polarity {polarity} phase {phase} SCK {sck} MOSI {mosi} CS {cs} DC {dc} reset {reset} backlight {backlight} width {width} height {height} x offset {xOffset} y offset {yOffset} BGR {bgr} inversion {inversion}",
+  "@blocksTftCreate": {
+    "description": "Localized explicit ST7789 constructor label. All placeholders are required Blockly value sockets and their order is the frozen runtime constructor order.",
+    "placeholders": {
+      "spiId": {"type": "String", "example": "%1"},
+      "baudrate": {"type": "String", "example": "%2"},
+      "polarity": {"type": "String", "example": "%3"},
+      "phase": {"type": "String", "example": "%4"},
+      "sck": {"type": "String", "example": "%5"},
+      "mosi": {"type": "String", "example": "%6"},
+      "cs": {"type": "String", "example": "%7"},
+      "dc": {"type": "String", "example": "%8"},
+      "reset": {"type": "String", "example": "%9"},
+      "backlight": {"type": "String", "example": "%10"},
+      "width": {"type": "String", "example": "%11"},
+      "height": {"type": "String", "example": "%12"},
+      "xOffset": {"type": "String", "example": "%13"},
+      "yOffset": {"type": "String", "example": "%14"},
+      "bgr": {"type": "String", "example": "%15"},
+      "inversion": {"type": "String", "example": "%16"}
+    }
+  },
+  "blocksTftRgb565": "RGB565 red {red} green {green} blue {blue}",
+  "@blocksTftRgb565": {
+    "description": "Localized RGB565 color constructor label. Placeholders are Blockly Number sockets.",
+    "placeholders": {
+      "red": {"type": "String", "example": "%1"},
+      "green": {"type": "String", "example": "%2"},
+      "blue": {"type": "String", "example": "%3"}
+    }
+  },
+  "blocksTftFill": "fill display {display} with {color}",
+  "@blocksTftFill": {
+    "description": "Localized ST7789 framebuffer-fill label.",
+    "placeholders": {
+      "display": {"type": "String", "example": "%1"},
+      "color": {"type": "String", "example": "%2"}
+    }
+  },
+  "blocksTftPixel": "display {display} pixel x {x} y {y} color {color}",
+  "@blocksTftPixel": {
+    "description": "Localized ST7789 framebuffer pixel label.",
+    "placeholders": {
+      "display": {"type": "String", "example": "%1"},
+      "x": {"type": "String", "example": "%2"},
+      "y": {"type": "String", "example": "%3"},
+      "color": {"type": "String", "example": "%4"}
+    }
+  },
+  "blocksTftRect": "display {display} {style} rectangle x {x} y {y} width {width} height {height} color {color}",
+  "@blocksTftRect": {
+    "description": "Localized ST7789 outline-or-filled rectangle label.",
+    "placeholders": {
+      "display": {"type": "String", "example": "%1"},
+      "style": {"type": "String", "example": "%2"},
+      "x": {"type": "String", "example": "%3"},
+      "y": {"type": "String", "example": "%4"},
+      "width": {"type": "String", "example": "%5"},
+      "height": {"type": "String", "example": "%6"},
+      "color": {"type": "String", "example": "%7"}
+    }
+  },
+  "blocksTftText": "display {display} text {text} x {x} y {y} color {color}",
+  "@blocksTftText": {
+    "description": "Localized ST7789 framebuffer text label.",
+    "placeholders": {
+      "display": {"type": "String", "example": "%1"},
+      "text": {"type": "String", "example": "%2"},
+      "x": {"type": "String", "example": "%3"},
+      "y": {"type": "String", "example": "%4"},
+      "color": {"type": "String", "example": "%5"}
+    }
+  },
+  "blocksTftShow": "show display {display}",
+  "@blocksTftShow": {
+    "description": "Localized explicit ST7789 framebuffer-transfer label.",
+    "placeholders": {
+      "display": {"type": "String", "example": "%1"}
+    }
+  },
+  "blocksTftBacklight": "display {display} backlight on {on}",
+  "@blocksTftBacklight": {
+    "description": "Localized explicit ST7789 Boolean backlight label.",
+    "placeholders": {
+      "display": {"type": "String", "example": "%1"},
+      "on": {"type": "String", "example": "%2"}
+    }
+  },
+  "blocksTftRectOutline": "outline",
+  "@blocksTftRectOutline": {
+    "description": "Rectangle style dropdown label for an outline."
+  },
+  "blocksTftRectFilled": "filled",
+  "@blocksTftRectFilled": {
+    "description": "Rectangle style dropdown label for a filled rectangle."
+  },
+  "blocksTftCreateTooltip": "Create an ST7789 framebuffer from an explicit SPI configuration, six Pins, panel geometry, offsets, color order, and inversion setting. The backlight remains off.",
+  "@blocksTftCreateTooltip": {
+    "description": "Tooltip for the explicit ST7789 constructor block."
+  },
+  "blocksTftRgb565Tooltip": "Convert red, green, and blue channel values to the display's RGB565 color format.",
+  "@blocksTftRgb565Tooltip": {
+    "description": "Tooltip for the composable RGB565 color block."
+  },
+  "blocksTftFillTooltip": "Fill the framebuffer with one color. Use Show to transfer the change to the display.",
+  "@blocksTftFillTooltip": {
+    "description": "Tooltip for the ST7789 framebuffer fill block."
+  },
+  "blocksTftPixelTooltip": "Draw one pixel in the framebuffer. Use Show to transfer the change to the display.",
+  "@blocksTftPixelTooltip": {
+    "description": "Tooltip for the ST7789 pixel block."
+  },
+  "blocksTftRectTooltip": "Draw an outline or filled rectangle in the framebuffer without transferring it automatically.",
+  "@blocksTftRectTooltip": {
+    "description": "Tooltip for the ST7789 rectangle block."
+  },
+  "blocksTftTextTooltip": "Draw text in the framebuffer. Use Show to transfer the change to the display.",
+  "@blocksTftTextTooltip": {
+    "description": "Tooltip for the ST7789 text block."
+  },
+  "blocksTftShowTooltip": "Transfer the complete framebuffer to the display.",
+  "@blocksTftShowTooltip": {
+    "description": "Tooltip for the sole explicit ST7789 framebuffer transfer block."
+  },
+  "blocksTftBacklightTooltip": "Set the display backlight from an explicit Boolean value.",
+  "@blocksTftBacklightTooltip": {
+    "description": "Tooltip for the explicit Boolean ST7789 backlight block."
+  },
+  "blocksTftCreateInputRequired": "ST7789 construction requires every explicit input.",
+  "@blocksTftCreateInputRequired": {
+    "description": "Generator validation shown when any ST7789 constructor socket is disconnected."
+  },
+  "blocksTftSpiIdInvalid": "SPI ID must be a safe non-negative integer literal.",
+  "@blocksTftSpiIdInvalid": {
+    "description": "Generator validation shown when the explicit ST7789 SPI bus ID is invalid."
+  },
+  "blocksTftBaudrateInvalid": "SPI baud rate must be a safe positive integer literal.",
+  "@blocksTftBaudrateInvalid": {
+    "description": "Generator validation shown when the explicit ST7789 baud rate is invalid."
+  },
+  "blocksTftSpiModeInvalid": "SPI polarity and phase must each be the integer literal 0 or 1.",
+  "@blocksTftSpiModeInvalid": {
+    "description": "Generator validation shown when the explicit ST7789 SPI polarity or phase is invalid."
+  },
+  "blocksTftGeometryInvalid": "Display width and height must be safe positive integer literals.",
+  "@blocksTftGeometryInvalid": {
+    "description": "Generator validation shown when explicit ST7789 panel geometry is invalid."
+  },
+  "blocksTftOffsetInvalid": "Display offsets must be safe non-negative integer literals.",
+  "@blocksTftOffsetInvalid": {
+    "description": "Generator validation shown when an explicit ST7789 RAM offset is invalid."
+  },
+  "blocksTftColorComponentRequired": "RGB565 requires red, green, and blue values.",
+  "@blocksTftColorComponentRequired": {
+    "description": "Generator validation shown when an RGB565 color component is missing."
+  },
+  "blocksTftDisplayRequired": "This TFT operation requires a display input.",
+  "@blocksTftDisplayRequired": {
+    "description": "Generator validation shown when a TFT operation has no ST7789 receiver."
+  },
+  "blocksTftColorRequired": "This TFT drawing operation requires an RGB565 color.",
+  "@blocksTftColorRequired": {
+    "description": "Generator validation shown when a TFT drawing operation has no RGB565 color."
+  },
+  "blocksTftCoordinateRequired": "This TFT drawing operation requires every coordinate and size value.",
+  "@blocksTftCoordinateRequired": {
+    "description": "Generator validation shown when a TFT coordinate or rectangle size socket is disconnected."
+  },
+  "blocksTftTextRequired": "TFT text drawing requires a text value.",
+  "@blocksTftTextRequired": {
+    "description": "Generator validation shown when a TFT text block has no String input."
+  },
+  "blocksTftBacklightRequired": "TFT backlight control requires a Boolean value.",
+  "@blocksTftBacklightRequired": {
+    "description": "Generator validation shown when a TFT backlight block has no Boolean input."
+  },
+  "blocksTftRectStyleInvalid": "TFT rectangle style is invalid.",
+  "@blocksTftRectStyleInvalid": {
+    "description": "Generator validation shown when the live TFT rectangle style is outside the frozen enum."
+  },
+  "blocksTftRestoreStyleInvalid": "Restored TFT rectangle style is invalid.",
+  "@blocksTftRestoreStyleInvalid": {
+    "description": "Restore validation shown when serialized TFT rectangle style is outside the frozen enum."
   },
 
   "connectAdapterOffTitle": "Bluetooth is off",

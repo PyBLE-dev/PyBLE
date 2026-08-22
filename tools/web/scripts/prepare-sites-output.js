@@ -16,6 +16,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import {
   validateFreshDeploymentBundle,
+  validatePreservedDeploymentBundle,
   validateStagedFirmwareRelease,
 } from "./stage-firmware-release.js";
 
@@ -42,11 +43,25 @@ async function requireFile(path, missingMessage) {
 
 const requiredPrerenderedRoutes = [
   "/",
+  "/app",
   "/flash",
   "/privacy",
   "/support",
   "/404",
 ];
+
+export function sitesFirmwareReleaseValidator() {
+  const validationMode = process.env.PYBLE_FIRMWARE_VALIDATION_MODE;
+  if (validationMode === undefined) {
+    return validateFreshDeploymentBundle;
+  }
+  if (validationMode === "preserved-public") {
+    return validatePreservedDeploymentBundle;
+  }
+  throw new Error(
+    "PYBLE_FIRMWARE_VALIDATION_MODE must be absent or preserved-public",
+  );
+}
 
 /**
  * @param {string} notFoundHtml
@@ -62,6 +77,8 @@ import vinextHandler from "./vinext-handler.js";
 
 const delegatedPaths = new Set([
   "/",
+  "/app",
+  "/app/",
   "/privacy",
   "/privacy/",
   "/support",
@@ -80,7 +97,9 @@ function delegatesToVinext(pathname) {
     pathname.startsWith("/_next/") ||
     pathname.startsWith("/app/") ||
     pathname.startsWith("/brand/") ||
-    pathname.startsWith("/firmware/")
+    pathname.startsWith("/firmware/") ||
+    pathname.startsWith("/google-play/") ||
+    pathname.startsWith("/testflight/")
   );
 }
 
@@ -148,8 +167,16 @@ async function requirePrerenderedRoutes(manifestPath) {
 export async function prepareSitesOutput(
   packageRoot,
   stagedFirmwareRoot = process.env.PYBLE_FIRMWARE_STAGED_ROOT,
-  releaseValidator = validateFreshDeploymentBundle,
+  releaseValidator = sitesFirmwareReleaseValidator(),
 ) {
+  if (
+    process.env.PYBLE_LOCAL_FLASH_PREVIEW ||
+    process.env.PYBLE_LOCAL_FLASH_PREVIEW_FILE
+  ) {
+    throw new Error(
+      "Sites output refuses local preview flags and engineering artifacts",
+    );
+  }
   const selectionFile = process.env.PYBLE_FLASH_SELECTION_FILE;
   if (Boolean(stagedFirmwareRoot) !== Boolean(selectionFile)) {
     throw new Error(

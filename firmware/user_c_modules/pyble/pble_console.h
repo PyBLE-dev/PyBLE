@@ -51,7 +51,8 @@ extern const mp_print_t pble_console_stderr_print;
 
 // 0x31 CONSOLE_INPUT handler (NimBLE host task): append payload to the bounded
 // stdin ring; fire-and-forget — returns PBLE_NO_RSP so dispatch emits no frame.
-uint8_t pble_console_input(const pble_frame_t *req, uint8_t *rsp, size_t *rlen, uint16_t conn);
+uint8_t pble_console_input(const pble_frame_t *req, uint8_t *rsp, size_t *rlen,
+                           const pble_session_token_t *session);
 
 // Worker stdin drain for input()/sys.stdin: next byte, or -1 when empty.
 int  pble_console_stdin_getchar(void);
@@ -59,6 +60,10 @@ int  pble_console_stdin_getchar(void);
 // Register 0x31 and install the dupterm tee/stdin stream. Idempotent; call once
 // at boot from init_agent() (main task, valid VM state).
 void pble_console_register(void);
+
+// Retained-VM lifecycle hooks used before and after upstream thread deletion.
+void pble_console_vm_detach(void);
+void pble_console_vm_reset(void);
 
 #ifdef __cplusplus
 }

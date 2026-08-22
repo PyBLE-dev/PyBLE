@@ -1,0 +1,201 @@
+{
+  "schema_version": 1,
+  "identity": {
+    "binary_archive": {
+      "bytes": 134812148,
+      "filename": "arm-gnu-toolchain-14.2.rel1-darwin-arm64-arm-none-eabi.tar.xz",
+      "sha256": "c7c78ffab9bebfce91d99d3c24da6bf4b81c01e16cf551eb2ff9f25b9e0a3818"
+    },
+    "source_archive": {
+      "bytes": 311500280,
+      "filename": "arm-gnu-toolchain-src-snapshot-14.2.rel1.tar.xz",
+      "sha256": "e6405f20f8a817a50d92dbf7974d0ee77708dfdf9e79900a59c5d343b464ef9c"
+    },
+    "source_manifest": {
+      "path": "firmware/licenses/evidence/rp2/arm-gnu-toolchain/14.2.rel1/source-manifest.txt",
+      "sha256": "470cdb8bae9f5fed96c17b10834bbd22820e933cfad99914c3f37997cae36745"
+    },
+    "source_commits": {
+      "binutils-gdb": "74c7803f0cc8d3d66513b6d6549bff2fbe737a7d",
+      "gcc": "a05ea1e5ee0867191bb432a84c055be99dbdbc16",
+      "newlib-cygwin": "7923059bff6c120c6fb74b63c7553ea345c0a8f3"
+    }
+  },
+  "components": [
+    {
+      "id": "arm-gnu-binutils-build-tools",
+      "kind": "build-tool",
+      "license_basis": "GPL-3.0-or-later",
+      "source_component": "binutils-gdb"
+    },
+    {
+      "id": "arm-gnu-gcc-build-tools",
+      "kind": "build-tool",
+      "license_basis": "GPL-3.0-or-later",
+      "source_component": "gcc"
+    },
+    {
+      "id": "arm-gnu-gcc-runtime",
+      "kind": "runtime",
+      "license_basis": "GPL-3.0-or-later WITH GCC-exception-3.1",
+      "source_component": "gcc"
+    },
+    {
+      "id": "arm-gnu-libgloss-runtime",
+      "kind": "runtime",
+      "license_basis": "LicenseRef-PyBLE-Libgloss-Multilicense",
+      "license_sha256": "bdaffd5fff30cb5fc7a239a4fa0b95f703590f7b3813ca7f4e76ff46437aeb81",
+      "source_component": "newlib-cygwin"
+    },
+    {
+      "id": "arm-gnu-newlib-runtime",
+      "kind": "runtime",
+      "license_basis": "LicenseRef-PyBLE-Newlib-Multilicense",
+      "license_sha256": "fcfb5ec69b6ab52676dcc4dab7cf4338c8000ef97812dadd35b8592a640a8419",
+      "source_component": "newlib-cygwin"
+    }
+  ],
+  "build_tools": [
+    ["arm-gnu-gcc-build-tools", "bin/arm-none-eabi-gcc", "07bfe9e74cfe028af639bf38703b2259c608aedee6ff991752084a10b82da614", "gcc-driver"],
+    ["arm-gnu-gcc-build-tools", "bin/arm-none-eabi-g++", "1217329890aab103c6af8d08a24c1d9b2be4b8da67748e7704c5c7131c1f5d1d", "gxx-driver"],
+    ["arm-gnu-gcc-build-tools", "libexec/gcc/arm-none-eabi/14.2.1/collect2", "68358863efcfdc1d8b21b308fd9f30b6c64b7e3bc7ccbaed98afa45ebabc3203", "collect2"],
+    ["arm-gnu-binutils-build-tools", "arm-none-eabi/bin/as", "a5aa5b3d0c3c80017ee312233c88e4a131baed0b6efe3324f94324e6c20f0064", "assembler"],
+    ["arm-gnu-binutils-build-tools", "arm-none-eabi/bin/ld", "cfe173600ce23ca212b75c4aebc94a5dc1db3f69cd6ba7af77ac13856e2ce605", "linker"]
+  ],
+  "specs_inputs": [
+    ["arm-gnu-libgloss-runtime", "--specs=nosys.specs", "arm-none-eabi/lib/nosys.specs", 277, "24f0304a9ef660646fcb468d0ecf308b6e82ee5648e9b10b568e19ed4726d8d8", "newlib-cygwin/libgloss/libnosys/nosys.specs", 277, "24f0304a9ef660646fcb468d0ecf308b6e82ee5648e9b10b568e19ed4726d8d8", "libgloss-default-compilation", false]
+  ],
+  "runtime_archives": [
+    ["arm-gnu-gcc-runtime", "lib/gcc/arm-none-eabi/14.2.1/thumb/v8-m.main+fp/softfp/libgcc.a", "d418423c43a7eaa7066ad99da860d7cc43619de536d9e1480b82dbaa193198be", 6],
+    ["arm-gnu-gcc-runtime", "arm-none-eabi/lib/thumb/v8-m.main+fp/softfp/libstdc++.a", "7aa89cdb586943582d63c8c55d97543b8887c212004ab852d67042f23b66b06f", 0],
+    ["arm-gnu-newlib-runtime", "arm-none-eabi/lib/thumb/v8-m.main+fp/softfp/libc.a", "a570709ba24c847aa6bb4a3984746fd3e45b5002f4709fc3fff6c38fe4a51360", 0],
+    ["arm-gnu-newlib-runtime", "arm-none-eabi/lib/thumb/v8-m.main+fp/softfp/libg.a", "a570709ba24c847aa6bb4a3984746fd3e45b5002f4709fc3fff6c38fe4a51360", 22],
+    ["arm-gnu-newlib-runtime", "arm-none-eabi/lib/thumb/v8-m.main+fp/softfp/libm.a", "07714cb7e6c6addaa0554e77062e52531dd689cd93be0a5e18ade9b727b5d271", 1],
+    ["arm-gnu-libgloss-runtime", "arm-none-eabi/lib/thumb/v8-m.main+fp/softfp/libnosys.a", "156e6fc457c3da2cbf0c77b6f46051ea9241376d891c7d05ca626166fe70481b", 0]
+  ],
+  "direct_inputs": [
+    ["arm-gnu-gcc-runtime", "lib/gcc/arm-none-eabi/14.2.1/thumb/v8-m.main+fp/softfp/crti.o", "369a0b2172c9905700289fadc9e4c14a3bbf545cbc2ebd948e03a88400782fbf", true, "gcc/libgcc/config/arm/crti.S", "ba6e815d13954655297f7f3407334e69d701b5e2efc19a0503a557279cae2266", "gcc-runtime-exception"],
+    ["arm-gnu-gcc-runtime", "lib/gcc/arm-none-eabi/14.2.1/thumb/v8-m.main+fp/softfp/crtbegin.o", "36c4f81a52c32a7a7ec3f85354984d2301564f0c8a1de50f4e3e85457cb6cb82", true, "gcc/libgcc/crtstuff.c", "5859380c2242ce108b323fe216847df6f2be052fa98ca56eb6284daacda3befd", "gcc-runtime-exception"],
+    ["arm-gnu-gcc-runtime", "lib/gcc/arm-none-eabi/14.2.1/thumb/v8-m.main+fp/softfp/crtend.o", "c0ccdb682c5e558472cf726e34ee5be89a38676c92408f87edeee92d2a0d1f77", true, "gcc/libgcc/crtstuff.c", "5859380c2242ce108b323fe216847df6f2be052fa98ca56eb6284daacda3befd", "gcc-runtime-exception"],
+    ["arm-gnu-gcc-runtime", "lib/gcc/arm-none-eabi/14.2.1/thumb/v8-m.main+fp/softfp/crtn.o", "72bf6e5380bdd8a6b29fc084730a7b69ed1a99d5fa2ee1fc0404f1b88195cf7a", false, "gcc/libgcc/config/arm/crtn.S", "1ef2af4d2ece8be9745975e7d14f66d776b2a558a84eb2d28eb75371715ec0c3", "gcc-runtime-exception"],
+    ["arm-gnu-libgloss-runtime", "arm-none-eabi/lib/thumb/v8-m.main+fp/softfp/crt0.o", "ec66d49f1b740601b52af8ee5729c47e4ea098291c24d3f70308e3e50c9a7a8f", false, "newlib-cygwin/libgloss/arm/crt0.S", "762e48eab82804f83574c682ca55fb8f7e212f10229928586814f860155ea1a8", "libgloss-default-compilation"]
+  ],
+  "archive_members": [
+    ["arm-gnu-gcc-runtime", "libgcc.a", "_aeabi_ldivmod.o", "20397f8c2afcc090dab37d3fce789b08124c0f4edafa82d346ea966efdf45e7c", "gcc/libgcc/config/arm/bpabi.S", "715a314e76a0521f41094aac78d17951f87023b94ab1e265847ef4faf538fafd", "gcc-runtime-exception"],
+    ["arm-gnu-gcc-runtime", "libgcc.a", "_aeabi_uldivmod.o", "2239465e72cf39f35750aa39f06f41aaeb56d76fc4af091b0ab43cfcaa0a7ed0", "gcc/libgcc/config/arm/bpabi.S", "715a314e76a0521f41094aac78d17951f87023b94ab1e265847ef4faf538fafd", "gcc-runtime-exception"],
+    ["arm-gnu-gcc-runtime", "libgcc.a", "_dvmd_tls.o", "74a72536d2ecdb8bad728f817ce3ca2a60007e21585fef86e2d264fe5a46d288", "gcc/libgcc/config/arm/lib1funcs.S", "356ccb5aa1fb82e2bbf2f08585e18eb138efcd8a745c12a0e367d935aad29769", "gcc-runtime-exception"],
+    ["arm-gnu-gcc-runtime", "libgcc.a", "_fixunssfdi.o", "62a1aad5ba9dc7b9bdfbf8564617cda508a15bb0e44e940a6cff26ba1c08ac92", "gcc/libgcc/libgcc2.c", "0bf1fa3e4b9be1fd45a47682cb119d4f8fda17f02398d157a189d49c6f2d2919", "gcc-runtime-exception"],
+    ["arm-gnu-gcc-runtime", "libgcc.a", "_popcountsi2.o", "24c414472e943fc1e3ceb6b0547252660b3b143d9f6d7f23bc90c0816f833a3c", "gcc/libgcc/libgcc2.c", "0bf1fa3e4b9be1fd45a47682cb119d4f8fda17f02398d157a189d49c6f2d2919", "gcc-runtime-exception"],
+    ["arm-gnu-gcc-runtime", "libgcc.a", "_udivmoddi4.o", "c4d567b4709fcec11424bb44142e26b79bae79bb6a08c517cb45fd05446e34c9", "gcc/libgcc/libgcc2.c", "0bf1fa3e4b9be1fd45a47682cb119d4f8fda17f02398d157a189d49c6f2d2919", "gcc-runtime-exception"],
+    ["arm-gnu-newlib-runtime", "libg.a", "libc_a-atoi.o", "78b5bae5ac48c34a5d381ed3ddfe062d73d059870bbe661291a5a1d073b51301", "newlib-cygwin/newlib/libc/stdlib/atoi.c", "738c6ad86cbf2ecbc772d055db38087d4a4048297f5ec9bc9b44699f96cdaa93", "newlib-default-compilation"],
+    ["arm-gnu-newlib-runtime", "libg.a", "libc_a-ctype_.o", "e911fc6741624d115c155dda009b364486ebf82c7efbc58896a3785285d4fef1", "newlib-cygwin/newlib/libc/ctype/ctype_.c", "4611d2bf9d583fdebc2b00047553cbbdf340ee02db6065e2e1f1537be5db86f0", "source-header"],
+    ["arm-gnu-newlib-runtime", "libg.a", "libc_a-errno.o", "b5a60851cf9afa97639fda08bd6842a0589a848761986ee1401d16f8ec138574", "newlib-cygwin/newlib/libc/errno/errno.c", "f6aa3747ded9ca8441730918e5bd97794d6c0b55e999cd132c670b74f4d32cc1", "newlib-default-compilation"],
+    ["arm-gnu-newlib-runtime", "libg.a", "libc_a-findfp.o", "6b0fe518e41e44401d93b86103a34e10462952d129ec8ec6cf97f8baf23f12dc", "newlib-cygwin/newlib/libc/stdio/findfp.c", "2fe2fbb92042bfc48bcc592f7663e6bd72639c060165ef6d89eba4f2e9482a3f", "source-header"],
+    ["arm-gnu-newlib-runtime", "libg.a", "libc_a-gmtime.o", "2ac545614f1243354f9dc3f1b0bf03ccc8e16163e4efd7f83c7a50e1e40795a1", "newlib-cygwin/newlib/libc/time/gmtime.c", "0c62a502660802f56429cdac635070c86db7f74a65c5dbd9949f1ab6eecf462f", "newlib-default-compilation"],
+    ["arm-gnu-newlib-runtime", "libg.a", "libc_a-gmtime_r.o", "43a6e656067834e57bccc2058eb9e2c6476a6bfc072f0186c2a85dbd60d2dfc1", "newlib-cygwin/newlib/libc/time/gmtime_r.c", "c426410baf2c5ece0bc46da7622343dcbf353ea3e25afebd74aa959ccc22b1ca", "newlib-default-compilation"],
+    ["arm-gnu-newlib-runtime", "libg.a", "libc_a-impure.o", "0ab31d7a39eae6a1c7bfa93f9db1dbed3bf2c8e2309586b509d360cbca772eaf", "newlib-cygwin/newlib/libc/reent/impure.c", "b1be8abf84612bbd0780eb2b86bb1505898c2bf653eae4c52e9acbaad42535c9", "newlib-default-compilation"],
+    ["arm-gnu-newlib-runtime", "libg.a", "libc_a-memcmp.o", "5a970d18b9dfeb7597143e663bca5ff7468eba8c3c762c57f8c7d7a951f2b455", "newlib-cygwin/newlib/libc/string/memcmp.c", "094e398b28b60c8b9d398f304782042faa09d8f52ee87a580f5c24eb36bf8d6d", "newlib-default-compilation"],
+    ["arm-gnu-newlib-runtime", "libg.a", "libc_a-memcpy.o", "e183596e0211ee7369f7772ba5b84c0729d9506135030bffe7a7ab28334d8b06", "newlib-cygwin/newlib/libc/machine/arm/memcpy-armv7m.S", "06ce94efe66cff2ac9a6ba044e76d1f95b8dea772ecb87f9bc22663f1e6a9e65", "source-header"],
+    ["arm-gnu-newlib-runtime", "libg.a", "libc_a-memmove.o", "382df8c05fec6670286586a7798fa2d8336947ff869a7c01ba7259c7eae2830c", "newlib-cygwin/newlib/libc/string/memmove.c", "f0026d239917831e77514db2a24447311dc4bf6ad79d3240160dfddcfdf7b4b7", "newlib-default-compilation"],
+    ["arm-gnu-newlib-runtime", "libg.a", "libc_a-memset.o", "56f13356c78e35a092ab194899d2f859ba8105299860ede01c521e4926e87553", "newlib-cygwin/newlib/libc/string/memset.c", "94cfb44062fc4966682ce986b99b79c445ddc11172bc30c72f992a2b6db6ac43", "newlib-default-compilation"],
+    ["arm-gnu-newlib-runtime", "libg.a", "libc_a-strchr.o", "e1b2c15be0aa5c2c8addeec260f6dce1b0a21afd789ec0baea7a76198df77225", "newlib-cygwin/newlib/libc/string/strchr.c", "8d38b921bf12ca7ef801333ee285fc1468a1985c6253db87f1a2bfede27b6dbc", "newlib-default-compilation"],
+    ["arm-gnu-newlib-runtime", "libg.a", "libc_a-strcmp.o", "326fcbdefa3cf43dc0f74ea22ec49d9470c9b6132dba892bc0f3ca7401375a57", "newlib-cygwin/newlib/libc/machine/arm/strcmp-armv7m.S", "e04b507955096f1dc8dc9bdb806cc1c1acee4d181c0689b808105f6f08fce5f8", "source-header"],
+    ["arm-gnu-newlib-runtime", "libg.a", "libc_a-strcpy.o", "75bcc6099307d1a8abe44e0aa3516ae52a04da7f6919c753e8b659021c03ba7a", "newlib-cygwin/newlib/libc/machine/arm/strcpy.c", "905c44506cb6265aae32dcf31b501033b6814a5edb26c41dbf5569719b210264", "source-header"],
+    ["arm-gnu-newlib-runtime", "libg.a", "libc_a-strcspn.o", "83a100acdfe6edc4bffd5bdf5b1c20089426ee494acbb0993c1b9fc5d104aa6d", "newlib-cygwin/newlib/libc/string/strcspn.c", "e7fcab3eff45112d6320ba685a61e68593e8743cd6951fba741c97db4cc6f7d1", "newlib-default-compilation"],
+    ["arm-gnu-newlib-runtime", "libg.a", "libc_a-strlen-stub.o", "afd51bb7d4626181e22d36e6e3ef0e49884c7aa71e7f1cd117b369fb66a06444", "newlib-cygwin/newlib/libc/machine/arm/strlen-stub.c", "c1cce7c728cb91b2c167731837c09915f478c9317e3c87e3992063fdf9c6264e", "source-header"],
+    ["arm-gnu-newlib-runtime", "libg.a", "libc_a-strncmp.o", "62f154791f652b693d239ec323eb9c8c2ff3acb062d8b78a8cafce065d93756a", "newlib-cygwin/newlib/libc/string/strncmp.c", "5feeb16b00c54d3a56dab7266de2d0a911d61c42f5715614087babf662471bab", "newlib-default-compilation"],
+    ["arm-gnu-newlib-runtime", "libg.a", "libc_a-strncpy.o", "a98afa468b3f0f9fac6314fe205efb5f54d15a5947b1748d4908b9e91b6b4dad", "newlib-cygwin/newlib/libc/string/strncpy.c", "e6e00f1a8cb3c11733b3b50dece1521b3582e8fdb7ecfd03bc48f3b0ed8caf1e", "newlib-default-compilation"],
+    ["arm-gnu-newlib-runtime", "libg.a", "libc_a-strnlen.o", "5e857b0aac3c8f2d7c25052984994ac58328c30fd501d6cbd1f208fe84e772e3", "newlib-cygwin/newlib/libc/string/strnlen.c", "408faab69ffe3b5a10d85d9cd7c56b2540698f35012dc86fbaf574dd3264786b", "newlib-default-compilation"],
+    ["arm-gnu-newlib-runtime", "libg.a", "libc_a-strspn.o", "f6ed6541fedbdcae5e7ebac0527495a97891a7be8cc3a037c3aa2c1990ecafc2", "newlib-cygwin/newlib/libc/string/strspn.c", "63430c0345b50356bc86f113a92970fd6479353bbfc1d748b3f9f63ede02b211", "newlib-default-compilation"],
+    ["arm-gnu-newlib-runtime", "libg.a", "libc_a-strstr.o", "c1674412595e5ea884ebee1435aa98b839025f6eb3d44c26e0e839ec3499c96d", "newlib-cygwin/newlib/libc/string/strstr.c", "10a191158c7e2bb44116ce56073927fc2fb5ab4db0039e0a8378d3fc9806955b", "source-header"],
+    ["arm-gnu-newlib-runtime", "libg.a", "libc_a-strtol.o", "0883999f376bdc86db7d1deb019d6638cf1a5a1083d8866ba741143ce53fd279", "newlib-cygwin/newlib/libc/stdlib/strtol.c", "1fd68d257b1b3d1c4b31845d68d7658cc0c9064b6b9e471d9275bbf3b3143362", "source-header"],
+    ["arm-gnu-newlib-runtime", "libm.a", "libm_a-wf_log2.o", "d81937156fa392d82908c97bc4b61817d1fc31056165ec35d4353d8cdde302a8", "newlib-cygwin/newlib/libm/math/wf_log2.c", "59ae5d9416db66589b885c6f21fcb543c396963efd1acae679f14d40a69086a5", "source-header"]
+  ],
+  "headers": [
+    ["arm-gnu-newlib-runtime", "arm-none-eabi/include/_ansi.h", "5c6403b471ee897c9a6c12e00a58617247804eb3ee72d7baeb7c08616090dd1d", "newlib-cygwin/newlib/libc/include/_ansi.h"],
+    ["arm-gnu-newlib-runtime", "arm-none-eabi/include/alloca.h", "fdebd60de65105d933b55dcde1650f6c9b3cf6142c225397c5f956638208d4de", "newlib-cygwin/newlib/libc/include/alloca.h"],
+    ["arm-gnu-newlib-runtime", "arm-none-eabi/include/assert.h", "76d2c321e49e268077d5e6f14e3da71b8f1e28ced650fe3cd403261b3d09923f", "newlib-cygwin/newlib/libc/include/assert.h"],
+    ["arm-gnu-newlib-runtime", "arm-none-eabi/include/errno.h", "53d288d669b43f2341048bf58bc5e6e46a5cfbe68c6d296a3b2e2f1378ac3ca8", "newlib-cygwin/newlib/libc/include/errno.h"],
+    ["arm-gnu-newlib-runtime", "arm-none-eabi/include/inttypes.h", "de91bd3417f3c69ace8b332edea2ff3db8a7fddb4f61cb6017272a06e5727837", "newlib-cygwin/newlib/libc/include/inttypes.h"],
+    ["arm-gnu-newlib-runtime", "arm-none-eabi/include/limits.h", "16b91bb4b4f7053ddfbbe6ec0925d901093499468151289d5c224d718ec25e44", "newlib-cygwin/newlib/libc/include/limits.h"],
+    ["arm-gnu-newlib-runtime", "arm-none-eabi/include/machine/_default_types.h", "5d8f9f7ead7927e4b8b7ed00172e84f2ae82ea7f5f6ba3240ff813a9236771b3", "newlib-cygwin/newlib/libc/include/machine/_default_types.h"],
+    ["arm-gnu-newlib-runtime", "arm-none-eabi/include/machine/_endian.h", "4b886bc7fadb6712ef700478167e0b2cf921563bbf5a0f0beacb4925ff016f31", "newlib-cygwin/newlib/libc/machine/arm/machine/_endian.h"],
+    ["arm-gnu-newlib-runtime", "arm-none-eabi/include/machine/_time.h", "30d5767d9856a34b13effab3cc2663bc48d77eaf778d313f243b25015dfe1d8b", "newlib-cygwin/newlib/libc/include/machine/_time.h"],
+    ["arm-gnu-newlib-runtime", "arm-none-eabi/include/machine/_types.h", "44544ecbbc10c8aa58ca2da6d0617ffeee5af847af24515ab108c8218d6d92c8", "newlib-cygwin/newlib/libc/include/machine/_types.h"],
+    ["arm-gnu-newlib-runtime", "arm-none-eabi/include/machine/endian.h", "c9cb16333e537785dde867ed059915ef2d09661dbab7cc8b4519b646735eace4", "newlib-cygwin/newlib/libc/include/machine/endian.h"],
+    ["arm-gnu-newlib-runtime", "arm-none-eabi/include/machine/ieeefp.h", "ec1e7f9f068ef40e2ec360681a4bbc7e2f3f1e3bb9e141a254a1f1ccdc4af195", "newlib-cygwin/newlib/libc/include/machine/ieeefp.h"],
+    ["arm-gnu-newlib-runtime", "arm-none-eabi/include/machine/stdlib.h", "43552e520d412993325ba62cb496839cd03fd46b0df67149a5ccbe1b95c45fdd", "newlib-cygwin/newlib/libc/include/machine/stdlib.h"],
+    ["arm-gnu-newlib-runtime", "arm-none-eabi/include/machine/time.h", "ac7672170b5e2df1fe1d40a9aa5a83356e7df9c221de771c8dbf79da68e0757d", "newlib-cygwin/newlib/libc/include/machine/time.h"],
+    ["arm-gnu-newlib-runtime", "arm-none-eabi/include/machine/types.h", "3be8e785d201f2972db6a96ae1adb4263227623c7e298aded1a662cb8da93ea3", "newlib-cygwin/newlib/libc/include/machine/types.h"],
+    ["arm-gnu-newlib-runtime", "arm-none-eabi/include/math.h", "af8b612e6f341fdaab6d30f154e1c24b18695cc0a8dc17b6e98da3cb3ecfdb72", "newlib-cygwin/newlib/libc/include/math.h"],
+    ["arm-gnu-newlib-runtime", "arm-none-eabi/include/stdint.h", "99fe201684856075ccd92704f63b702f6fa882b9dab61bd7a9bcce2588275861", "newlib-cygwin/newlib/libc/include/stdint.h"],
+    ["arm-gnu-newlib-runtime", "arm-none-eabi/include/stdio.h", "c900e320b44518e1a214792b8caf7cffa683fda7bae2cb70714bdcd8087fe2f8", "newlib-cygwin/newlib/libc/include/stdio.h"],
+    ["arm-gnu-newlib-runtime", "arm-none-eabi/include/stdlib.h", "0352eeb92f26fc71f80bb19f14cdd31d33a830b0b6d3e3c5ccb266312bf0c2b8", "newlib-cygwin/newlib/libc/include/stdlib.h"],
+    ["arm-gnu-newlib-runtime", "arm-none-eabi/include/string.h", "79722fe25a7d01447fee06a0b8efe7535c1b891568730ba154a139c59c068ffc", "newlib-cygwin/newlib/libc/include/string.h"],
+    ["arm-gnu-newlib-runtime", "arm-none-eabi/include/strings.h", "743121afb2f530045eb63bcfa3fdbc4ecf555131bd1cf7ce36a268f758bb4be5", "newlib-cygwin/newlib/libc/include/strings.h"],
+    ["arm-gnu-newlib-runtime", "arm-none-eabi/include/sys/_intsup.h", "1af8abe244b43a3a5b5a85f6c834aa206930b6938e8109fbec430bc140b68df5", "newlib-cygwin/newlib/libc/include/sys/_intsup.h"],
+    ["arm-gnu-newlib-runtime", "arm-none-eabi/include/sys/_locale.h", "adc8e11513e5f83a0c73ac641c256815b0aa6cc8a09a43d2c97b1ee79db9f154", "newlib-cygwin/newlib/libc/include/sys/_locale.h"],
+    ["arm-gnu-newlib-runtime", "arm-none-eabi/include/sys/_pthreadtypes.h", "e0924bdccdc1b9983c51436971b690cd58024aa7c56b83f3e076bfc4f51091b6", "newlib-cygwin/newlib/libc/include/sys/_pthreadtypes.h"],
+    ["arm-gnu-newlib-runtime", "arm-none-eabi/include/sys/_sigset.h", "16e78626ff97ef85ec70ba9898082fccf70b741b0c6586c57e4421fc60b9a07d", "newlib-cygwin/newlib/libc/include/sys/_sigset.h"],
+    ["arm-gnu-newlib-runtime", "arm-none-eabi/include/sys/_stdint.h", "49f8328943afa2a83ed4a35fcb808ed08b8c9fcb55373c786fb1b1d3a21952d7", "newlib-cygwin/newlib/libc/include/sys/_stdint.h"],
+    ["arm-gnu-newlib-runtime", "arm-none-eabi/include/sys/_timespec.h", "cea8007561c4c9285063cc2f941a284d008e9f044fdfa346572e8bb39f236391", "newlib-cygwin/newlib/libc/include/sys/_timespec.h"],
+    ["arm-gnu-newlib-runtime", "arm-none-eabi/include/sys/_timeval.h", "976b01c11c44422953444b3f612ca6a7d41d70569e25a4c0674e9f8899101b22", "newlib-cygwin/newlib/libc/include/sys/_timeval.h"],
+    ["arm-gnu-newlib-runtime", "arm-none-eabi/include/sys/_types.h", "1abe39aca5104bafbde2e0219e7cdc3e96129b22ce1ef5cd58b66d8d147d3fb7", "newlib-cygwin/newlib/libc/include/sys/_types.h"],
+    ["arm-gnu-newlib-runtime", "arm-none-eabi/include/sys/cdefs.h", "9dcd9f554b32c40791b8f081f34c83767c61c0bc567b4a486066edda39812f3e", "newlib-cygwin/newlib/libc/include/sys/cdefs.h"],
+    ["arm-gnu-newlib-runtime", "arm-none-eabi/include/sys/config.h", "583e381e7184a477bcea569149f6154ccf4f0faa0829a9d8363954adb7aecf14", "newlib-cygwin/newlib/libc/include/sys/config.h"],
+    ["arm-gnu-newlib-runtime", "arm-none-eabi/include/sys/errno.h", "b3f6da7e0a9eb56605d901ef6745ff228af9ac4044db5abc512541e2046257b1", "newlib-cygwin/newlib/libc/include/sys/errno.h"],
+    ["arm-gnu-newlib-runtime", "arm-none-eabi/include/sys/features.h", "c580ee2a628857e7ebeb0484d078b16cf61049f14b2492b0cac5b54ed1f34cca", "newlib-cygwin/newlib/libc/include/sys/features.h"],
+    ["arm-gnu-newlib-runtime", "arm-none-eabi/include/sys/lock.h", "f5cad9196ce745967fd2673e085b5c03df7887d4d11d7544aff05ff6679be6b8", "newlib-cygwin/newlib/libc/include/sys/lock.h"],
+    ["arm-gnu-newlib-runtime", "arm-none-eabi/include/sys/reent.h", "948b8a04507fd331248a164f0dfd12443e9942d3893b0159efd0865d787405f7", "newlib-cygwin/newlib/libc/include/sys/reent.h"],
+    ["arm-gnu-newlib-runtime", "arm-none-eabi/include/sys/sched.h", "a905a789e215093f6207948dc700e0ce9789cba8b491a6f1b58888a79b466526", "newlib-cygwin/newlib/libc/include/sys/sched.h"],
+    ["arm-gnu-newlib-runtime", "arm-none-eabi/include/sys/select.h", "95b29d3fbd8a106e718038a2fabf6ad64fb9ce1b4a549334d5ee1ca274def4a7", "newlib-cygwin/newlib/libc/include/sys/select.h"],
+    ["arm-gnu-newlib-runtime", "arm-none-eabi/include/sys/stat.h", "a722b7c06beeb507b934243ada623525030b1182bec2e013f38685e058c6f759", "newlib-cygwin/newlib/libc/include/sys/stat.h"],
+    ["arm-gnu-newlib-runtime", "arm-none-eabi/include/sys/stdio.h", "bd987ea6fed5d31d8a4e7d183a7d988e981ecca3cffce76ee482fcb0bf65594b", "newlib-cygwin/newlib/libc/include/sys/stdio.h"],
+    ["arm-gnu-newlib-runtime", "arm-none-eabi/include/sys/string.h", "b7164ee36ccb0a08bc27c7e381ea417c97d8c3fd3157de62b75d2a6bf7a0a589", "newlib-cygwin/newlib/libc/include/sys/string.h"],
+    ["arm-gnu-newlib-runtime", "arm-none-eabi/include/sys/syslimits.h", "780971936dd4b8f3b192669e693430c204a72c7fb05e7a1db67d48f02cd9aec4", "newlib-cygwin/newlib/libc/include/sys/syslimits.h"],
+    ["arm-gnu-newlib-runtime", "arm-none-eabi/include/sys/time.h", "4339fef02543373b805426f6b9540c9810737ad855082354981e027480bfce4f", "newlib-cygwin/newlib/libc/include/sys/time.h"],
+    ["arm-gnu-newlib-runtime", "arm-none-eabi/include/sys/times.h", "c15b32414d3a99b24ce37ed444eec2e4b50e9ff18aecf4aa1e070cbaaa0c4954", "newlib-cygwin/newlib/libc/include/sys/times.h"],
+    ["arm-gnu-newlib-runtime", "arm-none-eabi/include/sys/timespec.h", "c2c2dfdcf9deacccb8919ff633f212afa455e4779a2d12c47b9afa0eff7d73c1", "newlib-cygwin/newlib/libc/include/sys/timespec.h"],
+    ["arm-gnu-newlib-runtime", "arm-none-eabi/include/sys/types.h", "659abc34a2db9f62109d06135699e72a8759cce553626aac5340bfd84988d8a7", "newlib-cygwin/newlib/libc/include/sys/types.h"],
+    ["arm-gnu-newlib-runtime", "arm-none-eabi/include/sys/unistd.h", "ddba1987072acdd1db900ac79a36d8e7a534bed2bfb3b1b6b054f2402aed7f4b", "newlib-cygwin/newlib/libc/include/sys/unistd.h"],
+    ["arm-gnu-newlib-runtime", "arm-none-eabi/include/time.h", "b09063b6746def510cdd3dffaaa908df68e67ef1507291a58e520b0243db2d96", "newlib-cygwin/newlib/libc/include/time.h"],
+    ["arm-gnu-newlib-runtime", "arm-none-eabi/include/unistd.h", "19f31553182c4d649dd0d6301ffdbb5b4d7903b28373dd070a553798b41f524f", "newlib-cygwin/newlib/libc/include/unistd.h"],
+    ["arm-gnu-gcc-runtime", "arm-none-eabi/include/c++/14.2.1/arm-none-eabi/thumb/v8-m.main+fp/softfp/bits/cpu_defines.h", "44d1f531c37d6a6efbcc1f0923e54f5423f75949ac63b0508718dbf92f296e35", "gcc/libstdc++-v3/config/cpu/arm/cpu_defines.h"],
+    ["arm-gnu-gcc-runtime", "arm-none-eabi/include/c++/14.2.1/arm-none-eabi/thumb/v8-m.main+fp/softfp/bits/os_defines.h", "2b82a2e0155400c723e4f16b8bca8c787bacff4f605ed2d62a99fc9574aa9c4f", "gcc/libstdc++-v3/config/os/newlib/os_defines.h"],
+    ["arm-gnu-gcc-runtime", "arm-none-eabi/include/c++/14.2.1/bits/std_abs.h", "5ef9afc3cc6766e4eeb2e0c63b4f9a7ecaf43ef10f7d3b997f39b6a6bce04a26", "gcc/libstdc++-v3/include/bits/std_abs.h"],
+    ["arm-gnu-gcc-runtime", "arm-none-eabi/include/c++/14.2.1/cassert", "03b6807a38447a0b40585d8cba40b7b1b4ac075b77bc8f9f2d61acfe55793c76", "gcc/libstdc++-v3/include/c_global/cassert"],
+    ["arm-gnu-gcc-runtime", "arm-none-eabi/include/c++/14.2.1/cstdlib", "6e5357662487fa8a43fa8daf55e3bfe135c18d23926b7143daf2f963b02f6f9d", "gcc/libstdc++-v3/include/c_global/cstdlib"],
+    ["arm-gnu-gcc-runtime", "arm-none-eabi/include/c++/14.2.1/pstl/pstl_config.h", "bb345f04a06da82729897739105e8b69a01fcfaf58c608db36f2fd310a36ccd5", "gcc/libstdc++-v3/include/pstl/pstl_config.h"],
+    ["arm-gnu-gcc-runtime", "lib/gcc/arm-none-eabi/14.2.1/include/arm_acle.h", "2f9552d858f598096b0cb2bd7fec466ec5bdcbb3a6e4f8bb9ba3694f72a0dfa2", "gcc/gcc/config/arm/arm_acle.h"],
+    ["arm-gnu-gcc-runtime", "lib/gcc/arm-none-eabi/14.2.1/include/float.h", "0924f0708449d918e3152d00087efdf18e3f26c92030c464a6b4a77da1439f57", "gcc/gcc/ginclude/float.h"],
+    ["arm-gnu-gcc-runtime", "lib/gcc/arm-none-eabi/14.2.1/include/stdarg.h", "7ead4a2428691baf94bec3fd2db8984dbb1c5f597edf0f9bc3068fb43dad22f7", "gcc/gcc/ginclude/stdarg.h"],
+    ["arm-gnu-gcc-runtime", "lib/gcc/arm-none-eabi/14.2.1/include/stdatomic.h", "0aefe7b9013b2fcb7020c41e97d03ff11439d9a0d5bc27bf1233cbd091283ac0", "gcc/gcc/ginclude/stdatomic.h"],
+    ["arm-gnu-gcc-runtime", "lib/gcc/arm-none-eabi/14.2.1/include/stdbool.h", "7b9c438a5b2f082a560a72da8d752da51062cc6f84d1c4acec45ff0a68e8d037", "gcc/gcc/ginclude/stdbool.h"],
+    ["arm-gnu-gcc-runtime", "lib/gcc/arm-none-eabi/14.2.1/include/stddef.h", "c93f57f1538121cdbc27b59a47f1ed82b078d40e404b46481c83bafadd5deada", "gcc/gcc/ginclude/stddef.h"],
+    ["arm-gnu-gcc-runtime", "lib/gcc/arm-none-eabi/14.2.1/include/stdint.h", "86a7914ab7d6a18465a6fb9a7b54f945cad604fdbf3ca0d10e4e0254e0037911", "gcc/gcc/ginclude/stdint-wrap.h"],
+    ["arm-gnu-gcc-runtime", "lib/gcc/arm-none-eabi/14.2.1/include/syslimits.h", "22dd0ab81baadd5a8d455b445855f341d419c7b0267beca235de00b7ec78e529", "gcc/gcc/gsyslimits.h"]
+  ],
+  "generated_headers": [
+    ["arm-gnu-newlib-runtime", "arm-none-eabi/include/_newlib_version.h", "bfc4b55e8665b5c4ae407e090a6aac2fb829905f04a5a7519686631eb1633fff", [["newlib-cygwin/newlib/_newlib_version.hin", "be53896296e19c77186201eb4068d57b72d8fedd861833dd1f77603b2d6053b3"], ["newlib-cygwin/newlib/configure", "5d1fcdb2d8e04cd9f5fabf7daba5b1fafaf7a0c2c55dd264f3684a2fb70e136b"]], "configure-substitution"],
+    ["arm-gnu-newlib-runtime", "arm-none-eabi/include/newlib.h", "f5b1f4cb2854a583795145eeb2b3f4115411bbd216a683356cdddaa208adb9ad", [["newlib-cygwin/newlib/newlib.hin", "69589a3b917cb1c81de0c5bcd09b969ba8abdf458f1fc4b5bc954f7adcb17090"], ["newlib-cygwin/newlib/configure", "5d1fcdb2d8e04cd9f5fabf7daba5b1fafaf7a0c2c55dd264f3684a2fb70e136b"]], "configure-substitution-and-install-filter"],
+    ["arm-gnu-gcc-runtime", "arm-none-eabi/include/c++/14.2.1/arm-none-eabi/thumb/v8-m.main+fp/softfp/bits/c++config.h", "81d51dc1529f66dbeb4af9a3180ed5b2a6a10d0b3d7fa5ff6fb6b541ba30e036", [["gcc/libstdc++-v3/include/bits/c++config", "e6d0e032174eab87d9f9f027947c4efa6479a94332c0d9261ef2de188333da81"], ["gcc/libstdc++-v3/include/Makefile.am", "abc6221cfc2a210f9b27ea3ed799bd2823603f49a76c1be32f865ece24f69c53"]], "libstdcxx-cxxconfig-sed-recipe"],
+    ["arm-gnu-gcc-runtime", "lib/gcc/arm-none-eabi/14.2.1/include/limits.h", "bc572350077d8caa24f82d5439119aa2dc184e72cc4ea325b4cd0137db51580f", [["gcc/gcc/limitx.h", "b7098f6ed4e6b4a420bf5394aa4f07a8d6f6708772ad94e63231a867d3b8ae1a"], ["gcc/gcc/glimits.h", "91b75b5dc1fa336ac78ede173c70d51741389f787481511ba42ae79d1db2dae0"], ["gcc/gcc/limity.h", "281813879fe05668e6a3cc520ef294c7fd3f01f75dd67cb5e363c3ffdf37cb1b"], ["gcc/gcc/Makefile.in", "5ee8fe6d502fce2988195a6715fc436f32cc3c2fe0881e4033ae5484ac02edd7"]], "ordered-concatenation-limitx-glimits-limity" ]
+  ],
+  "eligible_compilation": {
+    "forbidden_arguments": ["-fplugin", "-flto"],
+    "forbid_compiler_launchers": true,
+    "forbid_external_ir_consumers": true,
+    "required_receipt_kinds": ["cmake-cache", "flags", "compile-recipe", "depfile", "link-command", "linker-map", "elf", "bin", "uf2"],
+    "target_code_drivers": ["bin/arm-none-eabi-gcc", "bin/arm-none-eabi-g++"],
+    "link_driver": "bin/arm-none-eabi-g++"
+  },
+  "summary": {
+    "allocated_archive_member_count": 29,
+    "build_tool_count": 5,
+    "direct_contributor_count": 3,
+    "exact_header_count": 62,
+    "generated_header_count": 4,
+    "header_count": 66,
+    "owner_count": 5
+  }
+}

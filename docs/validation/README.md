@@ -20,3 +20,12 @@ The retained firmware 0.4.1 OI-1 record was produced from the archived private
 development history. Its source identifier is deliberately not resolvable in
 this fresh public history. It documents the legacy release baseline and must
 not be reused as evidence for a new public-source release.
+
+The five-profile records at `firmware/oi1/7441a762….json` and
+`firmware/oi1/a8be631d….json` are immutable pre-publication v0.6.0 engineering
+baselines. The latter remains the active input for replacement-policy
+rederivation: static/heap thresholds are recomputed from it, while reset and
+goodput arrays remain diagnostic under ADR-0037's fixed SLOs. Its own
+`source_commit` never selects the derivation; the bound policy/candidate source
+era does. Neither record is candidate HIL or public release approval, and
+neither may be edited to fit the replacement.

@@ -4,6 +4,9 @@
 import { createHash } from "node:crypto";
 
 export const firmwareVersion = "0.4.2";
+// Prospective split-source release identity. This fixture does not assert that
+// the version has been qualified or published.
+export const currentFirmwareVersion = "0.5.1";
 export const firmwareOrigin = "https://pyble.dev";
 
 export const firmwareProfiles = [
@@ -46,6 +49,8 @@ export const firmwareProfiles = [
 ] as const;
 
 export type FirmwareProfileId = (typeof firmwareProfiles)[number]["id"];
+export type CurrentFirmwareProfileId =
+  FirmwareProfileId | "waveshare-esp32-s3-lcd-147b";
 export type FirmwareDeployment = "public" | "candidate" | "public-beta";
 export type HilStatus = "pending" | "passed";
 
@@ -75,7 +80,7 @@ export interface TestManifest {
 }
 
 export interface TestReleaseProfile {
-  id: FirmwareProfileId;
+  id: CurrentFirmwareProfileId;
   chip_family: string;
   requirements: {
     flash_size_bytes: number;
@@ -693,7 +698,241 @@ export function createFirmwareReleaseFixture(
   };
 }
 
-export function bundleFiles(fixture: FirmwareReleaseFixture) {
+export const currentFirmwareProfiles = [
+  {
+    ...firmwareProfiles[0],
+    manifestPath: "/firmware/v0.5.1/esp32-4mb/manifest.json",
+    firmwarePath: "/firmware/v0.5.1/esp32-4mb/firmware.bin",
+  },
+  {
+    ...firmwareProfiles[1],
+    label: "ESP32-S3 · N16R8 · lean generic",
+    manifestPath: "/firmware/v0.5.1/esp32-s3-n16r8/manifest.json",
+    firmwarePath: "/firmware/v0.5.1/esp32-s3-n16r8/firmware.bin",
+  },
+  {
+    id: "waveshare-esp32-s3-lcd-147b",
+    label: "Waveshare ESP32-S3-LCD-1.47B · N16R8",
+    chipFamily: "ESP32-S3",
+    manifestPath: "/firmware/v0.5.1/waveshare-esp32-s3-lcd-147b/manifest.json",
+    firmwarePath: "/firmware/v0.5.1/waveshare-esp32-s3-lcd-147b/firmware.bin",
+    offset: 0,
+    siliconRevision: {
+      minimumFull: 0,
+      maximumFull: 99,
+    },
+    flashSizeBytes: 16 * 1024 * 1024,
+    psram: {
+      required: true,
+      sizeBytes: 8 * 1024 * 1024,
+      type: "octal",
+    },
+  },
+] as const;
+
+interface CurrentFixtureOptions {
+  deployment?: FirmwareDeployment;
+  accessControlled?: boolean;
+  hilStatus?: HilStatus;
+  profileHilStatus?: Partial<Record<CurrentFirmwareProfileId, HilStatus>>;
+  profileId?: CurrentFirmwareProfileId;
+  mutateDescriptor?: (descriptor: CurrentFirmwareReleaseDescriptor) => void;
+  mutateManifest?: (manifest: TestManifest) => void;
+  mutateRelease?: (release: TestRelease) => void;
+  servedFirmware?: (declaredBytes: Uint8Array) => Uint8Array;
+  servedManifest?: (declaredBytes: Uint8Array) => Uint8Array;
+}
+
+export interface CurrentFirmwareReleaseDescriptor extends Omit<
+  FirmwareReleaseDescriptor,
+  "profiles"
+> {
+  profiles: typeof currentFirmwareProfiles;
+}
+
+export interface CurrentFirmwareReleaseFixture extends Omit<
+  FirmwareReleaseFixture,
+  "descriptor" | "profileId"
+> {
+  descriptor: CurrentFirmwareReleaseDescriptor;
+  profileId: CurrentFirmwareProfileId;
+}
+
+function exactCurrentReleaseSchema() {
+  const schema = structuredClone(exactReleaseSchema()) as {
+    title: string;
+    properties: {
+      schema_version: { const: number };
+      profiles: {
+        minItems: number;
+        maxItems: number;
+        items: { properties: { id: { enum: string[] } } };
+      };
+    };
+  };
+  schema.title = "PyBLE firmware release metadata v3";
+  schema.properties.schema_version.const = 3;
+  schema.properties.profiles.minItems = 3;
+  schema.properties.profiles.maxItems = 3;
+  schema.properties.profiles.items.properties.id.enum =
+    currentFirmwareProfiles.map(({ id }) => id);
+  return schema;
+}
+
+export function createCurrentFirmwareReleaseFixture(
+  options: CurrentFixtureOptions = {},
+): CurrentFirmwareReleaseFixture {
+  const fixture = createFirmwareReleaseFixture({
+    accessControlled: options.accessControlled,
+    deployment: options.deployment,
+    hilStatus: options.hilStatus,
+  });
+  const files = new Map<string, Uint8Array>();
+  const defaultHilStatus = options.hilStatus ?? "passed";
+  const selectedProfileId = options.profileId ?? "waveshare-esp32-s3-lcd-147b";
+  let selectedManifest: TestManifest | undefined;
+  let selectedManifestBytes: Uint8Array | undefined;
+  let selectedFirmwareBytes: Uint8Array | undefined;
+
+  fixture.release.schema_version = 3;
+  fixture.release.identity.version = currentFirmwareVersion;
+  fixture.release.identity.tag = `firmware-v${currentFirmwareVersion}`;
+  fixture.release.identity.agent_version = currentFirmwareVersion;
+  fixture.release.identity.built_at = "2026-08-03T12:00:00Z";
+  fixture.release.profiles = currentFirmwareProfiles.map(
+    (profile, profileIndex): TestReleaseProfile => {
+      const manifest: TestManifest = {
+        name: "PyBLE",
+        version: currentFirmwareVersion,
+        new_install_prompt_erase: false,
+        new_install_improv_wait_time: 0,
+        builds: [
+          {
+            chipFamily: profile.chipFamily,
+            parts: [{ path: "firmware.bin", offset: profile.offset }],
+          },
+        ],
+      };
+      if (profile.id === selectedProfileId) {
+        options.mutateManifest?.(manifest);
+        selectedManifest = manifest;
+      }
+      const manifestBytes = jsonBytes(manifest);
+      const firmwareBytes = new Uint8Array([
+        0xe9,
+        0x50 + profileIndex,
+        0x59,
+        0x42,
+        0x4c,
+        0x45,
+      ]);
+      files.set(`${profile.id}/manifest.json`, manifestBytes);
+      files.set(`${profile.id}/firmware.bin`, firmwareBytes);
+      if (profile.id === selectedProfileId) {
+        selectedManifestBytes = manifestBytes;
+        selectedFirmwareBytes = firmwareBytes;
+      }
+      const components = [
+        ["bootloader", "bootloader.bin", profile.offset],
+        ["partition-table", "partition-table.bin", 0x8000],
+        ["application", "application.bin", 0x10000],
+      ].map(([role, filename, offset], componentIndex) => {
+        const bytes = new Uint8Array([
+          0xe9,
+          profileIndex,
+          componentIndex,
+          0x50,
+          0x79,
+        ]);
+        const path = `${profile.id}/${filename as string}`;
+        files.set(path, bytes);
+        return {
+          ...artifact(path, bytes),
+          role: role as TestComponentArtifact["role"],
+          offset: offset as number,
+        };
+      });
+      return {
+        id: profile.id,
+        chip_family: profile.chipFamily,
+        requirements: {
+          flash_size_bytes: profile.flashSizeBytes,
+          psram: {
+            required: profile.psram.required,
+            size_bytes: profile.psram.sizeBytes,
+            type: profile.psram.type,
+          },
+        },
+        flash: {
+          mode: "dio",
+          frequency_hz: profile.id === "esp32-4mb" ? 40_000_000 : 80_000_000,
+        },
+        silicon_revision: {
+          minimum_full: profile.siliconRevision.minimumFull,
+          maximum_full: profile.siliconRevision.maximumFull,
+        },
+        hil_status: options.profileHilStatus?.[profile.id] ?? defaultHilStatus,
+        manifest: artifact(`${profile.id}/manifest.json`, manifestBytes),
+        install: {
+          ...artifact(`${profile.id}/firmware.bin`, firmwareBytes),
+          offset: profile.offset,
+        },
+        components,
+      };
+    },
+  );
+
+  for (const document of Object.values(fixture.release.documents)) {
+    const bytes = fixture.files.get(document.path);
+    if (!bytes) {
+      throw new Error(`Missing current fixture document: ${document.path}`);
+    }
+    files.set(document.path, bytes);
+  }
+  options.mutateRelease?.(fixture.release);
+  const releaseBytes = jsonBytes(fixture.release);
+  files.set("release.json", releaseBytes);
+  files.set("release.schema.json", jsonBytes(exactCurrentReleaseSchema()));
+
+  const descriptor: CurrentFirmwareReleaseDescriptor = {
+    deployment: options.deployment ?? "public",
+    accessControlled: options.accessControlled ?? false,
+    version: currentFirmwareVersion,
+    builtAt: fixture.release.identity.built_at,
+    hilStatus: defaultHilStatus,
+    releaseJson: {
+      path: `/firmware/v${currentFirmwareVersion}/release.json`,
+      sha256: sha256(releaseBytes),
+    },
+    schemaPath: `/firmware/v${currentFirmwareVersion}/release.schema.json`,
+    recoveryPath: `/firmware/v${currentFirmwareVersion}/RECOVERY.md`,
+    profiles: currentFirmwareProfiles,
+  };
+  options.mutateDescriptor?.(descriptor);
+  if (!selectedManifest || !selectedManifestBytes || !selectedFirmwareBytes) {
+    throw new Error(`Unknown current test profile: ${selectedProfileId}`);
+  }
+  files.set(
+    `${selectedProfileId}/manifest.json`,
+    options.servedManifest?.(selectedManifestBytes) ?? selectedManifestBytes,
+  );
+  files.set(
+    `${selectedProfileId}/firmware.bin`,
+    options.servedFirmware?.(selectedFirmwareBytes) ?? selectedFirmwareBytes,
+  );
+  return {
+    descriptor,
+    files,
+    manifest: selectedManifest,
+    manifestBytes: selectedManifestBytes,
+    firmwareBytes: selectedFirmwareBytes,
+    profileId: selectedProfileId,
+    release: fixture.release,
+    releaseBytes,
+  };
+}
+
+export function bundleFiles(fixture: Pick<FirmwareReleaseFixture, "files">) {
   const files = new Map(fixture.files);
   const sums = [...files.entries()]
     .sort(([left], [right]) => left.localeCompare(right))
@@ -705,6 +944,30 @@ export function bundleFiles(fixture: FirmwareReleaseFixture) {
 
 export const passedPublicFirmwareRelease =
   createFirmwareReleaseFixture().descriptor;
+// Synthetic passed-public descriptors exercise future activation gates only;
+// the checked-in v0.5.1 state remains prospective and unqualified.
+export const hypotheticalPassedPublicFirmwareRelease =
+  createCurrentFirmwareReleaseFixture({
+    deployment: "public",
+    accessControlled: false,
+    hilStatus: "passed",
+  }).descriptor;
+export const currentPassedPublicFirmwareRelease =
+  hypotheticalPassedPublicFirmwareRelease;
+export const currentPendingPublicFirmwareRelease =
+  createCurrentFirmwareReleaseFixture({ hilStatus: "pending" }).descriptor;
+export const currentPendingCandidateFirmwareRelease =
+  createCurrentFirmwareReleaseFixture({
+    deployment: "candidate",
+    accessControlled: true,
+    hilStatus: "pending",
+  }).descriptor;
+export const currentUncontrolledCandidateFirmwareRelease =
+  createCurrentFirmwareReleaseFixture({
+    deployment: "candidate",
+    accessControlled: false,
+    hilStatus: "pending",
+  }).descriptor;
 export const pendingPublicFirmwareRelease = createFirmwareReleaseFixture({
   hilStatus: "pending",
 }).descriptor;

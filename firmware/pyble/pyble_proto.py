@@ -46,6 +46,7 @@ OPCODES = {
     "RUN": 0x20,
     "STOP": 0x21,
     "SOFT_REBOOT": 0x22,
+    "SET_AUTORUN": 0x23,  # additive §9 opcode (S6 F-12), auto_run-cap gated
     "CONSOLE_DATA": 0x30,
     "CONSOLE_INPUT": 0x31,
     "RUN_STATE": 0x40,
@@ -86,6 +87,16 @@ class ProtocolError(ValueError):
 
 
 # --- IEEE CRC-32 (protocol.md §3.1 / FR-PROTO-3) -----------------------------
+# Native fast path: `binascii.crc32` (zlib-compatible IEEE CRC-32) where the
+# runtime provides it (MicroPython rp2, CPython). The pure-Python table below
+# stays as the fallback so the module imports anywhere; both forms are
+# BIT-IDENTICAL (guarded by the shared conformance corpus + the rp2 streaming
+# suite, tests/firmware_tests/host/test_pyble_proto_opcode_parity.py).
+try:
+    from binascii import crc32 as _crc32_native
+except ImportError:
+    _crc32_native = None
+
 # Pure-Python, table-driven, reflected CRC-32 (poly 0xEDB88320, init/xorout
 # 0xFFFFFFFF) — bit-identical to zlib.crc32 on both CPython and MicroPython,
 # with no dependency on the host `zlib`/`binascii` module.
@@ -98,12 +109,28 @@ for _n in range(256):
 del _n, _c, _k
 
 
-def crc32(buf):
-    """IEEE CRC-32 (zlib-compatible) over `buf`, returned as a uint32."""
-    crc = 0xFFFFFFFF
-    for byte in buf:
+def _crc32_pure_update(crc, chunk):
+    """Pure-table streaming step, chained exactly like binascii.crc32(chunk, crc)
+    (un-finalize the running value, fold the chunk, re-finalize)."""
+    crc = (crc ^ 0xFFFFFFFF) & 0xFFFFFFFF
+    for byte in chunk:
         crc = _CRC_TABLE[(crc ^ byte) & 0xFF] ^ (crc >> 8)
     return crc ^ 0xFFFFFFFF
+
+
+def crc32_update(crc, chunk):
+    """Streaming IEEE CRC-32 (F-25): seed 0, chain c = crc32_update(c, chunk);
+    the final value equals crc32(b"".join(chunks)). Accepts bytes / bytearray /
+    memoryview chunks (the rp2 file worker streams flash reads through
+    memoryviews). Native `binascii.crc32` fast path where available."""
+    if _crc32_native is not None:
+        return _crc32_native(chunk, crc) & 0xFFFFFFFF
+    return _crc32_pure_update(crc, chunk)
+
+
+def crc32(buf):
+    """IEEE CRC-32 (zlib-compatible) over `buf`, returned as a uint32."""
+    return crc32_update(0, buf)
 
 
 class Frame:

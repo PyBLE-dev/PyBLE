@@ -26,10 +26,25 @@ import 'package:pyble/pble/pble_constants.dart';
 
 /// A scriptable in-memory [ByteTransport] (the Fake board transport).
 class FakeByteTransport implements ByteTransport {
-  FakeByteTransport({this.mtu = Pble.mtuRequest});
+  FakeByteTransport({
+    this.mtu = Pble.mtuRequest,
+    this.sendDelay = Duration.zero,
+    this.onSendStarted,
+    this.sendError,
+  });
 
   @override
   final int mtu;
+
+  /// Optional deterministic delay used to verify end-to-end request deadlines.
+  final Duration sendDelay;
+
+  /// Optional hook that runs after [send] starts but before its delayed Future
+  /// completes, so tests can model a Notify racing an acknowledged write.
+  final void Function()? onSendStarted;
+
+  /// Optional backend-origin error raised after [onSendStarted] and [sendDelay].
+  final Object? sendError;
 
   final StreamController<Uint8List> _inbound =
       StreamController<Uint8List>.broadcast();
@@ -38,6 +53,9 @@ class FakeByteTransport implements ByteTransport {
 
   /// Every raw GATT packet the client wrote (in order), for structural checks.
   final List<Uint8List> sentPackets = <Uint8List>[];
+
+  /// Whether each outbound packet requested an acknowledged GATT write.
+  final List<bool> sentAcknowledged = <bool>[];
 
   /// Every COMPLETE frame the client sent (reassembled + decoded), for
   /// request/response assertions.
@@ -50,7 +68,11 @@ class FakeByteTransport implements ByteTransport {
   ValueListenable<bool> get connected => _connected;
 
   @override
-  Future<void> send(Uint8List packet) async {
+  Future<void> send(Uint8List packet, {required bool acknowledged}) async {
+    onSendStarted?.call();
+    if (sendDelay > Duration.zero) await Future<void>.delayed(sendDelay);
+    if (sendError case final Object error) throw error;
+    sentAcknowledged.add(acknowledged);
     sentPackets.add(Uint8List.fromList(packet));
     final Uint8List? full = _outboundReassembler.offer(packet);
     if (full != null) sentFrames.add(decodeFrame(full));

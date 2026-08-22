@@ -2,11 +2,10 @@
 # SPDX-License-Identifier: MIT
 # Part of PyBLE (https://pyble.dev) — see /LICENSE.
 #
-# X-03 — Build all three chips (BLD-3, CON-11) from the single pin. Thin driver
-# over build.sh for esp32 / esp32-s3 / esp32-c3.
+# X-03 — Build four variants over three chips (BLD-3, CON-11) from one pin.
 #
-#   build_all.sh            real build of all three targets (stops on first fail).
-#   build_all.sh --plan     dry-run plan for all three (no ESP-IDF required).
+#   build_all.sh            real build of all four variants (stops on first fail).
+#   build_all.sh --plan     dry-run plan for all four (no ESP-IDF required).
 
 set -eu
 
@@ -15,7 +14,7 @@ REPO_ROOT="$(cd "$HERE/../.." && pwd)"
 BUILD="$HERE/build.sh"
 FW="$REPO_ROOT/firmware"
 
-TARGETS="esp32 esp32-s3 esp32-c3"
+TARGETS="esp32 esp32-s3 waveshare-esp32-s3-lcd-147b esp32-c3"
 BUILD_ROOT="${PYBLE_BUILD_ROOT:-$FW/build}"
 CANONICAL_UPSTREAM="${PYBLE_CANONICAL_UPSTREAM_DIR:-$FW/upstream/micropython}"
 LOCK="${PYBLE_LOCK_FILE:-$FW/versions.lock}"
@@ -185,6 +184,54 @@ assert_retained_checkouts() {
   done
 }
 
+admit_matrix_mpy_cross() {
+  reference=""
+  for compiler_target in $TARGETS; do
+    compiler="$SOURCES_ROOT/$compiler_target/micropython/mpy-cross/build/mpy-cross"
+    if [ -L "$compiler" ] || [ ! -f "$compiler" ] || [ ! -x "$compiler" ]; then
+      echo "build_all: $compiler_target mpy-cross is missing, symlinked, or not executable" >&2
+      return 1
+    fi
+    if [ -z "$reference" ]; then
+      reference="$compiler"
+    elif ! cmp -s "$reference" "$compiler"; then
+      echo "build_all: retained mpy-cross outputs are not byte-identical" >&2
+      return 1
+    fi
+  done
+  [ -n "$reference" ] || {
+    echo "build_all: no retained mpy-cross output was produced" >&2
+    return 1
+  }
+
+  canonical_dir="$CANONICAL_UPSTREAM/mpy-cross/build"
+  if [ -L "$canonical_dir" ] ||
+     { [ -e "$canonical_dir" ] && [ ! -d "$canonical_dir" ]; }
+  then
+    echo "build_all: canonical mpy-cross directory is not a regular directory" >&2
+    return 1
+  fi
+  mkdir -p "$canonical_dir" || return 1
+  canonical="$canonical_dir/mpy-cross"
+  if [ -L "$canonical" ] || { [ -e "$canonical" ] && [ ! -f "$canonical" ]; }; then
+    echo "build_all: canonical mpy-cross path is not a regular file" >&2
+    return 1
+  fi
+  incoming="$(mktemp "$canonical_dir/.mpy-cross.incoming.XXXXXX")" || {
+    echo "build_all: could not create atomic canonical admission" >&2
+    return 1
+  }
+  if ! install -m 0755 "$reference" "$incoming" ||
+     ! cmp -s "$reference" "$incoming" ||
+     ! mv -f -- "$incoming" "$canonical"
+  then
+    rm -f -- "$incoming"
+    echo "build_all: could not atomically admit canonical mpy-cross" >&2
+    return 1
+  fi
+  echo "build_all: admitted one byte-identical mpy-cross from all four variants"
+}
+
 # A plan is diagnostic and remains usable from a development worktree. A real
 # all-profile build is release input and therefore starts from one clean state.
 if [ -z "$PLAN" ]; then
@@ -252,5 +299,11 @@ if [ "$rc" -ne 0 ]; then
   echo "build_all: one or more targets did not complete" >&2
   exit 1
 fi
-echo "build_all: all three targets ($TARGETS) completed"
+if [ -z "$PLAN" ]; then
+  admit_matrix_mpy_cross || {
+    echo "build_all: compiler admission failed" >&2
+    exit 1
+  }
+fi
+echo "build_all: all four variants ($TARGETS) completed"
 exit 0

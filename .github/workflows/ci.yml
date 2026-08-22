@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Part of PyBLE (https://pyble.dev) — see /LICENSE.
 #
-# PyBLE CI — G0/G1 gate suite + 3-chip build matrix. Runs on every push and PR.
+# PyBLE CI — G0/G1 gate suite + 4-variant/3-chip build matrix. Runs on every push and PR.
 #   - no-leak         : reject forbidden proprietary tokens in shippable code (CON-6).
 #   - spdx            : every source file carries SPDX-License-Identifier: MIT (NFR-MAINT-4).
 #   - dco             : every commit in the PR is Signed-off-by (CON-6).
@@ -19,8 +19,8 @@
 #   - firmware-host   : shell gates plus the complete Python host/release suite.
 #   - android-webview : real Blockly platform-WebView integration on a clean,
 #                       pinned Android 14 / API 34 AOSP x86_64 AVD.
-#   - build           : cross-compile the empty agent for esp32 / esp32-s3 / esp32-c3
-#                       (BLD-3/4/5) — the REAL toolchain job (installs ESP-IDF + submodule).
+#   - build           : cross-compile esp32 / lean esp32-s3 / exact Waveshare
+#                       esp32-s3 / esp32-c3 (BLD-3/4/5) — the REAL toolchain job.
 name: ci
 
 on:
@@ -132,11 +132,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          fetch-depth: 0
           submodules: true
-      - name: Initialize pinned MicroPython host dependency
+      - name: Initialize pinned MicroPython host dependencies
         run: |
           git -C firmware/upstream/micropython submodule update --init --depth 1 \
-            lib/micropython-lib
+            lib/micropython-lib \
+            lib/cyw43-driver
       - name: Firmware shell and conformance gates
         run: tests/firmware_tests/run_tests.sh
       - name: Complete firmware host and release suite
@@ -236,6 +238,10 @@ jobs:
       PYBLE_ANDROID_RAW_EMULATOR_LOG: /tmp/pyble-android-emulator.log
       ANDROID_AVD_HOME: /tmp/pyble-android-avd
       GRADLE_USER_HOME: /tmp/pyble-gradle-home
+      PYBLE_ANDROID_KEYSTORE_PATH: /tmp/pyble-android-ci-upload.p12
+      PYBLE_ANDROID_KEYSTORE_PASSWORD: pyble-ci-ephemeral-not-a-secret
+      PYBLE_ANDROID_KEY_ALIAS: pyble-ci-upload
+      PYBLE_ANDROID_KEY_PASSWORD: pyble-ci-ephemeral-not-a-secret
     steps:
       - uses: actions/checkout@v4
       - name: Set up Flutter 3.44.1 (pinned, stable) + SDK cache
@@ -347,15 +353,34 @@ jobs:
             "ANDROID_NDK_PATH=$ANDROID_NDK_PATH" \
             "ANDROID_NDK_LATEST_HOME=$ANDROID_NDK_LATEST_HOME" \
             >> "$GITHUB_ENV"
-      - name: Production release APK build (no integration-test plugin)
+      - name: Create disposable Android CI signing key
+        shell: bash
+        run: |
+          set -euo pipefail
+          keytool -genkeypair -noprompt \
+            -keystore "$PYBLE_ANDROID_KEYSTORE_PATH" \
+            -storetype PKCS12 \
+            -storepass "$PYBLE_ANDROID_KEYSTORE_PASSWORD" \
+            -keypass "$PYBLE_ANDROID_KEY_PASSWORD" \
+            -alias "$PYBLE_ANDROID_KEY_ALIAS" \
+            -keyalg RSA \
+            -keysize 2048 \
+            -sigalg SHA256withRSA \
+            -validity 10000 \
+            -dname 'CN=PyBLE CI Ephemeral'
+      - name: Production release APK build plus signed AAB (no integration-test plugin)
         shell: bash
         run: |
           set -euo pipefail
           flutter build apk --release --flavor production --target lib/main.dart
+          flutter build appbundle --release --flavor production --target lib/main.dart
           PYBLE_AAPT="$PYBLE_ANDROID_SDK_ROOT/build-tools/36.0.0/aapt"
           PYBLE_APK="build/app/outputs/flutter-apk/app-production-release.apk"
+          PYBLE_AAB="build/app/outputs/bundle/productionRelease/app-production-release.aab"
           "$PYBLE_AAPT" dump badging "$PYBLE_APK" \
             | grep -F "package: name='dev.pyble.pyble'"
+          test -s "$PYBLE_AAB"
+          jarsigner -verify "$PYBLE_AAB"
       - name: Create API 34 AOSP x86_64 tablet AVD
         shell: bash
         run: |
@@ -663,15 +688,16 @@ jobs:
           exit 0
 
   build:
-    # The REAL 3-chip cross-compile. Installs the pinned ESP-IDF + initializes
-    # the pinned MicroPython submodule, then builds the agent per target.
+    # The REAL four-variant/three-chip cross-compile. Installs the pinned
+    # ESP-IDF + initializes the pinned MicroPython submodule, then builds each
+    # logical variant independently.
     # This is the toolchain job that the host gate environment cannot run.
     needs: [no-leak, spdx, sha-drift, patches, firmware-host]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        target: [esp32, esp32-s3, esp32-c3]
+        target: [esp32, esp32-s3, waveshare-esp32-s3-lcd-147b, esp32-c3]
     steps:
       - uses: actions/checkout@v4
         with:

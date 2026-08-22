@@ -3,6 +3,7 @@
 
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -286,7 +287,12 @@ Future<void> _tapVisible(WidgetTester tester, Finder finder) async {
   // A real Android IME can keep the footer below the resized render surface
   // even after ensureVisible scrolls its RenderBox. Commit the field edit and
   // restore the full viewport before resolving the action's tap position.
+  // The integration binding also retains its focusedEditable pointer after a
+  // modal closes even though Android has closed that text-input connection.
+  // Clear the pointer with the focus so a later enterText on the same field
+  // requests a fresh connection instead of sending the edit to the stale one.
   FocusManager.instance.primaryFocus?.unfocus();
+  tester.binding.focusedEditable = null;
   await SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
   await tester.pumpAndSettle();
   await tester.ensureVisible(finder);
@@ -355,6 +361,26 @@ void registerBlocklyWebViewIntegrationTests() {
         },
       );
       expect(find.text('Loading Blocks…'), findsNothing);
+
+      final WebViewWidget startupWebView = tester.widget<WebViewWidget>(
+        find.byType(WebViewWidget),
+      );
+      final WebViewController startupWebViewController =
+          WebViewController.fromPlatform(
+            startupWebView.platform.params.controller,
+          );
+      final String? startupUrl = await startupWebViewController.currentUrl();
+      expect(startupUrl, isNotNull);
+      expect(isAllowedBlocklyNavigation(startupUrl!), isTrue);
+      if (defaultTargetPlatform == TargetPlatform.android) {
+        expect(
+          startupUrl,
+          Uri.file(kAndroidBlocklyAssetFilePath).toString(),
+          reason:
+              'Android must start through the file loader that enables the '
+              'relative bundled Blockly resources before hostReady',
+        );
+      }
 
       // Exercise the real platform view through both orientation geometries.
       // The retained bridge snapshot must remain runnable; resize is a layout
@@ -754,8 +780,23 @@ pixels.write()
         find.byKey(const ValueKey<String>('blocksExampleCard-blink-led')),
       );
       await tester.pumpAndSettle();
-      await tester.enterText(find.widgetWithText(TextField, 'LED GPIO'), '17');
+      final Finder labelledLedGpioField = find.widgetWithText(
+        TextField,
+        'LED GPIO',
+      );
+      expect(labelledLedGpioField, findsOneWidget);
+      final Key? ledGpioFieldKey = tester
+          .widget<TextField>(labelledLedGpioField)
+          .key;
+      expect(
+        ledGpioFieldKey,
+        isNotNull,
+        reason: 'the responsive chooser must retain a stable GPIO field key',
+      );
+      final Finder ledGpioField = find.byKey(ledGpioFieldKey!);
+      await tester.enterText(ledGpioField, '17');
       await tester.pumpAndSettle();
+      expect(tester.widget<TextField>(ledGpioField).controller?.text, '17');
       expect(
         find.textContaining('Pin(17, Pin.OUT'),
         findsNothing,
@@ -774,6 +815,72 @@ pixels.write()
           matching: find.text('Close'),
         ),
       );
+      await tester.pumpAndSettle();
+
+      // A-38: exercise the complete native-entry -> example materialization
+      // -> sealed Blockly generator path with a real MicroPython named pin.
+      // Editing remains local until Preview, and the active workspace and
+      // connected board remain untouched by the disposable scratch run.
+      await tester.enterText(ledGpioField, 'LED');
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<TextField>(ledGpioField).controller?.text,
+        'LED',
+        reason: 'the fresh Android text connection must commit the named pin',
+      );
+      expect(
+        find.textContaining('Pin("LED", Pin.OUT'),
+        findsNothing,
+        reason: 'named GPIO editing must not generate before Preview',
+      );
+      expect(
+        find.textContaining('Pin(17, Pin.OUT'),
+        findsNothing,
+        reason: 'the named edit must invalidate the cached numeric preview',
+      );
+      expect(
+        tester
+            .widget<ButtonStyleButton>(
+              find.byKey(kBlocksExamplePreviewButtonKey),
+            )
+            .onPressed,
+        isNotNull,
+        reason: 'a valid named pin must enable the real preview action',
+      );
+      await _tapVisible(tester, find.byKey(kBlocksExamplePreviewButtonKey));
+      await _pumpUntil(
+        tester,
+        () => find.textContaining('Pin("LED", Pin.OUT').evaluate().isNotEmpty,
+        reason:
+            'the real scratch Blockly workspace did not quote the named LED pin',
+        diagnostics: () =>
+            'gpio=${tester.widget<TextField>(ledGpioField).controller?.text}; '
+            'numericPreviewMatches='
+            '${find.textContaining('Pin(17, Pin.OUT').evaluate().length}; '
+            'namedPreviewMatches='
+            '${find.textContaining('Pin("LED", Pin.OUT').evaluate().length}; '
+            'dialogs=${find.byType(AlertDialog).evaluate().length}',
+      );
+      await tester.tap(
+        find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.text('Close'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final BlocksDocument afterNamedPinPreview = container.read(
+        blocksDocumentProvider,
+      );
+      expect(
+        afterNamedPinPreview.retainedWorkspaceJson,
+        beforeExamples.retainedWorkspaceJson,
+      );
+      expect(connection.writes, hasLength(writesBeforeExamples));
+      expect(connection.runs, hasLength(runsBeforeExamples));
+
+      // Preserve the existing numeric replacement gate after independently
+      // proving named-pin preview generation.
+      await tester.enterText(ledGpioField, '17');
       await tester.pumpAndSettle();
       // A real Android IME can still cover the example action after enterText,
       // even when ensureVisible has scrolled its RenderBox into the viewport.

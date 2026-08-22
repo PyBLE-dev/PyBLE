@@ -97,6 +97,23 @@ const reviewedLicenseSources = {
     path: "node_modules/lightningcss/LICENSE",
   },
 };
+const bundledProductionDependencies = [
+  {
+    ownerPath: "node_modules/vinext",
+    ownerVersion: "1.0.0-beta.8",
+    name: "image-size",
+    version: "2.0.2",
+    bundledPath:
+      "node_modules/vinext/dist/deps/.pnpm/image-size@2.0.2/deps/image-size/dist/index.js",
+    license: "MIT",
+    source: "https://registry.npmjs.org/image-size/-/image-size-2.0.2.tgz",
+    licenseName: "reviewed image-size@2.0.2 package LICENSE",
+    licenseText: mitLicense(
+      "Copyright © 2013-Present Aditya Yadav, http://netroy.in",
+      "The MIT License (MIT)",
+    ),
+  },
+];
 
 function packageNameFromPath(packagePath) {
   const marker = "node_modules/";
@@ -298,6 +315,29 @@ export async function generateWebsiteThirdPartyLicenses() {
         `License file: ${license.name}`,
         "",
         license.text,
+        "",
+      ].join("\n"),
+    );
+  }
+
+  for (const bundled of bundledProductionDependencies) {
+    const owner = lock.packages[bundled.ownerPath];
+    if (owner?.version !== bundled.ownerVersion) {
+      throw new Error(
+        `Reviewed bundled dependency record is stale for ${bundled.ownerPath}@${owner?.version ?? "missing"}`,
+      );
+    }
+    await readFile(join(packageRoot, bundled.bundledPath), "utf8");
+    records.push(
+      [
+        "================================================================================",
+        `${bundled.name} ${bundled.version} (bundled by vinext ${bundled.ownerVersion})`,
+        `Bundled path: ${bundled.bundledPath}`,
+        `SPDX license: ${bundled.license}`,
+        `Source: ${bundled.source}`,
+        `License file: ${bundled.licenseName}`,
+        "",
+        bundled.licenseText,
         "",
       ].join("\n"),
     );

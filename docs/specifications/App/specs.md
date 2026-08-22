@@ -1,6 +1,6 @@
 # PyBLE App — Requirements Specification
 
-Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-07-29
+Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-08-15
 
 ## 1. Purpose, Scope & Document Role
 
@@ -78,7 +78,7 @@ Requirement voice: MUST / SHOULD / MAY. Each line: **ID** — statement — *(so
 
 - **FR-BLE-1** — The adapter MUST scan with `flutter_blue_plus` **filtered to the PyBLE service UUID** ([protocol.md §2](../protocol.md#2-ble-transport-gatt)) and MUST surface only advertised `PyBLE-XXXX` devices with RSSI; it MUST NOT expose a raw, unfiltered BLE device list. MUST (*source: PRD §9.6, §8.1; verify: unit; story: A-01*)
 - **FR-BLE-2** — The adapter MUST open a GATT connection to a selected device, subscribe to the TX (Notify) characteristic, and request **MTU 247**, correctly handling a negotiated MTU down to the BLE default. MUST (*source: PRD §9.6, §16.1; verify: unit/integration; story: A-02*)
-- **FR-BLE-3** — The adapter MUST expose a byte-stream interface: an inbound `Stream<List<int>>` from TX notifications and a `write(bytes)` to RX (Write / Write-Without-Response); it MUST NOT interpret frame contents. MUST (*source: app.md §2; verify: unit; story: A-02*)
+- **FR-BLE-3** — The adapter MUST expose a byte-stream interface: an inbound `Stream<List<int>>` from TX notifications and a `write(bytes, {required withoutResponse})` to RX; it MUST map `withoutResponse: false` to acknowledged GATT Write and `true` to Write-Without-Response, and MUST NOT interpret frame contents. MUST (*source: app.md §2, [protocol.md §2](../protocol.md#2-ble-transport-gatt); verify: unit; story: A-02*)
 - **FR-BLE-4** — The adapter MUST detect link loss and auto-reattempt connection, exposing connection-state transitions to the layer above; it MUST reconnect a saved board by remembered identifier. MUST (*source: PRD §8.1, §13.1; verify: unit/integration; story: A-03*)
 - **FR-BLE-5** — The adapter MUST stop scanning before initiating a connection. MUST (*source: PRD §9.6; verify: unit; story: A-02*)
 - **FR-BLE-6** — The adapter MUST request and handle platform BLE permissions and adapter-off state, surfacing them upward with enough detail for a localized rationale (iOS `NSBluetoothAlwaysUsageDescription`; Android 12+ `BLUETOOTH_SCAN`/`BLUETOOTH_CONNECT`; Android 11 and lower `BLUETOOTH`/`BLUETOOTH_ADMIN` capped at API 30 plus location handling; `ACCESS_COARSE_LOCATION` capped at API 28). Because BLE is the sole primary transport, the Android package MUST declare `android.hardware.bluetooth_le` as required. It MUST declare `android.hardware.bluetooth` and `android.hardware.location` as not required so legacy permissions do not filter otherwise-compatible BLE hardware. MUST (*source: PRD §9.6, §13.6, app.md §5; verify: integration; story: A-04*)
@@ -92,7 +92,7 @@ The client implements the PBLE/1 wire contract; it references [protocol.md](../p
 - **FR-PBLE-1** — The client MUST encode and decode PBLE/1 messages per [protocol.md §3.1](../protocol.md#3-framing) (VER/TYPE/OPCODE/ID/LEN/PAYLOAD/CRC32) and MUST compute/verify the IEEE CRC-32 over header+payload. MUST (*source: PRD §9, §6.3; verify: conformance; story: P-01, A-13*)
 - **FR-PBLE-2** — The client MUST fragment outbound messages and reassemble inbound messages across `MTU − 4` boundaries per [protocol.md §3.2](../protocol.md#3-framing) (FIRST/LAST/index-mod-64 header), reproducing the original message byte-identically. MUST (*source: PRD §6.3; verify: conformance; story: P-02, A-13*)
 - **FR-PBLE-3** — The client MUST drop any reassembled frame whose CRC fails and MUST surface it as an error (mapping to `ECRC` per [protocol.md §3.2](../protocol.md#3-framing)/[§8](../protocol.md#8-status--error-codes-1-byte-status-in-rsp)), never delivering corrupt payload upward. MUST (*source: PRD §6.3; verify: conformance; story: P-01*)
-- **FR-PBLE-4** — The client MUST correlate each `CMD` with its `RSP` by the 1-byte `ID` and MUST route `EVT` frames (`ID = 0`) to the appropriate stream (console, run-state, file-transfer acks/data). MUST (*source: protocol.md §3.1, §4; verify: conformance; story: A-13*)
+- **FR-PBLE-4** — The client MUST complete a pending `CMD` only from `TYPE=RSP` with the exact originating `{OPCODE, ID}` pair. A wrong-opcode `RSP` with the same reused 1-byte `ID`, or any non-`RSP` frame with a nonzero `ID`, MUST NOT complete the pending command or consume, replace, or hide its matching response in either arrival order. Correlation is connection-local and retains the one FR-PBLE-16 absolute arrival deadline; unrelated frames do not extend it. The client MUST route valid `EVT` frames (`ID = 0`) to the appropriate stream (console, run-state, file-transfer acks/data). MUST (*source: protocol.md §3.1, §4; verify: conformance; story: A-13*)
 - **FR-PBLE-5** — The client MUST implement HELLO version + capability negotiation per [protocol.md §7](../protocol.md#7-hello--capabilities): send `proto_versions[]` + `app_name`/`app_version`, receive `proto_version` + `caps`. MUST (*source: PRD §9.6, §18.3; verify: conformance; story: P-03, A-10*)
 - **FR-PBLE-6** — The client MUST refuse, with a clear typed error, a board whose chosen `proto_version` it does not support. MUST (*source: PRD §18.3; verify: conformance; story: P-03*)
 - **FR-PBLE-7** — The client MUST NOT issue any request for a capability the board did not advertise in HELLO `caps`. MUST (*source: PRD §6.3, §9.6, §18.3; verify: conformance; story: P-03, A-10*)
@@ -104,6 +104,7 @@ The client implements the PBLE/1 wire contract; it references [protocol.md](../p
 - **FR-PBLE-13** — The client MUST map every PBLE/1 status byte ([protocol.md §8](../protocol.md#8-status--error-codes-1-byte-status-in-rsp): OK, EBADREQ, ENOENT, EACCES, ENOSPC, EIO, ENOMEM, EBUSY, ECRC, ERANGE, EUNSUPPORTED, EINTERNAL) to a distinct typed Dart exception so callers can branch on the failure. MUST (*source: PRD §9.2, §13.2; verify: conformance; story: P-04*)
 - **FR-PBLE-14** — The client MUST be the **only** layer that knows the wire format; it MUST present all behaviour to widgets exclusively through the `Connection` interface. MUST (*source: PRD §16.1, app.md §1; verify: unit; story: A-10*)
 - **FR-PBLE-15** — The client MUST be authored clean-room and carry no closed-source wire format, opcodes, or UUIDs (see [architecture.md §5](../architecture.md#5-clean-room--ip-boundary), [ADR-0002](../../decisions/0002-fresh-protocol.md)); the no-leak gate MUST pass over `lib/pble/`. MUST (*source: PRD §1A.2, §6.3; verify: unit (no-leak gate); story: X-02*)
+- **FR-PBLE-16** — The neutral byte transport MUST expose `send(packet, {required acknowledged})`. `PbleEngine.request` MUST send every fragment with `acknowledged: true`; `PbleEngine.fire` MUST retain Write-Without-Response with `acknowledged: false`. One unchanged absolute request deadline MUST begin before the first fragment write and include every acknowledged write plus the matching response wait; write progress MUST NOT reset or extend it. MUST (*source: [protocol.md §2](../protocol.md#2-ble-transport-gatt), §3.2; verify: unit, integration; story: P-02/A-13*)
 
 **A-13 `putFile` sliding-window increment — FROZEN (`[docs]` 2026-07-04).** This freezes the A-13 slice of FR-PBLE-8/-10 that supersedes the A-12 depth-1 (stop-and-wait) uploader ([TDD §8.4](TDD.md#84-file-transfer-state-machine)). No wire change — [protocol.md §5](../protocol.md#5-file-transfer-the-reliability-core) is FROZEN and the offset/watermark cumulative-ACK is window-agnostic; `W` is a client-side pacing parameter read from HELLO `caps.window`. The testable acceptance criteria the test authors (P-/A-13 conformance) MUST convert to `[red]`:
 
@@ -197,7 +198,7 @@ The client implements the PBLE/1 wire contract; it references [protocol.md](../p
 
 ### 4.10 Blocks & Plots — FR-BLOCKS / FR-PLOTS
 
-- **FR-BLOCKS-1** — The app MUST provide a Blockly block editor (WebView, `lib/blocks/`) that generates an inspectable, board-neutral MicroPython subset with **no board-specific defaults**. The current numeric-GPIO and NeoPixel subset is initially validated on ESP32-family firmware; broader runtime availability MUST NOT be implied. MUST (*source: PRD §9.8, §16.1; verify: integration; story: A-31*)
+- **FR-BLOCKS-1** — The app MUST provide a Blockly block editor (WebView, `lib/blocks/`) that generates an inspectable, board-neutral MicroPython subset with **no board-specific defaults**. The explicit `pyble_st7789` TFT surface MUST remain bundled and usable offline, but its generated import requires either the exact `waveshare-esp32-s3-lcd-147b` firmware or a separately user-installed API-compatible module; lean `esp32-s3-n16r8` firmware makes no bundled TFT-runtime claim. The app MUST NOT use a chip or provisioning-profile allowlist to hide, enable, select, or gate these tools. MUST (*source: PRD §9.8, §16.1; verify: integration; story: A-31*)
 - **FR-BLOCKS-1A — Android input and test isolation (FROZEN · A-31 · `[docs]`
   2026-08-07).** Native GPIO fields in the example chooser MUST retain focus
   and accept ordinary software-keyboard input on supported Android tablets.
@@ -239,6 +240,25 @@ The client implements the PBLE/1 wire contract; it references [protocol.md](../p
   integration plugin can neither break nor enter the production artifact.
   MUST (*source: PRD §13.6, §16.1; verify: widget/Android physical-device;
   story: A-31/X-11*)
+- **FR-BLOCKS-1B — Explicit named pins (FROZEN · A-38 · `[docs]`
+  2026-08-12).** Every GPIO identity slot in the authored Blockly host,
+  example chooser/materializer, and bounded Python importer MUST accept either
+  its existing explicit non-negative integer form or an ASCII, case-sensitive
+  MicroPython `machine.Pin` name matching
+  `^[A-Za-z][A-Za-z0-9_]{0,15}$`. The block input MUST accept ordinary Blockly
+  `Number` or `String` values; examples MUST materialize integers as
+  `math_number` and names as `text`; generated Python MUST keep integers bare
+  and quote names (`Pin(2, ...)`, `Pin("LED", ...)`). The importer MUST accept
+  single- or double-quoted names under the same grammar and retain its
+  all-or-nothing semantic round-trip. Invalid identities MUST use the existing
+  repairable/`invalid_gpio` paths. Names MUST remain explicit user program
+  data: the app MUST NOT ship a per-board list, suggestion, default,
+  autocomplete, translation, `DeviceInfo`/profile gate, or automatic example
+  choice. Example-role uniqueness MUST compare canonical integer/name values;
+  all new visible guidance/errors MUST be ARB-sourced. The connected
+  MicroPython runtime remains authoritative for physical validity. MUST
+  (*source: ADR-0031, ADR-0021; verify: unit/asset/widget/integration/HIL;
+  story: A-38*)
 - **FR-BLOCKS-2** — Generated code MUST be inspectable as plain `.py` and MUST flow through the same upload/run path as the text editor (§8.2). MUST (*source: PRD §9.8; verify: integration; story: A-31*)
 - **FR-BLOCKS-3** — The app MUST allow running or saving the generated code through the `Connection` API. MUST (*source: PRD §9.8; verify: integration; story: A-31*)
 - **FR-BLOCKS-4** — The block bridge MUST bind to `Connection`/neutral types
@@ -248,33 +268,39 @@ The client implements the PBLE/1 wire contract; it references [protocol.md](../p
   PRD §9.8, app.md §6; verify: unit (no-leak gate); story: A-31*)
 - **FR-BLOCKS-5** — The GPIO toolbox MUST provide composable generic digital
   `machine.Pin` construction, write, and read blocks; generate the standard
-  MicroPython import/calls; require an explicit non-negative integral GPIO; and
-  MUST NOT contain or infer a board pin map, named onboard component, routing
-  profile, or claimed default/safe GPIO. This is the initial ESP-compatible
-  numeric-pin subset, not a claim that every MicroPython port uses numeric pin
-  identifiers; broader pin models require a later specified capability and
-  block contract. MUST (*source: PRD §9.8, §11.3; verify: unit/integration;
-  story: A-31*)
+  MicroPython import/calls; and require one explicit pin identity: either the
+  existing non-negative integral numeric literal or FR-BLOCKS-1B's bounded
+  user-entered name. It MUST NOT contain or infer a board pin map, suggested
+  named onboard component, routing profile, or claimed default/safe pin. This
+  integer/named-pin subset does not claim that a syntactically accepted
+  identity exists or is electrically suitable on every MicroPython port;
+  broader pin models require a later frozen block contract. MUST (*source: PRD
+  §9.8, §11.3, ADR-0031; verify: unit/integration; story: A-31/A-38*)
 - **FR-BLOCKS-6** — The **Time** toolbox category MUST provide
   `pyble_time_sleep_ms`, a statement block with a required explicit finite,
   non-negative integral `MILLISECONDS` literal, no shadow/default, and
   deterministic exact-once `from time import sleep_ms` generation. MUST
   (*source: PRD §9.8; verify: unit/integration; story: A-31*)
 - **FR-BLOCKS-7** — The app MUST ship an offline, versioned catalog containing
-  exactly the seven editable starter workspaces `hello-pyble`,
+  exactly the eight editable starter workspaces `hello-pyble`,
   `count-repeatedly`, `blink-led`, `blink-neopixel`, `read-button`,
-  `button-controls-led`, and `reusable-function`. Previewed source MUST be
+  `button-controls-led`, `reusable-function`, and
+  `waveshare-esp32-s3-lcd-147b`. Previewed source MUST be
   produced by the production Blockly Python generator rather than stored
   separately, and a loaded example MUST become ordinary Blockly workspace JSON.
-  Hardware examples, including `blink-neopixel`, MUST keep every GPIO role
-  disconnected until the user enters it. MUST (*source: PRD §9.8; verify:
-  unit/integration; story: A-31*)
+  Hardware examples, including `blink-neopixel` and the exact-board TFT
+  example, MUST keep every GPIO role disconnected until the user enters it.
+  Localized TFT-example copy MUST name the exact Waveshare firmware or a
+  user-installed API-compatible module as the runtime prerequisite and state
+  that lean generic S3 firmware does not bundle it.
+  MUST (*source: PRD §9.8; verify: unit/integration; story: A-31*)
 - **FR-BLOCKS-8** — Example Preview MUST NOT mutate the active workspace.
   Create copy MUST load an independent editable clone only over a semantically
   empty workspace; a non-empty or invalid workspace MUST require confirmed
   Replace workspace. GPIO examples MUST require the user to enter every GPIO
-  role before preview/copy, with pairwise-distinct numeric values for separate
-  roles, a localized duplicate-GPIO error, and no supplied or remembered pin.
+  role before preview/copy, with pairwise-distinct canonical integer-or-name
+  identities for separate roles, a localized duplicate-pin error, and no
+  supplied, suggested, or remembered pin.
   No example operation may automatically Run, Save, write a board file, or
   replace the text-editor document. MUST (*source: PRD §9.8, §11.3; verify:
   unit/widget/integration; story: A-31*)
@@ -313,15 +339,19 @@ The client implements the PBLE/1 wire contract; it references [protocol.md](../p
   ADR-0017: simple literals/names and arithmetic/Boolean/comparison expressions;
   assignment and numeric change; one-argument `print`; `if`/`elif`/`else`,
   `while`, bounded literal non-empty `range`; bounded top-level procedures;
-  explicit `machine.Pin` construction/read/write; explicit `time.sleep_ms`; and
+  explicit `machine.Pin` construction/read/write, including ADR-0031's bounded
+  integer-or-quoted-name identity; explicit `time.sleep_ms`; and
   ADR-0018's exact standard NeoPixel subset (constructor, three-item RGB tuple,
-  indexed assignment, `fill`, and `write` with a definitely bound receiver).
+  indexed assignment, `fill`, and `write` with a definitely bound receiver),
+  plus ADR-0023's exact positional `ST7789` constructor, `rgb565`, framebuffer
+  mutations, explicit `show`, and Boolean backlight subset with a definitely
+  bound display receiver.
   Any syntax, unsupported construct, import/name/control-flow, numeric/resource,
   restore/generator, or semantic round-trip error MUST produce no candidate.
   The importer MUST NOT omit lines, emit a partial workspace, execute Python,
   use a raw-code escape block, choose/validate a board pin, or access the
-  network. MUST (*source: ADR-0017, ADR-0018; verify:
-  unit/asset/integration; story: A-31*)
+  network. MUST (*source: ADR-0017, ADR-0018, ADR-0023, ADR-0031; verify:
+  unit/asset/integration; story: A-31/A-38*)
 - **FR-BLOCKS-12** — Exact reopen and Python conversion MUST share a
   non-mutating Preview/Create/Replace candidate flow. Diagnostics MUST carry a
   stable technical code/severity and one-based source range while all visible
@@ -352,6 +382,32 @@ The client implements the PBLE/1 wire contract; it references [protocol.md](../p
   no block may infer an onboard component, board/chip profile, GPIO, RGBW
   topology, timing, or brightness. MUST (*source: PRD §9.8, ADR-0018; verify:
   unit/asset/integration; story: A-31/F-24*)
+- **FR-BLOCKS-14** — The **TFT Display** toolbox category MUST provide exactly
+  the eight stable composable types `pyble_tft_create`, `pyble_tft_rgb565`,
+  `pyble_tft_fill`, `pyble_tft_pixel`, `pyble_tft_rect`, `pyble_tft_text`,
+  `pyble_tft_show`, and `pyble_tft_backlight`. Construction MUST take, in
+  order, explicit `SPI_ID`, `BAUDRATE`, `POLARITY`, `PHASE`, `SCK`, `MOSI`,
+  `CS`, `DC`, `RESET`, `BACKLIGHT`, `WIDTH`, `HEIGHT`, `X_OFFSET`, `Y_OFFSET`,
+  `BGR`, and `INVERSION` values and generate the exact positional
+  `ST7789(spi_id, baudrate, polarity, phase, sck_pin, mosi_pin, cs_pin, dc_pin,
+  reset_pin, backlight_pin, width, height, x_offset, y_offset, bgr, inversion)`
+  API. The six pin inputs MUST consume explicit `Pin` values, and every socket
+  MUST be connected with no shadow/default. The other blocks MUST generate only
+  `rgb565(red, green, blue)`, `display.fill(color)`,
+  `display.pixel(x, y, color)`, `display.rect(...)` or
+  `display.fill_rect(...)` from an explicit outline/filled choice,
+  `display.text(text, x, y, color)`, `display.show()`, and
+  `display.backlight(on)`. Framebuffer mutations MUST NOT imply `show`, and
+  construction MUST NOT imply backlight-on. Imports MUST be exact-once and
+  use-dependent: the constructor owns `from pyble_st7789 import ST7789`, the
+  colour block owns `from pyble_st7789 import rgb565`, and ordinary GPIO blocks
+  remain the sole owner of `from machine import Pin`. No TFT block may infer a
+  bus, pin, geometry, offset, colour order, inversion, board identity, or
+  display capability. The category MUST remain visible regardless of
+  `DeviceInfo`, MUST NOT auto-select the exact-board example or gate a
+  connection, and MUST surface an unavailable module through the ordinary
+  generated-code import/runtime error path. MUST (*source: PRD §9.8,
+  ADR-0023, ADR-0028; verify: unit/asset/integration; story: A-31/F-24*)
 
 **A-31 increment — FROZEN (`[docs]` 2026-07-27,
 [ADR-0013](../../decisions/0013-clean-room-blockly-one-way-file-backed.md)).**
@@ -403,11 +459,13 @@ landscape and stacked portrait surfaces. These requirements are fresh PyBLE
 layout behavior only; no third-party product source, asset, styling
 implementation, identifier, or block catalog is copied.
 
-**A-31 generic digital GPIO — FROZEN (`[docs]` 2026-07-28,
-[ADR-0015](../../decisions/0015-generic-micropython-gpio-blocks.md)).**
+**A-31 generic digital GPIO, extended by A-38 named pins — FROZEN (`[docs]`
+2026-08-12, [ADR-0015](../../decisions/0015-generic-micropython-gpio-blocks.md),
+[ADR-0031](../../decisions/0031-explicit-named-micropython-pins.md)).**
 The GPIO category contains three stable, composable block types:
-`pyble_gpio_pin` is a `Pin`-valued constructor with required `Number` input
-`GPIO`, `MODE` = `IN|OUT`, and `PULL` = `NONE|UP|DOWN`;
+`pyble_gpio_pin` is a `Pin`-valued constructor with required `GPIO` input
+accepting `Number|String`, `MODE` = `IN|OUT`, and
+`PULL` = `NONE|UP|DOWN`;
 `pyble_gpio_write` is a statement with required `Pin` input `PIN` and
 `LEVEL` = `LOW|HIGH`; and `pyble_gpio_read` is a `Number` value with required
 `Pin` input `PIN`. Standard variable set/get blocks own storage and reuse. A
@@ -417,21 +475,27 @@ user-name collision. `NONE` emits an explicit `None` pull argument,
 `UP`/`DOWN` emit `Pin.PULL_UP`/`Pin.PULL_DOWN`, write emits `.value(0|1)`, and read emits
 `.value()`. Output construction does not imply an initial level; deterministic
 level changes require an explicit write. Missing inputs, an invalid GPIO
-literal, or unknown enum tokens are generator errors using the existing
+identity, or unknown enum tokens are generator errors using the existing
 editable-workspace/stale-actions-disabled recovery boundary. If the workspace
 serialized successfully, that error payload MUST retain its current JSON and
 next monotonic revision so a recreated host restores the invalid-but-repairable
-workspace. A valid workspace-bearing error, including the first result from a
+workspace. An integer identity remains bare; a name matching
+`^[A-Za-z][A-Za-z0-9_]{0,15}$` is generated as a double-quoted string, so the
+standard forms include `Pin(2, Pin.OUT, None)` and
+`Pin("LED", Pin.OUT, None)`. A valid workspace-bearing error, including the first result from a
 restored host, MUST stop the host watchdog and keep the editor repairable while
 actions stay disabled until the active host publishes a later valid snapshot.
-No toolbox shadow or pin default/catalog is supplied, and the app does not
+No toolbox shadow, pin default, name suggestion, or pin catalog is supplied,
+and the app does not
 validate physical pin/mode/pull suitability from `DeviceInfo`; standard
 MicroPython on the board is authoritative. GPIO source remains ordinary
 `/blocks.py` content using the same Preview/Open/Save/Run path, with no new
 WebView-to-board, PBLE/1, or firmware operation.
 
-**A-31 beginner examples and Time block — FROZEN (`[docs]` 2026-07-28,
-[ADR-0016](../../decisions/0016-offline-beginner-blockly-examples.md)).**
+**A-31 beginner examples and Time block, extended by A-38 named pins — FROZEN
+(`[docs]` 2026-08-12,
+[ADR-0016](../../decisions/0016-offline-beginner-blockly-examples.md),
+[ADR-0031](../../decisions/0031-explicit-named-micropython-pins.md)).**
 A fresh **Time** category adds `pyble_time_sleep_ms`, a statement with a
 required `Number` input `MILLISECONDS`, no shadow/default, exact-once
 `from time import sleep_ms`, reserved-name protection, and
@@ -439,10 +503,11 @@ required `Number` input `MILLISECONDS`, no shadow/default, exact-once
 non-negative, and integral; invalid/tampered input follows the normal
 editable-workspace generator-error boundary.
 
-The local catalog at `app/assets/blockly/examples/catalog.json` is version 2 and
+The local catalog at `app/assets/blockly/examples/catalog.json` is version 3 and
 contains exactly `hello-pyble`, `count-repeatedly`, `blink-led`,
 `blink-neopixel`, `read-button`, `button-controls-led`, and
-`reusable-function` in that order. Each fixture is
+`reusable-function`, followed by `waveshare-esp32-s3-lcd-147b`, in that order.
+Each fixture is
 ordinary Blockly serialization plus stable technical metadata and ARB keys.
 The catalog does not duplicate generated Python. Opening, browsing, selecting,
 or editing a GPIO draft does not invoke the platform view or production
@@ -452,17 +517,33 @@ for the selectable, read-only source preview. Before that action, the preview
 surface MUST state that generation awaits an action; it MUST show a loading
 state only while generation is actually in progress. A GPIO fixture contains
 disconnected constructor sockets and role bindings only; the user must provide
-each finite, non-negative integral GPIO before source is previewed or copied,
-and values for separate roles must be pairwise distinct. A repeated role value
-produces a localized field error; this does not claim physical board validity.
+each pin identity as either a non-negative exact-safe integer or a name matching
+FR-BLOCKS-1B before source is previewed or copied, and canonical values for
+separate roles must be pairwise distinct. A repeated integer or exact
+case-sensitive name produces a localized field error; this does not claim
+physical board validity.
 While a required GPIO is absent or invalid, the source surface describes that
 entering every required GPIO enables generation; it does not promise automatic
 generation.
-Materialization connects ordinary number blocks in the clone and leaves no role
-placeholder or metadata in the active workspace. No board/chip default, named
-onboard component, remembered pin, or claimed safe value is supplied.
+Materialization connects an ordinary `math_number` block for an integer or
+ordinary `text` block for a name in the clone and leaves no role placeholder or
+metadata in the active workspace. No board/chip default, named-component
+suggestion, remembered pin, or claimed safe value is supplied.
 Wiring notes identify the roles, an external LED/resistor or button/pull
 behavior where relevant, and direct the user to their board documentation.
+The eighth fixture is the only named-board example. It contains the exact
+`ESP32-S3-LCD-1.47B` spelling and six disconnected GPIO roles for SCLK, MOSI,
+CS, D/C, reset, and backlight. Its ordinary visible values configure SPI bus
+1 at 40 MHz with polarity 0 and phase 0, 172 × 320 geometry, offsets 34 and 0,
+BGR order, and inversion. The localized wiring note states the documented
+B-board GPIO values 40, 45, 42, 41, 39, and 46 respectively, warns that the
+non-B board differs, and still requires the user to enter all six values.
+Selecting, previewing, or loading this example never reads `DeviceInfo`, checks
+a chip/capability, chooses a pin, gates a connection, or implies that another
+board has a display. Localized compatibility copy states that exact
+`waveshare-esp32-s3-lcd-147b` firmware bundles the runtime, lean
+`esp32-s3-n16r8` does not, and a user-installed API-compatible module is an
+alternative.
 
 Preview is non-mutating. **Create copy** is available for a semantically empty
 workspace. A workspace containing any block, variable, or procedure—including
@@ -510,7 +591,7 @@ Set/fill never call `write` implicitly. Off is an explicit `(0, 0, 0)` buffer
 change followed by write; blink is composed from those blocks, a finite loop,
 and Time. The toolbox contains no board or onboard-LED name, pin/count/colour
 default, brightness transform, RGBW/timing extension, PBLE/1 operation, or
-network path. Catalog version 2 adds the ordinary `blink-neopixel` workspace
+network path. Catalog version 2 introduced the ordinary `blink-neopixel` workspace
 after `blink-led`: one pixel, index zero, dim colour/off, explicit writes,
 finite delays/repeats, and one disconnected user-supplied GPIO role.
 
@@ -522,6 +603,50 @@ RGBW/timing arguments, malformed arity, invalid counts, and calls on a receiver
 not definitely bound to a NeoPixel variable reject the complete conversion.
 Semantic round-trip equality includes the NeoPixel import, binding, operations,
 indices, and tuple expressions.
+
+**A-31 explicit ST7789 TFT — FROZEN (`[docs]` 2026-08-01,
+[ADR-0023](../../decisions/0023-explicit-st7789-user-runtime.md)).**
+The TFT Display category contains the eight stable types in FR-BLOCKS-14.
+It is a target-neutral authoring surface, not proof that the connected runtime
+supplies its import. The exact `waveshare-esp32-s3-lcd-147b` firmware freezes
+`pyble_st7789`; lean `esp32-s3-n16r8` does not. A user MAY install a compatible
+module separately. No connection, category, or example visibility may be gated
+by that provisioning distinction.
+`pyble_tft_create` returns `ST7789` and has required Number inputs
+`SPI_ID`, `BAUDRATE`, `POLARITY`, `PHASE`, `WIDTH`, `HEIGHT`, `X_OFFSET`, and
+`Y_OFFSET`; required Pin inputs `SCK`, `MOSI`, `CS`, `DC`, `RESET`, and
+`BACKLIGHT`; and required Boolean inputs `BGR` and `INVERSION`. It emits the
+16 values in exactly that order as one positional `ST7789(...)` call. The
+constructor owns exactly one `from pyble_st7789 import ST7789`; the colour block
+owns exactly one `from pyble_st7789 import rgb565`; when both are used the two
+lines occur once each in deterministic `ST7789`-then-`rgb565` definition order.
+Nested GPIO constructors alone own `from machine import Pin`.
+
+`pyble_tft_rgb565` returns `TFTColor` from `RED`, `GREEN`, and `BLUE` Number
+inputs. `pyble_tft_fill`, `pyble_tft_pixel`, `pyble_tft_rect`, and
+`pyble_tft_text` mutate only the display framebuffer through the exact
+`fill`, `pixel`, `rect`/`fill_rect`, and `text` methods. The rectangle block has
+an explicit `OUTLINE|FILLED` field; the latter is the only path that emits
+`fill_rect`. `pyble_tft_show` is the sole framebuffer-transfer block, and
+`pyble_tft_backlight` passes its required Boolean `ON` input to
+`display.backlight(on)`. All required inputs have no shadow/default. The
+constructor validates literal SPI ID, frequency, mode, geometry, and offsets;
+the ordinary connected expressions for coordinates, text, and colour remain
+runtime values. A failure is the existing workspace-bearing repairable
+generator error. No block performs board detection, imports `machine.SPI`,
+turns on the backlight during construction, implies `show` after mutation, or
+contains Waveshare wiring.
+
+The bounded importer accepts only the exact unaliased, use-dependent leading
+imports above; the exact positional 16-argument constructor; `rgb565` with
+three arguments; and the listed methods on a definitely bound `ST7789`
+receiver. The six constructor pin arguments must be explicit `Pin` values;
+numeric/mode/geometry/offset and Boolean arguments must preserve the same
+block-representable semantics. Keyword arguments, aliases, wrong order/arity,
+an unsupported method, or a receiver that is not definitely bound reject the
+complete conversion. Semantic round-trip equality includes both TFT imports,
+the complete constructor configuration, RGB conversion, receiver bindings,
+every draw operation, explicit show, and backlight state.
 
 **A-31 exact sidecar reopen and bounded Python import — FROZEN (`[docs]`
 2026-07-28,
@@ -555,8 +680,9 @@ levels of spaces-indented UTF-8. It admits only ADR-0017's enumerated literals,
 names, unary/arithmetic/Boolean/single-comparison expressions, simple
 assignment/`+=`, one-argument `print`, conditionals, `while`, non-empty
 literal `range`, bounded top-level procedures (≤16, ≤8 positional parameters),
-explicit standard `Pin`, and literal `sleep_ms`. Canonical imports are exact,
-unaliased, and use-dependent. Numeric literals fit JavaScript's exact
+explicit standard `Pin` with either its existing non-negative decimal integer
+or FR-BLOCKS-1B's single-/double-quoted name, and literal `sleep_ms`. Canonical
+imports are exact, unaliased, and use-dependent. Numeric literals fit JavaScript's exact
 safe-integer bound where Blockly needs integral values; `range` has a non-zero
 literal step and a direction that makes it non-empty. Integral-valued decimal
 float syntax and raw U+0000 strings are rejected because ordinary Blockly
@@ -589,6 +715,67 @@ text/keyboard insets. Parsing/validation/Preview/Create/Replace/cancel call no
 Connection, Save, Run, editor replacement, console, board-write, or network
 operation. Only an explicit file-open may read the selected pair, and only the
 existing explicit Blocks Save/Run writes it or executes Python.
+
+**A-38 explicit named MicroPython pins — FROZEN (`[docs]` 2026-08-12,
+[ADR-0031](../../decisions/0031-explicit-named-micropython-pins.md)).**
+
+**Story.** As a user of a compatible MicroPython board whose hardware is
+addressed by a standard named `machine.Pin` rather than a numeric GPIO, I want
+to enter the exact documented name in the existing Blocks GPIO surfaces so
+that I can preview, save, and run truthful Python without PyBLE carrying a
+board profile. The concrete validated case is the Pico 2 W onboard LED,
+addressed as `Pin("LED")`; the story is capability-defined and is not a
+Pico-only UI feature.
+
+**Scope.** A-38 extends only the pin-identity value accepted by
+`pyble_gpio_pin`, example GPIO roles, and ADR-0017's bounded importer. It does
+not add a block type, firmware/PBLE operation, board/name registry, default,
+suggestion, device gate, automatic example choice, or physical-validity claim.
+All existing one-way workspace, error retention, explicit example action,
+atomic replacement, exact sidecar, file-backed Save/Run, localization,
+offline, and no-leak boundaries remain in force.
+
+The acceptance criteria test authors MUST convert to `[red]` before the A-38
+implementation:
+
+- **A38-AC-1 (identity grammar)** — Each affected surface MUST preserve its
+  existing non-negative integer semantics and additionally accept only a
+  case-sensitive ASCII name matching `^[A-Za-z][A-Za-z0-9_]{0,15}$`. The
+  one- and sixteen-character boundaries MUST pass; empty, digit-led,
+  digits-only, spaced, hyphenated, non-ASCII, escaped, overlength, variable,
+  and arbitrary-expression forms MUST fail through the existing invalid-pin
+  path. MUST
+- **A38-AC-2 (ordinary Blocks and deterministic source)** — The GPIO input
+  MUST accept only ordinary Blockly `Number|String` values with no
+  shadow/default. Integers MUST use `math_number` and generate bare; names MUST
+  use `text` and generate as a quoted literal. A composed workspace containing
+  `LED` MUST generate `Pin("LED", ...)`, retain exact-once `machine.Pin`
+  import/name reservation, and remain repairable after an invalid identity.
+  MUST
+- **A38-AC-3 (examples)** — The native chooser MUST accept integer and named
+  roles, allow mixed forms, use a full text keyboard with suggestions and
+  autocorrection disabled, and materialize a deep clone with the matching
+  ordinary value-block type. Distinctness MUST compare canonical typed values;
+  duplicate integers or exact case-sensitive names MUST show localized errors.
+  No fixture, selection, or reopening MAY supply or remember a pin. MUST
+- **A38-AC-4 (bounded import)** — `Pin(2, ...)`, `Pin("LED", ...)`, and
+  `Pin('WL_GPIO0', ...)` MUST import to the corresponding ordinary value
+  blocks and pass generate→reparse semantic equality, including identity kind
+  and value. One invalid identity MUST yield `invalid_gpio` and no partial
+  candidate. Quote spelling MAY normalize; exact sidecar reopen remains
+  byte-exact. MUST
+- **A38-AC-5 (target neutrality and action safety)** — Validation/generation
+  MUST NOT read `DeviceInfo`, a provisioning profile, connection state, or a
+  pin catalog; Preview/Create/Replace MUST perform no Connection, Save, Run,
+  board, or network operation. MicroPython MUST remain the physical-validity
+  authority and its exception MUST remain visible. MUST
+- **A38-AC-6 (regression and hardware evidence)** — Unit, asset, widget, real
+  WebView, locale, offline/CSP, license, no-leak, and integration gates MUST
+  cover both identity branches without regressing numeric ESP32,
+  NeoPixel/TFT composition, or exact reopen. On the validated Pico 2 W, the
+  existing Blink example with user-entered `LED` MUST run through the ordinary
+  file-backed path and blink the physical onboard LED; that evidence MUST NOT
+  be converted into an app-side Pico profile. MUST
 
 - **FR-PLOTS-1** — The app MUST provide live plots (`fl_chart`, `lib/plots/`) over CSV/streamed values printed by the running program to the console stream. MUST (*source: PRD §9.8, §16.1; verify: widget/integration; story: A-32*)
 - **FR-PLOTS-2** — Plotting MUST be derived purely from program console output (no special data-event opcode); the app SHOULD let the user configure how console output is parsed into series. MUST/SHOULD (*source: PRD §9.8; verify: unit/widget; story: A-32*)
@@ -719,7 +906,7 @@ finished.
   domain-specific lesson flow, or proprietary/classroom pedagogy, per
   [PRD §1A.2](../prd.md)). MUST (*source: PRD §1A.1, §1A.2; verify: unit
   (no-leak gate); story: X-01/X-02*)
-- **CON-7** — The app MUST NOT implement any board-specific hardware profile, science-lab feature, or managed-teaching/multi-device mechanism (the permanent non-goals of [PRD §4.3](../prd.md)); the pin reference is read-only informational only. MUST (*source: PRD §4.3, §11.3; verify: unit; story: A-22*)
+- **CON-7** — The app MUST NOT implement any board-specific hardware profile, science-lab feature, or managed-teaching/multi-device mechanism (the permanent non-goals of [PRD §4.3](../prd.md)); the pin reference is read-only informational only. Website/build provisioning-profile IDs identify independently flashed bytes and MUST NOT become app connection, capability, routing, toolbox-visibility, or automatic-example-selection state. Example guidance MAY name an exact firmware prerequisite but MUST NOT store or enforce it. MUST (*source: PRD §4.3, §11.3; verify: unit; story: A-22*)
 - **CON-8** — Every widget MUST bind only to the `Connection` API (or callbacks derived from it) and MUST NOT import `lib/ble/`; only `lib/pble/` knows the wire format. MUST (*source: PRD §6.1, §16.1, app.md §1; verify: unit; story: all A*)
 - **CON-9** — Every new user-facing string MUST ship with at least its `en` ARB entry in the same commit; locale parity gates merges. MUST (*source: PRD §9.10, §13.7; verify: locale; story: X-12*)
 
@@ -759,6 +946,7 @@ The local Drift database ([PRD §12.1](../prd.md), `lib/data/`) MUST model exact
 - **BLD-9** — If a future backward-incompatible **PBLE/2** ships, the app MUST continue to interoperate with the previous protocol major version for a stated compatibility window so that already-deployed boards are not bricked by an app update; the version actually used MUST be selected through HELLO negotiation (FR-PBLE-5/6) rather than assumed. MUST (*source: PRD §18.4; verify: integration; story: X-11*)
 - **BLD-10 — Launcher identity (FROZEN · X-11 · `[docs]` 2026-07-29).** iPadOS and Android MUST ship the same original PyBLE **Prompt Chip** identity from an MIT, grid-defined vector source: a full-bleed flat deep-navy `#081B35` field; one electric-blue `#2F8CFF` rounded microcontroller frame with exactly two pins on its top, bottom, and left edges and no right-edge pins; one large near-white `#F4F7FF` terminal prompt; and one subordinate blue radio arc on the right. The complete foreground MUST stay inside Android's 66×66 dp guaranteed safe zone. The production artwork MUST NOT contain text, a connection-status indicator, the Bluetooth or Python figure mark, extra radio arcs, generated lighting, a baked platform mask, or platform-specific geometry. Repeatable exports MUST provide an opaque 1024×1024 iOS default icon plus deliberate dark and grayscale-tinted appearances; opaque Android legacy density icons plus adaptive background/foreground and monochrome layers; and a 512×512 RGBA Google Play listing icon. Unit tests MUST verify catalog/resource linkage, canonical vector parity, formats, and dimensions; release builds plus 20 px and circle/squircle/rounded-square visual checks verify compilation, legibility, and mask safety. MUST (*source: PRD §13.6, §15.3, §18.2; verify: unit/build/manual; story: X-11*)
 - **BLD-11 — Store-signable embedded assets (FROZEN · X-11 · `[docs]` 2026-07-29).** Every non-Mach-O file embedded in an iOS distribution archive MUST remain a sealed data resource and MUST NOT be classifiable as an unsigned nested executable. In particular, generated Blockly JavaScript that contains multiline Python templates MUST be transformed deterministically at vendoring time so the packaged file is ordinary JavaScript/data rather than a Python script while preserving byte-for-byte generated Python at runtime. The asset-policy unit gate MUST pin that transform; the vendoring build and exported-IPA gate MUST reject any Flutter asset identified as `script text executable`; and any correction MUST be followed by a clean archive/export rather than mutation of a signed bundle. MUST (*source: PRD §18.2; Apple Code Signing Guide / TN2206; verify: unit/build/manual; story: X-11*)
+- **BLD-12 — Android release signing (FROZEN · X-11 · `[docs]` 2026-08-07).** Every Android `release` variant MUST fail closed unless an explicit non-debug signing identity is supplied through the four secret-manager environment variables `PYBLE_ANDROID_KEYSTORE_PATH`, `PYBLE_ANDROID_KEYSTORE_PASSWORD`, `PYBLE_ANDROID_KEY_ALIAS`, and `PYBLE_ANDROID_KEY_PASSWORD`; it MUST never fall back to the Android debug key or an unsigned artifact. The production Play artifact MUST be an upload-key-signed Android App Bundle for `dev.pyble.pyble`. Public CI MUST exercise this exact release-signing path with a disposable CI-only key, build both the production APK and AAB, verify the AAB JAR signature, and never receive the production upload key. The final release gate MUST compare the AAB signer SHA-256 fingerprint with the owner-controlled upload certificate and record the AAB SHA-256 plus source commit and version. MUST (*source: PRD §15.3, §18.2; Android app-signing requirements; verify: unit/build/manual; story: X-11*)
 
 ## 10. Security & Privacy — SEC
 
@@ -785,7 +973,7 @@ The local Drift database ([PRD §12.1](../prd.md), `lib/data/`) MUST model exact
 | FR-CONSOLE-* | §9.4 | A-21 | widget, golden |
 | FR-RUN-* | §9.5, §8.2, §8.3, §13.3 | A-11 | widget, integration |
 | FR-IMPORT-* | §9.7, §12.1 | A-33 | integration |
-| FR-BLOCKS-*/FR-PLOTS-* | §9.8, §16.1 | A-31, A-32 | integration, widget |
+| FR-BLOCKS-*/FR-PLOTS-* | §9.8, §16.1 | A-31, A-32, A-38 | unit, asset, widget, integration, HIL |
 | FR-ERR-* | §9.9 | A-21 | unit, widget |
 | FR-I18N-* | §9.10, §13.7 | X-12 | locale |
 | FR-UI-* | §19 | A-20, A-22 | golden, widget |

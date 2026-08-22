@@ -22,12 +22,30 @@ describe("Cloudflare-fronted VPS deployment", () => {
     expect(config).toContain("root /srv/pyble/current;");
     expect(config).toMatch(/server_name\s+pyble\.dev;/);
     expect(config).toMatch(
-      /location = \/(privacy|support|flash)\s*\{[\s\S]*?\.html/,
+      /location = \/(app|privacy|support|flash)\s*\{[\s\S]*?\.html/,
     );
-    expect(config).toMatch(/location = \/(privacy|support|flash)\/\s*\{/);
+    expect(config).toMatch(/location = \/(app|privacy|support|flash)\/\s*\{/);
     expect(config).toContain("error_page 404 /404.html;");
     expect(config).toMatch(/location = \/404\.html\s*\{[\s\S]*?internal;/);
     expect(config).not.toContain("proxy_pass");
+  });
+
+  it("serves the exact app route without shadowing app capture assets", async () => {
+    const config = await readFile(
+      join(deploymentRoot, "nginx", "10-pyble-dev-https.conf"),
+      "utf8",
+    );
+
+    expect(config).toMatch(
+      /location = \/app\s*\{[\s\S]*?try_files \/app\.html =404;[\s\S]*?\}/,
+    );
+    expect(config).toMatch(
+      /location = \/app\/\s*\{[\s\S]*?return 308 https:\/\/pyble\.dev\/app\$is_args\$args;[\s\S]*?\}/,
+    );
+    expect(config).not.toMatch(/location \^~ \/app\/?\s*\{/);
+    expect(config).toMatch(
+      /location \/\s*\{[\s\S]*?try_files \$uri =404;[\s\S]*?\}/,
+    );
   });
 
   it("defines TLS, cache, MIME, and security-header boundaries", async () => {
@@ -71,7 +89,7 @@ describe("Cloudflare-fronted VPS deployment", () => {
     );
     expect(config).toContain('Cache-Control "no-cache, no-transform"');
     expect(config).not.toContain('add_header Cache-Control "no-cache" always;');
-    for (const route of ["/", "/privacy", "/support", "/flash"]) {
+    for (const route of ["/", "/app", "/privacy", "/support", "/flash"]) {
       const locationStart = config.indexOf(`location = ${route} {`);
       const locationEnd = config.indexOf("\n    }", locationStart);
       const locationBlock = config.slice(locationStart, locationEnd);
@@ -212,6 +230,22 @@ describe("Cloudflare-fronted VPS deployment", () => {
     expect(script).not.toContain("--chmod=");
     expect(script).not.toMatch(/\b(?:\d{1,3}\.){3}\d{1,3}\b/);
     expect(script).not.toMatch(/BEGIN (?:RSA |OPENSSH )?PRIVATE KEY/);
+  });
+
+  it("requires and smoke-tests the app page alongside the firmware installer", async () => {
+    const script = await readFile(
+      join(deploymentRoot, "vps", "deploy.sh"),
+      "utf8",
+    );
+
+    expect(script).toMatch(
+      /for required_file in[\s\S]*?app\.html[\s\S]*?flash\.html[\s\S]*?; do/,
+    );
+    expect(script).toContain(
+      "for route in / /app /privacy /support /flash; do",
+    );
+    expect(script).toContain("/app) route_file=app.html ;;");
+    expect(script).toContain("/flash) route_file=flash.html ;;");
   });
 
   it("accepts only the exact unrestricted pending public beta in the activation path", async () => {
@@ -485,7 +519,7 @@ describe("Cloudflare-fronted VPS deployment", () => {
       "utf8",
     );
     const publicRouteSmoke =
-      /for route in \/ \/privacy \/support \/flash; do([\s\S]*?)\ndone/.exec(
+      /for route in \/ \/app \/privacy \/support \/flash; do([\s\S]*?)\ndone/.exec(
         script,
       )?.[1];
 
@@ -495,7 +529,7 @@ describe("Cloudflare-fronted VPS deployment", () => {
     );
   });
 
-  it("requires missing firmware and deferred C3 smoke responses to be 404 no-store", async () => {
+  it("requires missing firmware to be 404 no-store and scopes deferred C3 to public beta", async () => {
     const script = await readFile(
       join(deploymentRoot, "vps", "deploy.sh"),
       "utf8",
@@ -518,7 +552,9 @@ describe("Cloudflare-fronted VPS deployment", () => {
       '--request "${firmware_not_found_method}"',
     );
     expect(firmwareNotFoundSmoke).not.toContain("firmware_not_found_curl_mode");
-    expect(firmwareNotFoundSmoke).toContain("esp32-c3-4mb/manifest.json");
+    expect(firmwareNotFoundSmoke).toMatch(
+      /if \[\[ "\$\{firmware_deployment\}" == public-beta \]\]; then\s+firmware_not_found_paths\+=\(\s+"\$\{selected_firmware_root\}\/esp32-c3-4mb\/manifest\.json"\s+\)\s+fi/,
+    );
     expect(firmwareNotFoundSmoke).toContain("--dump-header");
     expect(firmwareNotFoundSmoke).toContain("--write-out '%{http_code}'");
     expect(firmwareNotFoundSmoke).toMatch(
@@ -723,7 +759,7 @@ describe("Cloudflare-fronted VPS deployment", () => {
       "utf8",
     );
     const routeSmoke =
-      /for route in \/ \/privacy \/support \/flash; do([\s\S]*?)\ndone/.exec(
+      /for route in \/ \/app \/privacy \/support \/flash; do([\s\S]*?)\ndone/.exec(
         script,
       )?.[1];
 

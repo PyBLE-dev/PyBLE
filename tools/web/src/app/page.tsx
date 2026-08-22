@@ -18,8 +18,20 @@ import {
   RadioIcon,
   ShieldIcon,
 } from "@/components/icons";
-import { firmwareReleaseSelectedAtBuild } from "@/lib/firmware-release-selection";
-import { firmwareTargetsForRelease, siteConfig } from "@/lib/site";
+import { WaveshareBoardPhoto } from "@/components/waveshare-board-photo";
+import {
+  firmwareVersionUsesFiveProfiles,
+  releaseIncludesWaveshareLcd147b,
+} from "@/lib/firmware-release";
+import {
+  firmwareReleaseSelectedAtBuild,
+  localFirmwarePreviewSelectedAtBuild,
+} from "@/lib/firmware-release-selection";
+import {
+  firmwareTargetsForLocalPreview,
+  firmwareTargetsForRelease,
+  siteConfig,
+} from "@/lib/site";
 
 export const metadata: Metadata = {
   title: {
@@ -68,23 +80,40 @@ const workflowStepsAfterProvision = [
 ] as const;
 
 export default function HomePage() {
-  const firmwareRelease = firmwareReleaseSelectedAtBuild();
+  const preview = localFirmwarePreviewSelectedAtBuild();
+  const firmwareRelease = preview ? null : firmwareReleaseSelectedAtBuild();
   const publicBeta = firmwareRelease?.deployment === "public-beta";
-  const qualifiedPublic =
-    firmwareRelease?.deployment === "public" &&
-    firmwareRelease.hilStatus === "passed";
-  const firmwareTargets = firmwareTargetsForRelease(firmwareRelease);
+  const waveshareLcd147b = releaseIncludesWaveshareLcd147b(firmwareRelease);
+  const qualifiedPublic = firmwareRelease !== null && waveshareLcd147b;
+  const fiveProfileRelease =
+    firmwareRelease !== null &&
+    firmwareVersionUsesFiveProfiles(firmwareRelease.version);
+  const releaseHasWaveshareProfile = Boolean(
+    firmwareRelease?.profiles.some(
+      ({ id }) => id === "waveshare-esp32-s3-lcd-147b",
+    ),
+  );
+  const firmwareTargetGroupLabel = preview
+    ? `Five exact v${preview.version} engineering targets`
+    : qualifiedPublic
+      ? "Qualified public firmware targets"
+      : "Public firmware availability";
+  const firmwareTargets = preview
+    ? firmwareTargetsForLocalPreview(preview)
+    : firmwareTargetsForRelease(firmwareRelease);
   const steps = [
     {
       number: "01",
       title: "Provision once",
-      body: publicBeta
-        ? `Use USB once to install the exact matching v${firmwareRelease.version} hardware-tested beta. Production Chrome install and interrupted-flash recovery passed on both exact profiles; complete release qualification continues.`
-        : qualifiedPublic
-          ? `Use USB once to install the exact matching qualified v${firmwareRelease.version} firmware.`
-          : firmwareRelease
-            ? `Check the protected candidate instructions before provisioning v${firmwareRelease.version}.`
-            : "Check firmware status before provisioning; the installer is currently unavailable.",
+      body: preview
+        ? `Use USB once with the exact v${preview.version} engineering image for your target. The four ESP targets use Web Serial; Pico 2 W uses a verified UF2 download and BOOTSEL copy. Local preview bytes are unqualified.`
+        : publicBeta
+          ? `Use USB once to install the exact matching v${firmwareRelease.version} hardware-tested beta. Production Chrome install and interrupted-flash recovery passed on both exact profiles; complete release qualification continues.`
+          : qualifiedPublic
+            ? `Use USB once to install the exact matching qualified v${firmwareRelease.version} firmware.`
+            : firmwareRelease
+              ? `Check the protected candidate instructions before provisioning v${firmwareRelease.version}.`
+              : "Check firmware status before provisioning; the installer is currently unavailable.",
     },
     ...workflowStepsAfterProvision,
   ];
@@ -96,16 +125,23 @@ export default function HomePage() {
           <div className="hero__copy">
             <div className="status-badge">
               <span className="status-dot" aria-hidden="true" />
-              iPad beta now open
+              iPad external beta + Android internal test
             </div>
             <p className="eyebrow eyebrow--light">
               Python over Bluetooth Low Energy
             </p>
             <h1>Code your MicroPython board. Leave the cable behind.</h1>
             <p className="hero__lede">
-              PyBLE is a free, tablet-first IDE designed for boards that run
-              MicroPython and support Bluetooth Low Energy.{" "}
-              {publicBeta ? (
+              PyBLE is a free, open-source, tablet-first IDE designed for boards
+              that run MicroPython and support Bluetooth Low Energy.{" "}
+              {preview ? (
+                <>
+                  LOCAL ENGINEERING PREVIEW v{preview.version} — UNQUALIFIED.
+                  This loopback build exposes exact local artifacts for five
+                  firmware targets. These bytes are not a public release or
+                  support claim.
+                </>
+              ) : publicBeta ? (
                 <>
                   Public v{firmwareRelease.version} firmware is a
                   hardware-tested beta for the exact esp32-4mb and
@@ -113,15 +149,24 @@ export default function HomePage() {
                   interrupted-flash recovery passed on both exact profiles;
                   complete release qualification continues.
                 </>
+              ) : qualifiedPublic && fiveProfileRelease ? (
+                <>
+                  Qualified public v{firmwareRelease.version} firmware is
+                  available for all five exact release profiles across classic
+                  ESP32, ESP32-S3, the separate Waveshare exact-board image,
+                  ESP32-C3, and the Raspberry Pi Pico 2 W.
+                </>
               ) : qualifiedPublic ? (
                 <>
                   Qualified public v{firmwareRelease.version} firmware is
-                  available for the exact esp32-4mb and esp32-s3-n16r8 profiles.
+                  available for esp32-4mb, lean generic esp32-s3-n16r8, and the
+                  separate waveshare-esp32-s3-lcd-147b exact-board profile.
                 </>
               ) : firmwareRelease ? (
                 <>
                   Protected candidate v{firmwareRelease.version} is staged for
-                  the exact esp32-4mb and esp32-s3-n16r8 profiles.
+                  access-controlled qualification. It is not a public support
+                  claim.
                 </>
               ) : (
                 <>
@@ -129,15 +174,30 @@ export default function HomePage() {
                   status before provisioning a board.
                 </>
               )}{" "}
-              ESP32-C3 and more microcontroller families remain planned.
+              {!preview && !fiveProfileRelease ? (
+                <>
+                  ESP32-C3 and Raspberry Pi Pico 2 W are under engineering
+                  validation and remain unavailable in the public installer.
+                </>
+              ) : null}
+              {!preview &&
+              fiveProfileRelease &&
+              firmwareRelease.deployment === "candidate" ? (
+                <>
+                  All five firmware targets, including ESP32-C3 and Raspberry Pi
+                  Pico 2 W, are staged and pending hardware validation.
+                </>
+              ) : null}
             </p>
             <div className="button-row">
-              <Link className="button button--primary" href="#testflight">
-                Join the iPad beta
+              <Link className="button button--primary" href="/app">
+                Install PyBLE on iPad or Android
                 <ArrowIcon />
               </Link>
-              <Link className="button button--ghost" href="#workflow">
-                See how it works
+              <Link className="button button--ghost" href="/flash">
+                {preview
+                  ? "Review five-target firmware preview"
+                  : "Review firmware availability"}
               </Link>
             </div>
             <ul className="hero__proof" aria-label="PyBLE principles">
@@ -244,14 +304,16 @@ export default function HomePage() {
             <p className="eyebrow">From Blocks to Python</p>
             <h2>Start visually. See the real code.</h2>
             <p>
-              Build offline with seven editable beginner examples, explicit
-              numeric-GPIO blocks, and the standard MicroPython NeoPixel API.
-              Generated Python is always visible and editable.
+              Build offline with eight editable beginner examples, including an
+              explicit TFT display example, explicit numeric or named GPIO pins
+              such as <code>Pin(&quot;LED&quot;)</code>, and the standard
+              MicroPython NeoPixel API. Generated Python is always visible and
+              editable.
             </p>
             <ul className="check-list">
               <li>
                 <CheckIcon />
-                Choose the pin for your own board
+                Enter the numeric GPIO or named pin for your own board
               </li>
               <li>
                 <CheckIcon />
@@ -284,18 +346,17 @@ export default function HomePage() {
           </div>
           <div className="compatibility__targets">
             <p className="compatibility__target-label">
-              Initial beta firmware targets
+              {firmwareTargetGroupLabel}
             </p>
-            <div
-              className="target-grid"
-              aria-label="Initial beta firmware targets"
-            >
+            <div className="target-grid" aria-label={firmwareTargetGroupLabel}>
               {firmwareTargets.map((target) => (
                 <div
                   className={
-                    target.planned
-                      ? "target-grid__target target-grid__target--planned"
-                      : "target-grid__target"
+                    "preview" in target
+                      ? "target-grid__target target-grid__target--preview"
+                      : target.planned
+                        ? "target-grid__target target-grid__target--planned"
+                        : "target-grid__target"
                   }
                   key={target.id}
                 >
@@ -312,11 +373,19 @@ export default function HomePage() {
                   <small className="target-grid__constraint">
                     {target.constraint}
                   </small>
+                  {"method" in target ? (
+                    <small className="target-grid__method">
+                      {target.method}
+                    </small>
+                  ) : null}
                   <small className="target-grid__status">{target.status}</small>
                 </div>
               ))}
             </div>
           </div>
+          {releaseHasWaveshareProfile ? (
+            <WaveshareBoardPhoto showInstallerLink />
+          ) : null}
         </div>
       </section>
 
@@ -381,74 +450,131 @@ export default function HomePage() {
       </section>
 
       <section
-        className="section beta-invite"
-        id="testflight"
-        aria-labelledby="testflight-title"
+        className="section beta-hub"
+        aria-labelledby="beta-channels-title"
       >
-        <div className="container beta-invite__card">
-          <div className="beta-invite__copy">
-            <p className="eyebrow">External testing is open</p>
-            <h2 id="testflight-title">Join the PyBLE beta on TestFlight.</h2>
-            <p className="beta-invite__lede">
-              Install the free iPad beta through Apple TestFlight now.{" "}
-              {publicBeta ? (
-                <>
-                  The exact v{firmwareRelease.version} hardware-tested firmware
-                  beta is available for esp32-4mb and esp32-s3-n16r8. Production
-                  Chrome install and interrupted-flash recovery passed on both
-                  exact profiles; complete release qualification continues.
-                </>
-              ) : qualifiedPublic ? (
-                <>
-                  Qualified v{firmwareRelease.version} firmware is available for
-                  esp32-4mb and esp32-s3-n16r8.
-                </>
-              ) : (
-                <>
-                  The firmware installer is currently unavailable; check its
-                  status before connecting a board.
-                </>
-              )}{" "}
-              ESP32-C3 is unavailable. After one-time USB setup, everyday coding
-              runs over Bluetooth Low Energy.
+        <div className="container">
+          <div className="section-heading beta-hub__heading">
+            <p className="eyebrow">PyBLE for iPad + Android</p>
+            <h2 id="beta-channels-title">Choose your tablet beta.</h2>
+            <p>
+              Both builds come from the same open-source Flutter app. Choose the
+              testing channel for your tablet; neither is a production app store
+              release.
             </p>
-            <div className="button-row beta-invite__actions">
-              <a
-                className="button button--primary"
-                href={siteConfig.testFlightUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Open in TestFlight
-                <ArrowIcon />
-              </a>
-              <Link className="button button--secondary" href="/flash">
-                Check firmware status
-              </Link>
-            </div>
           </div>
-          <figure className="beta-invite__qr">
-            <a
-              className="beta-invite__qr-link"
-              href={siteConfig.testFlightUrl}
-              target="_blank"
-              rel="noopener noreferrer"
+          <div className="beta-channel-grid">
+            <section
+              className="beta-invite__card beta-invite__card--channel"
+              id="testflight"
+              aria-labelledby="testflight-title"
             >
-              <Image
-                src="/testflight/pyble-testflight-qr.svg"
-                width={360}
-                height={360}
-                alt="QR code for the PyBLE beta on Apple TestFlight"
-              />
-            </a>
-            <figcaption>
-              <strong>Scan with your iPad camera</strong>
-              <span>Or open this address on the device:</span>
-              <span className="beta-invite__url">
-                testflight.apple.com/join/yU4e8s6d
-              </span>
-            </figcaption>
-          </figure>
+              <div className="beta-invite__copy">
+                <p className="eyebrow">External testing is open</p>
+                <h3 id="testflight-title">
+                  Join the PyBLE beta on TestFlight.
+                </h3>
+                <p className="beta-invite__lede">
+                  Install the free iPad external beta through Apple TestFlight.
+                  Firmware availability and qualification depend on the exact
+                  target; check the firmware installer before provisioning.
+                  After one-time USB setup, everyday coding runs over Bluetooth
+                  Low Energy.
+                </p>
+                <div className="button-row beta-invite__actions">
+                  <a
+                    className="button button--primary"
+                    href={siteConfig.testFlightUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Open in TestFlight
+                    <ArrowIcon />
+                  </a>
+                  <Link className="button button--secondary" href="/flash">
+                    Check firmware status
+                  </Link>
+                </div>
+              </div>
+              <figure className="beta-invite__qr">
+                <a
+                  className="beta-invite__qr-link"
+                  href={siteConfig.testFlightUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <Image
+                    src="/testflight/pyble-testflight-qr.svg"
+                    width={360}
+                    height={360}
+                    alt="QR code for the PyBLE beta on Apple TestFlight"
+                  />
+                </a>
+                <figcaption>
+                  <strong>Scan with your iPad camera</strong>
+                  <span>Or open this address on the device:</span>
+                  <span className="beta-invite__url">
+                    testflight.apple.com/join/yU4e8s6d
+                  </span>
+                </figcaption>
+              </figure>
+            </section>
+
+            <section
+              className="beta-invite__card beta-invite__card--channel beta-invite__card--android"
+              id="android-internal-test"
+              aria-labelledby="android-internal-test-title"
+            >
+              <div className="beta-invite__copy">
+                <p className="eyebrow">Android internal testing</p>
+                <h3 id="android-internal-test-title">
+                  Join the PyBLE Android internal test.
+                </h3>
+                <p className="beta-invite__lede">
+                  The Android build is available only to approved internal
+                  testers signed in with an invited Google account. An
+                  unapproved or signed-out visitor may find the listing
+                  unavailable. This is not a public Google Play release.
+                </p>
+                <div className="button-row beta-invite__actions">
+                  <a
+                    className="button button--primary"
+                    href={siteConfig.googlePlayInternalTestUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Open Android internal test
+                    <ArrowIcon />
+                  </a>
+                  <Link className="button button--secondary" href="/support">
+                    Get support
+                  </Link>
+                </div>
+              </div>
+              <figure className="beta-invite__qr">
+                <a
+                  className="beta-invite__qr-link"
+                  href={siteConfig.googlePlayInternalTestUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <Image
+                    src="/google-play/pyble-google-play-internal-test-qr.svg"
+                    width={360}
+                    height={360}
+                    alt="QR code for the PyBLE Android internal test on Google Play"
+                  />
+                </a>
+                <figcaption>
+                  <strong>Scan with your Android camera</strong>
+                  <span>Sign in with the Google account that was invited:</span>
+                  <span className="beta-invite__url">
+                    {siteConfig.googlePlayInternalTestUrl}
+                  </span>
+                </figcaption>
+              </figure>
+            </section>
+          </div>
         </div>
       </section>
     </main>
