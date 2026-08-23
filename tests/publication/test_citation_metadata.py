@@ -56,16 +56,16 @@ class CitationMetadataTest(unittest.TestCase):
         ):
             self.assertIn(wording, normalized)
 
-    def test_release_identity_is_complete_or_intentionally_project_level(
-        self,
-    ) -> None:
+    def test_release_identity_is_complete_for_the_project_snapshot(self) -> None:
         has_doi = re.search(r"(?m)^doi:\s*", self.citation) is not None
         has_version = re.search(r"(?m)^version:\s*", self.citation) is not None
         has_release_date = (
             re.search(r"(?m)^date-released:\s*", self.citation) is not None
         )
-        self.assertEqual(has_doi, has_version)
-        self.assertEqual(has_doi, has_release_date)
+        self.assertTrue(has_version)
+        self.assertEqual(has_version, has_release_date)
+        self.assertIn('version: "2026.08.23"', self.citation)
+        self.assertIn('date-released: "2026-08-23"', self.citation)
         if has_doi:
             self.assertRegex(
                 self.citation,
