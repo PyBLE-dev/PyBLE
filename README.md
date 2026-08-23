@@ -258,6 +258,13 @@ fail-closed unless an explicit validated release input is supplied.
 - [Validation evidence index](docs/validation/README.md)
 - [Security policy](SECURITY.md)
 
+## Citation
+
+If you use PyBLE in research, teaching, or another published work, use the
+metadata in [CITATION.cff](CITATION.cff). The app and firmware are versioned
+independently, so cite the exact archived project snapshot or component
+release you used; qualified firmware v0.6.0 is not the app version.
+
 ## Contributing
 
 Contributions are welcome, especially new validated board ports, protocol and

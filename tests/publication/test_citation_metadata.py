@@ -45,6 +45,7 @@ class CitationMetadataTest(unittest.TestCase):
         self.assertNotRegex(self.citation, r"(?im)^\s*(orcid|affiliation):")
 
     def test_citation_describes_the_open_ble_first_software(self) -> None:
+        normalized = " ".join(self.citation.split())
         for wording in (
             "tablet-first MicroPython integrated development environment",
             "Bluetooth Low Energy",
@@ -53,7 +54,7 @@ class CitationMetadataTest(unittest.TestCase):
             "physical computing",
             "embedded systems",
         ):
-            self.assertIn(wording, self.citation)
+            self.assertIn(wording, normalized)
 
     def test_release_identity_is_complete_or_intentionally_project_level(
         self,
@@ -78,13 +79,22 @@ class CitationMetadataTest(unittest.TestCase):
         )
 
     def test_repository_contract_and_public_docs_expose_the_citation(self) -> None:
-        self.assertRegex(
-            self.contributor_guidelines,
-            r"(?s)Root governance files are:.{0,260}`CITATION\.cff`",
+        governance_start = self.contributor_guidelines.index(
+            "Root governance files are:"
         )
+        governance_end = self.contributor_guidelines.index(
+            "```", governance_start + len("Root governance files are:") + 4
+        )
+        governance_files = self.contributor_guidelines[
+            governance_start:governance_end
+        ]
+        normalized_readme = " ".join(self.readme.split())
+        self.assertIn("CITATION.cff", governance_files)
         self.assertIn("## Citation", self.readme)
         self.assertIn("[CITATION.cff](CITATION.cff)", self.readme)
-        self.assertIn("app and firmware are versioned independently", self.readme)
+        self.assertIn(
+            "app and firmware are versioned independently", normalized_readme
+        )
         self.assertIn("CITATION.cff", self.changelog)
 
 
