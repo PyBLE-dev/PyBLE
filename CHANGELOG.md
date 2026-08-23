@@ -57,8 +57,10 @@ its annotated tag rather than from the newer branch tip.
 ### Website and repository source
 
 - Added project-level `CITATION.cff` metadata and identified whole-project
-  source snapshot `2026.08.23` for scholarly citation while preserving the
-  independently versioned app and firmware release identities.
+  source snapshot `source-2026.08.23` with exact Zenodo DOI
+  [`10.5281/zenodo.22064468`](https://doi.org/10.5281/zenodo.22064468) for
+  scholarly citation while preserving the independently versioned app and
+  firmware release identities.
 - Established `PyBLE-dev/PyBLE` as the canonical public monorepo and added
   contributor, security, architecture, protocol, and validation documentation.
 - Added an independent `/privacy` policy and stable `/app` landing page, with
