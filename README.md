@@ -265,6 +265,11 @@ metadata in [CITATION.cff](CITATION.cff). The app and firmware are versioned
 independently, so cite the exact archived project snapshot or component
 release you used; qualified firmware v0.6.0 is not the app version.
 
+The first whole-project citation snapshot is
+[2026.08.23](https://github.com/PyBLE-dev/PyBLE/releases/tag/source-2026.08.23).
+It contains app source `0.1.0+4` and records qualified firmware `0.6.0` as a
+separate component release.
+
 ## Contributing
 
 Contributions are welcome, especially new validated board ports, protocol and
