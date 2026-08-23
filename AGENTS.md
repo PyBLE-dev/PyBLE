@@ -64,7 +64,7 @@ Root governance files are:
 
 ```text
 README.md  LICENSE  CONTRIBUTING.md  CODE_OF_CONDUCT.md  SECURITY.md
-CHANGELOG.md  AGENTS.md  CLAUDE.md  .gitignore  .gitmodules
+CHANGELOG.md  CITATION.cff  AGENTS.md  CLAUDE.md  .gitignore  .gitmodules
 ```
 
 Put specifications and decisions under `docs/`, scripts under `tools/` or

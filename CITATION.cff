@@ -1,0 +1,25 @@
+cff-version: 1.2.0
+message: >-
+  If you use PyBLE in research, teaching, or another published work, please
+  cite the exact archived software version you used.
+title: "PyBLE: Python over Bluetooth Low Energy"
+type: software
+authors:
+  - family-names: Vchirawongkwin
+    given-names: Viwat
+abstract: >-
+  PyBLE is a free, MIT-licensed, tablet-first MicroPython integrated
+  development environment. Its Flutter app connects to compatible boards
+  running the portable PyBLE agent over Bluetooth Low Energy through the open
+  PBLE/1 protocol, enabling code editing, file transfer, program control, and
+  console streaming without an everyday USB or Wi-Fi connection.
+keywords:
+  - Bluetooth Low Energy
+  - MicroPython
+  - physical computing
+  - embedded systems
+  - Flutter
+  - tablet IDE
+license: MIT
+repository-code: "https://github.com/PyBLE-dev/PyBLE"
+url: "https://pyble.dev"
