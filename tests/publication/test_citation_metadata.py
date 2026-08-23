@@ -62,15 +62,13 @@ class CitationMetadataTest(unittest.TestCase):
         has_release_date = (
             re.search(r"(?m)^date-released:\s*", self.citation) is not None
         )
+        self.assertTrue(has_doi)
         self.assertTrue(has_version)
         self.assertEqual(has_version, has_release_date)
-        self.assertIn('version: "2026.08.23"', self.citation)
+        self.assertIn('version: "source-2026.08.23"', self.citation)
         self.assertIn('date-released: "2026-08-23"', self.citation)
-        if has_doi:
-            self.assertRegex(
-                self.citation,
-                r"(?m)^doi:\s*[\"']?10\.5281/zenodo\.\d+[\"']?\s*$",
-            )
+        self.assertIn('doi: "10.5281/zenodo.22064468"', self.citation)
+        self.assertNotIn("10.5281/zenodo.22064467", self.citation)
 
     def test_metadata_contains_no_placeholder_identifiers(self) -> None:
         self.assertNotRegex(
@@ -95,7 +93,14 @@ class CitationMetadataTest(unittest.TestCase):
         self.assertIn(
             "app and firmware are versioned independently", normalized_readme
         )
+        self.assertIn("https://doi.org/10.5281/zenodo.22064468", self.readme)
+        self.assertIn("https://doi.org/10.5281/zenodo.22064467", self.readme)
+        self.assertIn(
+            "https://zenodo.org/badge/DOI/10.5281/zenodo.22064467.svg",
+            self.readme,
+        )
         self.assertIn("CITATION.cff", self.changelog)
+        self.assertIn("10.5281/zenodo.22064468", self.changelog)
 
 
 if __name__ == "__main__":
