@@ -56,8 +56,9 @@ its annotated tag rather than from the newer branch tip.
 
 ### Website and repository source
 
-- Added project-level `CITATION.cff` metadata for scholarly citation while
-  preserving the independently versioned app and firmware release identities.
+- Added project-level `CITATION.cff` metadata and identified whole-project
+  source snapshot `2026.08.23` for scholarly citation while preserving the
+  independently versioned app and firmware release identities.
 - Established `PyBLE-dev/PyBLE` as the canonical public monorepo and added
   contributor, security, architecture, protocol, and validation documentation.
 - Added an independent `/privacy` policy and stable `/app` landing page, with
