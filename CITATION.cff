@@ -4,8 +4,9 @@ message: >-
   cite the exact archived software version you used.
 title: "PyBLE: Python over Bluetooth Low Energy"
 type: software
-version: "2026.08.23"
+version: "source-2026.08.23"
 date-released: "2026-08-23"
+doi: "10.5281/zenodo.22064468"
 authors:
   - family-names: Vchirawongkwin
     given-names: Viwat

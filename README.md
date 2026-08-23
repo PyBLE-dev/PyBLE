@@ -5,6 +5,7 @@ MicroPython IDE.
 
 [![CI](https://github.com/PyBLE-dev/PyBLE/actions/workflows/ci.yml/badge.svg)](https://github.com/PyBLE-dev/PyBLE/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22064467.svg)](https://doi.org/10.5281/zenodo.22064467)
 [![Platforms](https://img.shields.io/badge/app-iPadOS%20%7C%20Android-2D5BFF.svg)](#app)
 [![Protocol](https://img.shields.io/badge/protocol-PBLE%2F1-0E7490.svg)](docs/specifications/protocol.md)
 [![Firmware](https://img.shields.io/badge/firmware-v0.6.0%20qualified-15803D.svg)](https://pyble.dev/flash)
@@ -266,9 +267,13 @@ independently, so cite the exact archived project snapshot or component
 release you used; qualified firmware v0.6.0 is not the app version.
 
 The first whole-project citation snapshot is
-[2026.08.23](https://github.com/PyBLE-dev/PyBLE/releases/tag/source-2026.08.23).
-It contains app source `0.1.0+4` and records qualified firmware `0.6.0` as a
-separate component release.
+[`source-2026.08.23`](https://github.com/PyBLE-dev/PyBLE/releases/tag/source-2026.08.23).
+Cite that exact snapshot with DOI
+[`10.5281/zenodo.22064468`](https://doi.org/10.5281/zenodo.22064468); use the
+project concept DOI
+[`10.5281/zenodo.22064467`](https://doi.org/10.5281/zenodo.22064467) to link
+all archived PyBLE versions. The snapshot contains app source `0.1.0+4` and
+records qualified firmware `0.6.0` as a separate component release.
 
 ## Contributing
 
