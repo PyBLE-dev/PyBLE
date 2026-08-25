@@ -1,6 +1,6 @@
 # PyBLE — System Architecture
 
-Status: **DRAFT** · Last updated: 2026-08-03
+Status: **DRAFT** · Last updated: 2026-08-25
 
 ## 1. The three pieces
 
@@ -29,6 +29,25 @@ Status: **DRAFT** · Last updated: 2026-08-03
 3. **PBLE/1** (`docs/specifications/protocol.md`) — the open wire protocol carried over a BLE GATT service.
 
 The seam between app and firmware is a **byte stream over two GATT characteristics** (RX/TX), framed by PBLE/1. Everything above that seam (the editor, file explorer, console, plots) is transport-agnostic and speaks only to the PBLE/1 client.
+
+### 1.1 Companion example source collection
+
+The official user-facing runnable-example collection is maintained separately
+at <https://github.com/PyBLE-dev/examples>. It is content consumed through the
+generic public-GitHub import boundary, not a fourth runtime subsystem, package,
+submodule, build input, or privileged source. Repository existence alone makes
+no runnable or validated-example claim; those claims belong to versioned
+catalog and validation evidence in that repository.
+
+The current primary-maintainer sibling checkout is
+`/Users/vyv/Working/SciLabPro/PyBLE-Examples`. That path is non-portable
+operational information only; contributors and releases identify source by the
+public repository plus immutable commits/tags. Official example source,
+catalogs, example-specific tests, and example HIL evidence are implemented in
+that separate checkout and history. This PyBLE worktree retains app/importer,
+PBLE/1, firmware, and cross-repository compatibility contracts, plus its small
+GitHub-import integration fixtures and bundled offline Blocks examples. See
+[ADR-0041](../decisions/0041-separate-official-examples-repository.md).
 
 ## 2. App architecture (summary)
 
