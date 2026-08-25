@@ -33,6 +33,23 @@ shared conformance corpus in one pull request.
 - [`validation/`](validation/) — retained release and hardware qualification
   evidence
 
+## Related source repositories
+
+- [PyBLE](https://github.com/PyBLE-dev/PyBLE) — canonical app, PBLE/1,
+  firmware, product documentation, tests, and release tooling
+- [PyBLE Examples](https://github.com/PyBLE-dev/examples) — separately
+  governed official user-facing runnable-example collection; its
+  [initial catalog plan](https://github.com/PyBLE-dev/examples/blob/0afe334a1435131f2bdc6189cad3b54cef59e3bc/docs/planning/examples-catalog-plan.md)
+  records the founding scope
+
+The current primary-maintainer sibling checkout for the examples collection is
+`/Users/vyv/Working/SciLabPro/PyBLE-Examples`. This machine-local path is an
+informational organization convention, not a contributor, build, application,
+CI, or release requirement. [ADR-0041](decisions/0041-separate-official-examples-repository.md)
+defines the boundary: official example implementation happens in that separate
+repository and history, while this repository retains only the fixtures and
+bundled offline examples required by its own product contracts.
+
 ## Testing and release handoff
 
 - [PyBLE 0.1.0 (4) TestFlight description and test

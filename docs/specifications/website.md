@@ -176,12 +176,21 @@ firmware bytes under §6.1.
 
 ### 3.2 Public source repository
 
-The canonical public source repository is
+The canonical public product source repository is
 `https://github.com/PyBLE-dev/PyBLE`. The home page MUST identify the app,
 board-agent firmware, PBLE/1 protocol, tests, and documentation as public,
 MIT-licensed source and provide a prominent, accessible link to that exact
 repository. The global footer MUST provide the same repository link so it
 remains available from every launch route.
+
+The separately governed official user-facing example source collection is
+`https://github.com/PyBLE-dev/examples` under
+[ADR-0041](../decisions/0041-separate-official-examples-repository.md). It is a
+companion content repository and MUST NOT be presented as the canonical app,
+firmware, or PBLE/1 source. Recording it here creates no required website
+navigation or privileged app behavior. If the website links it, the copy MUST
+describe its actual release state and MUST NOT call content runnable or
+validated without matching versioned evidence from that repository.
 
 Repository links MUST be ordinary HTTPS links and MUST NOT use a tracking
 redirect, embedded GitHub widget, remote badge, or client-side network request

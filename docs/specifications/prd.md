@@ -1217,9 +1217,9 @@ PyBLE is, by design, the inverse of a closed-source product: every shippable art
 
 ### §15.1 Open-source policy
 
-- The entire project — Flutter app (`app/`), agent firmware (`firmware/`), shared PBLE/1 bindings (`protocol/`), examples, tooling, and tests — MUST be released under the **MIT License**. Per [ADR-0003](../decisions/0003-license-mit.md), there is no open-core split, no paywalled feature, no closed module, and no telemetry-by-default.
+- All PyBLE-owned source — Flutter app (`app/`), agent firmware (`firmware/`), shared PBLE/1 bindings (`protocol/`), repository-local fixtures, tooling, tests, and the separately governed official example collection — MUST be released under the **MIT License**. Per [ADR-0003](../decisions/0003-license-mit.md), there is no open-core split, no paywalled feature, no closed module, and no telemetry-by-default.
 - Every source file MUST carry an MIT SPDX header (`SPDX-License-Identifier: MIT`). CI SHOULD reject any added source file lacking one.
-- The canonical repository MUST be a **public GitHub repository**. v1.0 ships with `LICENSE` (MIT), `README.md`, `CONTRIBUTING.md`, and `CODE_OF_CONDUCT.md` at the repo root (the only files allowed there per §16.3).
+- The canonical product repository MUST remain the public GitHub repository <https://github.com/PyBLE-dev/PyBLE>. The official user-facing runnable-example collection MUST remain the separately governed public repository <https://github.com/PyBLE-dev/examples> under [ADR-0041](../decisions/0041-separate-official-examples-repository.md). Each repository MUST carry the governance and license files appropriate to its released scope; repository existence alone is not a runnable-example or validation claim. v1.0 of the product ships with `LICENSE` (MIT), `README.md`, `CONTRIBUTING.md`, and `CODE_OF_CONDUCT.md` at the product repo root (the only files allowed there per §16.3).
 - External contributions (issues and pull requests) MUST be welcome. Every commit MUST be **DCO-signed** (`git commit -s`); CI MUST reject unsigned commits. Contribution mechanics, commit-tag convention (`[red]`/`[green]`/`[refactor]`/`[docs]`/`[build]`/`[chore]`), and the SDD+TDD method are documented in `CONTRIBUTING.md` and [AGENTS.md](../../AGENTS.md).
 - A **Code of Conduct** MUST be published and enforced for all project spaces.
 - Re-used prior art the author owns (board-agnostic widgets — editor, console, file explorer, plots, Blockly bridge, GitHub import, tablet scaffold, localization) MUST be **relicensed MIT at copy time** with the header replaced; no proprietary protocol client, board profiles, UUIDs, or pedagogy is carried across (see [app.md §6](app.md#6-reuse-provenance-clean-room-note) and [ADR-0002](../decisions/0002-fresh-protocol.md)).
@@ -1321,11 +1321,21 @@ PyBLE/
 ├── firmware/             upstream MicroPython submodule + pyble_* agent; board overlays esp32/-s3/-c3; scripts; versions.lock
 ├── protocol/             shared PBLE/1 bindings (Dart + C), generated/hand-written codecs (pble_*)
 ├── tools/                web-flasher manifests, provisioning, helpers
-├── examples/             example MicroPython scripts (.py only)
+├── examples/             core-owned GitHub-import fixtures used by product tests
 └── tests/                host-side firmware tests, protocol conformance, app/integration runners
 ```
 
 - The repo root MUST contain only the listed files plus the listed directories (plus tool-managed `.git/`, `.github/`, `.claude/`).
+- The complete official user-facing MicroPython example collection MUST live
+  at <https://github.com/PyBLE-dev/examples> and MUST NOT be vendored, mirrored,
+  or added as a submodule/subtree here. Its current primary-maintainer checkout,
+  `/Users/vyv/Working/SciLabPro/PyBLE-Examples`, is informational only and MUST
+  NOT become a contributor, build, application, CI, or release dependency.
+  Official examples are implemented through separate examples-repository
+  sessions and commits. This repository's `examples/github-import/` files
+  remain deterministic importer integration fixtures, not the official
+  catalog; bundled offline Blocks examples remain app-owned assets. Cross-repo
+  compatibility claims MUST bind immutable source and firmware identities.
 - A CI **no-leak gate** MUST reject any forbidden proprietary identifier in shippable source (`app/ firmware/ protocol/ examples/ tests/ tools/`, scanning `.dart`/`.c`/`.h`/`.py`); governance docs that define the rule are exempt. The canonical command is in [AGENTS.md](../../AGENTS.md). A push containing a fixture token MUST fail; a clean tree MUST pass.
 - Upstream MicroPython is a clean submodule under `firmware/upstream/`; it MUST NOT be edited in place. Any unavoidable patch is isolated under `firmware/patches/micropython-<tag>/` with a written reason — default zero patches.
 
