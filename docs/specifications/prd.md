@@ -631,6 +631,16 @@ These requirements specify app behavior and become story acceptance criteria. Th
 - The app MUST import a folder of `.py` files from a **public** GitHub repository over HTTPS and write them to the board via `Connection.putFile` (`lib/github_import/`).
 - Import MUST require no GitHub account, token, or authentication, and the app MUST NOT support Git push in v1.0.
 - The app MUST let the user select a subfolder/branch to import and SHOULD preview the file list before writing, warning on conflicts with existing board files.
+- Every newly opened importer MUST prefill the editable official collection
+  `https://github.com/PyBLE-dev/examples`, while treating it exactly like any
+  other untrusted canonical public repository. The normal ref control MUST
+  retrieve a complete, explicitly bounded, branch-only searchable list and
+  select the repository's reported default branch. An advanced manual control
+  MUST retain branch/tag/commit input. Discovery MUST never publish a partial
+  branch catalog, and every selected ref MUST still resolve to a full immutable
+  commit SHA before tree or file access. Opening or using discovery MUST NOT
+  select, import, open, save, or run source automatically
+  ([ADR-0042](../decisions/0042-prefill-official-examples-and-discover-branches.md)).
 - Imported files MUST be stored locally so work continues offline after import; the local project remains the source of truth (the import is a project source, not the storage model).
 - Import MUST be `.py`/data only and MUST NOT fetch or write `.mpy`.
 
