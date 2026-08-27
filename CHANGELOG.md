@@ -3,7 +3,7 @@
 Notable public changes to PyBLE are recorded here. App and firmware versions
 are released independently from this monorepo.
 
-## Unreleased — App 0.2.0 beta train
+## Unreleased
 
 These app, website, and repository-source changes do not designate a new app
 or firmware release. The qualified firmware release remains v0.6.0, built from
