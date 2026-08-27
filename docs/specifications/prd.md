@@ -1613,7 +1613,9 @@ v1.0 is accepted when **all** of the following pass. The first block folds in th
 9. The **no-leak CI gate** is green on a clean tree and demonstrably fails on a fixture token (stories X-02).
 10. `THIRD_PARTY_LICENSES` ships with each firmware artifact and the in-app Open-Source Notices screen renders on both iPadOS and Android (§15.2).
 11. The **esp-web-tools** web flasher at `pyble.dev/flash` flashes each chip target from a supported browser (story X-10).
-12. Free App Store + Play builds are submitted at parity, and firmware bins are published via GitHub Releases (story X-11).
+12. Free App Store + Play builds are submitted at parity, the iOS/iPadOS build
+    encodes a minimum deployment target of at least `15.0`, and firmware bins
+    are published via GitHub Releases (story X-11).
 13. **Localization parity** holds: `en` is complete and CI blocks any merge that breaks ARB parity (story X-12).
 14. Every shipped behavior has a test (no behavior without a test); the PBLE/1 conformance suite (frame round-trip, CRC, fragmentation, window/resume, error mapping) is green.
 
