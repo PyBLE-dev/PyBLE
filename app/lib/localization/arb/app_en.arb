@@ -1943,6 +1943,13 @@
       "path": {"type": "String", "example": "/examples"}
     }
   },
+  "githubImportRootDestinationWarning": "The board root is selected. Some filenames—including names beginning with pyble or pble—are protected here. For examples, close Import, create and enter {childPath} in Files, then reopen Import.",
+  "@githubImportRootDestinationWarning": {
+    "description": "Informational guidance shown when the captured destination equals the board-reported filesystem root. The technical pyble and pble tokens remain verbatim.",
+    "placeholders": {
+      "childPath": {"type": "String", "example": "/flash/examples"}
+    }
+  },
   "githubImportPinnedCommit": "Pinned commit: {sha}",
   "@githubImportPinnedCommit": {
     "description": "Immutable Git commit identity shown after resolving the ref.",
@@ -2124,6 +2131,14 @@
     "description": "Safe path-specific target or content validation failure.",
     "placeholders": {
       "path": {"type": "String", "example": "examples/hello.py"}
+    }
+  },
+  "githubImportErrorProtectedRootTarget": "The board protects {path} at its top level. Close Import, create and enter {childPath} in Files, then reopen Import.",
+  "@githubImportErrorProtectedRootTarget": {
+    "description": "Path-specific protected-root guidance shown before board or blob I/O.",
+    "placeholders": {
+      "path": {"type": "String", "example": "/pyble_i2c_scan.py"},
+      "childPath": {"type": "String", "example": "/examples"}
     }
   },
   "githubImportErrorTooLarge": "The selected files exceed the safe import size limit.",

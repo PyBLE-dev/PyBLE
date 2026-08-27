@@ -102,11 +102,13 @@ class _ExplorerState extends ConsumerState<_Explorer> {
           ctrl: ctrl,
           l10n: l10n,
           githubImportFocus: _githubImportFocus,
-          githubImportEnabled: widget.connState == ConnState.ready,
+          githubImportEnabled:
+              widget.connState == ConnState.ready && state.hasReportedFsRoot,
           openGithubImport: () async {
             await showGithubImportBrowser(
               context,
               ref,
+              fsRoot: state.fsRoot,
               cwd: state.cwd,
               refreshFiles: ctrl.refresh,
             );

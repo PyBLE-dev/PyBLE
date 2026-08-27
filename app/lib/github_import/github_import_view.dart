@@ -36,6 +36,9 @@ const Key kGithubManualRefToggleKey = ValueKey<String>('githubManualRefToggle');
 const Key kGithubBrowseButtonKey = ValueKey<String>('githubBrowseButton');
 const Key kGithubReviewButtonKey = ValueKey<String>('githubReviewButton');
 const Key kGithubCommitButtonKey = ValueKey<String>('githubCommitButton');
+const Key kGithubRootDestinationWarningKey = ValueKey<String>(
+  'githubRootDestinationWarning',
+);
 
 /// Opens one import action, capturing the Files directory and connection
 /// session for the whole presentation.
@@ -45,6 +48,7 @@ const Key kGithubCommitButtonKey = ValueKey<String>('githubCommitButton');
 Future<void> showGithubImportBrowser(
   BuildContext context,
   WidgetRef ref, {
+  required String fsRoot,
   required String cwd,
   required Future<void> Function() refreshFiles,
 }) async {
@@ -54,12 +58,14 @@ Future<void> showGithubImportBrowser(
     api: api,
     connection: connection,
     capturedSessionStamp: connectionSessionStampOf(connection),
+    fsRoot: fsRoot,
     cwd: cwd,
     refreshFiles: refreshFiles,
   );
   final Widget content = _GithubImportView(
     api: api,
     importer: importer,
+    fsRoot: fsRoot,
     cwd: cwd,
   );
 
@@ -112,11 +118,13 @@ class _GithubImportView extends StatefulWidget {
   const _GithubImportView({
     required this.api,
     required this.importer,
+    required this.fsRoot,
     required this.cwd,
   });
 
   final GithubApi api;
   final GithubBoardImporter importer;
+  final String fsRoot;
   final String cwd;
 
   @override
@@ -163,6 +171,9 @@ class _GithubImportViewState extends State<_GithubImportView> {
 
   bool get _isLoadingBranches =>
       _busy && _networkPhase == _NetworkPhase.loadingBranches;
+
+  String get _examplesChildPath =>
+      widget.fsRoot == '/' ? '/examples' : '${widget.fsRoot}/examples';
 
   bool get _canBrowseRef => switch (_refMode) {
     _RefMode.branch =>
@@ -671,7 +682,12 @@ class _GithubImportViewState extends State<_GithubImportView> {
       if (review.blockingPaths.isNotEmpty) _focusFailureAfterFrame();
     } on GithubFailure catch (failure) {
       if (!_isCurrent(epoch)) return;
-      _showFailure(failure, retry: _reviewSelection);
+      _showFailure(
+        failure,
+        retry: failure.kind == GithubFailureKind.protectedRootTarget
+            ? null
+            : _reviewSelection,
+      );
     } catch (_) {
       if (!_isCurrent(epoch)) return;
       _showFailure(
@@ -1079,7 +1095,11 @@ class _GithubImportViewState extends State<_GithubImportView> {
             labelText: l10n.githubImportRepositoryLabel,
             hintText: l10n.githubImportRepositoryHint,
             errorText: _failure?.kind == GithubFailureKind.invalidInput
-                ? _failureMessage(l10n, _failure!)
+                ? _failureMessage(
+                    l10n,
+                    _failure!,
+                    protectedRootChildPath: _examplesChildPath,
+                  )
                 : null,
             border: const OutlineInputBorder(),
           ),
@@ -1131,6 +1151,12 @@ class _GithubImportViewState extends State<_GithubImportView> {
         ),
         const SizedBox(height: 16),
         Text(l10n.githubImportDestination(widget.cwd)),
+        if (widget.cwd == widget.fsRoot &&
+            _failure?.kind !=
+                GithubFailureKind.protectedRootTarget) ...<Widget>[
+          const SizedBox(height: 8),
+          _RootDestinationWarning(l10n: l10n, childPath: _examplesChildPath),
+        ],
         if (repository != null) ...<Widget>[
           const SizedBox(height: 8),
           SelectableText(l10n.githubImportPinnedCommit(repository.commitSha)),
@@ -1201,6 +1227,10 @@ class _GithubImportViewState extends State<_GithubImportView> {
         ),
         const SizedBox(height: 8),
         Text(l10n.githubImportDestination(review.cwd)),
+        if (review.cwd == widget.fsRoot) ...<Widget>[
+          const SizedBox(height: 8),
+          _RootDestinationWarning(l10n: l10n, childPath: _examplesChildPath),
+        ],
         const SizedBox(height: 16),
         for (final ImportTarget target in review.targets)
           Padding(
@@ -1249,7 +1279,11 @@ class _GithubImportViewState extends State<_GithubImportView> {
       GithubImportOutcome.failed =>
         result.failure == null
             ? l10n.githubImportPartial
-            : _failureMessage(l10n, result.failure!),
+            : _failureMessage(
+                l10n,
+                result.failure!,
+                protectedRootChildPath: _examplesChildPath,
+              ),
     };
     return Semantics(
       key: const ValueKey<String>('githubImportResult'),
@@ -1262,7 +1296,13 @@ class _GithubImportViewState extends State<_GithubImportView> {
           if (result.outcome == GithubImportOutcome.partial &&
               result.failure != null) ...<Widget>[
             const SizedBox(height: 8),
-            Text(_failureMessage(l10n, result.failure!)),
+            Text(
+              _failureMessage(
+                l10n,
+                result.failure!,
+                protectedRootChildPath: _examplesChildPath,
+              ),
+            ),
           ],
           if (result.succeeded.isNotEmpty) ...<Widget>[
             const SizedBox(height: 12),
@@ -1312,6 +1352,7 @@ class _GithubImportViewState extends State<_GithubImportView> {
           message: _failureMessage(
             l10n,
             primary,
+            protectedRootChildPath: _examplesChildPath,
             rateLimitReady: _rateRetryReady,
           ),
           retry: _rateRetryBlocked ? null : _retry,
@@ -1323,7 +1364,11 @@ class _GithubImportViewState extends State<_GithubImportView> {
         KeyedSubtree(
           key: const ValueKey<String>('githubImportRateLimitFailure'),
           child: _FailureBanner(
-            message: _failureMessage(l10n, cooldownFailure),
+            message: _failureMessage(
+              l10n,
+              cooldownFailure,
+              protectedRootChildPath: _examplesChildPath,
+            ),
             retry: null,
             l10n: l10n,
           ),
@@ -1350,7 +1395,10 @@ class _GithubImportViewState extends State<_GithubImportView> {
           ),
         FilledButton(
           key: kGithubReviewButtonKey,
-          onPressed: !_busy && _selectedPaths.isNotEmpty
+          onPressed:
+              !_busy &&
+                  _selectedPaths.isNotEmpty &&
+                  _failure?.kind != GithubFailureKind.protectedRootTarget
               ? _reviewSelection
               : null,
           child: Text(l10n.githubImportReview),
@@ -1493,6 +1541,42 @@ class _GithubEntryRow extends StatelessWidget {
   }
 }
 
+class _RootDestinationWarning extends StatelessWidget {
+  const _RootDestinationWarning({required this.l10n, required this.childPath});
+
+  final AppLocalizations l10n;
+  final String childPath;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    return Semantics(
+      key: kGithubRootDestinationWarningKey,
+      container: true,
+      child: Container(
+        color: colors.tertiaryContainer,
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Icon(
+              Icons.warning_amber_outlined,
+              color: colors.onTertiaryContainer,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                l10n.githubImportRootDestinationWarning(childPath),
+                style: TextStyle(color: colors.onTertiaryContainer),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _FailureBanner extends StatelessWidget {
   const _FailureBanner({
     required this.message,
@@ -1572,6 +1656,7 @@ class _ImportProgressView extends StatelessWidget {
 String _failureMessage(
   AppLocalizations l10n,
   GithubFailure failure, {
+  required String protectedRootChildPath,
   bool rateLimitReady = false,
 }) {
   return switch (failure.kind) {
@@ -1595,6 +1680,13 @@ String _failureMessage(
       failure.path == null
           ? l10n.githubImportErrorUnsafe
           : l10n.githubImportErrorUnsafePath(failure.path!),
+    GithubFailureKind.protectedRootTarget =>
+      failure.path == null
+          ? l10n.githubImportRootDestinationWarning(protectedRootChildPath)
+          : l10n.githubImportErrorProtectedRootTarget(
+              failure.path!,
+              protectedRootChildPath,
+            ),
     GithubFailureKind.fileTooLarge || GithubFailureKind.batchTooLarge =>
       failure.path == null
           ? l10n.githubImportErrorTooLarge

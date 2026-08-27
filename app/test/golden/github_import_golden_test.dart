@@ -534,15 +534,14 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(find.byType(BottomSheet), findsOneWidget);
-        expect(
-          find.text(
-            _l10n(tester).githubImportErrorProtectedRootTarget(
-              '/pyble_i2c_scan.py',
-              '/examples',
-            ),
+        final Finder protectedMessage = find.text(
+          _l10n(tester).githubImportErrorProtectedRootTarget(
+            '/pyble_i2c_scan.py',
+            '/examples',
           ),
-          findsOneWidget,
         );
+        expect(protectedMessage, findsOneWidget);
+        expect(protectedMessage.hitTestable(), findsOneWidget);
         expect(find.text(_l10n(tester).githubImportRetry), findsNothing);
         expect(connection.putFileCalls, isEmpty);
         await _expectGolden(tester, 'github_import_compact_protected_root');

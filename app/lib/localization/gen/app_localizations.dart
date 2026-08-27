@@ -2433,6 +2433,12 @@ abstract class AppLocalizations {
   /// **'Board folder: {path}'**
   String githubImportDestination(String path);
 
+  /// Informational guidance shown when the captured destination equals the board-reported filesystem root. The technical pyble and pble tokens remain verbatim.
+  ///
+  /// In en, this message translates to:
+  /// **'The board root is selected. Some filenames—including names beginning with pyble or pble—are protected here. For examples, close Import, create and enter {childPath} in Files, then reopen Import.'**
+  String githubImportRootDestinationWarning(String childPath);
+
   /// Immutable Git commit identity shown after resolving the ref.
   ///
   /// In en, this message translates to:
@@ -2660,6 +2666,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'The selected path {path} is unsafe for this import.'**
   String githubImportErrorUnsafePath(String path);
+
+  /// Path-specific protected-root guidance shown before board or blob I/O.
+  ///
+  /// In en, this message translates to:
+  /// **'The board protects {path} at its top level. Close Import, create and enter {childPath} in Files, then reopen Import.'**
+  String githubImportErrorProtectedRootTarget(String path, String childPath);
 
   /// Per-file or aggregate byte-limit failure.
   ///
