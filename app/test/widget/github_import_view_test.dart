@@ -62,6 +62,18 @@ const GithubEntry _nestedEntry = GithubEntry(
   declaredSize: 0,
 );
 
+final class _BranchCatalogFixture {
+  const _BranchCatalogFixture({
+    required this.defaultBranch,
+    required this.branches,
+    this.gate,
+  });
+
+  final String defaultBranch;
+  final List<String> branches;
+  final Completer<void>? gate;
+}
+
 final class _FakeGithubApi implements GithubApi {
   _FakeGithubApi({
     this.entries = const <GithubEntry>[
@@ -81,6 +93,12 @@ final class _FakeGithubApi implements GithubApi {
     this.fetchFailuresRemaining = 0,
     this.fetchFailure = const GithubFailure(GithubFailureKind.offline),
     this.listFailuresRemaining = 0,
+    this.branchCatalogs = const <_BranchCatalogFixture>[
+      _BranchCatalogFixture(
+        defaultBranch: 'main',
+        branches: <String>['main', 'develop', 'release/v1'],
+      ),
+    ],
   }) : _bytesByRemotePath = <String, Uint8List>{
          for (final MapEntry<String, String> source
              in sourceByRemotePath.entries)
@@ -96,10 +114,33 @@ final class _FakeGithubApi implements GithubApi {
   int fetchFailuresRemaining;
   final GithubFailure fetchFailure;
   int listFailuresRemaining;
+  final List<_BranchCatalogFixture> branchCatalogs;
+  final List<RepositoryLocator> listBranchesCalls = <RepositoryLocator>[];
   final List<(RepositoryLocator, String)> resolveCalls =
       <(RepositoryLocator, String)>[];
   final List<String> listedRemotePaths = <String>[];
   final List<String> fetchedRemotePaths = <String>[];
+
+  @override
+  Future<GithubBranchCatalog> listBranches(
+    RepositoryLocator locator, {
+    GithubCancellation? cancellation,
+  }) async {
+    final int callIndex = listBranchesCalls.length;
+    listBranchesCalls.add(locator);
+    final int fixtureIndex = callIndex < branchCatalogs.length
+        ? callIndex
+        : branchCatalogs.length - 1;
+    final _BranchCatalogFixture fixture = branchCatalogs[fixtureIndex];
+    await fixture.gate?.future;
+    // Deliberately return even after cancellation. Widget generations, rather
+    // than a cooperative fake, must keep stale discovery out of the chooser.
+    return GithubBranchCatalog(
+      locator: locator,
+      defaultBranch: fixture.defaultBranch,
+      branches: fixture.branches,
+    );
+  }
 
   @override
   Future<PinnedRepository> resolve(
@@ -234,11 +275,23 @@ Future<void> _openImport(
 
 Future<void> _browse(
   WidgetTester tester, {
-  String repository = 'https://github.com/PyBLE-dev/examples',
+  String repository = kOfficialExamplesRepositoryUrl,
   String ref = '',
 }) async {
-  await tester.enterText(find.byKey(kGithubRepositoryFieldKey), repository);
+  final TextField repositoryField = tester.widget<TextField>(
+    find.byKey(kGithubRepositoryFieldKey),
+  );
+  if (repositoryField.controller!.text != repository) {
+    await tester.enterText(find.byKey(kGithubRepositoryFieldKey), repository);
+    await tester.pump();
+    await tester.tap(find.byKey(kGithubLoadBranchesButtonKey));
+    await tester.pumpAndSettle();
+  }
   if (ref.isNotEmpty) {
+    if (find.byKey(kGithubRefFieldKey).evaluate().isEmpty) {
+      await tester.tap(find.byKey(kGithubManualRefToggleKey));
+      await tester.pump();
+    }
     await tester.enterText(find.byKey(kGithubRefFieldKey), ref);
   }
   await tester.tap(find.byKey(kGithubBrowseButtonKey));
@@ -259,7 +312,244 @@ Future<void> _activateButtonWithEnter(WidgetTester tester, Key key) async {
 void main() {
   group('A-33 GitHub import — adaptive connected Files workflow', () {
     testWidgets(
-      'wide dialog pins the default ref, reviews exact targets, and commits exact bytes without Run',
+      'a new importer prefills the editable official examples repository',
+      (WidgetTester tester) async {
+        final RecordingConnection connection = RecordingConnection(
+          initial: ConnState.ready,
+        );
+        final _FakeGithubApi api = _FakeGithubApi();
+        addTearDown(connection.dispose);
+
+        await _openImport(tester, connection, api);
+
+        final TextField repositoryField = tester.widget<TextField>(
+          find.byKey(kGithubRepositoryFieldKey),
+        );
+        expect(
+          repositoryField.controller!.text,
+          kOfficialExamplesRepositoryUrl,
+        );
+        expect(repositoryField.enabled, isTrue);
+        expect(api.listBranchesCalls, hasLength(1));
+        expect(
+          api.listBranchesCalls.single.canonicalRoot.toString(),
+          kOfficialExamplesRepositoryUrl,
+        );
+
+        const String customRepository = 'https://github.com/example/lessons';
+        await tester.enterText(
+          find.byKey(kGithubRepositoryFieldKey),
+          customRepository,
+        );
+        await tester.pump(const Duration(seconds: 1));
+
+        expect(repositoryField.controller!.text, customRepository);
+        expect(
+          api.listBranchesCalls,
+          hasLength(1),
+          reason: 'editing must not spend one GitHub request per keystroke',
+        );
+      },
+    );
+
+    testWidgets(
+      'initial discovery exposes branches only and resolves the default branch again',
+      (WidgetTester tester) async {
+        final RecordingConnection connection = RecordingConnection(
+          initial: ConnState.ready,
+        );
+        final _FakeGithubApi api = _FakeGithubApi(
+          branchCatalogs: const <_BranchCatalogFixture>[
+            _BranchCatalogFixture(
+              defaultBranch: 'main',
+              branches: <String>['main', 'develop', 'release/v1'],
+            ),
+          ],
+        );
+        addTearDown(connection.dispose);
+
+        await _openImport(tester, connection, api);
+
+        expect(find.byKey(kGithubBranchDropdownKey), findsOneWidget);
+        expect(find.byKey(kGithubRefFieldKey), findsNothing);
+        await tester.tap(find.byKey(kGithubBranchDropdownKey));
+        await tester.pumpAndSettle();
+        expect(find.textContaining('main'), findsWidgets);
+        expect(find.text('develop'), findsOneWidget);
+        expect(find.text('release/v1'), findsOneWidget);
+        await tester.tap(find.textContaining('main').last);
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(kGithubBrowseButtonKey));
+        await tester.pumpAndSettle();
+
+        expect(api.resolveCalls, hasLength(1));
+        expect(api.resolveCalls.single.$2, 'main');
+        expect(find.textContaining(_commitSha), findsOneWidget);
+      },
+    );
+
+    testWidgets('selecting an alternate branch resolves its exact name', (
+      WidgetTester tester,
+    ) async {
+      final RecordingConnection connection = RecordingConnection(
+        initial: ConnState.ready,
+      );
+      final _FakeGithubApi api = _FakeGithubApi();
+      addTearDown(connection.dispose);
+
+      await _openImport(tester, connection, api);
+      await tester.tap(find.byKey(kGithubBranchDropdownKey));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('release/v1').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(kGithubBrowseButtonKey));
+      await tester.pumpAndSettle();
+
+      expect(api.resolveCalls, hasLength(1));
+      expect(api.resolveCalls.single.$2, 'release/v1');
+    });
+
+    testWidgets('advanced mode retains exact tag and commit refs', (
+      WidgetTester tester,
+    ) async {
+      final RecordingConnection connection = RecordingConnection(
+        initial: ConnState.ready,
+      );
+      final _FakeGithubApi api = _FakeGithubApi();
+      addTearDown(connection.dispose);
+
+      await _openImport(tester, connection, api);
+      await tester.tap(find.byKey(kGithubManualRefToggleKey));
+      await tester.pump();
+      expect(find.byKey(kGithubBranchDropdownKey), findsNothing);
+      expect(find.byKey(kGithubRefFieldKey), findsOneWidget);
+
+      await tester.enterText(find.byKey(kGithubRefFieldKey), 'v1.2.0');
+      await tester.tap(find.byKey(kGithubBrowseButtonKey));
+      await tester.pumpAndSettle();
+      expect(api.resolveCalls.single.$2, 'v1.2.0');
+
+      await tester.enterText(find.byKey(kGithubRefFieldKey), _commitSha);
+      await tester.pump();
+      expect(find.textContaining(_commitSha), findsNothing);
+      await tester.tap(find.byKey(kGithubBrowseButtonKey));
+      await tester.pumpAndSettle();
+
+      expect(
+        api.resolveCalls.map(((RepositoryLocator, String) call) => call.$2),
+        <String>['v1.2.0', _commitSha],
+      );
+    });
+
+    testWidgets(
+      'editing the repository clears its catalog until explicit branch refresh',
+      (WidgetTester tester) async {
+        final RecordingConnection connection = RecordingConnection(
+          initial: ConnState.ready,
+        );
+        final _FakeGithubApi api = _FakeGithubApi();
+        addTearDown(connection.dispose);
+
+        await _openImport(tester, connection, api);
+        expect(find.byKey(kGithubBranchDropdownKey), findsOneWidget);
+
+        const String customRepository = 'https://github.com/example/lessons';
+        await tester.enterText(
+          find.byKey(kGithubRepositoryFieldKey),
+          customRepository,
+        );
+        await tester.pump(const Duration(seconds: 1));
+
+        expect(find.byKey(kGithubBranchDropdownKey), findsNothing);
+        expect(find.byKey(kGithubLoadBranchesButtonKey), findsOneWidget);
+        expect(api.listBranchesCalls, hasLength(1));
+
+        await tester.tap(find.byKey(kGithubLoadBranchesButtonKey));
+        await tester.pumpAndSettle();
+
+        expect(api.listBranchesCalls, hasLength(2));
+        expect(
+          api.listBranchesCalls.last.canonicalRoot.toString(),
+          customRepository,
+        );
+        expect(find.byKey(kGithubBranchDropdownKey), findsOneWidget);
+
+        await tester.tap(find.byKey(kGithubBrowseButtonKey));
+        await tester.pumpAndSettle();
+        expect(
+          api.resolveCalls.single.$1.canonicalRoot.toString(),
+          customRepository,
+        );
+        expect(api.resolveCalls.single.$2, 'main');
+      },
+    );
+
+    testWidgets('a stale branch response cannot replace a refreshed catalog', (
+      WidgetTester tester,
+    ) async {
+      final RecordingConnection connection = RecordingConnection(
+        initial: ConnState.ready,
+      );
+      final Completer<void> staleGate = Completer<void>();
+      final _FakeGithubApi api = _FakeGithubApi(
+        branchCatalogs: <_BranchCatalogFixture>[
+          _BranchCatalogFixture(
+            defaultBranch: 'main',
+            branches: const <String>['main', 'stale-branch'],
+            gate: staleGate,
+          ),
+          const _BranchCatalogFixture(
+            defaultBranch: 'stable',
+            branches: <String>['stable', 'next'],
+          ),
+        ],
+      );
+      addTearDown(() {
+        if (!staleGate.isCompleted) staleGate.complete();
+      });
+      addTearDown(connection.dispose);
+
+      await pumpSurface(
+        tester,
+        const FilesView(),
+        connection: connection,
+        extra: <Override>[githubApiProvider.overrideWithValue(api)],
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip(l10nOf(tester).githubImportAction));
+      await tester.pump();
+      expect(api.listBranchesCalls, hasLength(1));
+
+      const String customRepository = 'https://github.com/example/lessons';
+      await tester.enterText(
+        find.byKey(kGithubRepositoryFieldKey),
+        customRepository,
+      );
+      await tester.pump();
+      await tester.tap(find.byKey(kGithubLoadBranchesButtonKey));
+      await tester.pumpAndSettle();
+      expect(api.listBranchesCalls, hasLength(2));
+
+      staleGate.complete();
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(kGithubBrowseButtonKey));
+      await tester.pumpAndSettle();
+
+      expect(api.resolveCalls, hasLength(1));
+      expect(
+        api.resolveCalls.single.$1.canonicalRoot.toString(),
+        customRepository,
+      );
+      expect(
+        api.resolveCalls.single.$2,
+        'stable',
+        reason: 'the late official-repository result must remain stale',
+      );
+    });
+
+    testWidgets(
+      'wide dialog pins the selected default branch, reviews exact targets, and commits exact bytes without Run',
       (WidgetTester tester) async {
         final RecordingConnection connection = RecordingConnection(
           initial: ConnState.ready,
@@ -280,8 +570,8 @@ void main() {
         );
         expect(
           api.resolveCalls.single.$2,
-          isEmpty,
-          reason: 'a blank ref must request the repository default branch',
+          'main',
+          reason: 'normal mode must resolve the selected default branch again',
         );
         expect(api.listedRemotePaths, <String>['']);
         expect(find.textContaining(_commitSha), findsOneWidget);
@@ -339,7 +629,8 @@ void main() {
       expect(find.byType(BottomSheet), findsOneWidget);
       expect(find.byType(Dialog), findsNothing);
       expect(find.byKey(kGithubRepositoryFieldKey), findsOneWidget);
-      expect(find.byKey(kGithubRefFieldKey), findsOneWidget);
+      expect(find.byKey(kGithubBranchDropdownKey), findsOneWidget);
+      expect(find.byKey(kGithubManualRefToggleKey), findsOneWidget);
     });
 
     testWidgets('hardware Enter activates Browse and Review', (
@@ -354,10 +645,6 @@ void main() {
       addTearDown(connection.dispose);
 
       await _openImport(tester, connection, api);
-      await tester.enterText(
-        find.byKey(kGithubRepositoryFieldKey),
-        'https://github.com/PyBLE-dev/examples',
-      );
       await _activateButtonWithEnter(tester, kGithubBrowseButtonKey);
 
       expect(api.resolveCalls, hasLength(1));
@@ -447,10 +734,6 @@ void main() {
         addTearDown(connection.dispose);
 
         await _openImport(tester, connection, loadingApi);
-        await tester.enterText(
-          find.byKey(kGithubRepositoryFieldKey),
-          'https://github.com/PyBLE-dev/examples',
-        );
         await tester.tap(find.byKey(kGithubBrowseButtonKey));
         await tester.pump();
         expect(find.text('Resolving repository…'), findsOneWidget);
@@ -664,6 +947,8 @@ void main() {
         isTrue,
       );
 
+      await tester.tap(find.byKey(kGithubManualRefToggleKey));
+      await tester.pump();
       await tester.enterText(find.byKey(kGithubRefFieldKey), 'other-branch');
       await tester.pump();
 

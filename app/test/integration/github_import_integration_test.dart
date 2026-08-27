@@ -117,18 +117,21 @@ final class _RestBlobFixture {
   final String mode;
 }
 
-http.Response _jsonResponse(Map<String, Object?> body) => http.Response(
+http.Response _jsonResponse(Object? body) => http.Response(
   jsonEncode(body),
   200,
   headers: const <String, String>{'content-type': 'application/json'},
 );
 
-void _expectUnauthenticatedApiRequest(http.Request request) {
+void _expectUnauthenticatedApiRequest(
+  http.Request request, {
+  Map<String, String> queryParameters = const <String, String>{},
+}) {
   expect(request.method, 'GET');
   expect(request.url.scheme, 'https');
   expect(request.url.host, 'api.github.com');
   expect(request.url.hasPort, isFalse);
-  expect(request.url.query, isEmpty);
+  expect(request.url.queryParameters, queryParameters);
   expect(request.followRedirects, isFalse);
   expect(request.maxRedirects, 0);
   expect(request.headers['Accept'], 'application/vnd.github+json');
@@ -271,11 +274,32 @@ void main() {
       int refreshCount = 0;
 
       final MockClient httpClient = MockClient((http.Request request) async {
-        _expectUnauthenticatedApiRequest(request);
         final String path = request.url.path;
+        _expectUnauthenticatedApiRequest(
+          request,
+          queryParameters:
+              path == '/repos/PyBLE-dev/integration-fixture/branches'
+              ? const <String, String>{'per_page': '100', 'page': '1'}
+              : const <String, String>{},
+        );
         requestedPaths.add(path);
         operations.add('http:$path');
 
+        if (path == '/repos/PyBLE-dev/integration-fixture') {
+          return _jsonResponse(<String, Object?>{'default_branch': 'moving'});
+        }
+        if (path == '/repos/PyBLE-dev/integration-fixture/branches') {
+          return _jsonResponse(<Object?>[
+            <String, Object?>{
+              'name': 'release/v1',
+              'commit': <String, Object?>{'sha': _commitSha},
+            },
+            <String, Object?>{
+              'name': 'moving',
+              'commit': <String, Object?>{'sha': _commitSha},
+            },
+          ]);
+        }
         if (path == '/repos/PyBLE-dev/integration-fixture/commits/moving') {
           movingRefResolutions += 1;
           return _jsonResponse(<String, Object?>{
@@ -366,9 +390,14 @@ void main() {
         final RepositoryLocator locator = RepositoryLocator.parse(
           'https://github.com/PyBLE-dev/integration-fixture',
         );
+        final GithubBranchCatalog catalog = await api.listBranches(locator);
+        expect(catalog.locator, same(locator));
+        expect(catalog.defaultBranch, 'moving');
+        expect(catalog.branches, <String>['moving', 'release/v1']);
+
         final PinnedRepository repository = await api.resolve(
           locator,
-          ref: 'moving',
+          ref: catalog.defaultBranch,
         );
         expect(repository.requestedRef, 'moving');
         expect(repository.resolvedRef, 'moving');
@@ -434,6 +463,8 @@ void main() {
         expect(result.failure, isNull);
         expect(movingRefResolutions, 1);
         expect(requestedPaths, <String>[
+          '/repos/PyBLE-dev/integration-fixture',
+          '/repos/PyBLE-dev/integration-fixture/branches',
           '/repos/PyBLE-dev/integration-fixture/commits/moving',
           '/repos/PyBLE-dev/integration-fixture/git/trees/$_rootTreeSha',
           '/repos/PyBLE-dev/integration-fixture/git/trees/'

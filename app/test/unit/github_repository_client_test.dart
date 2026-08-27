@@ -40,6 +40,25 @@ GithubEntry _helloEntry() => const GithubEntry(
   declaredSize: 15,
 );
 
+Map<String, Object?> _branch(String name) => <String, Object?>{
+  'name': name,
+  'commit': <String, Object?>{
+    'sha': _commitSha,
+    'url':
+        'https://api.github.com/repos/PyBLE-dev/examples/commits/$_commitSha',
+  },
+  'protected': false,
+};
+
+String _nextBranchesLink(int page) =>
+    '<https://api.github.com/repos/PyBLE-dev/examples/branches'
+    '?per_page=100&page=$page>; rel="next"';
+
+List<Object?> _numberedBranches(int start, int count) => <Object?>[
+  for (int index = start; index < start + count; index += 1)
+    _branch('branch-${index.toString().padLeft(3, '0')}'),
+];
+
 void _expectGitHubRequest(http.Request request) {
   expect(request.url.scheme, 'https');
   expect(request.url.host, 'api.github.com');
@@ -217,6 +236,365 @@ void main() {
         );
       },
     );
+  });
+
+  group('GithubRepositoryClient branch discovery', () {
+    test(
+      'reads metadata then one exact branch page and puts the default first',
+      () async {
+        final List<http.Request> requests = <http.Request>[];
+        final GithubApi api = GithubRepositoryClient(
+          httpClient: MockClient((http.Request request) async {
+            requests.add(request);
+            _expectGitHubRequest(request);
+
+            if (requests.length == 1) {
+              expect(request.url.pathSegments, <String>[
+                'repos',
+                'PyBLE-dev',
+                'examples',
+              ]);
+              expect(request.url.hasQuery, isFalse);
+              return http.Response(
+                jsonEncode(<String, Object?>{'default_branch': 'main'}),
+                200,
+              );
+            }
+
+            expect(request.url.pathSegments, <String>[
+              'repos',
+              'PyBLE-dev',
+              'examples',
+              'branches',
+            ]);
+            expect(request.url.queryParametersAll, <String, List<String>>{
+              'per_page': <String>['100'],
+              'page': <String>['1'],
+            });
+            expect(
+              request.url.queryParameters.containsKey('protected'),
+              isFalse,
+            );
+            return http.Response(
+              jsonEncode(<Object?>[
+                _branch('zeta'),
+                _branch('feature/slash'),
+                _branch('main'),
+                _branch('alpha'),
+              ]),
+              200,
+            );
+          }),
+        );
+
+        final GithubBranchCatalog catalog = await api.listBranches(_locator());
+
+        expect(catalog.locator, _locator());
+        expect(catalog.defaultBranch, 'main');
+        expect(catalog.branches, <String>[
+          'main',
+          'alpha',
+          'feature/slash',
+          'zeta',
+        ]);
+        expect(() => catalog.branches.add('mutated'), throwsUnsupportedError);
+        expect(requests, hasLength(2));
+      },
+    );
+
+    test(
+      'validates Link pagination and sorts a complete multi-page catalog',
+      () async {
+        final List<int> requestedPages = <int>[];
+        int requestCount = 0;
+        final GithubApi api = GithubRepositoryClient(
+          httpClient: MockClient((http.Request request) async {
+            requestCount += 1;
+            _expectGitHubRequest(request);
+            if (request.url.pathSegments.last != 'branches') {
+              return http.Response(
+                jsonEncode(<String, Object?>{'default_branch': 'main'}),
+                200,
+              );
+            }
+
+            final int page = int.parse(request.url.queryParameters['page']!);
+            requestedPages.add(page);
+            expect(request.url.queryParameters['per_page'], '100');
+            if (page == 1) {
+              return http.Response(
+                jsonEncode(<Object?>[_branch('zeta'), _branch('main')]),
+                200,
+                headers: <String, String>{
+                  'link':
+                      '${_nextBranchesLink(2)}, '
+                      '<https://api.github.com/repos/PyBLE-dev/examples/'
+                      'branches?per_page=100&page=2>; rel="last"',
+                },
+              );
+            }
+            expect(page, 2);
+            return http.Response(
+              jsonEncode(<Object?>[_branch('release/v1'), _branch('alpha')]),
+              200,
+            );
+          }),
+        );
+
+        final GithubBranchCatalog catalog = await api.listBranches(_locator());
+
+        expect(requestCount, 3);
+        expect(requestedPages, <int>[1, 2]);
+        expect(catalog.defaultBranch, 'main');
+        expect(catalog.branches, <String>[
+          'main',
+          'alpha',
+          'release/v1',
+          'zeta',
+        ]);
+      },
+    );
+
+    test(
+      'rejects a wrong-host or skipped-page next Link without following it',
+      () async {
+        const List<({String label, String link})> cases =
+            <({String label, String link})>[
+              (
+                label: 'wrong host',
+                link:
+                    '<https://evil.example/repos/PyBLE-dev/examples/branches'
+                    '?per_page=100&page=2>; rel="next"',
+              ),
+              (
+                label: 'skipped page',
+                link:
+                    '<https://api.github.com/repos/PyBLE-dev/examples/branches'
+                    '?per_page=100&page=3>; rel="next"',
+              ),
+            ];
+
+        for (final ({String label, String link}) variant in cases) {
+          int requestCount = 0;
+          final GithubApi api = GithubRepositoryClient(
+            httpClient: MockClient((http.Request request) async {
+              requestCount += 1;
+              _expectGitHubRequest(request);
+              if (request.url.pathSegments.last != 'branches') {
+                return http.Response(
+                  jsonEncode(<String, Object?>{'default_branch': 'main'}),
+                  200,
+                );
+              }
+              return http.Response(
+                jsonEncode(<Object?>[_branch('main')]),
+                200,
+                headers: <String, String>{'link': variant.link},
+              );
+            }),
+          );
+
+          await expectLater(
+            api.listBranches(_locator()),
+            throwsA(_githubFailure(GithubFailureKind.malformedResponse)),
+            reason: variant.label,
+          );
+          expect(requestCount, 2, reason: variant.label);
+        }
+      },
+    );
+
+    test('accepts a complete catalog at the 512-branch boundary', () async {
+      final List<int> requestedPages = <int>[];
+      final GithubApi api = GithubRepositoryClient(
+        httpClient: MockClient((http.Request request) async {
+          if (request.url.pathSegments.last != 'branches') {
+            return http.Response(
+              jsonEncode(<String, Object?>{'default_branch': 'branch-000'}),
+              200,
+            );
+          }
+
+          final int page = int.parse(request.url.queryParameters['page']!);
+          requestedPages.add(page);
+          final int start = (page - 1) * 100;
+          final int count = page < 6 ? 100 : 12;
+          return http.Response(
+            jsonEncode(_numberedBranches(start, count)),
+            200,
+            headers: page < 6
+                ? <String, String>{'link': _nextBranchesLink(page + 1)}
+                : const <String, String>{},
+          );
+        }),
+      );
+
+      final GithubBranchCatalog catalog = await api.listBranches(_locator());
+
+      expect(requestedPages, <int>[1, 2, 3, 4, 5, 6]);
+      expect(catalog.branches, hasLength(512));
+      expect(catalog.branches.first, 'branch-000');
+      expect(catalog.branches.last, 'branch-511');
+    });
+
+    test(
+      'rejects a 513th branch without publishing a partial catalog',
+      () async {
+        final List<int> requestedPages = <int>[];
+        final GithubApi api = GithubRepositoryClient(
+          httpClient: MockClient((http.Request request) async {
+            if (request.url.pathSegments.last != 'branches') {
+              return http.Response(
+                jsonEncode(<String, Object?>{'default_branch': 'branch-000'}),
+                200,
+              );
+            }
+
+            final int page = int.parse(request.url.queryParameters['page']!);
+            requestedPages.add(page);
+            final int start = (page - 1) * 100;
+            final int count = page < 6 ? 100 : 13;
+            return http.Response(
+              jsonEncode(_numberedBranches(start, count)),
+              200,
+              headers: page < 6
+                  ? <String, String>{'link': _nextBranchesLink(page + 1)}
+                  : const <String, String>{},
+            );
+          }),
+        );
+
+        await expectLater(
+          api.listBranches(_locator()),
+          throwsA(_githubFailure(GithubFailureKind.tooManyBranches)),
+        );
+        expect(requestedPages, <int>[1, 2, 3, 4, 5, 6]);
+      },
+    );
+
+    test('rejects a seventh advertised page without requesting it', () async {
+      final List<int> requestedPages = <int>[];
+      final GithubApi api = GithubRepositoryClient(
+        httpClient: MockClient((http.Request request) async {
+          if (request.url.pathSegments.last != 'branches') {
+            return http.Response(
+              jsonEncode(<String, Object?>{'default_branch': 'branch-000'}),
+              200,
+            );
+          }
+
+          final int page = int.parse(request.url.queryParameters['page']!);
+          requestedPages.add(page);
+          final int start = (page - 1) * 100;
+          final int count = page < 6 ? 100 : 12;
+          return http.Response(
+            jsonEncode(_numberedBranches(start, count)),
+            200,
+            headers: <String, String>{'link': _nextBranchesLink(page + 1)},
+          );
+        }),
+      );
+
+      await expectLater(
+        api.listBranches(_locator()),
+        throwsA(_githubFailure(GithubFailureKind.tooManyBranches)),
+      );
+      expect(requestedPages, <int>[1, 2, 3, 4, 5, 6]);
+    });
+
+    test('rejects duplicate and invalid branch names as malformed', () async {
+      final List<({String label, List<Object?> body})> cases =
+          <({String label, List<Object?> body})>[
+            (
+              label: 'duplicate',
+              body: <Object?>[_branch('main'), _branch('main')],
+            ),
+            (label: 'empty', body: <Object?>[_branch('main'), _branch('')]),
+            (
+              label: 'leading whitespace',
+              body: <Object?>[_branch('main'), _branch(' feature')],
+            ),
+            (
+              label: 'backslash',
+              body: <Object?>[_branch('main'), _branch(r'feature\unsafe')],
+            ),
+          ];
+
+      for (final ({String label, List<Object?> body}) variant in cases) {
+        final GithubApi api = GithubRepositoryClient(
+          httpClient: MockClient((http.Request request) async {
+            if (request.url.pathSegments.last != 'branches') {
+              return http.Response(
+                jsonEncode(<String, Object?>{'default_branch': 'main'}),
+                200,
+              );
+            }
+            return http.Response(jsonEncode(variant.body), 200);
+          }),
+        );
+
+        await expectLater(
+          api.listBranches(_locator()),
+          throwsA(_githubFailure(GithubFailureKind.malformedResponse)),
+          reason: variant.label,
+        );
+      }
+    });
+
+    test('resolves the selected branch through the commit endpoint', () async {
+      final List<http.Request> requests = <http.Request>[];
+      final GithubApi api = GithubRepositoryClient(
+        httpClient: MockClient((http.Request request) async {
+          requests.add(request);
+          _expectGitHubRequest(request);
+          if (request.url.pathSegments.last == 'examples') {
+            return http.Response(
+              jsonEncode(<String, Object?>{'default_branch': 'main'}),
+              200,
+            );
+          }
+          if (request.url.pathSegments.last == 'branches') {
+            return http.Response(
+              jsonEncode(<Object?>[_branch('main'), _branch('release/v1')]),
+              200,
+            );
+          }
+
+          expect(request.url.pathSegments, <String>[
+            'repos',
+            'PyBLE-dev',
+            'examples',
+            'commits',
+            'release/v1',
+          ]);
+          return http.Response(
+            jsonEncode(<String, Object?>{
+              'sha': _commitSha,
+              'commit': <String, Object?>{
+                'tree': <String, Object?>{'sha': _rootTreeSha},
+              },
+            }),
+            200,
+          );
+        }),
+      );
+
+      final GithubBranchCatalog catalog = await api.listBranches(_locator());
+      final String selected = catalog.branches.singleWhere(
+        (String branch) => branch == 'release/v1',
+      );
+      final PinnedRepository pinned = await api.resolve(
+        _locator(),
+        ref: selected,
+      );
+
+      expect(requests, hasLength(3));
+      expect(requests.last.url.toString(), contains('release%2Fv1'));
+      expect(pinned.requestedRef, 'release/v1');
+      expect(pinned.resolvedRef, 'release/v1');
+      expect(pinned.commitSha, _commitSha);
+      expect(pinned.rootTreeSha, _rootTreeSha);
+    });
   });
 
   group('GithubRepositoryClient tree browsing', () {
