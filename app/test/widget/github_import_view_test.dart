@@ -318,6 +318,14 @@ Future<void> _browse(
   await tester.pumpAndSettle();
 }
 
+Future<void> _toggleSelection(WidgetTester tester, String remotePath) async {
+  final Finder selection = find.byKey(_selectionKey(remotePath));
+  await tester.ensureVisible(selection);
+  await tester.pumpAndSettle();
+  await tester.tap(selection);
+  await tester.pump();
+}
+
 Future<void> _activateButtonWithEnter(WidgetTester tester, Key key) async {
   final Finder button = find.byKey(key);
   final Finder label = find.descendant(of: button, matching: find.byType(Text));
@@ -706,9 +714,8 @@ void main() {
         expect(find.byKey(_entryKey('nested')), findsOneWidget);
         expect(find.byKey(_selectionKey('nested')), findsNothing);
 
-        await tester.tap(find.byKey(_selectionKey('hello.py')));
-        await tester.tap(find.byKey(_selectionKey('blink.py')));
-        await tester.pump();
+        await _toggleSelection(tester, 'hello.py');
+        await _toggleSelection(tester, 'blink.py');
         await tester.tap(find.byKey(kGithubReviewButtonKey));
         await tester.pumpAndSettle();
 
@@ -770,8 +777,7 @@ void main() {
 
       expect(api.resolveCalls, hasLength(1));
       expect(api.listedRemotePaths, <String>['']);
-      await tester.tap(find.byKey(_selectionKey('hello.py')));
-      await tester.pump();
+      await _toggleSelection(tester, 'hello.py');
       await _activateButtonWithEnter(tester, kGithubReviewButtonKey);
 
       expect(find.text(l10nOf(tester).githubImportReviewTitle), findsOneWidget);
@@ -801,8 +807,7 @@ void main() {
         await _openImport(tester, connection, api);
         final AppLocalizations l10n = l10nOf(tester);
         await _browse(tester);
-        await tester.tap(find.byKey(_selectionKey('hello.py')));
-        await tester.pump();
+        await _toggleSelection(tester, 'hello.py');
         await tester.tap(find.byKey(kGithubReviewButtonKey));
         await tester.pumpAndSettle();
 
@@ -1013,7 +1018,7 @@ void main() {
           'blink.py',
           'third.py',
         ]) {
-          await tester.tap(find.byKey(_selectionKey(path)));
+          await _toggleSelection(tester, path);
         }
         await tester.pump();
         await tester.tap(find.byKey(kGithubReviewButtonKey));
@@ -1059,8 +1064,7 @@ void main() {
 
       await _openImport(tester, connection, api);
       await _browse(tester);
-      await tester.tap(find.byKey(_selectionKey('hello.py')));
-      await tester.pump();
+      await _toggleSelection(tester, 'hello.py');
       expect(
         tester
             .widget<CheckboxListTile>(find.byKey(_selectionKey('hello.py')))
@@ -1099,8 +1103,7 @@ void main() {
 
       await _openImport(tester, connection, api);
       await _browse(tester);
-      await tester.tap(find.byKey(_selectionKey('hello.py')));
-      await tester.pump();
+      await _toggleSelection(tester, 'hello.py');
       await tester.tap(find.byKey(kGithubReviewButtonKey));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(kGithubCommitButtonKey));
@@ -1135,8 +1138,7 @@ void main() {
 
       await _openImport(tester, connection, api);
       await _browse(tester);
-      await tester.tap(find.byKey(_selectionKey('hello.py')));
-      await tester.pump();
+      await _toggleSelection(tester, 'hello.py');
       await tester.tap(find.byKey(_entryKey('nested')));
       await tester.pumpAndSettle();
 
@@ -1163,8 +1165,7 @@ void main() {
 
       await _openImport(tester, connection, api);
       await _browse(tester);
-      await tester.tap(find.byKey(_selectionKey('hello.py')));
-      await tester.pump();
+      await _toggleSelection(tester, 'hello.py');
       await tester.tap(find.byKey(kGithubReviewButtonKey));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(kGithubCommitButtonKey));
@@ -1209,8 +1210,7 @@ void main() {
 
       await _openImport(tester, connection, api);
       await _browse(tester);
-      await tester.tap(find.byKey(_selectionKey('examples/oversized.py')));
-      await tester.pump();
+      await _toggleSelection(tester, 'examples/oversized.py');
       await tester.tap(find.byKey(kGithubReviewButtonKey));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(kGithubCommitButtonKey));
@@ -1293,8 +1293,7 @@ void main() {
 
       await _openImport(tester, connection, api);
       await _browse(tester);
-      await tester.tap(find.byKey(_selectionKey('hello.py')));
-      await tester.pump();
+      await _toggleSelection(tester, 'hello.py');
       await tester.tap(find.byKey(kGithubReviewButtonKey));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(kGithubCommitButtonKey));
@@ -1371,8 +1370,7 @@ void main() {
 
       await _openImport(tester, connection, api);
       await _browse(tester);
-      await tester.tap(find.byKey(_selectionKey('hello.py')));
-      await tester.pump();
+      await _toggleSelection(tester, 'hello.py');
       await tester.tap(find.byKey(kGithubReviewButtonKey));
       await connection.listStarted.future;
       await tester.pump();
@@ -1402,26 +1400,35 @@ void main() {
         final AppLocalizations l10n = l10nOf(tester);
         expect(find.byKey(kGithubRootDestinationWarningKey), findsOneWidget);
         expect(
-          find.text(l10n.githubImportRootDestinationWarning),
+          find.text(l10n.githubImportRootDestinationWarning('/examples')),
           findsOneWidget,
         );
 
         await _browse(tester);
         final Finder selection = find.byKey(_selectionKey('pyble_i2c_scan.py'));
-        await tester.tap(selection);
-        await tester.pump();
+        await _toggleSelection(tester, 'pyble_i2c_scan.py');
         await tester.tap(find.byKey(kGithubReviewButtonKey));
         await tester.pumpAndSettle();
 
         expect(
           find.text(
-            l10n.githubImportErrorProtectedRootTarget('/pyble_i2c_scan.py'),
+            l10n.githubImportErrorProtectedRootTarget(
+              '/pyble_i2c_scan.py',
+              '/examples',
+            ),
           ),
           findsOneWidget,
         );
         expect(tester.widget<CheckboxListTile>(selection).value, isTrue);
+        expect(find.byKey(kGithubRootDestinationWarningKey), findsNothing);
         expect(find.text(l10n.githubImportRetry), findsNothing);
         expect(find.byKey(kGithubCommitButtonKey), findsNothing);
+        expect(
+          tester
+              .widget<FilledButton>(find.byKey(kGithubReviewButtonKey))
+              .onPressed,
+          isNull,
+        );
         final Finder failure = find.byKey(
           const ValueKey<String>('githubImportFailure'),
         );
@@ -1438,6 +1445,68 @@ void main() {
         expect(connection.importerListCalls, 0);
         expect(api.fetchedRemotePaths, isEmpty);
         expect(connection.putFileCalls, isEmpty);
+        expect(connection.mkdirCalls, isEmpty);
+        expect(connection.runFileCalls, isEmpty);
+        expect(connection.runSourceCalls, isEmpty);
+      },
+    );
+
+    testWidgets(
+      'a reported non-slash root guides to and imports from its child folder',
+      (WidgetTester tester) async {
+        const DeviceInfo info = DeviceInfo(
+          chip: 'future-port',
+          mpyVersion: '1.28.0',
+          freeMem: 48000,
+          fsRoot: '/flash',
+        );
+        final RecordingConnection connection = RecordingConnection(
+          initial: ConnState.ready,
+          deviceInfo: info,
+        );
+        final _FakeGithubApi api = _FakeGithubApi(
+          entries: const <GithubEntry>[_protectedExampleEntry],
+          sourceByRemotePath: const <String, String>{
+            'pyble_i2c_scan.py': 'print("scan")\n',
+          },
+        );
+        addTearDown(connection.dispose);
+        await connection.mkdir('/flash/examples');
+        connection.mkdirCalls.clear();
+        connection.operationLog.clear();
+
+        await _openImport(tester, connection, api);
+        final AppLocalizations l10n = l10nOf(tester);
+        expect(
+          find.text(l10n.githubImportRootDestinationWarning('/flash/examples')),
+          findsOneWidget,
+        );
+        await tester.tap(find.byTooltip(l10n.githubImportClose));
+        await tester.pumpAndSettle();
+
+        await tester.tap(
+          find.byKey(const ValueKey<String>('fileEntry_examples')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byTooltip(l10n.githubImportAction));
+        await tester.pumpAndSettle();
+        expect(find.byKey(kGithubRootDestinationWarningKey), findsNothing);
+
+        await _browse(tester);
+        await _toggleSelection(tester, 'pyble_i2c_scan.py');
+        await tester.tap(find.byKey(kGithubReviewButtonKey));
+        await tester.pumpAndSettle();
+        expect(
+          find.textContaining('/flash/examples/pyble_i2c_scan.py'),
+          findsOneWidget,
+        );
+        await tester.tap(find.byKey(kGithubCommitButtonKey));
+        await tester.pumpAndSettle();
+
+        expect(
+          connection.putFileCalls.map((PutFileCall call) => call.path),
+          <String>['/flash/examples/pyble_i2c_scan.py'],
+        );
         expect(connection.mkdirCalls, isEmpty);
         expect(connection.runFileCalls, isEmpty);
         expect(connection.runSourceCalls, isEmpty);
@@ -1461,8 +1530,7 @@ void main() {
 
       await _openImport(tester, connection, api);
       await _browse(tester);
-      await tester.tap(find.byKey(_selectionKey('hello.py')));
-      await tester.pump();
+      await _toggleSelection(tester, 'hello.py');
       await tester.tap(find.byKey(kGithubReviewButtonKey));
       await tester.pumpAndSettle();
 

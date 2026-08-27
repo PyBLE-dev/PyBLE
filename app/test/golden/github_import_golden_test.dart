@@ -522,7 +522,9 @@ void main() {
           tester,
           connection: connection,
           api: api,
-          size: const Size(599, 768),
+          size: const Size(599, 1024),
+          textScale: 2,
+          highContrast: true,
         );
         await _openImporter(tester);
         expect(find.byKey(kGithubRootDestinationWarningKey), findsOneWidget);
@@ -534,9 +536,10 @@ void main() {
         expect(find.byType(BottomSheet), findsOneWidget);
         expect(
           find.text(
-            _l10n(
-              tester,
-            ).githubImportErrorProtectedRootTarget('/pyble_i2c_scan.py'),
+            _l10n(tester).githubImportErrorProtectedRootTarget(
+              '/pyble_i2c_scan.py',
+              '/examples',
+            ),
           ),
           findsOneWidget,
         );
