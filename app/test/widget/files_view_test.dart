@@ -83,6 +83,31 @@ class _DisappearingDeleteConnection extends RecordingConnection {
   }
 }
 
+/// Holds exactly one requested listing while leaving the previous rows visible.
+class _HeldListConnection extends RecordingConnection {
+  _HeldListConnection() : super(initial: ConnState.ready);
+
+  Completer<void> listStarted = Completer<void>();
+  Completer<void> releaseList = Completer<void>();
+  bool _holdNext = false;
+
+  void holdNextList() {
+    listStarted = Completer<void>();
+    releaseList = Completer<void>();
+    _holdNext = true;
+  }
+
+  @override
+  Future<List<RemoteEntry>> listDir(String path) async {
+    if (_holdNext) {
+      _holdNext = false;
+      listStarted.complete();
+      await releaseList.future;
+    }
+    return super.listDir(path);
+  }
+}
+
 void main() {
   Uint8List b(String s) => Uint8List.fromList(utf8.encode(s));
   Key entryKey(String n) => ValueKey<String>('fileEntry_$n');
@@ -492,6 +517,73 @@ void main() {
       expect(find.text(l10n.filesSelectionSelectedCount(1)), findsOneWidget);
       expect(rec.getFileCalls, isEmpty);
     });
+
+    testWidgets('Space toggles the keyboard-focused file checkbox', (
+      WidgetTester tester,
+    ) async {
+      final RecordingConnection rec = RecordingConnection(
+        initial: ConnState.ready,
+      );
+      addTearDown(rec.dispose);
+      await rec.putFile('/alpha.py', b('print("alpha")\n'));
+      await pumpSurface(tester, const FilesView(), connection: rec);
+      await tester.pumpAndSettle();
+
+      await enterSelection(tester);
+      final Finder checkbox = find.byKey(selectKey('alpha.py'));
+      for (
+        int step = 0;
+        step < 8 && !primaryFocusIsWithin(tester, checkbox);
+        step += 1
+      ) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.pump();
+      }
+      expect(
+        primaryFocusIsWithin(tester, checkbox),
+        isTrue,
+        reason: 'the selected-file checkbox participates in focus traversal',
+      );
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.space);
+      await tester.pump();
+
+      expect(tester.widget<Checkbox>(checkbox).value, isTrue);
+      expect(rec.getFileCalls, isEmpty);
+    });
+
+    testWidgets(
+      'long press cannot enter selection while refresh is in flight',
+      (WidgetTester tester) async {
+        final _HeldListConnection rec = _HeldListConnection();
+        addTearDown(() {
+          if (!rec.releaseList.isCompleted) rec.releaseList.complete();
+          rec.dispose();
+        });
+        await rec.putFile('/alpha.py', b('alpha\n'));
+        await pumpSurface(tester, const FilesView(), connection: rec);
+        await tester.pumpAndSettle();
+
+        rec.holdNextList();
+        final Future<void> pending = containerOf(
+          tester,
+        ).read(fileExplorerProvider.notifier).refresh();
+        await rec.listStarted.future;
+        await tester.pump();
+
+        final TextButton selectAction = tester.widget<TextButton>(
+          find.byKey(kFilesSelectActionKey),
+        );
+        expect(selectAction.onPressed, isNull);
+        await tester.longPress(find.byKey(entryKey('alpha.py')));
+        await tester.pump();
+        expect(find.byKey(kFilesSelectionBarKey), findsNothing);
+
+        rec.releaseList.complete();
+        await pending;
+        await tester.pumpAndSettle();
+      },
+    );
 
     testWidgets(
       'folders and protected root or scratch entries stay locked and excluded',
@@ -1038,6 +1130,112 @@ void main() {
           reason: 'completion must not move focus into an offstage Files tree',
         );
         expect(find.text(l10n.filesDeleteSelectedComplete(1)), findsOneWidget);
+      },
+    );
+
+    testWidgets('a running delete locks progress, selection, and mutations', (
+      WidgetTester tester,
+    ) async {
+      final _HeldDeleteConnection rec = _HeldDeleteConnection();
+      addTearDown(() {
+        if (!rec.release.isCompleted) rec.release.complete();
+        rec.dispose();
+      });
+      await rec.putFile('/alpha.py', b('alpha\n'));
+      await rec.putFile('/beta.py', b('beta\n'));
+      await pumpSurface(tester, const FilesView(), connection: rec);
+      await tester.pumpAndSettle();
+      final AppLocalizations l10n = l10nOf(tester);
+
+      await enterSelection(tester);
+      await selectAllShown(tester);
+      await tester.tap(find.byKey(kFilesBulkDeleteActionKey));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.widgetWithText(FilledButton, l10n.commonDelete),
+        ),
+      );
+      await tester.pump();
+      expect(rec.started.isCompleted, isTrue);
+
+      final String progress = l10n.filesDeleteSelectedProgress(
+        'alpha.py',
+        0,
+        2,
+      );
+      final Finder progressText = find.text(progress);
+      expect(progressText, findsOneWidget);
+      final Finder liveProgress = find.ancestor(
+        of: progressText,
+        matching: find.byWidgetPredicate(
+          (Widget widget) =>
+              widget is Semantics && widget.properties.liveRegion == true,
+        ),
+      );
+      expect(liveProgress, findsOneWidget);
+      expect(tester.widget<Semantics>(liveProgress).properties.label, progress);
+
+      final Finder cancel = find.ancestor(
+        of: find.byTooltip(l10n.filesSelectionCancel),
+        matching: find.byType(IconButton),
+      );
+      expect(tester.widget<IconButton>(cancel).onPressed, isNull);
+      expect(
+        tester
+            .widget<IconButton>(find.byKey(kFilesSelectAllShownKey))
+            .onPressed,
+        isNull,
+      );
+      expect(
+        tester
+            .widget<IconButton>(find.byKey(kFilesBulkDeleteActionKey))
+            .onPressed,
+        isNull,
+      );
+      for (final String name in <String>['alpha.py', 'beta.py']) {
+        expect(
+          tester.widget<Checkbox>(find.byKey(selectKey(name))).onChanged,
+          isNull,
+        );
+        expect(
+          tester.widget<ListTile>(find.byKey(entryKey(name))).onTap,
+          isNull,
+        );
+      }
+      expect(find.byType(RefreshIndicator), findsNothing);
+      expect(find.text(l10n.filesSelectionSelectedCount(2)), findsOneWidget);
+
+      rec.release.complete();
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets(
+      'disconnect dismisses an open exact confirmation with zero I/O',
+      (WidgetTester tester) async {
+        final RecordingConnection rec = RecordingConnection(
+          initial: ConnState.ready,
+        );
+        addTearDown(rec.dispose);
+        await rec.putFile('/alpha.py', b('alpha\n'));
+        await pumpSurface(tester, const FilesView(), connection: rec);
+        await tester.pumpAndSettle();
+        final AppLocalizations l10n = l10nOf(tester);
+
+        await enterSelection(tester);
+        await tester.tap(find.byKey(entryKey('alpha.py')));
+        await tester.pump();
+        await tester.tap(find.byKey(kFilesBulkDeleteActionKey));
+        await tester.pumpAndSettle();
+        expect(find.byType(AlertDialog), findsOneWidget);
+
+        rec.emit(ConnState.disconnected);
+        await tester.pumpAndSettle();
+
+        expect(find.byType(AlertDialog), findsNothing);
+        expect(find.text(l10n.filesDisconnectedTitle), findsOneWidget);
+        expect(rec.deleteCalls, isEmpty);
       },
     );
 

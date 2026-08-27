@@ -21,6 +21,8 @@
 // toolbar action slots) without weakening any of it.
 // HAND-OFF provenance: lib/app → app-architect; lib/pble → app-protocol-engineer.
 
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -457,6 +459,64 @@ void main() {
         reason: 'the Files rail item toggled the sidebar closed',
       );
     });
+  });
+
+  group('A-30 Files selection shell lifecycle (ADR-0043)', () {
+    testWidgets('stacked navigation away clears temporary file selection', (
+      WidgetTester tester,
+    ) async {
+      final FakeConnection connection = fakeConnection(
+        initial: ConnState.ready,
+      );
+      await connection.putFile('/alpha.py', Uint8List.fromList(<int>[97, 10]));
+      await pumpShell(tester, connection: connection, surface: ipadPortrait);
+
+      Finder destination(String label) => find.descendant(
+        of: find.byType(NavigationBar),
+        matching: find.text(label),
+      );
+
+      await tester.tap(destination('Files'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(kFilesSelectActionKey));
+      await tester.pumpAndSettle();
+      expect(find.byKey(kFilesSelectionBarKey), findsOneWidget);
+
+      await tester.tap(destination('Editor'));
+      await tester.pumpAndSettle();
+      await tester.tap(destination('Files'));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(kFilesSelectionBarKey), findsNothing);
+      expect(find.byKey(kFilesSelectActionKey), findsOneWidget);
+    });
+
+    testWidgets(
+      'landscape Editor to Console focus keeps the visible Files selection',
+      (WidgetTester tester) async {
+        final FakeConnection connection = fakeConnection(
+          initial: ConnState.ready,
+        );
+        await connection.putFile(
+          '/alpha.py',
+          Uint8List.fromList(<int>[97, 10]),
+        );
+        await pumpShell(tester, connection: connection, surface: ipadLandscape);
+
+        await tester.tap(find.byKey(kFilesSelectActionKey));
+        await tester.pumpAndSettle();
+        expect(find.byKey(kFilesSelectionBarKey), findsOneWidget);
+
+        final Finder console = find.descendant(
+          of: find.byType(NavigationRail),
+          matching: find.text('Console'),
+        );
+        await tester.tap(console);
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(kFilesSelectionBarKey), findsOneWidget);
+      },
+    );
   });
 
   group('A-31 responsive Blocks reachability', () {

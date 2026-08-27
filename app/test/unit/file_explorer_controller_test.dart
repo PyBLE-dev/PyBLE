@@ -652,6 +652,34 @@ void main() {
     );
 
     test(
+      'surfaces reconciliation failure separately after every delete succeeds',
+      () async {
+        final h = await batchReady(files: <String>['alpha.py', 'beta.py']);
+        h.connection.nextListFailure = const EIo(
+          'scripted post-success reconciliation failure',
+        );
+
+        final FileDeleteBatchResult result = await ctrl(
+          h.container,
+        ).deleteMany(<String>['beta.py', 'alpha.py']);
+
+        expect(result.outcome, FileDeleteBatchOutcome.complete);
+        expect(result.succeededPaths, <String>['/alpha.py', '/beta.py']);
+        expect(result.failedPath, isNull);
+        expect(result.unattemptedPaths, isEmpty);
+        expect(result.failure, isNull);
+        expect(h.connection.batchLog, <String>[
+          'delete:/alpha.py',
+          'delete:/beta.py',
+          'list:/',
+        ]);
+        expect(h.connection.listedPaths, <String>['/']);
+        expect(state(h.container).error, FileErrorKind.io);
+        expect(state(h.container).errorPath, '/');
+      },
+    );
+
+    test(
       'session replacement starts no later delete and never lists the successor',
       () async {
         final h = await batchReady(
