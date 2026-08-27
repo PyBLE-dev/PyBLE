@@ -276,6 +276,10 @@ class FileExplorerController extends Notifier<FileExplorerState> {
   /// Invalidates late file-open completions when a newer open starts.
   int _openEpoch = 0;
 
+  /// Invalidates filesystem-root discovery when its initiating attachment is
+  /// replaced, the controller is disposed, or a newer initialization starts.
+  int _initEpoch = 0;
+
   /// Serializes explicit Open-as-Blocks source downloads. The native row stays
   /// responsive, but a rapid second activation cannot start a duplicate GET
   /// or a competing preview flow.
@@ -295,7 +299,10 @@ class FileExplorerController extends Notifier<FileExplorerState> {
     final ValueListenable<ConnState> connState = ref.watch(connStateProvider);
     _lastConnState = connState.value;
     connState.addListener(_onConnState);
-    ref.onDispose(() => connState.removeListener(_onConnState));
+    ref.onDispose(() {
+      _initEpoch += 1;
+      connState.removeListener(_onConnState);
+    });
 
     if (_isAttached(connState.value)) {
       // Already connected at first build (the gated shell's normal path):
@@ -322,6 +329,9 @@ class FileExplorerController extends Notifier<FileExplorerState> {
       // A NEW board session became ready: auto-load its listing (FR-FILES-1).
       _init();
     } else if (now == ConnState.disconnected) {
+      // DEVICE_INFO and the initial listing belong to the attachment that
+      // started them. Prevent either completion from publishing after detach.
+      _initEpoch += 1;
       // The board went away: drop the stale listing (the view shows the
       // disconnected guidance); the next connection re-roots via _init.
       state = state.copyWith(
@@ -338,25 +348,57 @@ class FileExplorerController extends Notifier<FileExplorerState> {
 
   /// Reads `fsRoot` from the board and lists the root directory.
   Future<void> _init() async {
+    final int epoch = ++_initEpoch;
+    final Connection connection = _conn;
+    final Object sessionStamp = connectionSessionStampOf(connection);
+    String? reportedRoot;
     state = state.copyWith(
       loading: true,
       hasReportedFsRoot: false,
       clearError: true,
     );
     try {
-      final DeviceInfo info = await _conn.deviceInfo();
-      _fsRoot = info.fsRoot;
+      final DeviceInfo info = await connection.deviceInfo();
+      if (!_isInitContextCurrent(
+        epoch: epoch,
+        connection: connection,
+        stamp: sessionStamp,
+      )) {
+        return;
+      }
+
+      reportedRoot = info.fsRoot;
+      _fsRoot = reportedRoot;
       state = state.copyWith(
         fsRoot: _fsRoot,
         hasReportedFsRoot: true,
         cwd: _fsRoot,
       );
-      await refresh();
+
+      final List<RemoteEntry> entries = await connection.listDir(reportedRoot);
+      if (!_isInitContextCurrent(
+            epoch: epoch,
+            connection: connection,
+            stamp: sessionStamp,
+          ) ||
+          state.cwd != reportedRoot) {
+        return;
+      }
+      entries.sort(_entryOrder);
+      state = state.copyWith(entries: entries, loading: false);
     } on PbleException catch (e) {
+      if (!_isInitContextCurrent(
+            epoch: epoch,
+            connection: connection,
+            stamp: sessionStamp,
+          ) ||
+          (reportedRoot != null && state.cwd != reportedRoot)) {
+        return;
+      }
       state = state.copyWith(
         loading: false,
         error: _kindOf(e),
-        errorPath: _fsRoot,
+        errorPath: reportedRoot ?? _fsRoot,
       );
     }
   }
@@ -743,6 +785,15 @@ class FileExplorerController extends Notifier<FileExplorerState> {
     return identical(current, connection) &&
         identical(connectionSessionStampOf(current), stamp);
   }
+
+  bool _isInitContextCurrent({
+    required int epoch,
+    required Connection connection,
+    required Object stamp,
+  }) =>
+      epoch == _initEpoch &&
+      _isCapturedSessionCurrent(connection: connection, stamp: stamp) &&
+      _isAttached(connection.state.value);
 
   /// Wall-clock for the transfer in flight; restarted per transfer.
   Stopwatch? _txClock;
