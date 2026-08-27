@@ -193,6 +193,13 @@ final class _HeldListingConnection extends RecordingConnection
     _sessionStamp = Object();
     emit(ConnState.ready);
   }
+
+  void beginInPlaceReconnect() {
+    _sessionStamp = Object();
+    emit(ConnState.connecting);
+  }
+
+  void finishInPlaceReconnect() => emit(ConnState.ready);
 }
 
 void main() {
@@ -1168,6 +1175,44 @@ void main() {
       connection.listRequests.single.result.complete(const <RemoteEntry>[]);
       await pumpEventQueue();
     });
+
+    test(
+      'ready -> connecting clears stale rows before the successor reloads',
+      () async {
+        final h = await heldInitialList();
+        h.connection.listRequests.single.result.complete(<RemoteEntry>[
+          const RemoteEntry(name: 'old.py', isDir: false, size: 3),
+        ]);
+        await pumpEventQueue();
+        expect(names(h.c), <String>{'old.py'});
+        expect(state(h.c).hasReportedFsRoot, isTrue);
+
+        h.connection.beginInPlaceReconnect();
+        await pumpEventQueue();
+
+        expect(state(h.c).entries, isEmpty);
+        expect(state(h.c).fsRoot, '/');
+        expect(state(h.c).cwd, '/');
+        expect(state(h.c).hasReportedFsRoot, isFalse);
+        expect(state(h.c).loading, isFalse);
+
+        h.connection.scriptedDeviceInfo = currentInfo;
+        h.connection.finishInPlaceReconnect();
+        await pumpEventQueue();
+        await pumpEventQueue();
+        expect(h.connection.listRequests, hasLength(2));
+        h.connection.listRequests[1].result.complete(<RemoteEntry>[
+          const RemoteEntry(name: 'current.py', isDir: false, size: 7),
+        ]);
+        await pumpEventQueue();
+
+        expect(state(h.c).fsRoot, '/flash');
+        expect(state(h.c).cwd, '/flash');
+        expect(state(h.c).hasReportedFsRoot, isTrue);
+        expect(names(h.c), <String>{'current.py'});
+        expect(state(h.c).error, isNull);
+      },
+    );
 
     test(
       'listing auto-loads when a connection becomes ready AFTER first build',
