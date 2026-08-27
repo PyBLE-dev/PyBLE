@@ -66,6 +66,14 @@ const GithubEntry _notesEntry = GithubEntry(
   declaredSize: 10,
 );
 
+const GithubEntry _protectedExampleEntry = GithubEntry(
+  name: 'pyble_i2c_scan.py',
+  remotePath: 'pyble_i2c_scan.py',
+  kind: GithubEntryKind.regularFile,
+  objectSha: '8888888888888888888888888888888888888888',
+  declaredSize: 14,
+);
+
 final class _GoldenGithubApi implements GithubApi {
   _GoldenGithubApi({
     this.branchFailure,
@@ -89,6 +97,7 @@ final class _GoldenGithubApi implements GithubApi {
     'alpha.py': Uint8List.fromList(utf8.encode("print('alpha')\n")),
     'beta.py': Uint8List.fromList(utf8.encode("print('beta')\n")),
     'gamma.py': Uint8List.fromList(utf8.encode("print('gamma')\n")),
+    'pyble_i2c_scan.py': Uint8List.fromList(utf8.encode('print("scan")\n')),
   };
 
   @override
@@ -494,6 +503,46 @@ void main() {
           tester,
           'github_import_compact_rate_limit_a11y_keyboard',
         );
+      },
+      tags: const <String>['golden'],
+    );
+
+    testWidgets(
+      'compact root guide explains a protected official example target',
+      (WidgetTester tester) async {
+        final RecordingConnection connection = RecordingConnection(
+          initial: ConnState.ready,
+        );
+        final _GoldenGithubApi api = _GoldenGithubApi(
+          entries: const <GithubEntry>[_protectedExampleEntry],
+        );
+        addTearDown(connection.dispose);
+
+        await _pumpGoldenHost(
+          tester,
+          connection: connection,
+          api: api,
+          size: const Size(599, 768),
+        );
+        await _openImporter(tester);
+        expect(find.byKey(kGithubRootDestinationWarningKey), findsOneWidget);
+        await _browseRepository(tester);
+        await _selectFiles(tester, const <String>['pyble_i2c_scan.py']);
+        await tester.tap(find.byKey(kGithubReviewButtonKey));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(BottomSheet), findsOneWidget);
+        expect(
+          find.text(
+            _l10n(
+              tester,
+            ).githubImportErrorProtectedRootTarget('/pyble_i2c_scan.py'),
+          ),
+          findsOneWidget,
+        );
+        expect(find.text(_l10n(tester).githubImportRetry), findsNothing);
+        expect(connection.putFileCalls, isEmpty);
+        await _expectGolden(tester, 'github_import_compact_protected_root');
       },
       tags: const <String>['golden'],
     );

@@ -150,6 +150,7 @@ void main() {
       await fake.putFile('/flash/sub/x.py', b('x\n'));
       final ProviderContainer c = await ready(fake);
       expect(state(c).cwd, '/flash');
+      expect(state(c).fsRoot, '/flash');
 
       await ctrl(c).into('sub');
       await pumpEventQueue();

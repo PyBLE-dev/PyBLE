@@ -62,6 +62,14 @@ const GithubEntry _nestedEntry = GithubEntry(
   declaredSize: 0,
 );
 
+const GithubEntry _protectedExampleEntry = GithubEntry(
+  name: 'pyble_i2c_scan.py',
+  remotePath: 'pyble_i2c_scan.py',
+  kind: GithubEntryKind.regularFile,
+  objectSha: '7777777777777777777777777777777777777777',
+  declaredSize: 14,
+);
+
 final class _BranchCatalogFixture {
   const _BranchCatalogFixture({
     required this.defaultBranch,
@@ -246,6 +254,18 @@ final class _HoldingReviewConnection extends RecordingConnection {
   Future<DirectoryListing> listDirWithMetadata(String path) async {
     if (!listStarted.isCompleted) listStarted.complete();
     await releaseList.future;
+    return super.listDirWithMetadata(path);
+  }
+}
+
+final class _CountingReviewConnection extends RecordingConnection {
+  _CountingReviewConnection() : super(initial: ConnState.ready);
+
+  int importerListCalls = 0;
+
+  @override
+  Future<DirectoryListing> listDirWithMetadata(String path) {
+    importerListCalls += 1;
     return super.listDirWithMetadata(path);
   }
 }
@@ -1362,7 +1382,67 @@ void main() {
       connection.releaseList.complete();
       await tester.pumpAndSettle();
       expect(find.byKey(kGithubCommitButtonKey), findsOneWidget);
+      expect(find.byKey(kGithubRootDestinationWarningKey), findsOneWidget);
     });
+
+    testWidgets(
+      'root guide blocks a protected example target before board or blob I/O',
+      (WidgetTester tester) async {
+        final _CountingReviewConnection connection =
+            _CountingReviewConnection();
+        final _FakeGithubApi api = _FakeGithubApi(
+          entries: const <GithubEntry>[_protectedExampleEntry],
+          sourceByRemotePath: const <String, String>{
+            'pyble_i2c_scan.py': 'print("scan")\n',
+          },
+        );
+        addTearDown(connection.dispose);
+
+        await _openImport(tester, connection, api);
+        final AppLocalizations l10n = l10nOf(tester);
+        expect(find.byKey(kGithubRootDestinationWarningKey), findsOneWidget);
+        expect(
+          find.text(l10n.githubImportRootDestinationWarning),
+          findsOneWidget,
+        );
+
+        await _browse(tester);
+        final Finder selection = find.byKey(_selectionKey('pyble_i2c_scan.py'));
+        await tester.tap(selection);
+        await tester.pump();
+        await tester.tap(find.byKey(kGithubReviewButtonKey));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text(
+            l10n.githubImportErrorProtectedRootTarget('/pyble_i2c_scan.py'),
+          ),
+          findsOneWidget,
+        );
+        expect(tester.widget<CheckboxListTile>(selection).value, isTrue);
+        expect(find.text(l10n.githubImportRetry), findsNothing);
+        expect(find.byKey(kGithubCommitButtonKey), findsNothing);
+        final Finder failure = find.byKey(
+          const ValueKey<String>('githubImportFailure'),
+        );
+        expect(tester.widget<Focus>(failure).focusNode?.hasFocus, isTrue);
+        expect(
+          tester.getSemantics(failure),
+          matchesSemantics(
+            isLiveRegion: true,
+            isFocusable: true,
+            isFocused: true,
+            hasFocusAction: true,
+          ),
+        );
+        expect(connection.importerListCalls, 0);
+        expect(api.fetchedRemotePaths, isEmpty);
+        expect(connection.putFileCalls, isEmpty);
+        expect(connection.mkdirCalls, isEmpty);
+        expect(connection.runFileCalls, isEmpty);
+        expect(connection.runSourceCalls, isEmpty);
+      },
+    );
 
     testWidgets('review marks an existing regular-file target before consent', (
       WidgetTester tester,

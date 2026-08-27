@@ -134,12 +134,14 @@ final class _Harness {
     required this.operationLog,
     required this.connection,
     required this.api,
+    required String fsRoot,
     required String cwd,
   }) {
     importer = GithubBoardImporter(
       api: api,
       connection: connection,
       capturedSessionStamp: connection.connectionSessionStamp,
+      fsRoot: fsRoot,
       cwd: cwd,
       refreshFiles: () async {
         operationLog.add('refresh');
@@ -149,6 +151,7 @@ final class _Harness {
   }
 
   factory _Harness({
+    String fsRoot = '/',
     String cwd = '/flash',
     List<List<RemoteEntry>>? directoryListings,
     List<bool>? listingTruncation,
@@ -168,6 +171,7 @@ final class _Harness {
       operationLog: operationLog,
       connection: connection,
       api: _FakeGithubApi(operationLog),
+      fsRoot: fsRoot,
       cwd: cwd,
     );
   }
@@ -235,6 +239,7 @@ void main() {
   });
 
   _Harness harness({
+    String fsRoot = '/',
     String cwd = '/flash',
     List<List<RemoteEntry>>? directoryListings,
     List<bool>? listingTruncation,
@@ -242,6 +247,7 @@ void main() {
     int? holdPutAt,
   }) {
     final _Harness value = _Harness(
+      fsRoot: fsRoot,
       cwd: cwd,
       directoryListings: directoryListings,
       listingTruncation: listingTruncation,
@@ -253,6 +259,107 @@ void main() {
   }
 
   group('A33-SUB-AC-4 review target and conflict safety', () {
+    test(
+      'blocks every protected basename at the reported root before I/O',
+      () async {
+        const List<String> protectedNames = <String>[
+          'pyble_i2c_scan.py',
+          'pyble.py',
+          'pyblex.py',
+          'pble_demo.py',
+          '_boot.py',
+          'boot.py',
+        ];
+
+        for (final String name in protectedNames) {
+          final _Harness h = harness(fsRoot: '/flash', cwd: '/flash');
+          await expectLater(
+            h.importer.review(_repository, <GithubEntry>[_file(name)]),
+            throwsA(
+              allOf(
+                _failure(GithubFailureKind.protectedRootTarget),
+                isA<GithubFailure>().having(
+                  (GithubFailure failure) => failure.path,
+                  'path',
+                  '/flash/$name',
+                ),
+              ),
+            ),
+          );
+
+          expect(h.operationLog, isEmpty);
+          expect(h.api.fetchedRemotePaths, isEmpty);
+          expect(h.connection.putFileCalls, isEmpty);
+        }
+      },
+    );
+
+    test(
+      'one protected root target blocks the complete mixed selection',
+      () async {
+        final _Harness h = harness(fsRoot: '/', cwd: '/');
+
+        await expectLater(
+          h.importer.review(_repository, <GithubEntry>[
+            _file('main.py', object: 40),
+            _file('pyble_i2c_scan.py', object: 41),
+          ]),
+          throwsA(_failure(GithubFailureKind.protectedRootTarget)),
+        );
+
+        expect(h.operationLog, isEmpty);
+        expect(h.api.fetchedRemotePaths, isEmpty);
+        expect(h.connection.putFileCalls, isEmpty);
+      },
+    );
+
+    test(
+      'allows protected basenames below root and ordinary names at root',
+      () async {
+        final _Harness nested = harness(
+          fsRoot: '/flash',
+          cwd: '/flash/examples',
+          directoryListings: <List<RemoteEntry>>[
+            <RemoteEntry>[],
+            <RemoteEntry>[],
+          ],
+        );
+        final GithubEntry i2c = _file('pyble_i2c_scan.py', object: 42);
+        nested.api.bytesByObjectSha[i2c.objectSha] = Uint8List.fromList(
+          utf8.encode('print("scan")\n'),
+        );
+
+        final GithubImportReview nestedReview = await nested.importer.review(
+          _repository,
+          <GithubEntry>[i2c],
+        );
+        expect(
+          nestedReview.targets.single.boardPath,
+          '/flash/examples/pyble_i2c_scan.py',
+        );
+        final GithubImportResult nestedResult = await nested.importer.commit(
+          nestedReview,
+          overwriteConfirmed: false,
+        );
+        expect(nestedResult.outcome, GithubImportOutcome.complete);
+        expect(
+          nested.connection.putFileCalls.single.path,
+          '/flash/examples/pyble_i2c_scan.py',
+        );
+
+        final _Harness root = harness(
+          fsRoot: '/flash',
+          cwd: '/flash',
+          directoryListings: <List<RemoteEntry>>[<RemoteEntry>[]],
+        );
+        final GithubImportReview rootReview = await root.importer.review(
+          _repository,
+          <GithubEntry>[_file('main.py', object: 43)],
+        );
+        expect(rootReview.targets.single.boardPath, '/flash/main.py');
+      },
+    );
+
     test(
       'maps basenames in stable remote-path order and discovers files',
       () async {
