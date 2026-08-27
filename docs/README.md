@@ -52,6 +52,8 @@ bundled offline examples required by its own product contracts.
 
 ## Testing and release handoff
 
+- [PyBLE 0.2.0 (5) TestFlight description and test
+  plan](testing/testflight/0.2.0-build-5.md)
 - [PyBLE 0.1.0 (4) TestFlight description and test
   plan](testing/testflight/0.1.0-build-4.md)
 
