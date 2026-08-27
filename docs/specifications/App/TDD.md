@@ -816,18 +816,21 @@ tablet view. These are hard resource ceilings, not pagination: the subset never
 silently presents a partial folder.
 
 Before normal-mode resolution, `listBranches(locator)` reads repository
-metadata for `default_branch`, then serially reads the public branches endpoint
-with `per_page=100` and increasing `page`. It publishes only a complete
+metadata for `default_branch` and a positive numeric repository `id`, then
+serially reads the public branches endpoint with `per_page=100` and increasing
+`page`. It publishes only a complete
 `GithubBranchCatalog`: at most 512 exact names over six pages, 512 KiB per
 branch page, and 2 MiB across branch-page bodies. Invalid/duplicate names,
 malformed metadata or pagination, a 513th name, or a further page fails without
 publishing accumulated names. `Link` metadata is accepted only when its next
-URL is HTTPS on exact host `api.github.com`, has the exact repository branches
-path and expected page parameters, and advances by one; the returned URL is
-never followed directly. The adapter constructs the next request from its
-validated locator and page number. The reported default is first and selected;
-remaining branches use `String.compareTo`. An empty catalog is displayed and
-cannot Browse in branch mode.
+URL is HTTPS on exact host `api.github.com`, has either the locator-derived
+`/repos/{owner}/{repo}/branches` path or GitHub's canonical
+`/repositories/{id}/branches` path for that metadata identity, carries only
+the expected page parameters, and advances by one; the returned URL is never
+followed directly. The adapter constructs the next request from its validated
+locator and page number. The reported default is first and selected; remaining
+branches use `String.compareTo`. An empty catalog is displayed and cannot
+Browse in branch mode.
 
 The normal ref control is a searchable branch-only chooser. A localized
 advanced action exposes the retained manual branch/tag/commit field, including

@@ -74,13 +74,16 @@ inputs would break existing advanced and reproducible-import workflows.
    and publishes no partial catalog. An empty catalog is displayed honestly
    and cannot be browsed in branch mode.
 
-7. **Keep pagination inside the exact-host boundary.** The client validates
-   GitHub's `Link` pagination metadata, including exact HTTPS host, repository
-   branch path, `per_page`, and strictly increasing `page`. It never directly
+7. **Keep pagination inside the exact-host boundary.** Repository metadata
+   also supplies a positive numeric repository `id`. The client validates
+   GitHub's `Link` pagination metadata, including exact HTTPS host, either the
+   locator-derived `/repos/{owner}/{repo}/branches` path or GitHub's canonical
+   `/repositories/{id}/branches` path bound to that metadata identity,
+   `per_page`, and a `page` that advances by exactly one. It never directly
    follows a response-provided URL; it constructs the next exact
-   `api.github.com` request from validated local values. Each page uses the
-   existing absolute request deadline, cancellation, response-body, error,
-   and rate-limit rules.
+   `api.github.com` request from the validated local locator and page number.
+   Each page uses the existing absolute request deadline, cancellation,
+   response-body, error, and rate-limit rules.
 
 8. **Pin after selection.** A branch catalog and any commit SHA contained in a
    branch-list response are advisory and moving. Browse passes only the chosen
