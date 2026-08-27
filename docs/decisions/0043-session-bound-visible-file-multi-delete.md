@@ -31,10 +31,12 @@ from PyBLE's Material design system and PBLE/1 contract.
    empty folder can be removed. Recursive deletion is not introduced or
    implied.
 
-2. **Selection is explicit, local, and temporary.** A labelled Select action is
-   the discoverable entry point; long-pressing an eligible file is an optional
-   shortcut that enters selection and selects that row. In selection mode, a
-   tap or keyboard activation toggles a checkbox instead of opening the file.
+2. **Selection is explicit, local, and temporary.** A localized
+   tooltip/semantics-labelled Select icon remains directly visible in both the
+   compact one-row and roomy normal Files toolbar; long-pressing an eligible
+   file is an optional shortcut that enters selection and selects that row. In
+   selection mode, a tap or keyboard activation toggles a checkbox instead of
+   opening the file.
    The normal navigation, create, transfer, import, rename, delete, and
    Open-as-Blocks affordances are replaced by a contextual selected-count bar.
    Cancel, Escape, system Back, navigation that hides the Files presentation, a
