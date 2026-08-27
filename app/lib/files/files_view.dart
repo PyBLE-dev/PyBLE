@@ -7,9 +7,10 @@
 /// Two ConnState-keyed treatments, read through the seam ([connStateProvider]):
 ///   * **Disconnected** — a quiet `folder_off` [EmptyState] with guidance and NO
 ///     destructive actions (nothing to act on).
-///   * **Connected** — a breadcrumb + action bar (Up / Refresh / New file / New
-///     folder / Upload / GitHub import) over the live listing. Tapping a folder
-///     descends; tapping
+///   * **Connected** — a breadcrumb + responsive, single-row action toolbar
+///     (Select / Refresh / New file / New folder / Upload / GitHub import) over
+///     the live listing. Lower-priority actions move into a labelled overflow
+///     only when all six targets do not fit. Tapping a folder descends; tapping
 ///     a file opens it in the editor. Each row carries rename/delete affordances.
 ///     A determinate transfer bar shows during a transfer; a typed failure is
 ///     surfaced as an ARB-localized message (FR-FILES-3), never a raw code.
@@ -40,8 +41,19 @@ import 'package:pyble/theme/theme.dart';
 import 'file_explorer_controller.dart';
 
 /// Stable interaction keys used by widget, golden, and hardware acceptance
-/// tests for the visible-file multi-delete workflow (ADR-0043).
+/// tests for the normal toolbar and visible-file multi-delete workflow
+/// (ADR-0043).
 const Key kFilesSelectActionKey = ValueKey<String>('filesSelectAction');
+const Key kFilesNormalActionsRowKey = ValueKey<String>('filesNormalActionsRow');
+const Key kFilesActionsOverflowButtonKey = ValueKey<String>(
+  'filesActionsOverflowButton',
+);
+const Key kFilesOverflowRefreshKey = ValueKey<String>('filesOverflowRefresh');
+const Key kFilesOverflowNewFileKey = ValueKey<String>('filesOverflowNewFile');
+const Key kFilesOverflowNewFolderKey = ValueKey<String>(
+  'filesOverflowNewFolder',
+);
+const Key kFilesOverflowUploadKey = ValueKey<String>('filesOverflowUpload');
 const Key kFilesSelectionBarKey = ValueKey<String>('filesSelectionBar');
 const Key kFilesSelectAllShownKey = ValueKey<String>('filesSelectAllShown');
 const Key kFilesBulkDeleteActionKey = ValueKey<String>('filesBulkDeleteAction');
@@ -552,8 +564,9 @@ class _ExplorerState extends ConsumerState<_Explorer> {
   }
 }
 
-/// The breadcrumb + action bar. Actions live in a [Wrap] so they never overflow
-/// a narrow pane.
+enum _FilesOverflowAction { refresh, newFile, newFolder, upload }
+
+/// The breadcrumb + responsive one-row action toolbar.
 class _ActionBar extends StatelessWidget {
   const _ActionBar({
     required this.state,
@@ -580,6 +593,21 @@ class _ActionBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
+    final Widget selectAction = IconButton(
+      key: kFilesSelectActionKey,
+      focusNode: selectFocus,
+      tooltip: l10n.filesActionSelect,
+      onPressed: canSelect ? onSelect : null,
+      icon: const Icon(Icons.checklist_outlined),
+    );
+    final Widget githubAction = IconButton(
+      focusNode: githubImportFocus,
+      tooltip: githubImportEnabled
+          ? l10n.githubImportAction
+          : l10n.githubImportRequiresReady,
+      icon: const Icon(Icons.cloud_download_outlined),
+      onPressed: githubImportEnabled ? openGithubImport : null,
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
@@ -615,53 +643,135 @@ class _ActionBar extends StatelessWidget {
           alignment: Alignment.centerRight,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: SignalSpacing.xs),
-            child: Wrap(
-              spacing: SignalSpacing.xs,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: <Widget>[
-                TextButton.icon(
-                  key: kFilesSelectActionKey,
-                  focusNode: selectFocus,
-                  style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
-                  onPressed: canSelect ? onSelect : null,
-                  icon: const Icon(Icons.checklist_outlined),
-                  label: Text(l10n.filesActionSelect),
-                ),
-                IconButton(
-                  tooltip: l10n.filesActionRefresh,
-                  icon: const Icon(Icons.refresh),
-                  onPressed: () => ctrl.refresh(),
-                ),
-                IconButton(
-                  tooltip: l10n.filesEmptyCta,
-                  icon: const Icon(Icons.note_add_outlined),
-                  onPressed: () => _promptNewFile(context, ctrl, l10n),
-                ),
-                IconButton(
-                  tooltip: l10n.filesActionNewFolder,
-                  icon: const Icon(Icons.create_new_folder_outlined),
-                  onPressed: () => _promptNewFolder(context, ctrl, l10n),
-                ),
-                IconButton(
-                  tooltip: l10n.filesActionUpload,
-                  icon: const Icon(Icons.upload_file_outlined),
-                  onPressed: () => ctrl.uploadCurrentBuffer(),
-                ),
-                IconButton(
-                  focusNode: githubImportFocus,
-                  tooltip: githubImportEnabled
-                      ? l10n.githubImportAction
-                      : l10n.githubImportRequiresReady,
-                  icon: const Icon(Icons.cloud_download_outlined),
-                  onPressed: githubImportEnabled ? openGithubImport : null,
-                ),
-              ],
+            child: LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints constraints) {
+                // Six direct Material targets need 288 dp. Below that exact
+                // bound, keep the two priority actions visible and move the
+                // remaining four into one labelled, accessible menu.
+                final bool compact = constraints.maxWidth < 6 * 48;
+                return SizedBox(
+                  key: kFilesNormalActionsRowKey,
+                  height: 48,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: compact
+                        ? <Widget>[
+                            selectAction,
+                            githubAction,
+                            PopupMenuButton<_FilesOverflowAction>(
+                              key: kFilesActionsOverflowButtonKey,
+                              tooltip: l10n.filesMoreActions,
+                              constraints: const BoxConstraints(
+                                minWidth: 220,
+                                maxWidth: 320,
+                              ),
+                              icon: const Icon(Icons.more_vert),
+                              onSelected: (_FilesOverflowAction action) {
+                                switch (action) {
+                                  case _FilesOverflowAction.refresh:
+                                    ctrl.refresh();
+                                    break;
+                                  case _FilesOverflowAction.newFile:
+                                    _promptNewFile(context, ctrl, l10n);
+                                    break;
+                                  case _FilesOverflowAction.newFolder:
+                                    _promptNewFolder(context, ctrl, l10n);
+                                    break;
+                                  case _FilesOverflowAction.upload:
+                                    ctrl.uploadCurrentBuffer();
+                                    break;
+                                }
+                              },
+                              itemBuilder: (BuildContext context) =>
+                                  <PopupMenuEntry<_FilesOverflowAction>>[
+                                    PopupMenuItem<_FilesOverflowAction>(
+                                      key: kFilesOverflowRefreshKey,
+                                      value: _FilesOverflowAction.refresh,
+                                      child: _FilesOverflowLabel(
+                                        icon: Icons.refresh,
+                                        label: l10n.filesActionRefresh,
+                                      ),
+                                    ),
+                                    PopupMenuItem<_FilesOverflowAction>(
+                                      key: kFilesOverflowNewFileKey,
+                                      value: _FilesOverflowAction.newFile,
+                                      child: _FilesOverflowLabel(
+                                        icon: Icons.note_add_outlined,
+                                        label: l10n.filesEmptyCta,
+                                      ),
+                                    ),
+                                    PopupMenuItem<_FilesOverflowAction>(
+                                      key: kFilesOverflowNewFolderKey,
+                                      value: _FilesOverflowAction.newFolder,
+                                      child: _FilesOverflowLabel(
+                                        icon: Icons.create_new_folder_outlined,
+                                        label: l10n.filesActionNewFolder,
+                                      ),
+                                    ),
+                                    PopupMenuItem<_FilesOverflowAction>(
+                                      key: kFilesOverflowUploadKey,
+                                      value: _FilesOverflowAction.upload,
+                                      child: _FilesOverflowLabel(
+                                        icon: Icons.upload_file_outlined,
+                                        label: l10n.filesActionUpload,
+                                      ),
+                                    ),
+                                  ],
+                            ),
+                          ]
+                        : <Widget>[
+                            selectAction,
+                            IconButton(
+                              tooltip: l10n.filesActionRefresh,
+                              icon: const Icon(Icons.refresh),
+                              onPressed: () => ctrl.refresh(),
+                            ),
+                            IconButton(
+                              tooltip: l10n.filesEmptyCta,
+                              icon: const Icon(Icons.note_add_outlined),
+                              onPressed: () =>
+                                  _promptNewFile(context, ctrl, l10n),
+                            ),
+                            IconButton(
+                              tooltip: l10n.filesActionNewFolder,
+                              icon: const Icon(
+                                Icons.create_new_folder_outlined,
+                              ),
+                              onPressed: () =>
+                                  _promptNewFolder(context, ctrl, l10n),
+                            ),
+                            IconButton(
+                              tooltip: l10n.filesActionUpload,
+                              icon: const Icon(Icons.upload_file_outlined),
+                              onPressed: () => ctrl.uploadCurrentBuffer(),
+                            ),
+                            githubAction,
+                          ],
+                  ),
+                );
+              },
             ),
           ),
         ),
       ],
     );
   }
+}
+
+class _FilesOverflowLabel extends StatelessWidget {
+  const _FilesOverflowLabel({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    children: <Widget>[
+      Icon(icon, size: 20),
+      const SizedBox(width: SignalSpacing.md),
+      Expanded(child: Text(label)),
+    ],
+  );
 }
 
 /// Session-scoped replacement for the ordinary Files actions. It stays compact
