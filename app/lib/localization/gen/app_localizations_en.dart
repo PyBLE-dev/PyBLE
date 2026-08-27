@@ -1385,6 +1385,37 @@ class AppLocalizationsEn extends AppLocalizations {
   String get githubImportRefHint => 'Leave blank for the default branch';
 
   @override
+  String get githubImportBranchLabel => 'Branch';
+
+  @override
+  String githubImportDefaultBranch(String branch) {
+    return '$branch (default)';
+  }
+
+  @override
+  String get githubImportLoadBranches => 'Load branches';
+
+  @override
+  String get githubImportRefreshBranches => 'Refresh branches';
+
+  @override
+  String get githubImportLoadingBranches => 'Loading repository branches…';
+
+  @override
+  String get githubImportBranchesNotLoaded =>
+      'Load branches for this repository before browsing.';
+
+  @override
+  String get githubImportNoBranches =>
+      'This repository has no branches to browse.';
+
+  @override
+  String get githubImportManualRef => 'Use a tag or commit';
+
+  @override
+  String get githubImportChooseBranch => 'Choose a repository branch';
+
+  @override
   String get githubImportBrowse => 'Browse repository';
 
   @override
@@ -1551,6 +1582,10 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get githubImportErrorMalformed =>
       'GitHub returned an unexpected response, so nothing was written.';
+
+  @override
+  String get githubImportErrorTooManyBranches =>
+      'This repository has more than 512 branches, so PyBLE cannot show a complete branch list. Use the manual ref option instead.';
 
   @override
   String get githubImportErrorUnsafe =>

@@ -24,8 +24,15 @@ import 'github_import_providers.dart';
 import 'github_models.dart';
 
 /// Stable widget-test and accessibility anchors for the public workflow.
+const String kOfficialExamplesRepositoryUrl =
+    'https://github.com/PyBLE-dev/examples';
 const Key kGithubRepositoryFieldKey = ValueKey<String>('githubRepositoryField');
 const Key kGithubRefFieldKey = ValueKey<String>('githubRefField');
+const Key kGithubBranchDropdownKey = ValueKey<String>('githubBranchDropdown');
+const Key kGithubLoadBranchesButtonKey = ValueKey<String>(
+  'githubLoadBranchesButton',
+);
+const Key kGithubManualRefToggleKey = ValueKey<String>('githubManualRefToggle');
 const Key kGithubBrowseButtonKey = ValueKey<String>('githubBrowseButton');
 const Key kGithubReviewButtonKey = ValueKey<String>('githubReviewButton');
 const Key kGithubCommitButtonKey = ValueKey<String>('githubCommitButton');
@@ -86,7 +93,14 @@ Future<void> showGithubImportBrowser(
 
 enum _SurfaceStep { browse, review, result }
 
-enum _NetworkPhase { resolving, loadingDirectory, checkingBoardTargets }
+enum _RefMode { branch, manual }
+
+enum _NetworkPhase {
+  loadingBranches,
+  resolving,
+  loadingDirectory,
+  checkingBoardTargets,
+}
 
 final class _DirectoryFrame {
   const _DirectoryFrame(this.directory);
@@ -110,15 +124,22 @@ class _GithubImportView extends StatefulWidget {
 }
 
 class _GithubImportViewState extends State<_GithubImportView> {
-  final TextEditingController _repositoryController = TextEditingController();
+  final TextEditingController _repositoryController = TextEditingController(
+    text: kOfficialExamplesRepositoryUrl,
+  );
+  final TextEditingController _branchController = TextEditingController();
   final TextEditingController _refController = TextEditingController();
   final FocusNode _repositoryFocus = FocusNode();
+  final FocusNode _branchFocus = FocusNode();
   final FocusNode _refFocus = FocusNode();
   final FocusNode _failureFocus = FocusNode();
   final ScrollController _scrollController = ScrollController();
   Timer? _rateRetryTimer;
 
   _SurfaceStep _step = _SurfaceStep.browse;
+  _RefMode _refMode = _RefMode.branch;
+  GithubBranchCatalog? _branchCatalog;
+  String? _selectedBranch;
   PinnedRepository? _repository;
   final List<_DirectoryFrame> _directories = <_DirectoryFrame>[];
   final Set<String> _selectedPaths = <String>{};
@@ -134,10 +155,31 @@ class _GithubImportViewState extends State<_GithubImportView> {
   bool _rateRetryReady = true;
   _NetworkPhase? _networkPhase;
   GithubCancellation? _networkCancellation;
+  bool _updatingBranchController = false;
   int _epoch = 0;
 
   GithubDirectory? get _directory =>
       _directories.isEmpty ? null : _directories.last.directory;
+
+  bool get _isLoadingBranches =>
+      _busy && _networkPhase == _NetworkPhase.loadingBranches;
+
+  bool get _canBrowseRef => switch (_refMode) {
+    _RefMode.branch =>
+      _branchCatalog != null &&
+          _selectedBranch != null &&
+          _branchController.text == _selectedBranch,
+    _RefMode.manual => true,
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    _branchController.addListener(_onBranchTextChanged);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_loadBranches());
+    });
+  }
 
   @override
   void dispose() {
@@ -146,8 +188,12 @@ class _GithubImportViewState extends State<_GithubImportView> {
     _rateRetryTimer?.cancel();
     widget.importer.cancel();
     _repositoryController.dispose();
+    _branchController
+      ..removeListener(_onBranchTextChanged)
+      ..dispose();
     _refController.dispose();
     _repositoryFocus.dispose();
+    _branchFocus.dispose();
     _refFocus.dispose();
     _failureFocus.dispose();
     _scrollController.dispose();
@@ -169,6 +215,154 @@ class _GithubImportViewState extends State<_GithubImportView> {
     }
   }
 
+  void _clearSnapshotValues() {
+    _repository = null;
+    _directories.clear();
+    _selectedPaths.clear();
+    _review = null;
+    _result = null;
+    _progress = null;
+    _step = _SurfaceStep.browse;
+  }
+
+  void _setBranchText(String value) {
+    _updatingBranchController = true;
+    _branchController.text = value;
+    _updatingBranchController = false;
+  }
+
+  void _onBranchTextChanged() {
+    if (_updatingBranchController || !mounted) return;
+    final String? selected = _selectedBranch;
+    if (selected == null || _branchController.text == selected) return;
+    _epoch += 1;
+    _networkCancellation?.cancel();
+    setState(() {
+      _selectedBranch = null;
+      _clearSnapshotValues();
+      _failure = null;
+      _retry = null;
+      if (_rateRetryReady) _rateRetryFailure = null;
+      _cancelled = false;
+    });
+  }
+
+  void _repositoryChanged() {
+    _epoch += 1;
+    _networkCancellation?.cancel();
+    _setBranchText('');
+    setState(() {
+      _busy = false;
+      _networkPhase = null;
+      _branchCatalog = null;
+      _selectedBranch = null;
+      _clearSnapshotValues();
+      _failure = null;
+      _retry = null;
+      if (_rateRetryReady) _rateRetryFailure = null;
+      _cancelled = false;
+    });
+  }
+
+  void _changeRefMode(bool manual) {
+    final _RefMode next = manual ? _RefMode.manual : _RefMode.branch;
+    if (_refMode == next) return;
+    _epoch += 1;
+    _networkCancellation?.cancel();
+    setState(() {
+      _refMode = next;
+      if (_isLoadingBranches) {
+        _busy = false;
+        _networkPhase = null;
+        _branchCatalog = null;
+        _selectedBranch = null;
+        _setBranchText('');
+      }
+      _clearSnapshotValues();
+      _failure = null;
+      _retry = null;
+      if (_rateRetryReady) _rateRetryFailure = null;
+      _cancelled = false;
+    });
+  }
+
+  Future<void> _loadBranches() async {
+    if (_busy || _rateRetryBlocked || _refMode != _RefMode.branch) return;
+
+    late final RepositoryLocator locator;
+    try {
+      locator = RepositoryLocator.parse(_repositoryController.text);
+    } on GithubFailure catch (failure) {
+      _showFailure(failure, focus: _repositoryFocus);
+      return;
+    }
+
+    final int epoch = ++_epoch;
+    final GithubCancellation cancellation = _beginNetworkOperation();
+    _setBranchText('');
+    setState(() {
+      _busy = true;
+      _networkPhase = _NetworkPhase.loadingBranches;
+      _branchCatalog = null;
+      _selectedBranch = null;
+      _clearSnapshotValues();
+      _failure = null;
+      _rateRetryFailure = null;
+      _retry = null;
+      _cancelled = false;
+    });
+
+    try {
+      final GithubBranchCatalog catalog = await widget.api.listBranches(
+        locator,
+        cancellation: cancellation,
+      );
+      if (!_isCurrent(epoch) || catalog.locator != locator) return;
+      final String? selected = catalog.branches.isEmpty
+          ? null
+          : catalog.defaultBranch;
+      _setBranchText(selected ?? '');
+      setState(() {
+        _branchCatalog = catalog;
+        _selectedBranch = selected;
+        _busy = false;
+        _networkPhase = null;
+      });
+    } on GithubFailure catch (failure) {
+      if (!_isCurrent(epoch)) return;
+      _showFailure(
+        failure,
+        retry: _loadBranches,
+        focus: failure.kind == GithubFailureKind.invalidInput
+            ? _repositoryFocus
+            : null,
+      );
+    } catch (_) {
+      if (!_isCurrent(epoch)) return;
+      _showFailure(
+        const GithubFailure(GithubFailureKind.malformedResponse),
+        retry: _loadBranches,
+      );
+    } finally {
+      _finishNetworkOperation(cancellation);
+    }
+  }
+
+  void _selectBranch(String? branch) {
+    if (branch == null || branch == _selectedBranch) return;
+    _epoch += 1;
+    _networkCancellation?.cancel();
+    _setBranchText(branch);
+    setState(() {
+      _selectedBranch = branch;
+      _clearSnapshotValues();
+      _failure = null;
+      _retry = null;
+      if (_rateRetryReady) _rateRetryFailure = null;
+      _cancelled = false;
+    });
+  }
+
   Future<void> _browseRepository() async {
     if (_busy || _rateRetryBlocked) return;
 
@@ -178,6 +372,21 @@ class _GithubImportViewState extends State<_GithubImportView> {
     } on GithubFailure catch (failure) {
       _showFailure(failure, focus: _repositoryFocus);
       return;
+    }
+
+    final String requestedRef;
+    if (_refMode == _RefMode.branch) {
+      final GithubBranchCatalog? catalog = _branchCatalog;
+      final String? branch = _selectedBranch;
+      if (catalog == null ||
+          catalog.locator != locator ||
+          branch == null ||
+          _branchController.text != branch) {
+        return;
+      }
+      requestedRef = branch;
+    } else {
+      requestedRef = _refController.text.trim();
     }
 
     final int epoch = ++_epoch;
@@ -202,7 +411,7 @@ class _GithubImportViewState extends State<_GithubImportView> {
     try {
       final PinnedRepository repository = await widget.api.resolve(
         locator,
-        ref: _refController.text.trim(),
+        ref: requestedRef,
         cancellation: cancellation,
       );
       resolvedRepository = repository;
@@ -233,7 +442,9 @@ class _GithubImportViewState extends State<_GithubImportView> {
         retry: resolvedRepository == null
             ? _browseRepository
             : () => _retryRootDirectory(resolvedRepository!),
-        focus: failure.kind == GithubFailureKind.invalidInput
+        focus:
+            failure.kind == GithubFailureKind.invalidInput &&
+                _refMode == _RefMode.manual
             ? _refFocus
             : null,
       );
@@ -755,6 +966,102 @@ class _GithubImportViewState extends State<_GithubImportView> {
     };
   }
 
+  Widget _buildRefControls(AppLocalizations l10n) {
+    final GithubBranchCatalog? catalog = _branchCatalog;
+    final bool refControlEnabled = !_busy && !_rateRetryBlocked;
+    final Widget selector;
+    if (_refMode == _RefMode.manual) {
+      selector = TextField(
+        key: kGithubRefFieldKey,
+        controller: _refController,
+        focusNode: _refFocus,
+        enabled: !_busy,
+        textInputAction: TextInputAction.done,
+        decoration: InputDecoration(
+          labelText: l10n.githubImportRefLabel,
+          hintText: l10n.githubImportRefHint,
+          border: const OutlineInputBorder(),
+        ),
+        onChanged: (_) => _invalidateSnapshot(),
+        onSubmitted: (_) => unawaited(_browseRepository()),
+      );
+    } else if (catalog == null) {
+      selector = Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          OutlinedButton.icon(
+            key: kGithubLoadBranchesButtonKey,
+            onPressed: refControlEnabled ? _loadBranches : null,
+            icon: const Icon(Icons.account_tree_outlined),
+            label: Text(l10n.githubImportLoadBranches),
+          ),
+          if (!_isLoadingBranches) ...<Widget>[
+            const SizedBox(height: 6),
+            Text(l10n.githubImportBranchesNotLoaded),
+          ],
+        ],
+      );
+    } else if (catalog.branches.isEmpty) {
+      selector = Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Expanded(child: Text(l10n.githubImportNoBranches)),
+          IconButton.filledTonal(
+            key: kGithubLoadBranchesButtonKey,
+            tooltip: l10n.githubImportRefreshBranches,
+            onPressed: refControlEnabled ? _loadBranches : null,
+            icon: const Icon(Icons.refresh),
+          ),
+        ],
+      );
+    } else {
+      selector = Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Expanded(
+                child: DropdownMenu<String>(
+                  key: kGithubBranchDropdownKey,
+                  controller: _branchController,
+                  focusNode: _branchFocus,
+                  enabled: refControlEnabled,
+                  enableFilter: true,
+                  enableSearch: true,
+                  requestFocusOnTap: true,
+                  expandedInsets: EdgeInsets.zero,
+                  menuHeight: 320,
+                  label: Text(l10n.githubImportBranchLabel),
+                  dropdownMenuEntries: <DropdownMenuEntry<String>>[
+                    for (final String branch in catalog.branches)
+                      DropdownMenuEntry<String>(
+                        value: branch,
+                        label: branch,
+                        labelWidget: branch == catalog.defaultBranch
+                            ? Text(l10n.githubImportDefaultBranch(branch))
+                            : null,
+                      ),
+                  ],
+                  onSelected: _selectBranch,
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton.filledTonal(
+                key: kGithubLoadBranchesButtonKey,
+                tooltip: l10n.githubImportRefreshBranches,
+                onPressed: refControlEnabled ? _loadBranches : null,
+                icon: const Icon(Icons.refresh),
+              ),
+            ],
+          ),
+        ],
+      );
+    }
+
+    return selector;
+  }
+
   Widget _buildBrowse(AppLocalizations l10n) {
     final PinnedRepository? repository = _repository;
     final GithubDirectory? directory = _directory;
@@ -765,7 +1072,7 @@ class _GithubImportViewState extends State<_GithubImportView> {
           key: kGithubRepositoryFieldKey,
           controller: _repositoryController,
           focusNode: _repositoryFocus,
-          enabled: !_busy,
+          enabled: !_busy || _isLoadingBranches,
           keyboardType: TextInputType.url,
           textInputAction: TextInputAction.next,
           decoration: InputDecoration(
@@ -776,33 +1083,51 @@ class _GithubImportViewState extends State<_GithubImportView> {
                 : null,
             border: const OutlineInputBorder(),
           ),
-          onChanged: (_) => _invalidateSnapshot(),
-          onSubmitted: (_) => _refFocus.requestFocus(),
+          onChanged: (_) => _repositoryChanged(),
+          onSubmitted: (_) {
+            if (_refMode == _RefMode.manual) {
+              _refFocus.requestFocus();
+            } else if (_branchCatalog == null) {
+              unawaited(_loadBranches());
+            } else {
+              _branchFocus.requestFocus();
+            }
+          },
         ),
         const SizedBox(height: 12),
-        TextField(
-          key: kGithubRefFieldKey,
-          controller: _refController,
-          focusNode: _refFocus,
-          enabled: !_busy,
-          textInputAction: TextInputAction.done,
-          decoration: InputDecoration(
-            labelText: l10n.githubImportRefLabel,
-            hintText: l10n.githubImportRefHint,
-            border: const OutlineInputBorder(),
-          ),
-          onChanged: (_) => _invalidateSnapshot(),
-          onSubmitted: (_) => unawaited(_browseRepository()),
-        ),
+        _buildRefControls(l10n),
         const SizedBox(height: 12),
-        Align(
-          alignment: AlignmentDirectional.centerEnd,
-          child: FilledButton.icon(
-            key: kGithubBrowseButtonKey,
-            onPressed: _busy || _rateRetryBlocked ? null : _browseRepository,
-            icon: const Icon(Icons.travel_explore_outlined),
-            label: Text(l10n.githubImportBrowse),
-          ),
+        Wrap(
+          alignment: WrapAlignment.end,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 8,
+          runSpacing: 8,
+          children: <Widget>[
+            TextButton.icon(
+              key: kGithubManualRefToggleKey,
+              onPressed: !_busy || _isLoadingBranches
+                  ? () => _changeRefMode(_refMode != _RefMode.manual)
+                  : null,
+              icon: Icon(
+                _refMode == _RefMode.manual
+                    ? Icons.account_tree_outlined
+                    : Icons.edit_outlined,
+              ),
+              label: Text(
+                _refMode == _RefMode.manual
+                    ? l10n.githubImportChooseBranch
+                    : l10n.githubImportManualRef,
+              ),
+            ),
+            FilledButton.icon(
+              key: kGithubBrowseButtonKey,
+              onPressed: _busy || _rateRetryBlocked || !_canBrowseRef
+                  ? null
+                  : _browseRepository,
+              icon: const Icon(Icons.travel_explore_outlined),
+              label: Text(l10n.githubImportBrowse),
+            ),
+          ],
         ),
         const SizedBox(height: 16),
         Text(l10n.githubImportDestination(widget.cwd)),
@@ -1008,6 +1333,7 @@ class _GithubImportViewState extends State<_GithubImportView> {
   }
 
   String _networkPhaseMessage(AppLocalizations l10n) => switch (_networkPhase) {
+    _NetworkPhase.loadingBranches => l10n.githubImportLoadingBranches,
     _NetworkPhase.resolving => l10n.githubImportResolving,
     _NetworkPhase.loadingDirectory => l10n.githubImportLoadingFolder,
     _NetworkPhase.checkingBoardTargets => l10n.githubImportCheckingBoardTargets,
@@ -1260,6 +1586,7 @@ String _failureMessage(
           : _rateLimitMessage(l10n, failure),
     GithubFailureKind.server => l10n.githubImportErrorServer,
     GithubFailureKind.malformedResponse => l10n.githubImportErrorMalformed,
+    GithubFailureKind.tooManyBranches => l10n.githubImportErrorTooManyBranches,
     GithubFailureKind.invalidTarget ||
     GithubFailureKind.duplicateTarget ||
     GithubFailureKind.pathTooLong ||

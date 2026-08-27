@@ -286,7 +286,10 @@ void main() {
         operations.add('http:$path');
 
         if (path == '/repos/PyBLE-dev/integration-fixture') {
-          return _jsonResponse(<String, Object?>{'default_branch': 'moving'});
+          return _jsonResponse(<String, Object?>{
+            'id': 1345960947,
+            'default_branch': 'moving',
+          });
         }
         if (path == '/repos/PyBLE-dev/integration-fixture/branches') {
           return _jsonResponse(<Object?>[

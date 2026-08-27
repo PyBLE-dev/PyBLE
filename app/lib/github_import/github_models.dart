@@ -121,6 +121,19 @@ final class PinnedRepository {
   final String rootTreeSha;
 }
 
+/// One complete, bounded branch catalog for a public repository.
+final class GithubBranchCatalog {
+  GithubBranchCatalog({
+    required this.locator,
+    required this.defaultBranch,
+    required List<String> branches,
+  }) : branches = List<String>.unmodifiable(branches);
+
+  final RepositoryLocator locator;
+  final String defaultBranch;
+  final List<String> branches;
+}
+
 enum GithubEntryKind { regularFile, directory, ineligible }
 
 /// A direct child returned by one non-recursive Git tree request.
@@ -166,6 +179,7 @@ enum GithubFailureKind {
   rateLimited,
   server,
   malformedResponse,
+  tooManyBranches,
   invalidTarget,
   duplicateTarget,
   pathTooLong,
@@ -221,6 +235,11 @@ final class GithubFailure implements Exception {
 
 /// Injected, board-independent seam for immutable public repository reads.
 abstract interface class GithubApi {
+  Future<GithubBranchCatalog> listBranches(
+    RepositoryLocator locator, {
+    GithubCancellation? cancellation,
+  });
+
   Future<PinnedRepository> resolve(
     RepositoryLocator locator, {
     String ref = '',

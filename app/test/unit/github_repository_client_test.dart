@@ -64,6 +64,10 @@ String _branchesLink(
     '<https://api.github.com/repositories/$repositoryId/branches'
     '?per_page=100&page=$page>; rel="$relation"';
 
+String _locatorBranchesLink(int page) =>
+    '<https://api.github.com/repos/PyBLE-dev/examples/branches'
+    '?per_page=100&page=$page>; rel="next"';
+
 Uint8List _paddedJsonBytes(Object? value, int byteLength) {
   final List<int> encoded = utf8.encode(jsonEncode(value));
   if (encoded.length > byteLength) {
@@ -319,6 +323,39 @@ void main() {
       },
     );
 
+    test('requires a positive bounded repository id for discovery', () async {
+      const List<Object?> invalidIds = <Object?>[
+        null,
+        0,
+        -1,
+        '1345960947',
+        9007199254740992,
+      ];
+
+      for (final Object? invalidId in invalidIds) {
+        int requestCount = 0;
+        final GithubApi api = GithubRepositoryClient(
+          httpClient: MockClient((http.Request request) async {
+            requestCount += 1;
+            return http.Response(
+              jsonEncode(<String, Object?>{
+                'id': invalidId,
+                'default_branch': 'main',
+              }),
+              200,
+            );
+          }),
+        );
+
+        await expectLater(
+          api.listBranches(_locator()),
+          throwsA(_githubFailure(GithubFailureKind.malformedResponse)),
+          reason: 'repository id: $invalidId',
+        );
+        expect(requestCount, 1, reason: 'repository id: $invalidId');
+      }
+    });
+
     test(
       'validates Link pagination and sorts a complete multi-page catalog',
       () async {
@@ -370,6 +407,31 @@ void main() {
         ]);
       },
     );
+
+    test('accepts the exact locator-derived pagination path', () async {
+      final List<int> requestedPages = <int>[];
+      final GithubApi api = GithubRepositoryClient(
+        httpClient: MockClient((http.Request request) async {
+          if (request.url.pathSegments.last != 'branches') {
+            return http.Response(jsonEncode(_repositoryMetadata('main')), 200);
+          }
+          final int page = int.parse(request.url.queryParameters['page']!);
+          requestedPages.add(page);
+          return http.Response(
+            jsonEncode(<Object?>[_branch(page == 1 ? 'main' : 'release/v1')]),
+            200,
+            headers: page == 1
+                ? <String, String>{'link': _locatorBranchesLink(2)}
+                : const <String, String>{},
+          );
+        }),
+      );
+
+      final GithubBranchCatalog catalog = await api.listBranches(_locator());
+
+      expect(requestedPages, <int>[1, 2]);
+      expect(catalog.branches, <String>['main', 'release/v1']);
+    });
 
     test(
       'rejects a wrong-host or skipped-page next Link without following it',

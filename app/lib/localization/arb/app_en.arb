@@ -1881,6 +1881,45 @@
   "@githubImportRefHint": {
     "description": "Hint explaining the blank Git ref behavior."
   },
+  "githubImportBranchLabel": "Branch",
+  "@githubImportBranchLabel": {
+    "description": "Label for the searchable public-repository branch chooser."
+  },
+  "githubImportDefaultBranch": "{branch} (default)",
+  "@githubImportDefaultBranch": {
+    "description": "Branch chooser label marking the repository-reported default. The branch name is an opaque technical Git ref and remains verbatim.",
+    "placeholders": {
+      "branch": {"type": "String", "example": "main"}
+    }
+  },
+  "githubImportLoadBranches": "Load branches",
+  "@githubImportLoadBranches": {
+    "description": "Action that retrieves all bounded public branches after the repository URL is edited."
+  },
+  "githubImportRefreshBranches": "Refresh branches",
+  "@githubImportRefreshBranches": {
+    "description": "Action that discards and reloads the current public repository branch catalog."
+  },
+  "githubImportLoadingBranches": "Loading repository branches…",
+  "@githubImportLoadingBranches": {
+    "description": "Visible and semantic state while the bounded public branch catalog loads."
+  },
+  "githubImportBranchesNotLoaded": "Load branches for this repository before browsing.",
+  "@githubImportBranchesNotLoaded": {
+    "description": "Guidance shown after an edited repository has no current branch catalog."
+  },
+  "githubImportNoBranches": "This repository has no branches to browse.",
+  "@githubImportNoBranches": {
+    "description": "Empty state for a public repository whose complete branch catalog is empty."
+  },
+  "githubImportManualRef": "Use a tag or commit",
+  "@githubImportManualRef": {
+    "description": "Advanced switch that replaces the novice branch chooser with the existing manual Git ref field."
+  },
+  "githubImportChooseBranch": "Choose a repository branch",
+  "@githubImportChooseBranch": {
+    "description": "Action that returns from manual Git ref entry to the novice branch chooser."
+  },
   "githubImportBrowse": "Browse repository",
   "@githubImportBrowse": {
     "description": "Action that resolves a repository ref and opens its pinned root tree."
@@ -2071,6 +2110,10 @@
   "githubImportErrorMalformed": "GitHub returned an unexpected response, so nothing was written.",
   "@githubImportErrorMalformed": {
     "description": "Fail-closed malformed or redirected response message."
+  },
+  "githubImportErrorTooManyBranches": "This repository has more than 512 branches, so PyBLE cannot show a complete branch list. Use the manual ref option instead.",
+  "@githubImportErrorTooManyBranches": {
+    "description": "Failure message when complete branch discovery exceeds its explicit resource ceiling."
   },
   "githubImportErrorUnsafe": "One selected file or board target is unsafe for this import.",
   "@githubImportErrorUnsafe": {
