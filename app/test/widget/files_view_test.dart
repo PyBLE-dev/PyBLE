@@ -206,57 +206,60 @@ void main() {
       'compact toolbar keeps Select and GitHub direct on one action row',
       (WidgetTester tester) async {
         final semantics = tester.ensureSemantics();
-        final RecordingConnection rec = RecordingConnection(
-          initial: ConnState.ready,
-        );
-        addTearDown(rec.dispose);
-        await rec.putFile('/alpha.py', b('print("alpha")\n'));
-        await pumpSurface(
-          tester,
-          const FilesView(),
-          connection: rec,
-          size: const Size(252, 568),
-        );
-        await tester.pumpAndSettle();
-        final AppLocalizations l10n = l10nOf(tester);
+        try {
+          final RecordingConnection rec = RecordingConnection(
+            initial: ConnState.ready,
+          );
+          addTearDown(rec.dispose);
+          await rec.putFile('/alpha.py', b('print("alpha")\n'));
+          await pumpSurface(
+            tester,
+            const FilesView(),
+            connection: rec,
+            size: const Size(252, 568),
+          );
+          await tester.pumpAndSettle();
+          final AppLocalizations l10n = l10nOf(tester);
 
-        final Finder select = find.byTooltip(l10n.filesActionSelect);
-        final Finder github = find.byTooltip(l10n.githubImportAction);
-        final Finder overflow = find.byKey(kFilesActionsOverflowButtonKey);
-        expect(find.byKey(kFilesNormalActionsRowKey), findsOneWidget);
-        expect(select, findsOneWidget);
-        expect(github, findsOneWidget);
-        expect(overflow, findsOneWidget);
-        expect(find.byTooltip(l10n.filesActionRefresh), findsNothing);
-        expect(find.byTooltip(l10n.filesEmptyCta), findsNothing);
-        expect(find.byTooltip(l10n.filesActionNewFolder), findsNothing);
-        expect(find.byTooltip(l10n.filesActionUpload), findsNothing);
-        expectOneHorizontalLine(tester, <Finder>[select, github, overflow]);
-        expect(
-          tester.getSize(find.byKey(kFilesNormalActionsRowKey)).height,
-          48,
-        );
-        expectTouchTarget(tester, select, 'compact Select');
-        expectTouchTarget(tester, github, 'compact GitHub import');
-        expectTouchTarget(tester, overflow, 'compact overflow');
-        final Finder overflowButton = find.descendant(
-          of: overflow,
-          matching: find.byType(IconButton),
-        );
-        expect(overflowButton, findsOneWidget);
-        expect(
-          tester.getSemantics(overflowButton),
-          isSemantics(
-            tooltip: l10n.filesMoreActions,
-            isButton: true,
-            hasEnabledState: true,
-            isEnabled: true,
-            isFocusable: true,
-            hasTapAction: true,
-          ),
-        );
-        expect(tester.takeException(), isNull);
-        semantics.dispose();
+          final Finder select = find.byTooltip(l10n.filesActionSelect);
+          final Finder github = find.byTooltip(l10n.githubImportAction);
+          final Finder overflow = find.byKey(kFilesActionsOverflowButtonKey);
+          expect(find.byKey(kFilesNormalActionsRowKey), findsOneWidget);
+          expect(select, findsOneWidget);
+          expect(github, findsOneWidget);
+          expect(overflow, findsOneWidget);
+          expect(find.byTooltip(l10n.filesActionRefresh), findsNothing);
+          expect(find.byTooltip(l10n.filesEmptyCta), findsNothing);
+          expect(find.byTooltip(l10n.filesActionNewFolder), findsNothing);
+          expect(find.byTooltip(l10n.filesActionUpload), findsNothing);
+          expectOneHorizontalLine(tester, <Finder>[select, github, overflow]);
+          expect(
+            tester.getSize(find.byKey(kFilesNormalActionsRowKey)).height,
+            48,
+          );
+          expectTouchTarget(tester, select, 'compact Select');
+          expectTouchTarget(tester, github, 'compact GitHub import');
+          expectTouchTarget(tester, overflow, 'compact overflow');
+          final Finder overflowButton = find.descendant(
+            of: overflow,
+            matching: find.byType(IconButton),
+          );
+          expect(overflowButton, findsOneWidget);
+          expect(
+            tester.getSemantics(overflowButton),
+            isSemantics(
+              tooltip: l10n.filesMoreActions,
+              isButton: true,
+              hasEnabledState: true,
+              isEnabled: true,
+              isFocusable: true,
+              hasTapAction: true,
+            ),
+          );
+          expect(tester.takeException(), isNull);
+        } finally {
+          semantics.dispose();
+        }
       },
     );
 
@@ -319,7 +322,12 @@ void main() {
 
         rec.holdNextList();
         await tester.sendKeyEvent(LogicalKeyboardKey.enter);
-        await rec.listStarted.future;
+        await tester.pump();
+        expect(
+          rec.listStarted.isCompleted,
+          isTrue,
+          reason: 'keyboard activation routes Refresh immediately',
+        );
         rec.releaseList.complete();
         await tester.pumpAndSettle();
         expect(find.byKey(kFilesOverflowRefreshKey), findsNothing);
@@ -366,7 +374,8 @@ void main() {
 
         rec.holdNextList();
         await tester.tap(find.byKey(kFilesOverflowRefreshKey));
-        await rec.listStarted.future;
+        await tester.pump();
+        expect(rec.listStarted.isCompleted, isTrue);
         expect(find.byKey(kFilesActionsOverflowButtonKey), findsOneWidget);
         rec.releaseList.complete();
         await tester.pumpAndSettle();
@@ -439,6 +448,40 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
+    for (final (double width, bool compact) in <(double, bool)>[
+      (295, true),
+      (296, false),
+    ]) {
+      testWidgets(
+        '${width.toInt()} dp host ${compact ? 'uses overflow' : 'fits six direct actions'} at the exact cutoff',
+        (WidgetTester tester) async {
+          final RecordingConnection rec = RecordingConnection(
+            initial: ConnState.ready,
+          );
+          addTearDown(rec.dispose);
+          await rec.putFile('/alpha.py', b('a\n'));
+          await pumpSurface(
+            tester,
+            const FilesView(),
+            connection: rec,
+            size: Size(width, 568),
+          );
+          await tester.pumpAndSettle();
+          final AppLocalizations l10n = l10nOf(tester);
+
+          expect(
+            find.byKey(kFilesActionsOverflowButtonKey),
+            compact ? findsOneWidget : findsNothing,
+          );
+          expect(
+            find.byTooltip(l10n.filesActionRefresh),
+            compact ? findsNothing : findsOneWidget,
+          );
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+
     testWidgets('compact overflow remains usable at 2x text', (
       WidgetTester tester,
     ) async {
@@ -465,6 +508,11 @@ void main() {
       expect(find.text(l10n.filesEmptyCta), findsOneWidget);
       expect(find.text(l10n.filesActionNewFolder), findsOneWidget);
       expect(find.text(l10n.filesActionUpload), findsOneWidget);
+      final Finder upload = find.byKey(kFilesOverflowUploadKey);
+      await tester.ensureVisible(upload);
+      await tester.pumpAndSettle();
+      expect(upload.hitTestable(), findsOneWidget);
+      expectTouchTarget(tester, upload, '2x Upload menu item');
       expect(tester.takeException(), isNull);
     });
 
