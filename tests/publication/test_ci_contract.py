@@ -349,7 +349,12 @@ class CiContractTest(unittest.TestCase):
             "tester.binding.focusedEditable = null;",
             "SystemChannels.textInput.invokeMethod<void>('TextInput.hide');",
             "await tester.ensureVisible(finder);",
-            "expect(finder.hitTestable(), findsOneWidget);",
+            "await _pumpUntil(",
+            "() => finder.hitTestable().evaluate().length == 1,",
+            (
+                "reason: 'the action did not become hit-testable after the "
+                "Android IME hide',"
+            ),
             "await tester.tap(finder);",
         )
         preview_positions = []
