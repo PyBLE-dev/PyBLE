@@ -51,7 +51,7 @@ flutter test --tags golden
 ```
 
 Install a standalone development build on a connected device (the current
-source build is `0.1.0+4`):
+source build is `0.2.0+5`):
 
 ```sh
 flutter run --release -d <device-id>

@@ -50,6 +50,9 @@ TestFlight handoff.
 - Advanced the independently versioned app source build from `0.1.0+3` to
   `0.1.0+4`, distinguishing this numbered-editor development build from build
   3.
+- Started the compatible app `0.2.0` beta train at globally monotonic build
+  `5`, synchronizing package metadata, PBLE/1 HELLO, and the public GitHub
+  request identity without designating a qualified store release.
 - Added the connected board's PBLE/1 board ID and PyBLE agent firmware version
   to Board info and retained both in the ready/running status pill, with
   localized missing-value handling, full accessibility context, and
