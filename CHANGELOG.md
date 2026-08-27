@@ -36,6 +36,10 @@ its annotated tag rather than from the newer branch tip.
   identities, incomplete board listings, reconnect/session races, response
   resource exhaustion, slow-trickle requests, and public API retry deadlines,
   with adaptive, keyboard-accessible, localized, and golden-tested states.
+- Added session-bound multi-selection for eligible regular files shown in one
+  board folder, with protected-path exclusion, exact confirmation, sequential
+  fail-fast deletion, one reconciliation listing, and honest partial results.
+  Folders retain their separate one-at-a-time empty-directory deletion.
 - Advanced the independently versioned app source build from `0.1.0+2` to
   `0.1.0+3`, distinguishing this development build from TestFlight build 2.
 - Advanced the independently versioned app source build from `0.1.0+3` to

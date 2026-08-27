@@ -37,8 +37,10 @@ from PyBLE's Material design system and PBLE/1 contract.
    tap or keyboard activation toggles a checkbox instead of opening the file.
    The normal navigation, create, transfer, import, rename, delete, and
    Open-as-Blocks affordances are replaced by a contextual selected-count bar.
-   Cancel, Escape, system Back, navigation, a replaced listing, Files disposal,
-   disconnect, or connection-session replacement clears the selection.
+   Cancel, Escape, system Back, navigation that hides the Files presentation, a
+   replaced listing, Files disposal, disconnect, or connection-session
+   replacement clears the selection. Changing Editor/Console centre focus while
+   the landscape Files sidebar remains visible is not navigation away from Files.
 
 3. **Select all means all eligible files currently shown.** It never claims to
    include entries omitted by a truncated board listing, folders, locked
@@ -63,8 +65,11 @@ from PyBLE's Material design system and PBLE/1 contract.
 6. **The controller validates before the first mutation.** It rejects an empty
    or unknown selection, duplicate or unsafe leaf, directory, reserved path,
    path outside the captured directory, and path over PBLE/1's 128-byte UTF-8
-   ceiling without sending `FILE_DELETE`. It verifies the captured directory
-   and session before the first command and again before every later command.
+   ceiling without sending `FILE_DELETE`. Once a valid ordered batch exists, a
+   local busy or stale-session refusal reports every path as unattempted; an
+   empty or malformed request has no accepted path list. It verifies the
+   captured directory and session before the first command and again before
+   every later command.
 
 7. **Deletion is sequential, fail-fast, and non-atomic.** The controller awaits
    one ordinary `Connection.delete(path)` before issuing the next. It stops on
@@ -76,9 +81,12 @@ from PyBLE's Material design system and PBLE/1 contract.
 8. **The result reports reality.** A result records exact succeeded paths, the
    failed/current path when present, exact unattempted paths, and the neutral
    localized failure kind. Complete success exits selection mode. A failed or
-   partial result removes succeeded names from the selection, retains the
-   unresolved names, and announces how many were deleted and remain. It never
-   calls the batch transactional.
+   partial result removes succeeded names from the selection, retains unresolved
+   names that still exist in the reconciled listing, and announces how many were
+   deleted and remain selected. A failed path absent from reconciliation remains
+   recorded in the result but is not kept as a non-rendered selection ghost. A
+   later selection edit dismisses rather than rewrites that terminal accounting.
+   It never calls the batch transactional.
 
 9. **Files refreshes once, and never refreshes a successor board.** After any
    `FILE_DELETE` was attempted—including a timeout whose board-side outcome may
