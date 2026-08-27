@@ -12,6 +12,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
+import 'package:pyble/app/app_info.dart';
 import 'package:pyble/github_import/github_import.dart';
 import 'package:pyble/pble/pble.dart';
 
@@ -136,7 +137,7 @@ void _expectUnauthenticatedApiRequest(
   expect(request.maxRedirects, 0);
   expect(request.headers['Accept'], 'application/vnd.github+json');
   expect(request.headers['X-GitHub-Api-Version'], '2026-03-10');
-  expect(request.headers['User-Agent'], startsWith('PyBLE/'));
+  expect(request.headers['User-Agent'], '$kAppName/$kAppVersion');
   final Set<String> headerNames = request.headers.keys
       .map((String name) => name.toLowerCase())
       .toSet();
