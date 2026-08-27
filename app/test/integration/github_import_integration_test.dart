@@ -243,6 +243,7 @@ _prepareFixtureReview({
     api: api,
     connection: connection,
     capturedSessionStamp: connectionSessionStampOf(connection),
+    fsRoot: '/',
     cwd: '/',
     refreshFiles: refreshFiles,
   );
@@ -433,6 +434,7 @@ void main() {
           api: api,
           connection: connection,
           capturedSessionStamp: connectionSessionStampOf(connection),
+          fsRoot: '/',
           cwd: '/',
           refreshFiles: () async {
             refreshCount += 1;

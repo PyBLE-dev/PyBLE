@@ -113,12 +113,14 @@ final class GithubBoardImporter {
     required GithubApi api,
     required Connection connection,
     required Object capturedSessionStamp,
+    required String fsRoot,
     required String cwd,
     required Future<void> Function() refreshFiles,
   }) => GithubBoardImporter._(
     api,
     connection,
     capturedSessionStamp,
+    fsRoot,
     cwd,
     refreshFiles,
   );
@@ -127,6 +129,7 @@ final class GithubBoardImporter {
     this._api,
     this._connection,
     this._capturedSessionStamp,
+    this._fsRoot,
     this._cwd,
     this._refreshFiles,
   );
@@ -134,6 +137,7 @@ final class GithubBoardImporter {
   final GithubApi _api;
   final Connection _connection;
   final Object _capturedSessionStamp;
+  final String _fsRoot;
   final String _cwd;
   final Future<void> Function() _refreshFiles;
 
@@ -156,8 +160,12 @@ final class GithubBoardImporter {
     List<GithubEntry> selected,
   ) async {
     _requireUsableSession();
+    final String fsRoot = _canonicalCwd(_fsRoot);
     final String cwd = _canonicalCwd(_cwd);
-    final List<ImportTarget> targets = _deriveTargets(cwd, selected);
+    if (!_isAtOrBelowRoot(cwd, fsRoot)) {
+      throw GithubFailure(GithubFailureKind.invalidTarget, path: cwd);
+    }
+    final List<ImportTarget> targets = _deriveTargets(cwd, fsRoot, selected);
     final Map<String, _BoardConflictKind> conflicts = await _listConflicts(
       cwd,
       targets,
@@ -437,7 +445,11 @@ final class GithubBoardImporter {
     }
   }
 
-  List<ImportTarget> _deriveTargets(String cwd, List<GithubEntry> selected) {
+  List<ImportTarget> _deriveTargets(
+    String cwd,
+    String fsRoot,
+    List<GithubEntry> selected,
+  ) {
     if (selected.isEmpty) {
       throw GithubFailure(GithubFailureKind.invalidTarget);
     }
@@ -455,6 +467,12 @@ final class GithubBoardImporter {
       final String boardPath = cwd == '/' ? '/$name' : '$cwd/$name';
       if (utf8.encode(boardPath).length > _maxBoardPathBytes) {
         throw GithubFailure(GithubFailureKind.pathTooLong, path: boardPath);
+      }
+      if (cwd == fsRoot && _isProtectedRootName(name)) {
+        throw GithubFailure(
+          GithubFailureKind.protectedRootTarget,
+          path: boardPath,
+        );
       }
       if (!boardPaths.add(boardPath)) {
         throw GithubFailure(GithubFailureKind.duplicateTarget, path: boardPath);
@@ -531,6 +549,15 @@ final class GithubBoardImporter {
     }
     return cwd == '/' ? '/' : cwd;
   }
+
+  bool _isAtOrBelowRoot(String cwd, String fsRoot) =>
+      fsRoot == '/' || cwd == fsRoot || cwd.startsWith('$fsRoot/');
+
+  bool _isProtectedRootName(String name) =>
+      name.startsWith('pyble') ||
+      name.startsWith('pble') ||
+      name == '_boot.py' ||
+      name == 'boot.py';
 
   GithubFailure? _validateContent(ImportTarget target, Uint8List bytes) {
     if (bytes.length > _maxGithubImportFileBytes) {

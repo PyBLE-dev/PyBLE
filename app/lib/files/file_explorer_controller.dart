@@ -72,6 +72,8 @@ enum FileErrorKind {
 @immutable
 class FileExplorerState {
   const FileExplorerState({
+    required this.fsRoot,
+    required this.hasReportedFsRoot,
     required this.cwd,
     required this.entries,
     required this.loading,
@@ -80,6 +82,12 @@ class FileExplorerState {
     this.error,
     this.errorPath,
   });
+
+  /// The filesystem root reported by the connected board.
+  final String fsRoot;
+
+  /// Whether [fsRoot] came from the current board session's DEVICE_INFO.
+  final bool hasReportedFsRoot;
 
   /// The current directory being listed, rooted at `DeviceInfo.fsRoot`.
   final String cwd;
@@ -104,6 +112,8 @@ class FileExplorerState {
   final String? errorPath;
 
   FileExplorerState copyWith({
+    String? fsRoot,
+    bool? hasReportedFsRoot,
     String? cwd,
     List<RemoteEntry>? entries,
     bool? loading,
@@ -115,6 +125,8 @@ class FileExplorerState {
     bool clearError = false,
   }) {
     return FileExplorerState(
+      fsRoot: fsRoot ?? this.fsRoot,
+      hasReportedFsRoot: hasReportedFsRoot ?? this.hasReportedFsRoot,
       cwd: cwd ?? this.cwd,
       entries: entries ?? this.entries,
       loading: loading ?? this.loading,
@@ -162,6 +174,8 @@ class FileExplorerController extends Notifier<FileExplorerState> {
       scheduleMicrotask(_init);
     }
     return FileExplorerState(
+      fsRoot: '/',
+      hasReportedFsRoot: false,
       cwd: '/',
       entries: const <RemoteEntry>[],
       loading: _isAttached(connState.value),
@@ -184,6 +198,7 @@ class FileExplorerController extends Notifier<FileExplorerState> {
       state = state.copyWith(
         entries: <RemoteEntry>[],
         loading: false,
+        hasReportedFsRoot: false,
         clearProgress: true,
         clearError: true,
       );
@@ -194,10 +209,19 @@ class FileExplorerController extends Notifier<FileExplorerState> {
 
   /// Reads `fsRoot` from the board and lists the root directory.
   Future<void> _init() async {
+    state = state.copyWith(
+      loading: true,
+      hasReportedFsRoot: false,
+      clearError: true,
+    );
     try {
       final DeviceInfo info = await _conn.deviceInfo();
       _fsRoot = info.fsRoot;
-      state = state.copyWith(cwd: _fsRoot);
+      state = state.copyWith(
+        fsRoot: _fsRoot,
+        hasReportedFsRoot: true,
+        cwd: _fsRoot,
+      );
       await refresh();
     } on PbleException catch (e) {
       state = state.copyWith(

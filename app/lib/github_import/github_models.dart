@@ -181,6 +181,7 @@ enum GithubFailureKind {
   malformedResponse,
   tooManyBranches,
   invalidTarget,
+  protectedRootTarget,
   duplicateTarget,
   pathTooLong,
   blockingConflict,

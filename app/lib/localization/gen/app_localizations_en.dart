@@ -1433,6 +1433,11 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String githubImportRootDestinationWarning(String childPath) {
+    return 'The board root is selected. Some filenames—including names beginning with pyble or pble—are protected here. For examples, close Import, create and enter $childPath in Files, then reopen Import.';
+  }
+
+  @override
   String githubImportPinnedCommit(String sha) {
     return 'Pinned commit: $sha';
   }
@@ -1594,6 +1599,11 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String githubImportErrorUnsafePath(String path) {
     return 'The selected path $path is unsafe for this import.';
+  }
+
+  @override
+  String githubImportErrorProtectedRootTarget(String path, String childPath) {
+    return 'The board protects $path at its top level. Close Import, create and enter $childPath in Files, then reopen Import.';
   }
 
   @override
