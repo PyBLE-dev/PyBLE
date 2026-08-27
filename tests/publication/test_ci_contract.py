@@ -407,6 +407,35 @@ class CiContractTest(unittest.TestCase):
         self.assertLess(reveal_action, hit_test)
         self.assertLess(hit_test, tap_action)
 
+    def test_ios_distribution_validator_enforces_deployment_floor(self) -> None:
+        validator = (
+            REPO_ROOT / "tools" / "validate_ios_ipa.sh"
+        ).read_text(encoding="utf-8")
+
+        required_snippets = (
+            "readonly IOS_DEPLOYMENT_FLOOR='15.0'",
+            "version_at_least() {",
+            "plutil -extract MinimumOSVersion raw",
+            "plutil -extract CFBundleExecutable raw",
+            '"$VTOOL_PATH" -show-build "$APP_EXECUTABLE_PATH"',
+            "expected iOS deployment floor",
+            "compiled iOS minimum",
+        )
+        positions = []
+        for snippet in required_snippets:
+            self.assertIn(
+                snippet,
+                validator,
+                f"missing iOS deployment-floor validator contract: {snippet}",
+            )
+            positions.append(validator.index(snippet))
+
+        self.assertEqual(positions, sorted(positions))
+        self.assertLess(
+            validator.index("compiled iOS minimum"),
+            validator.index("codesign --verify --deep --strict"),
+        )
+
     def test_workflow_has_no_adjacent_duplicate_shell_key(self) -> None:
         workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(
             encoding="utf-8"
