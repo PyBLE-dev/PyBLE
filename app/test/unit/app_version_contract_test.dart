@@ -37,4 +37,25 @@ void main() {
       reason: 'PBLE/1 HELLO must match the package base version exactly',
     );
   });
+
+  test('production PBLE/1 HELLO consumes the shared app identity', () {
+    final String mainSource = File(
+      '${appPackageRoot().path}/lib/main.dart',
+    ).readAsStringSync();
+
+    expect(
+      mainSource,
+      matches(
+        RegExp(
+          r'PbleConnectionManager\.production\('
+          r'\s*appName:\s*kAppName,'
+          r'\s*appVersion:\s*kAppVersion,'
+          r'\s*\)',
+        ),
+      ),
+      reason:
+          'the production manager must not replace either shared constant '
+          'with an independently versioned literal',
+    );
+  });
 }

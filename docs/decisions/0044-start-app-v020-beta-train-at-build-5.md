@@ -8,13 +8,13 @@
 
 ## Context
 
-The installed app identity remains `0.1.0+4`, but build 4 is a retained
-TestFlight handoff bound to an earlier source commit. Since that handoff, the
-app source has gained a coherent set of compatible beta features: connected
-board identity, the numbered and adjustable rich editor, SHA-pinned GitHub
-import, the editable official examples-repository default with branch-only
-discovery, session-bound visible-file multi-delete, and a one-row responsive
-Files toolbar.
+Before this decision, the installed app identity was `0.1.0+4`; build 4 remains
+a retained TestFlight handoff bound to an earlier source commit. Since that
+handoff, the app source has gained a coherent set of compatible beta features:
+connected board identity, the numbered and adjustable rich editor, SHA-pinned
+GitHub import, the editable official examples-repository default with
+branch-only discovery, session-bound visible-file multi-delete, and a one-row
+responsive Files toolbar.
 
 Reinstalling a different source state under the same version and build works
 for local development, but it makes About, screenshots, HIL evidence, and
@@ -70,8 +70,8 @@ previously assigned a numbered milestone to the current Unreleased app work.
    moving branch tip.
 
 8. **Keep delivery test-first and local until accepted.** The synchronization
-   test lands red before the version implementation. The exact release build is
-   installed and physically reviewed on iPad before any pull request or push
+   test lands red before the version implementation. The exact candidate build
+   is installed and physically reviewed on iPad before any pull request or push
    for this combined feature branch.
 
 ## Consequences
