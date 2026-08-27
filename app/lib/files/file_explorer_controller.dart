@@ -19,7 +19,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart' show ValueListenable, immutable;
+import 'package:flutter/foundation.dart'
+    show ValueChanged, ValueListenable, immutable;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:pyble/app/providers.dart';
@@ -68,12 +69,136 @@ enum FileErrorKind {
   generic,
 }
 
+/// The terminal truth reported by one visible-file delete batch.
+enum FileDeleteBatchOutcome { complete, failed, partial }
+
+/// Item-level progress emitted immediately before each delete attempt.
+@immutable
+class FileDeleteBatchProgress {
+  const FileDeleteBatchProgress({
+    required this.completed,
+    required this.total,
+    required this.currentPath,
+  });
+
+  /// The number of paths already deleted successfully.
+  final int completed;
+
+  /// The number of unique selected paths in the displayed batch order.
+  final int total;
+
+  /// The absolute board path about to be attempted.
+  final String currentPath;
+}
+
+/// The immutable, non-transactional result of one delete batch.
+@immutable
+class FileDeleteBatchResult {
+  FileDeleteBatchResult({
+    required this.outcome,
+    required List<String> succeededPaths,
+    this.failedPath,
+    required List<String> unattemptedPaths,
+    this.failure,
+  }) : succeededPaths = List<String>.unmodifiable(succeededPaths),
+       unattemptedPaths = List<String>.unmodifiable(unattemptedPaths);
+
+  final FileDeleteBatchOutcome outcome;
+  final List<String> succeededPaths;
+  final String? failedPath;
+  final List<String> unattemptedPaths;
+  final FileErrorKind? failure;
+}
+
+/// Whether [name] is one editable direct child of [cwd] in [fsRoot].
+///
+/// This pure predicate mirrors the case-sensitive PBLE/1 workspace jail for
+/// Files presentation and batch preflight. It additionally rejects malformed
+/// direct leaves and paths beyond PBLE/1's 128-byte UTF-8 wire ceiling.
+bool isEditableBoardEntry({
+  required String fsRoot,
+  required String cwd,
+  required String name,
+}) => _boardEntryEditFailure(fsRoot: fsRoot, cwd: cwd, name: name) == null;
+
+FileErrorKind? _boardEntryEditFailure({
+  required String fsRoot,
+  required String cwd,
+  required String name,
+}) {
+  if (!_isCanonicalAbsoluteDirectory(fsRoot) ||
+      !_isCanonicalAbsoluteDirectory(cwd) ||
+      !_isWithinBoardRoot(fsRoot: fsRoot, path: cwd) ||
+      !_isSafeDirectLeaf(name)) {
+    return FileErrorKind.badRequest;
+  }
+
+  final String path = cwd == '/' ? '/$name' : '$cwd/$name';
+  if (utf8.encode(path).length > 128) return FileErrorKind.range;
+
+  final String relativeDirectory;
+  if (cwd == fsRoot) {
+    relativeDirectory = '';
+  } else if (fsRoot == '/') {
+    relativeDirectory = cwd.substring(1);
+  } else {
+    relativeDirectory = cwd.substring(fsRoot.length + 1);
+  }
+  final List<String> relativeComponents = <String>[
+    if (relativeDirectory.isNotEmpty) ...relativeDirectory.split('/'),
+    name,
+  ];
+  if (relativeComponents.any(
+    (String component) => component.endsWith('.pbltmp'),
+  )) {
+    return FileErrorKind.permission;
+  }
+
+  final String topLevel = relativeComponents.first;
+  if (topLevel.startsWith('pyble') ||
+      topLevel.startsWith('pble') ||
+      topLevel == 'boot.py' ||
+      topLevel == '_boot.py') {
+    return FileErrorKind.permission;
+  }
+  return null;
+}
+
+bool _isCanonicalAbsoluteDirectory(String path) {
+  if (path == '/') return true;
+  if (!path.startsWith('/') || path.endsWith('/') || path.contains(r'\')) {
+    return false;
+  }
+  if (_hasControlCharacter(path)) return false;
+  return path
+      .split('/')
+      .skip(1)
+      .every(
+        (String component) =>
+            component.isNotEmpty && component != '.' && component != '..',
+      );
+}
+
+bool _isWithinBoardRoot({required String fsRoot, required String path}) =>
+    fsRoot == '/' || path == fsRoot || path.startsWith('$fsRoot/');
+
+bool _isSafeDirectLeaf(String name) =>
+    name.isNotEmpty &&
+    name != '.' &&
+    name != '..' &&
+    !name.contains('/') &&
+    !name.contains(r'\') &&
+    !_hasControlCharacter(name);
+
+bool _hasControlCharacter(String value) =>
+    value.runes.any((int rune) => rune < 0x20 || rune == 0x7f);
+
 /// The immutable snapshot the [FileExplorerController] publishes.
 @immutable
 class FileExplorerState {
   const FileExplorerState({
-    required this.fsRoot,
-    required this.hasReportedFsRoot,
+    this.fsRoot = '/',
+    this.hasReportedFsRoot = false,
     required this.cwd,
     required this.entries,
     required this.loading,
@@ -155,6 +280,10 @@ class FileExplorerController extends Notifier<FileExplorerState> {
   /// responsive, but a rapid second activation cannot start a duplicate GET
   /// or a competing preview flow.
   bool _blocksDownloadInFlight = false;
+
+  /// PBLE/1 has one serialized mutation stream; a second local delete batch is
+  /// refused before it can send a board verb.
+  bool _deleteBatchInFlight = false;
 
   @override
   FileExplorerState build() {
@@ -386,6 +515,191 @@ class FileExplorerController extends Notifier<FileExplorerState> {
     }
   }
 
+  /// Deletes eligible shown regular files sequentially in displayed order.
+  ///
+  /// One invocation is bound to its captured folder and opaque connection
+  /// session. It stops on the first failure or context replacement, never
+  /// rolls back, and performs at most one same-session reconciliation listing.
+  Future<FileDeleteBatchResult> deleteMany(
+    Iterable<String> names, {
+    String? expectedCwd,
+    Object? expectedSessionStamp,
+    ValueChanged<FileDeleteBatchProgress>? onProgress,
+  }) async {
+    final Connection connection = _conn;
+    final Object capturedStamp = connectionSessionStampOf(connection);
+    final String capturedCwd = state.cwd;
+    final String capturedRoot = state.fsRoot;
+    final List<RemoteEntry> displayed = List<RemoteEntry>.of(state.entries);
+    final List<String> requestedNames = List<String>.of(names);
+
+    if (requestedNames.isEmpty) {
+      return _preflightDeleteFailure(FileErrorKind.badRequest);
+    }
+
+    final Set<String> selectedNames = <String>{};
+    for (final String name in requestedNames) {
+      if (!selectedNames.add(name)) {
+        return _preflightDeleteFailure(FileErrorKind.badRequest);
+      }
+    }
+
+    final Map<String, RemoteEntry> displayedByName = <String, RemoteEntry>{
+      for (final RemoteEntry entry in displayed) entry.name: entry,
+    };
+    for (final String name in selectedNames) {
+      final FileErrorKind? editFailure = _boardEntryEditFailure(
+        fsRoot: capturedRoot,
+        cwd: capturedCwd,
+        name: name,
+      );
+      if (editFailure != null) {
+        return _preflightDeleteFailure(editFailure);
+      }
+      final RemoteEntry? entry = displayedByName[name];
+      if (entry == null || entry.isDir) {
+        return _preflightDeleteFailure(FileErrorKind.badRequest);
+      }
+    }
+
+    final List<String> orderedPaths = <String>[
+      for (final RemoteEntry entry in displayed)
+        if (selectedNames.contains(entry.name)) _join(capturedCwd, entry.name),
+    ];
+    if (orderedPaths.length != selectedNames.length) {
+      return _preflightDeleteFailure(FileErrorKind.badRequest);
+    }
+
+    if (expectedCwd != null && expectedCwd != capturedCwd) {
+      return _preflightDeleteFailure(FileErrorKind.badRequest);
+    }
+    if (expectedSessionStamp != null &&
+        !identical(expectedSessionStamp, capturedStamp)) {
+      return _preflightDeleteFailure(
+        FileErrorKind.notConnected,
+        unattemptedPaths: orderedPaths,
+      );
+    }
+    if (_deleteBatchInFlight) {
+      return _preflightDeleteFailure(
+        FileErrorKind.busy,
+        unattemptedPaths: orderedPaths,
+      );
+    }
+    _deleteBatchInFlight = true;
+
+    try {
+      FileErrorKind? failure = _capturedContextFailure(
+        connection: connection,
+        stamp: capturedStamp,
+        cwd: capturedCwd,
+      );
+      if (failure != null) {
+        return _preflightDeleteFailure(failure, unattemptedPaths: orderedPaths);
+      }
+
+      state = state.copyWith(clearError: true);
+      final List<String> succeeded = <String>[];
+      String? failedPath;
+      int attempted = 0;
+      int currentIndex = 0;
+
+      for (; currentIndex < orderedPaths.length; currentIndex += 1) {
+        final String path = orderedPaths[currentIndex];
+        failure = _capturedContextFailure(
+          connection: connection,
+          stamp: capturedStamp,
+          cwd: capturedCwd,
+        );
+        if (failure != null) {
+          failedPath = path;
+          break;
+        }
+
+        onProgress?.call(
+          FileDeleteBatchProgress(
+            completed: succeeded.length,
+            total: orderedPaths.length,
+            currentPath: path,
+          ),
+        );
+        attempted += 1;
+        try {
+          await connection.delete(path);
+          succeeded.add(path);
+        } on PbleException catch (error) {
+          failure = _kindOf(error);
+          failedPath = path;
+          break;
+        }
+      }
+
+      PbleException? reconciliationError;
+      List<RemoteEntry>? reconciledEntries;
+      if (attempted > 0 &&
+          _isCapturedSessionCurrent(
+            connection: connection,
+            stamp: capturedStamp,
+          )) {
+        try {
+          reconciledEntries = await connection.listDir(capturedCwd);
+          reconciledEntries.sort(_entryOrder);
+        } on PbleException catch (error) {
+          reconciliationError = error;
+        }
+      }
+
+      final bool sameSession = _isCapturedSessionCurrent(
+        connection: connection,
+        stamp: capturedStamp,
+      );
+      if (sameSession) {
+        FileExplorerState next = state;
+        if (reconciledEntries != null && state.cwd == capturedCwd) {
+          next = next.copyWith(entries: reconciledEntries, loading: false);
+        }
+        if (failure != null && failedPath != null) {
+          next = next.copyWith(
+            clearProgress: true,
+            error: failure,
+            errorPath: failedPath,
+          );
+        } else if (reconciliationError != null) {
+          next = next.copyWith(
+            clearProgress: true,
+            error: _kindOf(reconciliationError),
+            errorPath: capturedCwd,
+          );
+        } else {
+          next = next.copyWith(clearProgress: true, clearError: true);
+        }
+        state = next;
+      }
+
+      if (failure == null) {
+        return FileDeleteBatchResult(
+          outcome: FileDeleteBatchOutcome.complete,
+          succeededPaths: succeeded,
+          unattemptedPaths: const <String>[],
+        );
+      }
+
+      return FileDeleteBatchResult(
+        outcome: succeeded.isEmpty
+            ? FileDeleteBatchOutcome.failed
+            : FileDeleteBatchOutcome.partial,
+        succeededPaths: succeeded,
+        failedPath: failedPath,
+        unattemptedPaths: failedPath == null
+            ? orderedPaths.sublist(currentIndex)
+            : orderedPaths.sublist(currentIndex + 1),
+        failure: failure,
+      );
+    } finally {
+      _deleteBatchInFlight = false;
+    }
+  }
+
   /// Renames the entry [from] to [to], both within the current directory.
   Future<void> rename(String from, String to) async {
     final String src = _join(state.cwd, from);
@@ -399,6 +713,36 @@ class FileExplorerController extends Notifier<FileExplorerState> {
   }
 
   // --- helpers ---------------------------------------------------------------
+
+  FileDeleteBatchResult _preflightDeleteFailure(
+    FileErrorKind failure, {
+    List<String> unattemptedPaths = const <String>[],
+  }) => FileDeleteBatchResult(
+    outcome: FileDeleteBatchOutcome.failed,
+    succeededPaths: const <String>[],
+    unattemptedPaths: unattemptedPaths,
+    failure: failure,
+  );
+
+  FileErrorKind? _capturedContextFailure({
+    required Connection connection,
+    required Object stamp,
+    required String cwd,
+  }) {
+    if (!_isCapturedSessionCurrent(connection: connection, stamp: stamp)) {
+      return FileErrorKind.notConnected;
+    }
+    return state.cwd == cwd ? null : FileErrorKind.badRequest;
+  }
+
+  bool _isCapturedSessionCurrent({
+    required Connection connection,
+    required Object stamp,
+  }) {
+    final Connection current = _conn;
+    return identical(current, connection) &&
+        identical(connectionSessionStampOf(current), stamp);
+  }
 
   /// Wall-clock for the transfer in flight; restarted per transfer.
   Stopwatch? _txClock;
