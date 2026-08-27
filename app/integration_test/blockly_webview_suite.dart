@@ -297,7 +297,21 @@ Future<void> _tapVisible(WidgetTester tester, Finder finder) async {
   await tester.pumpAndSettle();
   await tester.ensureVisible(finder);
   await tester.pumpAndSettle();
-  expect(finder.hitTestable(), findsOneWidget);
+  // `pumpAndSettle` only observes Flutter-scheduled frames. Android can finish
+  // its native IME/insets transition later (including a late `onShown` after
+  // the hide request), leaving the footer outside the hit-testable viewport.
+  // Wait for the actual action precondition within the suite's bounded device
+  // timeout instead of racing the platform animation.
+  await _pumpUntil(
+    tester,
+    () => finder.hitTestable().evaluate().length == 1,
+    reason: 'the action did not become hit-testable after the Android IME hide',
+    diagnostics: () {
+      final int candidates = finder.evaluate().length;
+      final int hitTestable = finder.hitTestable().evaluate().length;
+      return 'candidates=$candidates, hitTestable=$hitTestable';
+    },
+  );
   await tester.tap(finder);
 }
 
