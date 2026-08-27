@@ -51,7 +51,7 @@ dependencies:
   # sole adapter lives in lib/app/app_build_info.dart and reads the actual
   # iOS/Android version + build number; PBLE/1 HELLO keeps its static ASCII
   # identity constants. Min 10.2.1 supports the pinned Flutter 3.44.1 /
-  # Dart 3.12.1 / iOS 13 / Java 17 toolchain.
+  # Dart 3.12.1 / iOS 15 / Java 17 toolchain.
   package_info_plus: ^10.2.1
 
   # Public GitHub example import (A-33 connected subset). License:
@@ -73,7 +73,7 @@ dependencies:
   highlight: ^0.7.0
 
   # Offline Blockly host (A-31). License: BSD-3-Clause. Min version: 4.14.1,
-  # whose Android 24 / iOS 13 floors match PyBLE's pinned platform floors and
+  # which is compatible with PyBLE's Android 24 / iOS 15 platform floors and
   # whose WebViewController supports loadFlutterAsset + JavaScript channels.
   # The sole importer lives in lib/blocks/; all board actions remain in Dart.
   webview_flutter: ^4.14.1
