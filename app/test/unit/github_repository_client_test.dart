@@ -20,6 +20,9 @@ const String _commitSha = '1111111111111111111111111111111111111111';
 const String _rootTreeSha = '2222222222222222222222222222222222222222';
 const String _childTreeSha = '3333333333333333333333333333333333333333';
 const String _helloBlobSha = '4444444444444444444444444444444444444444';
+const int _repositoryId = 1345960947;
+const int _branchPageBodyLimit = 512 * 1024;
+const int _branchAggregateBodyLimit = 2 * 1024 * 1024;
 
 RepositoryLocator _locator() =>
     RepositoryLocator.parse('https://github.com/PyBLE-dev/examples');
@@ -50,9 +53,26 @@ Map<String, Object?> _branch(String name) => <String, Object?>{
   'protected': false,
 };
 
-String _nextBranchesLink(int page) =>
-    '<https://api.github.com/repos/PyBLE-dev/examples/branches'
-    '?per_page=100&page=$page>; rel="next"';
+Map<String, Object?> _repositoryMetadata(String defaultBranch) =>
+    <String, Object?>{'id': _repositoryId, 'default_branch': defaultBranch};
+
+String _branchesLink(
+  int page, {
+  String relation = 'next',
+  int repositoryId = _repositoryId,
+}) =>
+    '<https://api.github.com/repositories/$repositoryId/branches'
+    '?per_page=100&page=$page>; rel="$relation"';
+
+Uint8List _paddedJsonBytes(Object? value, int byteLength) {
+  final List<int> encoded = utf8.encode(jsonEncode(value));
+  if (encoded.length > byteLength) {
+    throw StateError('JSON fixture exceeds requested byte length');
+  }
+  return Uint8List(byteLength)
+    ..fillRange(0, byteLength, 0x20)
+    ..setRange(0, encoded.length, encoded);
+}
 
 List<Object?> _numberedBranches(int start, int count) => <Object?>[
   for (int index = start; index < start + count; index += 1)
@@ -137,10 +157,7 @@ void main() {
               'PyBLE-dev',
               'examples',
             ]);
-            return http.Response(
-              jsonEncode(<String, Object?>{'default_branch': 'main'}),
-              200,
-            );
+            return http.Response(jsonEncode(_repositoryMetadata('main')), 200);
           }
 
           expect(request.url.pathSegments, <String>[
@@ -256,7 +273,7 @@ void main() {
               ]);
               expect(request.url.hasQuery, isFalse);
               return http.Response(
-                jsonEncode(<String, Object?>{'default_branch': 'main'}),
+                jsonEncode(_repositoryMetadata('main')),
                 200,
               );
             }
@@ -313,7 +330,7 @@ void main() {
             _expectGitHubRequest(request);
             if (request.url.pathSegments.last != 'branches') {
               return http.Response(
-                jsonEncode(<String, Object?>{'default_branch': 'main'}),
+                jsonEncode(_repositoryMetadata('main')),
                 200,
               );
             }
@@ -327,9 +344,8 @@ void main() {
                 200,
                 headers: <String, String>{
                   'link':
-                      '${_nextBranchesLink(2)}, '
-                      '<https://api.github.com/repos/PyBLE-dev/examples/'
-                      'branches?per_page=100&page=2>; rel="last"',
+                      '${_branchesLink(2)}, '
+                      '${_branchesLink(2, relation: 'last')}',
                 },
               );
             }
@@ -358,19 +374,18 @@ void main() {
     test(
       'rejects a wrong-host or skipped-page next Link without following it',
       () async {
-        const List<({String label, String link})> cases =
+        final List<({String label, String link})> cases =
             <({String label, String link})>[
               (
                 label: 'wrong host',
                 link:
-                    '<https://evil.example/repos/PyBLE-dev/examples/branches'
+                    '<https://evil.example/repositories/$_repositoryId/branches'
                     '?per_page=100&page=2>; rel="next"',
               ),
+              (label: 'skipped page', link: _branchesLink(3)),
               (
-                label: 'skipped page',
-                link:
-                    '<https://api.github.com/repos/PyBLE-dev/examples/branches'
-                    '?per_page=100&page=3>; rel="next"',
+                label: 'mismatched repository id',
+                link: _branchesLink(2, repositoryId: _repositoryId + 1),
               ),
             ];
 
@@ -382,7 +397,7 @@ void main() {
               _expectGitHubRequest(request);
               if (request.url.pathSegments.last != 'branches') {
                 return http.Response(
-                  jsonEncode(<String, Object?>{'default_branch': 'main'}),
+                  jsonEncode(_repositoryMetadata('main')),
                   200,
                 );
               }
@@ -404,13 +419,125 @@ void main() {
       },
     );
 
+    test('accepts a branch page body at exactly 512 KiB', () async {
+      final GithubApi api = GithubRepositoryClient(
+        httpClient: MockClient((http.Request request) async {
+          if (request.url.pathSegments.last != 'branches') {
+            return http.Response(jsonEncode(_repositoryMetadata('main')), 200);
+          }
+          return http.Response.bytes(
+            _paddedJsonBytes(<Object?>[_branch('main')], _branchPageBodyLimit),
+            200,
+          );
+        }),
+      );
+
+      final GithubBranchCatalog catalog = await api.listBranches(_locator());
+
+      expect(catalog.branches, <String>['main']);
+    });
+
+    test('rejects a branch page body one byte above 512 KiB', () async {
+      int requestCount = 0;
+      final GithubApi api = GithubRepositoryClient(
+        httpClient: MockClient((http.Request request) async {
+          requestCount += 1;
+          if (request.url.pathSegments.last != 'branches') {
+            return http.Response(jsonEncode(_repositoryMetadata('main')), 200);
+          }
+          return http.Response.bytes(
+            _paddedJsonBytes(<Object?>[
+              _branch('main'),
+            ], _branchPageBodyLimit + 1),
+            200,
+          );
+        }),
+      );
+
+      await expectLater(
+        api.listBranches(_locator()),
+        throwsA(_githubFailure(GithubFailureKind.malformedResponse)),
+      );
+      expect(requestCount, 2);
+    });
+
+    test('accepts aggregate branch bodies at exactly 2 MiB', () async {
+      final List<int> requestedPages = <int>[];
+      final GithubApi api = GithubRepositoryClient(
+        httpClient: MockClient((http.Request request) async {
+          if (request.url.pathSegments.last != 'branches') {
+            return http.Response(jsonEncode(_repositoryMetadata('main')), 200);
+          }
+
+          final int page = int.parse(request.url.queryParameters['page']!);
+          requestedPages.add(page);
+          return http.Response.bytes(
+            _paddedJsonBytes(<Object?>[
+              _branch(page == 1 ? 'main' : 'branch-$page'),
+            ], _branchPageBodyLimit),
+            200,
+            headers: page < 4
+                ? <String, String>{'link': _branchesLink(page + 1)}
+                : const <String, String>{},
+          );
+        }),
+      );
+
+      final GithubBranchCatalog catalog = await api.listBranches(_locator());
+
+      expect(requestedPages, <int>[1, 2, 3, 4]);
+      expect(catalog.branches, <String>[
+        'main',
+        'branch-2',
+        'branch-3',
+        'branch-4',
+      ]);
+    });
+
+    test('rejects aggregate branch bodies one byte above 2 MiB', () async {
+      final List<int> requestedPages = <int>[];
+      final GithubApi api = GithubRepositoryClient(
+        httpClient: MockClient((http.Request request) async {
+          if (request.url.pathSegments.last != 'branches') {
+            return http.Response(jsonEncode(_repositoryMetadata('main')), 200);
+          }
+
+          final int page = int.parse(request.url.queryParameters['page']!);
+          requestedPages.add(page);
+          final int bodyLength = switch (page) {
+            < 4 => _branchPageBodyLimit,
+            4 => _branchAggregateBodyLimit - (3 * _branchPageBodyLimit) - 1,
+            _ => 2,
+          };
+          return http.Response.bytes(
+            _paddedJsonBytes(
+              page == 5
+                  ? const <Object?>[]
+                  : <Object?>[_branch(page == 1 ? 'main' : 'branch-$page')],
+              bodyLength,
+            ),
+            200,
+            headers: page < 5
+                ? <String, String>{'link': _branchesLink(page + 1)}
+                : const <String, String>{},
+          );
+        }),
+      );
+
+      await expectLater(
+        api.listBranches(_locator()),
+        throwsA(_githubFailure(GithubFailureKind.malformedResponse)),
+      );
+      expect(requestedPages, <int>[1, 2, 3, 4, 5]);
+    });
+
     test('accepts a complete catalog at the 512-branch boundary', () async {
       final List<int> requestedPages = <int>[];
       final GithubApi api = GithubRepositoryClient(
         httpClient: MockClient((http.Request request) async {
           if (request.url.pathSegments.last != 'branches') {
             return http.Response(
-              jsonEncode(<String, Object?>{'default_branch': 'branch-000'}),
+              jsonEncode(_repositoryMetadata('branch-000')),
               200,
             );
           }
@@ -423,7 +550,7 @@ void main() {
             jsonEncode(_numberedBranches(start, count)),
             200,
             headers: page < 6
-                ? <String, String>{'link': _nextBranchesLink(page + 1)}
+                ? <String, String>{'link': _branchesLink(page + 1)}
                 : const <String, String>{},
           );
         }),
@@ -445,7 +572,7 @@ void main() {
           httpClient: MockClient((http.Request request) async {
             if (request.url.pathSegments.last != 'branches') {
               return http.Response(
-                jsonEncode(<String, Object?>{'default_branch': 'branch-000'}),
+                jsonEncode(_repositoryMetadata('branch-000')),
                 200,
               );
             }
@@ -458,7 +585,7 @@ void main() {
               jsonEncode(_numberedBranches(start, count)),
               200,
               headers: page < 6
-                  ? <String, String>{'link': _nextBranchesLink(page + 1)}
+                  ? <String, String>{'link': _branchesLink(page + 1)}
                   : const <String, String>{},
             );
           }),
@@ -478,7 +605,7 @@ void main() {
         httpClient: MockClient((http.Request request) async {
           if (request.url.pathSegments.last != 'branches') {
             return http.Response(
-              jsonEncode(<String, Object?>{'default_branch': 'branch-000'}),
+              jsonEncode(_repositoryMetadata('branch-000')),
               200,
             );
           }
@@ -490,7 +617,7 @@ void main() {
           return http.Response(
             jsonEncode(_numberedBranches(start, count)),
             200,
-            headers: <String, String>{'link': _nextBranchesLink(page + 1)},
+            headers: <String, String>{'link': _branchesLink(page + 1)},
           );
         }),
       );
@@ -525,7 +652,7 @@ void main() {
           httpClient: MockClient((http.Request request) async {
             if (request.url.pathSegments.last != 'branches') {
               return http.Response(
-                jsonEncode(<String, Object?>{'default_branch': 'main'}),
+                jsonEncode(_repositoryMetadata('main')),
                 200,
               );
             }
@@ -548,10 +675,7 @@ void main() {
           requests.add(request);
           _expectGitHubRequest(request);
           if (request.url.pathSegments.last == 'examples') {
-            return http.Response(
-              jsonEncode(<String, Object?>{'default_branch': 'main'}),
-              200,
-            );
+            return http.Response(jsonEncode(_repositoryMetadata('main')), 200);
           }
           if (request.url.pathSegments.last == 'branches') {
             return http.Response(

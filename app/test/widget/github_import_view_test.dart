@@ -410,6 +410,104 @@ void main() {
       expect(api.resolveCalls.single.$2, 'release/v1');
     });
 
+    testWidgets('an empty branch catalog is explicit and cannot be browsed', (
+      WidgetTester tester,
+    ) async {
+      final RecordingConnection connection = RecordingConnection(
+        initial: ConnState.ready,
+      );
+      final _FakeGithubApi api = _FakeGithubApi(
+        branchCatalogs: const <_BranchCatalogFixture>[
+          _BranchCatalogFixture(defaultBranch: 'main', branches: <String>[]),
+        ],
+      );
+      addTearDown(connection.dispose);
+
+      await _openImport(tester, connection, api);
+
+      expect(find.text(l10nOf(tester).githubImportNoBranches), findsOneWidget);
+      expect(find.byKey(kGithubBranchDropdownKey), findsNothing);
+      expect(find.byKey(kGithubLoadBranchesButtonKey), findsOneWidget);
+      expect(
+        tester
+            .widget<FilledButton>(find.byKey(kGithubBrowseButtonKey))
+            .onPressed,
+        isNull,
+      );
+      expect(api.resolveCalls, isEmpty);
+    });
+
+    testWidgets('the branch chooser retains useful semantics at 2x text', (
+      WidgetTester tester,
+    ) async {
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      final RecordingConnection connection = RecordingConnection(
+        initial: ConnState.ready,
+      );
+      final _FakeGithubApi api = _FakeGithubApi();
+      addTearDown(connection.dispose);
+
+      await _openImport(tester, connection, api);
+      final Finder chooser = find.byKey(kGithubBranchDropdownKey);
+      final Finder input = find.descendant(
+        of: chooser,
+        matching: find.byType(EditableText),
+      );
+      await tester.ensureVisible(chooser);
+      await tester.pumpAndSettle();
+
+      expect(
+        tester.getSemantics(input),
+        matchesSemantics(
+          label: l10nOf(tester).githubImportBranchLabel,
+          value: 'main',
+          isTextField: true,
+          hasEnabledState: true,
+          isEnabled: true,
+          isFocusable: true,
+          hasTapAction: true,
+          hasFocusAction: true,
+          hasExpandedState: true,
+        ),
+      );
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets(
+      'keyboard search selects an available branch and resolves its exact ref',
+      (WidgetTester tester) async {
+        final RecordingConnection connection = RecordingConnection(
+          initial: ConnState.ready,
+        );
+        final _FakeGithubApi api = _FakeGithubApi();
+        addTearDown(connection.dispose);
+
+        await _openImport(tester, connection, api);
+        final Finder input = find.descendant(
+          of: find.byKey(kGithubBranchDropdownKey),
+          matching: find.byType(EditableText),
+        );
+        await tester.tap(input);
+        await tester.pumpAndSettle();
+        await tester.enterText(input, 'release');
+        await tester.pumpAndSettle();
+        expect(find.text('release/v1'), findsOneWidget);
+
+        await tester.testTextInput.receiveAction(TextInputAction.done);
+        await tester.pumpAndSettle();
+        expect(
+          tester.widget<EditableText>(input).controller.text,
+          'release/v1',
+        );
+
+        await tester.tap(find.byKey(kGithubBrowseButtonKey));
+        await tester.pumpAndSettle();
+        expect(api.resolveCalls, hasLength(1));
+        expect(api.resolveCalls.single.$2, 'release/v1');
+      },
+    );
+
     testWidgets('advanced mode retains exact tag and commit refs', (
       WidgetTester tester,
     ) async {
@@ -432,7 +530,10 @@ void main() {
 
       await tester.enterText(find.byKey(kGithubRefFieldKey), _commitSha);
       await tester.pump();
-      expect(find.textContaining(_commitSha), findsNothing);
+      expect(
+        find.text(l10nOf(tester).githubImportPinnedCommit(_commitSha)),
+        findsNothing,
+      );
       await tester.tap(find.byKey(kGithubBrowseButtonKey));
       await tester.pumpAndSettle();
 
