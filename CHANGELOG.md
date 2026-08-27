@@ -9,10 +9,10 @@ These app, website, and repository-source changes do not designate a new app
 or firmware release. The qualified firmware release remains v0.6.0, built from
 its annotated tag rather than from the newer branch tip.
 
-The current compatible app feature set now targets `0.2.0`; its first local
-beta candidate is build `5`. This candidate identity improves test and
-evidence traceability but does not designate a qualified store release or
-TestFlight handoff.
+The current compatible app feature set now targets `0.2.0`; build `5` was
+handed off through Transporter for TestFlight. This candidate identity improves
+test and evidence traceability but does not designate a qualified store release
+or claim App Store Connect processing, beta-review approval, or availability.
 
 ### App source
 
