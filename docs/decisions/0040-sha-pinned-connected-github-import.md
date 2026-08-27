@@ -72,8 +72,19 @@ the selected `.py` files sequentially to the current board directory.**
    surface shows every exact remote path and exact board target path. It
    rejects empty/dot names, separators, NUL, duplicate targets, paths outside
    the captured directory, and targets over PBLE/1's 128-byte UTF-8 path
-   ceiling. Preserving a remote hierarchy is a future, separately specified
-   extension.
+   ceiling. The action also captures the board-reported `fs_root` and mirrors
+   PBLE/1's protected top-level names: when the captured directory equals that
+   root, a target beginning with lowercase `pyble` or `pble`, or named exactly
+   `boot.py` or `_boot.py`, is blocked before a board listing, Git blob fetch,
+   or PUT. The surface warns whenever the captured destination is the board
+   root. A path-specific localized failure names a selected protected target
+   and instructs the user to close Import, create and enter a child directory
+   such as `/examples` in Files, and then reopen Import so the new destination
+   is captured. The same basename remains valid below a child directory.
+   Ordinary non-protected basenames remain valid at the board root; this is
+   targeted preflight, not a blanket root-import ban or confirm-to-continue
+   warning.
+   Preserving a remote hierarchy is a future, separately specified extension.
 
 5. **Overwrite is always an informed choice.** Review lists the captured board
    directory and marks exact target names already present. Existing
@@ -150,11 +161,13 @@ the selected `.py` files sequentially to the current board directory.**
 
 11. **The delivery remains test-driven and clean-room.** Unit tests cover URL
     and host rejection, ref-to-SHA pinning, lazy traversal, entry filtering,
-    safe target derivation, UTF-8/NUL/size bounds, rate/error mapping, operation
+    safe target derivation (including protected-root rejection and nested-path
+    acceptance), UTF-8/NUL/size bounds, rate/error mapping, operation
     generations, and result accounting. Widget tests use an injected fake
-    GitHub client and `FakeConnection` to prove overwrite consent, all-fetches-
-    before-first-PUT, sequential order, session changes, cancellation, partial
-    truth, refresh, and zero open/run/mkdir calls. Goldens cover compact and
+    GitHub client and `FakeConnection` to prove actionable protected-root
+    guidance, overwrite consent, all-fetches-before-first-PUT, sequential
+    order, session changes, cancellation, partial truth, refresh, and zero
+    open/run/mkdir calls. Goldens cover compact and
     wide layouts, portrait/landscape, loading/error/review/partial states, 2×
     text, high contrast, and keyboard inset. An integration/HIL row imports a
     small public pinned fixture into a disposable board directory and verifies
