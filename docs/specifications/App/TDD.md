@@ -501,7 +501,7 @@ UI reads down (watch providers) and writes up (call `Connection` methods / DAO m
 
 **Runtime session — FROZEN (A-22 · `[docs]` 2026-07-02, [ADR-0009](../../decisions/0009-runtime-connection-manager.md)).** The active `Connection` changes at runtime, so the seam is preserved as a **stable facade** rather than a swapped root value:
 
-- **Root injection moves up to `connectionManagerProvider`** (`Provider<ConnectionManager>`, throws until overridden). `main.dart` overrides it with `PbleConnectionManager.production(appName: kAppName, appVersion: kAppVersion)` — importing `package:pyble/pble/…` only, so `main.dart` names no `lib/ble` type (the import-boundary gate scans `main.dart`). `kAppName` (`"PyBLE"`) / `kAppVersion` are ASCII HELLO `app_name`/`app_version` constants ([protocol.md §7](../protocol.md#7-hello--capabilities)) held in `lib/app/` and kept in sync with the `pubspec` base version by hand. No runtime metadata dependency crosses into `lib/pble`; `package_info_plus` is confined to the About-page adapter ([§4.12](#412-libapp--about-and-open-source-information)) and never supplies a wire value. The constants are wire identifiers, not display text (FR-I18N-4, FR-ABOUT-3).
+- **Root injection moves up to `connectionManagerProvider`** (`Provider<ConnectionManager>`, throws until overridden). `main.dart` overrides it with `PbleConnectionManager.production(appName: kAppName, appVersion: kAppVersion)` — importing `package:pyble/pble/…` only, so `main.dart` names no `lib/ble` type (the import-boundary gate scans `main.dart`). `kAppName` (`"PyBLE"`) / `kAppVersion` are ASCII HELLO `app_name`/`app_version` constants ([protocol.md §7](../protocol.md#7-hello--capabilities)) held in `lib/app/`. `app/pubspec.yaml` remains the complete app-version/build authority; a unit contract parses its base version and requires exact equality with `kAppVersion`, while the public GitHub User-Agent derives from those same constants ([ADR-0044](../../decisions/0044-start-app-v020-beta-train-at-build-5.md)). No runtime metadata dependency crosses into `lib/pble`; `package_info_plus` is confined to the About-page adapter ([§4.12](#412-libapp--about-and-open-source-information)) and never supplies a wire value. The constants are wire identifiers, not display text (FR-I18N-4, FR-ABOUT-3).
 - **`connectionProvider` is preserved, now derived:** `Provider<Connection>((ref) => ref.watch(connectionManagerProvider).connection)`. `ConnectionManager.connection` is a **stable facade** whose identity never changes: its `state` reflects the whole session (`disconnected` while idle/scanning/failed, `connecting` during GATT+HELLO, then the live board's `ready`/`running`), and its verbs delegate to the live board when connected and throw a **typed not-connected error** otherwise (never a silent success). `connStateProvider` is **unchanged** (`connectionProvider.state`). Every S1–S3 widget (`ConnectionStatusPill`, `PinReferencePage` `FutureBuilder`, `FilesPage`) keeps compiling and now shows real state.
 - **Test compatibility:** a test overriding `connectionProvider` directly with a `FakeConnection` still **wins** (the override replaces the derived body), so the existing widget/golden suite (`shell_harness.pumpShell`) is untouched. New connect-flow tests inject `FakeScanner` + a `ConnectionFactory` returning `FakeConnection` + a fake `BleReadinessSource` through a `PbleConnectionManager`, or override `connectionManagerProvider` with a fake manager — no fake radio / fake `BleLink` needed (FR-CONN-7, D5).
 - The `ConnectController` (`Notifier`) projecting the manager into `ConnectState` for the connect surface lives in `lib/connect` ([§4.8](#48-libconnect--scanconnect-flow-ui)); it is the one place with the connect-flow intents.
@@ -785,16 +785,18 @@ request. The canonical value displayed back to the user is
 
 `GithubApi` talks only to HTTPS on exact host `api.github.com`, with redirects
 disabled (or independently revalidated and rejected unless the destination is
-the same exact host). It sends GitHub's required API version/accept/user-agent
-headers but no authorization, token, cookie, board fact, or user source. It
-does not follow `download_url`, HTML links, or any arbitrary URL returned in a
-response. A response rejected from headers alone (including status or declared
-body length) has its body stream cancelled before the adapter publishes the
-typed failure, so repeated hostile responses cannot strand transport resources
-(SEC-10). Each REST GET also owns one non-extending absolute wall-clock
-deadline that starts before the request is sent and covers both headers and the
-complete bounded body. Receiving a slow trickle never extends that deadline;
-expiry asks the transport to abort and maps to the neutral offline failure.
+the same exact host). It sends GitHub's required API version and accept headers
+plus exact User-Agent `PyBLE/<kAppVersion>`, derived from the compile-time app
+identity rather than an independent version literal. It sends no authorization,
+token, cookie, board fact, or user source. It does not follow `download_url`,
+HTML links, or any arbitrary URL returned in a response. A response rejected
+from headers alone (including status or declared body length) has its body
+stream cancelled before the adapter publishes the typed failure, so repeated
+hostile responses cannot strand transport resources (SEC-10). Each REST GET
+also owns one non-extending absolute wall-clock deadline that starts before the
+request is sent and covers both headers and the complete bounded body.
+Receiving a slow trickle never extends that deadline; expiry asks the transport
+to abort and maps to the neutral offline failure.
 
 Resolution is a two-step logical operation:
 

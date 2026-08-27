@@ -15,6 +15,8 @@ promising dates; accepted work is tracked through GitHub issues and milestones.
 
 ## Near term
 
+- Qualify the app 0.2.0 beta train, starting at globally monotonic build 5,
+  across the retained iPad/Android and five-profile hardware test scope
 - Complete the app, PBLE/1, resource, and remaining firmware release
   qualification for the exact v0.4.2 bytes
 - Complete real-hardware qualification before enabling the ESP32-C3 installer
