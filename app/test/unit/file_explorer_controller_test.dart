@@ -937,6 +937,26 @@ void main() {
     }
 
     test(
+      'dispose before the queued initial load performs no board I/O',
+      () async {
+        final _HeldDeviceInfoConnection connection =
+            _HeldDeviceInfoConnection();
+        addTearDown(connection.dispose);
+        final ProviderContainer c = ProviderContainer(
+          overrides: <Override>[
+            connectionProvider.overrideWithValue(connection),
+          ],
+        );
+
+        c.listen(fileExplorerProvider, (_, _) {});
+        c.dispose();
+        await pumpEventQueue();
+
+        expect(connection.deviceInfoRequests, isEmpty);
+      },
+    );
+
+    test(
       'a late prior-session DEVICE_INFO success cannot replace the current root',
       () async {
         final h = await reconnectWithHeldOldInfo();
