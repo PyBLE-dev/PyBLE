@@ -128,6 +128,36 @@ final class _BatchDeleteConnection extends RecordingConnection
   }
 }
 
+/// Holds each DEVICE_INFO response so reconnect ordering can be exercised.
+final class _HeldDeviceInfoConnection extends RecordingConnection
+    implements ConnectionSessionStampSource {
+  _HeldDeviceInfoConnection() : super(initial: ConnState.ready);
+
+  Object _sessionStamp = Object();
+  final List<Completer<DeviceInfo>> deviceInfoRequests =
+      <Completer<DeviceInfo>>[];
+
+  @override
+  Object get connectionSessionStamp => _sessionStamp;
+
+  @override
+  Future<DeviceInfo> deviceInfo() {
+    final Completer<DeviceInfo> request = Completer<DeviceInfo>();
+    deviceInfoRequests.add(request);
+    return request.future;
+  }
+
+  void detachSession() {
+    _sessionStamp = Object();
+    emit(ConnState.disconnected);
+  }
+
+  void attachSession() {
+    _sessionStamp = Object();
+    emit(ConnState.ready);
+  }
+}
+
 void main() {
   Uint8List b(String s) => Uint8List.fromList(utf8.encode(s));
 
@@ -864,102 +894,176 @@ void main() {
     });
   });
 
-  group(
-    'FR-FILES-1 auto-load on connection (the facade never re-fires build)',
-    () {
-      test(
-        'listing auto-loads when a connection becomes ready AFTER first build',
-        () async {
-          final FakeConnection fake = FakeConnection(
-            initial: ConnState.disconnected,
-          );
-          addTearDown(fake.dispose);
-          await fake.putFile('/main.py', b('print(1)\n'));
+  group('FR-FILES-1 auto-load on connection (the facade never re-fires build)', () {
+    const DeviceInfo oldInfo = DeviceInfo(
+      chip: 'esp32',
+      mpyVersion: '1.28.0',
+      freeMem: 32000,
+      fsRoot: '/old',
+    );
+    const DeviceInfo currentInfo = DeviceInfo(
+      chip: 'esp32-s3',
+      mpyVersion: '1.28.0',
+      freeMem: 48000,
+      fsRoot: '/flash',
+    );
 
-          final ProviderContainer c = await ready(fake);
-          expect(
-            state(c).entries,
-            isEmpty,
-            reason: 'nothing to list while disconnected',
-          );
-          expect(
-            state(c).loading,
-            isFalse,
-            reason: 'no listing is in flight while disconnected',
-          );
+    Future<({_HeldDeviceInfoConnection connection, ProviderContainer c})>
+    reconnectWithHeldOldInfo() async {
+      final _HeldDeviceInfoConnection connection = _HeldDeviceInfoConnection();
+      addTearDown(connection.dispose);
+      await connection.mkdir('/old');
+      await connection.mkdir('/flash');
+      await connection.putFile('/flash/current.py', b('# current\n'));
 
-          // The board connects: the explorer must re-root + list by ITSELF —
-          // no manual refresh (the stable facade never re-fires build; the
-          // controller listens to ConnState instead).
-          fake.emit(ConnState.ready);
-          await pumpEventQueue();
-          await pumpEventQueue();
+      final ProviderContainer c = await ready(connection);
+      expect(connection.deviceInfoRequests, hasLength(1));
 
-          expect(
-            names(c),
-            contains('main.py'),
-            reason: 'the listing auto-loads on the new connection',
-          );
-        },
-      );
+      connection.detachSession();
+      await pumpEventQueue();
+      connection.attachSession();
+      await pumpEventQueue();
+      expect(connection.deviceInfoRequests, hasLength(2));
 
-      test(
-        'running -> ready (a program finishing) keeps the user\'s cwd',
-        () async {
-          final FakeConnection fake = FakeConnection(initial: ConnState.ready);
-          addTearDown(fake.dispose);
-          await fake.mkdir('/lib');
-          await fake.putFile('/lib/util.py', b('# util\n'));
+      connection.deviceInfoRequests[1].complete(currentInfo);
+      await pumpEventQueue();
+      await pumpEventQueue();
+      expect(state(c).fsRoot, '/flash');
+      expect(state(c).cwd, '/flash');
+      expect(state(c).hasReportedFsRoot, isTrue);
+      expect(names(c), contains('current.py'));
+      expect(state(c).error, isNull);
+      return (connection: connection, c: c);
+    }
 
-          final ProviderContainer c = await ready(fake);
-          await ctrl(c).into('lib');
-          expect(state(c).cwd, '/lib');
+    test(
+      'a late prior-session DEVICE_INFO success cannot replace the current root',
+      () async {
+        final h = await reconnectWithHeldOldInfo();
 
-          // A program runs and finishes: ready -> running -> ready must NOT
-          // re-root the explorer out of the directory being browsed.
-          fake.emit(ConnState.running);
-          await pumpEventQueue();
-          fake.emit(ConnState.ready);
-          await pumpEventQueue();
-          await pumpEventQueue();
+        h.connection.deviceInfoRequests.first.complete(oldInfo);
+        await pumpEventQueue();
+        await pumpEventQueue();
 
-          expect(
-            state(c).cwd,
-            '/lib',
-            reason: 'a run finishing must not yank the user back to fsRoot',
-          );
-        },
-      );
+        expect(state(h.c).fsRoot, '/flash');
+        expect(state(h.c).cwd, '/flash');
+        expect(state(h.c).hasReportedFsRoot, isTrue);
+        expect(names(h.c), contains('current.py'));
+        expect(state(h.c).error, isNull);
+      },
+    );
 
-      test(
-        'disconnect clears the stale listing; the next connection re-lists',
-        () async {
-          final FakeConnection fake = FakeConnection(initial: ConnState.ready);
-          addTearDown(fake.dispose);
-          await fake.putFile('/main.py', b('print(1)\n'));
+    test(
+      'a late prior-session DEVICE_INFO failure cannot overwrite current state',
+      () async {
+        final h = await reconnectWithHeldOldInfo();
 
-          final ProviderContainer c = await ready(fake);
-          expect(names(c), contains('main.py'));
+        h.connection.deviceInfoRequests.first.completeError(
+          const EIo('old session failed late'),
+        );
+        await pumpEventQueue();
+        await pumpEventQueue();
 
-          fake.emit(ConnState.disconnected);
-          await pumpEventQueue();
-          expect(
-            state(c).entries,
-            isEmpty,
-            reason: 'a stale listing from the old board is dropped',
-          );
+        expect(state(h.c).fsRoot, '/flash');
+        expect(state(h.c).cwd, '/flash');
+        expect(state(h.c).hasReportedFsRoot, isTrue);
+        expect(names(h.c), contains('current.py'));
+        expect(state(h.c).error, isNull);
+      },
+    );
 
-          await fake.putFile('/new.py', b('print(2)\n'));
-          fake.emit(ConnState.ready);
-          await pumpEventQueue();
-          await pumpEventQueue();
-          expect(
-            names(c),
-            contains('new.py'),
-            reason: 'the new session auto-lists',
-          );
-        },
-      );
-    },
-  );
+    test(
+      'listing auto-loads when a connection becomes ready AFTER first build',
+      () async {
+        final FakeConnection fake = FakeConnection(
+          initial: ConnState.disconnected,
+        );
+        addTearDown(fake.dispose);
+        await fake.putFile('/main.py', b('print(1)\n'));
+
+        final ProviderContainer c = await ready(fake);
+        expect(
+          state(c).entries,
+          isEmpty,
+          reason: 'nothing to list while disconnected',
+        );
+        expect(
+          state(c).loading,
+          isFalse,
+          reason: 'no listing is in flight while disconnected',
+        );
+
+        // The board connects: the explorer must re-root + list by ITSELF —
+        // no manual refresh (the stable facade never re-fires build; the
+        // controller listens to ConnState instead).
+        fake.emit(ConnState.ready);
+        await pumpEventQueue();
+        await pumpEventQueue();
+
+        expect(
+          names(c),
+          contains('main.py'),
+          reason: 'the listing auto-loads on the new connection',
+        );
+      },
+    );
+
+    test(
+      'running -> ready (a program finishing) keeps the user\'s cwd',
+      () async {
+        final FakeConnection fake = FakeConnection(initial: ConnState.ready);
+        addTearDown(fake.dispose);
+        await fake.mkdir('/lib');
+        await fake.putFile('/lib/util.py', b('# util\n'));
+
+        final ProviderContainer c = await ready(fake);
+        await ctrl(c).into('lib');
+        expect(state(c).cwd, '/lib');
+
+        // A program runs and finishes: ready -> running -> ready must NOT
+        // re-root the explorer out of the directory being browsed.
+        fake.emit(ConnState.running);
+        await pumpEventQueue();
+        fake.emit(ConnState.ready);
+        await pumpEventQueue();
+        await pumpEventQueue();
+
+        expect(
+          state(c).cwd,
+          '/lib',
+          reason: 'a run finishing must not yank the user back to fsRoot',
+        );
+      },
+    );
+
+    test(
+      'disconnect clears the stale listing; the next connection re-lists',
+      () async {
+        final FakeConnection fake = FakeConnection(initial: ConnState.ready);
+        addTearDown(fake.dispose);
+        await fake.putFile('/main.py', b('print(1)\n'));
+
+        final ProviderContainer c = await ready(fake);
+        expect(names(c), contains('main.py'));
+
+        fake.emit(ConnState.disconnected);
+        await pumpEventQueue();
+        expect(
+          state(c).entries,
+          isEmpty,
+          reason: 'a stale listing from the old board is dropped',
+        );
+
+        await fake.putFile('/new.py', b('print(2)\n'));
+        fake.emit(ConnState.ready);
+        await pumpEventQueue();
+        await pumpEventQueue();
+        expect(
+          names(c),
+          contains('new.py'),
+          reason: 'the new session auto-lists',
+        );
+      },
+    );
+  });
 }
