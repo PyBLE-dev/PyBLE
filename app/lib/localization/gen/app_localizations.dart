@@ -2019,6 +2019,12 @@ abstract class AppLocalizations {
   /// **'Select files'**
   String get filesActionSelect;
 
+  /// Tooltip and semantics label for the compact Files toolbar overflow containing Refresh, New file, New folder, and Upload.
+  ///
+  /// In en, this message translates to:
+  /// **'More file actions'**
+  String get filesMoreActions;
+
   /// Action that exits Files multi-selection mode without deleting anything.
   ///
   /// In en, this message translates to:

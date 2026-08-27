@@ -36,6 +36,13 @@ import 'package:pyble/pble/pble.dart';
 import '../support/feature_harness.dart';
 import '../support/recording_connection.dart';
 
+const Key _normalActionsRowKey = ValueKey<String>('filesNormalActionsRow');
+const Key _actionsOverflowKey = ValueKey<String>('filesActionsOverflowButton');
+const Key _overflowRefreshKey = ValueKey<String>('filesOverflowRefresh');
+const Key _overflowNewFileKey = ValueKey<String>('filesOverflowNewFile');
+const Key _overflowNewFolderKey = ValueKey<String>('filesOverflowNewFolder');
+const Key _overflowUploadKey = ValueKey<String>('filesOverflowUpload');
+
 /// Records a deterministic fail-fast boundary without changing the shared
 /// connection test double. Files before [failPath] delete normally; that path
 /// records its attempted verb and fails, so later files must remain untouched.
@@ -147,6 +154,17 @@ void main() {
     );
   }
 
+  void expectOneHorizontalLine(WidgetTester tester, List<Finder> actions) {
+    final List<double> centers = actions
+        .map((Finder action) => tester.getCenter(action).dy)
+        .toList(growable: false);
+    expect(
+      centers.map((double center) => (center - centers.first).abs()),
+      everyElement(lessThan(0.1)),
+      reason: 'normal Files actions must share exactly one horizontal row',
+    );
+  }
+
   Future<void> enterSelection(WidgetTester tester) async {
     await tester.tap(find.byKey(kFilesSelectActionKey));
     await tester.pumpAndSettle();
@@ -189,6 +207,154 @@ void main() {
         isNull,
         reason: 'a running board cannot accept import PUTs',
       );
+    });
+
+    testWidgets(
+      'compact toolbar keeps Select and GitHub direct on one action row',
+      (WidgetTester tester) async {
+        final RecordingConnection rec = RecordingConnection(
+          initial: ConnState.ready,
+        );
+        addTearDown(rec.dispose);
+        await rec.putFile('/alpha.py', b('print("alpha")\n'));
+        await pumpSurface(
+          tester,
+          const FilesView(),
+          connection: rec,
+          size: const Size(252, 568),
+        );
+        await tester.pumpAndSettle();
+        final AppLocalizations l10n = l10nOf(tester);
+
+        final Finder select = find.byTooltip(l10n.filesActionSelect);
+        final Finder github = find.byTooltip(l10n.githubImportAction);
+        final Finder overflow = find.byKey(_actionsOverflowKey);
+        expect(find.byKey(_normalActionsRowKey), findsOneWidget);
+        expect(select, findsOneWidget);
+        expect(github, findsOneWidget);
+        expect(overflow, findsOneWidget);
+        expect(find.byTooltip(l10n.filesActionRefresh), findsNothing);
+        expect(find.byTooltip(l10n.filesEmptyCta), findsNothing);
+        expect(find.byTooltip(l10n.filesActionNewFolder), findsNothing);
+        expect(find.byTooltip(l10n.filesActionUpload), findsNothing);
+        expectOneHorizontalLine(tester, <Finder>[select, github, overflow]);
+        expect(tester.getSize(find.byKey(_normalActionsRowKey)).height, 48);
+        expectTouchTarget(tester, select, 'compact Select');
+        expectTouchTarget(tester, github, 'compact GitHub import');
+        expectTouchTarget(tester, overflow, 'compact overflow');
+        expect(tester.getSemantics(overflow).label, l10n.filesMoreActions);
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
+      'compact overflow labels and routes every lower-frequency action',
+      (WidgetTester tester) async {
+        final _HeldListConnection rec = _HeldListConnection();
+        addTearDown(() async {
+          if (!rec.releaseList.isCompleted) rec.releaseList.complete();
+          await rec.dispose();
+        });
+        await rec.putFile('/alpha.py', b('a\n'));
+        await pumpSurface(
+          tester,
+          const FilesView(),
+          connection: rec,
+          size: const Size(252, 568),
+        );
+        await tester.pumpAndSettle();
+        final AppLocalizations l10n = l10nOf(tester);
+
+        await tester.tap(find.byKey(_actionsOverflowKey));
+        await tester.pumpAndSettle();
+
+        for (final (Key key, String label) in <(Key, String)>[
+          (_overflowRefreshKey, l10n.filesActionRefresh),
+          (_overflowNewFileKey, l10n.filesEmptyCta),
+          (_overflowNewFolderKey, l10n.filesActionNewFolder),
+          (_overflowUploadKey, l10n.filesActionUpload),
+        ]) {
+          final Finder item = find.byKey(key);
+          expect(item, findsOneWidget);
+          expect(
+            find.descendant(of: item, matching: find.text(label)),
+            findsOneWidget,
+          );
+          expectTouchTarget(tester, item, label);
+        }
+
+        rec.holdNextList();
+        await tester.tap(find.byKey(_overflowRefreshKey));
+        await rec.listStarted.future;
+        expect(find.byKey(_actionsOverflowKey), findsOneWidget);
+        rec.releaseList.complete();
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets('roomy toolbar exposes all six actions on one row', (
+      WidgetTester tester,
+    ) async {
+      final RecordingConnection rec = RecordingConnection(
+        initial: ConnState.ready,
+      );
+      addTearDown(rec.dispose);
+      await rec.putFile('/alpha.py', b('a\n'));
+      await pumpSurface(
+        tester,
+        const FilesView(),
+        connection: rec,
+        size: const Size(600, 568),
+      );
+      await tester.pumpAndSettle();
+      final AppLocalizations l10n = l10nOf(tester);
+      final List<Finder> actions = <Finder>[
+        find.byTooltip(l10n.filesActionSelect),
+        find.byTooltip(l10n.filesActionRefresh),
+        find.byTooltip(l10n.filesEmptyCta),
+        find.byTooltip(l10n.filesActionNewFolder),
+        find.byTooltip(l10n.filesActionUpload),
+        find.byTooltip(l10n.githubImportAction),
+      ];
+
+      expect(find.byKey(_actionsOverflowKey), findsNothing);
+      for (final Finder action in actions) {
+        expect(action, findsOneWidget);
+        expectTouchTarget(tester, action, 'roomy Files action');
+      }
+      expectOneHorizontalLine(tester, actions);
+      expect(tester.getSize(find.byKey(_normalActionsRowKey)).height, 48);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('compact overflow remains usable at 2x text', (
+      WidgetTester tester,
+    ) async {
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      final RecordingConnection rec = RecordingConnection(
+        initial: ConnState.ready,
+      );
+      addTearDown(rec.dispose);
+      await rec.putFile('/alpha.py', b('a\n'));
+      await pumpSurface(
+        tester,
+        const FilesView(),
+        connection: rec,
+        size: const Size(252, 568),
+      );
+      await tester.pumpAndSettle();
+      final AppLocalizations l10n = l10nOf(tester);
+
+      await tester.tap(find.byKey(_actionsOverflowKey));
+      await tester.pumpAndSettle();
+
+      expect(find.text(l10n.filesActionRefresh), findsOneWidget);
+      expect(find.text(l10n.filesEmptyCta), findsOneWidget);
+      expect(find.text(l10n.filesActionNewFolder), findsOneWidget);
+      expect(find.text(l10n.filesActionUpload), findsOneWidget);
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('lists the fsRoot entries when connected', (

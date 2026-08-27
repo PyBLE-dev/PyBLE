@@ -1178,6 +1178,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get filesActionSelect => 'Select files';
 
   @override
+  String get filesMoreActions => 'More file actions';
+
+  @override
   String get filesSelectionCancel => 'Cancel selection';
 
   @override
