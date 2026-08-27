@@ -1605,6 +1605,10 @@
   "@filesActionSelect": {
     "description": "Discoverable action that enters the Files regular-file multi-selection mode."
   },
+  "filesMoreActions": "More file actions",
+  "@filesMoreActions": {
+    "description": "Tooltip and semantics label for the compact Files toolbar overflow containing Refresh, New file, New folder, and Upload."
+  },
   "filesSelectionCancel": "Cancel selection",
   "@filesSelectionCancel": {
     "description": "Action that exits Files multi-selection mode without deleting anything."
