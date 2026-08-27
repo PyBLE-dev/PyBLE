@@ -347,9 +347,13 @@ adds the novice ref-selection path without weakening A33-SUB-AC-1..10:
   catalog or none: at most 512 names, six pages, 512 KiB per branch page, and
   2 MiB across branch-page bodies. A 513th name, further next page, duplicate
   or invalid name, malformed metadata/page/link, or exceeded byte bound MUST
-  return a localized typed failure. Pagination links MUST be validated for the
-  exact HTTPS API host, repository path, page, and page size but MUST NOT be
-  followed directly; the client constructs the next exact-host request. MUST
+  return a localized typed failure. Metadata MUST provide the positive numeric
+  repository identity used to bind GitHub's canonical
+  `/repositories/{id}/branches` pagination path. Pagination links MUST be
+  validated for the exact HTTPS API host, either that identity-bound path or
+  the locator-derived repository branch path, the next consecutive page, and
+  the fixed page size, but MUST NOT be followed directly; the client constructs
+  the next exact-host request from local values. MUST
 - **A33-BRANCH-AC-4 (state, rate, and accessibility)** — Branch loading MUST
   be a distinct visible/cancellable state. Editing the repository clears the
   catalog and all dependent pinned/navigation/selection/review state without
