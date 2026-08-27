@@ -212,11 +212,11 @@ abstract interface class BleSession {
 
 ### 4.5 `lib/files/` — workspace file explorer
 
-**Responsibility:** display the board filesystem from `listDir` rooted at `fs_root`; open/upload/download/rename/delete/mkdir; multi-select bulk ops; progress for transfers; surface PBLE/1 status codes as actionable localized messages; mark the agent control plane non-editable; `.py`/data only.
+**Responsibility:** display the board filesystem from `listDir` rooted at `fs_root`; open/upload/download/rename/delete/mkdir; session-bound multi-select deletion of visible eligible regular files; progress for transfers and delete batches; surface PBLE/1 status codes as actionable localized messages; mark the agent control plane and transfer scratch paths non-editable; `.py`/data only.
 
-**Public API (sketch):** `FileExplorerController` over `Connection.listDir/getFile/putFile/delete/mkdir/rename`; a `RemoteEntry` tree model; a forbidden/non-editable predicate for control-plane paths.
+**Public API (sketch):** `FileExplorerController` over `Connection.listDir/getFile/putFile/delete/mkdir/rename`; a `RemoteEntry` tree model; the pure board-jail-aligned `isEditableBoardEntry` predicate; `FileDeleteBatchProgress` and `FileDeleteBatchResult`; sequential `deleteMany` with optional expected `cwd`/connection-session stamp.
 
-**Key state:** current path, expanded nodes, selection set, per-transfer `TransferProgress`.
+**Key state:** current path, expanded nodes, per-transfer `TransferProgress`, and one controller-owned delete-batch action lock. The exact selection set, selection `cwd`/session stamp, keyboard/focus state, and terminal batch announcement are ephemeral `FilesView` presentation state and disappear when that presentation is disposed.
 
 **Dependencies:** `Connection`, `lib/localization/`, `lib/data/` (mirror to project). No `lib/ble/`.
 
@@ -1846,11 +1846,27 @@ Rendering (line-splitting, `SignalCodeColors.streamColor` per `ConsoleStream`, t
 ```dart
 enum FileErrorKind {                    // typed PbleException -> kind; widget maps kind -> ARB (FR-I18N-3)
   notFound, permission, storageFull, io, crc, busy, unsupported, range, badRequest, notConnected, generic }
+enum FileDeleteBatchOutcome { complete, failed, partial }
+@immutable
+class FileDeleteBatchProgress {
+  final int completed; final int total; final String currentPath;
+}
+@immutable
+class FileDeleteBatchResult {
+  final FileDeleteBatchOutcome outcome;
+  final List<String> succeededPaths;
+  final String? failedPath;
+  final List<String> unattemptedPaths;
+  final FileErrorKind? failure;
+}
 @immutable
 class FileExplorerState {
-  final String cwd; final List<RemoteEntry> entries; final bool loading;
+  final String fsRoot; final String cwd; final List<RemoteEntry> entries; final bool loading;
   final TransferProgress? progress; final FileErrorKind? error; final String? errorPath;
 }
+// isEditableBoardEntry(fsRoot:, cwd:, name:)
+//   -> false for unsafe/overlength direct targets, any `.pbltmp` suffix,
+//      and lowercase top-level pyble*/pble*/boot.py/_boot.py at fsRoot
 // fileExplorerProvider = NotifierProvider<FileExplorerController, FileExplorerState>
 //   refresh()                     -> listDir(cwd)
 //   into(String dirName)          -> cwd = cwd/dirName; refresh
@@ -1862,11 +1878,22 @@ class FileExplorerState {
 //                                    -> on success editorDocumentProvider.notifier.markSaved(boardPath: path)
 //   newFile(String name)          -> putFile(cwd/name, empty, onProgress) -> openInEditor(name)
 //   mkdir(String name)            -> mkdir(cwd/name); refresh
-//   delete(String name)           -> delete(path); refresh
+//   delete(String name)           -> existing one-item file/empty-dir delete; refresh
+//   deleteMany(Iterable<String> names,
+//      {String? expectedCwd, Object? expectedSessionStamp,
+//       ValueChanged<FileDeleteBatchProgress>? onProgress})
+//     -> validate exact shown direct entries + jail/session/cwd before I/O
+//     -> sequential delete(path), stop first failure/session change, no rollback
+//     -> one same-session listDir after any attempted delete
+//     -> exact complete/failed/partial FileDeleteBatchResult
 //   rename(String from,String to) -> rename(cwd/from, cwd/to); refresh
 ```
 
-Every verb wraps the typed `PbleException` ([§14.1](#141-status-byte--typed-exception--localized-message)) into a `FileErrorKind` the widget renders as an actionable, localized message (FR-FILES-3). Transfers report `progress` continuously and succeed only on the seam's whole-file CRC/size verification (FR-FILES-4, already enforced in `lib/pble`). File ops are enabled only while the session is up (`ConnState.ready`/`running`); disconnected shows the existing `folder_off` guidance with no destructive action. **Deferred:** multi-select bulk ops (FR-FILES-5), the control-plane non-editable predicate (FR-FILES-6 — the board still enforces `EACCES`, SEC-7), and a true export-to-device-storage **Download** (needs local persistence + a `path_provider`-class dep, out of scope) — **open-in-editor is the read-into-app path** for this increment. `.py`/data-only holds (CON-3): the workspace never produces `.mpy`/`.pyc`.
+Every verb wraps the typed `PbleException` ([§14.1](#141-status-byte--typed-exception--localized-message)) into a `FileErrorKind` the widget renders as an actionable, localized message (FR-FILES-3). Transfers report `progress` continuously and succeed only on the seam's whole-file CRC/size verification (FR-FILES-4, already enforced in `lib/pble`). File ops are enabled only while the session is up (`ConnState.ready`/`running`); disconnected shows the existing `folder_off` guidance with no destructive action. **Deferred:** a true export-to-device-storage **Download** (needs local persistence + a `path_provider`-class dep, out of scope) — **open-in-editor is the read-into-app path** for this increment. `.py`/data-only holds (CON-3): the workspace never produces `.mpy`/`.pyc`.
+
+**Visible regular-file multi-delete — FROZEN (`[docs]` 2026-08-27, [ADR-0043](../../decisions/0043-session-bound-visible-file-multi-delete.md)).** `FilesView` owns a temporary selection of eligible shown direct regular-file names plus captured `cwd` and opaque session stamp. A labelled Select action or eligible-row long press enters; rows become checked toggles, Select all includes eligible shown files only, and Cancel/Escape/Back exits. Folders and locked entries never enter the set. The contextual bar replaces normal Files actions and uses a live selected count, destructive Delete, and item progress. One scrollable dialog presents the exact `cwd` and ordered names with Cancel focused before Delete.
+
+`deleteMany` snapshots the controller's displayed order, rejects unknown/directory/unsafe/reserved/overlength names and a mismatched expected `cwd` or session before the first `Connection.delete`, then awaits each delete serially. A second batch receives a local `busy` failure and sends no verb. On the first typed error or session change it starts no later delete and returns exact succeeded/current/unattempted accounting. It performs no rollback or automatic retry. If at least one delete was issued, it calls `listDir(capturedCwd)` exactly once only while the captured session is current; a primary delete error wins over a reconciliation error. Complete success clears selection; failed/partial removes succeeded names, keeps unresolved names selected, focuses and announces one localized result, and leaves the refreshed listing visible. Folders retain the existing single empty-directory delete; there is no recursion or new PBLE opcode.
 
 **(e) Seam providers — `lib/app/providers.dart` (owner: app-architect).** Adds one Connection-derived provider beside `connectionProvider`/`connStateProvider`:
 
@@ -1994,6 +2021,21 @@ network/content failure before commit is explicitly zero-mutation; a failure
 after a PUT began is explicitly potentially partial
 ([§10.6](#106-cancellation-rate-limits-and-errors)).
 
+### 14.4 Files multi-delete result ownership
+
+The `Connection` seam continues to own each ordinary PBLE/1 `FILE_DELETE`
+response and typed exception. `FileExplorerController.deleteMany` owns local
+path/session validation, sequential command ordering, the action lock, one
+same-session reconciliation listing, and exact complete/failed/partial result
+accounting. `FilesView` owns the ephemeral selection, immutable confirmation,
+focus, progress, and ARB rendering. A failure before the first command is
+zero-mutation. After a command was issued, earlier `OK` paths are reported as
+deleted; the current failed path is never called deleted, later paths are
+explicitly unattempted, and no automatic retry or rollback claim is made. A
+timeout or link loss can make the board-side state of the current path
+uncertain, so copy directs the user to the reconciled Files list rather than
+asserting that the whole batch was unchanged.
+
 ## 15. Test design
 
 This is where the Technical Design meets **Test-Driven Development** ([§0](#0-naming-note-acronym-clash), [PRD §1B.3](../prd.md)). The verification methods of [specs.md §2.2](specs.md) — *widget*, *golden*, *unit*, *conformance*, *integration*, *locale* — map onto the packages below. Each behaviour is pinned by a `[red]` test before code (NFR-MAINT-3).
@@ -2008,7 +2050,7 @@ This is where the Technical Design meets **Test-Driven Development** ([§0](#0-n
 | `lib/data/` | DAO CRUD, migrations, schema version | — | — | — | offline create→run→log | — |
 | `lib/editor/` | EditorSurface, tabs, save | tabs/find/run actions (FakeConnection) | landscape/portrait/phone | — | save→upload→run loop | strings from ARB |
 | `lib/console/` | line buffer, error explainer table | stream render, stdin, tab-switch persistence | stdout/stderr/system + traceback | — | observe-anywhere | explainer strings |
-| `lib/files/` | path/forbidden predicate, `.py` filter | list/upload/download/rename/delete (FakeConnection) | — | — | progress + CRC success | status-code messages |
+| `lib/files/` | path/forbidden predicate, delete-batch validation/order/result accounting, `.py` filter | list/upload/download/rename/single-delete; explicit/long-press multi-select, Select-all-shown, exact confirmation, cancel, partial truth, keyboard/focus/semantics (FakeConnection) | contextual selection + exact confirmation at narrow tablet/phone and 2× high contrast | — | progress + CRC success; physical multi-delete complete/partial reconciliation | every selection/confirmation/progress/result/status string |
 | `lib/connect/` | saved-board store | scan list (label/PyBLE-XXXX + RSSI), diagnostics, unsupported-version prompt, rename privacy-warn + length bound, Identify shown iff has_identify, configure-LED prompt when identify_led null, EUNSUPPORTED surfaced | — | — | scan→connect→HELLO→DeviceInfo; setLabel/setIdentifyLed/identify round-trips | permission rationale, rename warning |
 | `lib/blocks/` | bridge decode/limits, host epochs, fresh-snapshot correlation, action lock, restore state; GPIO/Time/NeoPixel/TFT definitions, codegen, validation, imports, and name safety; catalog schema/IDs/distinct-role materialization; production-generation of all eight fixtures (no pin/default/profile or device gate); target adoption/path derivation/128-byte preflight, sidecar v1 codec/CRC/exact-source and scratch-round-trip validation; bounded tokenizer/parser/model precedence, imports, names, numeric/range/function/NeoPixel/TFT/resource limits, supported/rejected grammar, all-or-nothing and semantic reparse equality | focused layout, sole Run ownership, off-canvas notices, inspector threshold, console expansion; shared adaptive example/import chooser; Preview non-mutation; empty Create; confirmed/cancelled/failed Replace with workspace+target rollback and host-acknowledged success; duplicate-role/diagnostic/stale-document errors; non-destructive optional/invalid toolbox IDs; no implicit board action; keyboard/semantics | wide landscape with inspector; narrower landscape without; stacked portrait; empty Examples state; exact-reopen/import diagnostics, target paths, and source preview; compact bottom sheet, wider dialog, constrained action overflow, large text, and keyboard inset | source-first/sidecar-last write ordering, no-PUT overlength preflight, local-session stamp lifecycle, board-swap/disconnect refusal before the next sidecar/Run verb, and CRC anchor reuse | every catalog workspace restore→generate; exact pair reopen preserving serialization/target; composed bound-document Python subset→workspace→generate→semantic reparse; torn-pair failures; GPIO/NeoPixel/TFT workspace pair Save→Run on iPadOS + Android | all Blocks/example/import/actions/wiring/diagnostic/validation/semantics labels |
 | `lib/plots/` | SeriesParser | plot render | plot golden | — | live plot from console | — |
