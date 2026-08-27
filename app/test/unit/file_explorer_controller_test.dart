@@ -158,6 +158,43 @@ final class _HeldDeviceInfoConnection extends RecordingConnection
   }
 }
 
+final class _HeldListRequest {
+  _HeldListRequest(this.path);
+
+  final String path;
+  final Completer<List<RemoteEntry>> result = Completer<List<RemoteEntry>>();
+}
+
+/// Returns DEVICE_INFO immediately but holds every initial/manual listing.
+final class _HeldListingConnection extends RecordingConnection
+    implements ConnectionSessionStampSource {
+  _HeldListingConnection({required super.deviceInfo})
+    : super(initial: ConnState.ready);
+
+  Object _sessionStamp = Object();
+  final List<_HeldListRequest> listRequests = <_HeldListRequest>[];
+
+  @override
+  Object get connectionSessionStamp => _sessionStamp;
+
+  @override
+  Future<List<RemoteEntry>> listDir(String path) {
+    final _HeldListRequest request = _HeldListRequest(path);
+    listRequests.add(request);
+    return request.result.future;
+  }
+
+  void detachSession() {
+    _sessionStamp = Object();
+    emit(ConnState.disconnected);
+  }
+
+  void attachSession() {
+    _sessionStamp = Object();
+    emit(ConnState.ready);
+  }
+}
+
 void main() {
   Uint8List b(String s) => Uint8List.fromList(utf8.encode(s));
 
@@ -936,6 +973,49 @@ void main() {
       return (connection: connection, c: c);
     }
 
+    Future<({_HeldListingConnection connection, ProviderContainer c})>
+    reconnectWithHeldOldList() async {
+      final _HeldListingConnection connection = _HeldListingConnection(
+        deviceInfo: oldInfo,
+      );
+      addTearDown(connection.dispose);
+      final ProviderContainer c = await ready(connection);
+      expect(connection.listRequests, hasLength(1));
+      expect(connection.listRequests.first.path, '/old');
+
+      connection.detachSession();
+      await pumpEventQueue();
+      connection.scriptedDeviceInfo = currentInfo;
+      connection.attachSession();
+      await pumpEventQueue();
+      await pumpEventQueue();
+      expect(connection.listRequests, hasLength(2));
+      expect(connection.listRequests[1].path, '/flash');
+
+      connection.listRequests[1].result.complete(<RemoteEntry>[
+        const RemoteEntry(name: 'current.py', isDir: false, size: 10),
+      ]);
+      await pumpEventQueue();
+      expect(state(c).fsRoot, '/flash');
+      expect(state(c).cwd, '/flash');
+      expect(state(c).hasReportedFsRoot, isTrue);
+      expect(names(c), <String>{'current.py'});
+      expect(state(c).error, isNull);
+      return (connection: connection, c: c);
+    }
+
+    Future<({_HeldListingConnection connection, ProviderContainer c})>
+    heldInitialList() async {
+      final _HeldListingConnection connection = _HeldListingConnection(
+        deviceInfo: currentInfo,
+      );
+      addTearDown(connection.dispose);
+      final ProviderContainer c = await ready(connection);
+      expect(connection.listRequests, hasLength(1));
+      expect(connection.listRequests.first.path, '/flash');
+      return (connection: connection, c: c);
+    }
+
     test(
       'dispose before the queued initial load performs no board I/O',
       () async {
@@ -991,6 +1071,103 @@ void main() {
         expect(state(h.c).error, isNull);
       },
     );
+
+    test(
+      'a late prior-session initial listing cannot replace current entries',
+      () async {
+        final h = await reconnectWithHeldOldList();
+
+        h.connection.listRequests.first.result.complete(<RemoteEntry>[
+          const RemoteEntry(name: 'old.py', isDir: false, size: 3),
+        ]);
+        await pumpEventQueue();
+
+        expect(state(h.c).fsRoot, '/flash');
+        expect(state(h.c).cwd, '/flash');
+        expect(names(h.c), <String>{'current.py'});
+        expect(state(h.c).error, isNull);
+      },
+    );
+
+    test(
+      'a late prior-session initial listing failure cannot replace current state',
+      () async {
+        final h = await reconnectWithHeldOldList();
+
+        h.connection.listRequests.first.result.completeError(
+          const EIo('old listing failed late'),
+        );
+        await pumpEventQueue();
+
+        expect(state(h.c).fsRoot, '/flash');
+        expect(state(h.c).cwd, '/flash');
+        expect(names(h.c), <String>{'current.py'});
+        expect(state(h.c).error, isNull);
+      },
+    );
+
+    test(
+      'a newer same-session refresh wins over the initial listing',
+      () async {
+        final h = await heldInitialList();
+
+        final Future<void> refreshed = ctrl(h.c).refresh();
+        expect(h.connection.listRequests, hasLength(2));
+        h.connection.listRequests[1].result.complete(<RemoteEntry>[
+          const RemoteEntry(name: 'fresh.py', isDir: false, size: 5),
+        ]);
+        await refreshed;
+        expect(names(h.c), <String>{'fresh.py'});
+
+        h.connection.listRequests.first.result.complete(<RemoteEntry>[
+          const RemoteEntry(name: 'stale.py', isDir: false, size: 5),
+        ]);
+        await pumpEventQueue();
+
+        expect(names(h.c), <String>{'fresh.py'});
+        expect(state(h.c).error, isNull);
+      },
+    );
+
+    test(
+      'an older same-session listing failure cannot overwrite a newer refresh',
+      () async {
+        final h = await heldInitialList();
+
+        final Future<void> refreshed = ctrl(h.c).refresh();
+        expect(h.connection.listRequests, hasLength(2));
+        h.connection.listRequests[1].result.complete(<RemoteEntry>[
+          const RemoteEntry(name: 'fresh.py', isDir: false, size: 5),
+        ]);
+        await refreshed;
+        expect(names(h.c), <String>{'fresh.py'});
+
+        h.connection.listRequests.first.result.completeError(
+          const EIo('initial listing failed late'),
+        );
+        await pumpEventQueue();
+
+        expect(names(h.c), <String>{'fresh.py'});
+        expect(state(h.c).error, isNull);
+      },
+    );
+
+    test('an initial listing completion after disposal is ignored', () async {
+      final _HeldListingConnection connection = _HeldListingConnection(
+        deviceInfo: currentInfo,
+      );
+      addTearDown(connection.dispose);
+      final ProviderContainer c = ProviderContainer(
+        overrides: <Override>[connectionProvider.overrideWithValue(connection)],
+      );
+      c.listen(fileExplorerProvider, (_, _) {});
+      await pumpEventQueue();
+      expect(connection.listRequests, hasLength(1));
+
+      c.dispose();
+      connection.listRequests.single.result.complete(const <RemoteEntry>[]);
+      await pumpEventQueue();
+    });
 
     test(
       'listing auto-loads when a connection becomes ready AFTER first build',
