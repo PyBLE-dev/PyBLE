@@ -14,6 +14,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
+import 'package:pyble/app/app_info.dart';
 import 'package:pyble/github_import/github_import.dart';
 
 const String _commitSha = '1111111111111111111111111111111111111111';
@@ -89,7 +90,7 @@ void _expectGitHubRequest(http.Request request) {
   expect(request.url.hasPort, isFalse);
   expect(request.headers['Accept'], 'application/vnd.github+json');
   expect(request.headers['X-GitHub-Api-Version'], '2026-03-10');
-  expect(request.headers['User-Agent'], startsWith('PyBLE/'));
+  expect(request.headers['User-Agent'], '$kAppName/$kAppVersion');
   expect(request.headers.containsKey('Authorization'), isFalse);
   expect(request.headers.containsKey('Cookie'), isFalse);
 }
