@@ -73,6 +73,23 @@ printf '    minos %s\\n' "$PYBLE_TEST_COMPILED_MINIMUM"
         self._write_tool("swinfo", "#!/usr/bin/env bash\nexit 0\n")
         self._write_tool("codesign", "#!/usr/bin/env bash\nexit 0\n")
         self._write_tool(
+            "find",
+            """#!/usr/bin/env bash
+set -eu
+case " $* " in
+  *' -type d '*)
+    printf '%s/Runner.app\\n' "$1"
+    ;;
+  *' -perm +111 '*)
+    printf '%s\\0' "$1/Runner"
+    ;;
+  *)
+    printf '%s\\0%s\\0' "$1/Info.plist" "$1/Runner"
+    ;;
+esac
+""",
+        )
+        self._write_tool(
             "file",
             "#!/usr/bin/env bash\nprintf 'Mach-O 64-bit executable\\n'\n",
         )
@@ -141,6 +158,13 @@ printf '    minos %s\\n' "$PYBLE_TEST_COMPILED_MINIMUM"
 
         self.assertNotEqual(0, result.returncode)
         self.assertIn("unexpected compiled platform MACOS", result.stderr)
+        self.assertNotIn("awk:", result.stderr)
+
+    def test_accepts_ios_15_application_and_main_executable(self) -> None:
+        result = self._run(app_minimum="15.0", compiled_minimum="15.0.1")
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("valid App Store payload", result.stdout)
         self.assertNotIn("awk:", result.stderr)
 
 
