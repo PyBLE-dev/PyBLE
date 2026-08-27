@@ -698,7 +698,7 @@ record RepositoryLocator(Uri canonicalRoot, String owner, String repo);
 record GithubBranchCatalog(
   RepositoryLocator locator,
   String defaultBranch,
-  List<String> branchNames,
+  List<String> branches,
 );
 record PinnedRepository(
   RepositoryLocator locator,
@@ -743,7 +743,7 @@ The fetched `_ImportCandidate` is deliberately a private service value rather
 than public/provider state: it exists only inside one bounded `commit()` call
 and is released at terminal return.
 
-`GithubBranchCatalog.branchNames` is immutable and contains exact, validated
+`GithubBranchCatalog.branches` is immutable and contains exact, validated
 technical ref values. Discovery may observe moving branch tips, but exposes no
 branch-list commit identity because `resolve(locator, ref:)` remains the sole
 operation that publishes an immutable browse pin.
