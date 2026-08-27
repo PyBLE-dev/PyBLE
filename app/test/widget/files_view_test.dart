@@ -20,17 +20,17 @@
 // CURRENTLY RED: lib/files exports no FilesView. HAND-OFF:
 // lib/files/files_view.dart -> app-files-engineer.
 
+import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:pyble/app/providers.dart';
 import 'package:pyble/editor/editor.dart';
 import 'package:pyble/files/files.dart';
 import 'package:pyble/localization/localization.dart';
-import 'package:pyble/app/providers.dart';
 import 'package:pyble/pble/pble.dart';
 
 import '../support/feature_harness.dart';
@@ -52,6 +52,34 @@ class _FailingDeleteConnection extends RecordingConnection {
       return Future<void>.error(const EIo('scripted bulk-delete failure'));
     }
     return super.delete(path);
+  }
+}
+
+/// Holds one delete so the shell navigation provider can change while the
+/// non-cancellable PBLE/1 mutation remains in flight.
+class _HeldDeleteConnection extends RecordingConnection {
+  _HeldDeleteConnection() : super(initial: ConnState.ready);
+
+  final Completer<void> started = Completer<void>();
+  final Completer<void> release = Completer<void>();
+
+  @override
+  Future<void> delete(String path) async {
+    if (!started.isCompleted) started.complete();
+    await release.future;
+    await super.delete(path);
+  }
+}
+
+/// Simulates a file disappearing before the board reports ENOENT. Reconciliation
+/// must not leave that absent row counted as a selected, retryable ghost.
+class _DisappearingDeleteConnection extends RecordingConnection {
+  _DisappearingDeleteConnection() : super(initial: ConnState.ready);
+
+  @override
+  Future<void> delete(String path) async {
+    await super.delete(path);
+    throw const ENoEnt('scripted file disappeared before delete');
   }
 }
 
@@ -884,6 +912,162 @@ void main() {
         );
       },
     );
+
+    testWidgets(
+      'editing selection clears the prior partial-result accounting',
+      (WidgetTester tester) async {
+        final _FailingDeleteConnection rec = _FailingDeleteConnection(
+          failPath: '/beta.py',
+        );
+        addTearDown(rec.dispose);
+        for (final String name in <String>['alpha.py', 'beta.py', 'gamma.py']) {
+          await rec.putFile('/$name', b('$name\n'));
+        }
+        await pumpSurface(tester, const FilesView(), connection: rec);
+        await tester.pumpAndSettle();
+        final AppLocalizations l10n = l10nOf(tester);
+
+        await enterSelection(tester);
+        await selectAllShown(tester);
+        await tester.tap(find.byKey(kFilesBulkDeleteActionKey));
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.descendant(
+            of: find.byType(AlertDialog),
+            matching: find.widgetWithText(FilledButton, l10n.commonDelete),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final String stopped = l10n.filesDeleteSelectedStopped(1, 2);
+        expect(find.text(stopped), findsOneWidget);
+        await tester.tap(find.byKey(entryKey('gamma.py')));
+        await tester.pump();
+
+        expect(
+          find.text(stopped),
+          findsNothing,
+          reason:
+              'a terminal result cannot be rewritten by later selection edits',
+        );
+        expect(
+          find.text(l10n.filesDeleteSelectedStopped(1, 1)),
+          findsNothing,
+          reason:
+              'a later selection edit dismisses rather than mutates the result',
+        );
+        expect(find.text(l10n.filesSelectionSelectedCount(1)), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'reconciliation removes an absent failed row from retry selection',
+      (WidgetTester tester) async {
+        final _DisappearingDeleteConnection rec =
+            _DisappearingDeleteConnection();
+        addTearDown(rec.dispose);
+        await rec.putFile('/alpha.py', b('alpha\n'));
+        await rec.putFile('/beta.py', b('beta\n'));
+        await pumpSurface(tester, const FilesView(), connection: rec);
+        await tester.pumpAndSettle();
+        final AppLocalizations l10n = l10nOf(tester);
+
+        await enterSelection(tester);
+        await selectAllShown(tester);
+        await tester.tap(find.byKey(kFilesBulkDeleteActionKey));
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.descendant(
+            of: find.byType(AlertDialog),
+            matching: find.widgetWithText(FilledButton, l10n.commonDelete),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(entryKey('alpha.py')), findsNothing);
+        expect(find.byKey(selectKey('alpha.py')), findsNothing);
+        expect(find.byKey(selectKey('beta.py')), findsOneWidget);
+        expect(
+          tester.widget<Checkbox>(find.byKey(selectKey('beta.py'))).value,
+          isTrue,
+        );
+        expect(find.text(l10n.filesSelectionSelectedCount(1)), findsOneWidget);
+        expect(
+          find.text(l10n.filesDeleteSelectedStopped(0, 1)),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      'navigation during a running delete clears selection without hidden focus',
+      (WidgetTester tester) async {
+        final _HeldDeleteConnection rec = _HeldDeleteConnection();
+        addTearDown(rec.dispose);
+        await rec.putFile('/alpha.py', b('alpha\n'));
+        await pumpSurface(tester, const FilesView(), connection: rec);
+        await tester.pumpAndSettle();
+        final AppLocalizations l10n = l10nOf(tester);
+
+        await enterSelection(tester);
+        await tester.tap(find.byKey(entryKey('alpha.py')));
+        await tester.pump();
+        await tester.tap(find.byKey(kFilesBulkDeleteActionKey));
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.descendant(
+            of: find.byType(AlertDialog),
+            matching: find.widgetWithText(FilledButton, l10n.commonDelete),
+          ),
+        );
+        await tester.pump();
+        expect(rec.started.isCompleted, isTrue);
+
+        containerOf(tester).read(selectedSurfaceProvider.notifier).state =
+            AppSurface.editor;
+        await tester.pump();
+        rec.release.complete();
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(kFilesSelectionBarKey), findsNothing);
+        final Finder selectAction = find.byKey(kFilesSelectActionKey);
+        expect(selectAction, findsOneWidget);
+        expect(
+          primaryFocusIsWithin(tester, selectAction),
+          isFalse,
+          reason: 'completion must not move focus into an offstage Files tree',
+        );
+        expect(find.text(l10n.filesDeleteSelectedComplete(1)), findsOneWidget);
+      },
+    );
+
+    testWidgets('a replaced listing dismisses a stale confirmation safely', (
+      WidgetTester tester,
+    ) async {
+      final RecordingConnection rec = RecordingConnection(
+        initial: ConnState.ready,
+      );
+      addTearDown(rec.dispose);
+      await rec.putFile('/alpha.py', b('alpha\n'));
+      await pumpSurface(tester, const FilesView(), connection: rec);
+      await tester.pumpAndSettle();
+
+      await enterSelection(tester);
+      await tester.tap(find.byKey(entryKey('alpha.py')));
+      await tester.pump();
+      await tester.tap(find.byKey(kFilesBulkDeleteActionKey));
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsOneWidget);
+
+      await containerOf(tester).read(fileExplorerProvider.notifier).refresh();
+      await tester.pumpAndSettle();
+
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(find.byKey(kFilesSelectionBarKey), findsNothing);
+      expect(rec.deleteCalls, isEmpty);
+      final Finder selectAction = find.byKey(kFilesSelectActionKey);
+      expect(primaryFocusIsWithin(tester, selectAction), isTrue);
+    });
 
     testWidgets(
       'selection and exact confirmation do not overflow narrow 2x UI',

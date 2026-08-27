@@ -59,8 +59,7 @@ final class _HeldGetConnection extends RecordingConnection {
 /// shared test support deliberately need no bulk-delete-specific hooks.
 final class _BatchDeleteConnection extends RecordingConnection
     implements ConnectionSessionStampSource {
-  _BatchDeleteConnection({DeviceInfo? deviceInfo})
-    : super(initial: ConnState.ready, deviceInfo: deviceInfo);
+  _BatchDeleteConnection({super.deviceInfo}) : super(initial: ConnState.ready);
 
   Object _sessionStamp = Object();
   int _deleteOrdinal = 0;
@@ -490,7 +489,7 @@ void main() {
 
   group('ADR-0043 FileExplorerController.deleteMany', () {
     test(
-      'dedupes in display order, reports item progress, and reconciles once',
+      'deletes in display order, reports item progress, and reconciles once',
       () async {
         final h = await batchReady(
           files: <String>['z.py', 'Alpha.py', 'middle.txt'],
@@ -499,7 +498,7 @@ void main() {
             <FileDeleteBatchProgress>[];
 
         final FileDeleteBatchResult result = await ctrl(h.container).deleteMany(
-          <String>['z.py', 'middle.txt', 'z.py', 'Alpha.py'],
+          <String>['z.py', 'middle.txt', 'Alpha.py'],
           expectedCwd: '/',
           expectedSessionStamp: h.connection.connectionSessionStamp,
           onProgress: progress.add,
@@ -547,6 +546,22 @@ void main() {
         expect(state(h.container).entries, isEmpty);
       },
     );
+
+    test('rejects a duplicate selection before board I/O', () async {
+      final h = await batchReady(files: <String>['alpha.py', 'beta.py']);
+
+      final FileDeleteBatchResult result = await ctrl(
+        h.container,
+      ).deleteMany(<String>['beta.py', 'alpha.py', 'beta.py']);
+
+      expect(result.outcome, FileDeleteBatchOutcome.failed);
+      expect(result.failure, FileErrorKind.badRequest);
+      expect(result.succeededPaths, isEmpty);
+      expect(result.failedPath, isNull);
+      expect(result.unattemptedPaths, isEmpty);
+      expect(h.connection.attemptedDeletePaths, isEmpty);
+      expect(h.connection.listedPaths, isEmpty);
+    });
 
     test('awaits each delete before starting the next', () async {
       final h = await batchReady(files: <String>['alpha.py', 'beta.py']);
@@ -767,14 +782,19 @@ void main() {
       final FileDeleteBatchResult concurrent = await ctrl(
         h.container,
       ).deleteMany(<String>['beta.py']);
+      final List<String> listedBeforeRelease = List<String>.of(
+        h.connection.listedPaths,
+      );
+      h.connection.releaseDelete.complete();
+      final FileDeleteBatchResult firstResult = await first;
+
       expect(concurrent.outcome, FileDeleteBatchOutcome.failed);
       expect(concurrent.failure, FileErrorKind.busy);
       expect(concurrent.succeededPaths, isEmpty);
-      expect(h.connection.attemptedDeletePaths, <String>['/alpha.py']);
-      expect(h.connection.listedPaths, isEmpty);
-
-      h.connection.releaseDelete.complete();
-      expect((await first).outcome, FileDeleteBatchOutcome.complete);
+      expect(concurrent.failedPath, isNull);
+      expect(concurrent.unattemptedPaths, <String>['/beta.py']);
+      expect(listedBeforeRelease, isEmpty);
+      expect(firstResult.outcome, FileDeleteBatchOutcome.complete);
       expect(h.connection.attemptedDeletePaths, <String>['/alpha.py']);
       expect(h.connection.listedPaths, <String>['/']);
     });
