@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Part of PyBLE (https://pyble.dev) — see /LICENSE.
 //
-// X-11 / BLD-10 — platform launchers preserve the PyBLE visual identity.
+// X-11 / BLD-10/13 — platform launchers and deployment metadata preserve the
+// PyBLE distribution contract.
 
 import 'dart:convert';
 import 'dart:io';
@@ -131,6 +132,39 @@ void main() {
       reason:
           'distribution signing must be supplied from maintainer-local '
           'configuration',
+    );
+  });
+
+  test('iOS project pins every configuration to deployment target 15', () {
+    final String project = File(
+      '${app.path}/ios/Runner.xcodeproj/project.pbxproj',
+    ).readAsStringSync();
+    final List<String> deploymentTargets =
+        RegExp(r'^\s*IPHONEOS_DEPLOYMENT_TARGET = ([^;]+);$', multiLine: true)
+            .allMatches(project)
+            .map((RegExpMatch match) {
+              return match.group(1)!;
+            })
+            .toList(growable: false);
+
+    expect(
+      deploymentTargets,
+      hasLength(3),
+      reason: 'Profile, Debug, and Release must each declare one target',
+    );
+    expect(
+      deploymentTargets,
+      everyElement('15.0'),
+      reason: 'every authored iOS deployment target must use the BLD-13 floor',
+    );
+
+    final String plist = File(
+      '${app.path}/ios/Runner/Info.plist',
+    ).readAsStringSync();
+    expect(
+      plist,
+      isNot(contains('<key>MinimumOSVersion</key>')),
+      reason: 'Xcode must derive MinimumOSVersion from the deployment target',
     );
   });
 
