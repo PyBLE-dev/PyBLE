@@ -1175,6 +1175,48 @@ class AppLocalizationsEn extends AppLocalizations {
   String get filesGoUp => 'Up one folder';
 
   @override
+  String get filesActionSelect => 'Select files';
+
+  @override
+  String get filesSelectionCancel => 'Cancel selection';
+
+  @override
+  String filesSelectionSelectedCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count files selected',
+      one: '1 file selected',
+      zero: 'No files selected',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String filesSelectionSelectAllShown(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Select all $count shown files',
+      one: 'Select the 1 shown file',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get filesSelectionClearAll => 'Clear file selection';
+
+  @override
+  String get filesSelectionDelete => 'Delete selected files';
+
+  @override
+  String get filesSelectionFilesOnly =>
+      'Folders cannot be selected for bulk delete.';
+
+  @override
+  String get filesEntryProtected => 'Protected by the board';
+
+  @override
   String get filesOpenInEditor => 'Open in editor';
 
   @override
@@ -1220,6 +1262,59 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get filesDeleteConfirmBody =>
       'This permanently removes it from the board.';
+
+  @override
+  String filesDeleteSelectedConfirmTitle(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Delete $count selected files?',
+      one: 'Delete 1 selected file?',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String filesDeleteSelectedConfirmBody(String cwd) {
+    return 'This permanently removes the selected files from $cwd. This cannot be undone.';
+  }
+
+  @override
+  String get filesDeleteSelectedListLabel => 'Files to delete';
+
+  @override
+  String filesDeleteSelectedProgress(String name, int completed, int total) {
+    return 'Deleting $name · $completed of $total completed';
+  }
+
+  @override
+  String filesDeleteSelectedComplete(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count files deleted',
+      one: '1 file deleted',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String filesDeleteSelectedStopped(int deleted, int remaining) {
+    String _temp0 = intl.Intl.pluralLogic(
+      deleted,
+      locale: localeName,
+      other: '$deleted files were deleted.',
+      one: '1 file was deleted.',
+      zero: 'No files were confirmed deleted.',
+    );
+    String _temp1 = intl.Intl.pluralLogic(
+      remaining,
+      locale: localeName,
+      other: '$remaining files remain selected.',
+      one: '1 file remains selected.',
+    );
+    return '$_temp0 $_temp1 Review the Files list before trying again.';
+  }
 
   @override
   String get commonCancel => 'Cancel';
