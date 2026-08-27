@@ -1,6 +1,6 @@
 # PyBLE App — Technical Design Document (TDD)
 
-Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-08-22
+Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-08-27
 
 ## 0. Naming note (acronym clash)
 
@@ -345,11 +345,13 @@ The full design later stores the exact bytes locally as the source of truth and
 records provenance; those durable parts remain deferred to A-24/full A-33.
 
 **Public API (implemented connected subset):** an injected `GithubApi` with
+`listBranches(locator) → GithubBranchCatalog`,
 `resolve(locator) → PinnedRepository`, `listDirectory(repository, treeSha,
 path)`, and `fetchFile(repository, entry)`. `githubApiProvider` is the sole
 production composition point: it owns and closes the `http.Client` and exposes
 only `GithubApi`. `GithubRepositoryClient` implements that board-independent
-REST seam. The adaptive view owns ephemeral repository/ref input, lazy
+REST seam. The adaptive view owns the editable official repository initial
+value, branch/manual-ref mode, ephemeral ref input, lazy
 navigation, selection, retry, focus, and visible-step state; it delegates
 board review/commit/cancellation to `GithubBoardImporter`. That service owns
 safe target derivation, complete-listing conflict snapshots, bounded all-fetch
@@ -357,8 +359,9 @@ validation, the session-bound sequential PUT loop, progress/result accounting,
 and Files refresh. It knows no widget, BLE transport, editor, or persistence
 type.
 
-**Key state:** presentation scope holds the canonical repo locator,
-requested/default ref, full pinned commit SHA, current remote-directory stack,
+**Key state:** presentation scope holds the canonical repo locator, complete
+branch catalog, chosen ref mode/value, full pinned commit SHA, current
+remote-directory stack,
 lazy entries, folder-local selection, retry/focus data, and visible
 browse/review/result state. One `GithubBoardImporter` instance is constructed
 per opened action with the captured board `cwd`, stable `Connection` facade,
@@ -692,6 +695,11 @@ data store. The boundary values are:
 
 ```dart
 record RepositoryLocator(Uri canonicalRoot, String owner, String repo);
+record GithubBranchCatalog(
+  RepositoryLocator locator,
+  String defaultBranch,
+  List<String> branchNames,
+);
 record PinnedRepository(
   RepositoryLocator locator,
   String requestedRef,
@@ -735,6 +743,11 @@ The fetched `_ImportCandidate` is deliberately a private service value rather
 than public/provider state: it exists only inside one bounded `commit()` call
 and is released at terminal return.
 
+`GithubBranchCatalog.branchNames` is immutable and contains exact, validated
+technical ref values. Discovery may observe moving branch tips, but exposes no
+branch-list commit identity because `resolve(locator, ref:)` remains the sole
+operation that publishes an immutable browse pin.
+
 `GithubEntryKind.regularFile` is granted only to a Git tree entry with
 `type = blob` and mode `100644` or `100755`; a directory is `type = tree` and
 mode `040000`. Symlink mode `120000`, submodule `type = commit` / mode `160000`,
@@ -753,6 +766,15 @@ target paths do not silently move. Closing and reopening is how the user
 targets the new `cwd`.
 
 ### 10.2 Canonical input and immutable snapshot resolution
+
+The presentation owns the local constant
+`https://github.com/PyBLE-dev/examples` and initializes each new import action's
+repository controller from it. The value is editable and is not fetched from,
+or coupled to, the sibling examples checkout. App launch and ordinary Files
+navigation never request it. Opening the user-invoked importer may call
+`listBranches`; editing the URL clears and cancels the catalog without issuing
+a request per keystroke, and an explicit load/refresh retrieves branches for
+the new canonical value.
 
 `RepositoryLocator.parse` accepts only HTTPS, exact host `github.com`, default
 port, no user-info/query/fragment, and exactly two non-empty decoded path
@@ -793,12 +815,34 @@ rejected above 512 direct entries before the directory model reaches the eager
 tablet view. These are hard resource ceilings, not pagination: the subset never
 silently presents a partial folder.
 
+Before normal-mode resolution, `listBranches(locator)` reads repository
+metadata for `default_branch`, then serially reads the public branches endpoint
+with `per_page=100` and increasing `page`. It publishes only a complete
+`GithubBranchCatalog`: at most 512 exact names over six pages, 512 KiB per
+branch page, and 2 MiB across branch-page bodies. Invalid/duplicate names,
+malformed metadata or pagination, a 513th name, or a further page fails without
+publishing accumulated names. `Link` metadata is accepted only when its next
+URL is HTTPS on exact host `api.github.com`, has the exact repository branches
+path and expected page parameters, and advances by one; the returned URL is
+never followed directly. The adapter constructs the next request from its
+validated locator and page number. The reported default is first and selected;
+remaining branches use `String.compareTo`. An empty catalog is displayed and
+cannot Browse in branch mode.
+
+The normal ref control is a searchable branch-only chooser. A localized
+advanced action exposes the retained manual branch/tag/commit field, including
+ADR-0040's blank-default behavior. Mode/value changes invalidate the pinned
+snapshot and all dependent state. In both modes the chosen value passes to
+`resolve`; catalog metadata never substitutes for full commit/root-tree
+resolution.
+
 ### 10.3 Lazy browse, selection, and adaptive state
 
 The user-visible lifecycle remains:
 
 ```text
-enterRepository → resolving → browsing → selecting → reviewing
+enterRepository → loadingBranches → choosingRef → resolving → browsing
+  → selecting → reviewing
   → awaitingOverwrite → fetching → recheckingBoard → uploading
   → complete | partial | cancelled | failed
 ```
@@ -806,12 +850,14 @@ enterRepository → resolving → browsing → selecting → reviewing
 The implementation does not introduce a second Riverpod workflow controller.
 The adaptive `StatefulWidget` owns presentation-only state: a
 `browse | review | result` surface step,
-`resolving | loadingDirectory | checkingBoardTargets` operation phase,
+`loadingBranches | resolving | loadingDirectory | checkingBoardTargets`
+operation phase,
 directory stack, selection, failure/retry/focus data, and the current
 progress/result. Resolve/list operations capture the view's increasing
-epoch and a `GithubCancellation`; cancel, ref refresh, directory change, or
-disposal advances that epoch, and a late completion cannot repopulate the
-view. `GithubBoardImporter` separately owns its fetch/commit generation,
+epoch and a `GithubCancellation`; repository edit, branch refresh, ref-mode
+change, cancel, directory change, or disposal advances that epoch, and a late
+completion cannot repopulate the view. `GithubBoardImporter` separately owns
+its fetch/commit generation,
 active cancellation token, and duplicate-commit lock, publishing typed
 fetch/recheck/upload progress and terminal results through callbacks/returns.
 Together these values render every lifecycle state above distinctly. At most

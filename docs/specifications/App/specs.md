@@ -1,6 +1,6 @@
 # PyBLE App — Requirements Specification
 
-Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-08-22
+Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-08-27
 
 ## 1. Purpose, Scope & Document Role
 
@@ -195,6 +195,20 @@ The client implements the PBLE/1 wire contract; it references [protocol.md](../p
 - **FR-IMPORT-4** — Imported files MUST be stored locally so work continues offline after import; the local project remains the source of truth (import is a project source, not the storage model). MUST (*source: PRD §9.7, §13.5; verify: integration; story: A-33*)
 - **FR-IMPORT-5** — Import MUST be `.py`/data only and MUST NOT fetch or write `.mpy`/`.pyc`. MUST (*source: PRD §9.7, §10.14; verify: unit; story: A-33*)
 - **FR-IMPORT-6** — The app MUST record import provenance (repo URL, ref, subpath, commit SHA, file count, timestamp) in the local `github_imports` data per §8. MUST (*source: PRD §12.1; verify: unit; story: A-33*)
+- **FR-IMPORT-7** — Every newly opened GitHub-import action MUST initialize
+  its editable repository field to the official public collection
+  `https://github.com/PyBLE-dev/examples`; replacing it with another canonical
+  public GitHub repository MUST retain identical validation, trust, and import
+  behavior. MUST (*source: PRD §9.7,
+  [ADR-0042](../../decisions/0042-prefill-official-examples-and-discover-branches.md);
+  verify: widget/integration; story: A-33*)
+- **FR-IMPORT-8** — The normal ref workflow MUST retrieve and expose a
+  complete bounded branch-only chooser, select and mark the reported default
+  branch, and still resolve the chosen branch to an immutable commit before
+  browsing. A clearly labelled advanced mode MUST retain explicit branch,
+  tag, or commit entry. MUST (*source: PRD §9.7,
+  [ADR-0042](../../decisions/0042-prefill-official-examples-and-discover-branches.md);
+  verify: unit/widget/integration; story: A-33*)
 
 **Connected working-loop increment — FROZEN (A-33 subset · `[docs]`
 2026-08-22, [ADR-0040](../../decisions/0040-sha-pinned-connected-github-import.md),
@@ -303,6 +317,50 @@ to `[red]` before implementation:
   loading/error/review/partial outcomes, portrait/landscape, 2× text, high
   contrast, and keyboard inset. Integration/HIL MUST verify exact imported
   bytes in a disposable board directory and no automatic execution. MUST
+
+**Official-repository and branch-discovery increment — FROZEN (A-33 subset ·
+`[docs]` 2026-08-27,
+[ADR-0042](../../decisions/0042-prefill-official-examples-and-discover-branches.md),
+[TDD §10](TDD.md#10-github-import-design-libgithub_import)).** This extension
+adds the novice ref-selection path without weakening A33-SUB-AC-1..10:
+
+- **A33-BRANCH-AC-1 (editable official initial value)** — A newly opened
+  action MUST prefill `https://github.com/PyBLE-dev/examples`, remain editable,
+  and reset to that value on a later new action. The value MUST pass the same
+  canonical parser and all untrusted-source gates as a custom repository. No
+  GitHub request may occur on app launch or ordinary Files navigation; opening
+  the explicit importer action MAY start branch discovery but MUST NOT fetch a
+  tree/blob, select a file, call a board verb, open an editor, Save, or Run.
+  MUST
+- **A33-BRANCH-AC-2 (normal and advanced refs)** — Normal mode MUST be a
+  searchable branch-only chooser containing exact names returned for that
+  repository. The reported default branch MUST be first, visibly marked, and
+  initially selected; remaining names use deterministic code-point order. A
+  clearly labelled advanced mode MUST retain the existing manual
+  branch/tag/commit input and blank-default behavior. In either mode, Browse
+  MUST resolve the selected value again and pin the returned full commit SHA
+  before any tree access. Branch-list commit identities MUST NOT substitute for
+  that resolution. MUST
+- **A33-BRANCH-AC-3 (complete bounded discovery)** — Discovery MUST read
+  repository metadata and serially paginate the public branch endpoint at 100
+  names/page with no protection filter. It MUST publish either the complete
+  catalog or none: at most 512 names, six pages, 512 KiB per branch page, and
+  2 MiB across branch-page bodies. A 513th name, further next page, duplicate
+  or invalid name, malformed metadata/page/link, or exceeded byte bound MUST
+  return a localized typed failure. Pagination links MUST be validated for the
+  exact HTTPS API host, repository path, page, and page size but MUST NOT be
+  followed directly; the client constructs the next exact-host request. MUST
+- **A33-BRANCH-AC-4 (state, rate, and accessibility)** — Branch loading MUST
+  be a distinct visible/cancellable state. Editing the repository clears the
+  catalog and all dependent pinned/navigation/selection/review state without
+  issuing a request per keystroke; an explicit load/refresh action retrieves
+  the edited repository's branches. Refresh, mode/ref changes, cancel, and
+  dismissal MUST invalidate applicable state, and late pages MUST publish
+  nothing. The surface-wide rate deadline MUST gate discovery too. Labels for
+  branch, loading, refresh, default, empty, limit/error, and advanced mode MUST
+  come from ARB; exact names remain technical values. The chooser MUST be
+  searchable, scrollable, keyboard/screen-reader operable, at least 48 dp, and
+  usable in compact/wide layouts and at 2× text. MUST
 
 ### 4.10 Blocks & Plots — FR-BLOCKS / FR-PLOTS
 
