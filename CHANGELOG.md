@@ -53,6 +53,10 @@ TestFlight handoff.
 - Started the compatible app `0.2.0` beta train at globally monotonic build
   `5`, synchronizing package metadata, PBLE/1 HELLO, and the public GitHub
   request identity without designating a qualified store release.
+- Raised the maintained iOS/iPadOS deployment floor to `15.0` in every Xcode
+  configuration and made the exported-IPA gate reject a lower app plist or
+  compiled minimum. The retained build-5 iOS 13 artifact remains unchanged;
+  this source-only change creates and uploads no build 6.
 - Added the connected board's PBLE/1 board ID and PyBLE agent firmware version
   to Board info and retained both in the ready/running status pill, with
   localized missing-value handling, full accessibility context, and
