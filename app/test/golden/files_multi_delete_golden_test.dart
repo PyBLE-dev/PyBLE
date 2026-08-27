@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 // Part of PyBLE (https://pyble.dev) — see /LICENSE.
 //
-// A-30 / ADR-0043 [red] — adaptive visual coverage for Files regular-file
-// multi-selection and its exact, non-atomic delete confirmation. Every board
-// entry is an authored in-memory fixture and all filesystem access crosses the
-// neutral Connection seam.
+// A-30 / ADR-0043 [red] — adaptive visual coverage for the normal Files action
+// toolbar, regular-file multi-selection, and its exact non-atomic delete
+// confirmation. Every board entry is an authored in-memory fixture and all
+// filesystem access crosses the neutral Connection seam.
 
 import 'dart:convert';
 import 'dart:typed_data';
@@ -144,7 +144,42 @@ Future<void> _expectGolden(WidgetTester tester, String name) => expectLater(
 );
 
 void main() {
-  group('A-30 Files visible-file multi-delete goldens', () {
+  group('A-30 Files adaptive chrome and multi-delete goldens', () {
+    testWidgets(
+      '252 dp pane keeps priority actions on one row and opens labelled overflow',
+      (WidgetTester tester) async {
+        final RecordingConnection connection = await _fixtureConnection();
+        addTearDown(connection.dispose);
+
+        await _pumpGoldenHost(
+          tester,
+          connection: connection,
+          size: const Size(252, 568),
+        );
+        final AppLocalizations l10n = _l10n(tester);
+
+        expect(find.byKey(kFilesNormalActionsRowKey), findsOneWidget);
+        expect(find.byTooltip(l10n.filesActionSelect), findsOneWidget);
+        expect(find.byTooltip(l10n.githubImportAction), findsOneWidget);
+        expect(find.byKey(kFilesActionsOverflowButtonKey), findsOneWidget);
+        expect(find.byTooltip(l10n.filesActionRefresh), findsNothing);
+        expect(find.byTooltip(l10n.filesEmptyCta), findsNothing);
+        expect(find.byTooltip(l10n.filesActionNewFolder), findsNothing);
+        expect(find.byTooltip(l10n.filesActionUpload), findsNothing);
+        expect(tester.takeException(), isNull);
+
+        await tester.tap(find.byKey(kFilesActionsOverflowButtonKey));
+        await tester.pumpAndSettle();
+        expect(find.text(l10n.filesActionRefresh), findsOneWidget);
+        expect(find.text(l10n.filesEmptyCta), findsOneWidget);
+        expect(find.text(l10n.filesActionNewFolder), findsOneWidget);
+        expect(find.text(l10n.filesActionUpload), findsOneWidget);
+
+        await _expectGolden(tester, 'files_toolbar_252_compact_overflow');
+      },
+      tags: const <String>['golden'],
+    );
+
     testWidgets(
       '320 dp pane reflows the contextual selection bar without selecting folders or locked files',
       (WidgetTester tester) async {

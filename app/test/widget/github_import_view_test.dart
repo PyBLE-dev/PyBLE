@@ -968,6 +968,7 @@ void main() {
         tester,
         const FilesView(),
         connection: connection,
+        size: const Size(252, 568),
         extra: <Override>[githubApiProvider.overrideWithValue(api)],
       );
       await tester.pumpAndSettle();
