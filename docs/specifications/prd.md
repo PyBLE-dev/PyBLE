@@ -299,7 +299,7 @@ These restate the success criteria of §21.1 in production terms.
 
 The following are planned for **v1.x / post-v1** and **SHOULD** be built on the same frozen contract without breaking it:
 
-- **Breadth IDE features** — file explorer multi-select, CSV/streamed **live plots**, and richer Blockly coverage hardened across all three chips ([public roadmap](../ROADMAP.md)).
+- **Breadth IDE features** — CSV/streamed **live plots** and richer Blockly coverage hardened across all three chips ([public roadmap](../ROADMAP.md)).
 - **GitHub import** — pull a folder of `.py` from a public GitHub repo onto the board ([app.md §2](app.md#2-packages--directories)).
 - **Saved-board UX and reliability hardening** — remembered boards, reconnect polish, and stress-tested transfers ([public roadmap](../ROADMAP.md)).
 - **Additional validated MicroPython + BLE platform ports** — later ESP32
@@ -591,7 +591,7 @@ These requirements specify app behavior and become story acceptance criteria. Th
 - The explorer MUST display the board filesystem from `listDir` (`FILE_LIST`) rooted at the `fs_root` reported in DEVICE_INFO.
 - It MUST support open, upload (`putFile`), download (`getFile`), rename (`rename`), delete (`delete`), and mkdir (`mkdir`), each surfacing PBLE/1 status codes (e.g. `ENOENT`, `ENOSPC`, `EACCES`) as actionable messages (see [protocol.md §8](protocol.md#8-status--error-codes-1-byte-status-in-rsp)).
 - Uploads and downloads MUST report progress and MUST be reported successful only on full-file CRC match (see §8.4).
-- The explorer SHOULD support multi-select for bulk operations and SHOULD distinguish the user workspace (`/main.py`, `/lib/*.py`, `/data/*`) from the agent control plane, which it MUST NOT expose as editable (see [firmware.md §1](firmware.md#1-four-layer-rule)).
+- The explorer MUST support session- and folder-bound multi-select deletion for visible eligible regular files, with one exact confirmation, sequential fail-fast PBLE/1 deletes, one reconciliation listing, and honest complete/partial results. It MUST distinguish the user workspace (`/main.py`, `/lib/*.py`, `/data/*`) from the agent control plane and transfer scratch paths, which it MUST NOT expose as editable or bulk-selectable (see [firmware.md §1](firmware.md#1-four-layer-rule) and [ADR-0043](../decisions/0043-session-bound-visible-file-multi-delete.md)).
 - Transfers MUST be `.py`/data files only; the app MUST NOT produce or transfer `.mpy` (non-goal, see §4.3).
 
 ### §9.3 MicroPython Code Editor
