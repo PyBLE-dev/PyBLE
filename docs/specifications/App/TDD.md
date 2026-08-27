@@ -915,9 +915,12 @@ to `boot.py` or `_boot.py`, raises a sanitized `protectedRootTarget` failure
 before the board listing, Git blob fetch, or PUT. The same basename below any
 child directory remains valid. The localized error names only the safe target
 path and explains that the user must close Import, create and enter a child
-folder such as `/examples` in Files, and reopen Import because `capturedCwd`
-is immutable for that action. The review view renders exact remote → board
-path pairs before a network content fetch or PUT.
+folder at `join(fsRoot, "examples")` in Files, and reopen Import because
+`capturedCwd` is immutable for that action. Presentation derives and renders
+that child path rather than assuming `/`; while the path-specific failure is
+active it suppresses the repetitive general root guide and disables Review
+until selection changes. The review view renders exact remote → board path
+pairs before a network content fetch or PUT.
 
 `GithubBoardImporter.review()` first requires the captured session stamp to be
 current, then calls

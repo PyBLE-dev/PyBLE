@@ -259,10 +259,14 @@ to `[red]` before implementation:
   `pyble` or `pble`, or is exactly `boot.py` or `_boot.py`, MUST be blocked
   before the first board listing, Git blob fetch, or PUT. The localized failure
   MUST name the protected target and instruct the user to close Import, create
-  and enter a child folder such as `/examples` in Files, and reopen Import; the
-  same basename MUST remain valid below a child folder, and an ordinary
-  non-protected basename MUST remain valid at the board root without a separate
-  confirmation. Existing regular files MUST be named in a separate explicit
+  and enter the derived child folder `join(fs_root, "examples")` in Files, and
+  reopen Import. The rendered example path MUST therefore respect a non-`/`
+  root such as `/flash`. While this deterministic failure is active, its
+  path-specific guidance MUST replace the general root warning and Review MUST
+  remain disabled until the selection changes. The same basename MUST remain
+  valid below a child folder, and an ordinary non-protected basename MUST
+  remain valid at the board root without a separate confirmation. Existing
+  regular files MUST be named in a separate explicit
   overwrite confirmation; an existing directory or other non-regular conflict
   MUST block import. The board-listing seam MUST
   preserve PBLE/1's completeness bit, and `FILE_LIST more=1` (or a test double
