@@ -280,6 +280,12 @@ class FileExplorerController extends Notifier<FileExplorerState> {
   /// replaced, the controller is disposed, or a newer initialization starts.
   int _initEpoch = 0;
 
+  /// Makes directory listings latest-request-wins within one board session.
+  int _listingEpoch = 0;
+
+  /// Prevents queued or in-flight asynchronous work from reading a dead ref.
+  bool _disposed = false;
+
   /// Serializes explicit Open-as-Blocks source downloads. The native row stays
   /// responsive, but a rapid second activation cannot start a duplicate GET
   /// or a competing preview flow.
@@ -300,14 +306,24 @@ class FileExplorerController extends Notifier<FileExplorerState> {
     _lastConnState = connState.value;
     connState.addListener(_onConnState);
     ref.onDispose(() {
+      _disposed = true;
       _initEpoch += 1;
+      _listingEpoch += 1;
       connState.removeListener(_onConnState);
     });
 
     if (_isAttached(connState.value)) {
       // Already connected at first build (the gated shell's normal path):
       // root-init (fsRoot -> initial listing) asynchronously.
-      scheduleMicrotask(_init);
+      final int scheduledEpoch = _initEpoch;
+      scheduleMicrotask(() {
+        if (_disposed ||
+            scheduledEpoch != _initEpoch ||
+            !_isAttached(connState.value)) {
+          return;
+        }
+        _init();
+      });
     }
     return FileExplorerState(
       fsRoot: '/',
@@ -332,6 +348,7 @@ class FileExplorerController extends Notifier<FileExplorerState> {
       // DEVICE_INFO and the initial listing belong to the attachment that
       // started them. Prevent either completion from publishing after detach.
       _initEpoch += 1;
+      _listingEpoch += 1;
       // The board went away: drop the stale listing (the view shows the
       // disconnected guidance); the next connection re-roots via _init.
       state = state.copyWith(
@@ -348,10 +365,15 @@ class FileExplorerController extends Notifier<FileExplorerState> {
 
   /// Reads `fsRoot` from the board and lists the root directory.
   Future<void> _init() async {
-    final int epoch = ++_initEpoch;
+    if (_disposed) return;
     final Connection connection = _conn;
+    if (!_isAttached(connection.state.value)) return;
+
+    final int epoch = ++_initEpoch;
+    _listingEpoch += 1;
     final Object sessionStamp = connectionSessionStampOf(connection);
     String? reportedRoot;
+    int? initialListingEpoch;
     state = state.copyWith(
       loading: true,
       hasReportedFsRoot: false,
@@ -369,6 +391,7 @@ class FileExplorerController extends Notifier<FileExplorerState> {
 
       reportedRoot = info.fsRoot;
       _fsRoot = reportedRoot;
+      initialListingEpoch = ++_listingEpoch;
       state = state.copyWith(
         fsRoot: _fsRoot,
         hasReportedFsRoot: true,
@@ -376,23 +399,30 @@ class FileExplorerController extends Notifier<FileExplorerState> {
       );
 
       final List<RemoteEntry> entries = await connection.listDir(reportedRoot);
-      if (!_isInitContextCurrent(
-            epoch: epoch,
-            connection: connection,
-            stamp: sessionStamp,
-          ) ||
-          state.cwd != reportedRoot) {
+      if (!_isListingContextCurrent(
+        epoch: initialListingEpoch,
+        connection: connection,
+        stamp: sessionStamp,
+        path: reportedRoot,
+      )) {
         return;
       }
       entries.sort(_entryOrder);
       state = state.copyWith(entries: entries, loading: false);
     } on PbleException catch (e) {
-      if (!_isInitContextCurrent(
-            epoch: epoch,
-            connection: connection,
-            stamp: sessionStamp,
-          ) ||
-          (reportedRoot != null && state.cwd != reportedRoot)) {
+      final bool isCurrent = reportedRoot == null
+          ? _isInitContextCurrent(
+              epoch: epoch,
+              connection: connection,
+              stamp: sessionStamp,
+            )
+          : _isListingContextCurrent(
+              epoch: initialListingEpoch!,
+              connection: connection,
+              stamp: sessionStamp,
+              path: reportedRoot,
+            );
+      if (!isCurrent) {
         return;
       }
       state = state.copyWith(
@@ -405,16 +435,37 @@ class FileExplorerController extends Notifier<FileExplorerState> {
 
   /// Re-lists [FileExplorerState.cwd] (FR-FILES-1).
   Future<void> refresh() async {
+    if (_disposed) return;
+    final Connection connection = _conn;
+    final Object sessionStamp = connectionSessionStampOf(connection);
+    final String path = state.cwd;
+    final int epoch = ++_listingEpoch;
     state = state.copyWith(loading: true, clearError: true);
     try {
-      final List<RemoteEntry> entries = await _conn.listDir(state.cwd);
+      final List<RemoteEntry> entries = await connection.listDir(path);
+      if (!_isListingContextCurrent(
+        epoch: epoch,
+        connection: connection,
+        stamp: sessionStamp,
+        path: path,
+      )) {
+        return;
+      }
       entries.sort(_entryOrder);
       state = state.copyWith(entries: entries, loading: false);
     } on PbleException catch (e) {
+      if (!_isListingContextCurrent(
+        epoch: epoch,
+        connection: connection,
+        stamp: sessionStamp,
+        path: path,
+      )) {
+        return;
+      }
       state = state.copyWith(
         loading: false,
         error: _kindOf(e),
-        errorPath: state.cwd,
+        errorPath: path,
       );
     }
   }
@@ -791,7 +842,20 @@ class FileExplorerController extends Notifier<FileExplorerState> {
     required Connection connection,
     required Object stamp,
   }) =>
+      !_disposed &&
       epoch == _initEpoch &&
+      _isCapturedSessionCurrent(connection: connection, stamp: stamp) &&
+      _isAttached(connection.state.value);
+
+  bool _isListingContextCurrent({
+    required int epoch,
+    required Connection connection,
+    required Object stamp,
+    required String path,
+  }) =>
+      !_disposed &&
+      epoch == _listingEpoch &&
+      state.cwd == path &&
       _isCapturedSessionCurrent(connection: connection, stamp: stamp) &&
       _isAttached(connection.state.value);
 
