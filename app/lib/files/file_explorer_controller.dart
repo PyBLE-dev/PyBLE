@@ -344,14 +344,18 @@ class FileExplorerController extends Notifier<FileExplorerState> {
     if (now == ConnState.ready && !_isAttached(prev)) {
       // A NEW board session became ready: auto-load its listing (FR-FILES-1).
       _init();
-    } else if (now == ConnState.disconnected) {
+    } else if (!_isAttached(now) && _isAttached(prev)) {
       // DEVICE_INFO and the initial listing belong to the attachment that
       // started them. Prevent either completion from publishing after detach.
       _initEpoch += 1;
       _listingEpoch += 1;
-      // The board went away: drop the stale listing (the view shows the
-      // disconnected guidance); the next connection re-roots via _init.
+      _fsRoot = '/';
+      // The attachment went away or began an in-place reconnect: drop every
+      // stale path/listing before the successor session can be acted upon.
+      // The next ready transition re-roots from DEVICE_INFO via _init.
       state = state.copyWith(
+        fsRoot: '/',
+        cwd: '/',
         entries: <RemoteEntry>[],
         loading: false,
         hasReportedFsRoot: false,
