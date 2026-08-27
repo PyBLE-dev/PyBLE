@@ -69,13 +69,11 @@ const GithubEntry _notesEntry = GithubEntry(
 final class _GoldenGithubApi implements GithubApi {
   _GoldenGithubApi({
     this.branchFailure,
-    this.resolveFailure,
     this.childListGate,
     this.entries = _defaultEntries,
   });
 
   final GithubFailure? branchFailure;
-  final GithubFailure? resolveFailure;
   final Completer<void>? childListGate;
   final List<GithubEntry> entries;
 
@@ -115,7 +113,6 @@ final class _GoldenGithubApi implements GithubApi {
     String ref = '',
     GithubCancellation? cancellation,
   }) async {
-    if (resolveFailure case final GithubFailure failure) throw failure;
     return PinnedRepository(
       locator: locator,
       requestedRef: ref,
@@ -268,7 +265,12 @@ Future<void> _selectFiles(
   Iterable<String> remotePaths,
 ) async {
   for (final String remotePath in remotePaths) {
-    await tester.tap(find.byKey(ValueKey<String>('githubSelect_$remotePath')));
+    final Finder selection = find.byKey(
+      ValueKey<String>('githubSelect_$remotePath'),
+    );
+    await tester.ensureVisible(selection);
+    await tester.pumpAndSettle();
+    await tester.tap(selection);
   }
   await tester.pump();
 }

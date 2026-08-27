@@ -2349,6 +2349,60 @@ abstract class AppLocalizations {
   /// **'Leave blank for the default branch'**
   String get githubImportRefHint;
 
+  /// Label for the searchable public-repository branch chooser.
+  ///
+  /// In en, this message translates to:
+  /// **'Branch'**
+  String get githubImportBranchLabel;
+
+  /// Branch chooser label marking the repository-reported default. The branch name is an opaque technical Git ref and remains verbatim.
+  ///
+  /// In en, this message translates to:
+  /// **'{branch} (default)'**
+  String githubImportDefaultBranch(String branch);
+
+  /// Action that retrieves all bounded public branches after the repository URL is edited.
+  ///
+  /// In en, this message translates to:
+  /// **'Load branches'**
+  String get githubImportLoadBranches;
+
+  /// Action that discards and reloads the current public repository branch catalog.
+  ///
+  /// In en, this message translates to:
+  /// **'Refresh branches'**
+  String get githubImportRefreshBranches;
+
+  /// Visible and semantic state while the bounded public branch catalog loads.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading repository branches…'**
+  String get githubImportLoadingBranches;
+
+  /// Guidance shown after an edited repository has no current branch catalog.
+  ///
+  /// In en, this message translates to:
+  /// **'Load branches for this repository before browsing.'**
+  String get githubImportBranchesNotLoaded;
+
+  /// Empty state for a public repository whose complete branch catalog is empty.
+  ///
+  /// In en, this message translates to:
+  /// **'This repository has no branches to browse.'**
+  String get githubImportNoBranches;
+
+  /// Advanced switch that replaces the novice branch chooser with the existing manual Git ref field.
+  ///
+  /// In en, this message translates to:
+  /// **'Use a tag or commit'**
+  String get githubImportManualRef;
+
+  /// Action that returns from manual Git ref entry to the novice branch chooser.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a repository branch'**
+  String get githubImportChooseBranch;
+
   /// Action that resolves a repository ref and opens its pinned root tree.
   ///
   /// In en, this message translates to:
@@ -2588,6 +2642,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'GitHub returned an unexpected response, so nothing was written.'**
   String get githubImportErrorMalformed;
+
+  /// Failure message when complete branch discovery exceeds its explicit resource ceiling.
+  ///
+  /// In en, this message translates to:
+  /// **'This repository has more than 512 branches, so PyBLE cannot show a complete branch list. Use the manual ref option instead.'**
+  String get githubImportErrorTooManyBranches;
 
   /// Path, type, encoding, NUL, or blocking-target validation failure.
   ///

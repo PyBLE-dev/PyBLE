@@ -29,12 +29,126 @@ final class GithubRepositoryClient implements GithubApi {
   static const String _apiVersion = '2026-03-10';
   static const String _userAgent = 'PyBLE/0.1.0';
   static const int _metadataBodyLimit = 1024 * 1024;
+  static const int _branchPageBodyLimit = 512 * 1024;
+  static const int _branchAggregateBodyLimit = 2 * 1024 * 1024;
   static const int _treeBodyLimit = 2 * 1024 * 1024;
   static const int _blobBodyLimit = 2 * 1024 * 1024;
+  static const int _branchesPerPage = 100;
+  static const int _maximumBranchPages = 6;
+  static const int _maximumBranches = 512;
+  static const int _maximumRepositoryId = 0x1fffffffffffff;
   static const int _maximumDirectTreeEntries = 512;
 
   final http.Client _httpClient;
   final Duration _timeout;
+
+  @override
+  Future<GithubBranchCatalog> listBranches(
+    RepositoryLocator locator, {
+    GithubCancellation? cancellation,
+  }) async {
+    final String failurePath = locator.canonicalRoot.toString();
+    final _RepositoryMetadata metadata = await _readRepositoryMetadata(
+      locator,
+      requireRepositoryId: true,
+      cancellation: cancellation,
+    );
+    final String defaultBranch = metadata.defaultBranch;
+    final int repositoryId = metadata.repositoryId!;
+    final Set<String> branchNames = <String>{};
+    int page = 1;
+    int aggregateBodyBytes = 0;
+
+    while (true) {
+      final _RestResponse response = await _get(
+        _branchesUri(locator, page),
+        failurePath: failurePath,
+        maximumBodyBytes: _branchPageBodyLimit,
+        cancellation: cancellation,
+      );
+      aggregateBodyBytes += response.bytes.length;
+      if (aggregateBodyBytes > _branchAggregateBodyLimit) {
+        throw GithubFailure(
+          GithubFailureKind.malformedResponse,
+          path: failurePath,
+        );
+      }
+
+      final List<Object?> rawBranches = _decodeList(
+        response.bytes,
+        path: failurePath,
+      );
+      if (rawBranches.length > _branchesPerPage) {
+        throw GithubFailure(
+          GithubFailureKind.malformedResponse,
+          path: failurePath,
+        );
+      }
+      for (final Object? rawBranch in rawBranches) {
+        final Map<String, Object?> branch = _requiredObject(
+          rawBranch,
+          path: failurePath,
+        );
+        final String branchName = _requiredBranchName(
+          branch['name'],
+          path: failurePath,
+        );
+        final Map<String, Object?> commit = _requiredObject(
+          branch['commit'],
+          path: failurePath,
+        );
+        _requiredObjectSha(commit['sha'], path: failurePath);
+        if (!branchNames.add(branchName)) {
+          throw GithubFailure(
+            GithubFailureKind.malformedResponse,
+            path: failurePath,
+          );
+        }
+        if (branchNames.length > _maximumBranches) {
+          throw GithubFailure(
+            GithubFailureKind.tooManyBranches,
+            path: failurePath,
+          );
+        }
+      }
+
+      final bool hasNextPage = _hasValidatedNextBranchPage(
+        response.headers,
+        locator: locator,
+        repositoryId: repositoryId,
+        currentPage: page,
+        path: failurePath,
+      );
+      if (!hasNextPage) break;
+      if (page >= _maximumBranchPages) {
+        throw GithubFailure(
+          GithubFailureKind.tooManyBranches,
+          path: failurePath,
+        );
+      }
+      page += 1;
+    }
+
+    if (branchNames.isNotEmpty && !branchNames.contains(defaultBranch)) {
+      throw GithubFailure(
+        GithubFailureKind.malformedResponse,
+        path: failurePath,
+      );
+    }
+    if (cancellation?.isCancelled ?? false) {
+      throw GithubFailure(GithubFailureKind.cancelled, path: failurePath);
+    }
+
+    final List<String> sortedBranches = branchNames.toList()..sort();
+    if (sortedBranches.remove(defaultBranch)) {
+      sortedBranches.insert(0, defaultBranch);
+    }
+    return GithubBranchCatalog(
+      locator: locator,
+      defaultBranch: defaultBranch,
+      branches: sortedBranches,
+    );
+  }
 
   @override
   Future<PinnedRepository> resolve(
@@ -49,26 +163,10 @@ final class GithubRepositoryClient implements GithubApi {
     String resolvedRef = requestedRef;
 
     if (resolvedRef.isEmpty) {
-      final _RestResponse metadata = await _get(
-        _repositoryUri(locator),
-        failurePath: locator.canonicalRoot.toString(),
-        maximumBodyBytes: _metadataBodyLimit,
+      resolvedRef = await _readDefaultBranch(
+        locator,
         cancellation: cancellation,
       );
-      final Map<String, Object?> object = _decodeObject(
-        metadata.bytes,
-        path: locator.canonicalRoot.toString(),
-      );
-      final Object? defaultBranch = object['default_branch'];
-      if (defaultBranch is! String ||
-          !_isValidRef(defaultBranch) ||
-          defaultBranch.trim() != defaultBranch) {
-        throw GithubFailure(
-          GithubFailureKind.malformedResponse,
-          path: locator.canonicalRoot.toString(),
-        );
-      }
-      resolvedRef = defaultBranch;
     }
 
     final _RestResponse commitResponse = await _get(
@@ -282,6 +380,133 @@ final class GithubRepositoryClient implements GithubApi {
     pathSegments: <String>['repos', locator.owner, locator.repo, ...suffix],
   );
 
+  Uri _branchesUri(RepositoryLocator locator, int page) =>
+      _repositoryUri(locator, const <String>['branches']).replace(
+        queryParameters: <String, String>{
+          'per_page': '$_branchesPerPage',
+          'page': '$page',
+        },
+      );
+
+  Future<String> _readDefaultBranch(
+    RepositoryLocator locator, {
+    GithubCancellation? cancellation,
+  }) async {
+    final _RepositoryMetadata metadata = await _readRepositoryMetadata(
+      locator,
+      requireRepositoryId: false,
+      cancellation: cancellation,
+    );
+    return metadata.defaultBranch;
+  }
+
+  Future<_RepositoryMetadata> _readRepositoryMetadata(
+    RepositoryLocator locator, {
+    required bool requireRepositoryId,
+    GithubCancellation? cancellation,
+  }) async {
+    final String failurePath = locator.canonicalRoot.toString();
+    final _RestResponse metadata = await _get(
+      _repositoryUri(locator),
+      failurePath: failurePath,
+      maximumBodyBytes: _metadataBodyLimit,
+      cancellation: cancellation,
+    );
+    final Map<String, Object?> object = _decodeObject(
+      metadata.bytes,
+      path: failurePath,
+    );
+    final String defaultBranch = _requiredBranchName(
+      object['default_branch'],
+      path: failurePath,
+    );
+    final Object? rawRepositoryId = object['id'];
+    final int? repositoryId =
+        rawRepositoryId is int &&
+            rawRepositoryId > 0 &&
+            rawRepositoryId <= _maximumRepositoryId
+        ? rawRepositoryId
+        : null;
+    if (requireRepositoryId && repositoryId == null) {
+      throw GithubFailure(
+        GithubFailureKind.malformedResponse,
+        path: failurePath,
+      );
+    }
+    return _RepositoryMetadata(
+      defaultBranch: defaultBranch,
+      repositoryId: repositoryId,
+    );
+  }
+
+  static bool _hasValidatedNextBranchPage(
+    Map<String, String> headers, {
+    required RepositoryLocator locator,
+    required int repositoryId,
+    required int currentPage,
+    required String path,
+  }) {
+    final String? rawLink = _header(headers, 'link');
+    if (rawLink == null) return false;
+    if (rawLink.isEmpty) {
+      throw GithubFailure(GithubFailureKind.malformedResponse, path: path);
+    }
+
+    Uri? nextUri;
+    final RegExp linkValuePattern = RegExp(
+      r'^\s*<([^<>]+)>\s*;\s*rel="([^"]+)"\s*$',
+    );
+    for (final String rawValue in rawLink.split(',')) {
+      final RegExpMatch? match = linkValuePattern.firstMatch(rawValue);
+      if (match == null) {
+        throw GithubFailure(GithubFailureKind.malformedResponse, path: path);
+      }
+      final String relation = match.group(2)!;
+      if (relation != 'next') continue;
+      if (nextUri != null) {
+        throw GithubFailure(GithubFailureKind.malformedResponse, path: path);
+      }
+      nextUri = Uri.tryParse(match.group(1)!);
+      if (nextUri == null) {
+        throw GithubFailure(GithubFailureKind.malformedResponse, path: path);
+      }
+    }
+    if (nextUri == null) return false;
+
+    final Uri locatorBranchPath = Uri(
+      scheme: 'https',
+      host: _apiHost,
+      pathSegments: <String>['repos', locator.owner, locator.repo, 'branches'],
+    );
+    final Uri identityBranchPath = Uri(
+      scheme: 'https',
+      host: _apiHost,
+      pathSegments: <String>['repositories', '$repositoryId', 'branches'],
+    );
+    final Map<String, List<String>> query = nextUri.queryParametersAll;
+    final List<String>? perPageValues = query['per_page'];
+    final List<String>? pageValues = query['page'];
+    final bool valid =
+        nextUri.scheme == 'https' &&
+        nextUri.authority == _apiHost &&
+        nextUri.userInfo.isEmpty &&
+        !nextUri.hasPort &&
+        !nextUri.hasFragment &&
+        (nextUri.path == locatorBranchPath.path ||
+            nextUri.path == identityBranchPath.path) &&
+        query.length == 2 &&
+        perPageValues != null &&
+        perPageValues.length == 1 &&
+        perPageValues.single == '$_branchesPerPage' &&
+        pageValues != null &&
+        pageValues.length == 1 &&
+        pageValues.single == '${currentPage + 1}';
+    if (!valid) {
+      throw GithubFailure(GithubFailureKind.malformedResponse, path: path);
+    }
+    return true;
+  }
+
   Future<_RestResponse> _get(
     Uri uri, {
     required String failurePath,
@@ -358,7 +583,10 @@ final class GithubRepositoryClient implements GithubApi {
         }
         body.add(chunk);
       }
-      return _RestResponse(bytes: body.takeBytes());
+      return _RestResponse(
+        bytes: body.takeBytes(),
+        headers: Map<String, String>.unmodifiable(streamed.headers),
+      );
     }
 
     try {
@@ -529,6 +757,18 @@ final class GithubRepositoryClient implements GithubApi {
     }
   }
 
+  static List<Object?> _decodeList(Uint8List bytes, {required String path}) {
+    try {
+      final Object? decoded = jsonDecode(
+        utf8.decode(bytes, allowMalformed: false),
+      );
+      if (decoded is List<Object?>) return decoded;
+    } on FormatException {
+      // Fall through to the one sanitized response failure below.
+    }
+    throw GithubFailure(GithubFailureKind.malformedResponse, path: path);
+  }
+
   static Map<String, Object?> _requiredObject(
     Object? value, {
     required String path,
@@ -544,6 +784,37 @@ final class GithubRepositoryClient implements GithubApi {
       return value;
     }
     throw GithubFailure(GithubFailureKind.malformedResponse, path: path);
+  }
+
+  static String _requiredBranchName(Object? value, {required String path}) {
+    if (value is String && _isValidBranchName(value)) {
+      return value;
+    }
+    throw GithubFailure(GithubFailureKind.malformedResponse, path: path);
+  }
+
+  static bool _isValidBranchName(String value) {
+    if (!_isValidRef(value) ||
+        value.trim() != value ||
+        value == '@' ||
+        value.startsWith('-') ||
+        value.startsWith('/') ||
+        value.endsWith('/') ||
+        value.endsWith('.') ||
+        value.contains('//') ||
+        value.contains('..') ||
+        value.contains('@{') ||
+        value.contains(RegExp(r'[ ~^:?*\[]'))) {
+      return false;
+    }
+    return value
+        .split('/')
+        .every(
+          (String component) =>
+              component.isNotEmpty &&
+              !component.startsWith('.') &&
+              !component.endsWith('.lock'),
+        );
   }
 
   static String _requiredDirectChildName(
@@ -623,7 +894,18 @@ final class GithubRepositoryClient implements GithubApi {
 }
 
 final class _RestResponse {
-  const _RestResponse({required this.bytes});
+  const _RestResponse({required this.bytes, required this.headers});
 
   final Uint8List bytes;
+  final Map<String, String> headers;
+}
+
+final class _RepositoryMetadata {
+  const _RepositoryMetadata({
+    required this.defaultBranch,
+    required this.repositoryId,
+  });
+
+  final String defaultBranch;
+  final int? repositoryId;
 }
