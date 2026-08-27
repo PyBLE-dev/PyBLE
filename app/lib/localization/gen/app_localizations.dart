@@ -2013,6 +2013,54 @@ abstract class AppLocalizations {
   /// **'Up one folder'**
   String get filesGoUp;
 
+  /// Discoverable action that enters the Files regular-file multi-selection mode.
+  ///
+  /// In en, this message translates to:
+  /// **'Select files'**
+  String get filesActionSelect;
+
+  /// Action that exits Files multi-selection mode without deleting anything.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel selection'**
+  String get filesSelectionCancel;
+
+  /// Live selected-file count in the Files contextual selection bar.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{No files selected} =1{1 file selected} other{{count} files selected}}'**
+  String filesSelectionSelectedCount(int count);
+
+  /// Tooltip and semantics for selecting every eligible regular file present in the rendered folder listing; omitted/truncated entries and folders are not implied.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{Select the 1 shown file} other{Select all {count} shown files}}'**
+  String filesSelectionSelectAllShown(int count);
+
+  /// Tooltip and semantics for clearing every currently selected board file while remaining in selection mode.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear file selection'**
+  String get filesSelectionClearAll;
+
+  /// Destructive action that reviews the selected board files before a sequential bulk delete.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete selected files'**
+  String get filesSelectionDelete;
+
+  /// Selection-mode guidance for a folder row; folders retain the separate one-at-a-time empty-folder delete behavior.
+  ///
+  /// In en, this message translates to:
+  /// **'Folders cannot be selected for bulk delete.'**
+  String get filesSelectionFilesOnly;
+
+  /// Tooltip and semantics for a firmware control-plane or transfer-scratch entry that Files presents as locked and non-editable.
+  ///
+  /// In en, this message translates to:
+  /// **'Protected by the board'**
+  String get filesEntryProtected;
+
   /// Action that downloads a board file (getFile) and opens it in the editor buffer.
   ///
   /// In en, this message translates to:
@@ -2084,6 +2132,42 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'This permanently removes it from the board.'**
   String get filesDeleteConfirmBody;
+
+  /// Title of the exact multi-file delete confirmation.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{Delete 1 selected file?} other{Delete {count} selected files?}}'**
+  String filesDeleteSelectedConfirmTitle(int count);
+
+  /// Permanent-removal warning in the multi-file delete confirmation. The board cwd is a verbatim technical path.
+  ///
+  /// In en, this message translates to:
+  /// **'This permanently removes the selected files from {cwd}. This cannot be undone.'**
+  String filesDeleteSelectedConfirmBody(String cwd);
+
+  /// Accessible heading above the exact ordered filenames in the multi-delete confirmation.
+  ///
+  /// In en, this message translates to:
+  /// **'Files to delete'**
+  String get filesDeleteSelectedListLabel;
+
+  /// Item-level progress shown while a sequential file-delete batch is active. The filename is verbatim technical text.
+  ///
+  /// In en, this message translates to:
+  /// **'Deleting {name} · {completed} of {total} completed'**
+  String filesDeleteSelectedProgress(String name, int completed, int total);
+
+  /// Polite terminal announcement after a complete multi-file delete.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 file deleted} other{{count} files deleted}}'**
+  String filesDeleteSelectedComplete(int count);
+
+  /// Honest failed/partial multi-delete summary; the separate typed file error explains why the batch stopped.
+  ///
+  /// In en, this message translates to:
+  /// **'{deleted, plural, =0{No files were confirmed deleted.} =1{1 file was deleted.} other{{deleted} files were deleted.}} {remaining, plural, =1{1 file remains selected.} other{{remaining} files remain selected.}} Review the Files list before trying again.'**
+  String filesDeleteSelectedStopped(int deleted, int remaining);
 
   /// Generic Cancel button, shared across dialogs.
   ///

@@ -1601,6 +1601,44 @@
   "@filesGoUp": {
     "description": "Tooltip for the navigate-up action in the file explorer; bounded at the board's filesystem root."
   },
+  "filesActionSelect": "Select files",
+  "@filesActionSelect": {
+    "description": "Discoverable action that enters the Files regular-file multi-selection mode."
+  },
+  "filesSelectionCancel": "Cancel selection",
+  "@filesSelectionCancel": {
+    "description": "Action that exits Files multi-selection mode without deleting anything."
+  },
+  "filesSelectionSelectedCount": "{count, plural, =0{No files selected} =1{1 file selected} other{{count} files selected}}",
+  "@filesSelectionSelectedCount": {
+    "description": "Live selected-file count in the Files contextual selection bar.",
+    "placeholders": {
+      "count": {"type": "int", "example": "3"}
+    }
+  },
+  "filesSelectionSelectAllShown": "{count, plural, =1{Select the 1 shown file} other{Select all {count} shown files}}",
+  "@filesSelectionSelectAllShown": {
+    "description": "Tooltip and semantics for selecting every eligible regular file present in the rendered folder listing; omitted/truncated entries and folders are not implied.",
+    "placeholders": {
+      "count": {"type": "int", "example": "5"}
+    }
+  },
+  "filesSelectionClearAll": "Clear file selection",
+  "@filesSelectionClearAll": {
+    "description": "Tooltip and semantics for clearing every currently selected board file while remaining in selection mode."
+  },
+  "filesSelectionDelete": "Delete selected files",
+  "@filesSelectionDelete": {
+    "description": "Destructive action that reviews the selected board files before a sequential bulk delete."
+  },
+  "filesSelectionFilesOnly": "Folders cannot be selected for bulk delete.",
+  "@filesSelectionFilesOnly": {
+    "description": "Selection-mode guidance for a folder row; folders retain the separate one-at-a-time empty-folder delete behavior."
+  },
+  "filesEntryProtected": "Protected by the board",
+  "@filesEntryProtected": {
+    "description": "Tooltip and semantics for a firmware control-plane or transfer-scratch entry that Files presents as locked and non-editable."
+  },
   "filesOpenInEditor": "Open in editor",
   "@filesOpenInEditor": {
     "description": "Action that downloads a board file (getFile) and opens it in the editor buffer."
@@ -1680,6 +1718,48 @@
   "filesDeleteConfirmBody": "This permanently removes it from the board.",
   "@filesDeleteConfirmBody": {
     "description": "Body of the delete-confirmation dialog, warning the deletion is permanent."
+  },
+  "filesDeleteSelectedConfirmTitle": "{count, plural, =1{Delete 1 selected file?} other{Delete {count} selected files?}}",
+  "@filesDeleteSelectedConfirmTitle": {
+    "description": "Title of the exact multi-file delete confirmation.",
+    "placeholders": {
+      "count": {"type": "int", "example": "3"}
+    }
+  },
+  "filesDeleteSelectedConfirmBody": "This permanently removes the selected files from {cwd}. This cannot be undone.",
+  "@filesDeleteSelectedConfirmBody": {
+    "description": "Permanent-removal warning in the multi-file delete confirmation. The board cwd is a verbatim technical path.",
+    "placeholders": {
+      "cwd": {"type": "String", "example": "/examples"}
+    }
+  },
+  "filesDeleteSelectedListLabel": "Files to delete",
+  "@filesDeleteSelectedListLabel": {
+    "description": "Accessible heading above the exact ordered filenames in the multi-delete confirmation."
+  },
+  "filesDeleteSelectedProgress": "Deleting {name} · {completed} of {total} completed",
+  "@filesDeleteSelectedProgress": {
+    "description": "Item-level progress shown while a sequential file-delete batch is active. The filename is verbatim technical text.",
+    "placeholders": {
+      "name": {"type": "String", "example": "blink.py"},
+      "completed": {"type": "int", "example": "1"},
+      "total": {"type": "int", "example": "3"}
+    }
+  },
+  "filesDeleteSelectedComplete": "{count, plural, =1{1 file deleted} other{{count} files deleted}}",
+  "@filesDeleteSelectedComplete": {
+    "description": "Polite terminal announcement after a complete multi-file delete.",
+    "placeholders": {
+      "count": {"type": "int", "example": "3"}
+    }
+  },
+  "filesDeleteSelectedStopped": "{deleted, plural, =0{No files were confirmed deleted.} =1{1 file was deleted.} other{{deleted} files were deleted.}} {remaining, plural, =1{1 file remains selected.} other{{remaining} files remain selected.}} Review the Files list before trying again.",
+  "@filesDeleteSelectedStopped": {
+    "description": "Honest failed/partial multi-delete summary; the separate typed file error explains why the batch stopped.",
+    "placeholders": {
+      "deleted": {"type": "int", "example": "1"},
+      "remaining": {"type": "int", "example": "2"}
+    }
   },
 
   "commonCancel": "Cancel",
