@@ -7,6 +7,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
+import 'package:pyble/app/app_info.dart';
 
 import 'github_models.dart';
 
@@ -27,7 +28,7 @@ final class GithubRepositoryClient implements GithubApi {
   static const String _apiHost = 'api.github.com';
   static const String _accept = 'application/vnd.github+json';
   static const String _apiVersion = '2026-03-10';
-  static const String _userAgent = 'PyBLE/0.1.0';
+  static const String _userAgent = '$kAppName/$kAppVersion';
   static const int _metadataBodyLimit = 1024 * 1024;
   static const int _branchPageBodyLimit = 512 * 1024;
   static const int _branchAggregateBodyLimit = 2 * 1024 * 1024;
