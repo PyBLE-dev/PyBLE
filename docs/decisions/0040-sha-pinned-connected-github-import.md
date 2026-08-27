@@ -79,8 +79,12 @@ the selected `.py` files sequentially to the current board directory.**
    or PUT. The surface warns whenever the captured destination is the board
    root. A path-specific localized failure names a selected protected target
    and instructs the user to close Import, create and enter a child directory
-   such as `/examples` in Files, and then reopen Import so the new destination
-   is captured. The same basename remains valid below a child directory.
+   at `join(fs_root, "examples")` in Files (for example `/examples` when the
+   root is `/`, or `/flash/examples` when it is `/flash`), and then reopen
+   Import so the new destination is captured. While that deterministic failure
+   is active, the general root guide is replaced by the path-specific message
+   and Review remains disabled until the selection changes. The same basename
+   remains valid below a child directory.
    Ordinary non-protected basenames remain valid at the board root; this is
    targeted preflight, not a blanket root-import ban or confirm-to-continue
    warning.
