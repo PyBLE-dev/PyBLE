@@ -68,11 +68,13 @@ const GithubEntry _notesEntry = GithubEntry(
 
 final class _GoldenGithubApi implements GithubApi {
   _GoldenGithubApi({
+    this.branchFailure,
     this.resolveFailure,
     this.childListGate,
     this.entries = _defaultEntries,
   });
 
+  final GithubFailure? branchFailure;
   final GithubFailure? resolveFailure;
   final Completer<void>? childListGate;
   final List<GithubEntry> entries;
@@ -90,6 +92,22 @@ final class _GoldenGithubApi implements GithubApi {
     'beta.py': Uint8List.fromList(utf8.encode("print('beta')\n")),
     'gamma.py': Uint8List.fromList(utf8.encode("print('gamma')\n")),
   };
+
+  @override
+  Future<GithubBranchCatalog> listBranches(
+    RepositoryLocator locator, {
+    GithubCancellation? cancellation,
+  }) async {
+    if (branchFailure case final GithubFailure failure) throw failure;
+    if (cancellation?.isCancelled ?? false) {
+      throw const GithubFailure(GithubFailureKind.cancelled);
+    }
+    return GithubBranchCatalog(
+      locator: locator,
+      defaultBranch: 'main',
+      branches: const <String>['main', 'release/v1'],
+    );
+  }
 
   @override
   Future<PinnedRepository> resolve(
@@ -233,10 +251,14 @@ Future<void> _openImporter(WidgetTester tester) async {
 }
 
 Future<void> _browseRepository(WidgetTester tester) async {
-  await tester.enterText(
-    find.byKey(kGithubRepositoryFieldKey),
-    'https://github.com/PyBLE-dev/examples',
+  expect(
+    tester
+        .widget<TextField>(find.byKey(kGithubRepositoryFieldKey))
+        .controller
+        ?.text,
+    kOfficialExamplesRepositoryUrl,
   );
+  expect(find.byKey(kGithubBranchDropdownKey), findsOneWidget);
   await tester.tap(find.byKey(kGithubBrowseButtonKey));
   await tester.pumpAndSettle();
 }
@@ -258,6 +280,44 @@ Future<void> _expectGolden(WidgetTester tester, String name) => expectLater(
 
 void main() {
   group('A-33 GitHub import adaptive goldens', () {
+    testWidgets(
+      'wide dialog starts with the editable official repository and default branch',
+      (WidgetTester tester) async {
+        final RecordingConnection connection = RecordingConnection(
+          initial: ConnState.ready,
+        );
+        final _GoldenGithubApi api = _GoldenGithubApi();
+        addTearDown(connection.dispose);
+
+        await _pumpGoldenHost(
+          tester,
+          connection: connection,
+          api: api,
+          size: const Size(1024, 768),
+        );
+        await _openImporter(tester);
+
+        final TextField repositoryField = tester.widget<TextField>(
+          find.byKey(kGithubRepositoryFieldKey),
+        );
+        expect(
+          repositoryField.controller?.text,
+          kOfficialExamplesRepositoryUrl,
+        );
+        expect(repositoryField.enabled, isNot(false));
+        expect(find.byKey(kGithubBranchDropdownKey), findsOneWidget);
+        await tester.tap(find.byKey(kGithubBranchDropdownKey));
+        await tester.pumpAndSettle();
+        expect(find.textContaining('main'), findsWidgets);
+        expect(find.text('release/v1'), findsOneWidget);
+        expect(connection.putFileCalls, isEmpty);
+        expect(connection.runFileCalls, isEmpty);
+        expect(connection.runSourceCalls, isEmpty);
+        await _expectGolden(tester, 'github_import_wide_branch_chooser');
+      },
+      tags: const <String>['golden'],
+    );
+
     testWidgets(
       'wide dialog retains context while a child folder loads',
       (WidgetTester tester) async {
@@ -394,7 +454,7 @@ void main() {
           initial: ConnState.ready,
         );
         final _GoldenGithubApi api = _GoldenGithubApi(
-          resolveFailure: const GithubFailure(
+          branchFailure: const GithubFailure(
             GithubFailureKind.rateLimited,
             rateLimitRemaining: 0,
             retryAfter: Duration(seconds: 120),
@@ -411,12 +471,7 @@ void main() {
           highContrast: true,
         );
         await _openImporter(tester);
-        await tester.enterText(
-          find.byKey(kGithubRepositoryFieldKey),
-          'https://github.com/PyBLE-dev/examples',
-        );
         tester.view.viewInsets = const FakeViewPadding(bottom: 440);
-        await tester.tap(find.byKey(kGithubBrowseButtonKey));
         await tester.pumpAndSettle();
 
         expect(find.byType(BottomSheet), findsOneWidget);
@@ -493,7 +548,7 @@ void main() {
           find.byKey(kGithubRepositoryFieldKey),
           'https://github.com/PyBLE-dev/PyBLE/tree/main',
         );
-        await tester.tap(find.byKey(kGithubBrowseButtonKey));
+        await tester.tap(find.byKey(kGithubLoadBranchesButtonKey));
         await tester.pumpAndSettle();
 
         expect(find.byType(BottomSheet), findsOneWidget);
