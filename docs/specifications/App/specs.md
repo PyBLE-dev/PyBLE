@@ -253,9 +253,18 @@ to `[red]` before implementation:
   `join(capturedCwd, basename(remotePath))`. This subset MUST NOT preserve the
   remote parent hierarchy or call `mkdir`. Empty/dot names, separators, NUL,
   duplicate/escaping targets, and targets exceeding PBLE/1's 128-byte UTF-8
-  path ceiling MUST fail before download. Existing regular files MUST be named
-  in a separate explicit overwrite confirmation; an existing directory or
-  other non-regular conflict MUST block import. The board-listing seam MUST
+  path ceiling MUST fail before download. The action MUST capture the
+  board-reported `fs_root` with `capturedCwd` and visibly warn when the two are
+  equal. At that root, a target whose top-level name begins with lowercase
+  `pyble` or `pble`, or is exactly `boot.py` or `_boot.py`, MUST be blocked
+  before the first board listing, Git blob fetch, or PUT. The localized failure
+  MUST name the protected target and instruct the user to close Import, create
+  and enter a child folder such as `/examples` in Files, and reopen Import; the
+  same basename MUST remain valid below a child folder, and an ordinary
+  non-protected basename MUST remain valid at the board root without a separate
+  confirmation. Existing regular files MUST be named in a separate explicit
+  overwrite confirmation; an existing directory or other non-regular conflict
+  MUST block import. The board-listing seam MUST
   preserve PBLE/1's completeness bit, and `FILE_LIST more=1` (or a test double
   that cannot prove completeness) MUST block import rather than treating omitted
   names as absent. The directory MUST be listed again immediately before the
@@ -308,12 +317,15 @@ to `[red]` before implementation:
   invoking Files action on dismissal; important error/final-result
   announcements MUST occur once. MUST
 - **A33-SUB-AC-10 (verification)** — Unit coverage MUST prove URL/host parsing,
-  ref-to-SHA pinning, lazy traversal, filtering, target safety, byte bounds,
+  ref-to-SHA pinning, lazy traversal, filtering, target safety including
+  protected-root rejection and nested-path acceptance, byte bounds,
   strict UTF-8/NUL rejection, rate/error mapping, stale-operation suppression,
   and result accounting. Fake-client/`FakeConnection` widget tests MUST prove
-  overwrite consent, all fetches before the first PUT, sequential order,
-  cancellation/session boundaries, partial truth, refresh, and zero
-  mkdir/open/run calls. Goldens MUST cover compact/wide responsive states,
+  visible root-destination guidance, path-specific protected-root refusal with
+  zero board I/O, nested acceptance, overwrite consent, all fetches before the
+  first PUT, sequential order, cancellation/session boundaries, partial truth,
+  refresh, and zero mkdir/open/run calls. Goldens MUST cover compact/wide
+  responsive states,
   loading/error/review/partial outcomes, portrait/landscape, 2× text, high
   contrast, and keyboard inset. Integration/HIL MUST verify exact imported
   bytes in a disposable board directory and no automatic execution. MUST
