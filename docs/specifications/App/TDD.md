@@ -2239,6 +2239,30 @@ records the clean source commit, version name/code, bundle SHA-256, and public
 upload-certificate SHA-256; the two certificate fingerprints extracted from
 the AAB and upload keystore MUST match before upload (BLD-12).
 
+### 15.9 iOS and iPadOS deployment-floor gate
+
+The authored Runner project owns one deployment floor: every Debug, Release,
+and Profile `IPHONEOS_DEPLOYMENT_TARGET` declaration is exactly `15.0`.
+`app_identity_manifest_test.dart` parses the project, pins the expected three
+declarations, and rejects a missing, duplicate, lower, or divergent value.
+The project does not hand-author `MinimumOSVersion` in Runner's `Info.plist`;
+Xcode derives it from the deployment target (BLD-13).
+
+After a clean archive and App Store export, `validate_ios_ipa.sh` reads the
+top-level application `MinimumOSVersion` and rejects a value below `15.0`. It
+also reads the main executable's iOS `LC_BUILD_VERSION` minimum with Xcode
+`vtool` and rejects a compiled minimum below `15.0`. A bundled dependency may
+retain a lower compatibility floor without lowering the containing app's
+installation floor. These checks run before the existing signature,
+nested-code, and Xcode software-information gates report success. An old
+archive cannot satisfy a new source floor by re-export or plist mutation
+because the compiled load command remains authoritative.
+
+The retained `0.2.0 (5)` handoff stays bound to its iOS/iPadOS 13 archive and
+checksum. This source change leaves `pubspec.yaml` at `0.2.0+5` and produces no
+new external candidate; ADR-0044 assigns the next build number only when a
+later artifact is prepared for external handoff (BLD-3/13).
+
 ## 16. Traceability
 
 Design element → satisfied requirement IDs. Each `FR-*`/`NFR-*`/`CON-*`/`DAT-*` family has at least one design home.
@@ -2265,13 +2289,13 @@ Design element → satisfied requirement IDs. Each `FR-*`/`NFR-*`/`CON-*`/`DAT-*
 | Error handling & mapping ([§14](#14-error-handling--mapping)) | lib/pble + UI | FR-PBLE-13, FR-ERR-*, FR-FILES-3, NFR-USE-3, NFR-REL-4 |
 | Reliability (resume, CRC, preserve-on-drop) ([§8.4](#84-file-transfer-state-machine), [§9.2](#92-migrations--hydration)) | lib/pble, lib/data | NFR-REL-1..4, NFR-PERF-1/2, FR-PROJ-6 |
 | Test design, shared corpus, gates ([§15](#15-test-design)) | all | NFR-MAINT-1/3/4, BLD-5/8, CON-6/8 |
-| Build/versioning/distribution ([§15.6](#156-import-boundary--no-leak-gates), [§15.7](#157-launcher-identity-and-platform-assets), [§15.8](#158-android-release-signing-and-app-bundle-gate), [§8.6](#86-hello--capabilities)) | all | BLD-1..12, IF-6, NFR-COMPAT-1 |
+| Build/versioning/distribution ([§15.6](#156-import-boundary--no-leak-gates), [§15.7](#157-launcher-identity-and-platform-assets), [§15.8](#158-android-release-signing-and-app-bundle-gate), [§15.9](#159-ios-and-ipados-deployment-floor-gate), [§8.6](#86-hello--capabilities)) | all | BLD-1..13, IF-6, NFR-COMPAT-1 |
 | Security & privacy ([§5.1](#51-the-connection-interface), [§6.3](#63-single-active-writer--serialization), [§8.9](#89-screenless-identity--identify-control-commands), [§9.1](#91-schema), [§10.2](#102-canonical-input-and-immutable-snapshot-resolution), [§11.5](#115-screenless-identity--rename--identify)) | lib/pble, lib/connect, lib/data, lib/github_import | SEC-1..10 |
 
 **Requirements with no dedicated design element:** none functional. Notes:
 
 - **NFR-PERF-3/4** and **OI-4** have design *levers* (MTU 247, window `W`, bounded console buffer, time-to-connect via saved `board_ref`) but the concrete ceilings are HIL-frozen later — by intent, not a gap.
-- **BLD-1/2/3/4/6/10/11/12** (single Flutter codebase, `pubspec` governance + lock, SemVer, free dual-store-at-parity distribution, generated notices + in-app Open-Source Notices screen / IF-6, platform launcher packaging, store-signable embedded data, and fail-closed Android upload signing) are project/build-pipeline obligations: this TDD honors them (single codebase, ASCII identifiers, notices screen surfaced in UI, shared vector launcher source, deterministic Blockly asset transform, and the signed AAB gate) but the release pipeline is owned by the build/infra stories (X-03/X-11). Flagged here for completeness.
+- **BLD-1/2/3/4/6/10/11/12/13** (single Flutter codebase, `pubspec` governance + lock, SemVer, free dual-store-at-parity distribution, generated notices + in-app Open-Source Notices screen / IF-6, platform launcher packaging, store-signable embedded data, fail-closed Android upload signing, and the compiled iOS/iPadOS deployment floor) are project/build-pipeline obligations: this TDD honors them (single codebase, ASCII identifiers, notices screen surfaced in UI, shared vector launcher source, deterministic Blockly asset transform, signed AAB gate, and source-plus-IPA iOS floor gates) but the release pipeline is owned by the build/infra stories (X-03/X-11). Flagged here for completeness.
 - **BLD-9** (previous-protocol-major compatibility window) is forward-looking: no PBLE/2 exists yet, but its design home is the version-negotiation seam ([§8.6](#86-hello--capabilities)) — the same HELLO `proto_versions[]` exchange that refuses an unsupported version (FR-PBLE-5/6) is where a future app would select a previous major, so deployed boards are never bricked by an app update.
 - **OI-1** (editor widget) is closed by ADR-0012, and **OI-2** (state management) is closed by ADR-0007. Their choices are reflected in the Riverpod state graph and the executable `EditorSurface` fallback ([§11.1](#111-editor)); R1 remains a measured runtime risk rather than an undecided architecture.
 
