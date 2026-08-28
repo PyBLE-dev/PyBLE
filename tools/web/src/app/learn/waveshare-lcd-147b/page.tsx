@@ -2,6 +2,7 @@
 // Part of PyBLE (https://pyble.dev) — see /LICENSE.
 
 import { TutorialCallout } from "@/components/tutorial-callout";
+import { TutorialBoardIdentityGallery } from "@/components/tutorial-board-identity-gallery";
 import { TutorialPage, type TutorialStep } from "@/components/tutorial-page";
 import { WaveshareBoardPhoto } from "@/components/waveshare-board-photo";
 import { examplesSnapshot } from "@/lib/tutorials";
@@ -155,6 +156,12 @@ export default function WaveshareTutorial() {
             N16R8 carrier.
           </p>
         </TutorialCallout>
+        <TutorialBoardIdentityGallery
+          boards={["genericS3", "waveshareLcd147b"]}
+          title="Two S3 boards report the same runtime token"
+          introduction="Board 5646 is the generic ESP32-S3 in the maintained physical-session record; board DA86 is the exact Waveshare B-version. The shared esp32-s3 runtime token does not distinguish a firmware profile, so use the physical marking and installer record before exact-board code."
+          caption="5646 and DA86 comparison · identical runtime-family tokens, different recorded hardware contexts"
+        />
         <WaveshareBoardPhoto />
       </section>
 

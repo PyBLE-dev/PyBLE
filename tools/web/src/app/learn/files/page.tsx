@@ -18,22 +18,23 @@ const steps: readonly TutorialStep[] = [
     title: "Work below the board root",
     body: (
       <p>
-        Open Files and create or enter <code>/examples</code>. If it already
-        contains valuable work, make a new disposable child folder instead. Keep
+        Open Files and create or enter a disposable child folder such as{" "}
+        <code>/tutorial-capture</code>. You may instead work below{" "}
+        <code>/examples</code> when that folder contains no valuable work. Keep
         the breadcrumb visible and confirm the exact current path before every
         mutation.
       </p>
     ),
     expected:
-      "Files shows /examples, or the disposable child you chose, as the current board folder.",
+      "Files shows /tutorial-capture, or the disposable child you chose, as the current board folder.",
   },
   {
     title: "Create, open, edit, save, and refresh",
     body: (
       <p>
         Create <code>delete_me_one.py</code> and <code>delete_me_two.py</code>.
-        Open each file, enter a harmless print line, Save, return to Files, and
-        choose Refresh. Use only files you are prepared to lose.
+        Leave them empty for this deletion exercise, return to Files, and choose
+        Refresh. Use only files you are prepared to lose.
       </p>
     ),
     expected:
@@ -108,10 +109,10 @@ export default function FilesTutorial() {
       <section aria-labelledby="files-before">
         <h2 id="files-before">Before you begin</h2>
         <p>
-          Practice only with disposable files in <code>/examples</code> or a
-          child folder. Files can create, open, edit, save, refresh, and remove
-          board content, but this lesson does not promise direct export to
-          tablet storage.
+          Practice only with disposable files in <code>/tutorial-capture</code>,{" "}
+          <code>/examples</code>, or a child folder. Files can create, open,
+          edit, save, refresh, and remove board content, but this lesson does
+          not promise direct export to tablet storage.
         </p>
         <TutorialCallout title="Deletion is permanent" tone="warning">
           <p>
