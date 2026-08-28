@@ -835,6 +835,17 @@ for required_file in \
     privacy.html \
     support.html \
     flash.html \
+    learn.html \
+    learn/setup.html \
+    learn/first-program.html \
+    learn/files.html \
+    learn/github-import.html \
+    learn/blocks.html \
+    learn/examples.html \
+    learn/hardware.html \
+    learn/configured-hardware.html \
+    learn/pico-2-w.html \
+    learn/waveshare-lcd-147b.html \
     robots.txt \
     sitemap.xml \
     manifest.webmanifest \
@@ -1123,16 +1134,28 @@ cleanup_smoke() {
 }
 trap cleanup_smoke EXIT
 
-for route in / /app /privacy /support /flash; do
+for route in / /app /privacy /support /flash /learn /learn/setup /learn/first-program /learn/files /learn/github-import /learn/blocks /learn/examples /learn/hardware /learn/configured-hardware /learn/pico-2-w /learn/waveshare-lcd-147b; do
     case "${route}" in
         /) route_file=index.html ;;
         /app) route_file=app.html ;;
         /privacy) route_file=privacy.html ;;
         /support) route_file=support.html ;;
         /flash) route_file=flash.html ;;
+        /learn) route_file=learn.html ;;
+        /learn/setup) route_file=learn/setup.html ;;
+        /learn/first-program) route_file=learn/first-program.html ;;
+        /learn/files) route_file=learn/files.html ;;
+        /learn/github-import) route_file=learn/github-import.html ;;
+        /learn/blocks) route_file=learn/blocks.html ;;
+        /learn/examples) route_file=learn/examples.html ;;
+        /learn/hardware) route_file=learn/hardware.html ;;
+        /learn/configured-hardware) route_file=learn/configured-hardware.html ;;
+        /learn/pico-2-w) route_file=learn/pico-2-w.html ;;
+        /learn/waveshare-lcd-147b) route_file=learn/waveshare-lcd-147b.html ;;
     esac
     route_body="${smoke_root}/${route_file}"
     route_headers="${smoke_root}/${route_file}.headers"
+    mkdir -p -- "$(dirname -- "${route_body}")"
     curl --fail --silent --show-error --max-time 30 \
         --location --max-redirs 0 --proto '=https' \
         --dump-header "${route_headers}" \
@@ -1223,6 +1246,22 @@ if [[ "${not_found_status}" != 404 ]]; then
         "${not_found_status}" >&2
     reject_post_activation_smoke 66
 fi
+
+unknown_tutorial_body="${smoke_root}/learn-not-a-tutorial.html"
+readonly unknown_tutorial_status=$(
+    curl --silent --show-error --max-time 30 \
+        --location --max-redirs 0 --proto '=https' \
+        --output "${unknown_tutorial_body}" \
+        --write-out '%{http_code}' \
+        https://pyble.dev/learn/not-a-tutorial
+)
+
+if [[ "${unknown_tutorial_status}" != 404 ]]; then
+    printf 'Unknown Learn route smoke failed: expected 404, received %s.\n' \
+        "${unknown_tutorial_status}" >&2
+    reject_post_activation_smoke 66
+fi
+cmp -- "out/404.html" "${unknown_tutorial_body}"
 
 retired_public_asset_paths=(
     /social/pyble-beta-og-1200x630.png

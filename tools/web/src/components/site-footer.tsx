@@ -23,6 +23,7 @@ export function SiteFooter() {
           >
             GitHub
           </a>
+          <Link href="/learn">Learn</Link>
           <Link href="/flash">Firmware</Link>
           <Link href="/support">Support</Link>
           <Link href="/privacy">Privacy</Link>

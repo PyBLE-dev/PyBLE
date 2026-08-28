@@ -119,8 +119,8 @@ describe("static Learn route contract", () => {
           typeof description === "string" && description.length > 0,
       ),
     ).toBe(true);
-    expect(new Set(titles)).toHaveSize(learnRoutes.length);
-    expect(new Set(descriptions)).toHaveSize(learnRoutes.length);
+    expect(new Set(titles).size).toBe(learnRoutes.length);
+    expect(new Set(descriptions).size).toBe(learnRoutes.length);
 
     for (const { metadata, path } of learnRoutes) {
       expect(metadata.alternates).toEqual({

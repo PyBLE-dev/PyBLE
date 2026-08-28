@@ -2,25 +2,25 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://pyble.dev/</loc>
-    <lastmod>2026-08-12T00:00:00.000Z</lastmod>
+    <lastmod>2026-08-28T00:00:00.000Z</lastmod>
     <changefreq>weekly</changefreq>
     <priority>1</priority>
   </url>
   <url>
     <loc>https://pyble.dev/app</loc>
-    <lastmod>2026-08-07T00:00:00.000Z</lastmod>
+    <lastmod>2026-08-28T00:00:00.000Z</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.9</priority>
   </url>
   <url>
     <loc>https://pyble.dev/privacy</loc>
-    <lastmod>2026-08-07T00:00:00.000Z</lastmod>
+    <lastmod>2026-08-28T00:00:00.000Z</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
     <loc>https://pyble.dev/support</loc>
-    <lastmod>2026-07-29T00:00:00.000Z</lastmod>
+    <lastmod>2026-08-28T00:00:00.000Z</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>
@@ -29,5 +29,71 @@
     <lastmod>2026-07-29T00:00:00.000Z</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://pyble.dev/learn</loc>
+    <lastmod>2026-08-28T00:00:00.000Z</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://pyble.dev/learn/setup</loc>
+    <lastmod>2026-08-28T00:00:00.000Z</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://pyble.dev/learn/first-program</loc>
+    <lastmod>2026-08-28T00:00:00.000Z</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://pyble.dev/learn/files</loc>
+    <lastmod>2026-08-28T00:00:00.000Z</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://pyble.dev/learn/github-import</loc>
+    <lastmod>2026-08-28T00:00:00.000Z</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://pyble.dev/learn/blocks</loc>
+    <lastmod>2026-08-28T00:00:00.000Z</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://pyble.dev/learn/examples</loc>
+    <lastmod>2026-08-28T00:00:00.000Z</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://pyble.dev/learn/hardware</loc>
+    <lastmod>2026-08-28T00:00:00.000Z</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://pyble.dev/learn/configured-hardware</loc>
+    <lastmod>2026-08-28T00:00:00.000Z</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://pyble.dev/learn/pico-2-w</loc>
+    <lastmod>2026-08-28T00:00:00.000Z</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://pyble.dev/learn/waveshare-lcd-147b</loc>
+    <lastmod>2026-08-28T00:00:00.000Z</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
   </url>
 </urlset>
