@@ -342,6 +342,46 @@ render without client JavaScript and provide:
   and
 - previous/next navigation plus a return to `/learn`.
 
+Every tutorial route MUST also contain at least one purposeful instructional
+visual. A visual may be a privacy-reviewed app capture, an exact-board
+photograph, or an authored diagram when that form best explains the lesson; a
+decorative repetition of the same workspace does not satisfy this requirement.
+The initial app-workflow lessons (`setup`, `first-program`, `files`,
+`github-import`, `blocks`, and `examples`) MUST use physical-tablet captures of
+the reviewed app surface. Hardware lessons MUST prefer actual board imagery for
+physical identity and wiring, and MAY pair it with a physical-tablet capture
+only when the app state adds distinct instructional evidence.
+
+Each published app capture MUST:
+
+- be a static, same-origin, content-versioned asset with explicit pixel
+  dimensions and a recorded SHA-256 digest;
+- retain a local provenance record naming the physical device model, operating
+  system, app version and build, capture date, depicted state, and source raw
+  capture without publishing the raw workspace;
+- use a semantic figure, a useful alternative description, and a visible
+  caption that accurately identifies the physical device and depicted state;
+- be privacy-reviewed for board identifiers, custom labels, notifications,
+  accounts, private repositories, tokens, unpublished code, and unrelated
+  system chrome;
+- remove only unrelated system bars or empty framing through deterministic
+  crop, resize, orientation, and metadata-stripping operations; and
+- leave every app pixel truthful: no retouching, generative fill, fabricated
+  state, or removal of an in-app warning, error, or identity.
+
+Debug, integration-test, simulator, emulator, and golden-renderer frames MUST
+NOT be presented as physical-device captures. A debug or integration-test
+label disqualifies the frame from public tutorial use even when the underlying
+UI otherwise matches production. Simulator, emulator, or golden images MAY be
+used only when their caption names that provenance and the lesson does not
+claim physical-device evidence. Tutorial instructions and stop conditions MUST
+remain complete when images are unavailable or cannot be seen.
+
+Raw capture workspaces remain ignored and outside the website package. Only a
+separately reviewed derivative and its non-sensitive provenance record MAY be
+committed below `tools/web/public/`; publication MUST NOT add a runtime
+third-party image request.
+
 Firmware claims MUST derive from the same build-selected release descriptor as
 the home and `/flash` routes. Stable profile explanations MUST keep the exact
 release order `esp32-4mb`, `esp32-s3-n16r8`,

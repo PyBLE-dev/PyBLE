@@ -68,8 +68,11 @@ CHANGELOG.md  CITATION.cff  AGENTS.md  CLAUDE.md  .gitignore  .gitmodules
 ```
 
 Put specifications and decisions under `docs/`, scripts under `tools/` or
-`firmware/scripts/`, and examples under `examples/`. Keep screenshots, signing
-material, builds, assistant state, and local notes out of Git.
+`firmware/scripts/`, and examples under `examples/`. Keep raw or unreviewed
+screenshots, signing material, builds, assistant state, and local notes out of
+Git. A deliberately reviewed, provenance-recorded image used by the public
+website may live below `tools/web/public/`; its raw capture must remain in an
+ignored workspace.
 
 ## Naming
 
