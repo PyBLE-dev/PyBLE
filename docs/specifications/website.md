@@ -1,7 +1,7 @@
 # PyBLE — Public Website Specification
 
 Status: **FROZEN (pre-v1 and v1 launch surface)** · Owner: project maintainer · Last updated:
-2026-08-12
+2026-08-28
 
 This document is the source of truth for the first public website at
 `pyble.dev`. It specifies only the public site; the Flutter app, PBLE/1, and
@@ -35,13 +35,24 @@ and query on `https://pyble.dev`.
 
 The launch surface is:
 
-| Route      | Contract                                                                                                                |
-| ---------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `/`        | Product identity, BLE-first workflow, verified capabilities, compatibility, open-source posture, and beta status        |
-| `/app`     | Stable first-party app landing page, current approved distribution link/QR, firmware setup, and support                 |
-| `/privacy` | Separate, plain-language disclosures for the Flutter app and public website                                             |
-| `/support` | Getting-started guidance, troubleshooting, diagnostics checklist, and a direct support contact                          |
-| `/flash`   | Versioned browser provisioning, compatibility/erase consent, integrity status, recovery, and install action gated by §7 |
+| Route | Contract |
+| --- | --- |
+| `/` | Product identity, BLE-first workflow, verified capabilities, compatibility, open-source posture, and beta status |
+| `/app` | Stable first-party app landing page, current approved distribution link/QR, firmware setup, and support |
+| `/privacy` | Separate, plain-language disclosures for the Flutter app and public website |
+| `/support` | Concise troubleshooting, diagnostics checklist, and a direct support contact |
+| `/flash` | Versioned browser provisioning, compatibility/erase consent, integrity status, recovery, and install action gated by §7 |
+| `/learn` | Ordered tutorial hub, learning tracks, compatibility/validation legend, and start/continue actions |
+| `/learn/setup` | Exact-profile selection, provisioning boundary, BLE connection, and identity check |
+| `/learn/first-program` | Hardware-free editor, Save, Run, Stop, reconnect, and Console workflow |
+| `/learn/files` | Child-folder Files workflow, protected paths, and reviewed multi-delete |
+| `/learn/github-import` | Public GitHub import, immutable ref, pinned SHA, exact target review, and rate limits |
+| `/learn/blocks` | Offline Blocks examples, generated Python, Save/Run, sidecars, and bounded conversion |
+| `/learn/examples` | Truthful 32-example development catalog with immutable source and validation state |
+| `/learn/hardware` | Five-profile compatibility, electrical safety, and generic-versus-exact-board boundaries |
+| `/learn/configured-hardware` | Explicitly configured GPIO, ADC, PWM, I2C, SPI, and NeoPixel progression |
+| `/learn/pico-2-w` | Exact Pico 2 W provisioning and named onboard-LED lessons |
+| `/learn/waveshare-lcd-147b` | Exact Waveshare B-version display runtime and onboard-pixel lessons |
 
 Every route MUST have a unique title and description. The site MUST publish a
 canonical URL, sitemap, robots policy, web manifest, social metadata, and a
@@ -287,6 +298,85 @@ model, and tablet operating system/version (iPadOS or Android). The issue
 template and support-page checklist MUST agree on those fields and remind users
 to remove secrets and personal identifiers.
 
+### 3.5 Release-bound tutorials and learning paths
+
+The website MUST publish the static learning center selected by
+[ADR-0046](../decisions/0046-publish-release-bound-static-learning-center.md).
+`/learn` is the canonical hub and **Learn** is a primary-navigation item. The
+initial ordered path is exactly:
+
+1. **Setup** — choose an exact firmware profile, use the correct ESP Web Serial
+   or Pico UF2/BOOTSEL provisioning method, connect over BLE, and verify board
+   and agent identity.
+2. **First program** — create a hardware-free file, edit, Save, Run, Stop, soft
+   reboot, inspect Console output, and recover from an ordinary disconnect.
+3. **Files** — work in a child folder, explain protected board-root paths,
+   manage visible regular files, and review permanent multi-delete.
+4. **GitHub import** — use the editable official repository URL, distinguish
+   branch discovery from an immutable explicit ref, verify a full pinned commit,
+   review exact targets and overwrites, and handle public rate limits.
+5. **Blocks** — start from bundled offline examples, inspect generated Python,
+   Save/Run only by explicit action, reopen exact sidecars, and explain bounded
+   all-or-nothing Python-to-Blocks conversion.
+6. **Examples catalog** — present all 32 authored examples with their planned
+   release slice, designed profiles, immutable source, and empty validation
+   state without presenting the development snapshot as a release.
+7. **Hardware safety** — distinguish portable code, configured capabilities,
+   and exact-board examples before any wiring or pin selection.
+8. **Configured hardware** — cover GPIO, ADC, PWM, I2C, SPI, and NeoPixel only
+   with reviewed explicit pins, bounded effects, and cleanup.
+9. **Pico 2 W** — cover the exact UF2/BOOTSEL profile and documented
+   `Pin("LED")` surface without claiming NeoPixel support.
+10. **Waveshare LCD 1.47B** — cover only the exact B-version image, display
+    runtime, fixed display wiring, and onboard pixel; never generalize it to the
+    lean S3 profile.
+
+Every tutorial route MUST have unique metadata and a canonical URL. It MUST
+render without client JavaScript and provide:
+
+- its position in the ordered path, difficulty, approximate time, prerequisites,
+  and explicit outcomes;
+- numbered steps with an expected observation or stop condition;
+- safety, privacy, compatibility, and troubleshooting callouts where relevant;
+- a visible link to the current `/flash` release state and `/support` recovery;
+  and
+- previous/next navigation plus a return to `/learn`.
+
+Firmware claims MUST derive from the same build-selected release descriptor as
+the home and `/flash` routes. Stable profile explanations MUST keep the exact
+release order `esp32-4mb`, `esp32-s3-n16r8`,
+`waveshare-esp32-s3-lcd-147b`, `esp32-c3-4mb`, and `rpi-pico2-w`. Generic ESP
+profiles provide no carrier pin map or implied onboard peripheral. Only the
+Waveshare B-version and Raspberry Pi Pico 2 W are exact-board identities, and
+the two S3 images MUST NOT be inferred from their shared `esp32-s3` runtime
+token.
+
+The official runnable examples remain owned by `PyBLE-dev/examples`. Website
+source MUST NOT mirror their complete `.py` files, fetch catalog content at
+build or runtime, or treat the official URL as trusted. A link used as lesson
+provenance MUST name an immutable commit or released tag. The initial reviewed
+snapshot is commit
+`8f4529b3cd0d62e8d53d7deb4f37e5cd2a171fd1`: it is **development-only,
+unreleased, and not HIL-validated**, has no `examples-v*` tag, and gives no
+validated-profile claim. Mutable `main` MAY be demonstrated as branch-discovery
+input but MUST NOT be the tutorial's reproducibility identity.
+
+The tutorials MUST NOT teach deferred Plots, saved-board persistence,
+rename/Identify UI, durable projects/settings, multi-file tabs, direct export
+to tablet storage, recursive folder deletion, automatic pin selection, or a
+beginner traceback explainer as shipped behavior. Imported or generated code is
+never described as automatically opened, saved, or run. Hardware guidance
+requires the user to review exact carrier documentation, voltage/current
+limits, pin capability and boot/strapping conflicts, shared ground and
+protection, bounded expected effects, Stop behavior, and cleanup before
+execution.
+
+Tutorial pages MAY show small authored explanatory snippets. Full runnable
+examples, compatibility evidence, and releases stay in the examples repository.
+Each linked example state MUST distinguish designed profiles from validated
+profiles, and no future copy may promote an example until its immutable tag and
+HIL/live-import evidence exist.
+
 ## 4. Brand and visual contract
 
 The canonical prompt-chip SVG in `app/assets/branding/` is the source asset. A
@@ -342,9 +432,15 @@ ownership.
 The privacy route MUST keep these systems and data flows distinct:
 
 - **PyBLE app:** no account, advertising, analytics, telemetry, crash-reporting,
-  payment, or cloud service. The current production app makes no HTTP request;
-  the placeholder GitHub-import package MUST NOT be described as a current
-  feature. The developer receives no app project content.
+  payment, or cloud service. A user-started public GitHub import is the sole
+  optional Internet workflow. It sends unauthenticated HTTPS requests only to
+  GitHub's public API for the user-entered repository owner/name, requested ref,
+  branch discovery, paths, and selected public source; it also sends a bounded
+  PyBLE app-version User-Agent. It sends no GitHub credential, board identity,
+  board file, or private app project source. GitHub independently receives
+  ordinary request metadata under its own policy. Editing, BLE, Files, Blocks,
+  and Run remain independent of GitHub availability, and the PyBLE developer
+  receives no app project content.
 - **User-selected board:** Save, Run, Files, and console actions transmit source
   code, paths or filenames, file content, Blocks companion data, or console
   input directly over BLE to the board the user selected. Board files remain on
@@ -381,8 +477,8 @@ The privacy route MUST keep these systems and data flows distinct:
 The policy MUST provide the current working contact method for privacy and
 deletion questions. A proposed project-domain mailbox MUST NOT replace it until
 the maintainer has verified that the mailbox exists and is monitored. Adding
-analytics, forms, accounts, embedded media, functional network import, or other
-data collection requires a spec and policy change before deployment.
+analytics, forms, accounts, embedded media, another network integration, or
+other data collection requires a spec and policy change before deployment.
 
 ## 6. Technical contract
 
@@ -457,8 +553,9 @@ VPS origin. The origin MUST:
   release and confirm it only after the public smoke suite succeeds; transient
   service-manager jobs MUST receive their embedded shell programs verbatim,
   with manager-side environment expansion disabled;
-- map `/app`, `/privacy`, `/support`, and `/flash` to their exported HTML without
-  changing the canonical slashless URL;
+- map `/app`, `/privacy`, `/support`, `/flash`, `/learn`, and every tutorial
+  route in §3.5 to their exported HTML without changing the canonical slashless
+  URL;
 - normalize the corresponding trailing-slash URLs permanently, preserve query
   strings, and return the generated 404 document with status 404 for an unknown
   path;
@@ -841,7 +938,7 @@ content and recovery guidance remain available without client JavaScript.
 
 The v1 site is releasable when:
 
-- all five routes and the not-found state render without client JavaScript;
+- all public routes and the not-found state render without client JavaScript;
 - route metadata and canonical URLs are correct;
 - navigation is accessible by pointer and keyboard at phone, tablet, and desktop
   widths;
@@ -868,6 +965,14 @@ The v1 site is releasable when:
   binding at `dist/.openai/hosting.json`;
 - every launch route is rendered in the vinext prerender manifest and robots,
   sitemap, and web manifest are static client files;
+- `/learn` and all ten ordered tutorials satisfy §3.5, expose truthful
+  release/validation state, cover every qualified firmware profile without
+  inventing a generic carrier pinout, and retain immutable examples provenance;
+- each learning route is canonical and present in the sitemap, static export,
+  Sites delegation/prerender allowlists, Nginx exact mapping and normalization,
+  deployment inventory, and byte-for-byte public smoke suite;
+- the privacy route discloses the sole user-started public GitHub workflow and
+  does not retain the obsolete no-HTTP or placeholder-import claim;
 - an unknown pathname returns the generated not-found page with status 404;
 - generated output contains no unsupported third-party runtime request;
 - the active flasher, when selected, names an exact profile and its truthful
