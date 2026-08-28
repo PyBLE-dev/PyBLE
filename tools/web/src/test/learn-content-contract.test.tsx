@@ -3,7 +3,7 @@
 
 import type { ComponentType } from "react";
 
-import { render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import BlocksTutorial from "@/app/learn/blocks/page";
@@ -16,6 +16,7 @@ import HardwareTutorial from "@/app/learn/hardware/page";
 import Pico2WTutorial from "@/app/learn/pico-2-w/page";
 import SetupTutorial from "@/app/learn/setup/page";
 import WaveshareTutorial from "@/app/learn/waveshare-lcd-147b/page";
+import { tutorialBoardIdentities } from "@/components/tutorial-board-identity-gallery";
 import {
   compatibilityLabels,
   examplesSnapshot,
@@ -147,6 +148,7 @@ const lessonPages: Array<{
 const physicalTabletLessonPages = lessonPages;
 
 function mainText(Page: ComponentType): string {
+  cleanup();
   render(<Page />);
   return screen.getByRole("main").textContent ?? "";
 }
@@ -378,6 +380,19 @@ describe("instructional visual contract", () => {
     },
   );
 
+  it("keeps 5646 associated with the generic ESP32-S3 session", () => {
+    expect(tutorialBoardIdentities.genericS3).toMatchObject({
+      boardId: "5646",
+      context: "Generic ESP32-S3 · N16R8",
+      runtimeChip: "esp32-s3",
+    });
+    expect(tutorialBoardIdentities.waveshareLcd147b).toMatchObject({
+      boardId: "DA86",
+      context: "Waveshare ESP32-S3-LCD-1.47B",
+      runtimeChip: "esp32-s3",
+    });
+  });
+
   it("uses identity subsets as hardware boundaries, not profile proof", () => {
     const configuredText = mainText(ConfiguredHardwareTutorial);
     expect(configuredText).toMatch(/C81A.*esp32-c3/is);
@@ -438,7 +453,7 @@ describe("tutorial truth and safety content", () => {
     expect(text).toContain("https://github.com/PyBLE-dev/examples");
     expect(text).toContain(examplesCommit);
     expect(text).toContain("examples/portable/basics/hello_console");
-    expect(text).toContain("/examples/portable/basics");
+    expect(text).toContain("/examples/pyble_hello_console.py");
     expect(text).toMatch(/editable.*repository URL/is);
     expect(text).toMatch(/branch.*only branches/is);
     expect(text).toMatch(/main.*branch discovery/is);

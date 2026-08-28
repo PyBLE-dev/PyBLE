@@ -8,25 +8,33 @@
 
 set -euo pipefail
 
-readonly OUTPUT_WIDTH=2000
-readonly OUTPUT_HEIGHT=1092
 readonly SOURCE_WIDTH=2000
 readonly SOURCE_HEIGHT=1200
-readonly CROP_TOP=36
 readonly APP_VERSION=0.2.0
 readonly APP_BUILD=5
 readonly OUTPUT_PREFIX="pyble-app-${APP_VERSION}-build-${APP_BUILD}"
 
-# Keep the finalized source-to-stable-key contract in one easy-to-audit table.
+# Keep the finalized source-to-stable-key and crop contract in one
+# easy-to-audit table: source, key, width, height, x, y.
 CAPTURE_TABLE=$(cat <<'EOF'
-06-setup-scan-results-production-release.raw.png	setup-scan-results
-07-setup-connected-identity-production-release.raw.png	setup-connected-identity
-08-first-program-editor-console-production-release.raw.png	first-program-editor-console
-09-files-multi-delete-review-production-release.raw.png	files-multi-delete-review
-10-github-import-branch-chooser-production-release.raw.png	github-import-branch-chooser
-11-github-import-prewrite-review-production-release.raw.png	github-import-prewrite-review
-12-examples-import-complete-production-release.raw.png	examples-import-complete
-20-blocks-hello-workspace-production-release.raw.png	blocks-hello-workspace
+07-five-board-scan-stopped.raw.png	setup-five-board-scan	2000	1092	0	36
+02-connected-5646.raw.png	identity-5646-ready	400	84	0	36
+02-connected-5646.raw.png	identity-5646-chip	512	390	1488	330
+03-connected-8c9e.raw.png	identity-8c9e-ready	400	84	0	36
+03-connected-8c9e.raw.png	identity-8c9e-chip	512	390	1488	330
+04-connected-c81a.raw.png	identity-c81a-ready	400	84	0	36
+04-connected-c81a.raw.png	identity-c81a-chip	512	390	1488	330
+05-connected-da86.raw.png	identity-da86-ready	400	84	0	36
+05-connected-da86.raw.png	identity-da86-chip	512	390	1488	330
+06-connected-3dcb.raw.png	identity-3dcb-ready	400	84	0	36
+06-connected-3dcb.raw.png	identity-3dcb-chip	512	390	1488	330
+08-first-program-classic-esp32.raw.png	first-program-editor-console	2000	1092	0	36
+17-files-multi-delete-classic-esp32-idle.raw.png	files-multi-delete-review	2000	1092	0	36
+16-github-branch-chooser-generic-s3-clean.raw.png	github-branch-chooser	2000	1092	0	36
+12-github-pinned-source-generic-s3.raw.png	github-pinned-source	2000	1092	0	36
+11-github-target-review-generic-s3.raw.png	github-target-review	2000	1092	0	36
+14-examples-import-waveshare.raw.png	examples-import-complete	2000	1092	0	36
+13-blocks-hello-c3-idle.raw.png	blocks-hello-workspace	2000	1092	0	36
 EOF
 )
 readonly CAPTURE_TABLE
@@ -102,11 +110,14 @@ require_screenshot_descendant() {
 }
 
 validate_capture_table() {
-  local source_name capture_key count=0
+  local source_name capture_key crop_width crop_height crop_x crop_y extra
+  local count=0 source_count key_count
 
-  while IFS=$'\t' read -r source_name capture_key; do
+  while IFS=$'\t' read -r source_name capture_key crop_width crop_height \
+    crop_x crop_y extra; do
     [ -n "$source_name" ] || fail "capture table contains an empty source"
     [ -n "$capture_key" ] || fail "capture table contains an empty key"
+    [ -z "$extra" ] || fail "capture table row has more than six fields"
     case "$source_name" in
       */* | .* | *..* | *[!A-Za-z0-9._-]*)
         fail "unsafe source filename in capture table: $source_name"
@@ -119,15 +130,32 @@ validate_capture_table() {
         fail "unsafe key in capture table: $capture_key"
         ;;
     esac
+    case "$crop_width:$crop_height:$crop_x:$crop_y" in
+      *[!0-9:]* | :* | *::* | *:)
+        fail "invalid crop geometry for $capture_key"
+        ;;
+    esac
+    [ "$crop_width" -gt 0 ] || fail "crop width must be positive: $capture_key"
+    [ "$crop_height" -gt 0 ] || fail "crop height must be positive: $capture_key"
+    [ "$((crop_x + crop_width))" -le "$SOURCE_WIDTH" ] ||
+      fail "crop exceeds source width: $capture_key"
+    [ "$((crop_y + crop_height))" -le "$SOURCE_HEIGHT" ] ||
+      fail "crop exceeds source height: $capture_key"
     count=$((count + 1))
   done <<<"$CAPTURE_TABLE"
 
-  [ "$count" -eq 8 ] || fail "capture table must contain exactly eight rows"
+  [ "$count" -eq 18 ] || fail "capture table must contain exactly eighteen rows"
+  source_count=$(printf '%s\n' "$CAPTURE_TABLE" | cut -f1 | sort -u | wc -l | tr -d ' ')
+  [ "$source_count" -eq 13 ] ||
+    fail "capture table must contain exactly thirteen distinct sources"
+  key_count=$(printf '%s\n' "$CAPTURE_TABLE" | cut -f2 | sort -u | wc -l | tr -d ' ')
+  [ "$key_count" -eq 18 ] || fail "capture table keys must be unique"
 }
 
 is_managed_output_name() {
   local name="$1"
-  local _source_name capture_key prefix hash
+  local _source_name capture_key _crop_width _crop_height _crop_x _crop_y
+  local prefix hash
 
   case "$name" in
     SHA256SUMS | SOURCE_SHA256SUMS | tutorial-captures.tsv)
@@ -135,7 +163,8 @@ is_managed_output_name() {
       ;;
   esac
 
-  while IFS=$'\t' read -r _source_name capture_key; do
+  while IFS=$'\t' read -r _source_name capture_key _crop_width \
+    _crop_height _crop_x _crop_y; do
     prefix="${OUTPUT_PREFIX}-${capture_key}-"
     case "$name" in
       "$prefix"*.png)
@@ -182,17 +211,21 @@ validate_source_image() {
 verify_reviewed_image() {
   local source_path="$1"
   local output_path="$2"
+  local crop_width="$3"
+  local crop_height="$4"
+  local crop_x="$5"
+  local crop_y="$6"
   local properties metric
 
   properties=$(magick identify -ping \
     -format '%n %w %h %m %z' "$output_path") ||
     fail "cannot identify reviewed capture: $output_path"
-  [ "$properties" = "1 $OUTPUT_WIDTH $OUTPUT_HEIGHT PNG 8" ] ||
+  [ "$properties" = "1 $crop_width $crop_height PNG 8" ] ||
     fail "reviewed capture has unexpected properties: $output_path ($properties)"
 
   metric=$(
     magick "$source_path" \
-      -crop "${OUTPUT_WIDTH}x${OUTPUT_HEIGHT}+0+${CROP_TOP}" \
+      -crop "${crop_width}x${crop_height}+${crop_x}+${crop_y}" \
       +repage miff:- |
       magick compare -metric AE miff:- "$output_path" null: 2>&1
   ) || fail "reviewed capture pixels differ from the fixed crop: $output_path"
@@ -305,18 +338,20 @@ if [ -e "$OUTPUT_DIR" ]; then
   fi
 fi
 
-while IFS=$'\t' read -r source_name _capture_key; do
+while IFS=$'\t' read -r source_name _capture_key _crop_width \
+  _crop_height _crop_x _crop_y; do
   validate_source_image "$INPUT_DIR/$source_name"
 done <<<"$CAPTURE_TABLE"
 
 STAGE_DIR=$(mktemp -d "$SCREENSHOTS_ROOT/.tutorial-captures.stage.XXXXXX")
 printf 'capture_key\treviewed_filename\treviewed_sha256\traw_filename\traw_sha256\n' \
   >"$STAGE_DIR/tutorial-captures.tsv"
-while IFS=$'\t' read -r source_name capture_key; do
+while IFS=$'\t' read -r source_name capture_key crop_width crop_height \
+  crop_x crop_y; do
   source_path="$INPUT_DIR/$source_name"
   temporary_output="$STAGE_DIR/.${capture_key}.png"
   magick "$source_path" \
-    -crop "${OUTPUT_WIDTH}x${OUTPUT_HEIGHT}+0+${CROP_TOP}" \
+    -crop "${crop_width}x${crop_height}+${crop_x}+${crop_y}" \
     +repage \
     -strip \
     -depth 8 \
@@ -325,7 +360,8 @@ while IFS=$'\t' read -r source_name capture_key; do
     -define png:compression-filter=5 \
     -define png:compression-strategy=1 \
     "$temporary_output"
-  verify_reviewed_image "$source_path" "$temporary_output"
+  verify_reviewed_image "$source_path" "$temporary_output" \
+    "$crop_width" "$crop_height" "$crop_x" "$crop_y"
   reviewed_sha256=$(sha256_file "$temporary_output")
   output_name="${OUTPUT_PREFIX}-${capture_key}-${reviewed_sha256:0:12}.png"
   output_path="$STAGE_DIR/$output_name"
@@ -341,10 +377,11 @@ tail -n +2 "$STAGE_DIR/tutorial-captures.tsv" |
   awk -F '\t' '{print $3 "  " $2}' >"$STAGE_DIR/SHA256SUMS"
 
 tail -n +2 "$STAGE_DIR/tutorial-captures.tsv" |
-  awk -F '\t' '{print $5 "  " $4}' >"$STAGE_DIR/SOURCE_SHA256SUMS"
+  awk -F '\t' '!seen[$4]++ {print $5 "  " $4}' \
+    >"$STAGE_DIR/SOURCE_SHA256SUMS"
 
 replace_output_directory "$STAGE_DIR" "$OUTPUT_DIR"
-printf 'Prepared 8 reviewed captures in %s\n' "$OUTPUT_DIR"
+printf 'Prepared 18 reviewed captures from 13 raw frames in %s\n' "$OUTPUT_DIR"
 printf 'Review SHA-256 manifest: %s/SHA256SUMS\n' "$OUTPUT_DIR"
 printf 'Raw SHA-256 manifest: %s/SOURCE_SHA256SUMS\n' "$OUTPUT_DIR"
 printf 'Stable-key manifest: %s/tutorial-captures.tsv\n' "$OUTPUT_DIR"

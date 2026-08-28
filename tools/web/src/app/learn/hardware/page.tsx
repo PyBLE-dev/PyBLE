@@ -2,6 +2,10 @@
 // Part of PyBLE (https://pyble.dev) — see /LICENSE.
 
 import { TutorialCallout } from "@/components/tutorial-callout";
+import {
+  allTutorialBoardIdentityKeys,
+  TutorialBoardIdentityGallery,
+} from "@/components/tutorial-board-identity-gallery";
 import { TutorialConceptFigure } from "@/components/tutorial-concept-figure";
 import { TutorialPage, type TutorialStep } from "@/components/tutorial-page";
 import { pageMetadata } from "@/lib/site";
@@ -140,6 +144,12 @@ export default function HardwareTutorial() {
             memory size, or chip token.
           </p>
         </TutorialCallout>
+        <TutorialBoardIdentityGallery
+          boards={allTutorialBoardIdentityKeys}
+          title="Runtime identity is a starting point, not a pin map"
+          introduction="The maintained physical-session record associates these five Ready sessions with the prepared boards. The app observations verify a connection and runtime family; they do not authorize pins, wiring, or a provisioning profile."
+          caption="Five board observations · physical records remain the source for exact hardware identity"
+        />
         <TutorialConceptFigure
           eyebrow="Choose the right evidence"
           title="Classify before you connect"

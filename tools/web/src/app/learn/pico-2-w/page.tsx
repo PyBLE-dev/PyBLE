@@ -2,6 +2,7 @@
 // Part of PyBLE (https://pyble.dev) — see /LICENSE.
 
 import { TutorialCallout } from "@/components/tutorial-callout";
+import { TutorialBoardIdentityGallery } from "@/components/tutorial-board-identity-gallery";
 import { TutorialConceptFigure } from "@/components/tutorial-concept-figure";
 import { TutorialPage, type TutorialStep } from "@/components/tutorial-page";
 import { examplesSnapshot } from "@/lib/tutorials";
@@ -135,6 +136,12 @@ export default function Pico2WTutorial() {
             Web Serial instructions into this UF2/BOOTSEL profile.
           </p>
         </TutorialCallout>
+        <TutorialBoardIdentityGallery
+          boards={["pico2W"]}
+          title="Pico 2 W connected over BLE"
+          introduction="Board 3DCB reported the rpi-pico2-w runtime token in this maintained physical session. Keep the exact physical marking and UF2 installer record alongside this app observation."
+          caption="3DCB session · exact-board record paired with the observed Pico runtime"
+        />
         <TutorialConceptFigure
           eyebrow="Two transports, one exact profile"
           title="Provision once, then work over BLE"

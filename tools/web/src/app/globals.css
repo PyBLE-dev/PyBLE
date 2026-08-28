@@ -3258,6 +3258,187 @@ h3 {
   box-shadow: 0 0 0 5px rgb(55 210 145 / 12%);
 }
 
+.tutorial-identity-gallery {
+  overflow: hidden;
+  margin: 24px 0 0;
+  border: 1px solid #b9cadf;
+  border-radius: 18px;
+  background: #d9e3ef;
+  box-shadow: 0 16px 38px rgb(8 27 53 / 12%);
+}
+
+.tutorial-identity-gallery__heading {
+  padding: 22px 24px 23px;
+  border-bottom: 1px solid #c4d2e2;
+  background:
+    radial-gradient(circle at 94% 14%, rgb(124 215 255 / 18%), transparent 31%),
+    linear-gradient(145deg, #142b48, #09182a 74%);
+}
+
+.tutorial-identity-gallery__heading > span {
+  display: block;
+  color: var(--cyan-300);
+  font-size: 0.64rem;
+  font-weight: 820;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.tutorial-lesson .tutorial-identity-gallery__heading h3 {
+  margin: 7px 0 6px;
+  color: var(--white);
+  font-size: clamp(1.15rem, 2.5vw, 1.48rem);
+}
+
+.tutorial-identity-gallery__heading p {
+  max-width: 690px;
+  margin: 0;
+  color: #b9cadd;
+  font-size: 0.8rem;
+  line-height: 1.65;
+}
+
+.tutorial-identity-gallery__grid {
+  display: grid;
+  margin: 0;
+  padding: 7px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  list-style: none;
+}
+
+.tutorial-lesson .tutorial-identity-gallery__grid > li {
+  min-width: 0;
+  margin: 0;
+}
+
+.tutorial-identity-gallery__grid[data-board-count="5"]
+  > li:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+  width: calc(50% - 3.5px);
+  justify-self: center;
+}
+
+.tutorial-identity-gallery__grid[data-board-count="1"] {
+  grid-template-columns: minmax(0, 520px);
+  justify-content: center;
+}
+
+.tutorial-identity-card {
+  display: grid;
+  min-width: 0;
+  height: 100%;
+  padding: 17px;
+  border: 1px solid rgb(183 200 220 / 72%);
+  border-radius: 13px;
+  background: #f8fafe;
+  align-content: start;
+  box-shadow: 0 4px 12px rgb(8 27 53 / 7%);
+  gap: 13px;
+}
+
+.tutorial-identity-card > header {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.tutorial-identity-card__id {
+  flex: 0 0 auto;
+  padding: 5px 8px;
+  border: 1px solid #a9cae8;
+  border-radius: 999px;
+  background: #e6f3ff;
+  color: #174e7b;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.64rem;
+  font-weight: 820;
+  letter-spacing: 0.04em;
+}
+
+.tutorial-lesson .tutorial-identity-card h4 {
+  min-width: 0;
+  margin: 0;
+  color: var(--navy-900);
+  font-size: 0.78rem;
+  line-height: 1.35;
+  text-align: right;
+}
+
+.tutorial-identity-card__capture {
+  overflow: hidden;
+  min-width: 0;
+  border: 1px solid #cbd8e7;
+  border-radius: 10px;
+  background: #e9eff7;
+}
+
+.tutorial-identity-card__capture > span {
+  display: block;
+  padding: 7px 9px;
+  border-bottom: 1px solid #cbd8e7;
+  color: #49627d;
+  font-size: 0.61rem;
+  font-weight: 790;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.tutorial-identity-card__capture > span code {
+  color: var(--navy-900);
+  font-size: inherit;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.tutorial-identity-card__capture img {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: #f7f8fb;
+}
+
+.tutorial-identity-card > p {
+  margin: 0;
+  color: #536a83;
+  font-size: 0.72rem;
+  line-height: 1.6;
+}
+
+.tutorial-identity-gallery figcaption {
+  display: flex;
+  min-height: 52px;
+  padding: 13px 16px 14px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  border-top: 1px solid #c4d2e2;
+  background: #f5f8fc;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 650;
+  line-height: 1.5;
+}
+
+.tutorial-identity-gallery__evidence {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  color: var(--navy-850);
+  font-weight: 800;
+}
+
+.tutorial-identity-gallery__evidence i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--success);
+  box-shadow: 0 0 0 5px rgb(55 210 145 / 12%);
+}
+
 .tutorial-steps {
   display: grid;
   margin: 0;
@@ -3960,6 +4141,35 @@ h3 {
   }
 
   .tutorial-app-capture figcaption {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .tutorial-identity-gallery {
+    border-radius: 14px;
+  }
+
+  .tutorial-identity-gallery__heading {
+    padding: 20px;
+  }
+
+  .tutorial-identity-gallery__grid,
+  .tutorial-identity-gallery__grid[data-board-count="1"] {
+    grid-template-columns: 1fr;
+  }
+
+  .tutorial-identity-gallery__grid[data-board-count="5"]
+    > li:last-child:nth-child(odd) {
+    width: 100%;
+    grid-column: auto;
+  }
+
+  .tutorial-identity-card {
+    padding: 14px;
+  }
+
+  .tutorial-identity-gallery figcaption {
     align-items: flex-start;
     flex-direction: column;
     gap: 5px;

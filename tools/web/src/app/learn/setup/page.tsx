@@ -4,6 +4,10 @@
 import Link from "next/link";
 
 import { TutorialAppCapture } from "@/components/tutorial-app-capture";
+import {
+  allTutorialBoardIdentityKeys,
+  TutorialBoardIdentityGallery,
+} from "@/components/tutorial-board-identity-gallery";
 import { TutorialCallout } from "@/components/tutorial-callout";
 import { TutorialPage, type TutorialStep } from "@/components/tutorial-page";
 import { pageMetadata } from "@/lib/site";
@@ -52,7 +56,7 @@ const steps: readonly TutorialStep[] = [
         to connect.
       </p>
     ),
-    visual: <TutorialAppCapture capture="setupScanResults" />,
+    visual: <TutorialAppCapture capture="setupFiveBoardScan" />,
     expected:
       "the scan shows one PyBLE-… advertisement and the app reaches its connected workspace.",
   },
@@ -67,7 +71,6 @@ const steps: readonly TutorialStep[] = [
         installer record and reported identity with any later problem report.
       </p>
     ),
-    visual: <TutorialAppCapture capture="setupConnectedIdentity" />,
     stopIf:
       "a reported field is absent or inconsistent with the physical board and your recorded installer selection.",
   },
@@ -147,6 +150,12 @@ export default function SetupTutorial() {
             </dd>
           </div>
         </dl>
+        <TutorialBoardIdentityGallery
+          boards={allTutorialBoardIdentityKeys}
+          title="Five boards, five observed sessions"
+          introduction="Each pair preserves the Ready board ID and read-only runtime token observed after connecting. Profile associations come from the maintained physical-session record, not from the token alone."
+          caption="Five separately connected boards · Ready identity paired with its runtime observation"
+        />
         <TutorialCallout title="Provision on a computer" tone="note">
           <p>
             An iPad cannot perform the wired provisioning step. Use a compatible
