@@ -144,6 +144,8 @@ const lessonPages: Array<{
   },
 ];
 
+const physicalTabletLessonPages = lessonPages.slice(0, 6);
+
 function mainText(Page: ComponentType): string {
   render(<Page />);
   return screen.getByRole("main").textContent ?? "";
@@ -305,6 +307,55 @@ describe("shared tutorial structure", () => {
   );
 });
 
+describe("instructional visual contract", () => {
+  it.each(lessonPages)(
+    "$href includes a purposeful, accessible visual",
+    ({ Page }) => {
+      render(<Page />);
+      const main = screen.getByRole("main");
+      const figures = [...main.querySelectorAll("figure")];
+
+      expect(figures.length).toBeGreaterThan(0);
+      for (const figure of figures) {
+        expect(figure.querySelector("figcaption")).not.toBeNull();
+        const images = [...figure.querySelectorAll("img")];
+        for (const image of images) {
+          expect(image).toHaveAttribute("alt");
+          expect(image.getAttribute("alt")?.trim().length).toBeGreaterThan(20);
+          expect(Number(image.getAttribute("width"))).toBeGreaterThan(0);
+          expect(Number(image.getAttribute("height"))).toBeGreaterThan(0);
+          expect(image).toHaveAttribute("loading", "lazy");
+        }
+      }
+    },
+  );
+
+  it.each(physicalTabletLessonPages)(
+    "$href includes truthful physical Lenovo app evidence",
+    ({ Page }) => {
+      render(<Page />);
+      const main = screen.getByRole("main");
+      const physicalFigures = [...main.querySelectorAll("figure")].filter(
+        (figure) =>
+          figure
+            .querySelector("figcaption")
+            ?.textContent?.includes("Actual Android tablet · Lenovo TB-J616X"),
+      );
+
+      expect(physicalFigures.length).toBeGreaterThan(0);
+      for (const figure of physicalFigures) {
+        const image = within(figure).getByRole("img");
+        expect(image.getAttribute("src")).toMatch(
+          /^\/learn\/app\/[a-z0-9.-]+\.png$/,
+        );
+        expect(image.getAttribute("alt")).toMatch(/PyBLE 0\.2\.0 beta/i);
+        expect(figure).not.toHaveTextContent(/integration test|debug|golden/i);
+      }
+      expect(main).not.toHaveTextContent(/PyBLE Integration Test/i);
+    },
+  );
+});
+
 describe("tutorial truth and safety content", () => {
   it("teaches exact provisioning boundaries before BLE use", () => {
     const text = mainText(SetupTutorial);
@@ -325,6 +376,8 @@ describe("tutorial truth and safety content", () => {
 
     expect(text).toContain('print("Hello from PyBLE!")');
     expect(text).toMatch(/hardware-free/i);
+    expect(text).toMatch(/In Files.*New file.*hello\.py.*open.*Editor/is);
+    expect(text).not.toMatch(/New file in the Editor.*name.*hello\.py/is);
     expect(text).toMatch(/hello\.py.*Save.*Run.*Console/is);
     expect(text).toMatch(/Stop.*soft reboot.*reconnect/is);
   });
@@ -352,7 +405,8 @@ describe("tutorial truth and safety content", () => {
     expect(text).toMatch(/editable.*repository URL/is);
     expect(text).toMatch(/branch.*only branches/is);
     expect(text).toMatch(/main.*branch discovery/is);
-    expect(text).toMatch(/advanced.*tag or commit.*full.*commit/is);
+    expect(text).toMatch(/Use a tag or commit.*40-character commit/is);
+    expect(text).not.toMatch(/Open Advanced/i);
     expect(text).toMatch(/public.*no.*account.*token/is);
     expect(text).toMatch(/rate limit/is);
     expect(text).toMatch(/lowercase \.py.*direct.*one folder/is);
