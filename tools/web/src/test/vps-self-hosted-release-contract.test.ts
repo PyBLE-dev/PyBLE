@@ -116,9 +116,7 @@ describe("self-hosted firmware activation", () => {
     const build = script.indexOf("NEXT_TELEMETRY_DISABLED=1 npm run check");
     const markerCopy = script.indexOf(marker, build);
     const upload = script.search(/\brsync\b/);
-    const smoke = script.indexOf(
-      "for route in / /app /privacy /support /flash",
-    );
+    const smoke = script.indexOf("for route in ", upload);
 
     expect(markerCopy).toBeGreaterThan(build);
     expect(markerCopy).toBeLessThan(upload);

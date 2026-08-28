@@ -135,12 +135,12 @@ function jpegDimensions(bytes: Buffer): { width: number; height: number } {
 }
 
 describe("public-site contract", () => {
-  it("keeps pyble.dev canonical and presents the four launch routes", () => {
+  it("keeps pyble.dev canonical and presents Learn in the primary routes", () => {
     expect(siteConfig.origin).toBe("https://pyble.dev");
     expect(siteConfig.alternateOrigin).toBe("https://pyble.org");
     expect(navigation.map((item) => item.href)).toEqual([
       "/#features",
-      "/#blocks",
+      "/learn",
       "/flash",
       "/support",
     ]);
@@ -190,9 +190,20 @@ describe("public-site contract", () => {
       "https://pyble.dev/privacy",
       "https://pyble.dev/support",
       "https://pyble.dev/flash",
+      "https://pyble.dev/learn",
+      "https://pyble.dev/learn/setup",
+      "https://pyble.dev/learn/first-program",
+      "https://pyble.dev/learn/files",
+      "https://pyble.dev/learn/github-import",
+      "https://pyble.dev/learn/blocks",
+      "https://pyble.dev/learn/examples",
+      "https://pyble.dev/learn/hardware",
+      "https://pyble.dev/learn/configured-hardware",
+      "https://pyble.dev/learn/pico-2-w",
+      "https://pyble.dev/learn/waveshare-lcd-147b",
     ]);
     expect(sitemap).toMatch(
-      /<loc>https:\/\/pyble\.dev\/privacy<\/loc>\s*<lastmod>2026-08-07T00:00:00\.000Z<\/lastmod>/,
+      /<loc>https:\/\/pyble\.dev\/privacy<\/loc>\s*<lastmod>2026-08-28T00:00:00\.000Z<\/lastmod>/,
     );
     expect(sitemap).toMatch(
       /<loc>https:\/\/pyble\.dev\/<\/loc>\s*<lastmod>2026-08-12T00:00:00\.000Z<\/lastmod>/,
@@ -200,6 +211,23 @@ describe("public-site contract", () => {
     expect(sitemap).toMatch(
       /<loc>https:\/\/pyble\.dev\/app<\/loc>\s*<lastmod>2026-08-07T00:00:00\.000Z<\/lastmod>/,
     );
+    for (const path of [
+      "/learn",
+      "/learn/setup",
+      "/learn/first-program",
+      "/learn/files",
+      "/learn/github-import",
+      "/learn/blocks",
+      "/learn/examples",
+      "/learn/hardware",
+      "/learn/configured-hardware",
+      "/learn/pico-2-w",
+      "/learn/waveshare-lcd-147b",
+    ]) {
+      expect(sitemap).toContain(
+        `<loc>https://pyble.dev${path}</loc>\n    <lastmod>2026-08-28T00:00:00.000Z</lastmod>`,
+      );
+    }
     expect(robots).toContain("Host: https://pyble.dev");
     expect(robots).toContain("Sitemap: https://pyble.dev/sitemap.xml");
     expect(manifest).toMatchObject({
@@ -280,9 +308,9 @@ describe("public-site contract", () => {
     expect(
       within(nav).getByRole("link", { name: "What it does" }),
     ).toHaveAttribute("href", "/#features");
-    expect(within(nav).getByRole("link", { name: "Blocks" })).toHaveAttribute(
+    expect(within(nav).getByRole("link", { name: "Learn" })).toHaveAttribute(
       "href",
-      "/#blocks",
+      "/learn",
     );
     expect(within(nav).getByRole("link", { name: "Firmware" })).toHaveAttribute(
       "href",
@@ -296,6 +324,27 @@ describe("public-site contract", () => {
       "href",
       "/app",
     );
+  });
+
+  it("offers contextual paths into the learning center", () => {
+    const pages = [
+      { name: "home", Page: HomePage, expectedHref: "/learn" },
+      { name: "app", Page: AppPage, expectedHref: "/learn/setup" },
+      { name: "support", Page: SupportPage, expectedHref: "/learn" },
+    ] as const;
+
+    for (const { Page, expectedHref, name } of pages) {
+      const page = render(<Page />);
+      const contextualLink = page.container.querySelector<HTMLAnchorElement>(
+        `a[href="${expectedHref}"]`,
+      );
+      expect(
+        contextualLink,
+        `${name} should link to ${expectedHref}`,
+      ).not.toBeNull();
+      expect(contextualLink?.textContent?.trim()).not.toBe("");
+      page.unmount();
+    }
   });
 
   it("states the vendor-neutral vision without claiming unavailable firmware is active", () => {
@@ -451,6 +500,10 @@ describe("public-site contract", () => {
     expect(sourceLink).toHaveAttribute("rel", "noopener noreferrer");
 
     const footer = screen.getByRole("navigation", { name: "Footer" });
+    expect(within(footer).getByRole("link", { name: "Learn" })).toHaveAttribute(
+      "href",
+      "/learn",
+    );
     const footerLink = within(footer).getByRole("link", { name: "GitHub" });
     expect(footerLink).toHaveAttribute("href", repositoryUrl);
     expect(footerLink).toHaveAttribute("target", "_blank");
@@ -1281,15 +1334,17 @@ describe("public-site contract", () => {
   it("publishes a complete Play-ready privacy policy for the app and website", () => {
     render(<PrivacyPage />);
 
+    const policy = screen.getByRole("main");
+
     expect(
       screen.getByRole("heading", {
         level: 1,
         name: "PyBLE Privacy Policy",
       }),
     ).toBeInTheDocument();
-    expect(screen.getByText("7 August 2026").closest("time")).toHaveAttribute(
+    expect(screen.getByText("28 August 2026").closest("time")).toHaveAttribute(
       "datetime",
-      "2026-08-07",
+      "2026-08-28",
     );
     expect(
       screen.getByText(
@@ -1343,7 +1398,29 @@ describe("public-site contract", () => {
         /contains no advertising, analytics, crash-reporting, or account SDK/i,
       ),
     ).toBeInTheDocument();
-    expect(screen.queryByText(/GitHub import/i)).not.toBeInTheDocument();
+    expect(policy).not.toHaveTextContent(
+      /current production app makes no HTTP request/i,
+    );
+    expect(policy).toHaveTextContent(
+      /user-started public GitHub import.*only optional Internet workflow/i,
+    );
+    expect(policy).toHaveTextContent(/HTTPS.*api\.github\.com/i);
+    expect(policy).toHaveTextContent(/repository owner.*name.*ref/i);
+    expect(policy).toHaveTextContent(/branch discovery/i);
+    expect(policy).toHaveTextContent(/path.*selected public source/i);
+    expect(policy).toHaveTextContent(/PyBLE version.*user-agent/i);
+    expect(policy).toHaveTextContent(/no GitHub account.*token/i);
+    expect(policy).toHaveTextContent(/no board identity.*board files/i);
+    expect(policy).toHaveTextContent(/no private project source/i);
+    expect(policy).toHaveTextContent(
+      /GitHub.*ordinary request metadata.*IP address.*user-agent/i,
+    );
+    expect(policy).toHaveTextContent(
+      /editing.*BLE.*Files.*Blocks.*Run.*offline.*independent/i,
+    );
+    expect(policy).toHaveTextContent(
+      /import.*never automatically opens.*runs/i,
+    );
     expect(
       screen.getByText(/Cloudflare and the VPS hosting infrastructure/i),
     ).toHaveTextContent(/ordinary request data/i);

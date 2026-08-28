@@ -12,6 +12,40 @@ import { describe, expect, it } from "vitest";
 const deploymentRoot = join(process.cwd(), "deploy");
 const execFile = promisify(execFileCallback);
 
+const learningRouteFiles = [
+  ["/learn", "learn.html"],
+  ["/learn/setup", "learn/setup.html"],
+  ["/learn/first-program", "learn/first-program.html"],
+  ["/learn/files", "learn/files.html"],
+  ["/learn/github-import", "learn/github-import.html"],
+  ["/learn/blocks", "learn/blocks.html"],
+  ["/learn/examples", "learn/examples.html"],
+  ["/learn/hardware", "learn/hardware.html"],
+  ["/learn/configured-hardware", "learn/configured-hardware.html"],
+  ["/learn/pico-2-w", "learn/pico-2-w.html"],
+  ["/learn/waveshare-lcd-147b", "learn/waveshare-lcd-147b.html"],
+] as const;
+
+const publicRouteFiles = [
+  ["/", "index.html"],
+  ["/app", "app.html"],
+  ["/privacy", "privacy.html"],
+  ["/support", "support.html"],
+  ["/flash", "flash.html"],
+  ...learningRouteFiles,
+] as const;
+
+const escapeRegExp = (value: string) =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const exactLocationBody = (config: string, route: string) =>
+  new RegExp(
+    `location = ${escapeRegExp(route)}\\s*\\{([\\s\\S]*?)\\n\\s*\\}`,
+  ).exec(config)?.[1];
+
+const publicRouteSmoke = (script: string) =>
+  /for route in ([^;\n]+); do([\s\S]*?)\ndone/.exec(script);
+
 describe("Cloudflare-fronted VPS deployment", () => {
   it("serves the portable export with canonical routes and a true static 404", async () => {
     const config = await readFile(
@@ -21,13 +55,70 @@ describe("Cloudflare-fronted VPS deployment", () => {
 
     expect(config).toContain("root /srv/pyble/current;");
     expect(config).toMatch(/server_name\s+pyble\.dev;/);
-    expect(config).toMatch(
-      /location = \/(app|privacy|support|flash)\s*\{[\s\S]*?\.html/,
-    );
-    expect(config).toMatch(/location = \/(app|privacy|support|flash)\/\s*\{/);
+    for (const [route, routeFile] of publicRouteFiles) {
+      const locationBody = exactLocationBody(config, route);
+
+      expect
+        .soft(locationBody, `${route} must have an exact location`)
+        .toBeDefined();
+      expect
+        .soft(locationBody, `${route} must serve its static export directly`)
+        .toContain(`try_files /${routeFile} =404;`);
+    }
     expect(config).toContain("error_page 404 /404.html;");
     expect(config).toMatch(/location = \/404\.html\s*\{[\s\S]*?internal;/);
     expect(config).not.toContain("proxy_pass");
+  });
+
+  it("serves every tutorial from an exact static mapping and preserves query strings while removing trailing slashes", async () => {
+    const config = await readFile(
+      join(deploymentRoot, "nginx", "10-pyble-dev-https.conf"),
+      "utf8",
+    );
+
+    for (const [route, routeFile] of learningRouteFiles) {
+      const locationBody = exactLocationBody(config, route);
+      const slashLocationBody = exactLocationBody(config, `${route}/`);
+
+      expect
+        .soft(locationBody, `${route} must not depend on directory fallback`)
+        .toContain(`try_files /${routeFile} =404;`);
+      expect
+        .soft(
+          slashLocationBody,
+          `${route}/ must have an exact canonical redirect`,
+        )
+        .toContain(`return 308 https://pyble.dev${route}$is_args$args;`);
+    }
+  });
+
+  it("does not claim the Learn namespace so unknown tutorials retain the authored static 404", async () => {
+    const [config, script] = await Promise.all([
+      readFile(
+        join(deploymentRoot, "nginx", "10-pyble-dev-https.conf"),
+        "utf8",
+      ),
+      readFile(join(deploymentRoot, "vps", "deploy.sh"), "utf8"),
+    ]);
+
+    expect(config).not.toMatch(/location\s+(?:\^~\s+)?\/learn(?:\/|\s*\{)/);
+    expect(config).not.toMatch(/location\s+~\*?\s+[^\n]*\/learn/);
+    expect(config).toMatch(
+      /location \/\s*\{[\s\S]*?try_files \$uri =404;[\s\S]*?\}/,
+    );
+    expect(config).toContain("error_page 404 /404.html;");
+    const unknownTutorialIndex = script.indexOf(
+      "https://pyble.dev/learn/not-a-tutorial",
+    );
+    const unknownTutorialSmoke = script.slice(
+      Math.max(0, unknownTutorialIndex - 800),
+      unknownTutorialIndex + 2000,
+    );
+
+    expect(unknownTutorialIndex).toBeGreaterThan(-1);
+    expect(unknownTutorialSmoke).toContain("--output");
+    expect(unknownTutorialSmoke).toMatch(/!= 404/);
+    expect(unknownTutorialSmoke).toMatch(/cmp -- "out\/404\.html"/);
   });
 
   it("serves the exact app route without shadowing app capture assets", async () => {
@@ -89,7 +180,7 @@ describe("Cloudflare-fronted VPS deployment", () => {
     );
     expect(config).toContain('Cache-Control "no-cache, no-transform"');
     expect(config).not.toContain('add_header Cache-Control "no-cache" always;');
-    for (const route of ["/", "/app", "/privacy", "/support", "/flash"]) {
+    for (const [route] of publicRouteFiles) {
       const locationStart = config.indexOf(`location = ${route} {`);
       const locationEnd = config.indexOf("\n    }", locationStart);
       const locationBlock = config.slice(locationStart, locationEnd);
@@ -232,20 +323,34 @@ describe("Cloudflare-fronted VPS deployment", () => {
     expect(script).not.toMatch(/BEGIN (?:RSA |OPENSSH )?PRIVATE KEY/);
   });
 
-  it("requires and smoke-tests the app page alongside the firmware installer", async () => {
+  it("requires and smoke-tests every public page, including all tutorials", async () => {
     const script = await readFile(
       join(deploymentRoot, "vps", "deploy.sh"),
       "utf8",
     );
+    const requiredFiles =
+      /for required_file in([\s\S]*?); do/.exec(script)?.[1] ?? "";
+    const smoke = publicRouteSmoke(script);
+    const smokeRoutes = smoke?.[1].trim().split(/\s+/) ?? [];
+    const smokeBody = smoke?.[2] ?? "";
 
-    expect(script).toMatch(
-      /for required_file in[\s\S]*?app\.html[\s\S]*?flash\.html[\s\S]*?; do/,
-    );
-    expect(script).toContain(
-      "for route in / /app /privacy /support /flash; do",
-    );
-    expect(script).toContain("/app) route_file=app.html ;;");
-    expect(script).toContain("/flash) route_file=flash.html ;;");
+    for (const [route, routeFile] of publicRouteFiles) {
+      expect
+        .soft(requiredFiles, `${routeFile} must enter the release inventory`)
+        .toMatch(new RegExp(`(?:^|\\s)${escapeRegExp(routeFile)}(?:\\s|$)`));
+      expect
+        .soft(smokeRoutes, `${route} must receive production smoke`)
+        .toContain(route);
+      expect
+        .soft(smokeBody, `${route} must map to the matching static file`)
+        .toMatch(
+          new RegExp(
+            `${escapeRegExp(route)}\\)\\s+route_file=${escapeRegExp(routeFile)}\\s+;;`,
+          ),
+        );
+    }
+    expect(smokeBody).toContain('mkdir -p -- "$(dirname -- "${route_body}")"');
+    expect(smokeBody).toContain('cmp -- "out/${route_file}" "${route_body}"');
   });
 
   it("accepts only the exact unrestricted pending public beta in the activation path", async () => {
@@ -518,15 +623,15 @@ describe("Cloudflare-fronted VPS deployment", () => {
       join(deploymentRoot, "vps", "deploy.sh"),
       "utf8",
     );
-    const publicRouteSmoke =
-      /for route in \/ \/app \/privacy \/support \/flash; do([\s\S]*?)\ndone/.exec(
-        script,
-      )?.[1];
+    const smoke = publicRouteSmoke(script);
+    const smokeRoutes = smoke?.[1].trim().split(/\s+/) ?? [];
+    const smokeBody = smoke?.[2];
 
-    expect(publicRouteSmoke).toBeDefined();
-    expect(publicRouteSmoke).toContain(
-      "Cache-Control: *no-cache, *no-transform",
-    );
+    expect(smokeBody).toBeDefined();
+    for (const [route] of publicRouteFiles) {
+      expect.soft(smokeRoutes).toContain(route);
+    }
+    expect(smokeBody).toContain("Cache-Control: *no-cache, *no-transform");
   });
 
   it("requires missing firmware to be 404 no-store and scopes deferred C3 to public beta", async () => {
@@ -758,12 +863,14 @@ describe("Cloudflare-fronted VPS deployment", () => {
       join(deploymentRoot, "vps", "deploy.sh"),
       "utf8",
     );
-    const routeSmoke =
-      /for route in \/ \/app \/privacy \/support \/flash; do([\s\S]*?)\ndone/.exec(
-        script,
-      )?.[1];
+    const smoke = publicRouteSmoke(script);
+    const smokeRoutes = smoke?.[1].trim().split(/\s+/) ?? [];
+    const routeSmoke = smoke?.[2];
 
     expect(routeSmoke).toBeDefined();
+    for (const [route] of publicRouteFiles) {
+      expect.soft(smokeRoutes).toContain(route);
+    }
     expect.soft(routeSmoke).not.toContain(">/dev/null");
     expect.soft(routeSmoke).toMatch(/--output|=\$\(\s*curl/);
     expect.soft(script).toMatch(/Content-Security-Policy:/i);

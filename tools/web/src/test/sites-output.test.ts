@@ -21,6 +21,32 @@ const temporaryDirectories: string[] = [];
 const execFile = promisify(execFileCallback);
 const acceptSyntheticFixture = async () => undefined;
 const { prepareSitesOutput } = sitesOutput;
+const learnDocumentRoutes = [
+  "/learn",
+  "/learn/setup",
+  "/learn/first-program",
+  "/learn/files",
+  "/learn/github-import",
+  "/learn/blocks",
+  "/learn/examples",
+  "/learn/hardware",
+  "/learn/configured-hardware",
+  "/learn/pico-2-w",
+  "/learn/waveshare-lcd-147b",
+] as const;
+const requiredPrerenderedRoutes = [
+  "/",
+  "/app",
+  "/flash",
+  "/privacy",
+  "/support",
+  ...learnDocumentRoutes,
+  "/404",
+] as const;
+const delegatedLearnPaths = learnDocumentRoutes.flatMap((route) => [
+  route,
+  `${route}/`,
+]);
 
 afterEach(async () => {
   await Promise.all(
@@ -37,12 +63,10 @@ async function writeSitesSkeleton(root: string) {
     "  return new Response(`vinext:${new URL(request.url).pathname}:${context.marker}`);\n" +
     "}\n";
   const prerenderManifest = JSON.stringify({
-    routes: ["/", "/app", "/flash", "/privacy", "/support", "/404"].map(
-      (route) => ({
-        route,
-        status: "rendered",
-      }),
-    ),
+    routes: requiredPrerenderedRoutes.map((route) => ({
+      route,
+      status: "rendered",
+    })),
   });
 
   await mkdir(join(root, ".openai"), { recursive: true });
@@ -121,12 +145,10 @@ describe("Sites vinext-output adapter", () => {
     const clientEntry = "<h1>PyBLE</h1>\n";
     const notFoundEntry = "<h1>That path wandered off.</h1>\n";
     const prerenderManifest = JSON.stringify({
-      routes: ["/", "/app", "/flash", "/privacy", "/support", "/404"].map(
-        (route) => ({
-          route,
-          status: "rendered",
-        }),
-      ),
+      routes: requiredPrerenderedRoutes.map((route) => ({
+        route,
+        status: "rendered",
+      })),
     });
 
     await mkdir(join(root, ".openai"), { recursive: true });
@@ -178,6 +200,19 @@ describe("Sites vinext-output adapter", () => {
         throw new TypeError("Sites entrypoint must export a module-worker fetch method");
       }
       const context = { marker: "execution-context" };
+      const learn = Object.fromEntries(await Promise.all(
+        ${JSON.stringify(delegatedLearnPaths)}.map(async (pathname) => {
+          const response = await worker.fetch(
+            new Request("https://pyble.dev" + pathname),
+            {},
+            context,
+          );
+          return [
+            pathname,
+            { status: response.status, body: await response.text() },
+          ];
+        }),
+      ));
       const privacy = await worker.fetch(
         new Request("https://pyble.dev/privacy"),
         { marker: "environment-must-not-reach-vinext" },
@@ -233,7 +268,18 @@ describe("Sites vinext-output adapter", () => {
         {},
         context,
       );
+      const unknownLearn = await worker.fetch(
+        new Request("https://pyble.dev/learn/not-a-tutorial"),
+        {},
+        context,
+      );
+      const unknownLearnTrailingSlash = await worker.fetch(
+        new Request("https://pyble.dev/learn/not-a-tutorial/"),
+        {},
+        context,
+      );
       console.log(JSON.stringify({
+        learn,
         privacy: { status: privacy.status, body: await privacy.text() },
         app: { status: app.status, body: await app.text() },
         brand: { status: brand.status, body: await brand.text() },
@@ -258,6 +304,14 @@ describe("Sites vinext-output adapter", () => {
           body: await firmwareBinary.text(),
         },
         notFound: { status: notFound.status, body: await notFound.text() },
+        unknownLearn: {
+          status: unknownLearn.status,
+          body: await unknownLearn.text(),
+        },
+        unknownLearnTrailingSlash: {
+          status: unknownLearnTrailingSlash.status,
+          body: await unknownLearnTrailingSlash.text(),
+        },
       }));
     `;
     const { stdout } = await execFile(
@@ -267,6 +321,15 @@ describe("Sites vinext-output adapter", () => {
     );
 
     expect(JSON.parse(stdout)).toEqual({
+      learn: Object.fromEntries(
+        delegatedLearnPaths.map((pathname) => [
+          pathname,
+          {
+            status: 200,
+            body: `vinext:${pathname}:execution-context`,
+          },
+        ]),
+      ),
       privacy: {
         status: 200,
         body: "vinext:/privacy:execution-context",
@@ -300,6 +363,8 @@ describe("Sites vinext-output adapter", () => {
         body: "vinext:/firmware/v0.4.2/esp32-s3-n16r8/firmware.bin:execution-context",
       },
       notFound: { status: 404, body: notFoundEntry },
+      unknownLearn: { status: 404, body: notFoundEntry },
+      unknownLearnTrailingSlash: { status: 404, body: notFoundEntry },
     });
   });
 
@@ -330,7 +395,7 @@ describe("Sites vinext-output adapter", () => {
     );
   });
 
-  it("rejects a launch route that vinext did not prerender", async () => {
+  it("rejects an exact Learn route that vinext did not prerender", async () => {
     const root = await mkdtemp(join(tmpdir(), "pyble-web-output-"));
     temporaryDirectories.push(root);
 
@@ -344,19 +409,14 @@ describe("Sites vinext-output adapter", () => {
     await writeFile(
       join(root, "dist", "server", "vinext-prerender.json"),
       JSON.stringify({
-        routes: [
-          { route: "/", status: "rendered" },
-          { route: "/app", status: "skipped" },
-          { route: "/flash", status: "rendered" },
-          { route: "/privacy", status: "rendered" },
-          { route: "/support", status: "rendered" },
-          { route: "/404", status: "rendered" },
-        ],
+        routes: requiredPrerenderedRoutes
+          .filter((route) => route !== "/learn/github-import")
+          .map((route) => ({ route, status: "rendered" })),
       }),
     );
 
     await expect(prepareSitesOutput(root)).rejects.toThrow(
-      /launch route was not prerendered: \/app/i,
+      /launch route was not prerendered: \/learn\/github-import/i,
     );
   });
 
