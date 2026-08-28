@@ -2666,6 +2666,97 @@ h3 {
   text-underline-offset: 3px;
 }
 
+.tutorial-concept-figure {
+  margin: 34px 0 0;
+  overflow: hidden;
+  border: 1px solid #c5d5e7;
+  border-radius: 22px;
+  background: var(--white);
+  box-shadow: var(--shadow-sm);
+}
+
+.tutorial-concept-figure__heading {
+  display: grid;
+  padding: 22px 24px;
+  gap: 4px;
+  background:
+    radial-gradient(circle at 92% 10%, rgb(47 140 255 / 24%), transparent 34%),
+    var(--navy-900);
+}
+
+.tutorial-concept-figure__heading span {
+  color: var(--cyan-300);
+  font-size: 0.69rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.tutorial-concept-figure__heading h3 {
+  margin: 0;
+  color: var(--white);
+  font-size: clamp(1.2rem, 2.8vw, 1.65rem);
+  line-height: 1.25;
+}
+
+.tutorial-concept-figure__items {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.tutorial-concept-figure__items li {
+  display: grid;
+  min-width: 0;
+  padding: 24px;
+  border-right: 1px solid var(--line);
+  gap: 14px;
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.tutorial-concept-figure__items li:last-child {
+  border-right: 0;
+}
+
+.tutorial-concept-figure__items li > span {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: 10px;
+  background: #e4eeff;
+  color: var(--signal-700);
+  font-size: 0.67rem;
+  font-weight: 850;
+}
+
+.tutorial-concept-figure__items div {
+  display: grid;
+  gap: 7px;
+}
+
+.tutorial-concept-figure__items strong {
+  color: var(--navy-900);
+  font-size: 0.88rem;
+}
+
+.tutorial-concept-figure__items p {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.58;
+}
+
+.tutorial-concept-figure figcaption {
+  padding: 15px 24px 17px;
+  border-top: 1px solid var(--line);
+  background: #f5f8fc;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.55;
+}
+
 .tutorial-overview {
   overflow: hidden;
   border: 1px solid var(--line);
@@ -3111,6 +3202,60 @@ h3 {
   border-color: #c8dbd5;
   border-left-color: #229d76;
   background: #edf9f5;
+}
+
+.tutorial-app-capture {
+  overflow: hidden;
+  margin: 22px 0 0;
+  border: 1px solid #b9cadf;
+  border-radius: 18px;
+  background: var(--white);
+  box-shadow: 0 16px 38px rgb(8 27 53 / 12%);
+}
+
+.tutorial-app-capture__frame {
+  padding: 6px;
+  background: linear-gradient(145deg, #253d5c, #09172a 72%);
+}
+
+.tutorial-app-capture__image {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 12px;
+  background: #f7f8fb;
+}
+
+.tutorial-app-capture figcaption {
+  display: flex;
+  min-height: 48px;
+  padding: 13px 15px 14px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  border-top: 1px solid #d9e3ee;
+  background: #f5f8fc;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 650;
+  line-height: 1.5;
+}
+
+.tutorial-app-capture__evidence {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  color: var(--navy-850);
+  font-weight: 800;
+}
+
+.tutorial-app-capture__evidence i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--success);
+  box-shadow: 0 0 0 5px rgb(55 210 145 / 12%);
 }
 
 .tutorial-steps {
@@ -3778,6 +3923,46 @@ h3 {
   .tutorial-definition-list > div {
     grid-template-columns: 1fr;
     gap: 6px;
+  }
+
+  .tutorial-concept-figure {
+    border-radius: 16px;
+  }
+
+  .tutorial-concept-figure__heading {
+    padding: 20px;
+  }
+
+  .tutorial-concept-figure__items {
+    grid-template-columns: 1fr;
+  }
+
+  .tutorial-concept-figure__items li {
+    padding: 20px;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .tutorial-concept-figure__items li:last-child {
+    border-bottom: 0;
+  }
+
+  .tutorial-concept-figure figcaption {
+    padding: 14px 20px 16px;
+  }
+
+  .tutorial-app-capture {
+    border-radius: 14px;
+  }
+
+  .tutorial-app-capture__image {
+    border-radius: 9px;
+  }
+
+  .tutorial-app-capture figcaption {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 5px;
   }
 
   .tutorial-toc {

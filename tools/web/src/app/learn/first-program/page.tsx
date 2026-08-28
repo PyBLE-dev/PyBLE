@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Part of PyBLE (https://pyble.dev) — see /LICENSE.
 
+import { TutorialAppCapture } from "@/components/tutorial-app-capture";
 import { TutorialCallout } from "@/components/tutorial-callout";
 import { TutorialPage, type TutorialStep } from "@/components/tutorial-page";
 import { pageMetadata } from "@/lib/site";
@@ -19,9 +20,11 @@ const steps: readonly TutorialStep[] = [
     title: "Create a new board-backed file",
     body: (
       <p>
-        With the correct board connected, choose New file in the Editor and name
-        it <code>hello.py</code>. Enter exactly the one hardware-free line
-        below. It uses no GPIO and is designed for all five profiles.
+        With the correct board connected, in Files enter the disposable child
+        folder you prepared, choose New file, and name it <code>hello.py</code>.
+        PyBLE opens the new board-backed file in the Editor. Enter exactly the
+        one hardware-free line below. It uses no GPIO and is designed for all
+        five profiles.
       </p>
     ),
     code: helloProgram,
@@ -49,6 +52,7 @@ const steps: readonly TutorialStep[] = [
         file alone never executes it.
       </p>
     ),
+    visual: <TutorialAppCapture capture="firstProgramEditorConsole" />,
     expected: (
       <>
         Console prints <code>Hello from PyBLE!</code> once and the finite

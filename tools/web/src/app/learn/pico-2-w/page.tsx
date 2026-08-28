@@ -2,6 +2,7 @@
 // Part of PyBLE (https://pyble.dev) — see /LICENSE.
 
 import { TutorialCallout } from "@/components/tutorial-callout";
+import { TutorialConceptFigure } from "@/components/tutorial-concept-figure";
 import { TutorialPage, type TutorialStep } from "@/components/tutorial-page";
 import { examplesSnapshot } from "@/lib/tutorials";
 import { pageMetadata } from "@/lib/site";
@@ -134,6 +135,28 @@ export default function Pico2WTutorial() {
             Web Serial instructions into this UF2/BOOTSEL profile.
           </p>
         </TutorialCallout>
+        <TutorialConceptFigure
+          eyebrow="Two transports, one exact profile"
+          title="Provision once, then work over BLE"
+          items={[
+            {
+              label: "Computer + BOOTSEL",
+              detail:
+                "Select the exact Pico 2 W profile and copy its verified UF2 to the mounted volume.",
+            },
+            {
+              label: "Tablet + PBLE/1",
+              detail:
+                "Reconnect in PyBLE over Bluetooth for editing, Files, Run, and Console.",
+            },
+            {
+              label: "Named onboard LED",
+              detail:
+                'Use Pin("LED") only on the verified Pico 2 W and keep every blink finite.',
+            },
+          ]}
+          caption="USB performs recovery and provisioning; everyday PyBLE work remains BLE-first."
+        />
       </section>
 
       <section aria-labelledby="pico-source">

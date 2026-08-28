@@ -2,6 +2,7 @@
 // Part of PyBLE (https://pyble.dev) — see /LICENSE.
 
 import { TutorialCallout } from "@/components/tutorial-callout";
+import { TutorialConceptFigure } from "@/components/tutorial-concept-figure";
 import { TutorialPage, type TutorialStep } from "@/components/tutorial-page";
 import { pageMetadata } from "@/lib/site";
 
@@ -139,6 +140,28 @@ export default function HardwareTutorial() {
             memory size, or chip token.
           </p>
         </TutorialCallout>
+        <TutorialConceptFigure
+          eyebrow="Choose the right evidence"
+          title="Classify before you connect"
+          items={[
+            {
+              label: "Portable code",
+              detail:
+                "Uses no carrier pin, fixed peripheral, or exact-board assumption.",
+            },
+            {
+              label: "Configured capability",
+              detail:
+                "Requires your reviewed pin choices, electrical limits, and wiring.",
+            },
+            {
+              label: "Exact board",
+              detail:
+                "Names one carrier, its matching firmware image, and fixed onboard surface.",
+            },
+          ]}
+          caption="The example class determines what must be verified before Run; designed compatibility is not physical validation."
+        />
       </section>
 
       <section aria-labelledby="hardware-classes">

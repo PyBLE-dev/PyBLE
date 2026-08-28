@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Part of PyBLE (https://pyble.dev) — see /LICENSE.
 
+import { TutorialAppCapture } from "@/components/tutorial-app-capture";
 import { TutorialCallout } from "@/components/tutorial-callout";
 import { TutorialPage, type TutorialStep } from "@/components/tutorial-page";
 import { pageMetadata } from "@/lib/site";
@@ -47,6 +48,7 @@ const steps: readonly TutorialStep[] = [
         bundled starter.
       </p>
     ),
+    visual: <TutorialAppCapture capture="blocksHelloWorkspace" />,
     expected:
       "the Blocks canvas contains an editable Hello PyBLE copy and nothing has been saved or run.",
   },

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Part of PyBLE (https://pyble.dev) — see /LICENSE.
 
+import { TutorialAppCapture } from "@/components/tutorial-app-capture";
 import { TutorialCallout } from "@/components/tutorial-callout";
 import { TutorialPage, type TutorialStep } from "@/components/tutorial-page";
 import { examplesSnapshot } from "@/lib/tutorials";
@@ -52,11 +53,12 @@ const steps: readonly TutorialStep[] = [
         In Branch mode, load the chooser and observe that it lists only
         branches. Select <code>main</code> to understand branch discovery, but
         do not use that moving name as this lesson&apos;s reproducibility
-        identity. Open Advanced, choose tag or commit, and enter the full
-        40-character commit below.
+        identity. Choose Use a tag or commit, then enter the full 40-character
+        commit below.
       </p>
     ),
     code: examplesSnapshot.commit,
+    visual: <TutorialAppCapture capture="githubBranchChooser" />,
     expected:
       "the importer resolves and displays the same full immutable commit before browsing files.",
   },
@@ -84,6 +86,7 @@ const steps: readonly TutorialStep[] = [
         it is intentional.
       </p>
     ),
+    visual: <TutorialAppCapture capture="githubPrewriteReview" />,
     stopIf:
       "the source commit, source folder, current directory, filename, or overwrite state differs from your review.",
   },

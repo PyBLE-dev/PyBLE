@@ -2,6 +2,7 @@
 // Part of PyBLE (https://pyble.dev) — see /LICENSE.
 
 import { TutorialCallout } from "@/components/tutorial-callout";
+import { TutorialConceptFigure } from "@/components/tutorial-concept-figure";
 import { TutorialPage, type TutorialStep } from "@/components/tutorial-page";
 import { pageMetadata } from "@/lib/site";
 
@@ -146,6 +147,28 @@ export default function ConfiguredHardwareTutorial() {
             components, or circuit.
           </p>
         </TutorialCallout>
+        <TutorialConceptFigure
+          eyebrow="One bounded experiment"
+          title="Review, observe, restore"
+          items={[
+            {
+              label: "Review",
+              detail:
+                "Confirm pin roles, voltage, current, boot conflicts, protection, and shared ground.",
+            },
+            {
+              label: "Observe",
+              detail:
+                "Run one finite effect with Console visible and Stop immediately available.",
+            },
+            {
+              label: "Restore",
+              detail:
+                "Leave outputs safe, deinitialize buses, power down, and remove temporary wiring.",
+            },
+          ]}
+          caption="A configured-hardware lesson is complete only after the circuit returns to a documented safe state."
+        />
       </section>
 
       <section aria-labelledby="configured-progression">

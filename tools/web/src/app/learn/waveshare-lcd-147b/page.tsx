@@ -3,6 +3,7 @@
 
 import { TutorialCallout } from "@/components/tutorial-callout";
 import { TutorialPage, type TutorialStep } from "@/components/tutorial-page";
+import { WaveshareBoardPhoto } from "@/components/waveshare-board-photo";
 import { examplesSnapshot } from "@/lib/tutorials";
 import { pageMetadata } from "@/lib/site";
 
@@ -154,6 +155,7 @@ export default function WaveshareTutorial() {
             N16R8 carrier.
           </p>
         </TutorialCallout>
+        <WaveshareBoardPhoto />
       </section>
 
       <section aria-labelledby="waveshare-source">
