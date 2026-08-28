@@ -144,7 +144,7 @@ const lessonPages: Array<{
   },
 ];
 
-const physicalTabletLessonPages = lessonPages.slice(0, 6);
+const physicalTabletLessonPages = lessonPages;
 
 function mainText(Page: ComponentType): string {
   render(<Page />);
@@ -344,16 +344,53 @@ describe("instructional visual contract", () => {
 
       expect(physicalFigures.length).toBeGreaterThan(0);
       for (const figure of physicalFigures) {
-        const image = within(figure).getByRole("img");
-        expect(image.getAttribute("src")).toMatch(
-          /^\/learn\/app\/[a-z0-9.-]+\.png$/,
-        );
-        expect(image.getAttribute("alt")).toMatch(/PyBLE 0\.2\.0 beta/i);
+        const images = within(figure).getAllByRole("img");
+        expect(images.length).toBeGreaterThan(0);
+        for (const image of images) {
+          expect(image.getAttribute("src")).toMatch(
+            /^\/learn\/app\/[a-z0-9.-]+\.png$/,
+          );
+          expect(image.getAttribute("alt")).toMatch(/PyBLE 0\.2\.0 beta/i);
+        }
         expect(figure).not.toHaveTextContent(/integration test|debug|golden/i);
       }
       expect(main).not.toHaveTextContent(/PyBLE Integration Test/i);
     },
   );
+
+  it.each([SetupTutorial, HardwareTutorial])(
+    "renders the complete five-board observed identity set",
+    (Page) => {
+      render(<Page />);
+      const main = screen.getByRole("main");
+      const text = main.textContent ?? "";
+
+      for (const [boardId, runtimeChip] of [
+        ["5646", "esp32-s3"],
+        ["8C9E", "esp32"],
+        ["C81A", "esp32-c3"],
+        ["DA86", "esp32-s3"],
+        ["3DCB", "rpi-pico2-w"],
+      ] as const) {
+        expect(text).toContain(boardId);
+        expect(text).toContain(runtimeChip);
+      }
+    },
+  );
+
+  it("uses identity subsets as hardware boundaries, not profile proof", () => {
+    const configuredText = mainText(ConfiguredHardwareTutorial);
+    expect(configuredText).toMatch(/C81A.*esp32-c3/is);
+
+    const picoText = mainText(Pico2WTutorial);
+    expect(picoText).toMatch(/3DCB.*rpi-pico2-w/is);
+
+    const waveshareText = mainText(WaveshareTutorial);
+    expect(waveshareText).toMatch(/5646.*DA86/is);
+    expect(waveshareText).toMatch(
+      /esp32-s3.*(?:cannot|does not).*distinguish.*profile/is,
+    );
+  });
 });
 
 describe("tutorial truth and safety content", () => {

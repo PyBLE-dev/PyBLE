@@ -26,6 +26,17 @@ trap cleanup EXIT HUP INT TERM
 
 command -v magick >/dev/null 2>&1 || fail "ImageMagick's magick is required"
 [ -x "$PROCESSOR" ] || fail "processor is not executable: $PROCESSOR"
+
+CAPTURE_TABLE="$($PROCESSOR --list)"
+[ "$(printf '%s\n' "$CAPTURE_TABLE" | wc -l | tr -d ' ')" = 18 ] ||
+  fail "capture table must expose eighteen reviewed derivatives"
+[ "$(printf '%s\n' "$CAPTURE_TABLE" | awk -F '\t' 'NF != 6 { bad = 1 } END { print bad + 0 }')" = 0 ] ||
+  fail "capture rows must name source, key, width, height, crop x, and crop y"
+[ "$(printf '%s\n' "$CAPTURE_TABLE" | cut -f1 | sort -u | wc -l | tr -d ' ')" = 13 ] ||
+  fail "capture table must bind thirteen distinct raw frames"
+[ "$(printf '%s\n' "$CAPTURE_TABLE" | cut -f2 | sort -u | wc -l | tr -d ' ')" = 18 ] ||
+  fail "capture keys must be unique"
+
 mkdir -p "$SCREENSHOTS_ROOT"
 TEST_ROOT=$(mktemp -d "$SCREENSHOTS_ROOT/.capture-processor-test.XXXXXX")
 INPUT_DIR="$TEST_ROOT/raw"
