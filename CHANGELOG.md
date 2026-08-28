@@ -48,8 +48,7 @@ or claim App Store Connect processing, beta-review approval, or availability.
 - Advanced the independently versioned app source build from `0.1.0+2` to
   `0.1.0+3`, distinguishing this development build from TestFlight build 2.
 - Advanced the independently versioned app source build from `0.1.0+3` to
-  `0.1.0+4`, distinguishing this numbered-editor development build from build
-  3.
+  `0.1.0+4`, distinguishing this numbered-editor development build from build 3.
 - Started the compatible app `0.2.0` beta train at globally monotonic build
   `5`, synchronizing package metadata, PBLE/1 HELLO, and the public GitHub
   request identity without designating a qualified store release.
@@ -72,6 +71,15 @@ or claim App Store Connect processing, beta-review approval, or availability.
 
 ### Website and repository source
 
+- Added a static `/learn` center with ten ordered, accessible tutorials covering
+  exact five-profile setup, the first BLE program, Files and multi-delete,
+  pinned public GitHub import, Blocks, the complete 32-example development
+  catalog, electrical safety, configured capabilities, Pico 2 W, and the exact
+  Waveshare LCD 1.47B B-version. Tutorial claims remain tied to the active
+  firmware selector and immutable examples provenance.
+- Updated the public privacy policy to disclose user-started, unauthenticated
+  requests to GitHub&apos;s public API while preserving the offline independence of
+  editing, BLE, Files, Blocks, and Run.
 - Added project-level `CITATION.cff` metadata and identified whole-project
   source snapshot `source-2026.08.23` with exact Zenodo DOI
   [`10.5281/zenodo.22064468`](https://doi.org/10.5281/zenodo.22064468) for

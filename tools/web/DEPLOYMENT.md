@@ -46,6 +46,12 @@ Review at least:
 - `/support`, including the public contact address;
 - `/flash`, confirming the install button is still disabled unless the
   firmware release gate is fully satisfied;
+- `/learn` and all ten ordered tutorials: setup, first program, Files, GitHub
+  import, Blocks, examples, hardware safety, configured hardware, Pico 2 W,
+  and the Waveshare LCD 1.47B;
+- every tutorial's release/compatibility statement, wiring boundary, expected
+  result, recovery guidance, previous/next navigation, and immutable source
+  link where applicable;
 - `out/robots.txt`, `out/sitemap.xml`, and `out/manifest.webmanifest`;
 - `out/WEBSITE_THIRD_PARTY_LICENSES.txt`, generated from the exact production
   dependency closure;
@@ -60,12 +66,15 @@ produced the checked `out/` export.
 
 ## Stage a firmware release
 
-The normal build and deploy path contains no firmware and keeps the installer
-unavailable. Do not put release bytes in `tools/web/public/`. Generate the
-firmware release bundle outside this package, including `release.json`,
-`release.schema.json`, all three current exact profile directories, release and
-recovery documents, and conventional full-coverage `SHA256SUMS`. The deferred
-`esp32-c3-4mb` directory must be absent from the current pre-v1 bundle.
+The normal source build contains no firmware and keeps the installer
+unavailable. A website-only production deployment instead authenticates and
+carries forward the active qualified selector and immutable release bytes; it
+does not silently disable or replace them. Do not put release bytes in
+`tools/web/public/`. Generate a v0.6.0 firmware release bundle outside this
+package, including `release.json`, `release.schema.json`, the five exact profile
+directories, release and recovery documents, and conventional full-coverage
+`SHA256SUMS`: `esp32-4mb`, `esp32-s3-n16r8`,
+`waveshare-esp32-s3-lcd-147b`, `esp32-c3-4mb`, and `rpi-pico2-w`.
 
 For an all-HIL-passed public bundle:
 
@@ -175,7 +184,9 @@ Deploy that artifact only behind enforced authentication. The boolean is an
 attestation to the fail-closed build policy, not access control itself. Never
 send a protected candidate through the public VPS helper; it accepts only
 qualified public releases whose final-byte HIL statuses are `passed` for every
-exact profile, or the exact audited and digest-bound v0.4.2 public beta.
+exact profile, or the exact audited and digest-bound v0.4.2 public-beta legacy
+exception. The current public selector is the qualified five-profile v0.6.0
+release.
 
 ## First-time VPS bootstrap
 
@@ -272,11 +283,15 @@ From the repository root:
 tools/web/deploy/vps/deploy.sh <ssh-user>@<vps-host>
 ```
 
-When the current installer is the v0.4.2 public beta, a website-only deployment
-must also export the same retained license-evidence, release-build, and exact
-firmware-source paths and retain the annotated `firmware-v0.4.2` tag.
-Carry-forward repeats the canonical audited-candidate and tag checks; it does
-not rely on the presence of firmware bytes alone.
+The current qualified v0.6.0 selector is carried forward without restaging:
+the helper retrieves the active selector and complete immutable release,
+validates their authenticated digests and qualified-public contract, and
+repackages those exact bytes. If the current installer is instead the legacy
+v0.4.2 public beta, a website-only deployment must also export the same retained
+license-evidence, release-build, and exact firmware-source paths and retain the
+annotated `firmware-v0.4.2` tag. That legacy carry-forward repeats the canonical
+audited-candidate and tag checks; neither path relies on the presence of
+firmware bytes alone.
 
 The SSH target is an argument so no host address or private-key path is stored
 in the repository. Authentication must be non-interactive and key-based.
@@ -326,13 +341,22 @@ certificate renewal.
 
 ```sh
 curl -fsSI https://pyble.dev/
+curl -fsSI https://pyble.dev/app
 curl -fsSI https://pyble.dev/privacy
 curl -fsSI https://pyble.dev/support
 curl -fsSI https://pyble.dev/flash
+for route in learn learn/setup learn/first-program learn/files \
+  learn/github-import learn/blocks learn/examples learn/hardware \
+  learn/configured-hardware learn/pico-2-w learn/waveshare-lcd-147b; do
+  curl -fsSI "https://pyble.dev/${route}"
+done
+curl -fsSI 'https://pyble.dev/learn/setup/?source=redirect-check'
 curl -fsSI 'https://www.pyble.dev/privacy?source=redirect-check'
 curl -fsSI 'https://pyble.org/privacy?source=redirect-check'
 test "$(curl -sS -o /dev/null -w '%{http_code}' \
   https://pyble.dev/not-found-smoke)" = 404
+test "$(curl -sS -o /dev/null -w '%{http_code}' \
+  https://pyble.dev/learn/not-a-tutorial)" = 404
 ```
 
 Confirm:
@@ -341,12 +365,15 @@ Confirm:
 - HTML returns `Cache-Control: no-cache, no-transform`, remains byte-identical
   to the checked export through Cloudflare, and revalidates while
   `/_next/static/` assets are immutable;
+- all eleven Learn documents are byte-identical to their nested `out/` files,
+  each slash redirect returns `308` with its query intact, and an unknown Learn
+  pathname returns the authored `out/404.html` body with status `404`;
 - versioned `/firmware/` assets, when present, are immutable and serve JSON and
   binary files with their explicit safe MIME types;
 - the helper tests the selected release's deferred C3 manifest as a `404`
-  `no-store` path only for the exact `v0.4.2` `public-beta`; a qualified
-  `public` release instead validates and retrieves every descriptor-declared
-  profile, including C3;
+  `no-store` path only for the exact legacy `v0.4.2` `public-beta`; qualified
+  v0.6.0 instead validates and retrieves every descriptor-declared profile,
+  including C3 and Pico 2 W;
 - the manifest uses `application/manifest+json`;
 - the reviewed security headers are present;
 - no third-party runtime request appears; and
