@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Part of PyBLE (https://pyble.dev) — see /LICENSE.
 
+import { TutorialAppCapture } from "@/components/tutorial-app-capture";
 import { TutorialCallout } from "@/components/tutorial-callout";
 import { TutorialPage, type TutorialStep } from "@/components/tutorial-page";
 import { pageMetadata } from "@/lib/site";
@@ -60,6 +61,7 @@ const steps: readonly TutorialStep[] = [
         Confirm in Files that neither disposable file was removed.
       </p>
     ),
+    visual: <TutorialAppCapture capture="filesMultiDeleteReview" />,
     expected:
       "the dialog closes and both files remain; cancellation issues no deletion.",
   },

@@ -19,6 +19,7 @@ export type TutorialStep = {
   title: string;
   body: ReactNode;
   code?: string;
+  visual?: ReactNode;
   expected?: ReactNode;
   stopIf?: ReactNode;
 };
@@ -191,6 +192,7 @@ export function TutorialPage({
                         <code>{step.code}</code>
                       </pre>
                     ) : null}
+                    {step.visual}
                     {step.expected ? (
                       <p className="tutorial-step__result">
                         <strong>Expected:</strong> {step.expected}

@@ -3,6 +3,7 @@
 
 import Link from "next/link";
 
+import { TutorialAppCapture } from "@/components/tutorial-app-capture";
 import { TutorialCallout } from "@/components/tutorial-callout";
 import { TutorialPage, type TutorialStep } from "@/components/tutorial-page";
 import { pageMetadata } from "@/lib/site";
@@ -51,6 +52,7 @@ const steps: readonly TutorialStep[] = [
         to connect.
       </p>
     ),
+    visual: <TutorialAppCapture capture="setupScanResults" />,
     expected:
       "the scan shows one PyBLE-… advertisement and the app reaches its connected workspace.",
   },
@@ -65,6 +67,7 @@ const steps: readonly TutorialStep[] = [
         installer record and reported identity with any later problem report.
       </p>
     ),
+    visual: <TutorialAppCapture capture="setupConnectedIdentity" />,
     stopIf:
       "a reported field is absent or inconsistent with the physical board and your recorded installer selection.",
   },
