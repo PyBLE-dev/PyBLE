@@ -2,6 +2,12 @@
 
 # Tutorial screenshot provenance — 2026-08-28
 
+> **Superseded and corrected:** use the
+> [five-board Lenovo capture record](tutorial-five-board-screenshot-provenance-2026-08-28.md)
+> for the current tutorial set. A later audit found the Lenovo stylus
+> affordance in seven old raw frames (`06` through `12`), not six. This record
+> is retained only as historical evidence for the earlier eight-image set.
+
 This record covers the physical Android captures prepared for local review of
 the ten-part learning path. Technical integrity and privacy review are
 complete. Production publication remains pending explicit user approval of the
@@ -53,7 +59,7 @@ Blocks starter was copied into the editable workspace but was not run.
 | Purpose | Raw capture | Published derivative | Reviewed SHA-256 | Privacy and state review |
 | --- | --- | --- | --- | --- |
 | Setup — board discovery | `06-setup-scan-results-production-release.raw.png` | `pyble-app-0.2.0-build-5-setup-scan-results-3558cadbe501.png` | `3558cadbe501d1865aafbacf4fe5dd9624ae969a2fb0ff7bbd457029bcf2c41c` | Pass; one documentation-board advertisement; Lenovo stylus edge control retained |
-| Setup — connected identity | `07-setup-connected-identity-production-release.raw.png` | `pyble-app-0.2.0-build-5-setup-connected-identity-58f65b64a966.png` | `58f65b64a966d4ef2dcd0148442bf07dbe6b2008eda502f9d1e14cda4b7b36ce` | Pass; documentation board only; no unrelated overlay visible |
+| Setup — connected identity | `07-setup-connected-identity-production-release.raw.png` | `pyble-app-0.2.0-build-5-setup-connected-identity-58f65b64a966.png` | `58f65b64a966d4ef2dcd0148442bf07dbe6b2008eda502f9d1e14cda4b7b36ce` | Pass; documentation board only; Lenovo stylus edge control retained |
 | First program — Editor and Console | `08-first-program-editor-console-production-release.raw.png` | `pyble-app-0.2.0-build-5-first-program-editor-console-86552d68afaa.png` | `86552d68afaa7f9ea8b1151e0ffc812685815f3009bb64b7a3c823090ef42152` | Pass; public tutorial source/output only; Lenovo stylus edge control retained |
 | Files — multi-delete review | `09-files-multi-delete-review-production-release.raw.png` | `pyble-app-0.2.0-build-5-files-multi-delete-review-b1df22dfa70a.png` | `b1df22dfa70a449356c05f34189ff897decdfbd418bf4630ae251365b6ed6b86` | Pass; disposable filenames; Delete was canceled; Lenovo stylus edge control retained |
 | GitHub — branch chooser | `10-github-import-branch-chooser-production-release.raw.png` | `pyble-app-0.2.0-build-5-github-import-branch-chooser-4514d2f0522b.png` | `4514d2f0522bb3600ba38a75d9ed581255877d1949a8c153341af2d720da8ba7` | Pass; official public URL and public branch only; Lenovo stylus edge control retained |
@@ -63,9 +69,9 @@ Blocks starter was copied into the editable workspace but was not run.
 
 No capture contains an account, token, private repository, notification,
 personal filename, debug label, integration-test label, or unrelated user board
-file. The small edge control retained in six frames belongs to Lenovo's
+file. The small edge control retained in seven frames belongs to Lenovo's
 `com.lenovo.styluspen` system package; it contains no user data. It was left
 truthful rather than removed by image retouching. The overlay was stopped
 reversibly before the final Blocks capture. A future physical recapture may
-replace those six frames with new content-versioned assets after the tablet is
+replace those seven frames with new content-versioned assets after the tablet is
 reconnected; existing published bytes must never be overwritten in place.
