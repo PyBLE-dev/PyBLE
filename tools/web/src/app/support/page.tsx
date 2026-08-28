@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Part of PyBLE (https://pyble.dev) — see /LICENSE.
 
+import Link from "next/link";
+
 import { ExternalIcon, MailIcon } from "@/components/icons";
 import { PageIntro } from "@/components/page-intro";
 import { releaseIncludesWaveshareLcd147b } from "@/lib/firmware-release";
@@ -65,6 +67,9 @@ export default function SupportPage() {
         <p>
           Start with the quick checks below. If the problem remains, send a
           small, reproducible report and we will help you narrow it down.
+        </p>
+        <p className="page-intro__meta">
+          New to PyBLE? <Link href="/learn">Follow the guided tutorials</Link>.
         </p>
       </PageIntro>
 

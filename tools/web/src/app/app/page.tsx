@@ -173,6 +173,9 @@ export default function AppPage() {
           </div>
 
           <div className="button-row app-install__secondary-actions app-install__support-actions">
+            <Link className="button button--secondary" href="/learn/setup">
+              Follow the setup tutorial
+            </Link>
             <Link className="button button--secondary" href="/flash">
               Open firmware installer
             </Link>

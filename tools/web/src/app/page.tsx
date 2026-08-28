@@ -265,6 +265,9 @@ export default function HomePage() {
             ))}
           </ol>
           <div className="button-row">
+            <Link className="button button--secondary" href="/learn">
+              Start the guided tutorials
+            </Link>
             <Link className="button button--secondary" href="/flash">
               Open firmware installer
               <ArrowIcon />

@@ -22,7 +22,7 @@ export default function PrivacyPage() {
           happens when you visit this website.
         </p>
         <p className="page-intro__meta">
-          Effective <time dateTime="2026-08-07">7 August 2026</time>
+          Effective <time dateTime="2026-08-28">28 August 2026</time>
         </p>
       </PageIntro>
 
@@ -45,8 +45,31 @@ export default function PrivacyPage() {
             <p>
               The PyBLE app has no account, advertising, analytics, telemetry,
               or crash reporting. It also has no payment or cloud service. The
-              current production app makes no HTTP request and does not send
-              your app project content to PyBLE, SciLabPro, or the maintainer.
+              user-started public GitHub import is its only optional Internet
+              workflow. Editing, BLE, Files, Blocks, and Run continue to work
+              offline and remain independent of GitHub availability. The app
+              does not send your project content to PyBLE, SciLabPro, or the
+              maintainer.
+            </p>
+            <h3>Public GitHub import</h3>
+            <p>
+              When you explicitly open Import examples from GitHub, the app
+              makes unauthenticated HTTPS requests only to
+              <code>api.github.com</code>. Those requests include the public
+              repository owner and name, the requested ref, branch discovery
+              operations, directory paths, paths identifying the selected public
+              source files, and Git object identifiers. GitHub returns the
+              selected file contents in its HTTPS responses. Requests also
+              include a bounded PyBLE version in the User-Agent. The app sends
+              no GitHub account or token, no board identity or board files, and
+              no private project source.
+            </p>
+            <p>
+              GitHub independently receives ordinary request metadata such as
+              your IP address and user-agent under GitHub&apos;s own privacy
+              policy. Import only reads the public files you select. It never
+              automatically opens or runs imported code; review the source and
+              choose any later board action yourself.
             </p>
             <h3>Data sent to your board</h3>
             <p>
@@ -149,8 +172,8 @@ export default function PrivacyPage() {
             <h2 id="policy-changes">Changes to this policy</h2>
             <p>
               If a future app or site feature handles information differently—
-              such as analytics, a form, an account, a functional network
-              import, or embedded media—we will update this policy and its
+              such as analytics, a form, an account, another network
+              integration, or embedded media—we will update this policy and its
               effective date before that feature is deployed.
             </p>
           </section>

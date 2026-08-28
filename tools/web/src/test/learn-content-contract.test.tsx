@@ -379,7 +379,7 @@ describe("tutorial truth and safety content", () => {
     ]) {
       expect(text).toContain(starter);
     }
-    expect(text).toMatch(/Preview Python.*Create copy/is);
+    expect(text).toMatch(/Preview.*Generated Python.*Create copy/is);
     expect(text).toMatch(/Save.*Run.*explicit/is);
     expect(text).toMatch(/sidecar/is);
     expect(text).toMatch(/Python-to-Blocks.*all-or-nothing/is);

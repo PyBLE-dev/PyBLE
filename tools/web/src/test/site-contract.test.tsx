@@ -206,10 +206,13 @@ describe("public-site contract", () => {
       /<loc>https:\/\/pyble\.dev\/privacy<\/loc>\s*<lastmod>2026-08-28T00:00:00\.000Z<\/lastmod>/,
     );
     expect(sitemap).toMatch(
-      /<loc>https:\/\/pyble\.dev\/<\/loc>\s*<lastmod>2026-08-12T00:00:00\.000Z<\/lastmod>/,
+      /<loc>https:\/\/pyble\.dev\/<\/loc>\s*<lastmod>2026-08-28T00:00:00\.000Z<\/lastmod>/,
     );
     expect(sitemap).toMatch(
-      /<loc>https:\/\/pyble\.dev\/app<\/loc>\s*<lastmod>2026-08-07T00:00:00\.000Z<\/lastmod>/,
+      /<loc>https:\/\/pyble\.dev\/app<\/loc>\s*<lastmod>2026-08-28T00:00:00\.000Z<\/lastmod>/,
+    );
+    expect(sitemap).toMatch(
+      /<loc>https:\/\/pyble\.dev\/support<\/loc>\s*<lastmod>2026-08-28T00:00:00\.000Z<\/lastmod>/,
     );
     for (const path of [
       "/learn",
