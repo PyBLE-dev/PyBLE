@@ -369,6 +369,40 @@ Each published app capture MUST:
 - leave every app pixel truthful: no retouching, generative fill, fabricated
   state, or removal of an in-app warning, error, or identity.
 
+The reviewed five-board Android capture set MUST use only the physical Lenovo
+TB-J616X and MUST keep the following evidence boundaries explicit:
+
+- discovery uses a stopped, stable scan with exactly five distinct
+  `PyBLE-XXXX` advertisements and `Scan: Idle`; an advertisement proves only a
+  nearby PBLE agent, not its provisioning profile;
+- each connected identity is represented by two deterministic crops from the
+  same raw frame: the Ready status containing board ID and agent version, and
+  the read-only runtime-chip panel. The crops MAY be paired only through
+  semantic HTML/CSS; they MUST NOT be baked into an annotated or retouched
+  raster composite;
+- the connected set records the observed pairs `5646` / `esp32-s3`, `8C9E` /
+  `esp32`, `C81A` / `esp32-c3`, `DA86` / `esp32-s3`, and `3DCB` /
+  `rpi-pico2-w`. These are documentation-session observations, not release
+  qualification or proof of installed profile bytes;
+- the two ESP32-S3 observations MUST remain visibly indistinguishable at the
+  runtime-token layer. A maintainer's physical-board or installer record MAY
+  identify one of those sessions separately, but the app image MUST NOT be
+  cited as proof of either `esp32-s3-n16r8` or
+  `waveshare-esp32-s3-lcd-147b`; and
+- full-frame workflow captures MUST show only the intentional disposable
+  tutorial state. Connected-identity derivatives MUST crop out unrelated board
+  file lists rather than publish or retouch them.
+
+The Setup tutorial MUST use the stable five-board discovery frame and all five
+paired identity observations. The Hardware safety tutorial MUST use the same
+identity set specifically to teach the difference between a runtime token and
+an exact profile. Configured hardware, Pico 2 W, and Waveshare tutorials MAY
+reuse only the identity observations that add that same boundary evidence;
+their existing physical or authored visuals remain necessary for exact-board,
+pin, and wiring instruction. The six app-workflow tutorials MUST otherwise use
+their clean, task-specific Lenovo captures; repeating an identity crop as
+decoration does not satisfy their visual requirement.
+
 Debug, integration-test, simulator, emulator, and golden-renderer frames MUST
 NOT be presented as physical-device captures. A debug or integration-test
 label disqualifies the frame from public tutorial use even when the underlying
