@@ -1,7 +1,7 @@
 # PyBLE — Public Website Specification
 
 Status: **FROZEN (pre-v1 and v1 launch surface)** · Owner: project maintainer · Last updated:
-2026-08-28
+2026-09-01
 
 This document is the source of truth for the first public website at
 `pyble.dev`. It specifies only the public site; the Flutter app, PBLE/1, and
@@ -11,9 +11,9 @@ firmware remain governed by their own specifications.
 
 The website MUST explain PyBLE accurately, help a beta user get started or ask
 for support, publish the app's privacy posture, and provide a gated browser
-firmware installer for the exact initial ESP32-family image profiles. The
-installer MUST distinguish a hardware-tested public beta from a fully
-qualified public release.
+firmware installer for exact validated release profiles. The installer MUST
+distinguish a hardware-tested public beta from a fully qualified public
+release.
 
 It MUST NOT imply that:
 
@@ -42,6 +42,7 @@ The launch surface is:
 | `/privacy` | Separate, plain-language disclosures for the Flutter app and public website |
 | `/support` | Concise troubleshooting, diagnostics checklist, and a direct support contact |
 | `/flash` | Versioned browser provisioning, compatibility/erase consent, integrity status, recovery, and install action gated by §7 |
+| `/features` | Release-bound PBLE/1 firmware architecture, complete operation surface, five exact profiles, limits, and evidence |
 | `/learn` | Ordered tutorial hub, learning tracks, compatibility/validation legend, and start/continue actions |
 | `/learn/setup` | Exact-profile selection, provisioning boundary, BLE connection, and identity check |
 | `/learn/first-program` | Hardware-free editor, Save, Run, Stop, reconnect, and Console workflow |
@@ -451,6 +452,61 @@ Each linked example state MUST distinguish designed profiles from validated
 profiles, and no future copy may promote an example until its immutable tag and
 HIL/live-import evidence exist.
 
+### 3.6 Release-bound firmware feature reference
+
+`/features` is the canonical human-readable overview of what the qualified
+PyBLE firmware provides. **Features** MUST be a primary-navigation item, and
+the home-page feature summary MUST provide a contextual path to this reference.
+The page complements `/flash`: it explains a release, while `/flash` remains
+the sole authority for the version, exact profiles, qualification state, and
+actions currently selected at build time.
+
+The initial reference snapshot is qualified public firmware `v0.6.0` and
+PBLE/1. It MUST visibly call itself a versioned snapshot rather than a live
+installer promise, link to `/flash` for current availability, and avoid
+describing a later or unselected release as current. Its architecture diagram
+MUST say that it is a functional diagram, not a physical board drawing,
+schematic, pinout, or automatic board detector.
+
+The diagram MUST be an original, deterministic, same-origin SVG with selectable
+text, an intrinsic `1920 × 1470` view box, an accessible title and long
+description, and a provenance record binding the reviewed SHA-256. It MUST NOT
+contain a rasterized or generated board likeness, vendor artwork, external
+image reference, or inferred carrier-board appearance. The page MUST place it
+in a semantic figure with useful alternative text and a visible caption, offer
+an operable same-origin full-size link, and allow deliberate two-dimensional
+inspection without forcing the whole diagram into unreadable mobile text.
+Material information in the diagram MUST also appear in reflowing semantic HTML
+so the rasterized visual representation is never the only source.
+
+The HTML reference MUST cover all of these release-bound surfaces:
+
+- the BLE discovery and GATT transport boundary, PBLE/1 framing and dispatch,
+  identity/capability negotiation, filesystem service, program runner, live
+  console, boot/lifecycle behavior, and user MicroPython runtime;
+- all 24 PBLE/1 operation identities, grouped without changing their names:
+  `HELLO`, `DEVICE_INFO`; `FILE_LIST`, `FILE_STAT`, `FILE_GET_BEGIN`,
+  `FILE_GET_DATA`, `FILE_GET_END`, `FILE_PUT_BEGIN`, `FILE_PUT_DATA`,
+  `FILE_PUT_END`, `FILE_DELETE`, `MKDIR`, `FILE_RENAME`, `FILE_PUT_ACK`;
+  `RUN`, `STOP`, `SOFT_REBOOT`, `SET_AUTORUN`, `RUN_STATE`; `CONSOLE_DATA`,
+  `CONSOLE_INPUT`; and `SET_LABEL`, `SET_IDENTIFY_LED`, `IDENTIFY`;
+- the exact release profile order `esp32-4mb`, `esp32-s3-n16r8`,
+  `waveshare-esp32-s3-lcd-147b`, `esp32-c3-4mb`, and `rpi-pico2-w`, including
+  the lean-generic versus exact-board S3 distinction and Pico's distinct
+  UF2/BOOTSEL and portable-agent path; and
+- operational boundaries that affect correct use: exact-profile installation,
+  one connected trusted client, one active program/transfer class, no recursive
+  delete, source `.py` rather than compiled `.mpy`/`.pyc` transfer, no SD-card
+  claim in this release, runtime-dependent Stop behavior, and possible console
+  drops under sustained output.
+
+The reference MUST link to the immutable public `v0.6.0` release descriptor,
+the matching source tag, and the PBLE/1 specification. It MUST not duplicate
+firmware binaries or fetch release data at runtime. Calls to action MUST send a
+user to `/flash` to install an exact selected profile and `/learn` for guided
+use. The route, its full-size diagram asset, and its content MUST render without
+client JavaScript or a third-party runtime request.
+
 ## 4. Brand and visual contract
 
 The canonical prompt-chip SVG in `app/assets/branding/` is the source asset. A
@@ -627,7 +683,7 @@ VPS origin. The origin MUST:
   release and confirm it only after the public smoke suite succeeds; transient
   service-manager jobs MUST receive their embedded shell programs verbatim,
   with manager-side environment expansion disabled;
-- map `/app`, `/privacy`, `/support`, `/flash`, `/learn`, and every tutorial
+- map `/app`, `/privacy`, `/support`, `/flash`, `/features`, `/learn`, and every tutorial
   route in §3.5 to their exported HTML without changing the canonical slashless
   URL;
 - normalize the corresponding trailing-slash URLs permanently, preserve query
@@ -1042,6 +1098,10 @@ The v1 site is releasable when:
 - `/learn` and all ten ordered tutorials satisfy §3.5, expose truthful
   release/validation state, cover every qualified firmware profile without
   inventing a generic carrier pinout, and retain immutable examples provenance;
+- `/features` satisfies §3.6, renders its reviewed functional SVG and equivalent
+  semantic HTML without client JavaScript, contains the complete 24-operation
+  and five-profile `v0.6.0` reference, links current actions back to `/flash`,
+  and never presents a generated board likeness, schematic, or pinout;
 - each learning route is canonical and present in the sitemap, static export,
   Sites delegation/prerender allowlists, Nginx exact mapping and normalization,
   deployment inventory, and byte-for-byte public smoke suite;
