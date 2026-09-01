@@ -386,6 +386,9 @@ describe("Cloudflare-fronted VPS deployment", () => {
     expect(script).toContain(
       "https://pyble.dev/features?source=redirect-check",
     );
+    expect(script).toContain(
+      'grep -Fiqx "Location: ${feature_redirect_location}"',
+    );
   });
 
   it("accepts only the exact unrestricted pending public beta in the activation path", async () => {
