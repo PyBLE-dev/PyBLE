@@ -297,6 +297,12 @@ export default function HomePage() {
               </article>
             ))}
           </div>
+          <div className="button-row feature-summary__action">
+            <Link className="button button--secondary" href="/features">
+              Explore all firmware features
+              <ArrowIcon />
+            </Link>
+          </div>
         </div>
       </section>
 

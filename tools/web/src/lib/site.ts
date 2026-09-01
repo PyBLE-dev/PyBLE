@@ -30,7 +30,7 @@ export const siteConfig = {
 } as const;
 
 export const navigation = [
-  { label: "What it does", href: "/#features" },
+  { label: "Features", href: "/features" },
   { label: "Learn", href: "/learn" },
   { label: "Firmware", href: "/flash" },
   { label: "Support", href: "/support" },
