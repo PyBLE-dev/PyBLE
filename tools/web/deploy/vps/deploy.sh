@@ -1209,7 +1209,7 @@ fi
 feature_redirect_normalized_headers="${feature_redirect_headers}.normalized"
 tr -d '\r' < "${feature_redirect_headers}" > \
     "${feature_redirect_normalized_headers}"
-if ! grep -Fqx "Location: ${feature_redirect_location}" \
+if ! grep -Fiqx "Location: ${feature_redirect_location}" \
     "${feature_redirect_normalized_headers}"; then
     printf 'Features redirect smoke failed: canonical query-preserving Location is missing.\n' >&2
     reject_post_activation_smoke 66
