@@ -835,6 +835,7 @@ for required_file in \
     privacy.html \
     support.html \
     flash.html \
+    features.html \
     learn.html \
     learn/setup.html \
     learn/first-program.html \
@@ -1134,13 +1135,14 @@ cleanup_smoke() {
 }
 trap cleanup_smoke EXIT
 
-for route in / /app /privacy /support /flash /learn /learn/setup /learn/first-program /learn/files /learn/github-import /learn/blocks /learn/examples /learn/hardware /learn/configured-hardware /learn/pico-2-w /learn/waveshare-lcd-147b; do
+for route in / /app /privacy /support /flash /features /learn /learn/setup /learn/first-program /learn/files /learn/github-import /learn/blocks /learn/examples /learn/hardware /learn/configured-hardware /learn/pico-2-w /learn/waveshare-lcd-147b; do
     case "${route}" in
         /) route_file=index.html ;;
         /app) route_file=app.html ;;
         /privacy) route_file=privacy.html ;;
         /support) route_file=support.html ;;
         /flash) route_file=flash.html ;;
+        /features) route_file=features.html ;;
         /learn) route_file=learn.html ;;
         /learn/setup) route_file=learn/setup.html ;;
         /learn/first-program) route_file=learn/first-program.html ;;
@@ -1170,6 +1172,48 @@ for route in / /app /privacy /support /flash /learn /learn/setup /learn/first-pr
     grep -Eiq '^Cache-Control: *no-cache, *no-transform *$' \
         "${normalized_headers}"
 done
+
+feature_diagram_path=features/pyble-firmware-v0.6.0-functional-block-diagram-473a85d475aa.svg
+feature_diagram_body="${smoke_root}/feature-diagram.svg"
+feature_diagram_headers="${smoke_root}/feature-diagram.headers"
+curl --fail --silent --show-error --max-time 30 \
+    --location --max-redirs 0 --proto '=https' \
+    --dump-header "${feature_diagram_headers}" \
+    --output "${feature_diagram_body}" \
+    "https://pyble.dev/${feature_diagram_path}"
+cmp -- "out/${feature_diagram_path}" "${feature_diagram_body}"
+feature_diagram_normalized_headers="${feature_diagram_headers}.normalized"
+tr -d '\r' < "${feature_diagram_headers}" > \
+    "${feature_diagram_normalized_headers}"
+if ! grep -iq '^Content-Type: *image/svg+xml' \
+    "${feature_diagram_normalized_headers}"; then
+    printf 'Feature diagram smoke failed: expected image/svg+xml Content-Type.\n' >&2
+    reject_post_activation_smoke 66
+fi
+
+feature_redirect_headers="${smoke_root}/features-redirect.headers"
+readonly feature_redirect_location='https://pyble.dev/features?source=redirect-check'
+readonly feature_redirect_status=$(
+    curl --silent --show-error --max-time 30 \
+        --max-redirs 0 --proto '=https' \
+        --dump-header "${feature_redirect_headers}" \
+        --output /dev/null \
+        --write-out '%{http_code}' \
+        'https://pyble.dev/features/?source=redirect-check'
+)
+if [[ "${feature_redirect_status}" != 308 ]]; then
+    printf 'Features redirect smoke failed: expected 308, received %s.\n' \
+        "${feature_redirect_status}" >&2
+    reject_post_activation_smoke 66
+fi
+feature_redirect_normalized_headers="${feature_redirect_headers}.normalized"
+tr -d '\r' < "${feature_redirect_headers}" > \
+    "${feature_redirect_normalized_headers}"
+if ! grep -Fqx "Location: ${feature_redirect_location}" \
+    "${feature_redirect_normalized_headers}"; then
+    printf 'Features redirect smoke failed: canonical query-preserving Location is missing.\n' >&2
+    reject_post_activation_smoke 66
+fi
 
 if [[ "${expected_installer_state}" == active ]]; then
     test -f out/.pyble-firmware-release-selection.json

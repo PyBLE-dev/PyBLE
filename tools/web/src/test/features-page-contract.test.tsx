@@ -11,9 +11,9 @@ import { describe, expect, it } from "vitest";
 import FeaturesPage, { metadata } from "@/app/features/page";
 
 const diagramPath =
-  "/features/pyble-firmware-v0.6.0-functional-block-diagram-24b9ab9fd54b.svg";
+  "/features/pyble-firmware-v0.6.0-functional-block-diagram-473a85d475aa.svg";
 const diagramSha256 =
-  "24b9ab9fd54b04b45c00fbee34d0c41840c73639cba1c6ca27f714b5278b2295";
+  "473a85d475aa90b1031ba100c0ab05c9227d44462134e92feee8d15b9d15003a";
 
 const operationGroups = [
   ["HELLO", "DEVICE_INFO"],
@@ -143,11 +143,13 @@ describe("firmware feature reference", () => {
   it("keeps installation authority on flash and links immutable evidence", async () => {
     render(<FeaturesPage />);
 
-    expect(
-      screen.getByRole("link", {
-        name: /check current firmware availability/i,
-      }),
-    ).toHaveAttribute("href", "/flash");
+    const currentAvailabilityLinks = screen.getAllByRole("link", {
+      name: /check current firmware availability/i,
+    });
+    expect(currentAvailabilityLinks.length).toBeGreaterThan(0);
+    for (const link of currentAvailabilityLinks) {
+      expect(link).toHaveAttribute("href", "/flash");
+    }
     expect(
       screen.getByRole("link", { name: /start the guided tutorials/i }),
     ).toHaveAttribute("href", "/learn");
@@ -196,7 +198,7 @@ describe("firmware feature reference", () => {
       ),
     ]);
 
-    expect(Buffer.byteLength(diagram)).toBe(22_029);
+    expect(Buffer.byteLength(diagram)).toBe(21_995);
     expect(createHash("sha256").update(diagram).digest("hex")).toBe(
       diagramSha256,
     );

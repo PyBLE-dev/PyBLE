@@ -12,7 +12,7 @@ import { describe, expect, it } from "vitest";
 const deploymentRoot = join(process.cwd(), "deploy");
 const execFile = promisify(execFileCallback);
 const featureDiagramPath =
-  "features/pyble-firmware-v0.6.0-functional-block-diagram-24b9ab9fd54b.svg";
+  "features/pyble-firmware-v0.6.0-functional-block-diagram-473a85d475aa.svg";
 
 const learningRouteFiles = [
   ["/learn", "learn.html"],
