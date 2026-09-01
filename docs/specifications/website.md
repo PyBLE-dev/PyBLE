@@ -70,12 +70,12 @@ The home page MAY make these verified claims:
 - It is a free, MIT-licensed, tablet-first MicroPython IDE designed for
   microcontroller boards that can run MicroPython and host a compatible
   Bluetooth Low Energy PyBLE agent.
-- The selected, still-pending `v0.6.0` qualified-release candidate has five
-  exact profiles in release order:
+- The active qualified public `v0.6.0` release has five exact profiles in
+  release order:
   `esp32-4mb`, `esp32-s3-n16r8`, `waveshare-esp32-s3-lcd-147b`,
-  `esp32-c3-4mb`, and `rpi-pico2-w`. This source/build posture is not five
-  public support claims: every row remains behind exact-byte qualification and
-  activation, including C3-G0…C3-G6 and Pico GP2.
+  `esp32-c3-4mb`, and `rpi-pico2-w`. All five exact-byte HIL rows passed. This
+  is still exact-profile support, not a chip-family or carrier-board allowlist;
+  the page may make the claim only while that descriptor is selected.
 - After one-time wired firmware provisioning, its normal workflow is BLE-first.
 - The app can scan/connect, edit, save, run, stop, soft reboot, exchange board
   files, and provide a live console over PBLE/1.
@@ -97,16 +97,18 @@ Compatibility copy MUST distinguish platform scope from current support:
 - actual support requires a published firmware image for the exact target and a
   truthful release state; browser-installation validation for a beta is
   narrower than complete release qualification;
-- the current public-beta list remains the exact `v0.4.2` `esp32-4mb` and
-  `esp32-s3-n16r8` profiles; that frozen two-profile exception MUST NOT be
-  interpreted as the unqualified `v0.5.1` or selected `v0.6.0` shape;
-- the selected `v0.6.0` qualified-release contract requires the exact five
-  ordered profiles in §7; this is an activation contract, not a claim that
-  those release bytes are qualified or public, and every gate remains pending;
+- the exact `v0.4.2` `esp32-4mb` and `esp32-s3-n16r8` public-beta exception is
+  retained only for authenticated carry-forward validation; it is not the
+  current public release and MUST NOT be interpreted as the `v0.5.1` or
+  `v0.6.0` shape;
+- the selected qualified public `v0.6.0` release contains all five ordered
+  profiles in §7 after their common and target-specific gates passed; a future
+  candidate MUST remain inactive until the same applicable gates pass;
 - the earlier local `firmware-v0.6.0` tag/candidate at `719b211…` was never
   present at origin, in GitHub Releases, or at the canonical same-origin
-  release path and is abandoned. Only ADR-0038's source-era-routed replacement
-  may become the first public v0.6.0, after fresh candidate HIL/finalization;
+  release path and is abandoned. ADR-0038's source-era-routed replacement is
+  the qualified public release bound to annotated tag `firmware-v0.6.0` and
+  source `0c7230d6708797c241160ba71fbd37e6b22f180a`;
 - the generic `esp32-s3-n16r8` image MUST NOT bundle `pyble_st7789`,
   `pyble_waveshare_lcd147b`, exact-board pin data, or the boot splash; the
   Waveshare profile MUST use its own manifest and different immutable firmware
@@ -752,7 +754,7 @@ retrieval check. The exception bypasses only structured parsing of that one
 legacy report. It MUST NOT admit the same bytes through fresh-public,
 candidate, audited-candidate, protected-preview, or local-preview validation;
 MUST NOT accept another version or a one-byte change to any file; and MUST NOT
-qualify or promote any pending `v0.6.0` candidate. It is continuity for the
+qualify or promote any unselected candidate. It is continuity for the
 already-active immutable selection, not authority to create or reclassify a
 release.
 
@@ -807,8 +809,8 @@ the exact `firmware.uf2` size/SHA-256, downloads those already verified bytes,
 and presents manual BOOTSEL-copy instructions. ESP Web Tools' family detection
 is necessary but not sufficient to establish memory topology, silicon
 revision, or board peripherals; in particular, it cannot distinguish the two
-S3 profiles. C3 and Pico remain pending/inactive until their target gates and
-the complete five-profile candidate pass.
+S3 profiles. A future candidate keeps C3 and Pico pending/inactive until their
+target gates and the complete five-profile candidate pass.
 
 The `/flash` page MUST make the exact Waveshare ESP32-S3-LCD-1.47B discoverable
 without weakening that profile boundary. When—and only when—the build-selected
@@ -1048,11 +1050,11 @@ or omit that staging directory; preview bytes MUST never enter `out/`, `dist/`,
 the canonical `/firmware/v<version>/` tree, a candidate/public selector, or a
 deployment carry-forward marker.
 
-The production `/flash` contract now selects the same five ordered v0.6.0
-profiles under release schema 4, policy schema 3, and HIL V5. C3 and Pico may
-appear only as pending/inactive candidate rows until C3-G0…C3-G6, Pico GP2,
-and the complete common exact-byte matrix pass; no install/download action or
-support claim is active for either before then. When no audited beta or fully
+The production `/flash` contract selects the five ordered qualified public
+v0.6.0 profiles under release schema 4, policy schema 3, and HIL V5. Their
+complete common exact-byte matrix, C3-G0…C3-G6, and Pico GP2 gates passed. A
+candidate presents any not-yet-qualified C3 or Pico row as pending/inactive
+with no install/download action or support claim. When no audited beta or fully
 qualified release is selected, production continues to fail closed with no
 public action. Local preview success is engineering evidence only and MUST NOT
 alter any of those states.
@@ -1128,8 +1130,8 @@ The v1 site is releasable when:
   exposes no firmware action or artifact metadata; and contains neither stale
   release copy nor the historical Waveshare photograph;
 - production builds reject or exclude every preview descriptor and staged
-  artifact, keep pending C3 and Pico 2 W rows inactive, and retain the
-  fail-closed no-release state until all five v0.6.0 rows pass;
+  artifact, keep any pending C3 and Pico 2 W candidate rows inactive, and
+  retain the fail-closed no-release state until all five v0.6.0 rows pass;
 - a qualified `v0.6.0` active selector names
   `waveshare-esp32-s3-lcd-147b` separately from the lean
   `esp32-s3-n16r8`, gives each its own manifest and firmware bytes, and requires
