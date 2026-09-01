@@ -21,6 +21,8 @@ const temporaryDirectories: string[] = [];
 const execFile = promisify(execFileCallback);
 const acceptSyntheticFixture = async () => undefined;
 const { prepareSitesOutput } = sitesOutput;
+const featureDiagramPath =
+  "/features/pyble-firmware-v0.6.0-functional-block-diagram-24b9ab9fd54b.svg";
 const learnDocumentRoutes = [
   "/learn",
   "/learn/setup",
@@ -37,6 +39,7 @@ const learnDocumentRoutes = [
 const requiredPrerenderedRoutes = [
   "/",
   "/app",
+  "/features",
   "/flash",
   "/privacy",
   "/support",
@@ -47,6 +50,11 @@ const delegatedLearnPaths = learnDocumentRoutes.flatMap((route) => [
   route,
   `${route}/`,
 ]);
+const delegatedFeaturePaths = [
+  "/features",
+  "/features/",
+  featureDiagramPath,
+] as const;
 
 afterEach(async () => {
   await Promise.all(
@@ -200,6 +208,19 @@ describe("Sites vinext-output adapter", () => {
         throw new TypeError("Sites entrypoint must export a module-worker fetch method");
       }
       const context = { marker: "execution-context" };
+      const features = Object.fromEntries(await Promise.all(
+        ${JSON.stringify(delegatedFeaturePaths)}.map(async (pathname) => {
+          const response = await worker.fetch(
+            new Request("https://pyble.dev" + pathname),
+            {},
+            context,
+          );
+          return [
+            pathname,
+            { status: response.status, body: await response.text() },
+          ];
+        }),
+      ));
       const learn = Object.fromEntries(await Promise.all(
         ${JSON.stringify(delegatedLearnPaths)}.map(async (pathname) => {
           const response = await worker.fetch(
@@ -279,6 +300,7 @@ describe("Sites vinext-output adapter", () => {
         context,
       );
       console.log(JSON.stringify({
+        features,
         learn,
         privacy: { status: privacy.status, body: await privacy.text() },
         app: { status: app.status, body: await app.text() },
@@ -321,6 +343,15 @@ describe("Sites vinext-output adapter", () => {
     );
 
     expect(JSON.parse(stdout)).toEqual({
+      features: Object.fromEntries(
+        delegatedFeaturePaths.map((pathname) => [
+          pathname,
+          {
+            status: 200,
+            body: `vinext:${pathname}:execution-context`,
+          },
+        ]),
+      ),
       learn: Object.fromEntries(
         delegatedLearnPaths.map((pathname) => [
           pathname,
@@ -417,6 +448,31 @@ describe("Sites vinext-output adapter", () => {
 
     await expect(prepareSitesOutput(root)).rejects.toThrow(
       /launch route was not prerendered: \/learn\/github-import/i,
+    );
+  });
+
+  it("rejects the Features route when vinext did not prerender it", async () => {
+    const root = await mkdtemp(join(tmpdir(), "pyble-web-output-"));
+    temporaryDirectories.push(root);
+
+    await mkdir(join(root, ".openai"), { recursive: true });
+    await mkdir(join(root, "dist", "server"), { recursive: true });
+    await writeFile(
+      join(root, ".openai", "hosting.json"),
+      '{"project_id":"appgprj_test"}',
+    );
+    await writeFile(join(root, "dist", "server", "index.js"), "export {};");
+    await writeFile(
+      join(root, "dist", "server", "vinext-prerender.json"),
+      JSON.stringify({
+        routes: requiredPrerenderedRoutes
+          .filter((route) => route !== "/features")
+          .map((route) => ({ route, status: "rendered" })),
+      }),
+    );
+
+    await expect(prepareSitesOutput(root)).rejects.toThrow(
+      /launch route was not prerendered: \/features/i,
     );
   });
 

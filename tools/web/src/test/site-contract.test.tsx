@@ -135,11 +135,11 @@ function jpegDimensions(bytes: Buffer): { width: number; height: number } {
 }
 
 describe("public-site contract", () => {
-  it("keeps pyble.dev canonical and presents Learn in the primary routes", () => {
+  it("keeps pyble.dev canonical and presents Features and Learn in the primary routes", () => {
     expect(siteConfig.origin).toBe("https://pyble.dev");
     expect(siteConfig.alternateOrigin).toBe("https://pyble.org");
     expect(navigation.map((item) => item.href)).toEqual([
-      "/#features",
+      "/features",
       "/learn",
       "/flash",
       "/support",
@@ -190,6 +190,7 @@ describe("public-site contract", () => {
       "https://pyble.dev/privacy",
       "https://pyble.dev/support",
       "https://pyble.dev/flash",
+      "https://pyble.dev/features",
       "https://pyble.dev/learn",
       "https://pyble.dev/learn/setup",
       "https://pyble.dev/learn/first-program",
@@ -213,6 +214,9 @@ describe("public-site contract", () => {
     );
     expect(sitemap).toMatch(
       /<loc>https:\/\/pyble\.dev\/support<\/loc>\s*<lastmod>2026-08-28T00:00:00\.000Z<\/lastmod>/,
+    );
+    expect(sitemap).toContain(
+      "<loc>https://pyble.dev/features</loc>\n    <lastmod>2026-09-01T00:00:00.000Z</lastmod>",
     );
     for (const path of [
       "/learn",
@@ -308,9 +312,10 @@ describe("public-site contract", () => {
     render(<SiteHeader />);
 
     const nav = screen.getByRole("navigation", { name: "Primary" });
-    expect(
-      within(nav).getByRole("link", { name: "What it does" }),
-    ).toHaveAttribute("href", "/#features");
+    expect(within(nav).getByRole("link", { name: "Features" })).toHaveAttribute(
+      "href",
+      "/features",
+    );
     expect(within(nav).getByRole("link", { name: "Learn" })).toHaveAttribute(
       "href",
       "/learn",
@@ -348,6 +353,14 @@ describe("public-site contract", () => {
       expect(contextualLink?.textContent?.trim()).not.toBe("");
       page.unmount();
     }
+  });
+
+  it("links the home feature summary to the complete firmware reference", () => {
+    render(<HomePage />);
+
+    expect(
+      screen.getByRole("link", { name: /explore all firmware features/i }),
+    ).toHaveAttribute("href", "/features");
   });
 
   it("states the vendor-neutral vision without claiming unavailable firmware is active", () => {
@@ -503,6 +516,9 @@ describe("public-site contract", () => {
     expect(sourceLink).toHaveAttribute("rel", "noopener noreferrer");
 
     const footer = screen.getByRole("navigation", { name: "Footer" });
+    expect(
+      within(footer).getByRole("link", { name: "Features" }),
+    ).toHaveAttribute("href", "/features");
     expect(within(footer).getByRole("link", { name: "Learn" })).toHaveAttribute(
       "href",
       "/learn",

@@ -11,6 +11,8 @@ import { describe, expect, it } from "vitest";
 
 const deploymentRoot = join(process.cwd(), "deploy");
 const execFile = promisify(execFileCallback);
+const featureDiagramPath =
+  "features/pyble-firmware-v0.6.0-functional-block-diagram-24b9ab9fd54b.svg";
 
 const learningRouteFiles = [
   ["/learn", "learn.html"],
@@ -32,6 +34,7 @@ const publicRouteFiles = [
   ["/privacy", "privacy.html"],
   ["/support", "support.html"],
   ["/flash", "flash.html"],
+  ["/features", "features.html"],
   ...learningRouteFiles,
 ] as const;
 
@@ -90,6 +93,17 @@ describe("Cloudflare-fronted VPS deployment", () => {
         )
         .toContain(`return 308 https://pyble.dev${route}$is_args$args;`);
     }
+  });
+
+  it("normalizes the Features trailing slash and preserves its query string", async () => {
+    const config = await readFile(
+      join(deploymentRoot, "nginx", "10-pyble-dev-https.conf"),
+      "utf8",
+    );
+
+    expect(exactLocationBody(config, "/features/")).toContain(
+      "return 308 https://pyble.dev/features$is_args$args;",
+    );
   });
 
   it("does not claim the Learn namespace so unknown tutorials retain the authored static 404", async () => {
@@ -351,6 +365,27 @@ describe("Cloudflare-fronted VPS deployment", () => {
     }
     expect(smokeBody).toContain('mkdir -p -- "$(dirname -- "${route_body}")"');
     expect(smokeBody).toContain('cmp -- "out/${route_file}" "${route_body}"');
+  });
+
+  it("byte-checks the reviewed feature diagram and its SVG response type", async () => {
+    const script = await readFile(
+      join(deploymentRoot, "vps", "deploy.sh"),
+      "utf8",
+    );
+
+    expect(script).toContain(`feature_diagram_path=${featureDiagramPath}`);
+    expect(script).toContain(
+      'cmp -- "out/${feature_diagram_path}" "${feature_diagram_body}"',
+    );
+    expect(script).toMatch(
+      /feature_diagram_headers[\s\S]*?Content-Type: \*image\/svg\+xml/i,
+    );
+    expect(script).toContain(
+      "https://pyble.dev/features/?source=redirect-check",
+    );
+    expect(script).toContain(
+      "https://pyble.dev/features?source=redirect-check",
+    );
   });
 
   it("accepts only the exact unrestricted pending public beta in the activation path", async () => {
