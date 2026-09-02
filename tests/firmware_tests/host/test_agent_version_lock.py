@@ -18,7 +18,7 @@ HISTORICAL_RECORD = (
     ROOT / "docs" / "validation" / "browser-flashing"
     / "v0.4.2-production.json"
 )
-CURRENT_VERSION = "0.6.0"
+CURRENT_VERSION = "0.6.1"
 
 
 class AgentVersionLockTests(unittest.TestCase):
