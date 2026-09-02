@@ -287,6 +287,35 @@ class ReassemblyHardeningTest(unittest.TestCase):
         self.assertFalse(self.record_violation(link))
         self.assertEqual([12], recorder.disconnect_calls)
 
+    def test_accepted_soft_closing_suppresses_fragment_violation_debits(self):
+        link, recorder, messages = self.new_link(conn=21)
+        for _ in range(7):
+            self.assertTrue(self.record_violation(link))
+
+        begin_closing = getattr(link, "begin_command_closing", None)
+        self.assertIsNotNone(
+            begin_closing,
+            "BleLink needs an exact-session accepted-SOFT closing seam so "
+            "fragment faults cannot bypass Agent-level admission precedence",
+        )
+        self.assertTrue(begin_closing(link.session_token()))
+
+        # Each input would normally consume the eighth unit. During the
+        # accepted reboot grace it is classified/dropped without accounting.
+        link._on_rx(b"")
+        link._on_rx(self.continuation(9, b"orphan", last=True))
+        self.assertTrue(self.record_violation(link))
+
+        self.assertEqual([], messages)
+        self.assertEqual(
+            [], recorder.disconnect_calls,
+            "accepted-SOFT closing faults must not trigger budget termination",
+        )
+        self.assertEqual(
+            7, link._violation_count,
+            "closing classification must leave the pre-existing budget intact",
+        )
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

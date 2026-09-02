@@ -282,6 +282,23 @@ class NativeFreshGlobalsTests(unittest.TestCase):
 
 
 class NativeReassemblyTests(unittest.TestCase):
+    def test_soft_closing_precedes_native_fragment_violation_accounting(self):
+        body = code_only(c_function(BLE, "pble_ble_record_protocol_violation"))
+        closing_at = body.find("pble_vm_reboot_command_admitted(false)")
+        increment_at = body.find("pble_protocol_violation_count++")
+        self.assertTrue(
+            0 <= closing_at < increment_at,
+            "the shared native violation seam must check accepted-SOFT global "
+            "closing before fragment or complete-frame accounting",
+        )
+        self.assertRegex(
+            body[:increment_at],
+            r"if\s*\(\s*!\s*pble_vm_reboot_command_admitted\s*\(\s*false\s*\)"
+            r"\s*\)\s*\{\s*return\s+true\s*;",
+            "closing faults remain classifiable for their normal error/drop "
+            "semantics, but cannot consume the bounded session budget",
+        )
+
     def test_rx_capacity_carries_the_largest_supported_run_source(self):
         match = re.search(r"#\s*define\s+PBLE_MSG_MAX\s+(\d+)\b", BLE)
         self.assertIsNotNone(match, "native reassembly needs a fixed static cap")

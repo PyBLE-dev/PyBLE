@@ -268,6 +268,18 @@ static void dispatch_empty_command(uint8_t opcode, uint8_t id,
     pble_proto_dispatch_admitted(frame, (size_t)length, session);
 }
 
+static void dispatch_empty_frame(uint8_t type, uint8_t opcode, uint8_t id,
+                                 const pble_session_token_t *session) {
+    uint8_t frame[16];
+    int length = pble_proto_encode(
+        type, opcode, id, NULL, 0u, frame, sizeof(frame));
+    if (length <= 0) {
+        fprintf(stderr, "could not encode type 0x%02x\n", type);
+        abort();
+    }
+    pble_proto_dispatch_admitted(frame, (size_t)length, session);
+}
+
 static int take_status(uint8_t opcode, uint8_t id) {
     pble_rsp_tx_t tx;
     if (!pble_rsp_tx_peek(&tx)) {
@@ -306,6 +318,18 @@ int main(void) {
     pble_proto_register_special(PBLE_OP_SOFT_REBOOT, side_effect_handler);
     pble_proto_register_no_response(
         PBLE_OP_CONSOLE_INPUT, side_effect_handler);
+
+    // Structural and direction faults retain their ordinary drop/refusal
+    // classification during accepted-SOFT closing, but closing has precedence
+    // over the session violation budget.
+    before = violation_debits;
+    const uint8_t short_message[] = {PBLE_PROTO_VERSION, PBLE_TYPE_CMD, 0x02u};
+    pble_proto_dispatch_admitted(
+        short_message, sizeof(short_message), &successor);
+    dispatch_empty_frame(PBLE_TYPE_RSP, PBLE_OP_DEVICE_INFO, 0x30u,
+                         &successor);
+    expect_equal("closing malformed/direction violation debit",
+                 violation_debits, before, &failures);
 
     before = violation_debits;
     dispatch_empty_command(PBLE_OP_DEVICE_INFO, 0x31u, &successor);

@@ -156,11 +156,12 @@ class NativeFsV061ContractTest(unittest.TestCase):
                 self.assertEqual(
                     len(resolve_positions), resolve_count,
                     "the existing jail chokepoint count must remain explicit")
-                busy_at = body.find("g_put_active")
+                busy_at = body.find("fs_put_active_current(it)")
                 effect_at = body.find(first_effect)
                 self.assertGreaterEqual(
                     busy_at, 0,
-                    "{} must consult active PUT ownership".format(function))
+                    "{} must consult generation-qualified active PUT ownership"
+                    .format(function))
                 self.assertTrue(
                     resolve_positions[-1] < busy_at < effect_at,
                     "{} must apply jail precedence, then EBUSY, before the first "
