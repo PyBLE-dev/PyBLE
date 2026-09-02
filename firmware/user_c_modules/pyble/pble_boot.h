@@ -28,15 +28,20 @@ extern "C" {
 #endif
 
 // The persisted opt-in auto-run flag (NVS "pyble"/"autorun", default 0 = off).
-// Read by pble_info to serialize the auto_run capability (FR-BOOT-3). Cheap enough
-// to call at boot; no caching required.
+// Read by pble_info to serialize the auto_run capability (FR-BOOT-3). The first
+// call loads NVS once; later reads use the boot-lifetime cache so failed repair
+// transactions cannot change the previously observable runtime value.
 bool    pble_boot_autorun_enabled(void);
+
+// Bounded internal persistence-fault marker; no PBLE/1 field in v0.6.1.
+uint8_t pble_boot_config_fault(void);
 
 // Persist the auto-run flag. PBLE_OK on success; PBLE_EIO if NVS write fails.
 uint8_t pble_boot_set_autorun(bool enable);
 
 // 0x23 SET_AUTORUN dispatch handler (registered into pble_proto). Payload
-// [enable:u8] (0=off, non-zero=on) -> persist -> RSP{status}. Short payload -> EBADREQ.
+// [enable:u8] (exactly 0=off or 1=on) -> persist -> RSP{status}. Any other
+// length/value is EBADREQ.
 uint8_t pble_boot_set_autorun_cmd(const pble_frame_t *req, uint8_t *rsp,
                                   size_t *rsp_len,
                                   const pble_session_token_t *session);
