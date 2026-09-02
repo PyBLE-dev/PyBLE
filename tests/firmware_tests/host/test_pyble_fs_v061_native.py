@@ -198,6 +198,24 @@ class NativeFsV061ContractTest(unittest.TestCase):
         self.assertIn("PBLE_EIO", guard)
         self.assertIn("break", guard)
 
+    def test_put_end_requires_a_successful_close_before_rename(self):
+        functions = _defined_functions(self.source)
+        close = functions["fs_put_close"]
+        end = functions["fs_do_put_end"]
+        signature_start, _end, _body = _function_span(
+            self.source, "fs_put_close")
+        signature = self.source[
+            signature_start:self.source.find("{", signature_start)]
+        self.assertRegex(signature, r"\buint8_t\s+fs_put_close\s*\(")
+        self.assertIn("PBLE_EIO", close)
+        close_at = end.find("fs_put_close(")
+        rename_at = end.find("mp_vfs_rename(")
+        self.assertTrue(0 <= close_at < rename_at)
+        gate = end[close_at:rename_at]
+        self.assertIn("PBLE_OK", gate)
+        self.assertIn("return", gate)
+        self.assertIn("fs_put_abort", gate)
+
     def test_put_begin_calls_checked_statvfs_admission_before_open(self):
         functions = _defined_functions(self.source)
         providers = [
