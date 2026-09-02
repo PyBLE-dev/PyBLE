@@ -794,13 +794,17 @@ receipt but are excluded from the redistributed firmware
 firmware image.
 
 The build-tools observer opens the retained install below one no-follow
-directory descriptor, rejects linked regular members, and proves exact member
-types, modes, bytes, and directory identity. It reconstructs a private
-byte-for-byte probe tree from the verified archive and executes `picotool
-version` only from that private tree; it never executes the pathname in the
-mutable retained install. After the probe callback it reopens the retained
-archive and complete installed tree and requires the same identities before
-minting evidence. A file rewrite, atomic replacement, link substitution,
+directory descriptor, requires the install root itself to be a directory with
+exact private mode `0700`, rejects linked regular members, and proves exact
+member types, modes, bytes, and node identities. It reconstructs and validates
+a private byte-for-byte probe tree from the verified archive, then removes
+every write bit and retains a no-follow descriptor for its executable across
+the probe. It executes `picotool version` only from that write-locked private
+tree; it never executes the pathname in the mutable retained install. The
+executable descriptor and complete locked probe tree must have the same bytes
+and identities after execution. The observer then reopens the retained archive
+and complete installed tree and requires the same identities before minting
+evidence. A file rewrite, atomic replacement, mode change, link substitution,
 path-component substitution, or archive mutation at the probe boundary is
 fatal.
 

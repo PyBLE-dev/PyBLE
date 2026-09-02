@@ -2484,13 +2484,17 @@ release inventory; missing, extra, reordered, cross-profile, and
 self-consistently rehashed substitutions fail. A v0.6.0 candidate carrying the
 eighth role or a v0.6.1 candidate lacking it fails without publication.
 
-The build-tools seam additionally tests four synchronized mutations at the
-runtime probe boundary: an in-place executable rewrite, atomic executable
-replacement, substituted/symlinked package directory, and retained-archive
-rewrite. Production must run only a private tree reconstructed from verified
-archive bytes, then descriptor-reopen the full original archive/tree before
-acceptance. A positive test proves both observations occur and that the
-retained executable pathname is never launched. Separate routing tests prove
+The build-tools seam additionally tests synchronized in-place and atomic
+mutations of the executable, package directory, and retained archive at the
+runtime probe boundary, including byte-identical inode replacement and an
+unsafe retained-root mode. Production must require exact mode `0700` on the
+retained root, run only a write-locked private tree reconstructed from verified
+archive bytes while retaining a no-follow executable descriptor, and recheck
+that descriptor and the complete private tree after execution. It then
+descriptor-reopens the full original archive/tree and compares node identities
+before acceptance. A positive test proves both original-tree observations
+occur and that the retained executable pathname is never launched. Separate
+routing tests prove
 that explicit candidate version selects tool-lock inputs without consulting
 the validator checkout version, and that the compare CLI derives and forwards
 the strict source version from its required repository root. The complete
