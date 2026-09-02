@@ -167,11 +167,66 @@ The lock also binds source tag `2.3.0` at commit
 `a4b3c4e64dea7b99e810c5c777bf13fb2722b8d0355e0b64a28244ddc1b0f8b5`,
 and CMake package-config SHA-256
 `ca12b6fee18e6583713cfdcb2e81886aaee741d40304ea2cc88c4f5b2df2b6c3`.
+The `[picotool]` table has exactly these keys; path values are normalized,
+nonempty, relative POSIX paths without `.`/`..` components, and the URL's
+final path component equals `archive_filename`:
+
+```text
+version
+version_line
+source_repo
+source_ref
+source_commit
+distribution_repo
+distribution_ref
+distribution_commit
+url
+archive_filename
+archive_bytes
+archive_format
+sha256
+cmake_dir
+executable_path
+executable_sha256
+cmake_config_path
+cmake_config_sha256
+bundled_libusb_path
+bundled_libusb_sha256
+```
+
+For this pin, `cmake_dir`, `executable_path`, `cmake_config_path`, and
+`bundled_libusb_path` are respectively `picotool`, `picotool/picotool`,
+`picotool/picotoolConfig.cmake`, and
+`picotool/libusb-1.0.0.dylib`; the bundled libusb SHA-256 is
+`b3d0c88bcb04fe61e4f56bc304a31fef56e19ee5ec2edaebd0fce44afb2b9237`.
+The verified ZIP has exactly the following member inventory. Modes are the
+complete Unix modes carried by the ZIP metadata; the digest of the directory
+entry and zero-byte `.keep` is the SHA-256 of empty content.
+
+| Member | Kind | Mode | Bytes | SHA-256 |
+| --- | --- | ---: | ---: | --- |
+| `picotool/` | directory | `040755` | 0 | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
+| `picotool/picotoolTargets-release.cmake` | regular | `100644` | 767 | `e40085002e565de850554e772c90f1a1c4cffb545f853eaa231b145e498f7c0f` |
+| `picotool/picotoolConfigVersion.cmake` | regular | `100644` | 2,303 | `61485a18a59a186d7cb82ddf7686c5f1f4def81726568ae49fd0033db368f7e3` |
+| `picotool/rp2350_otp_contents.json` | regular | `100644` | 367,931 | `1838713d5f94316c4c61558cb82d3346831235dc41f9b0f02151e6eda3f22fc2` |
+| `picotool/libusb-1.0.0.dylib` | regular | `100444` | 328,336 | `b3d0c88bcb04fe61e4f56bc304a31fef56e19ee5ec2edaebd0fce44afb2b9237` |
+| `picotool/enc_bootloader_mbedtls.elf` | regular | `100644` | 29,484 | `c5d17fcbb4f1ee41751dc782d86c1fc6629d8da3484e1a1cadc3ba4bec4d6044` |
+| `picotool/picotoolTargets.cmake` | regular | `100644` | 3,856 | `043655d4bc215fb3a05d4a04f92cabc0be9bbdb0834717b0211e80106b4d1aae` |
+| `picotool/picotoolConfig.cmake` | regular | `100644` | 96 | `ca12b6fee18e6583713cfdcb2e81886aaee741d40304ea2cc88c4f5b2df2b6c3` |
+| `picotool/xip_ram_perms.elf` | regular | `100644` | 34,004 | `afac0e166ee9b632f84717c7db02e7e5e648f03a51cc4795938adcd282c6103b` |
+| `picotool/picotool` | regular | `100755` | 5,673,800 | `a4b3c4e64dea7b99e810c5c777bf13fb2722b8d0355e0b64a28244ddc1b0f8b5` |
+| `picotool/enc_bootloader.elf` | regular | `100644` | 20,104 | `9ce3c424d61226225d2c1f5b80a8854f15174b09dd447e58e4439240b274fb3d` |
+| `.keep` | regular | `100644` | 0 | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
+
 The installer MUST verify the archive topology, byte length, digests,
 executable mode, and exact locked version line before atomically publishing
 the gitignored `firmware/.picotool/` tree. It MUST reject links, special files,
 duplicate or escaping members, unexpected top-level entries, partial trees,
-and pre-existing mismatched destinations without leaving build state.
+unsafe lock paths, URL/basename disagreement, and pre-existing mismatched
+destinations without leaving build state. Idempotent admission reopens the
+retained archive and proves every extracted path, regular-file byte, and mode
+matches that archive with no added entry; it never repairs or replaces a
+mismatched existing destination.
 
 Every RP2 build MUST select the verified executable and
 `picotoolConfig.cmake` from that explicit tree, set `picotool_DIR` to the
