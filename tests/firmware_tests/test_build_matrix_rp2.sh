@@ -56,8 +56,8 @@ check_lock() {
     '^"rpi-pico2-w"[[:space:]]*=[[:space:]]*"RPI_PICO2_W"' "$LOCK"
   check_grep "versions.lock gains an [arm_gnu_toolchain] pin section (BLD-4 eq)" \
     '^\[arm_gnu_toolchain\]' "$LOCK"
-  check_grep "combined source reserves agent version 0.6.0" \
-    '^agent_version[[:space:]]*=[[:space:]]*"0\.6\.0"' "$LOCK"
+  check_grep "combined source reserves agent version 0.6.1" \
+    '^agent_version[[:space:]]*=[[:space:]]*"0\.6\.1"' "$LOCK"
 
   # The ESP input sections remain exact (normalized to their key/value lines
   # so an appended rp2 comment block cannot false-fail this).
