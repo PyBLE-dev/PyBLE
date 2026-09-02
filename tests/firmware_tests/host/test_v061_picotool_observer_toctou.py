@@ -133,7 +133,12 @@ class PicotoolObserverRaceFixture:
     def close(self) -> None:
         self.temporary.cleanup()
 
-    def expect_probe_boundary_mutation_rejected(self, mutate) -> None:
+    def expect_probe_boundary_mutation_rejected(
+        self,
+        mutate,
+        *,
+        role_mutate=None,
+    ) -> None:
         """Run a synchronized mutation and require post-probe rejection."""
 
         observer = RELEASE._audit_observe_rp2_build_tools_license_inputs
@@ -151,6 +156,14 @@ class PicotoolObserverRaceFixture:
                 returncode=0,
                 stdout=VERSION_LINE + "\n",
                 stderr="",
+            )
+
+        def expected_role(**_kwargs):
+            if role_mutate is not None:
+                role_mutate()
+            return (
+                {"synthetic/input": "0" * 64},
+                {"schema_version": 1, "role": "build-tools"},
             )
 
         with mock.patch.object(
@@ -180,10 +193,7 @@ class PicotoolObserverRaceFixture:
         ) as tree_validation, mock.patch.object(
             RELEASE,
             "_audit_expected_rp2_build_tools_role",
-            return_value=(
-                {"synthetic/input": "0" * 64},
-                {"schema_version": 1, "role": "build-tools"},
-            ),
+            side_effect=expected_role,
         ), mock.patch.object(
             RELEASE.subprocess,
             "run",
@@ -251,9 +261,10 @@ class V061PicotoolObserverToctouTests(unittest.TestCase):
         snapshot_roots: list[Path] = []
 
         def version_probe(args, **kwargs):
-            executable = Path(args[0])
             probe_root = Path(kwargs["cwd"])
-            self.assertTrue(executable.is_absolute())
+            self.assertEqual(args[0], "./picotool/picotool")
+            executable = probe_root / args[0]
+            self.assertFalse(Path(args[0]).is_absolute())
             self.assertTrue(executable.is_file())
             self.assertFalse(executable.is_symlink())
             self.assertEqual(executable.read_bytes(), ORIGINAL_TOOL)
@@ -264,6 +275,8 @@ class V061PicotoolObserverToctouTests(unittest.TestCase):
             )
             self.assertFalse(executable.is_relative_to(self.fixture.install))
             self.assertTrue(executable.is_relative_to(probe_root))
+            self.assertEqual(len(kwargs["pass_fds"]), 1)
+            self.assertTrue(callable(kwargs["preexec_fn"]))
             executed_paths.append(executable)
             snapshot_roots.append(probe_root)
             return real_subprocess_run(args, **kwargs)
@@ -486,6 +499,18 @@ class V061PicotoolObserverToctouTests(unittest.TestCase):
             os.replace(replacement, self.fixture.archive)
 
         self.fixture.expect_probe_boundary_mutation_rejected(mutate)
+
+    def test_rejects_archive_mutation_while_minting_the_role_receipt(self):
+        def mutate_at_evidence_boundary() -> None:
+            self.fixture.archive.write_bytes(
+                b"mutated at evidence-mint boundary\n"
+            )
+            self.fixture.archive.chmod(0o644)
+
+        self.fixture.expect_probe_boundary_mutation_rejected(
+            lambda: None,
+            role_mutate=mutate_at_evidence_boundary,
+        )
 
 
 if __name__ == "__main__":
