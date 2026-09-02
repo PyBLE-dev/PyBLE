@@ -132,26 +132,22 @@ class PublicClaimsTest(unittest.TestCase):
         self.assertIn("Flashing erases the board", try_section)
         self.assertNotIn("v0.4.2 hardware-tested beta", try_section)
 
-    def test_current_public_surfaces_agree_on_beta_and_c3_state(self) -> None:
+    def test_current_public_surfaces_agree_on_v060_and_v061_state(self) -> None:
         combined = "\n".join(
             (self.home_page, self.site_copy, self.support_page, self.roadmap)
         )
 
         for wording in (
-            "v0.4.2",
-            "hardware-tested beta",
-            "browser install/recovery passed",
-            "release qualification pending",
+            "v0.6.0",
+            "qualified public release",
             "esp32-4mb",
             "esp32-s3-n16r8",
+            "esp32-c3-4mb",
+            "rpi-pico2-w",
         ):
             self.assertIn(wording, combined)
-        self.assertIn("Production Chrome install", combined)
-        self.assertIn("interrupted-flash recovery passed", combined)
         self.assertNotIn("full HIL pending", combined)
         self.assertNotIn("use it at your own risk", combined.lower())
-        self.assertIn("ESP32-C3", combined)
-        self.assertRegex(combined, r"(?is)ESP32-C3.{0,180}unavailable")
         for stale in (
             "public browser installer stays unavailable",
             "public installer is unavailable while v0.4.2 HIL runs",
@@ -160,11 +156,20 @@ class PublicClaimsTest(unittest.TestCase):
         ):
             self.assertNotIn(stale, combined)
 
+        available = " ".join(
+            markdown_section(self.roadmap, "Available now").split()
+        )
+        self.assertIn("current qualified firmware v0.6.0", available)
+        self.assertIn("five exact profiles", available)
+        self.assertIn("Pico 2 W", available)
+        self.assertNotIn("v0.4.2", self.roadmap)
+
         near_term = markdown_section(self.roadmap, "Near term")
         self.assertIn(
-            "Complete the app, PBLE/1, resource, and remaining firmware release",
+            "source-selected firmware v0.6.1 contract hardening",
             near_term,
         )
+        self.assertIn("fresh resource, recovery, and physical qualification", near_term)
 
     def test_production_browser_claim_is_bound_to_public_evidence(self) -> None:
         evidence = self.browser_validation

@@ -5,7 +5,7 @@
 - Builds on: [ADR-0033](0033-qualify-v060-as-five-profile-heterogeneous-release.md)
 - Normative contracts:
   [PBLE/1 §5](../specifications/protocol.md#5-file-transfer-the-reliability-core),
-  [firmware requirements §4.4](../specifications/firmware/specs.md#44-filesystem-bridge--workspace-jail),
+  [firmware requirements §4.4](../specifications/firmware/specs.md#44-filesystem-bridge--workspace-jail-fr-fs),
   and [firmware TDD §9.1](../specifications/firmware/TDD.md#91-vfs--littlefs)
 
 ## Context
