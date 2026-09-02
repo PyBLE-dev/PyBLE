@@ -1047,8 +1047,8 @@ The following ESP-IDF resolution rules are part of that fail-closed mapping:
    file, an admitted described directory marker, or a `CONFIG_ONLY` component
    root, except for these pinned application-`main` inputs:
 
-   - the eleven repository-owned files
-     `firmware/user_c_modules/pyble/{pble_proto,pble_ble,pble_info,pble_device_config,pble_runner,pble_console,pble_fs,pble_lock,pble_boot,pble_vm_lifecycle,pble_termination}.c`;
+   - the twelve repository-owned files
+     `firmware/user_c_modules/pyble/{pble_proto,pble_wire,pble_ble,pble_info,pble_device_config,pble_runner,pble_console,pble_fs,pble_lock,pble_boot,pble_vm_lifecycle,pble_termination}.c`;
    - the fourteen files in the selected target's immutable retained
      `.sources/<target>/micropython/lib/berkeley-db-1.xx` tree:
      `btree/{bt_close,bt_conv,bt_debug,bt_delete,bt_get,bt_open,bt_overflow,bt_page,bt_put,bt_search,bt_seq,bt_split,bt_utils}.c`
@@ -1086,7 +1086,7 @@ The following ESP-IDF resolution rules are part of that fail-closed mapping:
    into the application ELF. The selected output-basename multiset MUST equal
    the parsed archive-member multiset exactly. Each selected source MUST also
    belong to that same component's exact described file or directory marker;
-   an application `main` archive may additionally own the exact eleven pinned
+   an application `main` archive may additionally own the exact twelve pinned
    PyBLE sources above. A file or root described by one component MUST NOT
    authorize a linked output owned by another component, and the pinned
    Berkeley DB sources remain direct-object-only.
@@ -1123,7 +1123,7 @@ The following ESP-IDF resolution rules are part of that fail-closed mapping:
    - `CMakeFiles/<app-elf>.dir/project_elf_src_<idf-target>.c.obj` for the
      zero-byte role-root ELF anchor;
    - application `CMakeFiles/micropython.elf.dir/<absolute-PyBLE-source>.obj`
-     for the eleven repository-owned PyBLE C sources; and
+     for the twelve repository-owned PyBLE C sources; and
    - application
      `esp-idf/main/CMakeFiles/micropy_extmod_btree.dir/<absolute-retained-source>.obj`
      for the fourteen retained Berkeley DB sources.
