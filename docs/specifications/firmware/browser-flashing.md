@@ -1,12 +1,14 @@
 # PyBLE Firmware Browser Provisioning and Release Bundle
 
-Status: **FROZEN v1.32** · Owner: project maintainer · Frozen:
-2026-08-20 (`[docs]`; ADR-0033 adds the exact five-profile v0.6.0 successor
-with release schema 4, HIL V5, OI policy schema 3, four ESP Web Serial images,
-and one verified-UF2/manual-BOOTSEL path; every new gate remains pending;
-ADR-0037 fixes replacement-era reset and transfer product SLOs; ADR-0038
-replaces an unpublished local v0.6.0 candidate by source ancestry; immutable
-v0.4.2, v0.5.1, and predecessor-v0.6.0 contracts are preserved)
+Status: **FROZEN v1.33** · Owner: project maintainer · Frozen:
+2026-09-02 (`[docs]`; ADR-0033 established the exact five-profile v0.6.0
+successor with release schema 4, HIL V5, OI policy schema 3, four ESP Web
+Serial images, and one verified-UF2/manual-BOOTSEL path; ADR-0037 fixes
+replacement-era reset and transfer product SLOs; ADR-0038 replaces an
+unpublished local v0.6.0 candidate by source ancestry; the qualified v0.6.0
+result is the baseline; the v0.6.1 amendment retains V5 while requiring fresh,
+exact-version evidence; immutable v0.4.2, v0.5.1, and predecessor-v0.6.0
+contracts are preserved)
 
 This document is the source of truth for the initial browser-provisioning
 release bundle. It refines
@@ -45,8 +47,10 @@ The fifth row is deliberately heterogeneous:
 
 The exact profile order is `esp32-4mb`, `esp32-s3-n16r8`,
 `waveshare-esp32-s3-lcd-147b`, `esp32-c3-4mb`, `rpi-pico2-w`. All five are
-release-blocking. C3-G0…C3-G6 and Pico GP2 remain pending prerequisites; no
-profile becomes active until the complete exact-byte v0.6.0 matrix passes.
+release-blocking. The complete exact-byte v0.6.0 matrix, including C3-G0…C3-G6
+and Pico GP2, passed and is the qualified baseline. The v0.6.1 candidate must
+repeat every gate with fresh evidence; no v0.6.1 profile becomes active until
+that complete atomic matrix passes.
 
 ### 1.1 Loopback-only five-target approval preview
 
@@ -1705,7 +1709,8 @@ Automated release tests MUST cover:
   flash-capacity checks;
 - exact manifest schema, paths, profile parity, and forbidden redirect/origin
   cases;
-- exact v0.6.0 five-profile resource-policy schema 3 and HIL V5 schema, plus
+- exact v0.6.0/v0.6.1 five-profile resource-policy schema 3 and HIL V5 schema,
+  with every current-candidate version binding checked end to end, plus
   historical schema-2/V4 replay,
   baseline/policy/candidate
   hash binding, derivation arithmetic, threshold-boundary and one-unit-crossing
@@ -1737,10 +1742,11 @@ wrong source-era marker, an additional marker, or keys not defined below are
 invalid. These are admission requirements; they do not assert that a v0.5.1
 HIL report or qualified public bundle exists.
 
-The v0.6.0 report instead contains exactly one
+The v0.6.0 and v0.6.1 reports instead contain exactly one
 `PYBLE_HIL_RECORDS_V5` schema-5 object with five records in §1 order and the
-target-discriminated contract in §9.5. V5 is required only for v0.6.0 and MUST
-NOT reclassify V2/V4 history.
+target-discriminated contract in §9.5. V5 admission is limited to release cores
+`0.6.0` and `0.6.1`; it MUST NOT reclassify V2/V4 history or pre-authorize the
+proposed v0.7.0 contract.
 
 ```text
 <!-- PYBLE_HIL_RECORDS_V2
@@ -2266,8 +2272,18 @@ C3-G0…C3-G6; Pico binds GP0, GP1, and complete GP2. A missing private result,
 non-null input summary, failed sub-gate, changed input, or identity/hash
 mismatch leaves no public output.
 
-The V5 envelope is unchanged across the unpublished v0.6.0 source eras,
-but its policy derivation is source-bound. A candidate source at or before
+V5 release-license generation, candidate creation, physical-fact lineage,
+completion-fragment creation, report assembly, private gate validation, and
+copy-on-write finalization MUST derive the exact firmware version from
+`versions.lock` or the already-validated candidate `release.json`, as
+applicable. That exact value must match the release identity and tag, the
+heterogeneous license inventory, every V5 record, and every private result.
+Substituting a hard-coded v0.6.0 value for a v0.6.1 candidate is invalid and
+must publish no evidence or artifact. The two admitted release cores share the
+schema and profile order only; v0.6.0 evidence cannot qualify v0.6.1 bytes.
+
+The V5 envelope is unchanged across the v0.6.0 source eras and v0.6.1, but its
+policy derivation is source-bound. A candidate source at or before
 `5620f2fdc672b440548119e3431cfa4f4ed3f5a3` retains
 `fixed-product-slo-3000-v3` and `floor-95pct-min-100-v2`. A strict
 descendant of that boundary at or before
