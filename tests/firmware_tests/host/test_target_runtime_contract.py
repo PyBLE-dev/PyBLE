@@ -937,8 +937,8 @@ class BoardConfigurationSourceContractTests(unittest.TestCase):
             expected = tomllib.load(handle)["pyble"]["agent_version"]
         self.assertEqual(
             expected,
-            "0.6.0",
-            "the combined Pico 2 W source must advance the agent minor version",
+            "0.6.1",
+            "the v0.6.1 hardening source must advance the patch version",
         )
         package_source = (FIRMWARE_DIR / "pyble" / "__init__.py").read_text(
             encoding="utf-8"
