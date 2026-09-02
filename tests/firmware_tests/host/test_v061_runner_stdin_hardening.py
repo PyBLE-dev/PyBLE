@@ -220,6 +220,63 @@ class PortableAgentBoundaryTests(agent_support.AgentTestBase):
         self.assertEqual(agent_support.rsps(link, opcode=0x20, id_=206)[0].payload, b"\x07")
         self.assertEqual(drain(self, agent.console), b"keep")
 
+    def test_unpublished_run_response_does_not_open_a_stdin_generation(self):
+        agent, link = self.new_agent(
+            "v0.6.1 unpublished RUN response leaves stdin inactive")
+        generation = agent.console._input_generation
+        original_send = link.send_message
+
+        def reject_run_response(msg, *args, **kwargs):
+            frame = agent_support.pyble_proto.decode(msg)
+            if (frame.type == agent_support.RSP and frame.opcode == 0x20
+                    and frame.id == 207):
+                return False
+            return original_send(msg, *args, **kwargs)
+
+        link.send_message = reject_run_response
+        try:
+            agent_support.send(
+                self, link, 0x20, bytes((1,)) + b"pass", id_=207)
+        finally:
+            link.send_message = original_send
+
+        self.assertEqual(
+            agent.console._input_generation,
+            generation,
+            "a RUN whose response was not published must not begin stdin",
+        )
+        agent_support.send(self, link, 0x31, b"still-idle", id_=208)
+        self.assertEqual(drain(self, agent.console), b"")
+
+    def test_unpublished_stop_response_preserves_live_stdin_bytes(self):
+        agent, link = self.new_agent(
+            "v0.6.1 unpublished STOP response preserves stdin")
+        agent_support.send(
+            self, link, 0x20, bytes((1,)) + b"pass", id_=208)
+        agent_support.send(self, link, 0x31, b"keep", id_=209)
+        original_send = link.send_message
+
+        def reject_stop_response(msg, *args, **kwargs):
+            frame = agent_support.pyble_proto.decode(msg)
+            if (frame.type == agent_support.RSP and frame.opcode == 0x21
+                    and frame.id == 210):
+                return False
+            return original_send(msg, *args, **kwargs)
+
+        link.send_message = reject_stop_response
+        try:
+            agent_support.send(self, link, 0x21, id_=210)
+        finally:
+            link.send_message = original_send
+
+        self.assertEqual(
+            drain(self, agent.console),
+            b"keep",
+            "an unacknowledged STOP must not clear or close the live run's stdin",
+        )
+        agent_support.send(self, link, 0x31, b"still-live", id_=211)
+        self.assertEqual(drain(self, agent.console), b"still-live")
+
     def test_accepted_stop_clears_and_closes_stdin(self):
         agent, link = self.new_agent("v0.6.1 accepted STOP closes stdin")
         agent_support.send(self, link, 0x20, bytes((1,)) + b"pass", id_=207)

@@ -1455,6 +1455,7 @@ class HilCompletionWriterContractTests(unittest.TestCase):
                 "output_path",
                 "qualification_repo_root",
                 "profile_qualification_result",
+                "v061_hardening_result",
             },
         )
 
@@ -1481,6 +1482,7 @@ class HilCompletionWriterContractTests(unittest.TestCase):
         )
         self.assertEqual(command_help.returncode, 0, command_help.stderr)
         self.assertIn("--profile-qualification-result", command_help.stdout)
+        self.assertIn("--v061-hardening-result", command_help.stdout)
         self.assertNotIn("--profile-gate-summary", command_help.stdout)
         self.assertNotIn("--footprint-reliability", command_help.stdout)
 
