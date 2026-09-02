@@ -624,6 +624,140 @@ class PicotoolRetentionTests(unittest.TestCase):
         )
         self.assertFalse((displaced_parent / destination.name).exists())
 
+    def test_fresh_install_reopens_all_bytes_after_the_version_probe(self) -> None:
+        ready = self.root / "fresh-version-probe-ready"
+        release = self.root / "fresh-version-probe-release"
+        barrier_executable = (
+            b"#!/bin/sh\n"
+            b"[ \"${1:-}\" = version ] || exit 64\n"
+            b": > \"${PYBLE_TEST_VERSION_READY:?}\"\n"
+            b"while [ ! -e \"${PYBLE_TEST_VERSION_RELEASE:?}\" ]; do\n"
+            b"  sleep 0.01\n"
+            b"done\n"
+            + f"printf '%s\\n' '{VERSION_LINE}'\n".encode("utf-8")
+        )
+        archive = self.root / "fresh-reopen-race.zip"
+        write_archive(archive, executable=barrier_executable)
+        self.write_lock(archive=archive, executable=barrier_executable)
+        environment = dict(os.environ)
+        environment.update(
+            {
+                "PYBLE_LOCK_FILE": str(self.lock),
+                "PYBLE_PICOTOOL_ARCHIVE": str(archive),
+                "PYBLE_TEST_VERSION_READY": str(ready),
+                "PYBLE_TEST_VERSION_RELEASE": str(release),
+            }
+        )
+        process = subprocess.Popen(
+            [str(INSTALLER), str(self.destination)],
+            cwd=ROOT,
+            env=environment,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+        )
+        stdout = ""
+        try:
+            deadline = time.monotonic() + 10
+            while not ready.exists() and process.poll() is None:
+                if time.monotonic() >= deadline:
+                    self.fail("fresh-install version-probe barrier was not reached")
+                time.sleep(0.01)
+            self.assertIsNone(process.poll(), "installer exited before the race")
+
+            incoming = sorted(self.root.glob(".installed-picotool.incoming.*"))
+            self.assertEqual(len(incoming), 1, "staging tree was not observable")
+            (incoming[0] / CONFIG_PATH).write_bytes(
+                b"tampered after the first complete-tree validation\n"
+            )
+            release.touch()
+            stdout, _ = process.communicate(timeout=10)
+        finally:
+            release.touch(exist_ok=True)
+            if process.poll() is None:
+                process.kill()
+                process.communicate()
+
+        self.assertNotEqual(process.returncode, 0, stdout)
+        self.assertFalse(
+            self.destination.exists(),
+            "a staging-tree mutation was admitted as the pinned distribution",
+        )
+        self.assert_no_staging_tree()
+
+    def test_existing_install_reopens_all_bytes_after_the_version_probe(self) -> None:
+        ready = self.root / "existing-version-probe-ready"
+        release = self.root / "existing-version-probe-release"
+        barrier_executable = (
+            b"#!/bin/sh\n"
+            b"[ \"${1:-}\" = version ] || exit 64\n"
+            b": > \"${PYBLE_TEST_VERSION_READY:?}\"\n"
+            b"while [ ! -e \"${PYBLE_TEST_VERSION_RELEASE:?}\" ]; do\n"
+            b"  sleep 0.01\n"
+            b"done\n"
+            + f"printf '%s\\n' '{VERSION_LINE}'\n".encode("utf-8")
+        )
+        archive = self.root / "existing-reopen-race.zip"
+        write_archive(archive, executable=barrier_executable)
+        self.write_lock(archive=archive, executable=barrier_executable)
+        environment_overrides = {
+            "PYBLE_TEST_VERSION_READY": str(ready),
+            "PYBLE_TEST_VERSION_RELEASE": str(release),
+        }
+
+        release.touch()
+        installed = self.run_installer(
+            archive=archive,
+            environment_overrides=environment_overrides,
+        )
+        self.assertEqual(installed.returncode, 0, installed.stdout)
+        ready.unlink()
+        release.unlink()
+
+        environment = dict(os.environ)
+        environment.update(
+            {
+                "PYBLE_LOCK_FILE": str(self.lock),
+                "PYBLE_TEST_VERSION_READY": str(ready),
+                "PYBLE_TEST_VERSION_RELEASE": str(release),
+            }
+        )
+        environment.pop("PYBLE_PICOTOOL_ARCHIVE", None)
+        process = subprocess.Popen(
+            [str(INSTALLER), str(self.destination)],
+            cwd=ROOT,
+            env=environment,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+        )
+        stdout = ""
+        tampered = b"tampered after the first complete-tree revalidation\n"
+        try:
+            deadline = time.monotonic() + 10
+            while not ready.exists() and process.poll() is None:
+                if time.monotonic() >= deadline:
+                    self.fail("existing-install version-probe barrier was not reached")
+                time.sleep(0.01)
+            self.assertIsNone(process.poll(), "installer exited before the race")
+
+            (self.destination / CONFIG_PATH).write_bytes(tampered)
+            release.touch()
+            stdout, _ = process.communicate(timeout=10)
+        finally:
+            release.touch(exist_ok=True)
+            if process.poll() is None:
+                process.kill()
+                process.communicate()
+
+        self.assertNotEqual(process.returncode, 0, stdout)
+        self.assertEqual(
+            (self.destination / CONFIG_PATH).read_bytes(),
+            tampered,
+            "revalidation must preserve a mismatched existing destination",
+        )
+        self.assert_no_staging_tree()
+
     def test_retained_tree_is_revalidated_byte_for_byte_without_extras(self) -> None:
         cases = {
             "mutated-targets": lambda root: (
