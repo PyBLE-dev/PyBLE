@@ -1473,10 +1473,16 @@ MUST NOT change those frozen fields. A changed firmware, manifest, policy, or
 candidate identity invalidates the affected evidence.
 For V5 v0.6.0 and v0.6.1 candidates, derivation selection uses the bound
 policy/candidate source ancestry. The exact candidate version must propagate
-unchanged through license inventory, HIL records, lineage, completion, private
-gate validation, and finalization; v0.6.0 evidence cannot qualify v0.6.1. The
+unchanged through license inventory, HIL records, completion, private gate
+validation, and finalization; v0.6.0 evidence cannot qualify v0.6.1. The
 retained baseline's earlier `source_commit`, SemVer alone, schema alone,
 operator input, and the validator checkout are forbidden routing inputs.
+
+The one-field `physical-fact-lineage-v1` carry-forward remains limited to its
+exact v0.6.0 contract and is not a v0.6.1 evidence source. Every v0.6.1 profile
+MUST provide a fresh physical power-cycle observation for its exact candidate;
+the common observation validator MUST reject a lineage summary when the
+selected firmware version is v0.6.1.
 
 #### 5.3.5 v0.6.0 five-profile successor policy and evidence
 
