@@ -934,7 +934,7 @@ class FsService:
         st, jailed = resolve(path)
         if st != OK:
             return bytes((st,))
-        if self._put_active:
+        if self._busy():
             return bytes((EBUSY,))
         hpath = self._host(jailed)
         st, _size, isdir = self._stat(hpath)
@@ -958,7 +958,7 @@ class FsService:
         st, jailed = resolve(path)
         if st != OK:
             return bytes((st,))
-        if self._put_active:
+        if self._busy():
             return bytes((EBUSY,))
         hpath = self._host(jailed)
         st, _size, isdir = self._stat(hpath)
@@ -986,7 +986,7 @@ class FsService:
         st, djail = resolve(dst)
         if st != OK:
             return bytes((st,))
-        if self._put_active:
+        if self._busy():
             return bytes((EBUSY,))
         spath = self._host(sjail)
         dpath = self._host(djail)
