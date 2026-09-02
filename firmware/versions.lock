@@ -7,7 +7,7 @@
 # pins. See docs/specifications/firmware.md §6 (Build & distribution) and the
 # sibling note in firmware/upstream/README.md.
 #
-# SOURCE-SELECTED for agent v0.6.0. These exact bytes pin the MicroPython and
+# SOURCE-SELECTED for agent v0.6.1. These exact bytes pin the MicroPython and
 # ESP-IDF source inputs, but do not freeze or qualify a release candidate.
 # Candidate status requires fresh reproducible builds, license audit, OI-1
 # measurement, and HIL; retained v0.4.2 binaries or evidence cannot substitute.
@@ -45,7 +45,7 @@ mpy_cross = "rebuilt-from-pinned-micropython"
 [pyble]
 # Board identity remains in [targets] and board overlays rather than protocol
 # routing fields; generic and exact-board variants share the PBLE/1 contract.
-agent_version    = "0.6.0"
+agent_version    = "0.6.1"
 protocol_version = "PBLE/1"
 
 # --- rpi-pico2-w port (ADR-0030) --------------------------------------------
