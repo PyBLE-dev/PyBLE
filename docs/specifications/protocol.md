@@ -555,7 +555,15 @@ adopting a successor upload and change no PBLE/1 byte.
 Any VFS stream count is validated before the corresponding buffer range is
 read, CRC'd, copied, or exposed. It MUST be an integer in `0..requested`; a
 negative, non-integer, or over-reported count is `EIO`. A zero count before the
-promised extent is complete is a short read and is also `EIO`.
+promised extent is complete is a short read and is also `EIO`. For the portable
+binary-file API, the exact equivalent is an exact `bytes` result whose length
+is in `0..requested`; any other result is `EIO`. A fault discovered before a
+response is committed returns `EIO` normally. Once a successful
+`FILE_GET_BEGIN` response is committed, a read fault aborts that stream, emits
+no later `FILE_GET_DATA`, and MUST NOT emit `FILE_GET_END`; the client therefore
+uses its existing missing-END/extent timeout and reports an unsuccessful
+download. No replacement response or new error event is invented within
+PBLE/1.
 
 **Upload admission (amended 2026-09-02):** PBLE/1 retains the existing
 `total_size:u32`; v0.6.1 adds no fixed-size capability. Before creating or

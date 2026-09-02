@@ -294,9 +294,13 @@ BEGIN/DATA/END perform every VFS effect in the supervisor-polled bounded
 mailbox, never in the BTstack RX callback; its depth is at least advertised
 window plus two. Native request storage accepts the full 260-byte legal
 `FILE_RENAME` body. Both reject a VFS read count outside `0..requested` before
-using the buffer, validate every path as strict scalar UTF-8 at the jail
-chokepoint, and recognize a regular scratch only when the complete file-type
-field equals a regular file.
+using the buffer; portable binary reads additionally require an exact `bytes`
+result. A short or invalid read before response admission returns `EIO`. After
+a successful `FILE_GET_BEGIN` response, it cancels the stream without a
+completion event, so partial bytes can never be blessed by `FILE_GET_END`.
+Both validate every path as strict scalar UTF-8 at the jail chokepoint and
+recognize a regular scratch only when the complete file-type field equals a
+regular file.
 
 Configuration is candidate-first. ESP label, autorun, and Identify paths check
 every NVS set/erase/commit and change RAM/GPIO/advertising only after commit.

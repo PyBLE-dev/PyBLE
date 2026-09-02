@@ -412,9 +412,11 @@ clear, or adopt successor state. BEGIN publication, DATA/END checks, stale-owner
 reclamation, and terminal clear MUST compare ownership in their transfer-state
 critical cut. Portable VFS work runs only from its bounded supervisor mailbox;
 native storage MUST accept a 260-byte legal two-maximum-path `FILE_RENAME`.
-Every VFS read count is range-checked before buffer use, every path is strict
-scalar UTF-8, and exact regular-file type—not merely “not a directory”—is
-required for scratch resume. — *(source:
+Every VFS read count is range-checked before buffer use; portable binary reads
+require exact `bytes`. A short/invalid read before response admission is `EIO`,
+while one after successful GET admission aborts without `FILE_GET_END`. Every
+path is strict scalar UTF-8, and exact regular-file type—not merely “not a
+directory”—is required for scratch resume. — *(source:
 [protocol.md §5](../protocol.md#5-file-transfer-the-reliability-core); verify:
 portable/native compiled race, boundary, and hostile-VFS unit tests)*
 
