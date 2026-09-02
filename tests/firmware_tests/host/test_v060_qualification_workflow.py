@@ -477,6 +477,389 @@ class PicoPacingSourceBindingTests(unittest.TestCase):
             )
 
 
+class C3PostOiNvsReceiptWriterContractTests(unittest.TestCase):
+    """RED contract for the sole mechanical C3 receipt-authoring path."""
+
+    API_PARAMETERS = (
+        "candidate_dir",
+        "observation_path",
+        "oi1_raw_log_path",
+        "post_oi_nvs_slice_path",
+        "post_oi_nvs_acquisition_log_path",
+        "output_path",
+    )
+
+    def writer(self):
+        writer = getattr(GATE, "create_post_oi_nvs_receipt_file", None)
+        if not callable(writer):
+            self.skipTest("RED: create-post-oi-nvs-receipt has not landed")
+        return writer
+
+    def make_inputs(self, root: Path) -> dict[str, object]:
+        candidate = root / "candidate"
+        artifact_path = candidate / "esp32-c3-4mb" / "firmware.bin"
+        artifact_path.parent.mkdir(parents=True)
+        artifact = b"candidate v0.6.1 C3 receipt firmware\0"
+        artifact_path.write_bytes(artifact)
+        release_raw = canonical_json_bytes(
+            candidate_release(artifact, version="0.6.1")
+        )
+        release_path = candidate / "release.json"
+        release_path.write_bytes(release_raw)
+
+        private = root / "private"
+        raw_log_path = private / "c3-oi1-verify.jsonl"
+        raw_log = (
+            b'{"event":"measurement_start","profile_id":"esp32-c3-4mb",'
+            b'"sequence":1}\n'
+        )
+        observation = {
+            "raw_log_sha256": hashlib.sha256(raw_log).hexdigest(),
+            "reset_to_service_advertisement_ms": [
+                1000 + index for index in range(10)
+            ],
+        }
+        observation_path = private / "c3-oi1-observation.json"
+        slice_path = private / "c3-post-oi-nvs-slice.bin"
+        acquisition_log_path = private / "c3-post-oi-nvs-acquisition.log"
+        for path, raw in (
+            (observation_path, canonical_json_bytes(observation)),
+            (raw_log_path, raw_log),
+            (slice_path, C3_NVS_SLICE),
+            (acquisition_log_path, C3_NVS_ACQUISITION_LOG),
+        ):
+            _write_private_file(path, raw)
+
+        summary = {
+            "schema_version": 1,
+            "profile_id": "esp32-c3-4mb",
+            "candidate_release_json_sha256": hashlib.sha256(
+                release_raw
+            ).hexdigest(),
+            "candidate_firmware_sha256": hashlib.sha256(artifact).hexdigest(),
+            "oi1_raw_sha256": hashlib.sha256(raw_log).hexdigest(),
+            "reset_samples": 10,
+            "partition_offset": 0x9000,
+            "partition_size": 0x6000,
+            "nvs_slice_sha256": C3_NVS_SLICE_SHA256,
+            "nvs_slice_size_bytes": len(C3_NVS_SLICE),
+            "acquisition_log_sha256": hashlib.sha256(
+                C3_NVS_ACQUISITION_LOG
+            ).hexdigest(),
+            "acquisition_log_size_bytes": len(C3_NVS_ACQUISITION_LOG),
+            "integrity": "passed",
+            "written_namespaces": [],
+        }
+        return {
+            "candidate_dir": candidate,
+            "artifact_path": artifact_path,
+            "artifact": artifact,
+            "release_path": release_path,
+            "release_raw": release_raw,
+            "observation": observation,
+            "observation_path": observation_path,
+            "raw_log": raw_log,
+            "oi1_raw_log_path": raw_log_path,
+            "post_oi_nvs_slice_path": slice_path,
+            "post_oi_nvs_acquisition_log_path": acquisition_log_path,
+            "output_path": private / "c3-post-oi-nvs-receipt.json",
+            "expected_receipt": {"summary": summary, "inventory": []},
+        }
+
+    def create(self, evidence: dict[str, object], **overrides):
+        arguments = {
+            key: evidence[key]
+            for key in self.API_PARAMETERS
+        }
+        arguments.update(overrides)
+        return self.writer()(**arguments)
+
+    @staticmethod
+    def rewrite_observation(
+        evidence: dict[str, object],
+        *,
+        reset_count: int = 10,
+        raw_log_sha256: str | None = None,
+        canonical: bool = True,
+    ) -> None:
+        observation = {
+            "raw_log_sha256": (
+                raw_log_sha256
+                if raw_log_sha256 is not None
+                else hashlib.sha256(evidence["raw_log"]).hexdigest()
+            ),
+            "reset_to_service_advertisement_ms": [1000] * reset_count,
+        }
+        raw = (
+            canonical_json_bytes(observation)
+            if canonical
+            else (json.dumps(observation) + "\n").encode("utf-8")
+        )
+        _write_private_file(evidence["observation_path"], raw)
+
+    def test_candidate_bound_receipt_writer_api_is_exact(self):
+        writer = getattr(GATE, "create_post_oi_nvs_receipt_file", None)
+        self.assertTrue(
+            callable(writer),
+            "the C3 receipt must have one mechanical candidate-bound writer",
+        )
+        if not callable(writer):
+            return
+        self.assertEqual(
+            tuple(inspect.signature(writer).parameters),
+            self.API_PARAMETERS,
+        )
+        self.assertTrue(
+            all(
+                parameter.kind is inspect.Parameter.KEYWORD_ONLY
+                for parameter in inspect.signature(writer).parameters.values()
+            )
+        )
+        self.assertIn("create_post_oi_nvs_receipt_file", GATE.__all__)
+
+    def test_cli_exposes_six_positional_inputs_and_no_authored_claims(self):
+        top = subprocess.run(
+            [sys.executable, str(GATE_PATH), "--help"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(top.returncode, 0, top.stderr)
+        self.assertIn("create-post-oi-nvs-receipt", top.stdout)
+        command = subprocess.run(
+            [
+                sys.executable,
+                str(GATE_PATH),
+                "create-post-oi-nvs-receipt",
+                "--help",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(command.returncode, 0, command.stderr)
+        usage = command.stdout.split("\n\n", 1)[0]
+        positions = [usage.index(positional) for positional in self.API_PARAMETERS]
+        self.assertEqual(positions, sorted(positions))
+        for positional in self.API_PARAMETERS:
+            self.assertIn(positional, command.stdout)
+        for forbidden in (
+            "--candidate-release-json-sha256",
+            "--candidate-firmware-sha256",
+            "--oi1-raw-sha256",
+            "--reset-samples",
+            "--partition-offset",
+            "--partition-size",
+            "--integrity",
+            "--written-namespace",
+        ):
+            self.assertNotIn(forbidden, command.stdout)
+
+    def test_writer_derives_canonical_receipt_and_chains_to_result_validation(self):
+        with tempfile.TemporaryDirectory(prefix="pyble-v061-c3-receipt-") as tmp:
+            root = Path(tmp).resolve()
+            evidence = self.make_inputs(root)
+            input_paths = (
+                evidence["release_path"],
+                evidence["artifact_path"],
+                evidence["observation_path"],
+                evidence["oi1_raw_log_path"],
+                evidence["post_oi_nvs_slice_path"],
+                evidence["post_oi_nvs_acquisition_log_path"],
+            )
+            before = {path: path.read_bytes() for path in input_paths}
+            sync_modes: list[int] = []
+            real_fsync = GATE.os.fsync
+
+            def record_fsync(descriptor):
+                sync_modes.append(GATE.os.fstat(descriptor).st_mode)
+                return real_fsync(descriptor)
+
+            with mock.patch.object(GATE.os, "fsync", side_effect=record_fsync):
+                created = self.create(evidence)
+
+            output = evidence["output_path"]
+            expected_raw = canonical_json_bytes(evidence["expected_receipt"])
+            self.assertEqual(len(expected_raw), 801)
+            self.assertEqual(Path(created), output)
+            self.assertEqual(output.read_bytes(), expected_raw)
+            self.assertEqual(stat.S_IMODE(output.stat().st_mode), 0o600)
+            self.assertEqual(output.stat().st_nlink, 1)
+            self.assertTrue(any(stat.S_ISREG(mode) for mode in sync_modes))
+            self.assertTrue(any(stat.S_ISDIR(mode) for mode in sync_modes))
+            self.assertEqual(
+                {path: path.read_bytes() for path in input_paths},
+                before,
+                "receipt creation must not rewrite candidate or private inputs",
+            )
+
+            result_path = output.with_name("c3-result.json")
+            GATE.create_result_file(
+                candidate_dir=evidence["candidate_dir"],
+                profile_id="esp32-c3-4mb",
+                passed_gates=["C3-G%d" % index for index in range(7)],
+                output_path=result_path,
+                post_oi_nvs_receipt_path=output,
+                post_oi_nvs_slice_path=evidence["post_oi_nvs_slice_path"],
+                post_oi_nvs_acquisition_log_path=evidence[
+                    "post_oi_nvs_acquisition_log_path"
+                ],
+            )
+            summary = GATE.validate_c3_result_for_observation(
+                result_path,
+                artifact_path=evidence["artifact_path"],
+                expected_version="0.6.1",
+                candidate_release_json_sha256=hashlib.sha256(
+                    evidence["release_raw"]
+                ).hexdigest(),
+                observation=evidence["observation"],
+                post_oi_nvs_receipt_path=output,
+                post_oi_nvs_slice_path=evidence["post_oi_nvs_slice_path"],
+                post_oi_nvs_acquisition_log_path=evidence[
+                    "post_oi_nvs_acquisition_log_path"
+                ],
+            )
+            self.assertEqual(
+                summary["candidate_release_json_sha256"],
+                hashlib.sha256(evidence["release_raw"]).hexdigest(),
+            )
+
+    def test_cli_creates_the_same_candidate_bound_canonical_receipt(self):
+        self.writer()
+        with tempfile.TemporaryDirectory(prefix="pyble-v061-c3-receipt-cli-") as tmp:
+            evidence = self.make_inputs(Path(tmp).resolve())
+            output = evidence["output_path"]
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(GATE_PATH),
+                    "create-post-oi-nvs-receipt",
+                    str(evidence["candidate_dir"]),
+                    str(evidence["observation_path"]),
+                    str(evidence["oi1_raw_log_path"]),
+                    str(evidence["post_oi_nvs_slice_path"]),
+                    str(evidence["post_oi_nvs_acquisition_log_path"]),
+                    str(output),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(completed.stdout.strip(), str(output))
+            self.assertEqual(
+                output.read_bytes(),
+                canonical_json_bytes(evidence["expected_receipt"]),
+            )
+
+    def test_preexisting_receipt_is_never_replaced(self):
+        with tempfile.TemporaryDirectory(
+            prefix="pyble-v061-c3-receipt-exists-"
+        ) as tmp:
+            evidence = self.make_inputs(Path(tmp).resolve())
+            output = evidence["output_path"]
+            sentinel = b"pre-existing private receipt\n"
+            _write_private_file(output, sentinel)
+            with self.assertRaises(GATE.QualificationError):
+                self.create(evidence)
+            self.assertEqual(output.read_bytes(), sentinel)
+            self.assertEqual(stat.S_IMODE(output.stat().st_mode), 0o600)
+
+    def test_unsafe_or_mismatched_inputs_publish_no_receipt(self):
+        self.writer()
+
+        def chmod(evidence, key):
+            evidence[key].chmod(0o644)
+
+        def hardlink(evidence, key):
+            GATE.os.link(
+                evidence[key],
+                evidence[key].with_name(evidence[key].name + ".second-link"),
+            )
+
+        def symlink(evidence, key):
+            path = evidence[key]
+            target = path.with_name(path.name + ".real")
+            path.rename(target)
+            path.symlink_to(target)
+
+        cases = {
+            "observation-mode": lambda item: chmod(item, "observation_path"),
+            "raw-log-mode": lambda item: chmod(item, "oi1_raw_log_path"),
+            "slice-mode": lambda item: chmod(item, "post_oi_nvs_slice_path"),
+            "acquisition-mode": lambda item: chmod(
+                item, "post_oi_nvs_acquisition_log_path"
+            ),
+            "raw-log-hardlink": lambda item: hardlink(item, "oi1_raw_log_path"),
+            "slice-symlink": lambda item: symlink(item, "post_oi_nvs_slice_path"),
+            "raw-log-mismatch": lambda item: _write_private_file(
+                item["oi1_raw_log_path"], item["raw_log"] + b"changed\n"
+            ),
+            "nine-reset-samples": lambda item: self.rewrite_observation(
+                item, reset_count=9
+            ),
+            "noncanonical-observation": lambda item: self.rewrite_observation(
+                item, canonical=False
+            ),
+            "non-erased-slice": lambda item: _write_private_file(
+                item["post_oi_nvs_slice_path"],
+                b"\x00" + C3_NVS_SLICE[1:],
+            ),
+            "truncated-slice": lambda item: _write_private_file(
+                item["post_oi_nvs_slice_path"], C3_NVS_SLICE[:-1]
+            ),
+            "one-line-acquisition-marker": lambda item: _write_private_file(
+                item["post_oi_nvs_acquisition_log_path"],
+                b"c3-post-oi-nvs-acquisition-v1\n",
+            ),
+            "changed-acquisition-marker": lambda item: _write_private_file(
+                item["post_oi_nvs_acquisition_log_path"],
+                C3_NVS_ACQUISITION_LOG + b"unexpected-third-line\n",
+            ),
+        }
+        for name, mutate in cases.items():
+            with self.subTest(name=name), tempfile.TemporaryDirectory(
+                prefix="pyble-v061-c3-receipt-reject-"
+            ) as tmp:
+                evidence = self.make_inputs(Path(tmp).resolve())
+                mutate(evidence)
+                output = evidence["output_path"]
+                with self.assertRaises(GATE.QualificationError):
+                    self.create(evidence)
+                self.assertFalse(output.exists())
+
+    def test_slice_change_after_output_fsync_rolls_back_receipt(self):
+        with tempfile.TemporaryDirectory(
+            prefix="pyble-v061-c3-receipt-race-"
+        ) as tmp:
+            evidence = self.make_inputs(Path(tmp).resolve())
+            output = evidence["output_path"]
+            slice_path = evidence["post_oi_nvs_slice_path"]
+            real_fsync = GATE.os.fsync
+            changed = False
+
+            def change_slice_after_output_sync(descriptor):
+                nonlocal changed
+                mode = GATE.os.fstat(descriptor).st_mode
+                result = real_fsync(descriptor)
+                if stat.S_ISREG(mode) and not changed:
+                    changed = True
+                    _write_private_file(
+                        slice_path,
+                        b"\x00" + C3_NVS_SLICE[1:],
+                    )
+                return result
+
+            with mock.patch.object(
+                GATE.os,
+                "fsync",
+                side_effect=change_slice_after_output_sync,
+            ), self.assertRaises(GATE.QualificationError):
+                self.create(evidence)
+            self.assertTrue(changed, "the fixture must inject the slice race")
+            self.assertFalse(output.exists())
+
+
 class PrivateGateResultWriterContractTests(unittest.TestCase):
     def test_candidate_bound_no_replace_writer_api_exists(self):
         writer = getattr(GATE, "create_result_file", None)
