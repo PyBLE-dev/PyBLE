@@ -253,6 +253,81 @@ class V061HilScenarioOrchestrationTests(unittest.TestCase):
                     self.assertFalse(result_exists)
 
 
+class FakeRebootCentral:
+    def __init__(self, bench, events):
+        self.bench = bench
+        self.events = events
+        self.is_connected = True
+
+    async def send_cmd(self, opcode, command_id, payload=b"", **_kwargs):
+        self.events.append(("command", opcode, command_id, bytes(payload)))
+        return self.bench.wire.Frame(
+            self.bench.wire.RSP,
+            opcode,
+            command_id,
+            bytes((self.bench.wire.ST_OK,)),
+        )
+
+
+class V061VmResetOrchestrationTests(unittest.TestCase):
+    def test_soft_reboot_helper_reconnects_without_implicitly_negotiating(self):
+        bench = load_bench()
+        helper = getattr(bench, "_soft_reboot_connect_unnegotiated", None)
+        self.assertTrue(
+            callable(helper),
+            "[red] the HIL runner needs a reusable acknowledged reboot seam "
+            "that deliberately leaves the successor session unnegotiated",
+        )
+        if not callable(helper):
+            return
+
+        events = []
+        args = SimpleNamespace(
+            profile="esp32-4mb",
+            address="private-address",
+            expect_agent="0.6.1",
+        )
+        state = bench.LiveState(args)
+        old_central = FakeRebootCentral(bench, events)
+        new_central = FakeRebootCentral(bench, events)
+        state.central = old_central
+
+        async def wait_disconnected(central, timeout_s=None):
+            self.assertIs(central, old_central)
+            events.append(("disconnected", timeout_s))
+            central.is_connected = False
+
+        async def wait_advertisement(received_state, name):
+            self.assertIs(received_state, state)
+            events.append(("advertisement", name))
+
+        async def connect(received_state):
+            self.assertIs(received_state, state)
+            self.assertIsNone(state.central)
+            events.append(("connect", None))
+            state.central = new_central
+            return new_central
+
+        async def forbidden_negotiate(_state):
+            raise AssertionError("reboot helper negotiated before the scenario probe")
+
+        with (
+            mock.patch.object(bench, "_wait_disconnected", new=wait_disconnected),
+            mock.patch.object(bench, "_wait_advertisement", new=wait_advertisement),
+            mock.patch.object(bench, "_connect", new=connect),
+            mock.patch.object(bench, "_negotiate", new=forbidden_negotiate),
+        ):
+            returned = asyncio.run(helper(state, "PyBLE-1234"))
+
+        self.assertIs(returned, new_central)
+        self.assertIs(state.central, new_central)
+        self.assertEqual(events[0][0:2], ("command", bench.wire.OP_SOFT_REBOOT))
+        self.assertEqual(
+            [event[0] for event in events],
+            ["command", "disconnected", "advertisement", "connect"],
+        )
+
+
 class FakeConfigurationCentral:
     def __init__(self, bench, configuration, events):
         self.bench = bench
