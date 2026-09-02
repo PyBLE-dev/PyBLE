@@ -20,6 +20,7 @@ code (PRD §1B.7). These drivers are that demo, made repeatable.
 | `file_roundtrip_bench.py` | Upload/download regression bench for the reported 11.9 KiB stall: consumes HELLO caps, supports an exact canonical `--expect-chip`, and now requires contiguous unique GET offsets plus exact bytes/size/CRC. |
 | `target_smoke.py` | Target-neutral service/HELLO/DEVICE_INFO/INFO identity smoke. It requires an explicit expected chip, defaults the expected agent to `versions.lock`, and excludes BLE address, device ID, and label from its result line. |
 | `target_run_stop.py` | Target-neutral busy-loop and print-flood RUN/STOP lifecycle bench. It proves one matching `RSP{OK}` before one idle event in less than 500 ms, then runs a bounded same-link console nonce before file-mode cleanup. |
+| `v061_hardening_bench.py` | Exact-profile v0.6.1 physical hardening orchestrator. It executes the seven frozen scenarios in order, including exactly 50 sequential RUNs, validates both separately acquired sacrificial workspace receipts, and writes a candidate-bound canonical private result plus redacted raw log without replacement. |
 
 ## Prerequisites (HIL runner only)
 
@@ -28,12 +29,40 @@ python3 -m pip install bleak pyserial
 ```
 
 Plus a board flashed with the exact firmware candidate under test. v0.6.0 is
-one atomic five-profile matrix, in this order: `esp32-4mb`,
+the qualified baseline; v0.6.1 repeats one fresh atomic five-profile matrix in
+this same order: `esp32-4mb`,
 `esp32-s3-n16r8`, `waveshare-esp32-s3-lcd-147b`, `esp32-c3-4mb`, and
 `rpi-pico2-w`. Run them sequentially when USB capacity is limited; they do not
 need to be connected simultaneously. A missing profile blocks the whole
 release. Neither a serial-port name nor a chip family alone proves the required
 board, flash, PSRAM, or provisioning profile.
+
+## v0.6.1 hardening qualification
+
+Each exact profile requires one new private result from
+`v061_hardening_bench.py`. The live portion proves, in order,
+`transport-session`, `fragment-hardening`, `run-isolation`,
+`resource-stability`, `stdin-isolation`, `configuration-durability`, and
+`filesystem-hardening`. Resource stability is exactly 50 sequential runs.
+Configuration durability includes label and autorun persistence/restoration
+and Identify persistence/restoration when the profile advertises Identify.
+
+Workspace first-boot behavior occurs before BLE service startup and is
+therefore acquired separately on sacrificial media. Before the live run,
+retain one candidate-bound canonical receipt/raw log for erased-media LFS2
+creation and one for nonblank incompatible-media refusal. Do not erase or
+modify a user's working board to obtain either result. `NOT-RUN`, reused
+v0.6.0 evidence, a receipt from another profile, or a configuration-corruption
+test cannot qualify v0.6.1.
+
+The live runner receives the protected candidate directory, exact profile,
+private BLE address, both receipt paths, and new raw-log/output paths. It emits
+no passing result unless all seven live scenarios and both pre-service
+receipts pass against the same v0.6.1 candidate. The output and log are
+exclusive mode-`0600` files and must remain outside Git. The release workflow
+passes the result to `create-hil-completion`; the operator input never contains
+the derived hardening check or summary. Finalization reopens all five private
+results, so copying a result line or editing HIL Markdown is not evidence.
 
 For controlled reset samples, select an explicit USB serial adapter for the
 same board. The orchestrator uses the common ESP development-board wiring:
@@ -300,9 +329,9 @@ python3 ../../../firmware/scripts/release_bundle.py \
     <private>/esp32-c3-4mb-private-result.json
 ```
 
-The workflow-contract host test remains deliberately RED until these two safe
-writers land. Do not work around it by hand-authoring a private result,
-`profile_gate_summary`, candidate digest, or artifact digest.
+These safe writers are the only supported path. Do not work around them by
+hand-authoring a private result, `profile_gate_summary`, candidate digest, or
+artifact digest.
 
 After exactly five fragments exist, create the completed report without
 editing Markdown:

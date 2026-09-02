@@ -150,11 +150,46 @@ the complete GP2 matrix remain release-blocking.
 
 ## P9. Build & provisioning contract (RP2-BLD, FROZEN)
 
-Board `PYBLE_RPI_PICO2_W`; overlay `firmware/board_overlays/rpi-pico2-w/` (five files: `mpconfigboard.cmake`, `mpconfigvariant.cmake`, `mpconfigboard.h`, `manifest.py`, `_boot.py`); `build_rp2.sh` with the same `--plan`/fail-clean contract as `build.sh`; pinned **ARM GNU 14.2.Rel1** via `versions.lock [arm_gnu_toolchain]` (verify-or-fail, never a silent substitution — BLD-4 equivalent; the unpinned Homebrew arm-none-eabi-gcc on PATH must never be selected); BUILD dir outside the submodule; artifacts `firmware.uf2` (primary), `firmware.elf`, `firmware.bin`, provenance JSON (`port: "rp2"`); hard image-size gate **≤ 1,572,864 bytes**; flash = `picotool load -v -x`; BOOTSEL re-entry = `picotool reboot -f -u` or BLE RUN of `machine.bootloader()`.
+Board `PYBLE_RPI_PICO2_W`; overlay `firmware/board_overlays/rpi-pico2-w/` (five files: `mpconfigboard.cmake`, `mpconfigvariant.cmake`, `mpconfigboard.h`, `manifest.py`, `_boot.py`); `build_rp2.sh` with the same `--plan`/fail-clean contract as `build.sh`; pinned **ARM GNU 14.2.Rel1** via `versions.lock [arm_gnu_toolchain]` (verify-or-fail, never a silent substitution — BLD-4 equivalent; the unpinned Homebrew arm-none-eabi-gcc on PATH must never be selected); BUILD dir outside the submodule; artifacts `firmware.uf2` (primary), `firmware.elf`, `firmware.bin`, `firmware.elf.map`, provenance JSON (`port: "rp2"`); hard image-size gate **≤ 1,572,864 bytes**; flash = `picotool load -v -x`; BOOTSEL re-entry = `picotool reboot -f -u` or BLE RUN of `machine.bootloader()`.
 
 The installer default `firmware/.arm-gnu/` is a gitignored, pinned third-party
 compiler tree. Authored-source gates MUST prune that exact root, as they do
 `firmware/.esp-idf`, while similarly named authored paths remain in scope.
+
+**v0.6.1 deterministic picotool amendment.** `versions.lock [picotool]` pins
+the official Raspberry Pi Pico SDK Tools macOS distribution at picotool
+`2.3.0`: tag `v2.3.0-0`, archive `picotool-2.3.0-mac.zip`, exact archive byte
+length `1980457`, and archive SHA-256
+`085ea99ccc2d64309e967a72e307fb113838713a46ba45bf7e156e519cca7d8e`.
+The lock also binds source tag `2.3.0` at commit
+`6f6458d792b93685a11423b244a585eaa99eafcf`, distribution commit
+`ad9e4a8375253cf4886bf168ea1a8d2746aadf24`, extracted executable SHA-256
+`a4b3c4e64dea7b99e810c5c777bf13fb2722b8d0355e0b64a28244ddc1b0f8b5`,
+and CMake package-config SHA-256
+`ca12b6fee18e6583713cfdcb2e81886aaee741d40304ea2cc88c4f5b2df2b6c3`.
+The installer MUST verify the archive topology, byte length, digests,
+executable mode, and exact locked version line before atomically publishing
+the gitignored `firmware/.picotool/` tree. It MUST reject links, special files,
+duplicate or escaping members, unexpected top-level entries, partial trees,
+and pre-existing mismatched destinations without leaving build state.
+
+Every RP2 build MUST select the verified executable and
+`picotoolConfig.cmake` from that explicit tree, set `picotool_DIR` to the
+verified package directory, and disable CMake FetchContent network fallback.
+An ambient `picotool`, Homebrew package, PATH order, CMake package registry,
+or SDK auto-download is never a reproducibility input. The provenance record
+MUST contain the exact locked version line obtained from the verified binary.
+The build-tool archive and extracted tree are Eligible Compilation inputs,
+not installable firmware components; their source/license disposition remains
+part of the RP2 license audit.
+
+Pull requests MUST run one real `rpi-pico2-w` build in an isolated
+`macos-15` arm64 CI job after the source and host gates. That job installs both
+pinned tools, initializes the exact retained RP2 submodules, rejects any other
+host/architecture, runs `build_rp2.sh rpi-pico2-w`, and retains
+`firmware.uf2`, `firmware.bin`, `firmware.elf`, `firmware.elf.map`, and the
+provenance JSON. Authored-source/no-leak/SPDX gates may prune only the exact
+`.picotool` root; similarly named authored paths remain in scope.
 
 **Release-history ruling (recorded 2026-08-11):** the published v0.4.2 ESP32
 bytes and their evidence remain immutable. `[targets_rp2]` and
@@ -216,8 +251,11 @@ check remains exact.
   browser-verified exact UF2 download and manual BOOTSEL copy; and an
   interrupted/failed-copy recovery using the same verified UF2. *Verify:
   HIL/size/app/provisioning.* "Hardware-tested"/supported flips ONLY when GP2
-  and the common v0.6.0 release gates pass. Until then the profile remains a
-  visibly pending candidate, never an active qualified selector.
+  and the common exact-version release gates pass. The v0.6.0 result is the
+  qualified baseline; the v0.6.1 refresh remains pending until its fresh
+  candidate-bound build, seven-scenario hardening, workspace-provisioning,
+  app, and physical rows all pass. Until then the v0.6.1 profile is never an
+  active qualified selector.
 
 ### P10.1 v0.6.0 release evidence (FROZEN by ADR-0033)
 

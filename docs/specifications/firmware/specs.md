@@ -1484,6 +1484,100 @@ MUST provide a fresh physical power-cycle observation for its exact candidate;
 the common observation validator MUST reject a lineage summary when the
 selected firmware version is v0.6.1.
 
+##### v0.6.1 hardening result
+
+Every v0.6.1 V5 profile additionally requires one private, canonical,
+exclusive-created mode-`0600` hardening result. The exact top-level keys are:
+
+```text
+schema_version
+measurement_contract
+profile_id
+target
+firmware_version
+source_commit
+candidate_release_json_sha256
+install_sha256
+qualification_source_commit
+qualification_executable_sha256
+scenario_order
+scenarios
+workspace_provisioning
+raw_log_sha256
+status
+```
+
+`schema_version` is integer `1`; `measurement_contract` is exactly
+`v061-hardening-seven-scenario-v1`; `firmware_version` is exactly `0.6.1`;
+and `status` is `passed`. Profile, target, selected source commit, protected
+candidate `release.json`, and profile install digest MUST match one immutable
+candidate. The qualification source and executable digests bind the reviewed
+post-freeze runner that produced the result. The raw log is separately
+exclusive-created, redacted, canonical JSON Lines; its lowercase SHA-256 is
+bound by the result.
+
+`scenario_order` and the insertion order of `scenarios` are exactly:
+
+```json
+[
+  "transport-session",
+  "fragment-hardening",
+  "run-isolation",
+  "resource-stability",
+  "stdin-isolation",
+  "configuration-durability",
+  "filesystem-hardening"
+]
+```
+
+Each scenario object has exactly `status: "passed"`, except
+`resource-stability`, which additionally has exactly
+`sequential_runs: 50`. Configuration durability proves valid/rejected label
+bytes, label and advertisement persistence, autorun persistence and
+restoration, and, when `has_identify=1`, Identify configuration persistence
+and restoration. A profile which does not advertise Identify records no
+invented Identify pass. A scenario may not be omitted, reordered, retried into
+a pass, or replaced by host/model evidence.
+
+`workspace_provisioning` has exactly `erased-media-first-boot` and
+`nonblank-media-refusal`, in that order. Each value has exactly
+`status: "passed"`, `receipt_sha256`, and `raw_log_sha256`. Each receipt is a
+separate canonical, exclusive-created mode-`0600` result from a sacrificial
+physical-media boot using the same profile and candidate; it binds the same
+version/source/candidate/install identities and its exclusive raw boot log.
+The erased-media result proves one allowed LFS2 format/remount and subsequent
+advertisement. The nonblank result proves no format/write, one bounded
+recovery message, and no agent/autorun advertisement. `NOT-RUN`, a shared
+receipt, a non-sacrificial observation, a configuration-corruption proxy, or
+an observation from another profile/candidate fails closed.
+
+For v0.6.1 only, each protected candidate V5 record adds
+`v061_hardening: null` and `checks.v061_hardening: "pending"`. The mechanical
+completion path replaces those with `checks.v061_hardening: "passed"` and a
+privacy-safe `v061_hardening` object having exactly:
+
+```text
+measurement_contract
+scenario_order
+scenarios
+sequential_runs
+workspace_provisioning
+private_result_sha256
+```
+
+The summary repeats the exact contract/order, maps every scenario and both
+workspace observations to `passed`, records `sequential_runs: 50`, and binds
+the complete private result by lowercase SHA-256. It exposes no address,
+device ID, label, media bytes, raw log, console payload, or exception text.
+An operator input cannot contain either the check or summary.
+`create-hil-completion` validates and derives them from the selected profile's
+private result; report assembly requires five distinct matching results; and
+finalization reopens and revalidates exactly those five private files before
+publishing. Missing, extra, duplicated, swapped, reordered, changed, stale, or
+identity-inconsistent input produces no completed/public output. The
+historical v0.6.0 V5 record keys, seven-check map, completion fragments, and
+rendered bytes remain unchanged; no hardening field may appear there.
+
 #### 5.3.5 v0.6.0 five-profile successor policy and evidence
 
 ADR-0033 adds a successor contract without reinterpreting §§5.3.1–5.3.4.
@@ -2102,7 +2196,9 @@ These are tracked, release-blocking where noted; they MUST be closed before the 
   in §5.3. Reset and goodput are fixed; rederived static image/headroom and
   heap values plus final evidence remain open. The v0.6.1 increment closes only when
   all five ordered profiles have one committed schema-3 policy row and passing
-  final-candidate V5 evidence, including C3-G0…C3-G6 and Pico GP2. That state
+  final-candidate V5 evidence, including C3-G0…C3-G6, Pico GP2, and each
+  profile's candidate-bound seven-scenario hardening result plus both
+  sacrificial workspace-provisioning receipts. That state
   MUST be described as **“qualified for the five-profile v0.6.1 release”**,
   not as universal future-board qualification. — *(verify: size, build, HIL)*
 - **OI-2 — v0.4.2 pin selection is closed; current-candidate selection and

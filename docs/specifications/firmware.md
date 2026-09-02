@@ -229,14 +229,21 @@ contract, and HIL matrix live in
   matrix remains `esp32`, lean `esp32-s3`, exact-board
   `waveshare-esp32-s3-lcd-147b`, and `esp32-c3`). `versions.lock` gains
   `[targets_rp2]` (PyBLE
-  target → upstream rp2 board) and `[arm_gnu_toolchain]` (pinned ARM GNU
+  target → upstream rp2 board), `[arm_gnu_toolchain]` (pinned ARM GNU
   release + SHA-256; the build verifies the compiler version and fails cleanly
-  on mismatch — never a silent substitution, BLD-4 equivalent). pico-sdk,
+  on mismatch — never a silent substitution, BLD-4 equivalent), and
+  `[picotool]` (official macOS package, archive/extracted-file identities,
+  exact version line, source/distribution commits, and package-config path).
+  The RP2 build supplies the verified package through explicit
+  `picotool_DIR`, disables FetchContent fallback, and rejects an ambient PATH,
+  Homebrew, CMake-registry, or SDK-downloaded picotool. pico-sdk,
   BTstack, cyw43-driver etc. are pinned transitively as `lib/` submodules of
   the one `[micropython]` commit — no new external pin. Artifacts:
   `firmware.uf2` (primary, BOOTSEL/picotool-flashable), `firmware.elf`,
-  `firmware.bin`, provenance JSON (`port: "rp2"`), with a hard image-size gate
-  of 1,572,864 bytes.
+  `firmware.bin`, `firmware.elf.map`, provenance JSON (`port: "rp2"`), with a
+  hard image-size gate of 1,572,864 bytes. Pull requests run this as a real
+  isolated `macos-15` arm64 build and retain all five outputs; a plan-only or
+  host-model check cannot satisfy the fifth-profile build gate.
 - The first source identity that combines this RP2 port with the four existing
   ESP build variants is agent version **0.6.0**. Version `0.5.1` remains the
   earlier Waveshare/ESP source candidate and MUST NOT be retagged with different

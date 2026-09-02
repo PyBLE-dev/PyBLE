@@ -1938,6 +1938,30 @@ evidence, copies candidate-frozen fields from the pending report, derives the
 footprint/reliability pass from validated observations, and emits the completed
 source-era report atomically before finalization.
 
+For exact version `0.6.1`, the protected V5 record also starts with
+`v061_hardening: null` and a pending hardening check. The physical hardening
+runner receives the protected candidate, the exact profile, two separately
+acquired candidate-bound sacrificial workspace receipts, a new raw-log path,
+and a new result path. It runs the seven scenarios in the frozen order,
+including exactly 50 sequential RUNs, broad configuration durability, and
+filesystem hardening; validates both workspace receipts; then publishes one
+canonical mode-`0600` private result without replacement. Any failed or
+interrupted operation retains no passing result.
+
+`create-hil-completion` opens and validates that profile's private hardening
+result alongside the OI observation and existing target gate result. It
+derives the public hardening summary and check; neither may occur in operator
+input. `assemble-hil-report` accepts exactly five distinct completion
+fragments and preserves each derived private-result digest. The v0.6.1
+finalizer additionally receives exactly five private hardening-result paths,
+reopens each as a stable regular mode-`0600` file, revalidates its canonical
+bytes and candidate/profile/install/qualification identities, and requires its
+digest and derived summary to equal the completed report. It repeats those
+snapshots immediately before atomic publication so a post-validation mutation
+cannot pass. A missing, extra, duplicated, swapped, stale, reordered, or
+mutated file leaves no public output. Version `0.6.0` takes none of these
+inputs and retains its historical V5 record/completion byte shape unchanged.
+
 The validator recomputes image/headroom arithmetic, sample counts, heap
 minima, latency maximum, goodput from recorded durations, threshold
 comparisons, reliability totals, and the profile-exact transfer-link facts. It
