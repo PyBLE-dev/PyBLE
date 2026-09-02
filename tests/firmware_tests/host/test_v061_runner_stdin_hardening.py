@@ -16,6 +16,7 @@ from __future__ import annotations
 import os
 import sys
 import unittest
+from unittest import mock
 
 
 HOST_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -68,6 +69,24 @@ def drain(testcase, console, limit=300):
 
 
 class PortableConsoleBoundaryTests(unittest.TestCase):
+    def test_terminal_clear_reuses_preallocated_ring_under_memory_pressure(self):
+        console = make_console(self)
+        console.begin_input()
+        console.feed_input(b"queued")
+        module = CONSOLE.obj(
+            self, "v0.6.1 terminal stdin clear is allocation-free")
+
+        with mock.patch.object(
+                module, "bytearray", side_effect=MemoryError("injected"),
+                create=True):
+            console.end_input()
+
+        self.assertEqual(
+            drain(self, console), b"",
+            "an acknowledged STOP/SOFT terminal cut cannot lose its effect to "
+            "a replacement-ring allocation",
+        )
+
     def test_idle_input_is_discarded_without_a_response(self):
         console = make_console(self)
         self.assertIsNone(console.feed_input(b"idle"))
@@ -131,6 +150,51 @@ class PortableConsoleBoundaryTests(unittest.TestCase):
 class PortableAgentBoundaryTests(agent_support.AgentTestBase):
     """Exercise the real Agent callbacks, not just the Console primitive."""
 
+    def rotate_session_at_event_tx(self, link, opcode):
+        """Install one exact cut between logical EVT creation and link TX."""
+        original_send = link.send_message
+        observed = {
+            "rotated": False,
+            "origin": link.session_token(),
+            "expected_session": None,
+        }
+
+        def send_after_rotation(msg, on_published=None, expected_session=None):
+            frame = agent_support.pyble_proto.decode(bytes(msg))
+            if (not observed["rotated"] and frame.type == agent_support.EVT
+                    and frame.opcode == opcode):
+                observed["expected_session"] = expected_session
+                link.disconnect_cb()
+                link.session += 1
+                link.connect_cb()
+                observed["rotated"] = True
+            return original_send(
+                msg,
+                on_published=on_published,
+                expected_session=expected_session,
+            )
+
+        link.send_message = send_after_rotation
+        return observed
+
+    def assert_old_event_was_not_retargeted(self, link, observed, *opcodes):
+        self.assertTrue(
+            observed["rotated"],
+            "the deterministic disconnect/reused-session TX cut did not run",
+        )
+        self.assertEqual(
+            observed["expected_session"], observed["origin"],
+            "the logical event must carry its creation session through the "
+            "single expected_session TX chokepoint",
+        )
+        for opcode in opcodes:
+            with self.subTest(opcode=opcode):
+                self.assertEqual(
+                    agent_support.evts(link, opcode=opcode), [],
+                    "an event created for the predecessor session was retargeted "
+                    "to a reused successor session",
+                )
+
     def test_agent_discards_idle_console_input(self):
         agent, link = self.new_agent("v0.6.1 idle CONSOLE_INPUT discard")
         agent_support.send(self, link, 0x31, b"idle", id_=201)
@@ -193,6 +257,141 @@ class PortableAgentBoundaryTests(agent_support.AgentTestBase):
         self.assertEqual(drain(self, agent.console), b"")
         agent_support.send(self, link, 0x31, b"after-terminal", id_=217)
         self.assertEqual(drain(self, agent.console), b"")
+
+    def test_natural_run_state_keeps_its_creation_session_through_tx(self):
+        agent, link = self.new_agent(
+            "v0.6.1 portable RUN_STATE exact-session event ownership")
+        observed = self.rotate_session_at_event_tx(link, 0x40)
+
+        agent._emit_run_state(2)
+
+        self.assert_old_event_was_not_retargeted(link, observed, 0x40)
+
+    def test_console_chunk_keeps_its_creation_session_through_tx(self):
+        agent, link = self.new_agent(
+            "v0.6.1 portable CONSOLE_DATA exact-session event ownership")
+        agent.console.set_run_active(True)
+        observed = self.rotate_session_at_event_tx(link, 0x30)
+
+        agent.console.out(0, b"predecessor-console")
+
+        self.assert_old_event_was_not_retargeted(link, observed, 0x30)
+
+    def test_put_ack_keeps_the_mailbox_items_creation_session_through_tx(self):
+        agent, link = self.new_agent(
+            "v0.6.1 portable FILE_PUT_ACK exact-session event ownership")
+        data = b"A"
+        agent_support.send(
+            self,
+            link,
+            0x15,
+            agent_support.p_put_begin(
+                len(data), agent_support.pyble_proto.crc32(data),
+                "/session-ack.bin"),
+            id_=225,
+        )
+        agent.poll()
+        begin = agent_support.rsps(link, opcode=0x15, id_=225)
+        self.assertEqual(len(begin), 1)
+        self.assertEqual(begin[0].payload[0], agent_support.OK)
+        link.sent[:] = []
+        observed = self.rotate_session_at_event_tx(link, 0x41)
+
+        agent_support.send(
+            self, link, 0x16, b"\x00\x00\x00\x00" + data, id_=226)
+        agent.poll()
+
+        self.assert_old_event_was_not_retargeted(link, observed, 0x41)
+
+    def test_get_events_keep_the_transfer_creation_session_through_tx(self):
+        agent, link = self.new_agent(
+            "v0.6.1 portable FILE_GET exact-session event ownership")
+        with open(os.path.join(self.root, "session-get.bin"), "wb") as stream:
+            stream.write(b"GET")
+        agent_support.send(
+            self, link, 0x12,
+            agent_support.p_get_begin(0, "/session-get.bin"), id_=227)
+        begin = agent_support.rsps(link, opcode=0x12, id_=227)
+        self.assertEqual(len(begin), 1)
+        self.assertEqual(begin[0].payload[0], agent_support.OK)
+        link.sent[:] = []
+        observed = self.rotate_session_at_event_tx(link, 0x13)
+
+        agent.poll()
+
+        self.assert_old_event_was_not_retargeted(link, observed, 0x13, 0x14)
+
+    def test_natural_terminal_cannot_clear_or_reclassify_a_successor_run(self):
+        agent, link = self.new_agent(
+            "v0.6.1 portable terminal/successor stdin linearization")
+        agent_support.send(
+            self, link, 0x20, bytes((1,)) + b"pass", id_=218)
+
+        original_finished = agent._runner.rsm.on_finished
+        injected = [False]
+
+        def finish_then_admit_successor(ok):
+            terminal = original_finished(ok)
+            if not injected[0]:
+                injected[0] = True
+                # A scheduled BTstack callback may run at this exact Python
+                # bytecode boundary: predecessor state is terminal/admissible,
+                # but its console cleanup/event publication has not happened.
+                agent_support.send(
+                    self, link, 0x20, bytes((1,)) + b"pass", id_=219)
+                agent_support.send(self, link, 0x31, b"successor", id_=220)
+            return terminal
+
+        agent._runner.rsm.on_finished = finish_then_admit_successor
+        agent.poll()
+
+        successor = agent_support.rsps(link, opcode=0x20, id_=219)
+        self.assertEqual(len(successor), 1)
+        self.assertEqual(successor[0].payload, b"\x00")
+        self.assertEqual(
+            agent_support.run_states(link), [1, 2],
+            "the predecessor terminal event must retain its captured DONE value "
+            "even after a successor reserves RUNNING",
+        )
+        self.assertEqual(
+            drain(self, agent.console), b"successor",
+            "predecessor terminal cleanup must not erase the successor run's "
+            "already-admitted stdin",
+        )
+
+    def test_stopped_terminal_cannot_clear_a_successor_run(self):
+        agent, link = self.new_agent(
+            "v0.6.1 portable stopped-terminal/successor stdin linearization")
+        agent_support.send(
+            self, link, 0x20, bytes((1,)) + b"pass", id_=221)
+        agent_support.send(self, link, 0x21, id_=222)
+
+        original_stopped = agent._runner.rsm.on_stopped
+        injected = [False]
+
+        def stop_then_admit_successor():
+            terminal = original_stopped()
+            if not injected[0]:
+                injected[0] = True
+                agent_support.send(
+                    self, link, 0x20, bytes((1,)) + b"pass", id_=223)
+                agent_support.send(self, link, 0x31, b"successor", id_=224)
+            return terminal
+
+        agent._runner.rsm.on_stopped = stop_then_admit_successor
+        agent.poll()
+
+        successor = agent_support.rsps(link, opcode=0x20, id_=223)
+        self.assertEqual(len(successor), 1)
+        self.assertEqual(successor[0].payload, b"\x00")
+        self.assertEqual(
+            agent_support.run_states(link), [0],
+            "a pre-pickup STOP emits only the captured predecessor IDLE",
+        )
+        self.assertEqual(
+            drain(self, agent.console), b"successor",
+            "the predecessor IDLE cleanup must not erase successor stdin",
+        )
 
 
 if __name__ == "__main__":

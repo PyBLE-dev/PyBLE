@@ -32,6 +32,7 @@ import _support  # noqa: E402
 
 
 BOOT = _support.RedReason("pyble_boot", owner="rp2-agent-engineer")
+WORKSPACE = _support.RedReason("pyble_workspace", owner="v0.6.1-storage-engineer")
 
 BLOCK_COUNT_IOCTL = 4
 BLOCK_SIZE_IOCTL = 5
@@ -45,8 +46,18 @@ class FakeBlockDevice:
 
     def __init__(self, blocks, read_error_at=None, ioctl_error=None,
                  count_override=None, size_override=None, read_error=None,
-                 read_return=None, wrong_size_at=None, partial_at=None):
-        self.blocks = [bytes(block) for block in blocks]
+                 read_return=None, wrong_size_at=None, partial_at=None,
+                 block_size=4096):
+        if any(len(block) > block_size for block in blocks):
+            raise ValueError("fixture block exceeds its declared geometry")
+        # Use an LFS2-compatible default geometry even when a test spells only
+        # the significant prefix of a block. This keeps ordinary recovery
+        # cases realistic while dedicated cases can select hostile geometry.
+        self.blocks = [
+            bytes(block) + b"\xff" * (block_size - len(block))
+            for block in blocks
+        ]
+        self.block_size = block_size
         self.read_error_at = read_error_at
         self.read_error = read_error
         self.ioctl_error = ioctl_error
@@ -71,7 +82,7 @@ class FakeBlockDevice:
         if command == BLOCK_SIZE_IOCTL:
             if self.size_override is not None:
                 return self.size_override
-            return len(self.blocks[0]) if self.blocks else 0
+            return self.block_size if self.blocks else 0
         return None
 
     def readblocks(self, block_number, destination):
@@ -132,6 +143,16 @@ def fake_vfs(constructor_effects, mkfs_effect=None):
 class MountLfs2RecoveryTest(unittest.TestCase):
     def mount_fn(self, criterion):
         return BOOT.attr(self, "mount_lfs2", criterion)
+
+    def test_pico_reexports_the_single_shared_workspace_mount_decision(self):
+        shared = WORKSPACE.attr(
+            self, "mount_lfs2", "v0.6.1 shared LFS2 recovery authority")
+        self.assertIs(
+            self.mount_fn("v0.6.1 Pico uses shared LFS2 recovery authority"),
+            shared,
+            "Pico and ESP boot must not drift into different erased-media "
+            "format decisions",
+        )
 
     def test_healthy_mount_does_not_inspect_or_format_storage(self):
         mounted = object()
@@ -274,6 +295,7 @@ class MountLfs2RecoveryTest(unittest.TestCase):
         cases = (
             (dict(ioctl_error=OSError(errno.EIO, "ioctl")), "ioctl failure"),
             (dict(count_override=0), "zero block count"),
+            (dict(count_override=1), "one block cannot hold a metadata pair"),
             (dict(size_override=0), "zero block size"),
         )
         for kwargs, label in cases:
@@ -287,6 +309,34 @@ class MountLfs2RecoveryTest(unittest.TestCase):
                             bdev, vfs_module, progsize=256)
                 self.assertEqual(state.mkfs_calls, [])
                 self.assertEqual(len(state.constructor_calls), 1)
+                self.assertEqual(bdev.write_calls, [])
+
+    def test_positive_but_lfs_incompatible_geometry_never_formats(self):
+        # MicroPython derives cache_size as
+        # min(block_size, 4 * max(readsize=32, progsize)). LittleFS requires
+        # cache % readsize == 0, cache % progsize == 0, block % cache == 0,
+        # and block >= 128. Positive integers alone are therefore insufficient
+        # authority for the destructive first-use format path.
+        cases = (
+            (64, 32, "block below LittleFS minimum"),
+            (128, 256, "cache is not a multiple of progsize"),
+            (1280, 256, "block is not a multiple of derived cache"),
+        )
+        for block_size, progsize, label in cases:
+            with self.subTest(label=label):
+                bdev = FakeBlockDevice(
+                    [b"\xff", b"\xff"], block_size=block_size)
+                vfs_module, state = fake_vfs(
+                    [OSError(errno.EIO, "mount failed"), object()])
+
+                with self.assertRaises(ValueError):
+                    self.mount_fn(
+                        "v0.6.1 LFS-incompatible geometry is fail-closed")(
+                            bdev, vfs_module, progsize=progsize)
+
+                self.assertEqual(state.mkfs_calls, [])
+                self.assertEqual(len(state.constructor_calls), 1)
+                self.assertEqual(bdev.read_calls, [])
                 self.assertEqual(bdev.write_calls, [])
 
     def test_unexpected_constructor_exception_propagates_without_scan(self):
@@ -304,7 +354,7 @@ class MountLfs2RecoveryTest(unittest.TestCase):
                 self.assertEqual(state.mkfs_calls, [])
 
     def test_mkfs_failure_does_not_attempt_a_remount(self):
-        bdev = FakeBlockDevice([b"\xff" * 8])
+        bdev = FakeBlockDevice([b"\xff" * 8, b"\xff" * 8])
         mkfs_error = OSError(errno.EIO, "mkfs failed")
         vfs_module, state = fake_vfs(
             [OSError(errno.EIO, "unformatted")], mkfs_effect=mkfs_error)
