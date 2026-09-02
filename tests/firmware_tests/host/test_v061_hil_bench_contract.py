@@ -259,8 +259,20 @@ class V061HilBenchContractTests(unittest.TestCase):
             "ST_EBADREQ",
             "ST_EUNSUPPORTED",
             "disconnect",
+            "_set_vm_rotation_sentinel",
+            "_soft_reboot_connect_unnegotiated",
+            "_assert_vm_rotation_sentinel_absent",
         ):
             self.assertIn(token, transport)
+        reboot = transport.find("_soft_reboot_connect_unnegotiated")
+        pre_hello = transport.find('"post-VM-reset pre-HELLO DEVICE_INFO"')
+        renegotiate = transport.find("_negotiate(state)", pre_hello)
+        freshness = transport.find("_assert_vm_rotation_sentinel_absent")
+        self.assertTrue(
+            -1 < reboot < pre_hello < renegotiate < freshness,
+            "transport-session must prove VM rotation, reject a pre-HELLO "
+            "command, negotiate, then prove volatile state was cleared",
+        )
         for token in (
             "wire.encode",
             "TYPE",
@@ -290,10 +302,15 @@ class V061HilBenchContractTests(unittest.TestCase):
             bench.run_stdin_isolation: (
                 "OP_CONSOLE_INPUT",
                 "OP_STOP",
+                "OP_SOFT_REBOOT",
                 "idle",
                 "terminal",
                 "disconnect",
                 "overflow",
+                "soft-reboot",
+                "reboot-stale",
+                "reboot-fresh",
+                "_soft_reboot_connect_unnegotiated",
             ),
             bench.run_label_durability: (
                 "OP_SET_LABEL",
