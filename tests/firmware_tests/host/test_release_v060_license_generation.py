@@ -416,6 +416,35 @@ class V060LicenseGenerationTests(unittest.TestCase):
             )
         self.assertEqual(verified, inventory)
 
+    def test_v061_generation_and_replay_bind_the_selected_source_version(self) -> None:
+        lock_path = self.fixture.repo / "firmware" / "versions.lock"
+        lock_text = lock_path.read_text(encoding="utf-8", errors="strict")
+        self.assertEqual(lock_text.count('agent_version = "0.6.0"'), 1)
+        lock_path.write_text(
+            lock_text.replace(
+                'agent_version = "0.6.0"',
+                'agent_version = "0.6.1"',
+            ),
+            encoding="utf-8",
+        )
+
+        with mock.patch.object(
+            RELEASE,
+            "_audit_verify_release_inventory_evidence",
+            side_effect=lambda **_kwargs: None,
+        ) as verifier:
+            self.fixture.audit(verifier_side_effect=self.semantic_replay)
+
+        inventory = self.assert_canonical(
+            self.fixture.evidence / "release-inventory.json"
+        )
+        self.assertEqual(inventory["firmware_version"], "0.6.1")
+        verifier.assert_called_once()
+        self.assertEqual(
+            verifier.call_args.kwargs["firmware_version"],
+            "0.6.1",
+        )
+
     def test_exact_esp_review_bytes_survive_cross_process_semantic_replay(self) -> None:
         self.fixture.audit(verifier_side_effect=self.semantic_replay)
         expected_path = self.fixture.root / "expected-esp-review-sha256.json"

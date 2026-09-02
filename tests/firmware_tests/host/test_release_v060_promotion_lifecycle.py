@@ -72,7 +72,7 @@ def build_measurement(profile_id: str) -> dict[str, int]:
     }
 
 
-def pending_v5_payload() -> dict[str, object]:
+def pending_v5_payload(version: str = "0.6.0") -> dict[str, object]:
     policy = lifecycle_fixture.schema3_policy()
     policy_by_id = {item["profile_id"]: item for item in policy["profiles"]}
     profiles = {
@@ -96,8 +96,8 @@ def pending_v5_payload() -> dict[str, object]:
             "module_marking": "",
             "device_flash_capacity_bytes": 0,
             "device_psram_capacity_bytes": 0,
-            "firmware_version": "0.6.0",
-            "tag": "firmware-v0.6.0",
+            "firmware_version": version,
+            "tag": "firmware-v%s" % version,
             "source_commit": "1" * 40,
             "install_sha256": profile["install"]["sha256"],
             "tested_at": "",
@@ -369,6 +369,59 @@ class V5CompletionAndPromotionContractTests(unittest.TestCase):
                     profile_qualification_result=result_path,
                 )
             self.assertEqual(payload, json.loads(output.read_text(encoding="utf-8")))
+
+    def test_completion_writer_propagates_v061_without_v060_substitution(self) -> None:
+        pending = pending_v5_payload("0.6.1")
+        release = {
+            "identity": {"version": "0.6.1", "tag": "firmware-v0.6.1"},
+            "provenance": {"pyble": {"commit": real_source_commit()}},
+            "profiles": lifecycle_fixture.pending_profiles(),
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            candidate = root / "candidate"
+            candidate.mkdir()
+            (candidate / "release.json").write_bytes(b"{}\n")
+            (candidate / "HIL_REPORT.md").write_text(
+                hil_report(pending), encoding="utf-8"
+            )
+            provision_qualification_root(root)
+            profile_id = "esp32-4mb"
+            operator_path = root / "operator.json"
+            observation_path = root / "observation.json"
+            output = root / "completion.json"
+            write_json(operator_path, operator_input(profile_id))
+            write_json(observation_path, {"fixture": profile_id})
+
+            with mock.patch.object(
+                RELEASE, "validate_bundle", return_value=release
+            ), mock.patch.object(
+                RELEASE,
+                "_validate_qualification_observation",
+                side_effect=lambda value, *_args, **_kwargs: value,
+            ) as validate_observation:
+                created = RELEASE.create_hil_completion_fragment(
+                    candidate_dir=candidate,
+                    profile_id=profile_id,
+                    operator_input_path=operator_path,
+                    oi1_observation_path=observation_path,
+                    output_path=output,
+                    qualification_repo_root=root,
+                    profile_qualification_result=None,
+                )
+
+            self.assertEqual(Path(created), output)
+            self.assertEqual(
+                json.loads(output.read_text(encoding="utf-8")),
+                completion_fragment(profile_id),
+            )
+            self.assertTrue(
+                any(
+                    call.kwargs.get("firmware_version") == "0.6.1"
+                    for call in validate_observation.call_args_list
+                ),
+                "the candidate version must reach observation validation",
+            )
 
     def test_completion_writer_rejects_operator_gate_fields_or_wrong_private_phase(
         self,
