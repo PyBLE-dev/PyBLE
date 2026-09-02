@@ -296,7 +296,12 @@ and handler-free. A structural failure may receive `EBADREQ` only when a safe
 complete header identifies a v1 `CMD` with nonzero ID. Before HELLO succeeds,
 response-bearing non-HELLO commands MUST return `EBADREQ`, while the two
 response-free opcodes are silently side-effect-free. Unknown opcodes after
-negotiation remain `EUNSUPPORTED`. — *(source: [protocol.md §3](../protocol.md#3-framing),
+negotiation remain `EUNSUPPORTED`. Every known opcode parser MUST consume the
+exact frozen payload grammar; trailing bytes after a structured/fixed payload
+are handler-free `EBADREQ`. During an accepted soft-reboot closing interval,
+the global gate runs before HELLO/session/opcode admission and violation
+accounting: response-bearing CMDs return `EBUSY`, no-response CMDs are dropped,
+and neither path debits the malformed-input budget. — *(source: [protocol.md §3](../protocol.md#3-framing),
 [§7](../protocol.md#7-hello--capabilities); verify: one semantic corpus run
 against portable Python and compiled production C, plus conformance/HIL)*
 
@@ -400,6 +405,19 @@ No `max_file_size` capability is added. — *(source:
 portable/native unit, LFS2 conformance on every profile, incompatible-media
 fail-closed boot, five-profile HIL)*
 
+Deferred PUT work MUST be exact-session and exact transfer-generation owned.
+Disconnect/VM invalidation advances that generation atomically; a delayed
+predecessor may close only its own newly opened object and MUST NOT publish,
+clear, or adopt successor state. BEGIN publication, DATA/END checks, stale-owner
+reclamation, and terminal clear MUST compare ownership in their transfer-state
+critical cut. Portable VFS work runs only from its bounded supervisor mailbox;
+native storage MUST accept a 260-byte legal two-maximum-path `FILE_RENAME`.
+Every VFS read count is range-checked before buffer use, every path is strict
+scalar UTF-8, and exact regular-file type—not merely “not a directory”—is
+required for scratch resume. — *(source:
+[protocol.md §5](../protocol.md#5-file-transfer-the-reliability-core); verify:
+portable/native compiled race, boundary, and hostile-VFS unit tests)*
+
 ### 4.5 Console (FR-CON)
 
 - **FR-CON-1** — The agent MUST tee the running program's `stdout`/`stderr` to BLE as `CONSOLE_DATA` events. — *(source: PRD §8.2, §10.3, [protocol.md §6](../protocol.md#6-run--stop--console); verify: HIL, conformance; story: F-07)*
@@ -418,6 +436,15 @@ failed STOP response MUST change neither lifecycle nor bytes. Poll/read MUST
 remain empty unless both the runner worker and stdin-active predicate match.
 — *(source: [protocol.md §6](../protocol.md#6-run--stop--console); verify:
 portable/native unit and five-profile blocked-input HIL)*
+
+Terminal state selection, stdin deactivate/clear, and release of the run
+reservation MUST be one ordered lifecycle cut. A successor RUN is not
+reservable before that clear, predecessor cleanup MUST NOT erase successor
+input, and the predecessor terminal event uses the state captured before
+admission reopens. Clearing uses preallocated state and MUST succeed without
+allocation. — *(source: [protocol.md §6](../protocol.md#6-run--stop--console);
+verify: portable/native deterministic interleaving and allocation-failure unit
+tests)*
 
 ### 4.6 Device info / capabilities (FR-INFO)
 
@@ -453,12 +480,19 @@ semantic corpus and five-profile HIL)*
 exactly 0 or 1; an invalid stored value is safely disabled and records only a
 bounded internal configuration fault. Every persistence call and commit MUST
 be checked, and a failure leaves the prior runtime/persisted behavior in
-effect. The Pico storage-corruption exception to normal advertise-safe recovery
+effect. A corrupt/read/persistence marker remains latched until a successful
+durable repair of that same configuration domain; an absent first-boot key
+neither creates nor clears one. The marker has an internal read-only test seam
+but no v0.6.1 wire field. The Pico storage-corruption exception to normal advertise-safe recovery
 is deliberate: after a failed workspace mount, only a conclusively all-`0xFF`
 complete block device may be formatted once. Nonblank media or any inspection,
 allocation, or remount uncertainty MUST receive zero writes, skip agent and
 autorun startup, and remain available for bounded local USB recovery rather
-than falsely advertising a healthy workspace. — *(source:
+than falsely advertising a healthy workspace. All five overlays MUST use one
+frozen `pyble_workspace.mount_lfs2` authority with explicit LFS2 construction
+and a complete-device erased scan; ESP upstream `inisetup`'s first-block
+heuristic is not an admissible provisioning path. Invalid geometry fails before
+the first read or write. — *(source:
 [rpi-pico2-w.md](ports/rpi-pico2-w.md); verify: unit and sacrificial-Pico HIL)*
 
 ### 4.8 Execution modes (FR-MODE)
@@ -487,7 +521,8 @@ are screenless.
 **v0.6.1 amendments to FR-IDENT-1/2/5.** Label length MUST be checked before
 content: more than 24 encoded bytes is `ERANGE`; otherwise nonempty input MUST
 be strict UTF-8 without U+0000–U+001F or U+007F–U+009F controls, or return
-`EBADREQ`. All configuration changes MUST stage and validate a candidate, check
+`EBADREQ`. `SET_IDENTIFY_LED` accepts exactly zero bytes to clear or exactly
+two bytes to set; every other length is `EBADREQ`. All configuration changes MUST stage and validate a candidate, check
 every storage operation and commit, and update RAM, GPIO, caps, and advertising
 only after the durable commit cut. On ESP, Identify MUST use one authoritative
 four-byte NVS blob `id_cfg = [version=1, enabled, gpio, active_level]`; invalid
@@ -495,7 +530,9 @@ authoritative data disables Identify and MUST NOT fall back to stale legacy
 keys. Absent authoritative data may load a wholly valid legacy key pair and
 migrate only on the next successful set/clear. Corrupt persisted state MUST
 select safe defaults and a bounded internal fault marker, never an unchecked
-partial configuration. — *(source: [protocol.md §7](../protocol.md#7-hello--capabilities);
+partial configuration. Read and persistence failures latch that domain's
+marker until a successful durable repair; ordinary missing/valid reads do not
+erase an earlier fault. — *(source: [protocol.md §7](../protocol.md#7-hello--capabilities);
 verify: fault-injection unit and reboot HIL)*
 
 ### 4.10 Standard user-code libraries (FR-LIB)
