@@ -210,6 +210,7 @@ class PicotoolRetentionTests(unittest.TestCase):
         archive: Path | None = None,
         path_prefix: Path | None = None,
         destination: Path | None = None,
+        process_umask: int | None = None,
     ) -> subprocess.CompletedProcess[str]:
         if not INSTALLER.is_file():
             return subprocess.CompletedProcess(
@@ -233,6 +234,11 @@ class PicotoolRetentionTests(unittest.TestCase):
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             check=False,
+            preexec_fn=(
+                (lambda: os.umask(process_umask))
+                if process_umask is not None
+                else None
+            ),
         )
 
     def assert_no_staging_tree(self) -> None:
@@ -275,6 +281,26 @@ class PicotoolRetentionTests(unittest.TestCase):
         second = self.run_installer(path_prefix=fake_bin)
         self.assertEqual(second.returncode, 0, second.stdout)
         self.assertEqual(retained.read_bytes(), self.archive.read_bytes())
+
+    def test_restrictive_umask_cannot_change_retained_tree_modes(self) -> None:
+        result = self.run_installer(
+            archive=self.archive,
+            process_umask=0o077,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertEqual(
+            stat.S_IMODE((self.destination / ".pyble-dist").stat().st_mode),
+            0o755,
+        )
+        self.assertEqual(
+            stat.S_IMODE(
+                (
+                    self.destination / ".pyble-dist" / ARCHIVE_NAME
+                ).stat().st_mode
+            ),
+            0o644,
+        )
 
     @unittest.skipUnless(shutil.which("cmake"), "cmake is required for package smoke")
     def test_installed_distribution_is_a_real_find_package_config(self) -> None:
