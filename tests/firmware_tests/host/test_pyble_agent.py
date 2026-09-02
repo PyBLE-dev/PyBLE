@@ -970,6 +970,26 @@ class SoftRebootClosingTest(AgentTestBase):
         self.assertEqual(self.resets, [1],
                          "the original t=250 deadline remains authoritative")
 
+    def test_duplicate_after_reconnect_is_ebusy_without_renegotiation(self):
+        agent, link = self.new_agent(
+            "F-27/P4 closing survives disconnect and successor connect")
+        send(self, link, 0x22, id_=160)
+        self.assertEqual(rsps(link, 0x22, 160)[0].payload[0], OK)
+        original_deadline = agent._reboot_at
+
+        link.disconnect_cb()
+        link.session += 1
+        link.connect_cb()
+        send(self, link, 0x22, id_=161)
+
+        self.assertEqual(
+            rsps(link, 0x22, 161)[0].payload[0], EBUSY,
+            "the global closing gate precedes the successor session's "
+            "HELLO-first dispatch gate",
+        )
+        self.assertEqual(agent._reboot_at, original_deadline,
+                         "a successor duplicate cannot move the first deadline")
+
     def test_pending_reboot_rejects_run_and_skips_filesystem_pump(self):
         agent, link = self.new_agent(
             "F-27/P4 closing state rejects work")

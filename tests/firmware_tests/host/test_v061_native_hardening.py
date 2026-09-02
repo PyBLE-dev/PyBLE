@@ -28,6 +28,7 @@ NATIVE = ROOT / "firmware" / "user_c_modules" / "pyble"
 RUNNER = (NATIVE / "pble_runner.c").read_text(encoding="utf-8")
 DEVICE_CONFIG = (NATIVE / "pble_device_config.c").read_text(encoding="utf-8")
 BOOT = (NATIVE / "pble_boot.c").read_text(encoding="utf-8")
+BLE = (NATIVE / "pble_ble.c").read_text(encoding="utf-8")
 
 
 def matching_brace(source, opening):
@@ -275,6 +276,169 @@ class NativeFreshGlobalsTests(unittest.TestCase):
                 executed.returncode, 0,
                 "runner_exec leaked/restored incorrectly; probe exit {}".format(
                     executed.returncode),
+            )
+
+
+class NativeReassemblyTests(unittest.TestCase):
+    def test_rx_capacity_carries_the_largest_supported_run_source(self):
+        match = re.search(r"#\s*define\s+PBLE_MSG_MAX\s+(\d+)\b", BLE)
+        self.assertIsNotNone(match, "native reassembly needs a fixed static cap")
+        # RUN payload is [mode:u8][source <= 2048], inside the six-byte PBLE
+        # header and four-byte CRC. A smaller transport cap makes a valid
+        # handler-level maximum unreachable on every ESP profile.
+        self.assertGreaterEqual(
+            int(match.group(1)), 6 + 1 + 2048 + 4,
+            "native RX cannot carry the documented maximum RUN source frame",
+        )
+
+    def test_compiled_rx_discards_empty_cut_and_correlates_split_header(self):
+        compiler = shutil.which(os.environ.get("CC", "cc"))
+        self.assertIsNotNone(compiler, "a host C compiler is required for RX")
+        limit_match = re.search(r"#\s*define\s+PBLE_MSG_MAX\s+(\d+)\b", BLE)
+        self.assertIsNotNone(limit_match)
+        limit = int(limit_match.group(1))
+        reset = c_function(BLE, "pble_reset_reassembly")
+        discard = c_function(BLE, "pble_discard_reassembly_tail")
+        ingest = c_function(BLE, "pble_rx_ingest")
+        harness = textwrap.dedent(
+            r'''
+            #include <stdbool.h>
+            #include <stddef.h>
+            #include <stdint.h>
+            #include <string.h>
+
+            #define PBLE_MSG_MAX __LIMIT__
+            #define PBLE_FRAG_FIRST 0x80
+            #define PBLE_FRAG_LAST 0x40
+            #define PBLE_FRAG_IDX_MASK 0x3f
+            #define PBLE_FRAG_IDX_MOD 64
+            #define PBLE_RX_REASSEMBLY_DEADLINE_US 5000000LL
+            #define PBLE_PROTO_VERSION 1
+            #define PBLE_TYPE_CMD 1
+            #define PBLE_ERANGE 9
+
+            typedef struct { uint16_t conn; } pble_session_token_t;
+            static uint8_t pble_rx_buf[PBLE_MSG_MAX];
+            static size_t pble_rx_len;
+            static bool pble_rx_active;
+            static uint8_t pble_rx_next_index;
+            static int64_t pble_rx_started_us;
+            static bool pble_rx_discard_tail;
+            static bool pble_rx_hdr_valid;
+            static uint8_t pble_rx_hdr_ver;
+            static uint8_t pble_rx_hdr_type;
+            static uint8_t pble_rx_hdr_op;
+            static uint8_t pble_rx_hdr_id;
+            static int dispatch_calls;
+            static int violation_calls;
+            static int refuse_calls;
+            static uint8_t refused_op;
+            static uint8_t refused_id;
+            static uint8_t refused_status;
+
+            static int64_t esp_timer_get_time(void) { return 100; }
+            static bool pble_ble_record_protocol_violation(
+                    const pble_session_token_t *session) {
+                (void)session;
+                violation_calls++;
+                return true;
+            }
+            static void pble_proto_dispatch(const uint8_t *msg, size_t len,
+                                            uint16_t conn) {
+                (void)msg; (void)len; (void)conn;
+                dispatch_calls++;
+            }
+            static void pble_proto_refuse(uint8_t op, uint8_t id,
+                                          uint8_t status,
+                                          const pble_session_token_t *session) {
+                (void)session;
+                refuse_calls++;
+                refused_op = op;
+                refused_id = id;
+                refused_status = status;
+            }
+            '''
+        ).replace("__LIMIT__", str(limit))
+        main = textwrap.dedent(
+            r'''
+            static int empty_write_cut(const pble_session_token_t *session) {
+                uint8_t first[] = {PBLE_FRAG_FIRST, 'A'};
+                uint8_t stale_last[] = {PBLE_FRAG_LAST | 1, 'B'};
+                pble_reset_reassembly();
+                dispatch_calls = violation_calls = 0;
+                pble_rx_ingest(first, sizeof(first), session);
+                pble_rx_ingest(NULL, 0, session);
+                pble_rx_ingest(stale_last, sizeof(stale_last), session);
+                return dispatch_calls == 0 && violation_calls == 1;
+            }
+
+            static int split_header_oversize(const pble_session_token_t *session) {
+                uint8_t message[PBLE_MSG_MAX + 1];
+                uint8_t packet[98];
+                memset(message, 'X', sizeof(message));
+                message[0] = PBLE_PROTO_VERSION;
+                message[1] = PBLE_TYPE_CMD;
+                message[2] = 0x20;
+                message[3] = 0x2a;
+                message[4] = 0;
+                message[5] = 0;
+                pble_reset_reassembly();
+                refuse_calls = violation_calls = 0;
+                size_t offset = 0;
+                uint8_t index = 0;
+                while (offset < sizeof(message)) {
+                    size_t chunk = index == 0 ? 1 : sizeof(packet) - 1;
+                    if (chunk > sizeof(message) - offset) {
+                        chunk = sizeof(message) - offset;
+                    }
+                    packet[0] = (index == 0 ? PBLE_FRAG_FIRST : 0) |
+                                (index & PBLE_FRAG_IDX_MASK);
+                    memcpy(packet + 1, message + offset, chunk);
+                    pble_rx_ingest(packet, chunk + 1, session);
+                    offset += chunk;
+                    index = (uint8_t)((index + 1) % PBLE_FRAG_IDX_MOD);
+                }
+                return refuse_calls == 1 && violation_calls == 1 &&
+                       refused_op == 0x20 && refused_id == 0x2a &&
+                       refused_status == PBLE_ERANGE;
+            }
+
+            int main(void) {
+                pble_session_token_t session = {7};
+                if (!empty_write_cut(&session)) return 20;
+                if (!split_header_oversize(&session)) return 21;
+                return 0;
+            }
+            '''
+        )
+        with tempfile.TemporaryDirectory(prefix="pyble-v061-rx-") as temp:
+            source = Path(temp) / "rx_probe.c"
+            binary = Path(temp) / "rx_probe"
+            source.write_text(
+                harness + "\n" + reset + "\n" + discard + "\n" + ingest +
+                "\n" + main,
+                encoding="utf-8",
+            )
+            built = subprocess.run(
+                [compiler, "-std=c11", "-Wall", "-Wextra", "-Werror",
+                 "-Wno-unused-variable", str(source), "-o", str(binary)],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(
+                built.returncode, 0,
+                "native RX host probe did not compile:\n{}{}".format(
+                    built.stdout, built.stderr),
+            )
+            executed = subprocess.run(
+                [str(binary)], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                text=True, check=False)
+            self.assertEqual(
+                executed.returncode, 0,
+                "native RX mishandled empty/split-header input; probe exit {}"
+                .format(executed.returncode),
             )
 
 
