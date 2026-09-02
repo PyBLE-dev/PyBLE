@@ -443,6 +443,30 @@ class FailedSessionTerminationIntegrationTest(unittest.TestCase):
         self.assertIn("esp_restart", close)
         self.assertIn("ESP_OK", close)
         self.assertEqual(close.count("ble_gap_terminate("), 1)
+
+    def test_preclose_timeout_claims_restarting_before_public_restart(self) -> None:
+        helper = _code(
+            _function(self.ble, "pble_termination_restart_if_current")
+        )
+        self.assertIn("pble_termination_pending_matches_locked", helper)
+        self.assertIn("pble_term_preclose_failed", helper)
+        _assert_inside_session_critical(
+            self, helper, "pble_term_preclose_failed"
+        )
+        self.assertIn("PBLE_TERM_EFFECT_RESTART", helper)
+
+        close = _code(_function(self.ble, "pble_ble_terminate_session"))
+        self.assertGreaterEqual(
+            close.count("pble_termination_restart_if_current"),
+            4,
+            "missing mutex, pre-wait deadline, wait-timeout, or post-wait "
+            "deadline path without an atomic RESTARTING claim",
+        )
+        self.assertNotIn(
+            "pble_termination_request_current",
+            close,
+            "check-then-restart leaves a cleanup race before esp_restart",
+        )
         self.assertNotRegex(close, r"\b(?:for|while)\s*\(")
 
     def test_gap_result_classification_is_exact_and_non_retrying(self) -> None:
