@@ -23,7 +23,7 @@ sys.path.insert(0, str(HIL))
 import _pble_wire as wire  # noqa: E402
 
 
-CURRENT_VERSION = "0.6.0"
+CURRENT_VERSION = "0.6.1"
 CURRENT_TARGET_MATRIX = {
     "esp32": ("esp32", "esp32"),
     "esp32-s3": ("esp32s3", "esp32-s3"),
