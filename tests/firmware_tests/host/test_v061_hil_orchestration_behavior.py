@@ -269,6 +269,14 @@ class FakeRebootCentral:
         )
 
 
+class FakeResetCutCentral:
+    def __init__(self, frames):
+        self.frames = list(frames)
+
+    def events_since(self, cursor):
+        return len(self.frames), self.frames[cursor:]
+
+
 class V061VmResetOrchestrationTests(unittest.TestCase):
     def test_vm_rotation_probes_use_bounded_executable_source_and_exact_markers(self):
         bench = load_bench()
@@ -360,6 +368,99 @@ class V061VmResetOrchestrationTests(unittest.TestCase):
             [event[0] for event in events],
             ["command", "disconnected", "advertisement", "connect"],
         )
+
+    def test_soft_reboot_acceptance_guard_runs_before_disconnect(self):
+        bench = load_bench()
+        events = []
+        args = SimpleNamespace(
+            profile="esp32-4mb",
+            address="private-address",
+            expect_agent="0.6.1",
+        )
+        state = bench.LiveState(args)
+        old_central = FakeRebootCentral(bench, events)
+        new_central = FakeRebootCentral(bench, events)
+        state.central = old_central
+
+        def accepted(central):
+            self.assertIs(central, old_central)
+            events.append(("accepted", None))
+
+        async def wait_disconnected(central, timeout_s=None):
+            self.assertIs(central, old_central)
+            events.append(("disconnected", timeout_s))
+            central.is_connected = False
+
+        async def wait_advertisement(_state, name):
+            events.append(("advertisement", name))
+
+        async def connect(_state):
+            events.append(("connect", None))
+            state.central = new_central
+            return new_central
+
+        with (
+            mock.patch.object(bench, "_wait_disconnected", new=wait_disconnected),
+            mock.patch.object(bench, "_wait_advertisement", new=wait_advertisement),
+            mock.patch.object(bench, "_connect", new=connect),
+        ):
+            returned = asyncio.run(
+                bench._soft_reboot_connect_unnegotiated(
+                    state,
+                    "PyBLE-1234",
+                    response_timeout_s=2.0,
+                    on_accepted=accepted,
+                )
+            )
+
+        self.assertIs(returned, new_central)
+        self.assertEqual(
+            [event[0] for event in events],
+            ["command", "accepted", "disconnected", "advertisement", "connect"],
+        )
+
+    def test_stdin_reset_cut_rejects_consumed_or_terminal_predecessor(self):
+        bench = load_bench()
+        running = bench.wire.Frame(
+            bench.wire.EVT,
+            bench.wire.OP_RUN_STATE,
+            0,
+            bytes((bench.ST_RUNNING,)),
+        )
+        stale_echo = bench.wire.Frame(
+            bench.wire.EVT,
+            bench.wire.OP_CONSOLE_DATA,
+            0,
+            b"\x00__PYBLE_V061_STDIN_soft-reboot_ECHO__=reboot-stale\n",
+        )
+        done = bench.wire.Frame(
+            bench.wire.EVT,
+            bench.wire.OP_RUN_STATE,
+            0,
+            bytes((bench.ST_DONE,)),
+        )
+        guard = getattr(bench, "_assert_stdin_reset_acceptance", None)
+        self.assertTrue(
+            callable(guard),
+            "[red] the VM-reset HIL case needs an acceptance-cut guard",
+        )
+        if not callable(guard):
+            return
+
+        guard(
+            FakeResetCutCentral([running]),
+            0,
+            b"__PYBLE_V061_STDIN_soft-reboot_ECHO__=",
+            b"reboot-stale",
+        )
+        for frames in ([running, stale_echo], [running, done]):
+            with self.subTest(frames=frames), self.assertRaises(bench.BenchFailure):
+                guard(
+                    FakeResetCutCentral(frames),
+                    0,
+                    b"__PYBLE_V061_STDIN_soft-reboot_ECHO__=",
+                    b"reboot-stale",
+                )
 
 
 class FakeActiveGetCentral:
