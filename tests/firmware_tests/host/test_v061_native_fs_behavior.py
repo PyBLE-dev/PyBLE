@@ -96,12 +96,16 @@ PRODUCTION_FUNCTIONS = (
     "fs_has_tmp_suffix",
     "fs_utf8_valid",
     "pble_fs_resolve",
+    "fs_is_forbidden_artifact",
     "fs_str",
     "fs_open",
+    "fs_chunk",
     "fs_mode_is_regular",
     "fs_stat_path",
+    "fs_crc_file",
     "fs_crc_prefix",
     "fs_do_list",
+    "fs_do_get",
     "pble_fs_transfer_valid",
     "pble_fs_item_valid",
     "pble_fs_ticket_valid",
@@ -110,12 +114,15 @@ PRODUCTION_FUNCTIONS = (
     "fs_put_owned",
     "fs_put_active_current",
     "fs_put_reset_owner",
+    "fs_put_close_local",
+    "fs_put_reconcile_stale",
     "pble_fs_on_disconnect",
     "fs_remove_malformed_scratch",
     "fs_put_space_status",
     "pble_fs_resume_prefix",
     "fs_put_abort",
     "fs_put_publish",
+    "fs_do_put_begin",
     "fs_do_put_end",
     "fs_do_delete",
     "fs_do_mkdir",
@@ -202,6 +209,27 @@ class NativeFsBehaviorTest(unittest.TestCase):
     def test_stale_identity_cannot_publish_or_commit(self) -> None:
         self.run_scenario("identity")
 
+    def test_crc_file_closes_after_post_open_invalidation(self) -> None:
+        self.run_scenario("crc-file-open-close")
+
+    def test_crc_file_closes_after_post_read_invalidation(self) -> None:
+        self.run_scenario("crc-file-read-close")
+
+    def test_crc_prefix_closes_after_post_open_invalidation(self) -> None:
+        self.run_scenario("crc-prefix-open-close")
+
+    def test_crc_prefix_closes_after_post_read_invalidation(self) -> None:
+        self.run_scenario("crc-prefix-read-close")
+
+    def test_get_closes_after_post_open_invalidation(self) -> None:
+        self.run_scenario("get-open-close")
+
+    def test_get_closes_after_post_read_invalidation(self) -> None:
+        self.run_scenario("get-read-close")
+
+    def test_put_begin_closes_local_handle_across_invalidation(self) -> None:
+        self.run_scenario("put-begin-open-close")
+
 
 PRELUDE = r"""
 #define _POSIX_C_SOURCE 200809L
@@ -227,6 +255,10 @@ PRELUDE = r"""
 #define PBLE_EINTERNAL    0xffu
 #define PBLE_NO_RSP       0xfeu
 #define PBLE_RSP_MAX      480u
+#define PBLE_OP_FILE_GET_BEGIN 0x12u
+#define PBLE_OP_FILE_GET_DATA  0x13u
+#define PBLE_OP_FILE_GET_END   0x14u
+#define PBLE_TX_OK 0
 
 #define PBLE_FS_ROOT           "/"
 #define PBLE_FS_PATH_MAX       128u
@@ -236,6 +268,7 @@ PRELUDE = r"""
 #define PBLE_FS_ITEM_PAYLOAD   260u
 #define PBLE_FS_SCRATCH        512u
 #define PBLE_FS_ENOTEMPTY      39
+#define PBLE_CHUNK_OVERHEAD    18u
 
 #define MP_ENOENT 2
 #define MP_EIO 5
@@ -252,6 +285,8 @@ PRELUDE = r"""
 #define MP_S_IFDIR 0x4000
 #define MP_S_IFREG 0x8000
 #define MP_STREAM_ERROR ((mp_uint_t)-1)
+#define MP_THREAD_GIL_EXIT() do { } while (0)
+#define MP_THREAD_GIL_ENTER() do { } while (0)
 
 typedef long long mp_int_t;
 typedef unsigned long long mp_uint_t;
@@ -340,6 +375,20 @@ static bool g_ticket_enabled = true;
 static pble_session_token_t g_live_session = {7u, 11u};
 static uint64_t g_live_vm_epoch = 13u;
 
+enum invalidation_domain {
+    INVALIDATE_NONE,
+    INVALIDATE_SESSION,
+    INVALIDATE_VM,
+    INVALIDATE_TRANSFER,
+};
+static enum invalidation_domain g_invalidation_domain;
+static bool g_invalidate_after_open;
+static bool g_invalidate_after_read;
+static bool g_open_cut_via_ticket;
+static bool g_open_cut_armed;
+static unsigned g_item_checks_after_open;
+static unsigned g_ticket_checks_after_open;
+
 static bool g_scratch_exists;
 static bool g_scratch_is_directory;
 static uint32_t g_scratch_stat_size;
@@ -392,6 +441,22 @@ static uint8_t fs_stat_path(const pble_fs_req_t *it, const char *path,
                             uint32_t *size, bool *isdir);
 static bool fs_put_owned(const pble_fs_req_t *it);
 static bool fs_put_active_current(const pble_fs_req_t *it);
+
+static void invalidate_identity(void) {
+    switch (g_invalidation_domain) {
+        case INVALIDATE_SESSION:
+            g_session_enabled = false;
+            break;
+        case INVALIDATE_VM:
+            g_vm_enabled = false;
+            break;
+        case INVALIDATE_TRANSFER:
+            g_fs_transfer_generation++;
+            break;
+        default:
+            break;
+    }
+}
 
 static void fake_die(const char *message) {
     fprintf(stderr, "fake runtime error: %s\n", message);
@@ -515,6 +580,13 @@ static mp_obj_t mp_iternext(mp_obj_t iterable) {
 }
 
 static bool pble_ble_session_live(const pble_session_token_t *session) {
+    if (g_invalidate_after_open && !g_open_cut_via_ticket &&
+        g_open_cut_armed) {
+        g_item_checks_after_open++;
+        if (g_item_checks_after_open == 2u) {
+            invalidate_identity();
+        }
+    }
     return g_session_enabled && session != NULL &&
            session->conn == g_live_session.conn &&
            session->incarnation == g_live_session.incarnation;
@@ -525,6 +597,13 @@ static bool pble_vm_epoch_valid(uint64_t epoch) {
 }
 
 static bool pble_rsp_ticket_valid(const pble_rsp_ticket_t *ticket) {
+    if (g_invalidate_after_open && g_open_cut_via_ticket &&
+        g_open_cut_armed) {
+        g_ticket_checks_after_open++;
+        if (g_ticket_checks_after_open == 2u) {
+            invalidate_identity();
+        }
+    }
     return g_ticket_enabled && ticket != NULL &&
            ticket->incarnation == 17u &&
            pble_ble_session_live(&ticket->session) &&
@@ -620,6 +699,10 @@ static mp_uint_t fake_stream_read(mp_obj_t file, void *buffer,
     size_t amount = remaining < requested ? remaining : (size_t)requested;
     memcpy(buffer, g_scratch_bytes + file->cursor, amount);
     file->cursor += amount;
+    if (g_invalidate_after_read) {
+        g_invalidate_after_read = false;
+        invalidate_identity();
+    }
     return (mp_uint_t)amount;
 }
 
@@ -638,13 +721,20 @@ static const mp_stream_p_t g_stream = {
 
 static mp_obj_t mp_vfs_open(size_t count, mp_obj_t *arguments, mp_map_t *kw) {
     (void)kw;
-    if (count != 2u || strcmp(fake_path(arguments[0]),
-                              "/old.py.pbltmp") != 0) {
+    const char *path = fake_path(arguments[0]);
+    if (count != 2u ||
+        (strcmp(path, "/old.py.pbltmp") != 0 &&
+         strcmp(path, "/old.py") != 0)) {
         fake_die("unexpected open");
     }
     g_open_calls++;
     memset(&g_file_object, 0, sizeof(g_file_object));
     g_file_object.kind = FAKE_FILE;
+    if (g_invalidate_after_open) {
+        g_open_cut_armed = true;
+        g_item_checks_after_open = 0u;
+        g_ticket_checks_after_open = 0u;
+    }
     return &g_file_object;
 }
 
@@ -705,6 +795,41 @@ static void mp_vfs_rename(mp_obj_t source_object, mp_obj_t dest_object) {
         g_scratch_exists = false;
     }
 }
+
+static uint16_t pble_ble_mtu(void) {
+    return 247u;
+}
+
+static bool pble_rsp_expect_completion(const pble_rsp_ticket_t *ticket) {
+    return pble_rsp_ticket_valid(ticket);
+}
+
+static bool pble_rsp_publish(const pble_rsp_ticket_t *ticket, uint8_t opcode,
+                             uint8_t id, const uint8_t *payload, size_t len) {
+    (void)opcode;
+    (void)id;
+    (void)payload;
+    (void)len;
+    return pble_rsp_ticket_valid(ticket);
+}
+
+static void pble_rsp_cancel_ticket(const pble_rsp_ticket_t *ticket) {
+    (void)ticket;
+}
+
+static bool pble_rsp_wait(const pble_rsp_ticket_t *ticket) {
+    (void)ticket;
+    return true;
+}
+
+static int fs_emit_paced(const pble_fs_req_t *it, uint8_t opcode,
+                         const uint8_t *payload, size_t len) {
+    (void)it;
+    (void)opcode;
+    (void)payload;
+    (void)len;
+    return PBLE_TX_OK;
+}
 """
 
 
@@ -724,6 +849,13 @@ static void reset_world(void) {
     g_session_enabled = true;
     g_vm_enabled = true;
     g_ticket_enabled = true;
+    g_invalidation_domain = INVALIDATE_NONE;
+    g_invalidate_after_open = false;
+    g_invalidate_after_read = false;
+    g_open_cut_via_ticket = false;
+    g_open_cut_armed = false;
+    g_item_checks_after_open = 0u;
+    g_ticket_checks_after_open = 0u;
     g_live_session.conn = 7u;
     g_live_session.incarnation = 11u;
     g_live_vm_epoch = 13u;
@@ -1070,6 +1202,123 @@ static int scenario_identity(void) {
     return 0;
 }
 
+static void prepare_file_bytes(const char *bytes) {
+    size_t length = strlen(bytes);
+    if (length > sizeof(g_scratch_bytes)) {
+        fake_die("test file exceeds fake storage");
+    }
+    memcpy(g_scratch_bytes, bytes, length);
+    g_scratch_actual_size = length;
+}
+
+static void arm_post_open_cut(enum invalidation_domain domain,
+                              bool via_ticket) {
+    g_invalidation_domain = domain;
+    g_invalidate_after_open = true;
+    g_open_cut_via_ticket = via_ticket;
+}
+
+static void arm_post_read_cut(enum invalidation_domain domain) {
+    g_invalidation_domain = domain;
+    g_invalidate_after_read = true;
+}
+
+static int check_local_close(uint8_t status, const char *context) {
+    if (status != PBLE_NO_RSP) {
+        fprintf(stderr, "%s returned %u instead of silent cancellation\n",
+                context, (unsigned)status);
+        return 1;
+    }
+    if (g_open_calls != 1u || g_close_calls != 1u) {
+        fprintf(stderr,
+                "%s opened %u local object(s) but closed %u (expected 1/1)\n",
+                context, g_open_calls, g_close_calls);
+        return 1;
+    }
+    return 0;
+}
+
+static int scenario_crc_file_close(bool after_open) {
+    reset_world();
+    prepare_file_bytes("OLD");
+    if (after_open) {
+        arm_post_open_cut(INVALIDATE_SESSION, true);
+    } else {
+        arm_post_read_cut(INVALIDATE_VM);
+    }
+    pble_fs_req_t request = current_request();
+    uint32_t crc = 0u;
+    uint8_t status = fs_crc_file(&request, "/old.py", 3u, &crc);
+    return check_local_close(
+        status, after_open ? "fs_crc_file post-open"
+                           : "fs_crc_file post-read");
+}
+
+static int scenario_crc_prefix_close(bool after_open) {
+    reset_world();
+    prepare_file_bytes("OLD");
+    if (after_open) {
+        arm_post_open_cut(INVALIDATE_TRANSFER, true);
+    } else {
+        arm_post_read_cut(INVALIDATE_SESSION);
+    }
+    pble_fs_req_t request = current_request();
+    uint32_t running = 0u;
+    uint8_t status = fs_crc_prefix(
+        &request, "/old.py.pbltmp", 3u, &running);
+    return check_local_close(
+        status, after_open ? "fs_crc_prefix post-open"
+                           : "fs_crc_prefix post-read");
+}
+
+static void set_get_request(pble_fs_req_t *request, const char *path) {
+    size_t length = strlen(path);
+    memset(request->payload, 0, 4u);
+    request->payload[4] = (uint8_t)(length & 0xffu);
+    request->payload[5] = (uint8_t)(length >> 8);
+    memcpy(request->payload + 6u, path, length);
+    request->len = (uint16_t)(6u + length);
+}
+
+static int scenario_get_close(bool after_open) {
+    reset_world();
+    prepare_file_bytes("OLD");
+    if (after_open) {
+        arm_post_open_cut(INVALIDATE_VM, false);
+    } else {
+        arm_post_read_cut(INVALIDATE_TRANSFER);
+    }
+    pble_fs_req_t request = current_request();
+    set_get_request(&request, "/old.py");
+    uint8_t status = fs_do_get(&request);
+    return check_local_close(
+        status, after_open ? "fs_do_get post-open"
+                           : "fs_do_get post-read");
+}
+
+static void set_put_begin_request(pble_fs_req_t *request, const char *path) {
+    size_t length = strlen(path);
+    memset(request->payload, 0, 8u);  // total=0, whole-file CRC=0
+    request->payload[8] = (uint8_t)(length & 0xffu);
+    request->payload[9] = (uint8_t)(length >> 8);
+    memcpy(request->payload + 10u, path, length);
+    request->len = (uint16_t)(10u + length);
+}
+
+static int scenario_put_begin_close(void) {
+    reset_world();
+    arm_post_open_cut(INVALIDATE_SESSION, true);
+    pble_fs_req_t request = current_request();
+    set_put_begin_request(&request, "/old.py");
+    size_t extra = 99u;
+    uint8_t status = fs_do_put_begin(&request, &extra);
+    CHECK(!g_put_active && g_root_pble_fs_put_file == MP_OBJ_NULL,
+          "cancelled PUT_BEGIN published an active/rooted file");
+    CHECK(strcmp(g_old_destination, "OLD") == 0,
+          "cancelled PUT_BEGIN changed the old destination");
+    return check_local_close(status, "fs_do_put_begin post-open");
+}
+
 int main(int argc, char **argv) {
     if (argc != 2) {
         fprintf(stderr, "expected one scenario\n");
@@ -1089,6 +1338,27 @@ int main(int argc, char **argv) {
     }
     if (strcmp(argv[1], "identity") == 0) {
         return scenario_identity();
+    }
+    if (strcmp(argv[1], "crc-file-open-close") == 0) {
+        return scenario_crc_file_close(true);
+    }
+    if (strcmp(argv[1], "crc-file-read-close") == 0) {
+        return scenario_crc_file_close(false);
+    }
+    if (strcmp(argv[1], "crc-prefix-open-close") == 0) {
+        return scenario_crc_prefix_close(true);
+    }
+    if (strcmp(argv[1], "crc-prefix-read-close") == 0) {
+        return scenario_crc_prefix_close(false);
+    }
+    if (strcmp(argv[1], "get-open-close") == 0) {
+        return scenario_get_close(true);
+    }
+    if (strcmp(argv[1], "get-read-close") == 0) {
+        return scenario_get_close(false);
+    }
+    if (strcmp(argv[1], "put-begin-open-close") == 0) {
+        return scenario_put_begin_close();
     }
     fprintf(stderr, "unknown scenario: %s\n", argv[1]);
     return 2;
