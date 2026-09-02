@@ -1713,6 +1713,10 @@ Automated release tests MUST cover:
   cases;
 - exact v0.6.0/v0.6.1 five-profile resource-policy schema 3 and HIL V5 schema,
   with every current-candidate version binding checked end to end, plus
+  the version-routed v0.6.1 seven-scenario hardening result, exactly 50
+  sequential runs, two candidate-bound workspace-provisioning receipts,
+  private-result digest/TOCTOU validation, and proof that v0.6.0 retains its
+  prior record/check bytes, plus
   historical schema-2/V4 replay,
   baseline/policy/candidate
   hash binding, derivation arithmetic, threshold-boundary and one-unit-crossing
@@ -2290,8 +2294,20 @@ even if an operator supplies a structurally valid summary. Every v0.6.1 row
 must record a fresh physical power-cycle observation from its exact candidate
 bytes; the common validator rejects lineage before completion or finalization.
 
-The V5 envelope is unchanged across the v0.6.0 source eras and v0.6.1, but its
-policy derivation is source-bound. A candidate source at or before
+Every v0.6.1 row also binds the private
+`v061-hardening-seven-scenario-v1` result frozen in firmware specs §5.3.4.
+The candidate record has `v061_hardening: null` and the additional pending
+check. Mechanical completion alone may derive the privacy-safe summary and
+passed check from the profile-exact private result. Finalization reopens all
+five private results, binds their canonical SHA-256 values to those summaries,
+and rejects a workspace `NOT-RUN`, a run count other than 50, any scenario or
+receipt mismatch, or any candidate/profile/source/install/qualification
+identity drift. Version `0.6.0` rejects the field, check, private-result input,
+and summary so its existing V5 encoding is not reinterpreted.
+
+The V5 top-level envelope is unchanged across the v0.6.0 source eras and
+v0.6.1; the per-record hardening extension is exact-version-routed, and policy
+derivation remains source-bound. A candidate source at or before
 `5620f2fdc672b440548119e3431cfa4f4ed3f5a3` retains
 `fixed-product-slo-3000-v3` and `floor-95pct-min-100-v2`. A strict
 descendant of that boundary at or before
@@ -2331,10 +2347,13 @@ app_hil
 profile_gate_summary
 ```
 
-`checks` has exactly `provisioning_install`, `provisioning_recovery`,
-`advertising_info_hello`, `pble_workflow`, `safe_boot_reconnect`,
-`filesystem_resume_reliability`, and `footprint_reliability`. Every value is
-`pending` in a candidate and `passed` after validation. `app_hil` has exactly
+For v0.6.0, `checks` has exactly `provisioning_install`,
+`provisioning_recovery`, `advertising_info_hello`, `pble_workflow`,
+`safe_boot_reconnect`, `filesystem_resume_reliability`, and
+`footprint_reliability`. For v0.6.1 it has those exact keys plus
+`v061_hardening`, and the record additionally has the exact
+`v061_hardening` field described above. Every check is `pending` in a
+candidate and `passed` after validation. `app_hil` has exactly
 `ipad` and `android`; pending entries are JSON `null`, while each completed
 entry has exactly non-empty `app_version`, `app_build`, `os_major`, and
 `status: "passed"`. One platform cannot substitute for the other.
@@ -2420,6 +2439,13 @@ canonical exclusive mode-`0600` fragment without replacement, rereads it, and
 changes no candidate byte. `assemble-hil-report` then accepts exactly five of
 these fragments, in any input order, and still derives
 `footprint_reliability` itself.
+
+For v0.6.1, the same operation additionally requires the selected profile's
+exclusive mode-`0600` hardening result. It derives `v061_hardening` and its
+check from that file and rejects either field in operator input. The completed
+fragment carries only the privacy-safe summary and private-result digest;
+finalization takes all five private files separately and revalidates them
+rather than treating a copied fragment as qualification authority.
 
 The C3/Pico gate module provides a separate `create-result` operation so the
 private result never requires hand-authored identity or digest fields. It
@@ -2518,7 +2544,8 @@ envelope: only `HIL_REPORT.md`, the corresponding HIL statuses/report digest
 in `release.json`, and their `SHA256SUMS` entries may change. Every install,
 resource, component, manifest, schema, license, release-note, and recovery byte
 must equal the protected candidate. V5 finalization is atomic across all five
-records and three summaries; partial promotion is forbidden. This section
+records and three target summaries and, for v0.6.1, all five hardening
+summaries/private-result bindings; partial promotion is forbidden. This section
 freezes a contract and records no passed gate.
 
 ## 10. Activation and rollback
@@ -2537,8 +2564,10 @@ selector or staged-root environment variables MUST NOT reclassify public-page
 or no-firmware Sites fixtures. The test runner MUST exercise this isolation
 even when the surrounding release build exports candidate variables. The
 public action may become `active` only when every automated gate is green,
-all five v0.6.0 HIL rows say `passed`, the Waveshare, C3, and Pico derived
-summaries are present and passed, the maintainer approves the exact hashes,
+all five exact-version HIL rows say `passed`, the Waveshare, C3, and Pico
+derived summaries are present and passed, every v0.6.1 row additionally has
+its validated seven-scenario/workspace hardening summary when applicable, the
+maintainer approves the exact hashes,
 and the canonical same-origin bytes pass publication verification. If a
 pre-v1 mirror exists, its files and bytes MUST agree before activation; v1.0 and
 later require that mirror to be the matching GitHub Release. A missing,
