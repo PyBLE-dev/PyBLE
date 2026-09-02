@@ -79,11 +79,9 @@ class HelloNegotiator {
 
   /// Serializes the HELLO CMD request body.
   ///
-  /// NOTE: the §7 HELLO *request* byte-serialization is NOT frozen (no
-  /// conformance vector asserts it — the shared corpus treats HELLO payloads as
-  /// opaque). This mirrors the observed newline `key=value` caps form for
-  /// symmetry; it is provisional and will be reconciled when protocol.md §7
-  /// freezes the payload encoding.
+  /// PBLE/1 §7 freezes this newline-delimited `key=value` serialization. The
+  /// v0.6.1 shared semantic corpus byte-verifies every client-applicable HELLO
+  /// request against portable Python, dependency-free native C, and Dart.
   Uint8List _encodeHelloRequest(List<int> offer) {
     final String text = <String>[
       'proto_versions=${offer.join(',')}',
