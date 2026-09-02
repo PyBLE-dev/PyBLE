@@ -125,15 +125,15 @@ class V061HilScenarioOrchestrationTests(unittest.TestCase):
                 output.chmod(0o600)
                 return output
 
-            preflight = object()
+            preflight_token = object()
 
             def token_publish(
-                supplied_preflight,
+                preflight,
                 scenario_results,
                 raw_log,
                 result,
             ):
-                if supplied_preflight is not preflight:
+                if preflight is not preflight_token:
                     raise AssertionError("publication did not receive preflight token")
                 return publish(
                     scenario_results=scenario_results,
@@ -165,7 +165,7 @@ class V061HilScenarioOrchestrationTests(unittest.TestCase):
                     mock.patch.object(
                         bench,
                         "preflight_result_inputs",
-                        return_value=preflight,
+                        return_value=preflight_token,
                         create=True,
                     )
                 )

@@ -6,13 +6,11 @@
 The tool exercises only PBLE/1 behavior amended for v0.6.1.  It deliberately
 does not claim that host-side checks, a different profile, or a different board
 can fill a physical evidence row.  BLE addresses, device IDs, labels, console
-payloads, and exception details are never included in the public result line.
+payloads, and exception details never enter the bounded machine evidence.
 
-Blank-media provisioning and nonblank-incompatible-media refusal happen before
-the PBLE/1 service exists.  A live BLE client therefore cannot automate them.
-The final result always records that boundary; requesting that evidence makes
-this tool fail closed and directs the operator to an out-of-band sacrificial-
-media boot observation.
+The two pre-service workspace observations are supplied as separately captured
+candidate-bound receipts.  Only after those receipts and all seven live
+scenarios pass does this runner publish one exclusive private result.
 """
 
 from __future__ import annotations
@@ -20,6 +18,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 from pathlib import Path
 import re
 import sys
@@ -33,9 +32,40 @@ import target_smoke
 
 ROOT = Path(__file__).resolve().parents[3]
 POLICY_PATH = ROOT / "firmware" / "qualification" / "oi1-gates.json"
+QUALIFICATION_DIR = ROOT / "firmware" / "qualification"
+if str(QUALIFICATION_DIR) not in sys.path:
+    sys.path.insert(0, str(QUALIFICATION_DIR))
+import v061_hardening_release_gate as hardening_gate  # noqa: E402
 
 PROFILE_ORDER = tuple(pble_bench.PROFILE_ORDER)
 PROFILE_CHIPS = dict(pble_bench.PROFILE_CHIPS)
+PROFILE_BOARD_IDENTITIES = {
+    "esp32-4mb": {
+        "board_manufacturer": "Espressif Systems",
+        "board_model": "Electronically identified ESP32 development board",
+        "module_marking": "ESP32-D0WD revision v1.0 (esptool)",
+    },
+    "esp32-s3-n16r8": {
+        "board_manufacturer": "Espressif Systems",
+        "board_model": "Electronically identified ESP32-S3 development board",
+        "module_marking": "ESP32-S3 QFN56 revision v0.1 (esptool)",
+    },
+    "waveshare-esp32-s3-lcd-147b": {
+        "board_manufacturer": "Waveshare",
+        "board_model": "ESP32-S3-LCD-1.47B",
+        "module_marking": "ESP32-S3R8",
+    },
+    "esp32-c3-4mb": {
+        "board_manufacturer": "Espressif Systems",
+        "board_model": "Electronically identified ESP32-C3 development board",
+        "module_marking": "ESP32-C3 QFN32 revision v0.4 (esptool)",
+    },
+    "rpi-pico2-w": {
+        "board_manufacturer": "Raspberry Pi Ltd",
+        "board_model": "Raspberry Pi Pico 2 W",
+        "module_marking": "RP2350 + CYW43439",
+    },
+}
 SCENARIO_ORDER = (
     "transport-session",
     "fragment-hardening",
@@ -540,9 +570,45 @@ def format_result(status, profile, caps, workspace):
 
 
 def workspace_prerequisite(args):
-    if args.require_workspace_provisioning:
-        return "FAIL(requires-out-of-band-blank-and-nonblank-boot-observations)"
-    return "NOT-RUN(nondestructive)"
+    return (
+        "passed"
+        if getattr(args, "_workspace_receipts_validated", False)
+        else "pending"
+    )
+
+
+def preflight_result_inputs(args):
+    """Lease the candidate, receipts, and committed runner before BLE work."""
+    try:
+        preflight = hardening_gate.preflight_result_inputs(
+            candidate_dir=Path(args.candidate_dir),
+            profile_id=args.profile,
+            workspace_erased_receipt=Path(args.workspace_erased_receipt),
+            workspace_nonblank_receipt=Path(args.workspace_nonblank_receipt),
+            qualification_repo_root=Path(args.qualification_repo_root),
+        )
+    except hardening_gate.QualificationError as exc:
+        raise BenchFailure("candidate-bound input preflight failed") from exc
+    args._workspace_receipts_validated = True
+    return preflight
+
+
+async def preflight_board_workspace(state):
+    """Refuse any namespace collision before the first board mutation."""
+    for path, label in (
+        (WORK_DIR, "v0.6.1 scratch root"),
+        ("/main.py", "owner main.py"),
+    ):
+        response = await state.central.send_cmd(
+            wire.OP_FILE_STAT,
+            state.ids.next(),
+            pble_bench.path_payload(path),
+        )
+        _status_is(response, wire.ST_ENOENT, "%s preflight" % label)
+        _require(
+            response.payload == bytes((wire.ST_ENOENT,)),
+            "%s preflight returned malformed evidence" % label,
+        )
 
 
 async def run_transport_session(state):
@@ -896,18 +962,38 @@ async def _soft_reboot_to_advertisement(state, expected_name):
 
 
 async def run_label_durability(state):
-    """Prove exact LABEL_24 bytes, rejected controls, reboot, and advertisement."""
+    """Prove label, autorun, and owner-configured Identify durability."""
     # _set_label and _soft_reboot_to_advertisement issue wire.OP_SET_LABEL and
     # wire.OP_SOFT_REBOOT; keeping them transactional lets restoration share
     # the same exact physical path as the assertion.
     original_caps = await _device_info(state)
     original_label = original_caps["label"]
     original_name = original_label or "PyBLE-%s" % original_caps["device_id"]
+    _require(
+        original_caps.get("auto_run") in ("0", "1"),
+        "DEVICE_INFO auto_run is not a bit",
+    )
+    _require(
+        original_caps.get("has_identify") in ("0", "1"),
+        "DEVICE_INFO has_identify is not a bit",
+    )
+    original_auto_run = int(original_caps["auto_run"])
+    original_identify_led = original_caps.get("identify_led")
+    has_identify = original_caps["has_identify"] == "1"
     test_bytes = LABEL_24.encode("utf-8")
     _require(len(test_bytes) == 24, "LABEL_24 is not exactly 24 UTF-8 bytes")
-    restore_required = True
     primary_error = None
     try:
+        # Identify is an action, never a configuration operation.  Preserve
+        # the owner's identify_led and prove the action on both sides of a
+        # soft reboot only when the capability says it exists.
+        if has_identify:
+            response = await state.central.send_cmd(
+                wire.OP_IDENTIFY,
+                state.ids.next(),
+            )
+            _status_is(response, wire.ST_OK, "IDENTIFY before soft reboot")
+
         rejected = (
             (b"x" * 25, wire.ST_ERANGE),
             (b"bad\x00label", wire.ST_EBADREQ),
@@ -930,6 +1016,38 @@ async def run_label_durability(state):
             caps["label"] == original_label,
             "rejected label changed persisted configuration",
         )
+        _require(
+            caps.get("identify_led") == original_identify_led,
+            "soft reboot changed owner identify_led configuration",
+        )
+        if has_identify:
+            response = await state.central.send_cmd(
+                wire.OP_IDENTIFY,
+                state.ids.next(),
+            )
+            _status_is(response, wire.ST_OK, "IDENTIFY after soft reboot")
+
+        toggled_auto_run = 1 - original_auto_run
+        response = await state.central.send_cmd(
+            wire.OP_SET_AUTORUN,
+            state.ids.next(),
+            bytes((toggled_auto_run,)),
+        )
+        _status_is(response, wire.ST_OK, "SET_AUTORUN durability toggle")
+        caps = await _device_info(state)
+        _require(
+            caps.get("auto_run") == str(toggled_auto_run),
+            "SET_AUTORUN did not update DEVICE_INFO",
+        )
+        caps = await _soft_reboot_to_advertisement(state, original_name)
+        _require(
+            caps.get("auto_run") == str(toggled_auto_run),
+            "auto_run did not persist across soft reboot",
+        )
+        _require(
+            caps.get("identify_led") == original_identify_led,
+            "autorun durability changed owner identify_led configuration",
+        )
 
         await _set_label(state, test_bytes, wire.ST_OK)
         caps = await _device_info(state)
@@ -939,28 +1057,41 @@ async def run_label_durability(state):
     except BaseException as exc:
         primary_error = exc
     finally:
-        if restore_required:
-            try:
-                if state.central is None or not state.central.is_connected:
-                    await _connect(state)
-                    await _negotiate(state)
-                await _set_label(
-                    state,
-                    original_label.encode("utf-8"),
-                    wire.ST_OK,
+        try:
+            if state.central is None or not state.central.is_connected:
+                await _connect(state)
+                await _negotiate(state)
+            await _set_label(
+                state,
+                original_label.encode("utf-8"),
+                wire.ST_OK,
+            )
+            response = await state.central.send_cmd(
+                wire.OP_SET_AUTORUN,
+                state.ids.next(),
+                bytes((original_auto_run,)),
+            )
+            _status_is(response, wire.ST_OK, "SET_AUTORUN restore")
+            restored = await _soft_reboot_to_advertisement(state, original_name)
+            _require(
+                restored["label"] == original_label,
+                "original label was not restored after the durability check",
+            )
+            _require(
+                restored.get("auto_run") == str(original_auto_run),
+                "original auto_run was not restored after the durability check",
+            )
+            _require(
+                restored.get("identify_led") == original_identify_led,
+                "restoration changed owner identify_led configuration",
+            )
+        except BaseException as cleanup_error:
+            if primary_error is None:
+                primary_error = cleanup_error
+            else:
+                primary_error = BenchFailure(
+                    "configuration check failed and deterministic restoration also failed"
                 )
-                restored = await _soft_reboot_to_advertisement(state, original_name)
-                _require(
-                    restored["label"] == original_label,
-                    "original label was not restored after the durability check",
-                )
-            except BaseException as cleanup_error:
-                if primary_error is None:
-                    primary_error = cleanup_error
-                else:
-                    primary_error = BenchFailure(
-                        "label check failed and deterministic restoration also failed"
-                    )
     if primary_error is not None:
         raise primary_error
 
@@ -1172,39 +1303,137 @@ async def run_filesystem_hardening(state):
         await pble_bench.remove_if_present(state.central, WORK_DIR, state.ids.next)
 
 
+def _scenario_log_bytes(scenario_results):
+    rows = []
+    for name in SCENARIO_ORDER:
+        row = scenario_results[name]
+        value = {"scenario": name, "status": row["status"]}
+        if name == "resource-stability":
+            value["sequential_runs"] = row["sequential_runs"]
+        rows.append(value)
+    try:
+        return b"".join(
+            (
+                json.dumps(
+                    value,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=False,
+                    allow_nan=False,
+                )
+                + "\n"
+            ).encode("utf-8")
+            for value in rows
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise BenchFailure("scenario result log is not canonical") from exc
+
+
+def _write_private_log(path, raw):
+    """Create one mode-0600 raw log without following or replacing a name."""
+    try:
+        hardening_gate._write_exclusive(Path(path), raw)
+    except hardening_gate.QualificationError as exc:
+        raise BenchFailure("raw log output could not be created safely") from exc
+
+
+def write_private_result(
+    candidate_dir,
+    profile_id,
+    scenario_results,
+    workspace_erased_receipt,
+    workspace_nonblank_receipt,
+    raw_log,
+    result,
+    qualification_repo_root,
+):
+    """Write the bounded raw log, then publish one shared-gate result."""
+    _write_private_log(raw_log, _scenario_log_bytes(scenario_results))
+    try:
+        return hardening_gate.create_result(
+            candidate_dir=Path(candidate_dir),
+            profile_id=profile_id,
+            scenario_results=scenario_results,
+            workspace_erased_receipt=Path(workspace_erased_receipt),
+            workspace_nonblank_receipt=Path(workspace_nonblank_receipt),
+            raw_log=Path(raw_log),
+            output_path=Path(result),
+            qualification_repo_root=Path(qualification_repo_root),
+        )
+    except hardening_gate.QualificationError as exc:
+        raise BenchFailure("candidate-bound result validation failed") from exc
+
+
+def write_private_result_from_preflight(
+    preflight,
+    scenario_results,
+    raw_log,
+    result,
+):
+    """Write the raw log and consume the exact pre-BLE evidence lease."""
+    _write_private_log(raw_log, _scenario_log_bytes(scenario_results))
+    try:
+        return hardening_gate.create_result_from_preflight(
+            preflight=preflight,
+            scenario_results=scenario_results,
+            raw_log=Path(raw_log),
+            output_path=Path(result),
+        )
+    except hardening_gate.QualificationError as exc:
+        raise BenchFailure("candidate-bound result validation failed") from exc
+
+
 async def _run_scenario(name, operation):
     await operation()
     print("V061 SCENARIO PASS (%s)" % name)
 
 
 async def run(args):
-    workspace = workspace_prerequisite(args)
+    workspace = "pending"
     expected_caps = {
         "chip": PROFILE_CHIPS[args.profile],
         "agent": args.expect_agent,
     }
-    if workspace.startswith("FAIL("):
-        print(format_result("FAIL", args.profile, expected_caps, workspace))
-        return 2
-
     state = LiveState(args)
+    scenario_results = {}
     try:
+        # The host preflight leases args.workspace_erased_receipt and
+        # args.workspace_nonblank_receipt before any physical operation.
+        preflight = preflight_result_inputs(args)
+        workspace = workspace_prerequisite(args)
         await _run_scenario(
             "transport-session", lambda: run_transport_session(state)
         )
+        scenario_results["transport-session"] = {"status": "passed"}
+        await preflight_board_workspace(state)
         await _run_scenario(
             "fragment-hardening", lambda: run_fragment_hardening(state)
         )
+        scenario_results["fragment-hardening"] = {"status": "passed"}
         await _run_scenario("run-isolation", lambda: run_fresh_globals(state))
+        scenario_results["run-isolation"] = {"status": "passed"}
         await _run_scenario(
             "resource-stability", lambda: run_resource_stability(state)
         )
+        scenario_results["resource-stability"] = {
+            "status": "passed",
+            "sequential_runs": SEQUENTIAL_RUNS,
+        }
         await _run_scenario("stdin-isolation", lambda: run_stdin_isolation(state))
+        scenario_results["stdin-isolation"] = {"status": "passed"}
         await _run_scenario(
             "configuration-durability", lambda: run_label_durability(state)
         )
+        scenario_results["configuration-durability"] = {"status": "passed"}
         await _run_scenario(
             "filesystem-hardening", lambda: run_filesystem_hardening(state)
+        )
+        scenario_results["filesystem-hardening"] = {"status": "passed"}
+        write_private_result_from_preflight(
+            preflight=preflight,
+            scenario_results=scenario_results,
+            raw_log=args.raw_log,
+            result=args.result,
         )
         print(format_result("PASS", args.profile, state.caps, workspace))
         return 0
@@ -1225,47 +1454,260 @@ def _parse_args(argv=None):
         description="physical PBLE/1 firmware-v0.6.1 hardening HIL bench"
     )
     parser.add_argument(
+        "--create-workspace-receipt",
+        action="store_true",
+        help="derive one pre-service receipt without opening BLE",
+    )
+    parser.add_argument(
         "--profile",
-        required=True,
         choices=PROFILE_ORDER,
         help="exact physical release profile under test",
     )
     parser.add_argument(
         "--address",
-        required=True,
         help="private BLE address/UUID (never emitted in the result)",
     )
     parser.add_argument(
         "--expect-agent",
-        default=target_smoke.expected_agent_from_lock(),
-        help="expected agent SemVer (default: firmware/versions.lock)",
+        help="exact v0.6.1 agent version",
     )
     parser.add_argument(
-        "--require-workspace-provisioning",
-        action="store_true",
-        help="require pre-service blank/nonblank workspace boot evidence",
+        "--candidate-dir",
+        type=Path,
+        help="exact firmware-v0.6.1 release candidate directory",
     )
     parser.add_argument(
-        "--sacrificial-media",
-        action="store_true",
-        help="acknowledge that workspace provisioning needs sacrificial media",
+        "--workspace-erased-receipt",
+        type=Path,
+        help="private erased-media-first-boot receipt",
     )
+    parser.add_argument(
+        "--workspace-nonblank-receipt",
+        type=Path,
+        help="private nonblank-media-refusal receipt",
+    )
+    parser.add_argument(
+        "--raw-log",
+        type=Path,
+        help="new private canonical JSONL output",
+    )
+    parser.add_argument(
+        "--result",
+        type=Path,
+        help="new private candidate-bound result output",
+    )
+    parser.add_argument("--board-manufacturer")
+    parser.add_argument("--board-model")
+    parser.add_argument("--module-marking")
+    parser.add_argument(
+        "--observation-kind",
+        choices=hardening_gate.WORKSPACE_PROVISIONING_ORDER,
+    )
+    parser.add_argument("--raw-boot-log", type=Path)
+    parser.add_argument("--receipt-output", type=Path)
     args = parser.parse_args(argv)
-    if not args.address.strip():
-        parser.error("--address must be non-empty")
-    if not args.expect_agent.strip():
-        parser.error("--expect-agent must be non-empty")
-    args.address = args.address.strip()
-    args.expect_agent = args.expect_agent.strip()
-    if args.require_workspace_provisioning != args.sacrificial_media:
-        parser.error(
-            "--require-workspace-provisioning and --sacrificial-media must be used together"
+
+    def require_options(names):
+        missing = ["--" + name.replace("_", "-") for name in names if getattr(args, name) is None]
+        if missing:
+            parser.error("the following arguments are required: %s" % ", ".join(missing))
+
+    args.qualification_repo_root = ROOT
+    try:
+        if args.create_workspace_receipt:
+            require_options(
+                (
+                    "profile",
+                    "candidate_dir",
+                    "observation_kind",
+                    "raw_boot_log",
+                    "receipt_output",
+                )
+            )
+            forbidden = (
+                "address",
+                "expect_agent",
+                "workspace_erased_receipt",
+                "workspace_nonblank_receipt",
+                "raw_log",
+                "result",
+                "board_manufacturer",
+                "board_model",
+                "module_marking",
+            )
+            if any(getattr(args, name) is not None for name in forbidden):
+                parser.error(
+                    "workspace-receipt mode accepts only its bounded receipt inputs"
+                )
+            candidate = hardening_gate._absolute_lexical_path(
+                args.candidate_dir, "candidate"
+            )
+            chain = hardening_gate._open_directory_chain(
+                candidate, label="candidate"
+            )
+            hardening_gate._close_directory_chain(chain)
+            raw_boot_log = hardening_gate._absolute_lexical_path(
+                args.raw_boot_log, "workspace raw boot log"
+            )
+            receipt_output = hardening_gate._absolute_lexical_path(
+                args.receipt_output, "workspace receipt output"
+            )
+            if receipt_output.suffix != ".json":
+                raise hardening_gate.QualificationError(
+                    "workspace receipt output must end in .json"
+                )
+            if raw_boot_log != hardening_gate._workspace_raw_path(receipt_output):
+                raise hardening_gate.QualificationError(
+                    "workspace raw boot log name must be derived from its receipt"
+                )
+            hardening_gate._stable_regular_bytes(
+                raw_boot_log,
+                label="workspace raw boot log",
+                maximum=64 * 1024,
+                private=True,
+            )
+            if os.path.lexists(receipt_output):
+                raise hardening_gate.QualificationError(
+                    "workspace receipt output already exists"
+                )
+            for path, label in (
+                (raw_boot_log, "workspace raw boot log"),
+                (receipt_output, "workspace receipt output"),
+            ):
+                if hardening_gate._inside(path, candidate):
+                    raise hardening_gate.QualificationError(
+                        "%s must be outside the candidate" % label
+                    )
+                if hardening_gate._inside(path, ROOT):
+                    raise hardening_gate.QualificationError(
+                        "%s must be outside the qualification checkout" % label
+                    )
+            chain = hardening_gate._open_directory_chain(
+                receipt_output.parent, label="workspace receipt output parent"
+            )
+            hardening_gate._close_directory_chain(chain)
+            return args
+
+        require_options(
+            (
+                "profile",
+                "address",
+                "candidate_dir",
+                "workspace_erased_receipt",
+                "workspace_nonblank_receipt",
+                "raw_log",
+                "result",
+                "board_manufacturer",
+                "board_model",
+                "module_marking",
+            )
         )
+        if any(
+            getattr(args, name) is not None
+            for name in ("observation_kind", "raw_boot_log", "receipt_output")
+        ):
+            parser.error("workspace-receipt inputs are invalid in live mode")
+        if not args.address.strip():
+            parser.error("--address must be non-empty")
+        if args.expect_agent is not None and args.expect_agent.strip() != "0.6.1":
+            parser.error("--expect-agent must be exactly 0.6.1")
+        args.address = args.address.strip()
+        args.expect_agent = "0.6.1"
+        expected_identity = PROFILE_BOARD_IDENTITIES[args.profile]
+        for field in ("board_manufacturer", "board_model", "module_marking"):
+            if getattr(args, field) != expected_identity[field]:
+                parser.error(
+                    "--%s must match the reviewed %s identity"
+                    % (field.replace("_", "-"), args.profile)
+                )
+        candidate = hardening_gate._absolute_lexical_path(
+            args.candidate_dir, "candidate"
+        )
+        chain = hardening_gate._open_directory_chain(
+            candidate, label="candidate"
+        )
+        hardening_gate._close_directory_chain(chain)
+        receipts = (
+            args.workspace_erased_receipt,
+            args.workspace_nonblank_receipt,
+        )
+        normalized_receipts = []
+        for receipt in receipts:
+            normalized = hardening_gate._absolute_lexical_path(
+                receipt, "workspace receipt"
+            )
+            hardening_gate._stable_regular_bytes(
+                normalized,
+                label="workspace receipt",
+                maximum=2 * 1024 * 1024,
+                private=True,
+            )
+            normalized_receipts.append(normalized)
+        if normalized_receipts[0] == normalized_receipts[1]:
+            raise hardening_gate.QualificationError(
+                "workspace receipts must be distinct"
+            )
+
+        raw_log = hardening_gate._absolute_lexical_path(
+            args.raw_log, "hardening raw log"
+        )
+        result = hardening_gate._absolute_lexical_path(
+            args.result, "hardening result"
+        )
+        if raw_log.suffix != ".jsonl" or result.suffix != ".json":
+            raise hardening_gate.QualificationError(
+                "hardening outputs must use .jsonl and .json"
+            )
+        if raw_log == result:
+            raise hardening_gate.QualificationError(
+                "hardening raw log and result must differ"
+            )
+        if os.path.lexists(raw_log) or os.path.lexists(result):
+            raise hardening_gate.QualificationError(
+                "hardening output already exists"
+            )
+        if hardening_gate._inside(raw_log, candidate) or hardening_gate._inside(
+            result, candidate
+        ):
+            raise hardening_gate.QualificationError(
+                "hardening outputs must be outside the candidate"
+            )
+        if hardening_gate._inside(raw_log, ROOT) or hardening_gate._inside(
+            result, ROOT
+        ):
+            raise hardening_gate.QualificationError(
+                "hardening outputs must be outside the qualification checkout"
+            )
+        for parent in (raw_log.parent, result.parent):
+            chain = hardening_gate._open_directory_chain(
+                parent, label="hardening output parent"
+            )
+            hardening_gate._close_directory_chain(chain)
+    except hardening_gate.QualificationError as exc:
+        parser.error(str(exc))
     return args
 
 
 def main(argv=None):
     args = _parse_args(argv)
+    if args.create_workspace_receipt:
+        try:
+            hardening_gate.create_workspace_receipt(
+                candidate_dir=Path(args.candidate_dir),
+                profile_id=args.profile,
+                observation_kind=args.observation_kind,
+                raw_boot_log=args.raw_boot_log,
+                output_path=args.receipt_output,
+                qualification_repo_root=ROOT,
+            )
+        except hardening_gate.QualificationError:
+            print("V061 WORKSPACE RECEIPT ERROR (private details withheld)")
+            return 2
+        print(
+            "V061 WORKSPACE RECEIPT PASS (profile=%s observation=%s)"
+            % (args.profile, args.observation_kind)
+        )
+        return 0
     try:
         return asyncio.run(run(args))
     except (KeyboardInterrupt, SystemExit):
