@@ -11,14 +11,15 @@
 # and refuses to sign any G1 item if G0 regressed. A milestone gate is green ONLY
 # on a real-hardware HIL demo; this script verifies only the HOST-runnable slice.
 #
-# SCOPE: G1 spans sprints S2–S6. THIS sprint (S2) delivers the HELLO/DEVICE_INFO
+# SCOPE: G1 spans sprints S2–S6. This retained script checks the S2
+# HELLO/DEVICE_INFO
 # + framing SLICE (F-01 pyble_ble pure helpers, F-02 pyble_proto codec/CRC/
 # fragmentation/dispatch/conformance). Later G1 rows (F-03 info, F-04..07 run/
 # console, F-08..11/17 fs+jail, F-12 boot, F-18 pairing, F-22/23 label+identify)
-# are reported DEFERRED-STORY until their sprints. **G1 does NOT close at S2.**
+# are checked by the sibling g1_s3…g1_s6 scripts. **G1 does NOT close at S2.**
 #
-# Exit non-zero if any HOST-verifiable S2-slice criterion FAILs (RED is expected
-# now: the pyble_* modules are not yet implemented). DEFERRED does not fail.
+# Exit non-zero if any HOST-verifiable S2-slice criterion fails. Physical rows
+# remain deferred and do not affect this host-only exit code.
 
 set -u
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
@@ -66,17 +67,14 @@ row "DEFERRED-HIL" "NimBLE only, Bluedroid not built; fully offline; no HW-outpu
 hdr "G1.4 From a test client on a classic ESP32: HELLO + DEVICE_INFO succeed  [F-01, F-02, F-03]"
 row "DEFERRED-HIL" "end-to-end HELLO + DEVICE_INFO round-trip on a classic ESP32 (also needs F-03 pyble_info, S3)"
 
-# --- Remaining G1 criteria (later sprints S3–S6) -----------------------------
-hdr "G1.5 Remaining G1 criteria — DEFERRED to later M1 sprints (S3–S6)"
-row "DEFERRED-STORY" "put/get/list/delete file round-trip + CRC + resume, reliability bench (F-08..11, S5–S6)"
-row "DEFERRED-STORY" "RUN(file|source) / STOP vs while-True / live console (F-04..07, S3–S4)"
-row "DEFERRED-STORY" "workspace jail rejects escapes; BLE pairing baseline (F-17, F-18, S6)"
-row "DEFERRED-STORY" "device label sets/clears PyBLE-XXXX pre-connect; cap-gated IDENTIFY; identity never gates access (F-22, F-23, S3–S4)"
+# --- Remaining G1 criteria are owned by current sibling scripts --------------
+hdr "G1.5 Remaining G1 host slices — checked by g1_s3 through g1_s6"
+note "run g1_s3_check.sh, g1_s4_check.sh, g1_s5_check.sh, and g1_s6_check.sh; this S2 script deliberately avoids a recursive aggregate"
 
 printf '\n----------------------------------------\n'
 if [ "$G1_FAIL" -ne 0 ]; then
-  printf 'G1 (S2 slice): %d host-verifiable criteria FAILING — expected RED until [green] pyble_proto/pyble_ble land. Plus DEFERRED HIL/STORY items. G1 NOT met.\n' "$G1_FAIL"
+  printf 'G1 (S2 slice): %d host-verifiable criteria FAILING. Plus DEFERRED-HIL items. G1 NOT met.\n' "$G1_FAIL"
   exit 1
 fi
-printf 'G1 (S2 slice): host-verifiable S2 criteria PASS. G1 still requires the DEFERRED HIL demo + later-sprint stories (S3–S6) before sign-off.\n'
+printf 'G1 (S2 slice): host-verifiable S2 criteria PASS. G1 still requires the sibling S3–S6 checks and physical HIL before sign-off.\n'
 exit 0

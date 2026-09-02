@@ -22,7 +22,7 @@
     {"name": "set_label_rsp_ok",           "type": 2, "opcode": 80, "id": 5,   "payload_hex": "00", "frame_hex": "010250050100000f20dc78", "crc32": 2027692047},
     {"name": "set_label_rsp_erange",       "type": 2, "opcode": 80, "id": 6,   "payload_hex": "09", "frame_hex": "010250060100094537b513", "crc32": 330643269}
   ],
-  "_s3_note": "run_rsp_* (0x20) and set_label_rsp_* (0x50) are FRAME-LEVEL vectors only: opcode is §4-frozen, payload[0] is a §8-frozen status per the frozen handler ABI (RSP payload = [status][extra]). They are NOT per-opcode PAYLOAD-SEMANTIC vectors — the HELLO/caps (§7), RUN{mode,path} (§6), and SET_LABEL body encodings are still DRAFT and MUST NOT be added here until §6/§7/§9 freeze (see s3_pending.json).",
+  "_s3_note": "run_rsp_* (0x20) and set_label_rsp_* (0x50) remain FRAME-LEVEL vectors: opcode is §4-frozen and payload[0] is a §8-frozen status. The byte-less S3 pre-freeze planning ledger is preserved under archive/pre-freeze/. Current HELLO/session, payload-grammar, and label semantics use the dedicated v0.6.1 vector files and named host suites; this corpus does not claim retrospective promotion of every historical semantic idea or completion of physical HIL.",
   "crc_reject": [
     {"name": "hello_cmd_empty_corrupt_crc", "opcode": 1, "frame_hex": "010101010000e4568001", "note": "last CRC byte flipped from FE to 01; decode MUST reject and the dispatch path MUST answer EVT ERROR(ECRC) referencing opcode 0x01 (FR-PROTO-3)"}
   ]

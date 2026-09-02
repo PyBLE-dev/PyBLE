@@ -7,18 +7,11 @@
 # module owner (HAND-OFF for [green]): runtime-engineer ->
 # firmware/pyble/pyble_runner.py (native twin pble_runner.c).
 #
-# =====================================================================
-# DoR STATUS — BLOCKED (do NOT commit [red] before the freeze):
-#   protocol.md §6 (Run / Stop / Console) is DRAFT (freeze ledger, 2026-07-01).
-#   Per the architect DoR, F-04 is ready:false until §6 freezes (RUN{mode,path}
-#   shape, RSP-then-RUN_STATE(running) sequence, running->done/error, EBUSY) and
-#   is mirrored into specs.md FR-RUN. Until then this suite asserts ONLY the
-#   FROZEN SEMANTICS via a PURE run-state-machine seam (the F-04 refactor
-#   extracts one for reuse by RUN source + STOP) — it NEVER hardcodes a DRAFT
-#   RUN payload byte, and it NEVER spawns a task. The actual separate-task
-#   spawn, link-stays-responsive, and HIL run-file are HIL-only (see
-#   gates/g1_s3_check.sh).
-# =====================================================================
+# Historical TDD provenance: the first [red] version used only a pure
+# run-state-machine seam while protocol §6 was awaiting its freeze. Section §6
+# and the FR-RUN mirror are now frozen, so this is an active regression suite
+# for RUN lifecycle, response/state order, and EBUSY. Separate-task execution,
+# link responsiveness, and physical RUN remain HIL-only.
 #
 # FROZEN references: protocol.md §4 (0x20 RUN, 0x40 RUN_STATE), §8 (EBUSY 0x07);
 # specs.md FR-RUN-1/3/4/7/9, NFR-SAFE-1/2, NFR-REL-1; architect contract

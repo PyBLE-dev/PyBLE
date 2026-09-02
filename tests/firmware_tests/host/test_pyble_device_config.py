@@ -8,21 +8,14 @@
 # identity-engineer -> firmware/pyble/pyble_device_config.py (native twin
 # pble_device_config.c).
 #
-# =====================================================================
-# DoR STATUS — BLOCKED (do NOT commit [red] before the freeze):
-#   protocol.md §7 (label/device_id carried in caps) is DRAFT, and the OI-6
-#   label max-length freeze [docs] mirror (architect froze PBLE_LABEL_MAX=24
-#   in the native contract) has not landed in protocol.md §4/§7 + specs.md
-#   FR-IDENT-1. Until then this suite asserts ONLY the FROZEN SEMANTICS via the
-#   scaffold API: the 24-byte bound (architect freeze), advertised-name
-#   derivation (§2 FROZEN, FR-BLE-5/12), empty-clears, over-length -> ERANGE
-#   (§8 FROZEN), and never-gates-access (SEC-11/CON-7). It NEVER hardcodes a
-#   DRAFT SET_LABEL body byte. NVS persist-across-reboot + scan-list visibility
-#   are HIL-only (see gates/g1_s3_check.sh).
-# =====================================================================
+# Historical TDD provenance: the first [red] version deliberately avoided an
+# unfrozen SET_LABEL body. Protocol §7 and the OI-6 label mirror are now frozen,
+# so this is an active regression suite for the 24-byte bound, advertised-name
+# derivation, empty clear, ERANGE, strict UTF-8, and display-only identity.
+# Persistence across reboot and scan-list visibility remain HIL-only.
 #
 # FROZEN references: protocol.md §2 (advertising: label replaces name, MAC-
-# suffix device_id), §4 (0x50 SET_LABEL), §8 (ERANGE 0x09); specs.md FR-BLE-5/12,
+# suffix device_id), §4 (0x50 SET_LABEL), §7 (payload), §8 (ERANGE 0x09); specs.md FR-BLE-5/12,
 # FR-IDENT-1, SEC-10/11, CON-7; architect freeze OI-6 = 24 bytes UTF-8.
 #
 # ---------------------------------------------------------------------------
