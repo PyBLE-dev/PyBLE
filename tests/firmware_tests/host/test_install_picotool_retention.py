@@ -12,6 +12,7 @@ import shutil
 import stat
 import subprocess
 import tempfile
+import time
 import unittest
 import zipfile
 
@@ -211,6 +212,7 @@ class PicotoolRetentionTests(unittest.TestCase):
         path_prefix: Path | None = None,
         destination: Path | None = None,
         process_umask: int | None = None,
+        environment_overrides: dict[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
         if not INSTALLER.is_file():
             return subprocess.CompletedProcess(
@@ -226,6 +228,8 @@ class PicotoolRetentionTests(unittest.TestCase):
             environment.pop("PYBLE_PICOTOOL_ARCHIVE", None)
         if path_prefix is not None:
             environment["PATH"] = f"{path_prefix}:{environment['PATH']}"
+        if environment_overrides is not None:
+            environment.update(environment_overrides)
         return subprocess.run(
             [str(INSTALLER), str(destination or self.destination)],
             cwd=ROOT,
@@ -483,6 +487,120 @@ class PicotoolRetentionTests(unittest.TestCase):
         self.assertEqual(sentinel.read_bytes(), b"do not replace\n")
         self.assertEqual([sentinel], list(self.destination.iterdir()))
         self.assert_no_staging_tree()
+
+    def test_destination_creation_race_is_atomic_no_replace(self) -> None:
+        """Create an empty contender after the last advisory existence check."""
+
+        injection = self.root / "race-python"
+        injection.mkdir()
+        contender_identity = self.root / "contender-identity"
+        (injection / "sitecustomize.py").write_text(
+            "import os\n"
+            "_real_lexists = os.path.lexists\n"
+            "_target = os.environ['PYBLE_TEST_RACE_DESTINATION']\n"
+            "_marker = os.environ['PYBLE_TEST_RACE_MARKER']\n"
+            "_calls = 0\n"
+            "def _race(path):\n"
+            "    global _calls\n"
+            "    result = _real_lexists(path)\n"
+            "    if os.path.abspath(os.fspath(path)) == _target:\n"
+            "        _calls += 1\n"
+            "        if _calls == 2 and not result:\n"
+            "            os.mkdir(_target, 0o700)\n"
+            "            identity = os.lstat(_target)\n"
+            "            with open(_marker, 'w', encoding='ascii') as output:\n"
+            "                output.write(f'{identity.st_dev}:{identity.st_ino}\\n')\n"
+            "    return result\n"
+            "os.path.lexists = _race\n",
+            encoding="utf-8",
+        )
+
+        result = self.run_installer(
+            archive=self.archive,
+            environment_overrides={
+                "PYTHONPATH": str(injection),
+                "PYBLE_TEST_RACE_DESTINATION": str(self.destination.absolute()),
+                "PYBLE_TEST_RACE_MARKER": str(contender_identity),
+            },
+        )
+
+        self.assertTrue(contender_identity.is_file(), result.stdout)
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        wanted_device, wanted_inode = (
+            int(value)
+            for value in contender_identity.read_text(encoding="ascii").strip().split(":")
+        )
+        observed = self.destination.lstat()
+        self.assertEqual((observed.st_dev, observed.st_ino), (wanted_device, wanted_inode))
+        self.assertTrue(self.destination.is_dir())
+        self.assertEqual([], list(self.destination.iterdir()))
+        self.assert_no_staging_tree()
+
+    def test_destination_parent_identity_swap_is_rejected_and_cleaned(self) -> None:
+        ready = self.root / "version-probe-ready"
+        release = self.root / "version-probe-release"
+        barrier_executable = (
+            b"#!/bin/sh\n"
+            b"[ \"${1:-}\" = version ] || exit 64\n"
+            b": > \"${PYBLE_TEST_VERSION_READY:?}\"\n"
+            b"while [ ! -e \"${PYBLE_TEST_VERSION_RELEASE:?}\" ]; do\n"
+            b"  sleep 0.01\n"
+            b"done\n"
+            + f"printf '%s\\n' '{VERSION_LINE}'\n".encode("utf-8")
+        )
+        archive = self.root / "parent-race.zip"
+        write_archive(archive, executable=barrier_executable)
+        self.write_lock(archive=archive, executable=barrier_executable)
+        original_parent = self.root / "original-parent"
+        original_parent.mkdir()
+        destination = original_parent / "installed"
+        environment = dict(os.environ)
+        environment.update(
+            {
+                "PYBLE_LOCK_FILE": str(self.lock),
+                "PYBLE_PICOTOOL_ARCHIVE": str(archive),
+                "PYBLE_TEST_VERSION_READY": str(ready),
+                "PYBLE_TEST_VERSION_RELEASE": str(release),
+            }
+        )
+        process = subprocess.Popen(
+            [str(INSTALLER), str(destination)],
+            cwd=ROOT,
+            env=environment,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+        )
+        displaced_parent = self.root / "displaced-parent"
+        try:
+            deadline = time.monotonic() + 10
+            while not ready.exists() and process.poll() is None:
+                if time.monotonic() >= deadline:
+                    self.fail("picotool version-probe barrier was not reached")
+                time.sleep(0.01)
+            self.assertIsNone(process.poll(), "installer exited before the race")
+
+            original_parent.rename(displaced_parent)
+            original_parent.mkdir()
+            attacker_sentinel = original_parent / "attacker-sentinel"
+            attacker_sentinel.write_bytes(b"preserve this parent\n")
+            release.touch()
+            stdout, _ = process.communicate(timeout=10)
+        finally:
+            release.touch(exist_ok=True)
+            if process.poll() is None:
+                process.kill()
+                process.communicate()
+
+        self.assertNotEqual(process.returncode, 0, stdout)
+        self.assertEqual(attacker_sentinel.read_bytes(), b"preserve this parent\n")
+        self.assertFalse(destination.exists())
+        self.assertEqual(
+            [],
+            sorted(displaced_parent.glob(".installed.incoming.*")),
+            "a rejected parent swap leaked its staged install",
+        )
+        self.assertFalse((displaced_parent / destination.name).exists())
 
     def test_retained_tree_is_revalidated_byte_for_byte_without_extras(self) -> None:
         cases = {
