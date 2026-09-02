@@ -556,6 +556,15 @@ def write_v060_private_result(
 async def combined_result_for_firmware(firmware: Path) -> dict:
     """Generate private finalization evidence through the real HIL runner."""
 
+    # This fixture exercises immutable v0.6.0 finalization semantics even when
+    # the source checkout has advanced. Keep its synthetic live observations
+    # bound to that historical candidate instead of inheriting the current
+    # versions.lock through the imported HIL modules.
+    historical_version = "0.6.0"
+    historical_caps = COMBINED_TEST.CAPS.replace(
+        ("agent=%s\n" % COMBINED_TEST.SELECTED_AGENT_VERSION).encode("ascii"),
+        ("agent=%s\n" % historical_version).encode("ascii"),
+    )
     payload = firmware.read_bytes()
     size_bytes = len(payload)
     spans = [
@@ -575,16 +584,22 @@ async def combined_result_for_firmware(firmware: Path) -> dict:
         COMBINED_TEST.CombinedFakeCentral(
             "candidate/setup-disabled",
             live_candidate_sha256=attestation["sha256"],
-        ),
-        COMBINED_TEST.CombinedFakeCentral("setup-disabled/setup-enabled"),
-        COMBINED_TEST.CombinedFakeCentral(
-            "setup-enabled/exercise/cycle-1-arm"
+            hello_payload=historical_caps,
         ),
         COMBINED_TEST.CombinedFakeCentral(
-            "cycle-1/final-disable/cycle-2-arm"
+            "setup-disabled/setup-enabled", hello_payload=historical_caps),
+        COMBINED_TEST.CombinedFakeCentral(
+            "setup-enabled/exercise/cycle-1-arm",
+            hello_payload=historical_caps,
         ),
-        COMBINED_TEST.CombinedFakeCentral("cycle-2/cycle-3-arm"),
-        COMBINED_TEST.CombinedFakeCentral("cycle-3/final-proof"),
+        COMBINED_TEST.CombinedFakeCentral(
+            "cycle-1/final-disable/cycle-2-arm",
+            hello_payload=historical_caps,
+        ),
+        COMBINED_TEST.CombinedFakeCentral(
+            "cycle-2/cycle-3-arm", hello_payload=historical_caps),
+        COMBINED_TEST.CombinedFakeCentral(
+            "cycle-3/final-proof", hello_payload=historical_caps),
     ]
     connector = COMBINED_TEST.CombinedFakeConnector(connections)
 
@@ -595,20 +610,33 @@ async def combined_result_for_firmware(firmware: Path) -> dict:
         connector.last.visual_confirmed = True
         return True
 
-    return await COMBINED_TEST.bench.run_combined_qualification(
-        connector,
-        "private-input-only",
-        COMBINED_TEST.preflight(),
-        hashlib.sha256(payload).hexdigest(),
-        size_bytes,
-        attestation,
-        timeout_s=2.0,
-        poll_interval_s=0,
-        production_app_probe=COMBINED_TEST.production_app_evidence,
-        confirm_splash=confirm_splash,
-        confirm_tft=confirm_tft,
-        session_id="34" * 16,
-    )
+    with (
+        mock.patch.object(COMBINED_TEST, "CAPS", historical_caps),
+        mock.patch.object(
+            COMBINED_TEST.bench,
+            "EXPECTED_FIRMWARE_VERSION",
+            historical_version,
+        ),
+        mock.patch.object(
+            COMBINED_TEST.tft_bench,
+            "EXPECTED_AGENT_VERSION",
+            historical_version,
+        ),
+    ):
+        return await COMBINED_TEST.bench.run_combined_qualification(
+            connector,
+            "private-input-only",
+            COMBINED_TEST.preflight(),
+            hashlib.sha256(payload).hexdigest(),
+            size_bytes,
+            attestation,
+            timeout_s=2.0,
+            poll_interval_s=0,
+            production_app_probe=COMBINED_TEST.production_app_evidence,
+            confirm_splash=confirm_splash,
+            confirm_tft=confirm_tft,
+            session_id="34" * 16,
+        )
 
 
 def refresh_candidate_hashes(candidate: Path) -> None:
