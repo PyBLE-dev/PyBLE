@@ -67,6 +67,16 @@ passes the result to `create-hil-completion`; the operator input never contains
 the derived hardening check or summary. Finalization reopens all five private
 results, so copying a result line or editing HIL Markdown is not evidence.
 
+The runner validates the protected candidate, both receipts and raw siblings,
+and the complete committed qualification-code closure before it connects. It
+then requires `/v061_hil` and `/main.py` to be absent before making any board
+change. Use a controlled qualification board: a collision is a hard refusal,
+not permission to delete an owner's files. The invocation also requires the
+reviewed manufacturer, model, and module marking for the selected physical
+profile. That operator attestation is the exact-board authority because
+PBLE/1 intentionally reports chip identity, not a carrier-board or provisioning
+profile; the private values never enter result evidence.
+
 For controlled reset samples, select an explicit USB serial adapter for the
 same board. The orchestrator uses the common ESP development-board wiring:
 **RTS asserts EN/reset low**, while **DTR remains deasserted** so GPIO0 is not
