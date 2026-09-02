@@ -14,25 +14,31 @@
 # never starts user code itself.
 import rp2
 import vfs
+import pyble_boot
 
-# Stock LFS2 mount (keep in sync with upstream ports/rp2/modules/_boot.py).
-# The flash requires the programming size to be aligned to 256 bytes.
+# The flash requires the programming size to be aligned to 256 bytes. A
+# healthy mount remains the stock constructor path; the helper permits one
+# format only after proving the complete device is erased.
 bdev = rp2.Flash()
+workspace_ready = False
 try:
-    fs = vfs.VfsLfs2(bdev, progsize=256)
-except:  # noqa: E722 - bare except mirrors upstream (first boot: no fs yet)
-    vfs.VfsLfs2.mkfs(bdev, progsize=256)
-    fs = vfs.VfsLfs2(bdev, progsize=256)
-vfs.mount(fs, "/")
-del vfs, bdev, fs
+    fs = pyble_boot.mount_lfs2(bdev, vfs, progsize=256)
+    vfs.mount(fs, "/")
+    workspace_ready = True
+except Exception:
+    # Fixed, bounded USB-only guidance: never print storage contents or the
+    # variable exception, and never start agent/autorun on uncertain media.
+    print("PyBLE workspace recovery is required; reconnect by USB.")
 
 # PyBLE agent auto-start (firmware-embedded, un-deletable). main() is the
 # supervisor loop and normally never returns; if the agent is not frozen yet
 # (bring-up images) or the supervisor hits a fatal fault, fall through to the
 # REPL rather than wedging the board.
-try:
-    import pyble_agent
+if workspace_ready:
+    del vfs, bdev, fs
+    try:
+        import pyble_agent
 
-    pyble_agent.main()
-except Exception:
-    pass
+        pyble_agent.main()
+    except Exception:
+        pass

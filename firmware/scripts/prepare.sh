@@ -104,9 +104,9 @@ cp -R "$OVERLAY"/. "$BOARD_DST"/
 # scratch notes, or a future module that has not been admitted by the manifest
 # must not become a release input merely because it is beside these sources.
 if [ "$PORT" = "rp2" ]; then
-  PYBLE_FILES="__init__.py _version.py pyble_agent.py pyble_ble.py pyble_boot.py pyble_console.py pyble_device_config.py pyble_fs.py pyble_info.py pyble_proto.py pyble_runner.py"
+  PYBLE_FILES="__init__.py _version.py pyble_agent.py pyble_ble.py pyble_boot.py pyble_console.py pyble_device_config.py pyble_fs.py pyble_info.py pyble_proto.py pyble_runner.py pyble_workspace.py"
 else
-  PYBLE_FILES="__init__.py _version.py pyble_ble.py pyble_proto.py"
+  PYBLE_FILES="__init__.py _version.py pyble_ble.py pyble_proto.py pyble_workspace.py"
 fi
 mkdir "$BOARD_DST/pyble"
 for pyble_file in $PYBLE_FILES; do

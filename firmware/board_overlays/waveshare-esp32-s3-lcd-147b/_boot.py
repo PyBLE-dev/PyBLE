@@ -4,16 +4,20 @@
 import gc
 import vfs
 from flashbdev import bdev
+import pyble_workspace
+
+workspace_ready = False
+try:
+    if not bdev:
+        raise OSError("workspace block device unavailable")
+    vfs.mount(pyble_workspace.mount_lfs2(bdev, vfs, progsize=256), "/")
+    workspace_ready = True
+except Exception:
+    print("PyBLE workspace recovery is required; reconnect by USB.")
 
 try:
-    if bdev:
-        vfs.mount(bdev, "/")
-except OSError:
-    import inisetup
-
-    inisetup.setup()
-
-try:
+    if not workspace_ready:
+        raise RuntimeError("workspace unavailable")
     import pble_ble
 
     pble_ble.init_agent()

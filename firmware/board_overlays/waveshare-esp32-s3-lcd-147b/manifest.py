@@ -3,7 +3,6 @@
 # Exact Waveshare ESP32-S3-LCD-1.47B frozen manifest (ADR-0028).
 
 module("flashbdev.py", base_path="$(PORT_DIR)/modules", opt=3)
-module("inisetup.py", base_path="$(PORT_DIR)/modules", opt=3)
 include("$(MPY_DIR)/extmod/asyncio")
 require("neopixel")
 
@@ -16,3 +15,4 @@ module("_version.py", base_path="$(BOARD_DIR)/pyble", opt=3)
 module("pyble/__init__.py", base_path="$(BOARD_DIR)", opt=3)
 module("pyble/pyble_ble.py", base_path="$(BOARD_DIR)", opt=3)
 module("pyble/pyble_proto.py", base_path="$(BOARD_DIR)", opt=3)
+module("pyble_workspace.py", base_path="$(BOARD_DIR)/pyble", opt=3)

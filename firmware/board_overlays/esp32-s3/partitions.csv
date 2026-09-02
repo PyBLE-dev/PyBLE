@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # PyBLE ESP32-S3 partition table (16 MB — the board's full flash). Explicit `vfs`
 # partition (flashbdev.py mounts the partition LABELLED "vfs"): 2 MB factory app
-# (fits the ~1.7 MB agent image) + a ~13.9 MB FAT vfs for the user workspace.
+# (fits the ~1.7 MB agent image) + a ~13.9 MB LFS2-formatted vfs workspace.
 # Requires CONFIG_ESPTOOLPY_FLASHSIZE=16MB (set in sdkconfig.board).
 # Name,   Type, SubType, Offset,   Size,      Flags
 nvs,      data, nvs,     0x9000,   0x6000,
