@@ -76,6 +76,12 @@ _IDENTIFY_GPIO_MAX = 29
 
 _RUNNING = pyble_runner.RUNNING
 
+# The portable receiver advertises a four-chunk window.  BEGIN + W DATA + END
+# must therefore fit one bounded supervisor mailbox without any VFS work or
+# response transmission from the synchronous BTstack callback.
+FS_MAILBOX_DEPTH = 6
+_CURRENT_SESSION = object()
+
 
 def _noop():
     return None
@@ -163,6 +169,7 @@ class Agent:
         self._clock = clock if clock is not None else _ticks_ms
         self._reboot_at = None          # ms deadline for the deferred reset
         self._control_after_rsp = None  # P3/P4: provisional until TX succeeds
+        self._run_reserved_after_rsp = False
         # Retained as a cleared compatibility sentinel for older host fixtures;
         # control staging above supersedes the former interrupt-only one-shot.
         self._interrupt_after_rsp = False
@@ -178,23 +185,30 @@ class Agent:
             self._console_emit, notify if notify is not None else _noop,
             clock=self._clock, stop_fail=self._reset)
         self._terminal_session = _NO_TERMINAL_SESSION
+        self._dispatch_session = None
 
         # Filesystem bridge (F-08/F-09/F-17): EVT emission via emit().
         self._fs = pyble_fs.FsService(
             self._root, self.emit,
             chunk_size=pyble_info.chunk_size(link.mtu()))
+        self._fs_mailbox = [None] * FS_MAILBOX_DEPTH
+        self._fs_mailbox_head = 0
+        self._fs_mailbox_tail = 0
+        self._fs_mailbox_count = 0
+        self._fs_overflow_rsp = None
 
         # Runner (P2/P3): handler reserves inline; service() executes on the
         # supervisor with the console stderr path for tracebacks.
         self._runner = pyble_runner.Runner(
             self._emit_run_state,
             pyble_runner.make_exec_fn(write_stderr=self._stderr),
-            emit_terminal=self._emit_terminal_run_state)
+            emit_terminal=self._emit_terminal_run_state,
+            end_input=self.console.end_input)
 
         # Dispatcher: EVERY §4 CMD opcode gets a registered handler — none may
         # fall through to the EUNSUPPORTED default (that default is only for
         # opcodes outside the frozen §4 set, FR-PROTO-9).
-        d = pyble_proto.Dispatcher()
+        d = pyble_proto.Dispatcher(link)
         d.register(_OP["HELLO"], self._h_info)
         d.register(_OP["DEVICE_INFO"], self._h_info)
         d.register(_OP["FILE_LIST"], self._h_list)
@@ -246,13 +260,23 @@ class Agent:
 
     def autorun(self):
         """maybe_autorun (called LAST by main(), after the link is up)."""
-        return pyble_boot.maybe_autorun(self._config, self._runner, self._root)
+        accepted = pyble_boot.maybe_autorun(
+            self._config, self._runner, self._root)
+        if accepted:
+            generation = self.console.begin_input()
+            self._runner.bind_reserved_input(generation)
+        return accepted
 
     # -- outbound paths --------------------------------------------------------
-    def emit(self, opcode, payload):
-        """The agent's EVT path: TYPE=EVT, ID=0, valid §3.1 CRC."""
-        self._link.send_message(
-            pyble_proto.encode(pyble_proto.EVT, opcode, 0, payload))
+    def emit(self, opcode, payload, expected_session=_CURRENT_SESSION):
+        """Encode and send one event against its immutable creation session."""
+        if expected_session is _CURRENT_SESSION:
+            expected_session = self._link.session_token()
+        if expected_session is None:
+            return False
+        return self._link.send_message(
+            pyble_proto.encode(pyble_proto.EVT, opcode, 0, payload),
+            expected_session=expected_session)
 
     def _console_emit(self, stream, data):
         self.emit(_OP["CONSOLE_DATA"], bytes((stream,)) + data)
@@ -263,12 +287,21 @@ class Agent:
     def _emit_run_state(self, state):
         # The run-active console gate (P8) tracks the lifecycle exactly:
         # opened at RUN_STATE(running), closed at every terminal state.
-        self.console.set_run_active(state == _RUNNING)
-        self.emit(_OP["RUN_STATE"], bytes((state,)))
+        # Event ownership begins when this event is created, not when the RUN
+        # command was admitted. A reconnect between those cuts therefore owns
+        # the newly-created state while the immutable token still prevents a
+        # later TX race from retargeting it.
+        expected_session = self._link.session_token()
+        input_generation = self._runner.event_input_generation()
+        self.console.set_run_active(
+            state == _RUNNING, expected_generation=input_generation)
+        self.emit(_OP["RUN_STATE"], bytes((state,)), expected_session)
 
     def _emit_terminal_run_state(self, state, published):
         """Emit stopped IDLE with a receipt at BleLink's local TX cut."""
-        self.console.set_run_active(False)
+        input_generation = self._runner.event_input_generation()
+        self.console.set_run_active(
+            False, expected_generation=input_generation)
         if self._terminal_session is _NO_TERMINAL_SESSION:
             self._terminal_session = self._link.session_token()
         session = self._terminal_session
@@ -289,13 +322,97 @@ class Agent:
             self._terminal_session = _NO_TERMINAL_SESSION
         return accepted
 
+    # -- portable PUT supervisor mailbox --------------------------------------
+    def _enqueue_put(self, frame):
+        """Capture one PUT command without touching VFS or transmitting."""
+        item = (frame.opcode, frame.id, bytes(frame.payload),
+                self._dispatch_session, self._fs.generation_token())
+        if self._fs_mailbox_count >= FS_MAILBOX_DEPTH:
+            # DATA is response-free and safely dropped for Go-Back-N retry.  Keep
+            # one bounded deferred rejection slot for a response-bearing abuse
+            # command; expected window traffic fits the six normal slots. A
+            # second response-bearing overflow has no bounded response slot, so
+            # close its exact session instead of silently dropping a reply on a
+            # still-live connection. Invalidate and clear queued VFS ownership
+            # synchronously; the later GAP callback repeats this idempotently.
+            if frame.opcode != _OP["FILE_PUT_DATA"]:
+                if self._fs_overflow_rsp is None:
+                    self._fs_overflow_rsp = (
+                        frame.opcode, frame.id, self._dispatch_session)
+                elif self._link.terminate_session(self._dispatch_session):
+                    self._fs.on_disconnect()
+                    self._clear_fs_mailbox()
+            return None
+        self._fs_mailbox[self._fs_mailbox_tail] = item
+        self._fs_mailbox_tail = (
+            self._fs_mailbox_tail + 1) % FS_MAILBOX_DEPTH
+        self._fs_mailbox_count += 1
+        return None
+
+    def _clear_fs_mailbox(self):
+        while self._fs_mailbox_count:
+            self._fs_mailbox[self._fs_mailbox_head] = None
+            self._fs_mailbox_head = (
+                self._fs_mailbox_head + 1) % FS_MAILBOX_DEPTH
+            self._fs_mailbox_count -= 1
+        self._fs_mailbox_head = 0
+        self._fs_mailbox_tail = 0
+        self._fs_overflow_rsp = None
+
+    def _service_put_mailbox(self):
+        """Execute at most one queued PUT operation in supervisor context."""
+        if self._fs_mailbox_count == 0:
+            rejected = self._fs_overflow_rsp
+            self._fs_overflow_rsp = None
+            if rejected is None:
+                return False
+            opcode, request_id, session = rejected
+            if session == self._link.session_token():
+                self._link.send_message(
+                    pyble_proto.encode(
+                        pyble_proto.RSP, opcode, request_id, bytes((EBUSY,))),
+                    expected_session=session)
+            return True
+
+        item = self._fs_mailbox[self._fs_mailbox_head]
+        self._fs_mailbox[self._fs_mailbox_head] = None
+        self._fs_mailbox_head = (
+            self._fs_mailbox_head + 1) % FS_MAILBOX_DEPTH
+        self._fs_mailbox_count -= 1
+        opcode, request_id, payload, session, generation = item
+
+        # The queue item's exact connection and transfer generation own every
+        # effect and response.  A disconnect invalidates both before successor
+        # work can publish.
+        if (session != self._link.session_token() or
+                generation != self._fs.generation_token()):
+            return True
+        self._fs.set_operation_owner(generation, session)
+        try:
+            if opcode == _OP["FILE_PUT_BEGIN"]:
+                response = self._fs.handle_put_begin(payload)
+            elif opcode == _OP["FILE_PUT_DATA"]:
+                response = self._fs.handle_put_data(payload)
+            else:
+                response = self._fs.handle_put_end(payload)
+        finally:
+            self._fs.clear_operation_owner()
+
+        if response is not None:
+            self._link.send_message(
+                pyble_proto.encode(
+                    pyble_proto.RSP, opcode, request_id, response),
+                expected_session=session)
+        return True
+
     # -- link callbacks --------------------------------------------------------
     def _closing_admission(self, msg):
         """Return (gated, response) for the P4 pre-dispatch closing gate.
 
         Malformed, wrong-version, and bad-CRC frames retain Dispatcher error
-        semantics. Every valid non-SOFT command is refused before any handler;
-        protocol no-response commands are silently dropped.
+        semantics. Every valid command is refused before any handler; protocol
+        no-response commands are silently dropped. This includes a duplicate
+        SOFT after reconnect, before the successor can negotiate HELLO.
         """
         if self._reboot_at is None:
             return (False, None)
@@ -304,13 +421,12 @@ class Agent:
             frame = pyble_proto.decode(msg)
         except pyble_proto.ProtocolError:
             return (False, None)
-        if frame.ver != pyble_proto.VER or frame.type != pyble_proto.CMD:
+        if (frame.ver != pyble_proto.VER or frame.type != pyble_proto.CMD or
+                frame.id == 0):
             return (False, None)
         got_crc = int.from_bytes(msg[-4:], "little")
         if pyble_proto.crc32(msg[:-4]) != got_crc:
             return (False, None)
-        if frame.opcode == _OP["SOFT_REBOOT"]:
-            return (False, None)       # handler returns duplicate EBUSY
         if frame.opcode in _NO_RSP_COMMANDS:
             return (True, None)
         rsp = pyble_proto.encode(
@@ -321,7 +437,8 @@ class Agent:
         gated, closing_rsp = self._closing_admission(msg)
         if gated:
             if closing_rsp is not None:
-                self._link.send_message(closing_rsp)
+                self._link.send_message(
+                    closing_rsp, expected_session=self._link.session_token())
             return
 
         # STOP/SOFT_REBOOT handlers only stage command-local control. The run,
@@ -329,35 +446,80 @@ class Agent:
         # encoding (inside Dispatcher) and link handoff succeed. `finally`
         # discards provisional state on every exceptional exit.
         control_after_rsp = None
+        run_reserved_after_rsp = False
+        response_published = [False]
+        session = self._link.session_token()
+        self._dispatch_session = session
         self._control_after_rsp = None
+        self._run_reserved_after_rsp = False
         self._interrupt_after_rsp = False
         try:
             rsp = self._dispatcher.on_message(msg)
+            receipt = self._dispatcher.take_publish_callback()
             control_after_rsp = self._control_after_rsp
+            run_reserved_after_rsp = self._run_reserved_after_rsp
             if rsp is not None:
-                self._link.send_message(rsp)
+                def _published():
+                    if receipt is not None:
+                        receipt()
+                    response_published[0] = True
+
+                accepted = self._link.send_message(
+                    rsp, on_published=_published, expected_session=session)
+                if accepted is False:
+                    response_published[0] = False
         finally:
+            # A handler may reserve RUN and then fail while the dispatcher is
+            # encoding its response.  In that case the local copy above was
+            # never assigned, but the reservation still must be rolled back.
+            run_reserved_after_rsp = (
+                run_reserved_after_rsp or self._run_reserved_after_rsp)
             self._control_after_rsp = None
+            self._run_reserved_after_rsp = False
             self._interrupt_after_rsp = False
-        if control_after_rsp is not None:
-            self._commit_control(control_after_rsp)
+            self._dispatch_session = None
+            if run_reserved_after_rsp:
+                if response_published[0]:
+                    generation = self.console.begin_input()
+                    self._runner.bind_reserved_input(generation)
+                else:
+                    self._runner.cancel_reserved_run()
+            if control_after_rsp is not None and response_published[0]:
+                self.console.end_input()
+                self._commit_control(control_after_rsp)
 
     def _on_connect(self):
+        self._dispatcher.reset_session()
+        if self._reboot_at is not None:
+            # The reboot deadline is device-global. A successor connection
+            # during its grace inherits transport-level closing so malformed
+            # fragments retain classification without consuming its budget.
+            begin_closing = getattr(
+                self._link, "begin_command_closing", None)
+            if begin_closing is not None:
+                begin_closing(self._link.session_token())
         # Refresh the INFO read for the new session (mtu/free_mem/label live).
         self._link.set_info_payload(self.info_payload())
 
     def _on_disconnect(self):
-        # F-10: reset the in-RAM transfer state ONLY — the jailed
-        # <dest>.pbltmp stays on flash as the durable resume watermark.
+        # Invalidate transfer ownership before clearing queued work.  This is
+        # RAM-only and never closes, stats, removes, or otherwise enters VFS.
         self._fs.on_disconnect()
+        self._clear_fs_mailbox()
+        self._dispatcher.reset_session()
+        self.console.clear_input()
 
     def _on_oversize(self, head):
         # P6: an oversize reassembled message was dropped — answer RSP ERANGE
         # with the best-effort opcode/id echo carried in the §3.1 header bytes.
-        opcode = head[2] if len(head) > 2 else 0x00
-        id_ = head[3] if len(head) > 3 else 0x00
+        head = bytes(head)
+        if (len(head) < 6 or head[0] != pyble_proto.VER or
+                head[1] != pyble_proto.CMD or head[3] == 0):
+            return
         self._link.send_message(
-            pyble_proto.encode(pyble_proto.RSP, opcode, id_, bytes((ERANGE,))))
+            pyble_proto.encode(
+                pyble_proto.RSP, head[2], head[3], bytes((ERANGE,))),
+            expected_session=self._link.session_token())
 
     # -- helpers ---------------------------------------------------------------
     def _run_active(self):
@@ -366,11 +528,20 @@ class Agent:
 
     def _commit_control(self, action):
         """Commit an acknowledged STOP/SOFT action after response handoff."""
+        if action == _CONTROL_SOFT_REBOOT:
+            # This cut follows successful local publication of RSP{OK}. Close
+            # transport-level violation accounting before any further reboot
+            # work, while retaining ordinary malformed-frame classification.
+            begin_closing = getattr(
+                self._link, "begin_command_closing", None)
+            if begin_closing is not None:
+                begin_closing(self._link.session_token())
+            self._reboot_at = self._clock() + REBOOT_FLUSH_MS
+
         self._runner.handle_stop()
         executing = self._runner.is_executing()
 
         if action == _CONTROL_SOFT_REBOOT:
-            self._reboot_at = self._clock() + REBOOT_FLUSH_MS
             if self._arm_reset is not None:
                 try:
                     self._arm_reset(REBOOT_FLUSH_MS)
@@ -390,10 +561,9 @@ class Agent:
     # -- §4 handlers (handler(frame) -> RSP payload bytes | None) --------------
     def _h_info(self, frame):
         # HELLO RSP == DEVICE_INFO RSP == [OK] + the single caps source (§7).
-        # The request payload is not parsed: the §9 VER gate in dispatch
-        # already refused any non-v1 frame (pble_info.c twin). The INFO read
-        # and the GET chunk size are refreshed here so both track the
-        # negotiated MTU (HELLO is the first post-MTU-exchange request).
+        # Dispatcher already validated HELLO's request grammar and PBLE/1
+        # offer. The INFO read and GET chunk size are refreshed here so both
+        # track the negotiated MTU (HELLO is the first post-MTU exchange).
         mtu, free_mem, device_id, label, auto_run = self._caps_args()
         self._fs._chunk = pyble_info.chunk_size(mtu)  # own-module seam (P2)
         self._link.set_info_payload(pyble_info.info_char_payload(
@@ -410,18 +580,23 @@ class Agent:
     def _h_get_begin(self, frame):
         if self._run_active():
             return bytes((EBUSY,))      # transfers-during-RUN (P2)
-        return self._fs.handle_get_begin(frame.payload)
+        self._fs.set_operation_owner(
+            self._fs.generation_token(), self._dispatch_session)
+        try:
+            return self._fs.handle_get_begin(frame.payload)
+        finally:
+            self._fs.clear_operation_owner()
 
     def _h_put_begin(self, frame):
         if self._run_active():
             return bytes((EBUSY,))      # transfers-during-RUN (P2)
-        return self._fs.handle_put_begin(frame.payload)
+        return self._enqueue_put(frame)
 
     def _h_put_data(self, frame):
-        return self._fs.handle_put_data(frame.payload)   # ACK-only: None
+        return self._enqueue_put(frame)                  # ACK-only: None
 
     def _h_put_end(self, frame):
-        return self._fs.handle_put_end(frame.payload)
+        return self._enqueue_put(frame)
 
     def _h_delete(self, frame):
         return self._fs.handle_delete(frame.payload)
@@ -437,7 +612,10 @@ class Agent:
         # supervisor work — RSP-before-RUN_STATE is structural.
         if self._reboot_at is not None:
             return bytes((EBUSY,))      # acknowledged SOFT closes admission
-        return bytes((self._runner.handle_run(frame.payload),))
+        status = self._runner.handle_run(
+            frame.payload, owner=self._dispatch_session)
+        self._run_reserved_after_rsp = status == OK
+        return bytes((status,))
 
     def _h_stop(self, frame):
         # §6/P3: OK is idempotent, but cancellation/interrupt is provisional
@@ -463,7 +641,7 @@ class Agent:
         payload = bytes(frame.payload)
         if len(payload) == 0:
             return bytes((OK,))         # empty payload clears the identify LED
-        if len(payload) < 2:
+        if len(payload) != 2:
             return bytes((EBADREQ,))
         if payload[0] > _IDENTIFY_GPIO_MAX:
             return bytes((ERANGE,))
@@ -501,6 +679,7 @@ class Agent:
                 # already cancelled by SOFT; it never admits new RUN source.
                 self._runner.service()
                 if self._reboot_at is None:
+                    self._service_put_mailbox()
                     self._fs.pump()
             except KeyboardInterrupt:
                 # A deferred 0x03 may land after exec but before the terminal

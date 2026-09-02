@@ -29,12 +29,11 @@
 #     incrementally across PUT_DATA so PUT_END need not re-scan the temp
 #     (NFR-PERF-2).
 #
-# Execution model (ports/rpi-pico2-w.md P2): the fast ops (LIST/STAT/DELETE/
-# MKDIR/RENAME + every PUT step) answer inline in scheduled context; the GET
-# stream is MAILBOXED — handle_get_begin() only validates + reserves and
-# returns RSP{OK}[total]; the supervisor later calls pump() to emit the
-# DATA*/END events on the main thread. pyble_agent owns RSP-before-EVT wire
-# ordering (it sends the returned RSP, then calls pump()).
+# Execution model (ports/rpi-pico2-w.md P2): pyble_agent defers every PUT step
+# through its bounded supervisor mailbox, so these handlers and their VFS calls
+# run only on the supervisor. GET_BEGIN validates + reserves inline, while the
+# supervisor later calls pump() to emit DATA*/END. Other small filesystem
+# operations retain their scheduled-context behavior.
 #
 # Injectable seams (host suite drives this without BLE):
 #   emit(opcode, payload)  — EVT sink (id 0): FILE_GET_DATA 0x13,
@@ -52,8 +51,10 @@ import pyble_proto
 FS_PATH_MAX = 128          # max path bytes on the wire (§5), else ERANGE
 TMP_SUFFIX = ".pbltmp"     # reserved transfer-scratch suffix (jailed)
 RSP_MAX = 480              # LIST truncation budget (C twin PBLE_RSP_MAX)
+FS_SAFETY_RESERVE = 65536  # bytes kept free after PUT admission (D11)
 
 _READ_BLK = 256            # streaming read block (CRC/resume scans)
+_UINT64_MAX = (1 << 64) - 1
 
 # --- §8 statuses (single-sourced from the frozen proto table) -----------------
 _ST = pyble_proto.STATUS
@@ -73,7 +74,9 @@ _OP_GET_DATA = pyble_proto.OPCODES["FILE_GET_DATA"]   # 0x13
 _OP_GET_END = pyble_proto.OPCODES["FILE_GET_END"]     # 0x14
 _OP_PUT_ACK = pyble_proto.OPCODES["FILE_PUT_ACK"]     # 0x41
 
-_S_IFDIR = 0x4000          # stat st_mode directory bit (POSIX + MicroPython)
+_S_IFMT = 0xF000           # complete POSIX/MicroPython file-type field
+_S_IFDIR = 0x4000
+_S_IFREG = 0x8000
 
 
 # --- Streaming IEEE CRC-32 (bit-identical to pyble_proto.crc32) ---------------
@@ -190,9 +193,8 @@ def resolve(path):
     for byte in path:
         if byte == 0:
             return (EBADREQ, None)      # NUL injection
-    try:
-        text = path.decode("utf-8")
-    except Exception:
+    text = pyble_proto.strict_utf8_decode(path)
+    if text is None:
         return (EBADREQ, None)
 
     # Canonicalize: split on '/', drop ''/'.', pop on '..' (never above root).
@@ -226,7 +228,8 @@ class FsService:
     payload bytes and return the RSP payload (payload[0] = §8 status);
     handle_put_data returns None (ACK-only, no RSP path)."""
 
-    def __init__(self, root, emit, chunk_size=229, open_fn=None):
+    def __init__(self, root, emit, chunk_size=229, open_fn=None,
+                 statvfs_fn=None):
         root = root or "/"
         if root != "/" and root.endswith("/"):
             root = root[:-1]
@@ -234,16 +237,60 @@ class FsService:
         self._emit = emit
         self._chunk = chunk_size
         self._open = open_fn if open_fn is not None else open
-        # Active-GET mailbox slot (P2): (host_path, offset) or None.
+        self._statvfs = (statvfs_fn if statvfs_fn is not None
+                         else getattr(os, "statvfs", None))
+        self._transfer_generation = 0
+        self._operation_generation = None
+        self._operation_session = None
+        # Active-GET mailbox slot (P2):
+        # (host_path, offset, advertised_total, generation, session) or None.
         self._get = None
         # PUT state machine (worker-local twin of pble_fs.c g_put_*). The open
-        # temp file object is kept SEPARATE from the resettable state (the
-        # rooted-pointer twin): on_disconnect resets flags but the orphan file
-        # is flushed + closed only by the next PUT_BEGIN.
+        # temp file object is kept separate from resettable state. The
+        # synchronous BLE disconnect callback clears only RAM ownership; the
+        # next worker-context PUT_BEGIN closes the old object before scanning
+        # its durable resumable prefix.
         self._put_file = None
         self._reset_put()
 
     # -- state helpers ---------------------------------------------------------
+    def generation_token(self):
+        return self._transfer_generation
+
+    def set_operation_owner(self, generation, session):
+        """Install the immutable owner of one supervisor mailbox item."""
+        self._operation_generation = generation
+        self._operation_session = session
+
+    def clear_operation_owner(self):
+        self._operation_generation = None
+        self._operation_session = None
+
+    def _operation_valid(self):
+        generation = self._operation_generation
+        return (generation is None or
+                generation == self._transfer_generation)
+
+    def _owner_generation(self):
+        generation = self._operation_generation
+        return (self._transfer_generation if generation is None else generation)
+
+    def _put_owned(self):
+        if not self._put_active or not self._operation_valid():
+            return False
+        return (self._put_generation == self._owner_generation() and
+                self._put_session == self._operation_session)
+
+    def _reconcile_stale_put(self):
+        """Make a disconnected predecessor inert before successor admission.
+
+        The old stream remains in ``_put_file`` and is closed in this same
+        supervisor operation before any resume scan. No VFS call occurs here.
+        """
+        if (self._put_active and
+                self._put_generation != self._transfer_generation):
+            self._reset_put()
+
     def _reset_put(self):
         self._put_active = False
         self._put_temp = None       # host path of "<dest>.pbltmp"
@@ -253,29 +300,53 @@ class FsService:
         self._put_watermark = 0     # highest contiguous byte written
         self._put_crc_run = 0       # streaming whole-file CRC (finalized form)
         self._put_latched = 0       # 0, or a latched §8 write status
+        self._put_generation = None
+        self._put_session = None
 
     def _close_put_file(self):
         f = self._put_file
-        if f is not None:
-            self._put_file = None
-            try:
-                f.close()           # flush to storage (fsync on LittleFS close)
-            except Exception:
-                pass
+        if f is None:
+            return OK
+        self._put_file = None
+        try:
+            f.close()               # flush to storage (fsync on LittleFS close)
+        except Exception:
+            return EIO
+        return OK
 
-    def _abort_put(self):
-        """Abort: close + DELETE the temp, KEEP the old target (FR-FS-14)."""
-        self._close_put_file()
+    def _abort_put(self, originating_status):
+        """Abort the exactly owned PUT and return its authoritative status.
+
+        Cleanup failure overrides the originating protocol/write status with
+        EIO.  If ownership becomes stale during a VFS call, the caller emits no
+        response and never clears successor state.
+        """
+        if not self._put_owned():
+            return None
+        generation = self._put_generation
+        session = self._put_session
         temp = self._put_temp
-        if temp:
-            try:
-                os.remove(temp)
-            except OSError:
-                pass
+        close_status = self._close_put_file()
+        if (not self._operation_valid() or not self._put_active or
+                self._put_generation != generation or
+                self._put_session != session):
+            return None
+        cleanup_status = self._remove_scratch(
+            temp, valid=self._put_owned)
+        if cleanup_status is None or not self._put_owned():
+            return None
         self._reset_put()
+        if close_status != OK or cleanup_status != OK:
+            return EIO
+        return originating_status
 
     def _busy(self):
         return self._put_active or self._get is not None
+
+    def _emit_owned(self, opcode, payload, session):
+        if session is None:
+            return self._emit(opcode, payload)
+        return self._emit(opcode, payload, session)
 
     def _host(self, jailed):
         """Map a canonical jailed path onto the injected root."""
@@ -294,26 +365,38 @@ class FsService:
             return (errno_to_status(_oserrno(exc)), 0, False)
         return (OK, st[6], (st[0] & _S_IFDIR) != 0)
 
-    def _crc_file(self, hpath):
-        """(status, whole-file CRC-32) streamed in _READ_BLK blocks."""
+    def _crc_file(self, hpath, expected):
+        """CRC exactly the stat-advertised extent, rejecting hostile reads."""
         try:
             f = self._open(hpath, "rb")
         except OSError as exc:
             return (errno_to_status(_oserrno(exc)), 0)
+        except Exception:
+            return (EIO, 0)
         crc = 0
+        status = OK
         try:
-            while True:
-                block = f.read(_READ_BLK)
-                if not block:
+            remaining = expected
+            while remaining > 0:
+                want = _READ_BLK if remaining > _READ_BLK else remaining
+                block = f.read(want)
+                if (type(block) is not bytes or len(block) == 0 or
+                        len(block) > want):
+                    status = EIO
                     break
                 crc = crc32_update(block, crc)
+                remaining -= len(block)
         except OSError as exc:
-            return (errno_to_status(_oserrno(exc)), 0)
+            status = errno_to_status(_oserrno(exc))
+        except Exception:
+            status = EIO
         finally:
             try:
                 f.close()
             except Exception:
-                pass
+                status = EIO
+        if status != OK:
+            return (status, 0)
         return (OK, crc)
 
     @staticmethod
@@ -344,6 +427,11 @@ class FsService:
         more = 0
         count = 0
         for name in names:
+            # Transport scratch is control-plane state, whether a backend
+            # reports it as a file or directory. Skip it before it can consume
+            # stat work, response bytes, count, or the truncation flag.
+            if name.endswith(TMP_SUFFIX):
+                continue
             nbytes = name.encode("utf-8")
             need = 1 + 4 + 2 + len(nbytes)
             if 4 + len(body) + need > RSP_MAX:
@@ -380,7 +468,7 @@ class FsService:
             return bytes((st,))
         crc = 0
         if not isdir:
-            st, crc = self._crc_file(hpath)  # whole-file CRC-32
+            st, crc = self._crc_file(hpath, size)
             if st != OK:
                 return bytes((st,))
         return bytes((OK,)) + _p32(size) + _p32(crc)
@@ -407,7 +495,8 @@ class FsService:
             return bytes((EACCES,))     # cannot GET a directory
         if offset > total:
             return bytes((ERANGE,))
-        self._get = (hpath, offset)     # mailboxed: supervisor calls pump()
+        self._get = (hpath, offset, total, self._owner_generation(),
+                     self._operation_session)
         return bytes((OK,)) + _p32(total)
 
     def pump(self):
@@ -415,78 +504,264 @@ class FsService:
         (bytes ≥ offset only) then FILE_GET_END [crc32] over the WHOLE file
         (a skipped prefix is CRC'd too), then free the transfer slot. No-op
         when idle. RSP{OK} already went out — a mid-stream fault cannot
-        retract it, so END still goes out with the partial CRC (C twin)."""
+        retract it, so it omits END and lets the client timeout the incomplete
+        transfer (C twin)."""
         if self._get is None:
             return
-        hpath, offset = self._get
+        transfer = self._get
+        hpath, offset, total, generation, session = transfer
+        if generation != self._transfer_generation:
+            if self._get is transfer:
+                self._get = None
+            return
         try:
             crc = 0
             pos = 0
+            remaining = total
+            stream_complete = False
             try:
                 f = self._open(hpath, "rb")
-            except OSError:
+            except Exception:
                 f = None
             if f is not None:
                 try:
-                    while True:
-                        block = f.read(self._chunk)
-                        if not block:
+                    read_ok = True
+                    while remaining > 0:
+                        if generation != self._transfer_generation:
+                            read_ok = False
+                            break
+                        want = self._chunk if remaining > self._chunk else remaining
+                        block = f.read(want)
+                        if generation != self._transfer_generation:
+                            read_ok = False
+                            break
+                        if (type(block) is not bytes or len(block) == 0 or
+                                len(block) > want):
+                            read_ok = False
                             break
                         crc = crc32_update(block, crc)  # whole-file (from 0)
                         end = pos + len(block)
                         if end > offset:                # emit only bytes ≥ offset
                             start = offset if pos < offset else pos
-                            self._emit(_OP_GET_DATA,
-                                       _p32(start) + block[start - pos:])
+                            self._emit_owned(
+                                _OP_GET_DATA,
+                                _p32(start) + block[start - pos:], session)
+                            if generation != self._transfer_generation:
+                                read_ok = False
+                                break
                         pos = end
-                except OSError:
-                    pass                # partial CRC → app detects the mismatch
+                        remaining -= len(block)
+                    if read_ok and remaining == 0:
+                        stream_complete = True
+                except Exception:
+                    stream_complete = False
                 try:
                     f.close()
                 except Exception:
-                    pass
-            self._emit(_OP_GET_END, _p32(crc))
+                    stream_complete = False
+            if (stream_complete and
+                    generation == self._transfer_generation):
+                self._emit_owned(_OP_GET_END, _p32(crc), session)
         finally:
-            self._get = None            # the transfer slot is free again
+            if self._get is transfer:
+                self._get = None        # never clear a successor transfer
 
     # -- FILE_PUT_BEGIN (0x15): [st](+[resume_offset:u32]) ---------------------
-    def _resume_prefix(self, temp, total):
-        """F-10 resume: re-derive the verified prefix from storage. Returns
-        (resume_offset, running_crc). No/empty/over-size/unreadable temp →
-        (0, 0) and the caller's "wb" open truncates (the over-size guard)."""
+    @staticmethod
+    def _path_absent(path, valid=None):
+        if valid is not None and not valid():
+            return None
+        try:
+            os.stat(path)
+        except OSError as exc:
+            absent = errno_to_status(_oserrno(exc)) == ENOENT
+        else:
+            absent = False
+        if valid is not None and not valid():
+            return None
+        return absent
+
+    def _remove_scratch(self, temp, st=None, valid=None):
+        """Remove one malformed scratch object without recursion.
+
+        A backend reporting success while leaving the object behind is an I/O
+        failure, not permission to truncate or replace it on the next open.
+        """
+        if valid is not None and not valid():
+            return None
+        if st is None:
+            try:
+                st = os.stat(temp)
+            except OSError as exc:
+                if errno_to_status(_oserrno(exc)) == ENOENT:
+                    return OK
+                return EIO
+            if valid is not None and not valid():
+                return None
+        try:
+            kind = st[0] & _S_IFMT
+        except (IndexError, TypeError):
+            return EIO
+        if kind != _S_IFDIR and kind != _S_IFREG:
+            return EIO                 # never mutate symlink/device/unknown
+        try:
+            if kind == _S_IFDIR:
+                os.rmdir(temp)          # deliberately never recursive
+            else:
+                os.remove(temp)
+        except (OSError, ValueError, TypeError):
+            return EIO
+        if valid is not None and not valid():
+            return None
+        absent = self._path_absent(temp, valid=valid)
+        if absent is None:
+            return None
+        return OK if absent else EIO
+
+    def _resume_prefix(self, temp, total, valid=None):
+        """Return ``(status, resume_offset, running_crc)`` for durable scratch.
+
+        Every nonzero resume offset is backed by an exact-length CRC scan and
+        an unchanged regular-file re-stat. Malformed state is removed only by
+        the bounded non-recursive helper; failed cleanup is fail-closed.
+        """
+        if valid is not None and not valid():
+            return (None, 0, 0)
         try:
             st = os.stat(temp)
-        except OSError:
-            return (0, 0)               # no temp → fresh upload
-        if (st[0] & _S_IFDIR) != 0:
-            return (0, 0)
+        except OSError as exc:
+            if errno_to_status(_oserrno(exc)) == ENOENT:
+                return (OK, 0, 0)       # no temp → fresh upload
+            return (EIO, 0, 0)
+        if valid is not None and not valid():
+            return (None, 0, 0)
+        try:
+            kind = st[0] & _S_IFMT
+        except (IndexError, TypeError):
+            return (EIO, 0, 0)
+        if kind == _S_IFDIR:
+            cleaned = self._remove_scratch(temp, st, valid=valid)
+            return (cleaned, 0, 0)
+        if kind != _S_IFREG:
+            return (EIO, 0, 0)          # fail closed; leave special untouched
         length = st[6]
-        if length == 0 or length > total:
-            return (0, 0)               # nothing to resume / over-size guard
+        if type(length) is not int or length < 0:
+            cleaned = self._remove_scratch(temp, st, valid=valid)
+            return (cleaned, 0, 0)
+        if length == 0:
+            return (OK, 0, 0)
+        if length > total:
+            cleaned = self._remove_scratch(temp, st, valid=valid)
+            return (cleaned, 0, 0)
+        if valid is not None and not valid():
+            return (None, 0, 0)
         try:
             f = self._open(temp, "rb")
         except OSError:
-            return (0, 0)
+            if valid is not None and not valid():
+                return (None, 0, 0)
+            cleaned = self._remove_scratch(temp, st, valid=valid)
+            return (cleaned, 0, 0)
+        if valid is not None and not valid():
+            try:
+                f.close()               # stale worker may close its local object
+            except Exception:
+                pass
+            return (None, 0, 0)
         crc = 0
+        scan_ok = True
         try:
             remaining = length
             while remaining > 0:
+                if valid is not None and not valid():
+                    scan_ok = False
+                    break
                 want = _READ_BLK if remaining > _READ_BLK else remaining
                 block = f.read(want)
-                if not block:
-                    break               # temp shorter than stat → CRC what exists
+                if valid is not None and not valid():
+                    scan_ok = False
+                    break
+                if type(block) is not bytes:
+                    scan_ok = False
+                    break
+                if len(block) != want:
+                    scan_ok = False     # premature EOF/short read is malformed
+                    break
                 crc = crc32_update(block, crc)
                 remaining -= len(block)
+        except Exception:
+            scan_ok = False
+        try:
+            f.close()
+        except Exception:
+            scan_ok = False
+
+        if valid is not None and not valid():
+            return (None, 0, 0)
+
+        try:
+            current = os.stat(temp)
         except OSError:
-            return (0, 0)               # unreadable prefix → fresh (wb truncates)
-        finally:
-            try:
-                f.close()
-            except Exception:
-                pass
-        return (length, crc)            # durable prefix re-derived from flash
+            current = None
+        if valid is not None and not valid():
+            return (None, 0, 0)
+        try:
+            current_kind = current[0] & _S_IFMT
+        except (IndexError, TypeError):
+            current_kind = None
+        unchanged = (current_kind == _S_IFREG and current[6] == length)
+        if scan_ok and unchanged:
+            return (OK, length, crc)
+
+        if current is not None and current_kind not in (_S_IFREG, _S_IFDIR):
+            return (EIO, 0, 0)          # changed-to-special remains untouched
+
+        # Re-stat once more inside cleanup so a file→directory race is
+        # normalized with the operation appropriate to its current type.
+        cleaned = self._remove_scratch(temp, current, valid=valid)
+        return (cleaned, 0, 0)
+
+    def _space_status(self, remaining, valid=None):
+        """Checked-u64 PUT capacity admission using frsize and bavail."""
+        if valid is not None and not valid():
+            return None
+        if self._statvfs is None:
+            return EIO
+        try:
+            values = self._statvfs(self._root)
+            if len(values) <= 4:
+                return EIO
+            unit = values[1]
+            available = values[4]
+        except Exception:
+            return EIO
+        if valid is not None and not valid():
+            return None
+        if (type(unit) is not int or type(available) is not int
+                or unit <= 0 or available < 0
+                or unit > _UINT64_MAX or available > _UINT64_MAX):
+            return EIO
+        if available != 0 and unit > _UINT64_MAX // available:
+            return EIO
+        free_bytes = unit * available
+
+        if remaining == 0:
+            rounded = 0
+        else:
+            addend = unit - 1
+            if remaining > _UINT64_MAX - addend:
+                return EIO
+            rounded = ((remaining + addend) // unit) * unit
+            if rounded > _UINT64_MAX:
+                return EIO
+        if rounded > _UINT64_MAX - FS_SAFETY_RESERVE:
+            return EIO
+        required = rounded + FS_SAFETY_RESERVE
+        return OK if free_bytes >= required else ENOSPC
 
     def handle_put_begin(self, payload):
+        if not self._operation_valid():
+            return None
         payload = bytes(payload)
         if len(payload) < 10:
             return bytes((EBADREQ,))
@@ -500,25 +775,52 @@ class FsService:
             return bytes((st,))
         if _forbidden_artifact(jailed):
             return bytes((EACCES,))     # .mpy/.pyc never accepted (FR-FS-12)
+        self._reconcile_stale_put()
         if self._busy():
             return bytes((EBUSY,))      # single active transfer (§5)
-        # Flush + close any file orphaned by a link-dropped transfer
-        # (on_disconnect resets flags only) so the resume scan below sees the
-        # full verified prefix length on storage (F-10).
-        self._close_put_file()
+        # A disconnect cannot enter VFS from the synchronous BLE callback.
+        # Close the prior object here, in the next PUT_BEGIN's worker context,
+        # before the resume scan derives its durable prefix (F-10).
+        close_status = self._close_put_file()
+        if not self._operation_valid():
+            return None
+        if close_status != OK:
+            self._reset_put()
+            return bytes((close_status,))
 
         dest = self._host(jailed)
         temp = dest + TMP_SUFFIX        # same jailed dir; resolve() forbids the
         #                                 suffix on the wire by design
-        resume, crc_run = self._resume_prefix(temp, total)
+        st, resume, crc_run = self._resume_prefix(
+            temp, total, valid=self._operation_valid)
+        if st is None:
+            return None
+        if st != OK:
+            self._reset_put()
+            return bytes((st,))
+        st = self._space_status(
+            total - resume, valid=self._operation_valid)
+        if st is None:
+            return None
+        if st != OK:
+            self._reset_put()
+            return bytes((st,))
         mode = "ab" if resume > 0 else "wb"   # wb truncates any stale temp
         try:
-            self._put_file = self._open(temp, mode)
+            opened = self._open(temp, mode)
         except OSError as exc:
+            if not self._operation_valid():
+                return None
             self._reset_put()           # temp (if any) persists on storage
             return bytes((errno_to_status(_oserrno(exc)),))
+        if not self._operation_valid():
+            try:
+                opened.close()          # only the stale worker's local object
+            except Exception:
+                pass
+            return None
 
-        self._put_active = True
+        self._put_file = opened
         self._put_temp = temp
         self._put_dest = dest
         self._put_total = total
@@ -526,15 +828,21 @@ class FsService:
         self._put_watermark = resume
         self._put_crc_run = crc_run
         self._put_latched = 0
+        self._put_generation = self._owner_generation()
+        self._put_session = self._operation_session
+        # Publish active last. All fields above are inert until this cut.
+        self._put_active = True
         return bytes((OK,)) + _p32(resume)
 
     # -- FILE_PUT_DATA (0x16): Go-Back-N; ACK-only, no RSP ---------------------
     def _ack(self):
         # ack_offset = next expected = highest contiguous (cumulative ACK)
-        self._emit(_OP_PUT_ACK, _p32(self._put_watermark))
+        if self._put_owned():
+            self._emit_owned(
+                _OP_PUT_ACK, _p32(self._put_watermark), self._put_session)
 
     def handle_put_data(self, payload):
-        if not self._put_active:
+        if not self._put_owned():
             return None                 # no transfer → nothing to ack
         payload = bytes(payload)
         if len(payload) < 4:
@@ -546,11 +854,24 @@ class FsService:
             self._ack()                 # latched error → keep acking; END reports
             return None
         if offset == self._put_watermark and data:
+            if (self._put_watermark > self._put_total
+                    or len(data) > self._put_total - self._put_watermark):
+                self._put_latched = ERANGE
+                self._ack()
+                return None
             try:
-                self._put_file.write(data)
+                written = self._put_file.write(data)
             except OSError as exc:
+                if not self._put_owned():
+                    return None
                 self._put_latched = errno_to_status(_oserrno(exc))
             else:
+                if not self._put_owned():
+                    return None
+                if type(written) is not int or written != len(data):
+                    self._put_latched = EIO
+                    self._ack()
+                    return None
                 # Advance + extend the streaming whole-file CRC together, only
                 # on a full contiguous write, so the running CRC stays in
                 # lockstep with the watermark (a dup/gap never double-counts).
@@ -563,35 +884,44 @@ class FsService:
 
     # -- FILE_PUT_END (0x17): verify + atomic rename ---------------------------
     def handle_put_end(self, payload):
-        if not self._put_active:
+        if not self._put_owned():
             return bytes((EBADREQ,))    # END without an active BEGIN
         payload = bytes(payload)
         if len(payload) < 4:
-            self._abort_put()
-            return bytes((EBADREQ,))
+            status = self._abort_put(EBADREQ)
+            return None if status is None else bytes((status,))
         declared = _u32(payload, 0)
         if self._put_latched:
             st = self._put_latched      # ENOSPC / EIO latched during DATA
-            self._abort_put()
-            return bytes((st,))
+            status = self._abort_put(st)
+            return None if status is None else bytes((status,))
         if self._put_watermark != self._put_total:
-            self._abort_put()
-            return bytes((ERANGE,))     # short/over transfer
-        self._close_put_file()          # flush the temp to storage
+            status = self._abort_put(ERANGE)
+            return None if status is None else bytes((status,))
+        close_status = self._close_put_file()  # durability cut before rename
+        if not self._put_owned():
+            return None
+        if close_status != OK:
+            status = self._abort_put(close_status)
+            return None if status is None else bytes((status,))
         # The streaming whole-file CRC (re-seeded over any resumed prefix) is
         # the ONLY correctness gate — a foreign prefix fails HERE (FR-FS-14).
         crc = self._put_crc_run
         if crc != self._put_crc_target or crc != declared:
-            self._abort_put()
-            return bytes((ECRC,))       # mismatch → target untouched
+            status = self._abort_put(ECRC)
+            return None if status is None else bytes((status,))
         temp = self._put_temp
         dest = self._put_dest
         try:
             os.rename(temp, dest)       # atomic replace (LittleFS / POSIX)
         except OSError as exc:
+            if not self._put_owned():
+                return None
             st = errno_to_status(_oserrno(exc))
-            self._abort_put()
-            return bytes((st,))
+            status = self._abort_put(st)
+            return None if status is None else bytes((status,))
+        if not self._put_owned():
+            return None
         self._reset_put()               # temp is gone (renamed) — clear only
         return bytes((OK,))
 
@@ -604,6 +934,8 @@ class FsService:
         st, jailed = resolve(path)
         if st != OK:
             return bytes((st,))
+        if self._put_active:
+            return bytes((EBUSY,))
         hpath = self._host(jailed)
         st, _size, isdir = self._stat(hpath)
         if st != OK:
@@ -626,6 +958,8 @@ class FsService:
         st, jailed = resolve(path)
         if st != OK:
             return bytes((st,))
+        if self._put_active:
+            return bytes((EBUSY,))
         hpath = self._host(jailed)
         st, _size, isdir = self._stat(hpath)
         if st == OK:
@@ -652,6 +986,8 @@ class FsService:
         st, djail = resolve(dst)
         if st != OK:
             return bytes((st,))
+        if self._put_active:
+            return bytes((EBUSY,))
         spath = self._host(sjail)
         dpath = self._host(djail)
         st, _size, _isdir = self._stat(spath)
@@ -665,9 +1001,7 @@ class FsService:
 
     # -- F-10 link-drop hook ---------------------------------------------------
     def on_disconnect(self):
-        """Reset in-RAM transfer state; KEEP <dest>.pbltmp on disk (its
-        on-flash length is the durable watermark a resuming PUT_BEGIN
-        re-derives). The orphan file object is flushed + closed later, by the
-        next PUT_BEGIN — never here. Idempotent."""
+        """Reset RAM only; defer VFS close and preserve resumable scratch."""
+        self._transfer_generation += 1
         self._get = None
         self._reset_put()
