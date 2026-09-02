@@ -334,12 +334,17 @@ class V061HilBenchContractTests(unittest.TestCase):
             bench.run_filesystem_hardening: (
                 ".pbltmp",
                 "OP_FILE_LIST",
+                "OP_FILE_STAT",
+                "OP_FILE_GET_BEGIN",
                 "OP_FILE_DELETE",
                 "OP_FILE_RENAME",
                 "OP_MKDIR",
                 "ST_EBUSY",
+                "ST_EBADREQ",
+                "ST_EACCES",
                 "ST_ENOSPC",
                 "CAPACITY_RESERVE",
+                "_get_with_active_probe",
             ),
         }
         for function, tokens in expectations.items():
@@ -378,6 +383,17 @@ class V061HilBenchContractTests(unittest.TestCase):
         self.assertEqual(len(bench.LABEL_24.encode("utf-8")), 24)
         self.assertEqual(bench.SEQUENTIAL_RUNS, 50)
         self.assertEqual(bench.CAPACITY_RESERVE, 65536)
+        self.assertEqual(bench.ACTIVE_GET_BYTES, 16384)
+        active_get = inspect.getsource(bench._get_with_active_probe)
+        for token in (
+            "DownloadVerifier",
+            "OP_FILE_GET_BEGIN",
+            "OP_FILE_GET_DATA",
+            "OP_FILE_GET_END",
+            "on_written",
+            "GET ended before",
+        ):
+            self.assertIn(token, active_get)
 
     def test_resource_evaluation_and_redacted_console_result_are_deterministic(self):
         bench = load_bench()
