@@ -107,6 +107,7 @@ class FakeLink:
         self.omit_terminal = False
         self.session = 1
         self.replace_session_before_terminal_retry = False
+        self.terminated_sessions = []
 
     def on_message(self, cb):
         self.message_cb = cb
@@ -119,6 +120,13 @@ class FakeLink:
 
     def session_token(self):
         return self.session
+
+    def terminate_session(self, expected_session=None):
+        current = self.session_token()
+        if expected_session is not None and expected_session != current:
+            return False
+        self.terminated_sessions.append(current)
+        return True
 
     def send_message(self, msg, on_published=None, expected_session=None):
         msg = bytes(msg)
@@ -495,6 +503,36 @@ class PutMailboxContextTest(AgentTestBase):
         agent.poll()
         self.assertFalse(os.path.exists(dest))
         self.assertFalse(os.path.exists(dest + ".pbltmp"))
+
+    def test_second_response_overflow_terminates_and_cancels_queued_work(self):
+        agent, link = self.new_agent(
+            "P2 response-bearing PUT overflow is never silently dropped")
+        calls = []
+
+        def handle(payload):
+            calls.append(bytes(payload))
+            return bytes((OK,)) + struct.pack("<I", 0)
+
+        agent._fs.handle_put_begin = handle
+        session = link.session_token()
+        payload = p_put_begin(1, pyble_proto.crc32(b"A"), "/overflow.bin")
+
+        # Six commands fill the bounded worker mailbox. The seventh consumes
+        # its sole deferred EBUSY response slot; the eighth cannot receive a
+        # response while the connection remains live and therefore must close
+        # that exact session before any queued VFS work can execute.
+        for request_id in range(190, 198):
+            send(self, link, CMD_OPCODES["FILE_PUT_BEGIN"], payload,
+                 id_=request_id)
+
+        self.assertEqual(link.terminated_sessions, [session])
+        pump(agent, 10, self.now)
+        self.assertEqual(calls, [])
+        self.assertEqual(
+            [frame for frame in decoded(link) if 190 <= frame.id < 198],
+            [],
+            "a terminal overflow cannot later publish from cancelled work",
+        )
 
     def test_paused_stale_begin_cannot_republish_over_successor_session(self):
         agent, link = self.new_agent(

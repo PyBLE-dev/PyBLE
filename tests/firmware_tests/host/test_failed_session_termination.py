@@ -469,6 +469,27 @@ class FailedSessionTerminationIntegrationTest(unittest.TestCase):
         )
         self.assertNotRegex(close, r"\b(?:for|while)\s*\(")
 
+    def test_absolute_deadline_mutex_waits_never_round_past_deadline(self) -> None:
+        for name in (
+            "pble_ble_terminate_session",
+            "pble_ble_vm_tx_lock",
+        ):
+            with self.subTest(name=name):
+                body = _code(_function(self.ble, name))
+                self.assertIn(
+                    "(uint32_t)(residual_us / INT64_C(1000))",
+                    body,
+                    "a sub-tick residual must become a nonblocking take",
+                )
+                self.assertNotIn("residual_us + INT64_C(999)", body)
+                self.assertNotRegex(
+                    body,
+                    r"if\s*\(\s*residual_ticks\s*==\s*0\s*\)\s*"
+                    r"\{\s*residual_ticks\s*=\s*1\s*;",
+                    "rounding a positive sub-tick residual up to one whole "
+                    "tick can wait beyond the one absolute deadline",
+                )
+
     def test_gap_result_classification_is_exact_and_non_retrying(self) -> None:
         close = _code(_function(self.ble, "pble_ble_terminate_session"))
         self.assertRegex(
