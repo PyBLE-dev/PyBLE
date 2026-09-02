@@ -44,6 +44,22 @@ Each exact profile requires one new private result from
 `transport-session`, `fragment-hardening`, `run-isolation`,
 `resource-stability`, `stdin-isolation`, `configuration-durability`, and
 `filesystem-hardening`. Resource stability is exactly 50 sequential runs.
+The transport/session scenario first proves ordinary disconnect/reconnect
+negotiation isolation. It then writes a bounded sentinel into volatile VM
+state, completes the acknowledged `SOFT_REBOOT` path, reconnects after the
+board advertises again, and requires a pre-HELLO `DEVICE_INFO` command to
+return `EBADREQ`. Only a new HELLO may reopen command admission, after which a
+bounded RUN must prove that the volatile sentinel is absent. This binds the
+negotiation-reset observation to a proven VM rotation rather than treating a
+BLE reconnect alone as VM-reset evidence.
+
+The stdin scenario covers idle, terminal, overflow/STOP, disconnect, and VM
+reset independently. For the VM-reset boundary it starts an active delayed
+input RUN, queues a stale complete line, accepts `SOFT_REBOOT`, reconnects and
+negotiates with the new VM, then starts a successor input RUN. The successor
+must remain blocked until a fresh post-reset line is sent and must never echo
+the queued predecessor line. Host tests can prove this orchestration, but only
+executing it on each exact board/candidate supplies physical HIL evidence.
 Configuration durability includes label and autorun persistence/restoration
 and preserves an existing Identify configuration across reboot when the
 profile advertises Identify. Because PBLE/1 caps do not expose the persisted
