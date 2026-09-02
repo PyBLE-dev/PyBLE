@@ -93,6 +93,9 @@ class V061HilScenarioOrchestrationTests(unittest.TestCase):
                 raw_log=root / "hardening.jsonl",
                 result=root / "hardening-result.json",
                 qualification_repo_root=ROOT,
+                board_manufacturer="Espressif Systems",
+                board_model="Electronically identified ESP32 development board",
+                module_marking="ESP32-D0WD revision v1.0 (esptool)",
                 # Legacy attributes keep this behavioral seam runnable against
                 # the predecessor bench while the candidate-bound CLI is RED.
                 require_workspace_provisioning=False,
@@ -122,6 +125,22 @@ class V061HilScenarioOrchestrationTests(unittest.TestCase):
                 output.chmod(0o600)
                 return output
 
+            preflight = object()
+
+            def token_publish(
+                supplied_preflight,
+                scenario_results,
+                raw_log,
+                result,
+            ):
+                if supplied_preflight is not preflight:
+                    raise AssertionError("publication did not receive preflight token")
+                return publish(
+                    scenario_results=scenario_results,
+                    raw_log=raw_log,
+                    result=result,
+                )
+
             with ExitStack() as stack:
                 for scenario, function_name in zip(
                     SCENARIOS,
@@ -145,8 +164,32 @@ class V061HilScenarioOrchestrationTests(unittest.TestCase):
                 stack.enter_context(
                     mock.patch.object(
                         bench,
+                        "preflight_result_inputs",
+                        return_value=preflight,
+                        create=True,
+                    )
+                )
+                stack.enter_context(
+                    mock.patch.object(
+                        bench,
+                        "preflight_board_workspace",
+                        new=async_noop,
+                        create=True,
+                    )
+                )
+                stack.enter_context(
+                    mock.patch.object(
+                        bench,
                         "write_private_result",
                         new=publish,
+                        create=True,
+                    )
+                )
+                stack.enter_context(
+                    mock.patch.object(
+                        bench,
+                        "write_private_result_from_preflight",
+                        new=token_publish,
                         create=True,
                     )
                 )
