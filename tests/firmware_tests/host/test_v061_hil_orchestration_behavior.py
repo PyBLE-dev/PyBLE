@@ -270,6 +270,40 @@ class FakeRebootCentral:
 
 
 class V061VmResetOrchestrationTests(unittest.TestCase):
+    def test_vm_rotation_probes_use_bounded_executable_source_and_exact_markers(self):
+        bench = load_bench()
+        captured = []
+        state = bench.LiveState(
+            SimpleNamespace(
+                profile="esp32-4mb",
+                address="private-address",
+                expect_agent="0.6.1",
+            )
+        )
+
+        async def run_program(_state, mode, source, description):
+            source = bytes(source)
+            compile(source, "<v061-vm-probe>", "exec")
+            captured.append((mode, source, description))
+            if "setup" in description:
+                return bench.VM_ROTATION_SET_MARKER
+            return bench.VM_ROTATION_FRESH_MARKER
+
+        with mock.patch.object(bench, "_run_program", new=run_program):
+            asyncio.run(bench._set_vm_rotation_sentinel(state))
+            asyncio.run(bench._assert_vm_rotation_sentinel_absent(state))
+
+        self.assertEqual([row[0] for row in captured], [1, 1])
+        self.assertTrue(all(len(row[1]) <= 256 for row in captured))
+        self.assertTrue(
+            all(
+                bench.VM_ROTATION_SENTINEL.encode("ascii") in row[1]
+                for row in captured
+            )
+        )
+        self.assertIn(bench.VM_ROTATION_SET_MARKER, captured[0][1])
+        self.assertIn(b"not in sys.path", captured[1][1])
+
     def test_soft_reboot_helper_reconnects_without_implicitly_negotiating(self):
         bench = load_bench()
         helper = getattr(bench, "_soft_reboot_connect_unnegotiated", None)

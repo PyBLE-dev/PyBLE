@@ -116,6 +116,9 @@ SOURCE_FRESH_MARKER = b"__PYBLE_V061_fresh-source__=1"
 FILE_SET_MARKER = b"__PYBLE_V061_FILE_SET__"
 FILE_FRESH_MARKER = b"__PYBLE_V061_fresh-file__=1"
 STATVFS_MARKER = b"__PYBLE_V061_STATVFS__="
+VM_ROTATION_SENTINEL = "__pyble_v061_vm_rotation__"
+VM_ROTATION_SET_MARKER = b"__PYBLE_V061_VM_SENTINEL_SET__"
+VM_ROTATION_FRESH_MARKER = b"__PYBLE_V061_VM_SENTINEL_FRESH__=1"
 
 
 class BenchFailure(RuntimeError):
@@ -320,6 +323,36 @@ async def _run_program(state, mode, data, description):
     return _console_bytes(events, 0)
 
 
+async def _set_vm_rotation_sentinel(state):
+    """Put one bounded marker in volatile VM state before SOFT_REBOOT."""
+    source = (
+        "import sys\n"
+        "sys.path.append(%r)\n"
+        "print(%r)\n"
+        % (VM_ROTATION_SENTINEL, VM_ROTATION_SET_MARKER.decode("ascii"))
+    ).encode("ascii")
+    stdout = await _run_program(state, 1, source, "VM-rotation sentinel setup")
+    _require(
+        stdout.count(VM_ROTATION_SET_MARKER) == 1,
+        "VM-rotation sentinel setup marker was not exact",
+    )
+
+
+async def _assert_vm_rotation_sentinel_absent(state):
+    """Prove that the post-reboot RUN executes in a newly initialized VM."""
+    source = (
+        "import sys\n"
+        "print('__PYBLE_V061_VM_SENTINEL_FRESH__=%%d' %% "
+        "(%r not in sys.path))\n"
+        % VM_ROTATION_SENTINEL
+    ).encode("ascii")
+    stdout = await _run_program(state, 1, source, "post-reboot VM sentinel")
+    _require(
+        stdout.count(VM_ROTATION_FRESH_MARKER) == 1,
+        "SOFT_REBOOT did not prove a fresh VM epoch",
+    )
+
+
 async def _wait_console_marker(central, cursor, marker, timeout_s=EVENT_TIMEOUT_S):
     deadline = time.monotonic() + timeout_s
     while True:
@@ -390,6 +423,7 @@ async def _finish_input_run(state, cursor, echo_prefix, value):
         "stdin successor did not consume exactly its fresh line",
     )
     _require(_console_bytes(events, 1) == b"", "stdin RUN emitted stderr")
+    return stdout
 
 
 def _put_begin_payload(path, data_size, checksum):
@@ -651,6 +685,30 @@ async def run_transport_session(state):
     _status_is(response, wire.ST_EBADREQ, "reconnected pre-HELLO DEVICE_INFO")
     await _negotiate(state)
 
+    # A BLE reconnect alone cannot prove the independent VM-epoch half of the
+    # session token. Seed volatile state, take the acknowledged reboot path,
+    # and require command admission to start closed before the new HELLO.
+    # This first workspace check is before the reboot so an owner main.py can
+    # never run through autorun. The orchestrator repeats the read-only check
+    # after this scenario and before every later board mutation.
+    await preflight_board_workspace(state)
+    await _set_vm_rotation_sentinel(state)
+    expected_name = (
+        state.caps.get("label") or "PyBLE-%s" % state.caps["device_id"]
+    )
+    await _soft_reboot_connect_unnegotiated(state, expected_name)
+    response = await state.central.send_cmd(
+        wire.OP_DEVICE_INFO,
+        state.ids.next(),
+    )
+    _status_is(
+        response,
+        wire.ST_EBADREQ,
+        "post-VM-reset pre-HELLO DEVICE_INFO",
+    )
+    await _negotiate(state)
+    await _assert_vm_rotation_sentinel_absent(state)
+
 
 async def _write_raw_packet(central, packet):
     await asyncio.wait_for(
@@ -825,7 +883,7 @@ async def run_resource_stability(state):
 
 
 async def run_stdin_isolation(state):
-    """Prove idle/prompt/STOP/terminal/disconnect/overflow stdin boundaries."""
+    """Prove idle/terminal/STOP/disconnect/VM-reset stdin boundaries."""
     # idle: pre-RUN input must be discarded; only input after the prompt wins.
     await state.central.send_cmd_no_rsp(
         wire.OP_CONSOLE_INPUT, state.ids.next(), b"idle-stale\n"
@@ -910,6 +968,25 @@ async def run_stdin_isolation(state):
     stdout = _console_bytes(_events_after(state.central, successor_cursor), 0)
     _require(b"disconnect-stale" not in stdout, "disconnect retained stale stdin")
 
+    # VM reset: queue a complete line while an active RUN is deliberately busy.
+    # An acknowledged SOFT_REBOOT must destroy that queue. The new-VM RUN must
+    # remain blocked until it receives a fresh post-reset line.
+    await _start_input_run(state, "soft-reboot", delay_ms=5000)
+    await state.central.send_cmd_no_rsp(
+        wire.OP_CONSOLE_INPUT,
+        state.ids.next(),
+        b"reboot-stale\n",
+    )
+    expected_name = (
+        state.caps.get("label") or "PyBLE-%s" % state.caps["device_id"]
+    )
+    await _soft_reboot_connect_unnegotiated(state, expected_name)
+    await _negotiate(state)
+    cursor, echo = await _start_input_run(state, "reboot-successor")
+    await _assert_run_still_active(state.central, cursor, "SOFT_REBOOT/VM reset")
+    stdout = await _finish_input_run(state, cursor, echo, b"reboot-fresh")
+    _require(b"reboot-stale" not in stdout, "VM reset retained stale stdin")
+
 
 async def _device_info(state):
     response = await state.central.send_cmd(
@@ -950,7 +1027,8 @@ async def _wait_advertisement(state, expected_name):
     raise BenchFailure("expected persisted advertisement was not observed")
 
 
-async def _soft_reboot_to_advertisement(state, expected_name):
+async def _soft_reboot_connect_unnegotiated(state, expected_name):
+    """Take acknowledged SOFT_REBOOT to a connected, unnegotiated successor."""
     central = state.central
     response = await central.send_cmd(wire.OP_SOFT_REBOOT, state.ids.next())
     _status_is(response, wire.ST_OK, "SOFT_REBOOT")
@@ -958,6 +1036,11 @@ async def _soft_reboot_to_advertisement(state, expected_name):
     state.central = None
     await _wait_advertisement(state, expected_name)
     await _connect(state)
+    return state.central
+
+
+async def _soft_reboot_to_advertisement(state, expected_name):
+    await _soft_reboot_connect_unnegotiated(state, expected_name)
     return await _negotiate(state)
 
 

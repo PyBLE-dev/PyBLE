@@ -265,11 +265,19 @@ class V061HilBenchContractTests(unittest.TestCase):
         ):
             self.assertIn(token, transport)
         reboot = transport.find("_soft_reboot_connect_unnegotiated")
+        workspace = transport.find("preflight_board_workspace")
+        sentinel = transport.find("_set_vm_rotation_sentinel")
         pre_hello = transport.find('"post-VM-reset pre-HELLO DEVICE_INFO"')
         renegotiate = transport.find("_negotiate(state)", pre_hello)
         freshness = transport.find("_assert_vm_rotation_sentinel_absent")
         self.assertTrue(
-            -1 < reboot < pre_hello < renegotiate < freshness,
+            -1
+            < workspace
+            < sentinel
+            < reboot
+            < pre_hello
+            < renegotiate
+            < freshness,
             "transport-session must prove VM rotation, reject a pre-HELLO "
             "command, negotiate, then prove volatile state was cleared",
         )
@@ -302,7 +310,6 @@ class V061HilBenchContractTests(unittest.TestCase):
             bench.run_stdin_isolation: (
                 "OP_CONSOLE_INPUT",
                 "OP_STOP",
-                "OP_SOFT_REBOOT",
                 "idle",
                 "terminal",
                 "disconnect",
@@ -340,6 +347,28 @@ class V061HilBenchContractTests(unittest.TestCase):
             for token in tokens:
                 with self.subTest(function=function.__name__, token=token):
                     self.assertIn(token, source)
+        reboot_helper = inspect.getsource(
+            bench._soft_reboot_connect_unnegotiated
+        )
+        for token in ("OP_SOFT_REBOOT", "ST_OK", "_wait_disconnected"):
+            self.assertIn(token, reboot_helper)
+
+        stdin = inspect.getsource(bench.run_stdin_isolation)
+        positions = [
+            stdin.find('"soft-reboot"'),
+            stdin.find("reboot-stale"),
+            stdin.find("_soft_reboot_connect_unnegotiated"),
+            stdin.find("_negotiate(state)", stdin.find("reboot-stale")),
+            stdin.find('"reboot-successor"'),
+            stdin.find("_assert_run_still_active", stdin.find("reboot-stale")),
+            stdin.find("reboot-fresh"),
+        ]
+        self.assertTrue(
+            all(position >= 0 for position in positions)
+            and positions == sorted(positions),
+            "stdin VM-reset case must queue stale input, reboot, negotiate, "
+            "then require fresh successor input",
+        )
         self.assertNotIn(
             "OP_SET_IDENTIFY_LED",
             inspect.getsource(bench.run_label_durability),
