@@ -3,8 +3,8 @@
 # Part of PyBLE (https://pyble.dev) — see /LICENSE.
 """RED contract tests for deterministic prepare.sh Python materialization.
 
-The ESP manifests select four reviewed scaffolds.  The RP2 manifest selects an
-exact literal eleven-file package.  Preparation must materialize those inputs,
+The ESP manifests select five reviewed scaffolds.  The RP2 manifest selects an
+exact literal twelve-file package.  Preparation must materialize those inputs,
 not recursively trust whatever ignored files happen to be beside them in a
 developer checkout.
 """
@@ -36,6 +36,7 @@ ESP_PYBLE_INVENTORY = (
     "_version.py",
     "pyble_ble.py",
     "pyble_proto.py",
+    "pyble_workspace.py",
 )
 
 RP2_PYBLE_INVENTORY = (
@@ -50,6 +51,7 @@ RP2_PYBLE_INVENTORY = (
     "pyble_info.py",
     "pyble_proto.py",
     "pyble_runner.py",
+    "pyble_workspace.py",
 )
 
 UNREVIEWED_PATHS = (
@@ -216,7 +218,7 @@ class PreparePythonFixture:
 
 
 class PreparePythonMaterializationTests(unittest.TestCase):
-    def test_every_esp_target_copies_exact_reviewed_four_file_inventory(self):
+    def test_every_esp_target_copies_exact_reviewed_five_file_inventory(self):
         fixture = PreparePythonFixture()
         try:
             expected = fixture.expected_bytes(ESP_PYBLE_INVENTORY)
@@ -227,13 +229,13 @@ class PreparePythonMaterializationTests(unittest.TestCase):
                     self.assertEqual(
                         fixture.materialized_bytes(fixture.board_pyble(target)),
                         expected,
-                        "ESP preparation must materialize only the four files "
+                        "ESP preparation must materialize only the five files "
                         "selected by the reviewed target manifest",
                     )
         finally:
             fixture.cleanup()
 
-    def test_rp2_copies_exact_reviewed_literal_eleven_file_inventory(self):
+    def test_rp2_copies_exact_reviewed_literal_twelve_file_inventory(self):
         fixture = PreparePythonFixture()
         try:
             completed = fixture.prepare("rpi-pico2-w")
@@ -242,7 +244,7 @@ class PreparePythonMaterializationTests(unittest.TestCase):
                 fixture.materialized_bytes(fixture.board_pyble("rpi-pico2-w")),
                 fixture.expected_bytes(RP2_PYBLE_INVENTORY),
                 "RP2 preparation must materialize exactly the manifest's "
-                "literal eleven-file frozen package",
+                "literal twelve-file frozen package",
             )
         finally:
             fixture.cleanup()
