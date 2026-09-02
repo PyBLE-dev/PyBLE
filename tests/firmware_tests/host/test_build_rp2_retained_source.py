@@ -583,7 +583,19 @@ class RP2BuildFixture:
                 "$PYBLE_ARM_TOOLCHAIN_DIR"
               printf 'picotool_DIR:UNINITIALIZED=%s/picotool\n' \
                 "$PYBLE_PICOTOOL_DIR"
-              printf 'FETCHCONTENT_FULLY_DISCONNECTED:UNINITIALIZED=ON\n'
+              case "${PYBLE_TEST_MUTATION:-}" in
+                fetchcontent-cache-uninitialized)
+                  printf 'FETCHCONTENT_FULLY_DISCONNECTED:UNINITIALIZED=ON\n'
+                  ;;
+                fetchcontent-cache-off)
+                  printf 'FETCHCONTENT_FULLY_DISCONNECTED:BOOL=OFF\n'
+                  ;;
+                fetchcontent-cache-missing)
+                  ;;
+                *)
+                  printf 'FETCHCONTENT_FULLY_DISCONNECTED:BOOL=ON\n'
+                  ;;
+              esac
               printf 'PICOTOOL_FORCE_FETCH_FROM_GIT:UNINITIALIZED=OFF\n'
               printf 'CMAKE_FIND_USE_PACKAGE_REGISTRY:UNINITIALIZED=OFF\n'
               printf 'CMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY:UNINITIALIZED=OFF\n'
@@ -869,7 +881,7 @@ class RP2RetainedSourceBehaviorTests(unittest.TestCase):
                 build_configuration,
             )
             self.assertIn(
-                "-DFETCHCONTENT_FULLY_DISCONNECTED=ON",
+                "-DFETCHCONTENT_FULLY_DISCONNECTED:BOOL=ON",
                 build_configuration,
             )
             self.assertIn(
@@ -1038,6 +1050,25 @@ class RP2RetainedSourceBehaviorTests(unittest.TestCase):
             self.assertEqual(fixture.canonical_snapshot(), before)
         finally:
             fixture.cleanup()
+
+    def test_cache_requires_exact_boolean_fetchcontent_disconnect_binding(self) -> None:
+        for mutation in (
+            "fetchcontent-cache-uninitialized",
+            "fetchcontent-cache-off",
+            "fetchcontent-cache-missing",
+        ):
+            with self.subTest(mutation=mutation):
+                fixture = RP2BuildFixture()
+                try:
+                    completed = fixture.execute(mutation=mutation)
+                    self.assertNotEqual(completed.returncode, 0, completed.stdout)
+                    self.assertFalse(
+                        (fixture.output / "pyble-build-provenance.json").exists()
+                    )
+                    self.assertFalse(fixture.output.exists())
+                    self.assertFalse(fixture.retained.exists())
+                finally:
+                    fixture.cleanup()
 
     def test_unsafe_audit_inputs_are_rejected_before_provenance(self) -> None:
         for mutation in ("symlink-link", "host-path-elf"):
