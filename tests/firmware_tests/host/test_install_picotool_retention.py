@@ -165,6 +165,7 @@ class PicotoolRetentionTests(unittest.TestCase):
         version_line: str = VERSION_LINE,
         archive_filename: str = ARCHIVE_NAME,
         url_filename: str = ARCHIVE_NAME,
+        url: str | None = None,
         archive_bytes: int | None = None,
         archive_sha256: str | None = None,
         cmake_dir: str = "picotool",
@@ -188,7 +189,7 @@ class PicotoolRetentionTests(unittest.TestCase):
             'distribution_ref = "v2.3.0-0"\n'
             'distribution_commit = '
             '"ad9e4a8375253cf4886bf168ea1a8d2746aadf24"\n'
-            f'url = "https://example.invalid/{url_filename}"\n'
+            f'url = "{url or f"https://example.invalid/{url_filename}"}"\n'
             f'archive_filename = "{archive_filename}"\n'
             f"archive_bytes = "
             f"{selected_archive.stat().st_size if archive_bytes is None else archive_bytes}\n"
@@ -384,6 +385,21 @@ class PicotoolRetentionTests(unittest.TestCase):
         self.assertFalse(self.destination.exists(), result.stdout)
         self.assert_no_staging_tree()
 
+    def test_download_stops_at_the_pinned_archive_size_bound(self) -> None:
+        download_root = self.root / "download-source"
+        download_root.mkdir()
+        oversized = download_root / ARCHIVE_NAME
+        oversized.write_bytes(self.archive.read_bytes() + b"unexpected trailing byte")
+        self.write_lock(url=oversized.as_uri())
+
+        result = self.run_installer()
+
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("exceeded the pinned archive_bytes bound", result.stdout)
+        self.assertFalse(self.destination.exists(), result.stdout)
+        self.assertEqual([], sorted(self.root.glob(".picotool-download.*")))
+        self.assert_no_staging_tree()
+
     def test_component_digests_are_checked_after_archive_digest(self) -> None:
         cases = {
             "changed-config": {"config": b"# changed package config\n"},
@@ -519,7 +535,10 @@ class PicotoolRetentionTests(unittest.TestCase):
             archive=self.archive,
             environment_overrides={
                 "PYTHONPATH": str(injection),
-                "PYBLE_TEST_RACE_DESTINATION": str(self.destination.absolute()),
+                "PYBLE_TEST_RACE_DESTINATION": str(
+                    Path(os.path.realpath(self.destination.parent))
+                    / self.destination.name
+                ),
                 "PYBLE_TEST_RACE_MARKER": str(contender_identity),
             },
         )
@@ -531,7 +550,10 @@ class PicotoolRetentionTests(unittest.TestCase):
             for value in contender_identity.read_text(encoding="ascii").strip().split(":")
         )
         observed = self.destination.lstat()
-        self.assertEqual((observed.st_dev, observed.st_ino), (wanted_device, wanted_inode))
+        self.assertEqual(
+            (observed.st_dev, observed.st_ino),
+            (wanted_device, wanted_inode),
+        )
         self.assertTrue(self.destination.is_dir())
         self.assertEqual([], list(self.destination.iterdir()))
         self.assert_no_staging_tree()
