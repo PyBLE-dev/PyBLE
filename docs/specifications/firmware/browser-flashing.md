@@ -763,6 +763,17 @@ archive bytes and 12-entry member inventory frozen by the Pico 2 W port
 contract, runtime version line, source repo/tag/commit, and distribution
 repo/tag/commit. It also binds the reviewed
 `firmware/licenses/evidence/rp2/picotool/2.3.0/distribution-attribution-v1.json`.
+Its exact keys are `picotool_lock`, `retained_archive`, `member_inventory`,
+`runtime_version_line`, `source`, `distribution`, and `attribution`.
+`picotool_lock` is an exact copy of the frozen lock table;
+`retained_archive` has exactly `path`, `bytes`, and `sha256`; every member has
+exactly `path`, `kind`, `mode`, `bytes`, and `sha256`; `source` and
+`distribution` each have exactly `repo`, `ref`, and `commit`; and
+`attribution` has exactly `path` and `sha256`. Every nonsoftware-member record
+copies its complete member record and adds only
+`classification: "packaging-metadata"`. Array order is the archive order
+frozen by the port contract, except owner roots and nonsoftware members, which
+are lexically path-sorted.
 That record distinguishes exact vendored-tree identities from upstream origin
 statements and records pico-sdk-tools' Apache-2.0 license as packaging
 provenance only. The archive is an aggregate container, not an Apache-2.0
