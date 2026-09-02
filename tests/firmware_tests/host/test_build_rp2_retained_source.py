@@ -955,6 +955,9 @@ class RP2RetainedSourceBehaviorTests(unittest.TestCase):
             "cmake-config": lambda fixture: (
                 fixture.picotool / "picotool" / "picotoolConfig.cmake"
             ).write_bytes(b"changed package config\n"),
+            "cmake-config-mode": lambda fixture: (
+                fixture.picotool / "picotool" / "picotoolConfig.cmake"
+            ).chmod(0o666),
             "bundled-libusb": lambda fixture: (
                 (
                     fixture.picotool
