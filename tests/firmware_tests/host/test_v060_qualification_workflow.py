@@ -181,7 +181,10 @@ def write_c3_post_oi_nvs_receipt(
     }
 
 
-def candidate_release(artifact: bytes) -> dict[str, object]:
+def candidate_release(
+    artifact: bytes,
+    version: str = "0.6.0",
+) -> dict[str, object]:
     esp_specs = {
         "esp32-4mb": (
             "esp32",
@@ -303,9 +306,9 @@ def candidate_release(artifact: bytes) -> dict[str, object]:
     return {
         "schema_version": 4,
         "identity": {
-            "version": "0.6.0",
-            "tag": "firmware-v0.6.0",
-            "agent_version": "0.6.0",
+            "version": version,
+            "tag": "firmware-v%s" % version,
+            "agent_version": version,
             "protocol_version": "PBLE/1",
             "built_at": "2026-08-12T00:00:00Z",
         },
@@ -650,6 +653,48 @@ class PrivateGateResultWriterContractTests(unittest.TestCase):
                     post_oi_nvs_acquisition_log_path=phy_evidence["log_path"],
                 )
             self.assertFalse(phy_output.exists())
+
+    def test_writer_accepts_v061_and_derives_its_exact_result_version(self):
+        with tempfile.TemporaryDirectory(prefix="pyble-v061-workflow-gate-") as tmp:
+            root = Path(tmp).resolve()
+            candidate = root / "candidate"
+            (candidate / "esp32-c3-4mb").mkdir(parents=True)
+            artifact = b"candidate v0.6.1 C3 firmware\0"
+            (candidate / "esp32-c3-4mb" / "firmware.bin").write_bytes(artifact)
+            release_raw = canonical_json_bytes(
+                candidate_release(artifact, version="0.6.1")
+            )
+            (candidate / "release.json").write_bytes(release_raw)
+            output = root / "private" / "c3-result.json"
+            receipt = root / "private" / "c3-post-oi-nvs.json"
+            evidence = write_c3_post_oi_nvs_receipt(
+                receipt,
+                release_raw=release_raw,
+                artifact=artifact,
+            )
+
+            created = GATE.create_result_file(
+                candidate_dir=candidate,
+                profile_id="esp32-c3-4mb",
+                passed_gates=["C3-G%d" % index for index in range(7)],
+                output_path=output,
+                post_oi_nvs_receipt_path=receipt,
+                post_oi_nvs_slice_path=evidence["slice_path"],
+                post_oi_nvs_acquisition_log_path=evidence["log_path"],
+            )
+
+            self.assertEqual(Path(created), output)
+            result = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(result["firmware_version"], "0.6.1")
+
+            future = candidate_release(artifact, version="0.7.0")
+            with self.assertRaises(GATE.QualificationError):
+                GATE._validate_candidate_release(
+                    future,
+                    profile_id="esp32-c3-4mb",
+                    artifact_size=len(artifact),
+                    artifact_sha256=hashlib.sha256(artifact).hexdigest(),
+                )
 
     def test_writer_reopens_slice_bytes_and_never_mints_from_diagnostics(self):
         """Handoff robust-design points 2, 4, and 5 at result creation.

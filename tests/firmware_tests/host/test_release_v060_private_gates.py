@@ -724,6 +724,25 @@ class V5SummaryBindingTests(unittest.TestCase):
         for profile_id in PROFILE_ORDER[:3]:
             self.assertIsNone(by_id[profile_id]["profile_gate_summary"])
 
+    def test_binder_accepts_the_exact_v061_v5_source_version(self) -> None:
+        payload = self.payload()
+        waveshare, c3, pico = self.summaries()
+        by_id = {record["profile_id"]: record for record in payload["records"]}
+        by_id[C3_PROFILE]["profile_gate_summary"] = copy.deepcopy(c3["gates"])
+        by_id[PICO_PROFILE]["profile_gate_summary"] = copy.deepcopy(pico["gates"])
+
+        bound = self.binder()(
+            payload,
+            waveshare_lcd147b_summary=waveshare,
+            esp32_c3_summary=c3,
+            rpi_pico2_w_summary=pico,
+            firmware_version="0.6.1",
+        )
+
+        self.assertEqual(bound["waveshare_lcd147b_qualification"], waveshare)
+        self.assertEqual(bound["esp32_c3_qualification"], c3)
+        self.assertEqual(bound["rpi_pico2_w_qualification"], pico)
+
     def test_binder_rejects_partial_changed_or_wrong_phase_inputs(self) -> None:
         binder = self.binder()
         waveshare, c3, pico = self.summaries()
@@ -758,7 +777,10 @@ class V5SummaryBindingTests(unittest.TestCase):
         wrong_schema = self.payload()
         wrong_schema["schema_version"] = 4
         cases["wrong-schema"] = (wrong_schema, waveshare, c3, pico, VERSION)
-        cases["wrong-version"] = (self.payload(), waveshare, c3, pico, "0.6.1")
+        cases["pre-v5-version"] = (self.payload(), waveshare, c3, pico, "0.5.1")
+        cases["unapproved-future-version"] = (
+            self.payload(), waveshare, c3, pico, "0.7.0"
+        )
         missing_record = self.payload()
         missing_record["records"] = missing_record["records"][:-1]
         cases["missing-record"] = (missing_record, waveshare, c3, pico, VERSION)
