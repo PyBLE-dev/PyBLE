@@ -29,8 +29,9 @@
 # INTERFACE PINNED BY THIS [red] TEST (identity-engineer implements to it):
 #   pyble_device_config.PBLE_LABEL_MAX : int == 24   # UTF-8 encoded bytes
 #   pyble_device_config.label_status(utf8: bytes) -> int
-#         # PURE bound decision: OK(0x00) if len<=MAX (incl. empty=clear),
-#         # ERANGE(0x09) if over. The NVS store/clear is layered on top (HIL).
+#         # PURE validator: length is checked first (ERANGE if over); otherwise
+#         # malformed UTF-8 or C0/C1/DEL controls -> EBADREQ; empty=clear and a
+#         # valid control-free label -> OK. Persistence is layered on top.
 #   pyble_device_config.adv_name(device_id: str, label: str) -> str
 #         # SINGLE SOURCE: label if non-empty else "PyBLE-"+device_id
 #         # (pyble_ble.advertised_name delegates here — F-22 refactor).
@@ -50,8 +51,8 @@ LABEL_MAX = 24  # OI-6 architect freeze (UTF-8 encoded bytes)
 
 
 class LabelBoundTest(unittest.TestCase):
-    """FR-IDENT-1 / SEC-10 / OI-6: bounded UTF-8 label; over-length -> ERANGE
-    and NOT stored; the bound is measured in ENCODED BYTES, not codepoints."""
+    """FR-IDENT-1 / SEC-10 / OI-6: validated, bounded UTF-8 label; the
+    bound is measured in ENCODED BYTES, not codepoints."""
 
     def test_frozen_bound_is_24_bytes(self):
         self.assertEqual(DC.attr(self, "PBLE_LABEL_MAX", "F-22/OI-6 label max = 24 bytes"),

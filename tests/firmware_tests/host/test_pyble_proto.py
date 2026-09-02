@@ -34,7 +34,9 @@
 #           handler(frame) -> bytes  # returns the RSP PAYLOAD (payload[0]=status)
 #           unknown opcode  -> RSP  payload[0]=EUNSUPPORTED, echoes id+opcode
 #           CRC failure     -> EVT  id=0, opcode=offending, payload[0]=ECRC
-#           malformed frame -> RSP  payload[0]=EBADREQ
+#           malformed frame -> RSP EBADREQ only with a complete, safely
+#                              correlatable v1/CMD/nonzero-ID header; else silent
+#           valid-CRC non-CMD / CMD id=0 -> silent, never dispatched
 # ---------------------------------------------------------------------------
 
 import os
@@ -235,16 +237,16 @@ class ErrorHandlingTest(unittest.TestCase):
         d.on_message(_support.hx(_support.crc_reject_frames()[0]["frame_hex"]))
         self.assertEqual(called["n"], 0, "a CRC-failed frame must be dropped, not dispatched")
 
-    def test_malformed_short_frame_answers_ebadreq(self):
-        disp_cls = PROTO.attr(self, "Dispatcher", "F-02/FR-PROTO-8 malformed -> EBADREQ")
-        decode = PROTO.attr(self, "decode", "F-02/FR-PROTO-8 decode")
+    def test_malformed_short_frame_without_safe_correlation_is_silent(self):
+        disp_cls = PROTO.attr(
+            self, "Dispatcher",
+            "v0.6.1 FR-PROTO-8 malformed without safe correlation -> silent")
         d = disp_cls()
         out = d.on_message(b"\x01\x01\x01")  # far too short for a §3.1 header
-        self.assertIsNotNone(out, "a malformed frame must be answered")
-        rsp = decode(bytes(out))
-        self.assertEqual(rsp.type, RSP)
-        self.assertEqual(rsp.payload[0], FROZEN_STATUS["EBADREQ"],
-                         "structurally-invalid input must answer EBADREQ (0x01)")
+        self.assertIsNone(
+            out,
+            "fewer than six header bytes cannot safely identify VER/type/op/id; "
+            "the board must not synthesize an RSP with ID 0")
 
     def test_malformed_len_mismatch_answers_ebadreq(self):
         disp_cls = PROTO.attr(self, "Dispatcher", "F-02/FR-PROTO-8 LEN mismatch -> EBADREQ")
@@ -257,6 +259,47 @@ class ErrorHandlingTest(unittest.TestCase):
         rsp = decode(bytes(d.on_message(bad)))
         self.assertEqual(rsp.payload[0], FROZEN_STATUS["EBADREQ"],
                          "a LEN that overruns the buffer is malformed -> EBADREQ")
+
+    def test_valid_crc_non_cmd_frames_are_silent_and_not_dispatched(self):
+        disp_cls = PROTO.attr(
+            self, "Dispatcher", "v0.6.1 TYPE direction gate before dispatch")
+        d = disp_cls()
+        called = {"n": 0}
+        d.register(
+            FROZEN_OPCODES["DEVICE_INFO"],
+            lambda frame: called.__setitem__("n", called["n"] + 1) or b"\x00")
+        for type_, id_ in ((RSP, 7), (EVT, 0), (0x7F, 8)):
+            with self.subTest(type=type_):
+                out = d.on_message(oracle_frame(
+                    type_, FROZEN_OPCODES["DEVICE_INFO"], id_, b""))
+                self.assertIsNone(out, "board RX accepts TYPE=CMD only")
+        self.assertEqual(0, called["n"])
+
+    def test_valid_crc_cmd_id_zero_is_silent_and_not_dispatched(self):
+        disp_cls = PROTO.attr(
+            self, "Dispatcher", "v0.6.1 nonzero request-ID gate")
+        d = disp_cls()
+        called = {"n": 0}
+        d.register(
+            FROZEN_OPCODES["DEVICE_INFO"],
+            lambda frame: called.__setitem__("n", called["n"] + 1) or b"\x00")
+        out = d.on_message(oracle_frame(
+            CMD, FROZEN_OPCODES["DEVICE_INFO"], 0, b""))
+        self.assertIsNone(out, "CMD ID 0 is invalid and response-loop unsafe")
+        self.assertEqual(0, called["n"])
+
+    def test_crc_failure_precedes_wrong_direction_gate(self):
+        disp_cls = PROTO.attr(
+            self, "Dispatcher", "v0.6.1 structure -> CRC -> TYPE precedence")
+        decode = PROTO.attr(self, "decode", "v0.6.1 ECRC EVT decode")
+        msg = oracle_frame(RSP, FROZEN_OPCODES["DEVICE_INFO"], 7, b"\x00")
+        msg = msg[:-1] + bytes((msg[-1] ^ 0x01,))
+        out = disp_cls().on_message(msg)
+        self.assertIsNotNone(out)
+        evt = decode(bytes(out))
+        self.assertEqual((EVT, FROZEN_OPCODES["DEVICE_INFO"], 0),
+                         (evt.type, evt.opcode, evt.id))
+        self.assertEqual(bytes((FROZEN_STATUS["ECRC"],)), bytes(evt.payload))
 
 
 class FragmentationTest(unittest.TestCase):
