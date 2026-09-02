@@ -54,7 +54,6 @@ EXACT_BOARD_TARGET = "waveshare-esp32-s3-lcd-147b"
 EXPECTED_FROZEN_PATHS = Counter(
     {
         "flashbdev.py": 1,
-        "inisetup.py": 1,
         "asyncio/__init__.py": 1,
         "asyncio/core.py": 1,
         "asyncio/event.py": 1,
@@ -68,12 +67,12 @@ EXPECTED_FROZEN_PATHS = Counter(
         "pyble/__init__.py": 1,
         "pyble/pyble_ble.py": 1,
         "pyble/pyble_proto.py": 1,
+        "pyble/pyble_workspace.py": 1,
     }
 )
 
 EXPECTED_FROZEN_SYMBOLS = {
     "flashbdev",
-    "inisetup",
     "asyncio___init__",
     "asyncio_core",
     "asyncio_event",
@@ -87,6 +86,7 @@ EXPECTED_FROZEN_SYMBOLS = {
     "pyble___init__",
     "pyble_pyble_ble",
     "pyble_pyble_proto",
+    "pyble_pyble_workspace",
 }
 
 
@@ -234,8 +234,8 @@ def _boot_failure_trace(failure: str) -> list[str]:
             mount=lambda *_args: trace.append("vfs.mount")
         ),
         "flashbdev": types.SimpleNamespace(bdev=None),
-        "inisetup": types.SimpleNamespace(
-            setup=lambda: trace.append("inisetup.setup")
+        "pyble_workspace": types.SimpleNamespace(
+            mount_lfs2=lambda *_args, **_kwargs: object()
         ),
         "pble_ble": types.SimpleNamespace(
             init_agent=lambda: trace.append("agent.init"),
@@ -374,8 +374,8 @@ def _boot_frozen_resolution_probe(target: str, failure: str = "success"):
             mount=lambda *_args: trace.append(("vfs.mount",))
         ),
         "flashbdev": types.SimpleNamespace(bdev=None),
-        "inisetup": types.SimpleNamespace(
-            setup=lambda: trace.append(("inisetup.setup",))
+        "pyble_workspace": types.SimpleNamespace(
+            mount_lfs2=lambda *_args, **_kwargs: object()
         ),
         "pble_ble": types.SimpleNamespace(
             init_agent=lambda: trace.append(("agent.init",)),
@@ -657,7 +657,7 @@ class EffectiveManifestContractTests(unittest.TestCase):
 
                 for required in (
                     "vfs.mount",
-                    "inisetup.setup",
+                    "pyble_workspace.mount_lfs2",
                     "pble_ble.init_agent",
                     "os.dupterm",
                     "pble_boot.maybe_autorun",
@@ -752,7 +752,7 @@ class EffectiveManifestContractTests(unittest.TestCase):
                     by_name["pble_ble.init_agent"][0].lineno,
                 )
                 self.assertLess(
-                    by_name["inisetup.setup"][0].lineno,
+                    by_name["pyble_workspace.mount_lfs2"][0].lineno,
                     by_name["pble_ble.init_agent"][0].lineno,
                 )
 
