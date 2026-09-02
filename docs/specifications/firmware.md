@@ -1,6 +1,6 @@
 # PyBLE — Agent Firmware
 
-Status: **DRAFT** · Last updated: 2026-08-20
+Status: **DRAFT** · Last updated: 2026-09-02
 
 The PyBLE agent is small board-side firmware that turns a compatible
 MicroPython target into a PyBLE-speaking board: it advertises the BLE service,
@@ -97,41 +97,44 @@ exactly `esp32-4mb`,
 `esp32-s3-n16r8`, and `waveshare-esp32-s3-lcd-147b`; its source identity and
 retained evidence remain immutable history.
 
-The v0.6.0 qualified-release contract now freezes one atomic five-profile
-order: `esp32-4mb`, `esp32-s3-n16r8`,
+The qualified public v0.6.0 release contains one atomic five-profile order:
+`esp32-4mb`, `esp32-s3-n16r8`,
 `waveshare-esp32-s3-lcd-147b`, `esp32-c3-4mb`, and `rpi-pico2-w`
 ([ADR-0033](../decisions/0033-qualify-v060-as-five-profile-heterogeneous-release.md)).
 The first four use profile-scoped ESP Web Serial merged images; Pico uses a
-browser-verified UF2 download followed by manual BOOTSEL copy. This is a
-qualification target, not a claim that any v0.6.0 gate has passed. Fresh
-two-clean-build reproducibility, license audit, resource policy, exact-byte
-HIL, both-platform app HIL, install/recovery, and copy-on-write finalization
-remain required for all five profiles before activation.
+browser-verified UF2 download followed by manual BOOTSEL copy. All five exact
+v0.6.0 rows completed their two-clean-build reproducibility, license, resource,
+exact-byte HIL, both-platform app-HIL, install/recovery, and copy-on-write
+finalization gates. The source-selected v0.6.1 tree retains the same profile
+order but is a new exact-byte candidate: every one of those gates requires
+fresh v0.6.1 evidence before its bytes can be qualified or activated.
 
-ADR-0038 replaces the unpublished local candidate tagged at `719b211…` in
-place: no origin tag, GitHub Release, or canonical v0.6.0 website release ever
-existed, so the first public version remains `0.6.0`. The predecessor source
-era ends at inclusive commit `5620f2f…`; strict descendants use the
+ADR-0038 governed replacement of the unpublished local candidate tagged at
+`719b211…`: at that decision point no origin tag, GitHub Release, or canonical
+v0.6.0 website release existed, so the first public version remained `0.6.0`.
+The predecessor source era ends at inclusive commit `5620f2f…`; strict
+descendants use the
 ADR-0037 fixed-SLO contract, and strict descendants of the second boundary
 `7d85328…` use the ADR-0039 second-replacement contract, which additionally
 fixes the Waveshare largest-block heap floor at `98304` under
 `floor-min-1024-waveshare-block-98304-v2` and permits byte-identity-conditioned
-carry-forward of already-passed physical evidence (ADR-0039 item 6). All old candidate bytes and HIL are invalid for
-the replacement, while superseded metadata and immutable baseline evidence
-remain retained. After source/docs/RED/GREEN, build, reproducibility, license,
-source, and audit gates pass, the local tag may be replaced so it peels to
-candidate `HEAD`; audited candidate creation then precedes fresh HIL and
-finalization. Push, publication, and activation remain forbidden until those
-later gates pass.
+carry-forward of already-passed physical evidence (ADR-0039 item 6). All old
+candidate bytes and HIL were invalid for that replacement, while superseded
+metadata and immutable baseline evidence remain retained. The replacement
+completed its source/docs/RED/GREEN, build, reproducibility, license, source,
+audit, fresh-HIL, and finalization gates and became the qualified public v0.6.0
+release. That completed evidence remains historical and cannot qualify the
+source-selected v0.6.1 tree.
 
-The ESP32-C3-MINI-1-N4 v0.4/4 MiB/no-PSRAM reference and its still-pending
-C3-G0…C3-G6 gates remain frozen in
-[firmware/ports/esp32-c3-4mb.md](firmware/ports/esp32-c3-4mb.md). C3 enters
-release metadata and selection only after those gates and the common v0.6.0
-matrix pass. ESP Web Tools detects the chip family but cannot by that fact
-alone prove the required flash/PSRAM topology or distinguish the two S3
-images. The full compatibility, heterogeneous-artifact, historical
-public-beta, and candidate-gate contracts are frozen in
+The ESP32-C3-MINI-1-N4 v0.4/4 MiB/no-PSRAM reference and its C3-G0…C3-G6 gate
+definitions remain frozen in
+[firmware/ports/esp32-c3-4mb.md](firmware/ports/esp32-c3-4mb.md). Those gates
+passed for the exact qualified v0.6.0 bytes; the source-selected v0.6.1 bytes
+must pass fresh C3-G0…C3-G6 and common five-profile gates. ESP Web Tools detects
+the chip family but cannot by that fact alone prove the required flash/PSRAM
+topology or distinguish the two S3 images. The full compatibility,
+heterogeneous-artifact, historical public-beta, and candidate-gate contracts
+are frozen in
 [firmware/browser-flashing.md](firmware/browser-flashing.md).
 
 The Waveshare ESP32-S3-LCD-1.47B uses its own

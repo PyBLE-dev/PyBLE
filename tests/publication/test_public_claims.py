@@ -301,7 +301,7 @@ class PublicClaimsTest(unittest.TestCase):
         ):
             self.assertNotIn(stale, unreleased)
 
-    def test_public_specifications_describe_the_exact_beta_without_overclaim(
+    def test_public_specifications_distinguish_beta_and_qualified_release(
         self,
     ) -> None:
         combined = "\n".join(
@@ -339,8 +339,11 @@ class PublicClaimsTest(unittest.TestCase):
 
         self.assertRegex(
             self.hardware_overview,
-            r"(?s)`esp32-4mb`.{0,240}hardware-tested beta.{0,200}"
-            r"`esp32-s3-n16r8`.{0,240}hardware-tested beta",
+            r"(?s)`esp32-4mb`.{0,240}Qualified in v0\.6\.0; current "
+            r"v0\.6\.1 source requires fresh exact-byte qualification\."
+            r".{0,240}`esp32-s3-n16r8`.{0,240}Qualified in v0\.6\.0; "
+            r"current v0\.6\.1 source requires independent exact-byte "
+            r"qualification\.",
         )
         self.assertIn(
             "The exact v0.4.2 public-beta bundle covers exactly the two enabled, "
