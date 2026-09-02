@@ -1,0 +1,301 @@
+{
+  "distribution_provenance": {
+    "attribution": {
+      "path": "firmware/licenses/evidence/rp2/picotool/2.3.0/distribution-attribution-v1.json",
+      "sha256": "9d96bdff715a08582506220d3ba1e332cc3b86dd9eaa13e7d7169856734a6e88"
+    },
+    "distribution": {
+      "commit": "ad9e4a8375253cf4886bf168ea1a8d2746aadf24",
+      "ref": "v2.3.0-0",
+      "repo": "https://github.com/raspberrypi/pico-sdk-tools.git"
+    },
+    "member_inventory": [
+      {
+        "bytes": 0,
+        "kind": "directory",
+        "mode": "040755",
+        "path": "picotool/",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 767,
+        "kind": "regular",
+        "mode": "100644",
+        "path": "picotool/picotoolTargets-release.cmake",
+        "sha256": "e40085002e565de850554e772c90f1a1c4cffb545f853eaa231b145e498f7c0f"
+      },
+      {
+        "bytes": 2303,
+        "kind": "regular",
+        "mode": "100644",
+        "path": "picotool/picotoolConfigVersion.cmake",
+        "sha256": "61485a18a59a186d7cb82ddf7686c5f1f4def81726568ae49fd0033db368f7e3"
+      },
+      {
+        "bytes": 367931,
+        "kind": "regular",
+        "mode": "100644",
+        "path": "picotool/rp2350_otp_contents.json",
+        "sha256": "1838713d5f94316c4c61558cb82d3346831235dc41f9b0f02151e6eda3f22fc2"
+      },
+      {
+        "bytes": 328336,
+        "kind": "regular",
+        "mode": "100444",
+        "path": "picotool/libusb-1.0.0.dylib",
+        "sha256": "b3d0c88bcb04fe61e4f56bc304a31fef56e19ee5ec2edaebd0fce44afb2b9237"
+      },
+      {
+        "bytes": 29484,
+        "kind": "regular",
+        "mode": "100644",
+        "path": "picotool/enc_bootloader_mbedtls.elf",
+        "sha256": "c5d17fcbb4f1ee41751dc782d86c1fc6629d8da3484e1a1cadc3ba4bec4d6044"
+      },
+      {
+        "bytes": 3856,
+        "kind": "regular",
+        "mode": "100644",
+        "path": "picotool/picotoolTargets.cmake",
+        "sha256": "043655d4bc215fb3a05d4a04f92cabc0be9bbdb0834717b0211e80106b4d1aae"
+      },
+      {
+        "bytes": 96,
+        "kind": "regular",
+        "mode": "100644",
+        "path": "picotool/picotoolConfig.cmake",
+        "sha256": "ca12b6fee18e6583713cfdcb2e81886aaee741d40304ea2cc88c4f5b2df2b6c3"
+      },
+      {
+        "bytes": 34004,
+        "kind": "regular",
+        "mode": "100644",
+        "path": "picotool/xip_ram_perms.elf",
+        "sha256": "afac0e166ee9b632f84717c7db02e7e5e648f03a51cc4795938adcd282c6103b"
+      },
+      {
+        "bytes": 5673800,
+        "kind": "regular",
+        "mode": "100755",
+        "path": "picotool/picotool",
+        "sha256": "a4b3c4e64dea7b99e810c5c777bf13fb2722b8d0355e0b64a28244ddc1b0f8b5"
+      },
+      {
+        "bytes": 20104,
+        "kind": "regular",
+        "mode": "100644",
+        "path": "picotool/enc_bootloader.elf",
+        "sha256": "9ce3c424d61226225d2c1f5b80a8854f15174b09dd447e58e4439240b274fb3d"
+      },
+      {
+        "bytes": 0,
+        "kind": "regular",
+        "mode": "100644",
+        "path": ".keep",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    ],
+    "picotool_lock": {
+      "archive_bytes": 1980457,
+      "archive_filename": "picotool-2.3.0-mac.zip",
+      "archive_format": "zip",
+      "bundled_libusb_path": "picotool/libusb-1.0.0.dylib",
+      "bundled_libusb_sha256": "b3d0c88bcb04fe61e4f56bc304a31fef56e19ee5ec2edaebd0fce44afb2b9237",
+      "cmake_config_path": "picotool/picotoolConfig.cmake",
+      "cmake_config_sha256": "ca12b6fee18e6583713cfdcb2e81886aaee741d40304ea2cc88c4f5b2df2b6c3",
+      "cmake_dir": "picotool",
+      "distribution_commit": "ad9e4a8375253cf4886bf168ea1a8d2746aadf24",
+      "distribution_ref": "v2.3.0-0",
+      "distribution_repo": "https://github.com/raspberrypi/pico-sdk-tools.git",
+      "executable_path": "picotool/picotool",
+      "executable_sha256": "a4b3c4e64dea7b99e810c5c777bf13fb2722b8d0355e0b64a28244ddc1b0f8b5",
+      "sha256": "085ea99ccc2d64309e967a72e307fb113838713a46ba45bf7e156e519cca7d8e",
+      "source_commit": "6f6458d792b93685a11423b244a585eaa99eafcf",
+      "source_ref": "2.3.0",
+      "source_repo": "https://github.com/raspberrypi/picotool.git",
+      "url": "https://github.com/raspberrypi/pico-sdk-tools/releases/download/v2.3.0-0/picotool-2.3.0-mac.zip",
+      "version": "2.3.0",
+      "version_line": "picotool v2.3.0 (Darwin, AppleClang-15.0.0.15000309, Release)"
+    },
+    "retained_archive": {
+      "bytes": 1980457,
+      "path": "firmware/.picotool/.pyble-dist/picotool-2.3.0-mac.zip",
+      "sha256": "085ea99ccc2d64309e967a72e307fb113838713a46ba45bf7e156e519cca7d8e"
+    },
+    "runtime_version_line": "picotool v2.3.0 (Darwin, AppleClang-15.0.0.15000309, Release)",
+    "source": {
+      "commit": "6f6458d792b93685a11423b244a585eaa99eafcf",
+      "ref": "2.3.0",
+      "repo": "https://github.com/raspberrypi/picotool.git"
+    }
+  },
+  "nonsoftware_members": [
+    {
+      "bytes": 0,
+      "classification": "packaging-metadata",
+      "kind": "regular",
+      "mode": "100644",
+      "path": ".keep",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "classification": "packaging-metadata",
+      "kind": "directory",
+      "mode": "040755",
+      "path": "picotool/",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "profile_id": "rpi-pico2-w",
+  "schema_version": 1,
+  "source_owners": [
+    {
+      "component_kind": "build-tool",
+      "copyright": "See distribution-attribution-v1.json for exact component copyrights.",
+      "disposition": "allow",
+      "id": "picotool-composite-build-tool",
+      "license_texts": [
+        {
+          "identifier": "LicenseRef-PyBLE-Picotool-2.3.0-Composite",
+          "path": "firmware/licenses/evidence/rp2/picotool/2.3.0/distribution-attribution-v1.json",
+          "sha256": "9d96bdff715a08582506220d3ba1e332cc3b86dd9eaa13e7d7169856734a6e88"
+        }
+      ],
+      "notice_files": [
+        {
+          "path": "firmware/licenses/evidence/mbedtls-LICENSE.txt",
+          "sha256": "9b405ef4c89342f5eae1dd828882f931747f71001cfba7d114801039b52ad09b"
+        },
+        {
+          "path": "firmware/licenses/evidence/rp2/picotool/2.3.0/clipp-LICENSE",
+          "sha256": "72c5d1a6f8c76c88b4559d26710c3a298a0ba9822ab3d187d0b4a5b2e8e2b219"
+        },
+        {
+          "path": "firmware/licenses/evidence/rp2/picotool/2.3.0/cmake-copying-cmake-scripts",
+          "sha256": "8c33ed647ccfaa4e682ffe56b677f4d5d0dc51e2ccc40038015df784c7be51dd"
+        },
+        {
+          "path": "firmware/licenses/evidence/rp2/picotool/2.3.0/littlefs-LICENSE.md",
+          "sha256": "0cb4ff1daf5fdc1359c6a6ee3116092f08fc100c9d58b1b77ab17bfd801f856d"
+        },
+        {
+          "path": "firmware/licenses/evidence/rp2/picotool/2.3.0/nlohmann-json-LICENSE.MIT",
+          "sha256": "86b998c792894ccb911a1cb7994f7a9652894e7a094c0b5e45be2f553f45cf14"
+        },
+        {
+          "path": "firmware/licenses/evidence/rp2/picotool/2.3.0/oofatfs-LICENSE",
+          "sha256": "4449f912502843f47a0a258e740054f916a21586f849a27ce40f936c095e2f6c"
+        },
+        {
+          "path": "firmware/licenses/evidence/rp2/picotool/2.3.0/picotool-LICENSE.TXT",
+          "sha256": "483f865953435b66c443dee7558debe3cc3cf8fcbb6a112fd9fc6a795d53f1f6"
+        },
+        {
+          "path": "firmware/licenses/evidence/rp2/picotool/2.3.0/whereami-LICENSE.MIT",
+          "sha256": "3633afb48d2f5fb9a1942eead37adbe0ab6c70a79468c1b69e5a1e771ec4b119"
+        },
+        {
+          "path": "firmware/licenses/evidence/rp2/picotool/2.3.0/whereami-LICENSE.WTFPLv2",
+          "sha256": "8b3d9ef07a62cfaa0194bdd64fa1bb61bbc18e4a156a83f8a52d937bd945239b"
+        }
+      ],
+      "selected_spdx_expression": "LicenseRef-PyBLE-Picotool-2.3.0-Composite",
+      "source_ref": "picotool-2.3.0-composite-v1",
+      "source_roots": [
+        {
+          "namespace": "picotool-distribution",
+          "path": "picotool/enc_bootloader.elf"
+        },
+        {
+          "namespace": "picotool-distribution",
+          "path": "picotool/enc_bootloader_mbedtls.elf"
+        },
+        {
+          "namespace": "picotool-distribution",
+          "path": "picotool/picotool"
+        },
+        {
+          "namespace": "picotool-distribution",
+          "path": "picotool/picotoolConfig.cmake"
+        },
+        {
+          "namespace": "picotool-distribution",
+          "path": "picotool/picotoolConfigVersion.cmake"
+        },
+        {
+          "namespace": "picotool-distribution",
+          "path": "picotool/picotoolTargets-release.cmake"
+        },
+        {
+          "namespace": "picotool-distribution",
+          "path": "picotool/picotoolTargets.cmake"
+        },
+        {
+          "namespace": "picotool-distribution",
+          "path": "picotool/rp2350_otp_contents.json"
+        },
+        {
+          "namespace": "picotool-distribution",
+          "path": "picotool/xip_ram_perms.elf"
+        }
+      ],
+      "source_spdx_expression": "LicenseRef-PyBLE-Picotool-2.3.0-Composite",
+      "source_url": "https://github.com/raspberrypi/picotool.git"
+    },
+    {
+      "component_kind": "build-tool",
+      "copyright": "Copyright libusb authors; see the exact AUTHORS evidence.",
+      "disposition": "allow",
+      "id": "picotool-libusb-build-tool",
+      "license_texts": [
+        {
+          "identifier": "LGPL-2.1-or-later",
+          "path": "firmware/licenses/texts/LGPL-2.1-or-later.txt",
+          "sha256": "5df07007198989c622f5d41de8d703e7bef3d0e79d62e24332ee739a452af62a"
+        }
+      ],
+      "notice_files": [
+        {
+          "path": "firmware/licenses/evidence/rp2/picotool/2.3.0/distribution-attribution-v1.json",
+          "sha256": "9d96bdff715a08582506220d3ba1e332cc3b86dd9eaa13e7d7169856734a6e88"
+        },
+        {
+          "path": "firmware/licenses/evidence/rp2/picotool/2.3.0/homebrew-libusb.rb",
+          "sha256": "5da3b9c199276c00cd14ef7da6a10e4dc7fd8b65eaa638ab356a049597491d74"
+        },
+        {
+          "path": "firmware/licenses/evidence/rp2/picotool/2.3.0/libusb-AUTHORS",
+          "sha256": "27fd82b016838197d5276ba98d2187ed5a1ad0e171767322f356f0a9f6395941"
+        },
+        {
+          "path": "firmware/licenses/evidence/rp2/picotool/2.3.0/libusb-COPYING",
+          "sha256": "5df07007198989c622f5d41de8d703e7bef3d0e79d62e24332ee739a452af62a"
+        },
+        {
+          "path": "firmware/licenses/evidence/rp2/picotool/2.3.0/libusb-README",
+          "sha256": "1d3dc1c6be134b121b0697ad7190f8c20911d509f2dfef69f72484c95b8a2b87"
+        },
+        {
+          "path": "firmware/licenses/evidence/rp2/picotool/2.3.0/libusb-version.h",
+          "sha256": "8ef05de838404213f63f3a27a073aee0e2bc072dc4415734772e756d34def7f8"
+        },
+        {
+          "path": "firmware/licenses/evidence/rp2/picotool/2.3.0/libusb-version_nano.h",
+          "sha256": "243da8ad18f946e4ee896b296ac56834bf6b50c6211af1b62603483b60f58d50"
+        }
+      ],
+      "selected_spdx_expression": "LGPL-2.1-or-later",
+      "source_ref": "v1.0.30@87a55632db62c9bdc58cd31d3ccfa673f1bb017f",
+      "source_roots": [
+        {
+          "namespace": "picotool-distribution",
+          "path": "picotool/libusb-1.0.0.dylib"
+        }
+      ],
+      "source_spdx_expression": "LGPL-2.1-or-later",
+      "source_url": "https://github.com/libusb/libusb.git"
+    }
+  ],
+  "target": "rpi-pico2-w"
+}

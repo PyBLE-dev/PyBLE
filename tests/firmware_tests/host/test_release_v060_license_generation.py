@@ -467,6 +467,7 @@ module._audit_verify_v060_esp_semantic_replay(
     evidence_dir=Path(evidence),
     build_root=Path(build),
     repo_root=Path(repo),
+    firmware_version="0.6.0",
 )
 '''
         completed = subprocess.run(

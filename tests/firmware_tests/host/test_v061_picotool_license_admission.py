@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
 # Part of PyBLE (https://pyble.dev) — see /LICENSE.
-"""RED admission contract for the v0.6.1 picotool build-tool evidence.
+"""Admission contract for the v0.6.1 picotool build-tool evidence.
 
-All generated license and provenance text in this suite is synthetic.  It
-tests the release machinery and does not represent a legal review or physical
-release qualification.
+Temporary repositories use exact copies of the checked-in reviewed policy and
+its complete referenced evidence closure.  Archive/install-tree observations
+remain synthetic and do not represent physical release qualification.
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ import inspect
 import json
 import os
 from pathlib import Path
+import shutil
 import tempfile
 import unittest
 from unittest import mock
@@ -25,6 +26,7 @@ import test_release_v060_license_generation as generation_fixture
 
 RELEASE = generation_fixture.RELEASE
 RELEASE_LOAD_ERROR = generation_fixture.RELEASE_LOAD_ERROR
+REPO_ROOT = Path(__file__).resolve().parents[3]
 V060_ROLES = tuple(generation_fixture.RP2_ROLES)
 V061_ROLES = (*V060_ROLES, "build-tools")
 VERSION_LINE = (
@@ -168,16 +170,17 @@ NONSOFTWARE_MEMBERS = [
     },
 ]
 
-COMPONENTS = [
-    {"name": "CMake package scripts", "license": "CMake-package-script-grant"},
-    {"name": "Mbed TLS", "license": "Apache-2.0"},
-    {"name": "Pico SDK", "license": "BSD-3-Clause"},
-    {"name": "clipp", "license": "MIT"},
-    {"name": "littlefs", "license": "BSD-3-Clause"},
-    {"name": "nlohmann JSON", "license": "MIT"},
-    {"name": "ooFatFs R0.13c", "license": "LicenseRef-ooFatFs-R0.13c"},
-    {"name": "picotool", "license": "BSD-3-Clause"},
-    {"name": "whereami", "license": "MIT"},
+COMPONENT_IDS = [
+    "picotool",
+    "pico-sdk",
+    "mbedtls",
+    "clipp",
+    "nlohmann-json",
+    "littlefs",
+    "oofatfs",
+    "whereami",
+    "cmake-package-scripts",
+    "libusb",
 ]
 
 
@@ -207,6 +210,32 @@ def recompute_semantic(observation: dict[str, object]) -> None:
         if key != "semantic_sha256"
     }
     observation["semantic_sha256"] = sha256_bytes(canonical_json_bytes(payload))
+
+
+def referenced_license_paths(*documents: object) -> tuple[str, ...]:
+    """Return the complete checked-in file closure named by documents."""
+
+    paths: set[str] = set()
+
+    def walk(value: object) -> None:
+        if isinstance(value, dict):
+            path = value.get("path")
+            digest = value.get("sha256")
+            if (
+                isinstance(path, str)
+                and path.startswith("firmware/licenses/")
+                and isinstance(digest, str)
+            ):
+                paths.add(path)
+            for nested in value.values():
+                walk(nested)
+        elif isinstance(value, list):
+            for nested in value:
+                walk(nested)
+
+    for document in documents:
+        walk(document)
+    return tuple(sorted(paths))
 
 
 def selected_roles(version: str) -> tuple[str, ...] | None:
@@ -286,170 +315,23 @@ class PicotoolPolicyFixture:
         self.build = self.root / "build"
         self.repo.mkdir()
         self.build.mkdir()
-        self.composite_license = (
-            self.repo / "firmware/licenses/texts/picotool-composite.txt"
+        policy_source = REPO_ROOT / POLICY_PATH
+        attribution_source = REPO_ROOT / ATTRIBUTION_PATH
+        self.policy = json.loads(policy_source.read_text(encoding="utf-8"))
+        attribution = json.loads(attribution_source.read_text(encoding="utf-8"))
+        self.reviewed_files = (
+            POLICY_PATH,
+            *referenced_license_paths(self.policy, attribution),
         )
-        self.libusb_license = (
-            self.repo / "firmware/licenses/texts/LGPL-2.1-or-later.txt"
-        )
-        self.libusb_attribution = (
-            self.repo
-            / "firmware/licenses/evidence/rp2/picotool/2.3.0/"
-            "libusb-attribution-v1.json"
-        )
+        for relative in self.reviewed_files:
+            source = REPO_ROOT / relative
+            destination = self.repo / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, destination)
         self.attribution = self.repo / ATTRIBUTION_PATH
-        self.composite_license.parent.mkdir(parents=True)
-        self.composite_license.write_text(
-            "Synthetic complete picotool composite grant.\n",
-            encoding="utf-8",
+        self.distribution_provenance = copy.deepcopy(
+            self.policy["distribution_provenance"]
         )
-        self.libusb_license.write_text(
-            "Synthetic complete LGPL-2.1-or-later text.\n",
-            encoding="utf-8",
-        )
-        write_json(
-            self.libusb_attribution,
-            {
-                "source_archive_sha256": (
-                    "fea36f34f9156400209595e300840767ab1a385ede1dc7ee893015aea9c6dbaf"
-                ),
-                "source_commit": "87a55632db62c9bdc58cd31d3ccfa673f1bb017f",
-                "source_ref": "v1.0.30",
-            },
-        )
-        write_json(
-            self.attribution,
-            {
-                "schema_version": 1,
-                "archive_sha256": PICOTOOL_LOCK["sha256"],
-                "components": COMPONENTS,
-                "packaging_provenance": {
-                    "name": "pico-sdk-tools",
-                    "license": "Apache-2.0",
-                    "repo": PICOTOOL_LOCK["distribution_repo"],
-                    "ref": PICOTOOL_LOCK["distribution_ref"],
-                    "commit": PICOTOOL_LOCK["distribution_commit"],
-                    "ownership": "packaging-only",
-                },
-            },
-        )
-        software_paths = sorted(
-            item["path"]
-            for item in MEMBERS
-            if item["kind"] == "regular"
-            and item["path"] not in {".keep", PICOTOOL_LOCK["bundled_libusb_path"]}
-        )
-        self.distribution_provenance = {
-            "picotool_lock": copy.deepcopy(PICOTOOL_LOCK),
-            "retained_archive": {
-                "path": (
-                    "firmware/.picotool/.pyble-dist/"
-                    + PICOTOOL_LOCK["archive_filename"]
-                ),
-                "bytes": PICOTOOL_LOCK["archive_bytes"],
-                "sha256": PICOTOOL_LOCK["sha256"],
-            },
-            "member_inventory": copy.deepcopy(MEMBERS),
-            "runtime_version_line": VERSION_LINE,
-            "source": {
-                "repo": PICOTOOL_LOCK["source_repo"],
-                "ref": PICOTOOL_LOCK["source_ref"],
-                "commit": PICOTOOL_LOCK["source_commit"],
-            },
-            "distribution": {
-                "repo": PICOTOOL_LOCK["distribution_repo"],
-                "ref": PICOTOOL_LOCK["distribution_ref"],
-                "commit": PICOTOOL_LOCK["distribution_commit"],
-            },
-            "attribution": {
-                "path": ATTRIBUTION_PATH,
-                "sha256": sha256_path(self.attribution),
-            },
-        }
-        self.policy = {
-            "schema_version": 1,
-            "profile_id": "rpi-pico2-w",
-            "target": "rpi-pico2-w",
-            "distribution_provenance": copy.deepcopy(
-                self.distribution_provenance
-            ),
-            "source_owners": [
-                {
-                    "id": "picotool-composite-build-tool",
-                    "source_roots": [
-                        {
-                            "namespace": "picotool-distribution",
-                            "path": path,
-                        }
-                        for path in software_paths
-                    ],
-                    "source_ref": "picotool-2.3.0-composite-v1",
-                    "source_url": PICOTOOL_LOCK["source_repo"],
-                    "source_spdx_expression": (
-                        "LicenseRef-PyBLE-Picotool-2.3.0-Composite"
-                    ),
-                    "selected_spdx_expression": (
-                        "LicenseRef-PyBLE-Picotool-2.3.0-Composite"
-                    ),
-                    "copyright": "Synthetic reviewed upstream attributions",
-                    "license_texts": [
-                        {
-                            "identifier": (
-                                "LicenseRef-PyBLE-Picotool-2.3.0-Composite"
-                            ),
-                            "path": self.composite_license.relative_to(
-                                self.repo
-                            ).as_posix(),
-                            "sha256": sha256_path(self.composite_license),
-                        }
-                    ],
-                    "notice_files": [
-                        {
-                            "path": ATTRIBUTION_PATH,
-                            "sha256": sha256_path(self.attribution),
-                        }
-                    ],
-                    "disposition": "allow",
-                    "component_kind": "build-tool",
-                },
-                {
-                    "id": "picotool-libusb-build-tool",
-                    "source_roots": [
-                        {
-                            "namespace": "picotool-distribution",
-                            "path": PICOTOOL_LOCK["bundled_libusb_path"],
-                        }
-                    ],
-                    "source_ref": (
-                        "v1.0.30@87a55632db62c9bdc58cd31d3ccfa673f1bb017f"
-                    ),
-                    "source_url": "https://github.com/libusb/libusb.git",
-                    "source_spdx_expression": "LGPL-2.1-or-later",
-                    "selected_spdx_expression": "LGPL-2.1-or-later",
-                    "copyright": "Synthetic libusb attribution",
-                    "license_texts": [
-                        {
-                            "identifier": "LGPL-2.1-or-later",
-                            "path": self.libusb_license.relative_to(
-                                self.repo
-                            ).as_posix(),
-                            "sha256": sha256_path(self.libusb_license),
-                        }
-                    ],
-                    "notice_files": [
-                        {
-                            "path": self.libusb_attribution.relative_to(
-                                self.repo
-                            ).as_posix(),
-                            "sha256": sha256_path(self.libusb_attribution),
-                        }
-                    ],
-                    "disposition": "allow",
-                    "component_kind": "build-tool",
-                },
-            ],
-            "nonsoftware_members": copy.deepcopy(NONSOFTWARE_MEMBERS),
-        }
 
     def close(self) -> None:
         self.temporary.cleanup()
@@ -492,10 +374,13 @@ class PicotoolBuildToolsPolicyTests(unittest.TestCase):
         )
         self.assertEqual(value["nonsoftware_members"], NONSOFTWARE_MEMBERS)
         attribution = json.loads(self.fixture.attribution.read_text(encoding="utf-8"))
-        self.assertEqual(attribution["components"], COMPONENTS)
         self.assertEqual(
-            attribution["packaging_provenance"]["ownership"],
-            "packaging-only",
+            [component["id"] for component in attribution["components"]],
+            COMPONENT_IDS,
+        )
+        self.assertEqual(
+            attribution["distribution_provenance"]["ownership"],
+            "packaging-provenance-only",
         )
 
     def test_policy_rejects_missing_extra_reordered_or_changed_frozen_data(self):
@@ -603,17 +488,13 @@ class V061CompositionFixture:
 
         policy_path = self.repo / POLICY_PATH
         write_json(policy_path, self.policy_fixture.policy)
-        attribution = self.repo / ATTRIBUTION_PATH
-        attribution.parent.mkdir(parents=True, exist_ok=True)
-        attribution.write_bytes(self.policy_fixture.attribution.read_bytes())
-        for source in (
-            self.policy_fixture.composite_license,
-            self.policy_fixture.libusb_license,
-            self.policy_fixture.libusb_attribution,
-        ):
-            destination = self.repo / source.relative_to(self.policy_fixture.repo)
+        for relative in self.policy_fixture.reviewed_files:
+            if relative == POLICY_PATH:
+                continue
+            source = self.policy_fixture.repo / relative
+            destination = self.repo / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
-            destination.write_bytes(source.read_bytes())
+            shutil.copy2(source, destination)
         self.policy = copy.deepcopy(self.policy_fixture.policy)
         self.generation.tool_lock["inputs"].update(
             {
@@ -646,6 +527,25 @@ class V061CompositionFixture:
         for owner in owners:
             for record in (*owner["license_texts"], *owner["notice_files"]):
                 input_sha256["repo/" + record["path"]] = record["sha256"]
+        attribution_value = json.loads(attribution.read_text(encoding="utf-8"))
+
+        def add_nested_assets(value: object) -> None:
+            if isinstance(value, dict):
+                path = value.get("path")
+                digest = value.get("sha256")
+                if (
+                    isinstance(path, str)
+                    and path.startswith("firmware/licenses/")
+                    and isinstance(digest, str)
+                ):
+                    input_sha256["repo/" + path] = digest
+                for nested in value.values():
+                    add_nested_assets(nested)
+            elif isinstance(value, list):
+                for nested in value:
+                    add_nested_assets(nested)
+
+        add_nested_assets(attribution_value)
         document = {
             "schema_version": 1,
             "profile_id": "rpi-pico2-w",

@@ -12,6 +12,7 @@ license/provenance byte.
 from __future__ import annotations
 
 from collections import Counter
+import copy
 import hashlib
 import json
 from pathlib import Path
@@ -40,6 +41,17 @@ POLICY_SHA256 = (
 ATTRIBUTION_SHA256 = (
     "9d96bdff715a08582506220d3ba1e332cc3b86dd9eaa13e7d7169856734a6e88"
 )
+COMPACT_COMPONENTS = [
+    {"name": "CMake package scripts", "license": "CMake-package-script-grant"},
+    {"name": "Mbed TLS", "license": "Apache-2.0"},
+    {"name": "Pico SDK", "license": "BSD-3-Clause"},
+    {"name": "clipp", "license": "MIT"},
+    {"name": "littlefs", "license": "BSD-3-Clause"},
+    {"name": "nlohmann JSON", "license": "MIT"},
+    {"name": "ooFatFs R0.13c", "license": "LicenseRef-ooFatFs-R0.13c"},
+    {"name": "picotool", "license": "BSD-3-Clause"},
+    {"name": "whereami", "license": "MIT"},
+]
 
 # This is the complete repository-file closure referenced by the production
 # policy and its nested attribution document.  Archive/install-tree identities
@@ -162,6 +174,47 @@ class PicotoolProductionEvidenceSchemaTests(unittest.TestCase):
     def test_production_validator_rejects_compact_four_key_attribution(self):
         fixture = compact_fixture.PicotoolPolicyFixture()
         try:
+            compact_attribution = {
+                "schema_version": 1,
+                "archive_sha256": compact_fixture.PICOTOOL_LOCK["sha256"],
+                "components": copy.deepcopy(COMPACT_COMPONENTS),
+                "packaging_provenance": {
+                    "name": "pico-sdk-tools",
+                    "license": "Apache-2.0",
+                    "repo": compact_fixture.PICOTOOL_LOCK[
+                        "distribution_repo"
+                    ],
+                    "ref": compact_fixture.PICOTOOL_LOCK["distribution_ref"],
+                    "commit": compact_fixture.PICOTOOL_LOCK[
+                        "distribution_commit"
+                    ],
+                    "ownership": "packaging-only",
+                },
+            }
+            self.assertEqual(
+                set(compact_attribution),
+                {
+                    "schema_version",
+                    "archive_sha256",
+                    "components",
+                    "packaging_provenance",
+                },
+            )
+            compact_fixture.write_json(fixture.attribution, compact_attribution)
+            compact_digest = compact_fixture.sha256_path(fixture.attribution)
+            policy = copy.deepcopy(fixture.policy)
+
+            def rebind_attribution(value: object) -> None:
+                if isinstance(value, dict):
+                    if value.get("path") == compact_fixture.ATTRIBUTION_PATH:
+                        value["sha256"] = compact_digest
+                    for nested in value.values():
+                        rebind_attribution(nested)
+                elif isinstance(value, list):
+                    for nested in value:
+                        rebind_attribution(nested)
+
+            rebind_attribution(policy)
             with self.assertRaises(
                 RELEASE.ReleaseError,
                 msg=(
@@ -170,7 +223,7 @@ class PicotoolProductionEvidenceSchemaTests(unittest.TestCase):
                 ),
             ):
                 RELEASE._audit_validate_rp2_build_tools_license_policy(
-                    fixture.policy,
+                    policy,
                     repo_root=fixture.repo,
                     build_root=fixture.build,
                     picotool_lock=compact_fixture.PICOTOOL_LOCK,
