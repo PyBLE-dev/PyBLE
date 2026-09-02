@@ -1,6 +1,6 @@
 # PBLE/1 — PyBLE BLE Wire Protocol
 
-Status: **§2–§10 FROZEN for v1.0 (complete)** · Version: 1 · Last updated: 2026-09-02
+Status: **§2–§10 FROZEN for v1.0 (complete)** · Version: 1 · Last updated: 2026-09-03
 
 > PBLE/1 is a **clean-room, original** protocol authored for PyBLE. It reuses no closed-source wire format, opcodes, or UUIDs. It carries PyBLE's app↔board messages over a BLE GATT service.
 >
@@ -613,7 +613,7 @@ atomic filesystem commit rather than FAT's delete-then-rename sequence.
 
 > **FROZEN for v1.0 (amended)** — RUN-file at G1 · S3; **`RUN{source}`, `STOP`, `SOFT_REBOOT`, `CONSOLE_DATA`, `CONSOLE_INPUT` frozen at G1 · S4 (2026-07-01 · `[docs]`)**; transactional RUN admission clarified 2026-08-14; default-MTU `STOP`/`SOFT_REBOOT` response-before-side-effect admission, per-event session binding, the runner pickup/control-resolution cut, and the bounded current-message TX-boundary wait clarified 2026-08-15. Wire below; amend only via a `[docs]` commit before dependent code.
 
-- **`RUN` (0x20)** payload `[mode:u8][data]` — `mode` 0=file (`data` = UTF-8 path), 1=source (`data` = UTF-8 snippet). → `RSP{status}` (`OK` | `EBUSY` if one already running, FR-RUN-4 | `EBADREQ` bad mode | `ERANGE` over-length), then `RUN_STATE(running)`. Both modes share one lifecycle. Completion → `RUN_STATE(done)`; an uncaught exception → `CONSOLE_DATA(stderr, traceback)` then `RUN_STATE(error)`. A missing/inaccessible file surfaces asynchronously (`CONSOLE_DATA(stderr)` + `RUN_STATE(error)`), not as the `RSP`. Every ordinary or autorun execution receives a fresh globals/locals dictionary containing `__name__ = "__main__"`; variables created by an earlier run are absent. PBLE/1 v0.6.1 does not yet define `__file__`, working-directory changes, sibling-import setup, or `sys.modules` cleanup.
+- **`RUN` (0x20)** payload `[mode:u8][data]` — `mode` 0=file (`data` = UTF-8 path), 1=source (`data` = UTF-8 snippet). → `RSP{status}` (`OK` | `EBUSY` if one already running, FR-RUN-4 | `EBADREQ` bad mode | `ERANGE` over-length), then `RUN_STATE(running)`. Both modes share one lifecycle. Completion → `RUN_STATE(done)`; an uncaught exception → `CONSOLE_DATA(stderr, traceback)` then `RUN_STATE(error)`. A missing/inaccessible file surfaces asynchronously (`CONSOLE_DATA(stderr)` + `RUN_STATE(error)`), not as the `RSP`. Every ordinary or autorun execution receives a fresh globals/locals dictionary containing `__name__ = "__main__"`; variables created by an earlier run are absent. This fresh-globals rule is limited to ordinary and autorun execution: it preserves the possibility of a future, separately specified, capability-gated persistent interactive mode, which MUST NOT silently change ordinary `RUN` isolation. PBLE/1 v0.6.1 does not yet define `__file__`, working-directory changes, sibling-import setup, or `sys.modules` cleanup.
 
   An otherwise valid, non-busy RUN is admitted transactionally. The ESP
   reference agent makes a provisional, non-observable reservation and copies

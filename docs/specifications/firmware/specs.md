@@ -1,6 +1,6 @@
 # PyBLE Agent Firmware — Requirements Specification
 
-Status: **DRAFT (per-section freeze in effect)** · Owner: project maintainer · Last updated: 2026-09-02
+Status: **DRAFT (per-section freeze in effect)** · Owner: project maintainer · Last updated: 2026-09-03
 
 ### Freeze ledger (per-section, per PRD §1B.4)
 
@@ -374,7 +374,10 @@ autorun execution MUST compile and execute with a newly allocated globals and
 locals dictionary containing `__name__ = "__main__"`; it MUST NOT inherit a
 variable created by an earlier run. The runner MUST restore its own prior
 globals/locals on both success and exception and MUST NOT clear the VM's main
-dictionary. This increment makes no portable promise for `__file__`, current
+dictionary. Fresh globals for ordinary and autorun execution preserve a future
+capability-gated persistent interactive namespace; that separate mode MUST be
+specified explicitly and MUST NOT silently weaken ordinary `RUN` isolation.
+This increment makes no portable promise for `__file__`, current
 directory, sibling imports, `sys.path`, or `sys.modules` cleanup. — *(source:
 [protocol.md §6](../protocol.md#6-run--stop--console); verify: unit,
 50-sequential-run resource gate, five-profile HIL)*

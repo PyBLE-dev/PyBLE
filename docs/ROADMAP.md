@@ -13,18 +13,19 @@ v0.7.0 remains non-normative and requires separate maintainer approval.
 - iPad external beta through TestFlight
 - PBLE/1 editing, run/stop, console, and file workflows over BLE
 - Offline Blockly with beginner GPIO and NeoPixel examples
-- Browser installation for the exact `esp32-4mb` and `esp32-s3-n16r8` profiles
-  as the v0.4.2 hardware-tested beta; production Chrome install/recovery passed
-  on both profiles
+- The current qualified firmware v0.6.0 covers five exact profiles: four ESP
+  Web Serial installers and the verified Pico 2 W UF2/manual-BOOTSEL path. All
+  five exact-byte hardware, recovery, PBLE/1, iPadOS, and Android rows passed
+  for that immutable release.
 - MIT-licensed app, agent firmware, protocol, website, tests, and release tools
 
 ## Near term
 
 - Qualify the app 0.2.0 beta train, starting at globally monotonic build 5,
   across the retained iPad/Android and five-profile hardware test scope
-- Complete the app, PBLE/1, resource, and remaining firmware release
-  qualification for the exact v0.4.2 bytes
-- Complete real-hardware qualification before enabling the ESP32-C3 installer
+- Complete source-selected firmware v0.6.1 contract hardening, deterministic
+  builds, and fresh resource, recovery, and physical qualification across the
+  same atomic five-profile scope before publication
 - Expand user-facing setup, recovery, and board-specific wiring guidance
 - Open and document the Android beta distribution path
 - Convert remaining pre-public planning references into focused GitHub issues
