@@ -95,6 +95,7 @@ CONNECT_TIMEOUT_S = 25.0
 RECONNECT_RETRY_S = 35.0
 SEQUENTIAL_RUNS = 50
 CAPACITY_RESERVE = 65536
+ACTIVE_GET_BYTES = 16384
 STDIN_OVERFLOW_BYTES = 400
 LABEL_24 = "ทดสอบไทย"
 
@@ -110,6 +111,11 @@ FS_SENTINEL_PATH = WORK_DIR + "/old_target.bin"
 FS_RENAME_PATH = WORK_DIR + "/renamed.bin"
 FS_BLOCKED_DIR = WORK_DIR + "/blocked_dir"
 FS_CAPACITY_PATH = WORK_DIR + "/capacity.bin"
+FS_ACTIVE_GET_PATH = WORK_DIR + "/active_get.bin"
+FS_GET_DELETE_PATH = WORK_DIR + "/get_delete.bin"
+FS_GET_MKDIR_PATH = WORK_DIR + "/get_mkdir"
+FS_GET_RENAME_SOURCE_PATH = WORK_DIR + "/get_rename_source.bin"
+FS_GET_RENAME_DEST_PATH = WORK_DIR + "/get_rename_dest.bin"
 
 SOURCE_SET_MARKER = b"__PYBLE_V061_SOURCE_SET__"
 SOURCE_FRESH_MARKER = b"__PYBLE_V061_fresh-source__=1"
@@ -1203,6 +1209,110 @@ async def _mutation_status(state, opcode, payload, description):
     _status_is(response, wire.ST_EBUSY, description)
 
 
+async def _get_with_active_probe(
+    state,
+    path,
+    expected,
+    probe_opcode,
+    probe_payload,
+    expected_status,
+    description,
+):
+    """Admit one command before GET_END and verify the complete download.
+
+    Each caller starts a separate deterministic GET.  The native response pool
+    has depth two, so batching several response-bearing probes behind one GET
+    would measure response-pool exhaustion instead of the filesystem admission
+    contract.
+    """
+    expected = bytes(expected)
+    verifier = pble_bench.DownloadVerifier(expected)
+    central = state.central
+    cursor = central.event_cursor()
+    response = await central.send_cmd(
+        wire.OP_FILE_GET_BEGIN,
+        state.ids.next(),
+        (0).to_bytes(4, "little") + pble_bench.path_payload(path),
+        timeout=EVENT_TIMEOUT_S,
+    )
+    _status_is(response, wire.ST_OK, description + " FILE_GET_BEGIN")
+    _require(
+        len(response.payload) == 5,
+        description + " FILE_GET_BEGIN payload has the wrong length",
+    )
+    _require(
+        int.from_bytes(response.payload[1:5], "little") == len(expected),
+        description + " FILE_GET_BEGIN advertised the wrong total",
+    )
+
+    write_receipt = False
+
+    def record_write_receipt():
+        nonlocal write_receipt
+        ended = any(
+            event.type == wire.EVT and event.opcode == wire.OP_FILE_GET_END
+            for event in _events_after(central, cursor)
+        )
+        _require(
+            not ended,
+            description + " GET ended before the probe command write completed",
+        )
+        write_receipt = True
+
+    probe_response = await central.send_cmd(
+        probe_opcode,
+        state.ids.next(),
+        bytes(probe_payload),
+        timeout=EVENT_TIMEOUT_S,
+        on_written=record_write_receipt,
+    )
+    _require(
+        write_receipt,
+        description + " did not produce a complete command-write receipt",
+    )
+    _status_is(probe_response, expected_status, description)
+
+    deadline = time.monotonic() + EVENT_TIMEOUT_S
+    finished = False
+    while True:
+        cursor, events = central.events_since(cursor)
+        progressed = False
+        try:
+            for event in events:
+                if event.type != wire.EVT:
+                    continue
+                if event.opcode == wire.OP_FILE_GET_DATA:
+                    _require(not finished, description + " emitted data after GET_END")
+                    _require(
+                        len(event.payload) > 4,
+                        description + " FILE_GET_DATA payload is truncated",
+                    )
+                    offset = int.from_bytes(event.payload[:4], "little")
+                    verifier.feed(offset, event.payload[4:])
+                    progressed = True
+                elif event.opcode == wire.OP_FILE_GET_END:
+                    _require(not finished, description + " emitted duplicate GET_END")
+                    _require(
+                        len(event.payload) == 4,
+                        description + " FILE_GET_END payload has the wrong length",
+                    )
+                    verifier.finish(int.from_bytes(event.payload, "little"))
+                    finished = True
+                    progressed = True
+        except pble_bench.IntegrityFailure as exc:
+            raise BenchFailure(description + " GET integrity check failed") from exc
+        if finished:
+            return probe_response
+        if progressed:
+            deadline = time.monotonic() + EVENT_TIMEOUT_S
+        if time.monotonic() >= deadline:
+            raise BenchFailure(
+                "%s GET timed out after %d/%d verified bytes"
+                % (description, verifier.unique_bytes, len(expected))
+            )
+        await asyncio.sleep(0.002)
+
+
 async def _statvfs_geometry(state):
     source = (
         b"import os\n"
@@ -1242,13 +1352,147 @@ async def _cleanup_bench_put(state, path):
 
 
 async def run_filesystem_hardening(state):
-    """Exercise .pbltmp hiding, mutation EBUSY, scratch safety, and capacity."""
+    """Exercise active-transfer admission, scratch safety, and capacity."""
     # _assert_scratch_hidden performs wire.OP_FILE_LIST; every valid namespace
     # mutation below must return the exact wire.ST_EBUSY status during PUT.
     old_bytes = b"v061-old-target-sentinel"
     replacement = b"v061-new-target-content-123456"
+    active_get_bytes = pble_bench.deterministic_payload(
+        state.args.profile,
+        0x0610,
+        ACTIVE_GET_BYTES,
+    )
+    get_delete_bytes = b"v061-active-get-delete-sentinel"
+    get_rename_bytes = b"v061-active-get-rename-sentinel"
     await pble_bench.ensure_directory(state.central, WORK_DIR, state.ids.next)
     try:
+        # A separate wire.OP_FILE_GET_BEGIN surrounds each 16 KiB probe.
+        # Complete BLE write receipt must precede GET_END, and the download
+        # remains subject to the same offset/byte/size/CRC checks as an
+        # ordinary GET.
+        await put_file(state, FS_ACTIVE_GET_PATH, active_get_bytes)
+        await put_file(state, FS_GET_DELETE_PATH, get_delete_bytes)
+        await put_file(state, FS_GET_RENAME_SOURCE_PATH, get_rename_bytes)
+        await pble_bench.remove_if_present(
+            state.central, FS_GET_MKDIR_PATH, state.ids.next
+        )
+        await pble_bench.remove_if_present(
+            state.central, FS_GET_RENAME_DEST_PATH, state.ids.next
+        )
+
+        await _get_with_active_probe(
+            state,
+            FS_ACTIVE_GET_PATH,
+            active_get_bytes,
+            wire.OP_FILE_DELETE,
+            pble_bench.path_payload(FS_GET_DELETE_PATH),
+            wire.ST_EBUSY,
+            "active-GET FILE_DELETE",
+        )
+        await _get_with_active_probe(
+            state,
+            FS_ACTIVE_GET_PATH,
+            active_get_bytes,
+            wire.OP_MKDIR,
+            pble_bench.path_payload(FS_GET_MKDIR_PATH),
+            wire.ST_EBUSY,
+            "active-GET MKDIR",
+        )
+        await _get_with_active_probe(
+            state,
+            FS_ACTIVE_GET_PATH,
+            active_get_bytes,
+            wire.OP_FILE_RENAME,
+            pble_bench.path_payload(FS_GET_RENAME_SOURCE_PATH)
+            + pble_bench.path_payload(FS_GET_RENAME_DEST_PATH),
+            wire.ST_EBUSY,
+            "active-GET FILE_RENAME",
+        )
+        await _get_with_active_probe(
+            state,
+            FS_ACTIVE_GET_PATH,
+            active_get_bytes,
+            wire.OP_FILE_DELETE,
+            b"\x02\x00x",
+            wire.ST_EBADREQ,
+            "active-GET malformed FILE_DELETE",
+        )
+        await _get_with_active_probe(
+            state,
+            FS_ACTIVE_GET_PATH,
+            active_get_bytes,
+            wire.OP_FILE_RENAME,
+            pble_bench.path_payload(FS_GET_RENAME_SOURCE_PATH)
+            + pble_bench.path_payload("../escape"),
+            wire.ST_EACCES,
+            "active-GET jailed FILE_RENAME",
+        )
+        list_response = await _get_with_active_probe(
+            state,
+            FS_ACTIVE_GET_PATH,
+            active_get_bytes,
+            wire.OP_FILE_LIST,
+            pble_bench.path_payload(WORK_DIR),
+            wire.ST_OK,
+            "active-GET FILE_LIST",
+        )
+        more, active_entries = parse_list_payload(list_response.payload)
+        _require(more == 0, "active-GET FILE_LIST was unexpectedly truncated")
+        active_names = {name for _kind, _size, name in active_entries}
+        _require(
+            {
+                "active_get.bin",
+                "get_delete.bin",
+                "get_rename_source.bin",
+            }.issubset(active_names),
+            "active-GET FILE_LIST omitted a deterministic fixture",
+        )
+        stat_response = await _get_with_active_probe(
+            state,
+            FS_ACTIVE_GET_PATH,
+            active_get_bytes,
+            wire.OP_FILE_STAT,
+            pble_bench.path_payload(FS_ACTIVE_GET_PATH),
+            wire.ST_OK,
+            "active-GET FILE_STAT",
+        )
+        _require(
+            len(stat_response.payload) == 9,
+            "active-GET FILE_STAT payload has the wrong length",
+        )
+        _require(
+            int.from_bytes(stat_response.payload[1:5], "little")
+            == ACTIVE_GET_BYTES
+            and int.from_bytes(stat_response.payload[5:9], "little")
+            == wire.crc32(active_get_bytes),
+            "active-GET FILE_STAT did not verify the fixture",
+        )
+
+        # The valid mutation probes above must not have changed the namespace.
+        await pble_bench.get_file(
+            state.central,
+            FS_GET_DELETE_PATH,
+            get_delete_bytes,
+            next_id=state.ids.next,
+        )
+        await pble_bench.get_file(
+            state.central,
+            FS_GET_RENAME_SOURCE_PATH,
+            get_rename_bytes,
+            next_id=state.ids.next,
+        )
+        response = await state.central.send_cmd(
+            wire.OP_FILE_STAT,
+            state.ids.next(),
+            pble_bench.path_payload(FS_GET_RENAME_DEST_PATH),
+        )
+        _status_is(response, wire.ST_ENOENT, "active-GET rename destination stat")
+        _more, entries = await _list_directory(state, WORK_DIR)
+        _require(
+            all(name != "get_mkdir" for _kind, _size, name in entries),
+            "active-GET MKDIR mutated the filesystem",
+        )
+
         await put_file(state, FS_SENTINEL_PATH, old_bytes)
 
         # An active PUT exposes neither its .pbltmp file nor a mutation window.
@@ -1377,6 +1621,21 @@ async def run_filesystem_hardening(state):
     finally:
         await _cleanup_bench_put(state, FS_SENTINEL_PATH)
         await _cleanup_bench_put(state, FS_CAPACITY_PATH)
+        await pble_bench.remove_if_present(
+            state.central, FS_ACTIVE_GET_PATH, state.ids.next
+        )
+        await pble_bench.remove_if_present(
+            state.central, FS_GET_DELETE_PATH, state.ids.next
+        )
+        await pble_bench.remove_if_present(
+            state.central, FS_GET_RENAME_SOURCE_PATH, state.ids.next
+        )
+        await pble_bench.remove_if_present(
+            state.central, FS_GET_RENAME_DEST_PATH, state.ids.next
+        )
+        await pble_bench.remove_if_present(
+            state.central, FS_GET_MKDIR_PATH, state.ids.next
+        )
         await pble_bench.remove_if_present(
             state.central, FS_RENAME_PATH, state.ids.next
         )

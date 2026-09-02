@@ -312,7 +312,10 @@ class ExactResponseCorrelationTest(unittest.IsolatedAsyncioTestCase):
             on_written=lambda: events.append("written"),
         )
 
-        self.assertIs(observed, exact)
+        self.assertEqual(observed.type, exact.type)
+        self.assertEqual(observed.opcode, exact.opcode)
+        self.assertEqual(observed.id, exact.id)
+        self.assertEqual(observed.payload, exact.payload)
         self.assertGreater(events.count("write"), 1)
         self.assertEqual(events[-2:], ["written", "await-response"])
 
