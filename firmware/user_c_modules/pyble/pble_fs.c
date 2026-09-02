@@ -85,6 +85,7 @@ typedef struct {
     pble_session_token_t session;
     uint64_t vm_epoch;
     uint64_t transfer_generation;
+    bool get_active_at_enqueue;
     pble_rsp_ticket_t ticket;
     uint16_t len;
     uint8_t  payload[PBLE_FS_ITEM_PAYLOAD];
@@ -107,6 +108,12 @@ static uint64_t g_fs_registration_epoch;
 static portMUX_TYPE g_fs_transfer_mux = portMUX_INITIALIZER_UNLOCKED;
 static uint64_t g_fs_transfer_generation = 1;
 static bool g_fs_transfer_exhausted;
+
+// GET streams occupy the one fs worker until completion. Namespace mutations
+// admitted concurrently snapshot this generation-qualified bit so that their
+// later dequeue cannot erase the admission-time EBUSY decision.
+static bool g_get_active;
+static uint64_t g_get_generation;
 
 // Worker-local single-active-transfer PUT state machine (§5 windowed upload).
 static bool     g_put_active;
@@ -836,11 +843,31 @@ static uint8_t fs_do_get(const pble_fs_req_t *it) {
         return PBLE_ERANGE;
     }
 
+    // From this cut until every stream exit, concurrent namespace mutations
+    // must retain that they were admitted during this GET. The worker itself
+    // is single-threaded, but host-task enqueue runs concurrently.
+    bool get_claimed = false;
+    taskENTER_CRITICAL(&g_fs_transfer_mux);
+    if (!g_fs_transfer_exhausted &&
+        it->transfer_generation == g_fs_transfer_generation &&
+        (!g_get_active || g_get_generation != g_fs_transfer_generation)) {
+        g_get_active = true;
+        g_get_generation = it->transfer_generation;
+        get_claimed = true;
+    }
+    taskEXIT_CRITICAL(&g_fs_transfer_mux);
+    if (!get_claimed) {
+        return PBLE_NO_RSP;
+    }
+    if (!pble_fs_ticket_valid(it)) {
+        goto get_done;
+    }
+
     // RSP{OK}[total_size:u32] must fully complete before dependent events.
     g_scratch[0] = PBLE_OK;
     le32(g_scratch + 1, total);
     if (!pble_rsp_expect_completion(&it->ticket)) {
-        return PBLE_NO_RSP;
+        goto get_done;
     }
     if (!pble_rsp_publish(&it->ticket, PBLE_OP_FILE_GET_BEGIN, it->id,
                           g_scratch, 5)) {
@@ -850,7 +877,7 @@ static uint8_t fs_do_get(const pble_fs_req_t *it) {
     bool rsp_delivered = pble_rsp_wait(&it->ticket);
     MP_THREAD_GIL_ENTER();
     if (!rsp_delivered || !pble_fs_item_valid(it)) {
-        return PBLE_NO_RSP;
+        goto get_done;
     }
 
     uint32_t chunk = fs_chunk();
@@ -863,14 +890,14 @@ static uint8_t fs_do_get(const pble_fs_req_t *it) {
     if (nlr_push(&nlr) == 0) {
         if (!pble_fs_item_valid(it)) {
             nlr_pop();
-            return PBLE_NO_RSP;
+            goto get_done;
         }
         f = fs_open(it, pble_fs_item_valid, path, "rb");
         if (!pble_fs_item_valid(it)) {
             fs_close_local((mp_obj_t)f);
             f = MP_OBJ_NULL;
             nlr_pop();
-            return PBLE_NO_RSP;
+            goto get_done;
         }
         const mp_stream_p_t *sp = mp_get_stream((mp_obj_t)f);
         uint32_t pos = 0;
@@ -889,14 +916,14 @@ static uint8_t fs_do_get(const pble_fs_req_t *it) {
                 fs_close_local((mp_obj_t)f);
                 f = MP_OBJ_NULL;
                 nlr_pop();
-                return PBLE_NO_RSP;
+                goto get_done;
             }
             mp_uint_t n = sp->read((mp_obj_t)f, g_scratch + 4, want, &err);
             if (!pble_fs_item_valid(it)) {
                 fs_close_local((mp_obj_t)f);
                 f = MP_OBJ_NULL;
                 nlr_pop();
-                return PBLE_NO_RSP;
+                goto get_done;
             }
             if (n == MP_STREAM_ERROR) {
                 mp_raise_OSError(err);
@@ -922,7 +949,7 @@ static uint8_t fs_do_get(const pble_fs_req_t *it) {
                     fs_close_local((mp_obj_t)f);
                     f = MP_OBJ_NULL;
                     nlr_pop();
-                    return PBLE_NO_RSP;
+                    goto get_done;
                 }
                 int emit_rc = fs_emit_paced(it, PBLE_OP_FILE_GET_DATA, dp - 4,
                                             (size_t)(4 + elen));
@@ -930,7 +957,7 @@ static uint8_t fs_do_get(const pble_fs_req_t *it) {
                     fs_close_local((mp_obj_t)f);
                     f = MP_OBJ_NULL;
                     nlr_pop();
-                    return PBLE_NO_RSP;
+                    goto get_done;
                 }
                 if (emit_rc != PBLE_TX_OK) {
                     tx_dead = 1;
@@ -943,13 +970,13 @@ static uint8_t fs_do_get(const pble_fs_req_t *it) {
             fs_close_local((mp_obj_t)f);
             f = MP_OBJ_NULL;
             nlr_pop();
-            return PBLE_NO_RSP;
+            goto get_done;
         }
         mp_stream_close((mp_obj_t)f);
         f = MP_OBJ_NULL;
         if (!pble_fs_item_valid(it)) {
             nlr_pop();
-            return PBLE_NO_RSP;
+            goto get_done;
         }
         stream_complete = (remaining == 0);
         nlr_pop();
@@ -966,15 +993,22 @@ static uint8_t fs_do_get(const pble_fs_req_t *it) {
         uint32_t fcrc = crc ^ 0xFFFFFFFFu;
         le32(g_scratch, fcrc);
         if (!pble_fs_item_valid(it)) {
-            return PBLE_NO_RSP;
+            goto get_done;
         }
         (void)fs_emit_paced(it, PBLE_OP_FILE_GET_END, g_scratch, 4);
         if (!pble_fs_item_valid(it)) {
-            return PBLE_NO_RSP;
+            goto get_done;
         }
     }
     // tx_dead: the link is gone or saturated beyond the retry budget — an END
     // cannot usefully be delivered; the app recovers via its data timeout.
+get_done:
+    taskENTER_CRITICAL(&g_fs_transfer_mux);
+    if (g_get_active && g_get_generation == it->transfer_generation) {
+        g_get_active = false;
+        g_get_generation = 0;
+    }
+    taskEXIT_CRITICAL(&g_fs_transfer_mux);
     return PBLE_NO_RSP;
 }
 
@@ -1712,7 +1746,7 @@ static uint8_t fs_do_delete(const pble_fs_req_t *it, size_t *extra) {
     if (rc != PBLE_OK) {
         return rc;
     }
-    if (g_put_active && fs_put_active_current(it)) {
+    if (fs_put_active_current(it) || it->get_active_at_enqueue) {
         return PBLE_EBUSY;
     }
     uint32_t sz;
@@ -1767,7 +1801,7 @@ static uint8_t fs_do_mkdir(const pble_fs_req_t *it, size_t *extra) {
     if (rc != PBLE_OK) {
         return rc;
     }
-    if (fs_put_active_current(it)) {
+    if (fs_put_active_current(it) || it->get_active_at_enqueue) {
         return PBLE_EBUSY;
     }
     nlr_buf_t nlr;
@@ -1830,7 +1864,7 @@ static uint8_t fs_do_rename(const pble_fs_req_t *it, size_t *extra) {
     if (rc != PBLE_OK) {
         return rc;
     }
-    if (g_put_active && fs_put_active_current(it)) {
+    if (fs_put_active_current(it) || it->get_active_at_enqueue) {
         return PBLE_EBUSY;
     }
     uint32_t sz;
@@ -1971,6 +2005,8 @@ void pble_fs_vm_reset(void) {
     } else {
         g_fs_transfer_generation++;
     }
+    g_get_active = false;
+    g_get_generation = 0;
     fs_put_reset_locked();
     taskEXIT_CRITICAL(&g_fs_transfer_mux);
     MP_STATE_VM(pble_fs_put_file) = MP_OBJ_NULL;
@@ -2021,6 +2057,9 @@ static uint8_t fs_enqueue(const pble_frame_t *req,
             taskENTER_CRITICAL(&g_fs_transfer_mux);
             g_enq.transfer_generation = g_fs_transfer_generation;
             bool generation_available = !g_fs_transfer_exhausted;
+            g_enq.get_active_at_enqueue = generation_available &&
+                g_get_active &&
+                g_get_generation == g_fs_transfer_generation;
             taskEXIT_CRITICAL(&g_fs_transfer_mux);
             if (ticket != NULL) {
                 g_enq.ticket = *ticket;

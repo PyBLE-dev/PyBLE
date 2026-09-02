@@ -166,6 +166,7 @@ typedef void *mp_obj_t;
 typedef struct { void *ret_val; } nlr_buf_t;
 typedef struct {
     uint16_t len;
+    bool get_active_at_enqueue;
     uint8_t payload[PBLE_FS_ITEM_PAYLOAD];
 } pble_fs_req_t;
 

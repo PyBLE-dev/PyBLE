@@ -204,7 +204,7 @@ class NativeFsBehaviorTest(unittest.TestCase):
     def test_malformed_resume_reads_preserve_the_old_destination(self) -> None:
         self.run_scenario("malformed-resume")
 
-    def test_active_put_blocks_mutation_only_after_jail_resolution(self) -> None:
+    def test_active_transfers_block_mutation_only_after_jail_resolution(self) -> None:
         self.run_scenario("mutation-gate")
 
     def test_stale_identity_cannot_publish_or_commit(self) -> None:
@@ -424,6 +424,8 @@ typedef int portMUX_TYPE;
 static portMUX_TYPE g_fs_transfer_mux = portMUX_INITIALIZER_UNLOCKED;
 static uint64_t g_fs_transfer_generation = 1u;
 static bool g_fs_transfer_exhausted;
+static bool g_get_active;
+static uint64_t g_get_generation;
 static bool g_put_active;
 static char g_put_temp[PBLE_FS_PATH_BUF];
 static char g_put_dest[PBLE_FS_PATH_BUF];
@@ -887,6 +889,8 @@ static void reset_world(void) {
     g_fs_transfer_mux = portMUX_INITIALIZER_UNLOCKED;
     g_fs_transfer_generation = 19u;
     g_fs_transfer_exhausted = false;
+    g_get_active = false;
+    g_get_generation = 0u;
     g_put_active = false;
     memset(g_put_temp, 0, sizeof(g_put_temp));
     memset(g_put_dest, 0, sizeof(g_put_dest));
@@ -1317,9 +1321,15 @@ static int scenario_get_close(bool after_open) {
     pble_fs_req_t request = current_request();
     set_get_request(&request, "/old.py");
     uint8_t status = fs_do_get(&request);
-    return check_local_close(
+    int result = check_local_close(
         status, after_open ? "fs_do_get post-open"
                            : "fs_do_get post-read");
+    if (result != 0) {
+        return result;
+    }
+    CHECK(!g_get_active && g_get_generation == 0u,
+          "cancelled GET retained active-download ownership");
+    return 0;
 }
 
 static void set_put_begin_request(pble_fs_req_t *request, const char *path) {
