@@ -49,6 +49,7 @@
 
 import os
 import sys
+import tempfile
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -458,6 +459,47 @@ class TerminalStateTest(unittest.TestCase):
         r.service()
         self.assertEqual(r.handle_run(GOOD_SOURCE), OK,
                          "after a terminal state the runner MUST accept a new RUN")
+
+
+class FreshGlobalsExecutorTest(unittest.TestCase):
+    """v0.6.1 ordinary RUNs receive a new ``__main__`` namespace."""
+
+    def test_sequential_source_and_file_runs_do_not_share_globals(self):
+        make_exec_fn = RUNNER.attr(
+            self,
+            "make_exec_fn",
+            "v0.6.1 portable RUN fresh-globals executor",
+        )
+        execute = make_exec_fn()
+
+        execute(
+            RUNNER.attr(self, "MODE_SOURCE", "v0.6.1 source RUN mode"),
+            b"sentinel_from_run_one = 1\n"
+            b"assert __name__ == '__main__'\n",
+        )
+        execute(
+            RUNNER.attr(self, "MODE_SOURCE", "v0.6.1 source RUN mode"),
+            b"assert 'sentinel_from_run_one' not in globals()\n"
+            b"assert __name__ == '__main__'\n",
+        )
+
+        with tempfile.TemporaryDirectory(prefix="pyble-v061-runner-") as root:
+            path = os.path.join(root, "fresh_file_run.py")
+            with open(path, "wb") as script:
+                script.write(
+                    b"assert 'sentinel_from_run_one' not in globals()\n"
+                    b"assert __name__ == '__main__'\n"
+                    b"file_only_sentinel = 1\n"
+                )
+            execute(
+                RUNNER.attr(self, "MODE_FILE", "v0.6.1 file RUN mode"),
+                path.encode("utf-8"),
+            )
+
+        execute(
+            RUNNER.attr(self, "MODE_SOURCE", "v0.6.1 source RUN mode"),
+            b"assert 'file_only_sentinel' not in globals()\n",
+        )
 
 
 class StaleStopClearedTest(unittest.TestCase):
