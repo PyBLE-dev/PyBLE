@@ -45,7 +45,10 @@ Each exact profile requires one new private result from
 `resource-stability`, `stdin-isolation`, `configuration-durability`, and
 `filesystem-hardening`. Resource stability is exactly 50 sequential runs.
 Configuration durability includes label and autorun persistence/restoration
-and Identify persistence/restoration when the profile advertises Identify.
+and preserves an existing Identify configuration across reboot when the
+profile advertises Identify. Because PBLE/1 caps do not expose the persisted
+active level, the target-neutral bench invokes Identify before and after reboot
+but does not rewrite an owner's LED configuration.
 
 Workspace first-boot behavior occurs before BLE service startup and is
 therefore acquired separately on sacrificial media. Before the live run,
