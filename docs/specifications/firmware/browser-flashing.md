@@ -2443,10 +2443,12 @@ observation, exact raw OI log, raw NVS slice, acquisition log, and a new
 receipt output path. All private evidence inputs MUST be stable exclusive
 mode-`0600` regular files. The operation derives rather than accepts every
 candidate, artifact, observation, raw-log, slice, acquisition-log, geometry,
-integrity, and empty-inventory field; the acquisition log is exactly
-`c3-post-oi-nvs-acquisition-v1\n`. It writes canonical JSON with exclusive
-mode `0600`, fsyncs file and parent, reopens the same inode, and repeats the
-complete validation before success. A pre-existing output or any input race,
+integrity, and empty-inventory field. The acquisition log is exactly the two
+LF-terminated lines `c3-post-oi-nvs-acquisition-v1` and
+`offset=0x9000 size=0x6000 captured=post-workload pre-evaluation`. It writes
+canonical JSON with exclusive mode `0600`, fsyncs file and parent, reopens the
+same inode, and repeats the complete validation before success. A pre-existing
+output or any input race,
 mode/link violation, digest mismatch, noncanonical observation, wrong reset
 count, non-erased slice, or output verification failure leaves no receipt.
 
