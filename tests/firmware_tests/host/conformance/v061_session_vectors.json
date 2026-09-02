@@ -31,6 +31,13 @@
       "violation_delta": 0
     },
     {
+      "name": "two_trailing_lf_are_not_canonical",
+      "payload_ascii": "proto_versions=1\napp_name=PyBLE\napp_version=0.2.0\n\n",
+      "expected_status": 1,
+      "negotiates_v1": false,
+      "violation_delta": 1
+    },
+    {
       "name": "well_formed_offer_without_v1",
       "payload_ascii": "proto_versions=2\napp_name=PyBLE\napp_version=0.2.0",
       "expected_status": 10,

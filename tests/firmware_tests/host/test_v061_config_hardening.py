@@ -27,6 +27,7 @@ if HOST_DIR not in sys.path:
     sys.path.insert(0, HOST_DIR)
 
 import _support  # noqa: E402
+import pyble_fs  # noqa: E402
 import pyble_proto  # noqa: E402
 
 
@@ -153,6 +154,59 @@ class StrictLabelValidationTests(ConfigCase):
         self.assertEqual(config.label, "old")
         self.assertEqual(Path(self.primary).read_bytes(), before)
         self.assertEqual(self.adv, [])
+
+
+class PortableStrictUtf8BoundaryTests(ConfigCase):
+    """Pin a decoder-independent strict-scalar UTF-8 authority on RP2."""
+
+    def strict_decode(self):
+        helper = getattr(pyble_proto, "strict_utf8_decode", None)
+        self.assertIsNotNone(
+            helper,
+            "portable wire text must use one explicit strict UTF-8 decoder; "
+            "the pinned MicroPython bytes.decode accepts invalid scalars",
+        )
+        return helper
+
+    def test_shared_decoder_accepts_only_shortest_form_unicode_scalars(self):
+        valid = (
+            (b"ASCII", "ASCII"),
+            (b"\xc2\x80", "\u0080"),
+            (b"\xe2\x82\xac", "\u20ac"),
+            (b"\xf4\x8f\xbf\xbf", "\U0010ffff"),
+        )
+        invalid = (
+            b"\x80", b"\xc0\x80", b"\xc1\xbf", b"\xe0\x80\x80",
+            b"\xed\xa0\x80", b"\xf0\x80\x80\x80",
+            b"\xf4\x90\x80\x80", b"\xf5\x80\x80\x80",
+            b"\xe2\x82", b"\xf0\x9f\x92", b"\xe2(\xa1",
+        )
+        decode = self.strict_decode()
+        for encoded, expected in valid:
+            with self.subTest(valid=encoded.hex()):
+                self.assertEqual(decode(encoded), expected)
+        for encoded in invalid:
+            with self.subTest(invalid=encoded.hex()):
+                self.assertIsNone(decode(encoded))
+
+    def test_path_and_label_share_the_explicit_decoder(self):
+        with mock.patch.object(
+            pyble_proto,
+            "strict_utf8_decode",
+            return_value=None,
+            create=True,
+        ) as strict:
+            self.assertEqual(
+                DC.attr(self, "label_status", "strict label UTF-8")(b"safe"),
+                EBADREQ,
+            )
+            self.assertEqual(pyble_fs.resolve(b"/safe"), (EBADREQ, None))
+        self.assertEqual(
+            strict.call_count,
+            2,
+            "both portable wire-text chokepoints must delegate to the one "
+            "decoder-independent scalar validator",
+        )
 
 
 class VersionedRecordTests(ConfigCase):

@@ -47,9 +47,11 @@ RSP = 0x02
 EVT = 0x03
 HELLO = 0x01
 DEVICE_INFO = 0x02
+SOFT_REBOOT = 0x22
 CONSOLE_INPUT = 0x31
 OK = 0x00
 EBADREQ = 0x01
+EBUSY = 0x07
 ECRC = 0x08
 ERANGE = 0x09
 EUNSUPPORTED = 0x0A
@@ -114,6 +116,8 @@ class RecordingLink:
         self.terminations = []
         self.violation_count = 0
         self.closed = False
+        self.command_closing = False
+        self.closing_calls = []
 
     def on_message(self, cb):
         self.message_cb = cb
@@ -160,16 +164,28 @@ class RecordingLink:
             return False
         if self.closed:
             return False
+        if self.command_closing:
+            # Accepted-SOFT closing preserves the normal malformed-frame wire
+            # classification, but it has precedence over violation accounting.
+            return True
         self.violation_count += 1
         if self.violation_count >= 8:
             self.terminate_session(expected_session)
             return False
         return True
 
+    def begin_command_closing(self, expected_session=None):
+        if expected_session is not None and expected_session != self.session:
+            return False
+        self.command_closing = True
+        self.closing_calls.append(self.session)
+        return True
+
     def reconnect(self):
         self.session += 1
         self.violation_count = 0
         self.closed = False
+        self.command_closing = False
 
     def trigger_oversize(self, head):
         """Model BleLink's link-owned debit-before-upcall ordering only.
@@ -334,6 +350,67 @@ class ProtocolSessionContractTest(unittest.TestCase):
                     self.assertIsNone(
                         agent.console.readinto(buf),
                         "pre-HELLO CONSOLE_INPUT must not reach the stdin ring")
+
+    def test_accepted_soft_marks_transport_closing_across_reconnect(self):
+        agent, link = self.new_agent()
+        self.negotiate(link)
+        self.send(link, oracle_frame(1, CMD, SOFT_REBOOT, 90))
+        self.assert_wire(link, {
+            "wire": "rsp", "opcode": SOFT_REBOOT, "id": 90, "status": OK,
+        }, "accepted SOFT_REBOOT")
+        self.assertTrue(
+            link.command_closing,
+            "response publication must close transport-level malformed-input "
+            "accounting for the accepted reboot grace",
+        )
+        self.assertEqual(link.closing_calls, [1])
+
+        link.disconnect_cb()
+        link.reconnect()
+        link.connect_cb()
+        self.assertTrue(
+            link.command_closing,
+            "a successor connection during the same reboot grace must inherit "
+            "the global closing admission state",
+        )
+        self.assertEqual(link.closing_calls, [1, 2])
+        self.assertIsNotNone(agent._reboot_at)
+
+    def test_closing_keeps_malformed_wire_semantics_without_budget_debit(self):
+        _, link = self.new_agent()
+        self.negotiate(link)
+        self.send(link, oracle_frame(1, CMD, SOFT_REBOOT, 91))
+        self.assertEqual(link.violation_count, 0)
+        self.assertTrue(link.command_closing)
+
+        bad_crc = bytearray(oracle_frame(1, CMD, DEVICE_INFO, 92))
+        bad_crc[-1] ^= 1
+        cases = (
+            (b"\x01\x01\x02", {"wire": "none"}),
+            (oracle_frame(1, RSP, DEVICE_INFO, 93), {"wire": "none"}),
+            (bytes(bad_crc), {
+                "wire": "evt", "opcode": DEVICE_INFO, "id": 0,
+                "status": ECRC,
+            }),
+            (oracle_frame(2, CMD, DEVICE_INFO, 94), {
+                "wire": "rsp", "opcode": DEVICE_INFO, "id": 94,
+                "status": EBADREQ,
+            }),
+            (bytes.fromhex("0101025f0500f75c519f"), {
+                "wire": "rsp", "opcode": DEVICE_INFO, "id": 95,
+                "status": EBADREQ,
+            }),
+        )
+        for message, expected in cases:
+            with self.subTest(message=message.hex()):
+                link.sent[:] = []
+                self.send(link, message)
+                self.assert_wire(link, expected, "accepted-SOFT closing fault")
+                self.assertEqual(
+                    link.violation_count,
+                    0,
+                    "accepted-SOFT closing must suppress every violation debit",
+                )
 
     def test_repeat_disconnect_and_publication_cut_sequences(self):
         hello_by_name = {
