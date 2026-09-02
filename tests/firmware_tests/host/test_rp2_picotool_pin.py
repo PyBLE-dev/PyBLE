@@ -148,7 +148,19 @@ class PicotoolPinContractTests(unittest.TestCase):
         self.assertNotRegex(logical, r"command\s+-v\s+picotool\b")
 
         self.assertIn("-Dpicotool_DIR=", source)
-        self.assertIn("-DFETCHCONTENT_FULLY_DISCONNECTED=ON", source)
+        self.assertIn(
+            "-DFETCHCONTENT_FULLY_DISCONNECTED:BOOL=ON",
+            source,
+        )
+        self.assertNotIn("-DFETCHCONTENT_FULLY_DISCONNECTED=ON", source)
+        self.assertIn(
+            '"FETCHCONTENT_FULLY_DISCONNECTED:BOOL=ON"',
+            source,
+        )
+        self.assertNotIn(
+            '"FETCHCONTENT_FULLY_DISCONNECTED:UNINITIALIZED=ON"',
+            source,
+        )
         self.assertIn("-DCMAKE_FIND_USE_PACKAGE_REGISTRY=OFF", source)
         self.assertIn("-DCMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY=OFF", source)
         self.assertIn("FETCHCONTENT_SOURCE_DIR_PICOTOOL", source)
