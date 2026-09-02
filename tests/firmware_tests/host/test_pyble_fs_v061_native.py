@@ -234,6 +234,67 @@ class NativeFsV061ContractTest(unittest.TestCase):
                 )
                 self.assertRegex(guard, r"\b(?:MP|PBLE)_EIO\b")
 
+    def test_stat_crc_consumes_exactly_the_advertised_extent(self):
+        start, _end, crc_body = _function_span(self.source, "fs_crc_file")
+        signature = self.source[start:self.source.find("{", start)]
+        self.assertRegex(
+            signature,
+            r"fs_crc_file\s*\([^)]*uint32_t\s+(?:expected|extent|size)",
+            "FILE_STAT must pass its stat-advertised size into the CRC scan",
+        )
+        self.assertRegex(
+            crc_body,
+            r"uint32_t\s+remaining\s*=\s*(?:expected|extent|size)\s*;",
+        )
+        self.assertRegex(crc_body, r"while\s*\(\s*remaining\s*>\s*0\s*\)")
+        self.assertRegex(
+            crc_body,
+            r"sp->read\s*\([^;]*,\s*want\s*,",
+            "the last CRC read must be bounded by the promised remainder",
+        )
+        eof = re.search(
+            r"if\s*\(\s*n\s*==\s*0\s*\)\s*\{(?P<body>[^{}]*)\}",
+            crc_body,
+            flags=re.DOTALL,
+        )
+        self.assertIsNotNone(eof)
+        self.assertNotIn("break", eof.group("body"))
+        self.assertRegex(eof.group("body"), r"(?:MP|PBLE)_EIO")
+        stat_body = _function_body(self.source, "fs_do_stat")
+        self.assertRegex(
+            stat_body,
+            r"fs_crc_file\s*\(\s*it\s*,\s*path\s*,\s*size\s*,\s*&crc\s*\)",
+        )
+
+    def test_get_short_read_cannot_emit_a_completion_event(self):
+        body = _function_body(self.source, "fs_do_get")
+        self.assertRegex(body, r"uint32_t\s+remaining\s*=\s*total\s*;")
+        self.assertRegex(body, r"while\s*\(\s*remaining\s*>\s*0\s*\)")
+        read_at = body.find("sp->read")
+        self.assertGreaterEqual(read_at, 0)
+        self.assertRegex(
+            body[read_at:body.find("crc32_update", read_at)],
+            r"\bn\s*>\s*want\b",
+            "GET must compare a backend count with the exact final read size",
+        )
+        self.assertRegex(
+            body[read_at:body.find("crc32_update", read_at)],
+            r"\bn\s*==\s*0\b[\s\S]*(?:MP|PBLE)_EIO",
+            "zero before the promised total must take the read-failure path",
+        )
+        self.assertIn(
+            "stream_complete",
+            body,
+            "GET_END needs an explicit exact-extent completion predicate",
+        )
+        end_at = body.find("PBLE_OP_FILE_GET_END")
+        self.assertGreater(end_at, 0)
+        completion_gate = body[max(0, end_at - 500):end_at]
+        self.assertIn(
+            "stream_complete", completion_gate,
+            "a catch path or early EOF must not publish FILE_GET_END",
+        )
+
     def test_put_end_requires_a_successful_close_before_rename(self):
         functions = _defined_functions(self.source)
         close = functions["fs_put_close"]

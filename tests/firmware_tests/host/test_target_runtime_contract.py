@@ -67,7 +67,7 @@ EXPECTED_FROZEN_PATHS = Counter(
         "pyble/__init__.py": 1,
         "pyble/pyble_ble.py": 1,
         "pyble/pyble_proto.py": 1,
-        "pyble/pyble_workspace.py": 1,
+        "pyble_workspace.py": 1,
     }
 )
 
@@ -86,7 +86,7 @@ EXPECTED_FROZEN_SYMBOLS = {
     "pyble___init__",
     "pyble_pyble_ble",
     "pyble_pyble_proto",
-    "pyble_pyble_workspace",
+    "pyble_workspace",
 }
 
 

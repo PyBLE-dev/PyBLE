@@ -35,9 +35,12 @@ from test_pyble_fs import (  # noqa: E402
     ERANGE,
     FS,
     OK,
+    OP_GET_DATA,
+    OP_GET_END,
     OP_PUT_ACK,
     FsTestBase,
     crc32,
+    get_begin_pl,
     path_pl,
     p32,
     put_begin_pl,
@@ -649,6 +652,157 @@ class _ShortReader:
 
     def __getattr__(self, name):
         return getattr(self._wrapped, name)
+
+
+class _ScriptedReader:
+    """Return adversarial binary-read results, then a stable EOF."""
+
+    def __init__(self, wrapped, results):
+        self._wrapped = wrapped
+        self._results = list(results)
+        self.read_calls = 0
+
+    def read(self, _length=-1):
+        self.read_calls += 1
+        if self._results:
+            return self._results.pop(0)
+        return b""
+
+    def close(self):
+        return self._wrapped.close()
+
+    def __getattr__(self, name):
+        return getattr(self._wrapped, name)
+
+
+class HostileReadBoundaryTest(V061FsTestBase):
+    def _scripted_service(self, path, results, *, chunk_size=4):
+        readers = []
+
+        def open_fn(candidate, mode):
+            wrapped = open(candidate, mode)
+            if candidate == path and mode == "rb":
+                reader = _ScriptedReader(wrapped, results)
+                readers.append(reader)
+                return reader
+            return wrapped
+
+        service, events = self.svc(
+            "v0.6.1 every portable VFS read is validated before use",
+            open_fn=open_fn,
+            chunk_size=chunk_size,
+        )
+        return service, events, readers
+
+    def test_file_stat_rejects_non_bytes_and_overreported_chunks_as_eio(self):
+        path = self.put_file("/hostile-stat.bin", b"ABCDEFGH")
+        cases = (
+            (None, "None"),
+            (bytearray(b"A"), "bytearray"),
+            (memoryview(b"A"), "memoryview"),
+            ("A", "str"),
+            (object(), "object"),
+            (b"X" * 257, "overreported bytes"),
+        )
+        for result, label in cases:
+            with self.subTest(result=label):
+                service, _events, _readers = self._scripted_service(
+                    path, (result, b""))
+                try:
+                    response = service.handle_stat(path_pl(b"/hostile-stat.bin"))
+                except Exception as exc:  # pragma: no cover - RED diagnostic
+                    self.fail("hostile stat read escaped as {!r}".format(exc))
+                self.assertEqual(
+                    response[0],
+                    EIO,
+                    "an invalid binary-read result must not be CRC'd or accepted",
+                )
+
+    def test_file_stat_rejects_eof_before_its_stat_extent(self):
+        path = self.put_file("/short-stat.bin", b"ABCDEFGH")
+        service, _events, _readers = self._scripted_service(
+            path, (b"ABC", b""))
+
+        response = service.handle_stat(path_pl(b"/short-stat.bin"))
+
+        self.assertEqual(
+            response[0], EIO,
+            "FILE_STAT cannot pair an eight-byte size with a three-byte CRC",
+        )
+
+    def test_file_stat_crc_is_bounded_to_the_promised_extent(self):
+        path = self.put_file("/growing-stat.bin", b"ABCDEFGH")
+        service, _events, readers = self._scripted_service(
+            path, (b"ABCDEFGH", b"TAIL", b""))
+
+        response = service.handle_stat(path_pl(b"/growing-stat.bin"))
+
+        self.assertEqual(response[0], OK)
+        self.assertEqual(u32(response, 1), 8)
+        self.assertEqual(u32(response, 5), crc32(b"ABCDEFGH"))
+        self.assertEqual(
+            readers[0].read_calls, 1,
+            "CRC scanning must stop exactly at the stat-advertised extent",
+        )
+
+    def test_get_rejects_invalid_or_overreported_chunk_without_exposure(self):
+        path = self.put_file("/hostile-get.bin", b"ABCDEFGH")
+        for result, label in ((object(), "object"), (b"ABCDE", "overreport")):
+            with self.subTest(result=label):
+                service, events, _readers = self._scripted_service(
+                    path, (result, b""), chunk_size=4)
+                response = service.handle_get_begin(
+                    get_begin_pl(0, b"/hostile-get.bin"))
+                self.assertEqual(response[0], OK)
+                try:
+                    service.pump()
+                except Exception as exc:  # pragma: no cover - RED diagnostic
+                    self.fail("hostile GET read escaped as {!r}".format(exc))
+                self.assertEqual(
+                    self.evts(events, OP_GET_DATA), [],
+                    "an invalid chunk must be rejected before bytes are exposed",
+                )
+                self.assertEqual(
+                    self.evts(events, OP_GET_END), [],
+                    "a failed stream must never emit the completion marker",
+                )
+
+    def test_get_short_read_keeps_prior_data_but_omits_completion(self):
+        path = self.put_file("/short-get.bin", b"ABCDEFGH")
+        service, events, _readers = self._scripted_service(
+            path, (b"ABC", b""), chunk_size=4)
+        self.assertEqual(
+            service.handle_get_begin(get_begin_pl(0, b"/short-get.bin"))[0],
+            OK,
+        )
+
+        service.pump()
+
+        data = self.evts(events, OP_GET_DATA)
+        self.assertEqual([payload[4:] for payload in data], [b"ABC"])
+        self.assertEqual(
+            self.evts(events, OP_GET_END), [],
+            "premature EOF leaves an incomplete transfer for the existing "
+            "client timeout; it cannot bless a partial CRC",
+        )
+
+    def test_get_never_reads_or_exposes_growth_beyond_begin_total(self):
+        path = self.put_file("/growing-get.bin", b"ABCDEFGH")
+        service, events, readers = self._scripted_service(
+            path, (b"ABCD", b"EFGH", b"IJKL", b""), chunk_size=4)
+        response = service.handle_get_begin(
+            get_begin_pl(0, b"/growing-get.bin"))
+        self.assertEqual(u32(response, 1), 8)
+
+        service.pump()
+
+        data = self.evts(events, OP_GET_DATA)
+        self.assertEqual(b"".join(payload[4:] for payload in data), b"ABCDEFGH")
+        self.assertEqual(u32(self.evts(events, OP_GET_END)[0]), crc32(b"ABCDEFGH"))
+        self.assertEqual(
+            readers[0].read_calls, 2,
+            "GET must stop at its BEGIN-advertised total without probing growth",
+        )
 
 
 class _PostScanMutationReader:

@@ -4872,7 +4872,6 @@ class RealFormatLicenseAuditRegressionTests(unittest.TestCase):
     def test_pinned_literal_manifests_resolve_exact_frozen_destinations(self):
         expected = {
             "flashbdev.py",
-            "inisetup.py",
             "asyncio/__init__.py",
             "asyncio/core.py",
             "asyncio/event.py",
@@ -4886,6 +4885,7 @@ class RealFormatLicenseAuditRegressionTests(unittest.TestCase):
             "pyble/__init__.py",
             "pyble/pyble_ble.py",
             "pyble/pyble_proto.py",
+            "pyble_workspace.py",
         }
         with tempfile.TemporaryDirectory(prefix="pyble-real-manifest-red-") as raw:
             frozen = Path(raw) / "frozen_content.c"
