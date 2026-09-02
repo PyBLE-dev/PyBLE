@@ -362,6 +362,139 @@ class V061VmResetOrchestrationTests(unittest.TestCase):
         )
 
 
+class FakeActiveGetCentral:
+    def __init__(self, bench, expected, *, end_before_write_receipt=False):
+        self.bench = bench
+        self.expected = bytes(expected)
+        self.end_before_write_receipt = end_before_write_receipt
+        self.events = []
+        self.commands = []
+        self.write_receipts = 0
+
+    def event_cursor(self):
+        return len(self.events)
+
+    def events_since(self, cursor):
+        return len(self.events), self.events[cursor:]
+
+    def _append_download(self):
+        midpoint = len(self.expected) // 2
+        for offset, data in (
+            (0, self.expected[:midpoint]),
+            (midpoint, self.expected[midpoint:]),
+        ):
+            self.events.append(
+                self.bench.wire.Frame(
+                    self.bench.wire.EVT,
+                    self.bench.wire.OP_FILE_GET_DATA,
+                    0,
+                    offset.to_bytes(4, "little") + data,
+                )
+            )
+        self.events.append(
+            self.bench.wire.Frame(
+                self.bench.wire.EVT,
+                self.bench.wire.OP_FILE_GET_END,
+                0,
+                self.bench.wire.crc32(self.expected).to_bytes(4, "little"),
+            )
+        )
+
+    async def send_cmd(
+        self,
+        opcode,
+        command_id,
+        payload=b"",
+        on_written=None,
+        **_kwargs,
+    ):
+        self.commands.append((opcode, command_id, bytes(payload)))
+        if opcode == self.bench.wire.OP_FILE_GET_BEGIN:
+            return self.bench.wire.Frame(
+                self.bench.wire.RSP,
+                opcode,
+                command_id,
+                bytes((self.bench.wire.ST_OK,))
+                + len(self.expected).to_bytes(4, "little"),
+            )
+        if self.end_before_write_receipt:
+            self._append_download()
+        if on_written is not None:
+            on_written()
+            self.write_receipts += 1
+        if not self.end_before_write_receipt:
+            self._append_download()
+        return self.bench.wire.Frame(
+            self.bench.wire.RSP,
+            opcode,
+            command_id,
+            bytes((self.bench.wire.ST_EBUSY,)),
+        )
+
+
+class V061ActiveGetOrchestrationTests(unittest.TestCase):
+    def test_active_get_probe_binds_write_before_end_and_verifies_all_bytes(self):
+        bench = load_bench()
+        helper = getattr(bench, "_get_with_active_probe", None)
+        self.assertTrue(
+            callable(helper),
+            "[red] filesystem HIL needs an active-GET admission probe",
+        )
+        if not callable(helper):
+            return
+
+        expected = b"0123456789abcdef"
+        state = bench.LiveState(
+            SimpleNamespace(profile="esp32-4mb", expect_agent="0.6.1")
+        )
+        state.central = FakeActiveGetCentral(bench, expected)
+        asyncio.run(
+            helper(
+                state,
+                "/v061_hil/active_get.bin",
+                expected,
+                bench.wire.OP_FILE_DELETE,
+                bench.pble_bench.path_payload("/v061_hil/delete.bin"),
+                bench.wire.ST_EBUSY,
+                "active-GET DELETE",
+            )
+        )
+        self.assertEqual(state.central.write_receipts, 1)
+        self.assertEqual(
+            [command[0] for command in state.central.commands],
+            [bench.wire.OP_FILE_GET_BEGIN, bench.wire.OP_FILE_DELETE],
+        )
+
+    def test_active_get_probe_rejects_a_command_written_after_get_end(self):
+        bench = load_bench()
+        helper = getattr(bench, "_get_with_active_probe", None)
+        self.assertTrue(callable(helper))
+        if not callable(helper):
+            return
+
+        expected = b"0123456789abcdef"
+        state = bench.LiveState(
+            SimpleNamespace(profile="esp32-4mb", expect_agent="0.6.1")
+        )
+        state.central = FakeActiveGetCentral(
+            bench,
+            expected,
+            end_before_write_receipt=True,
+        )
+        with self.assertRaises(bench.BenchFailure):
+            asyncio.run(
+                helper(
+                    state,
+                    "/v061_hil/active_get.bin",
+                    expected,
+                    bench.wire.OP_FILE_DELETE,
+                    bench.pble_bench.path_payload("/v061_hil/delete.bin"),
+                    bench.wire.ST_EBUSY,
+                    "late active-GET DELETE",
+                )
+            )
+
+
 class FakeConfigurationCentral:
     def __init__(self, bench, configuration, events):
         self.bench = bench
