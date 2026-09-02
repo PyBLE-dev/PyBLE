@@ -186,6 +186,11 @@ static bool pble_fs_ticket_valid(const pble_fs_req_t *request) {
     return request != NULL;
 }
 
+static bool fs_put_active_current(const pble_fs_req_t *request) {
+    (void)request;
+    return g_put_active;
+}
+
 static mp_obj_t fs_str(const char *path) {
     return (mp_obj_t)path;
 }
