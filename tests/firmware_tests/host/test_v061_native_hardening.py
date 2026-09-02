@@ -507,8 +507,8 @@ class NativeLabelAndNvsTests(unittest.TestCase):
                 )
                 self.assertRegex(
                     setter,
-                    r"if\s*\(\s*st\s*!=\s*PBLE_OK\s*\)\s*\{[^{}]*"
-                    r"dc_config_fault\s*\|=\s*{}".format(fault),
+                    (r"if\s*\(\s*st\s*!=\s*PBLE_OK\s*\)\s*\{[^{}]*"
+                     r"dc_config_fault\s*\|=\s*" + re.escape(fault)),
                     "set/erase/commit failure must latch its field marker",
                 )
 
