@@ -1534,10 +1534,13 @@ Each scenario object has exactly `status: "passed"`, except
 `resource-stability`, which additionally has exactly
 `sequential_runs: 50`. Configuration durability proves valid/rejected label
 bytes, label and advertisement persistence, autorun persistence and
-restoration, and, when `has_identify=1`, Identify configuration persistence
-and restoration. A profile which does not advertise Identify records no
-invented Identify pass. A scenario may not be omitted, reordered, retried into
-a pass, or replaced by host/model evidence.
+restoration, and, when `has_identify=1`, preservation of the existing Identify
+configuration across reboot plus a successful `IDENTIFY` before and after that
+reboot. The caps expose the configured GPIO but not its persisted active level,
+so the target-neutral runner MUST NOT rewrite `SET_IDENTIFY_LED` or claim that
+it can reconstruct an owner's exact setting. A profile which does not advertise
+Identify records no invented Identify pass. A scenario may not be omitted,
+reordered, retried into a pass, or replaced by host/model evidence.
 
 `workspace_provisioning` has exactly `erased-media-first-boot` and
 `nonblank-media-refusal`, in that order. Each value has exactly
