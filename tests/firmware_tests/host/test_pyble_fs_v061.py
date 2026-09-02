@@ -29,6 +29,7 @@ from test_pyble_fs import (  # noqa: E402
     EACCES,
     EBADREQ,
     EBUSY,
+    ECRC,
     EIO,
     ENOSPC,
     ERANGE,
@@ -199,6 +200,30 @@ class ActivePutMutationTest(V061FsTestBase):
         self.assertEqual(self.read_file("/source.txt"), b"source")
 
 
+class RenameMailboxBoundaryTest(V061FsTestBase):
+    def test_two_exact_128_byte_paths_fit_one_rename_request(self):
+        source = "/" + "s" * 127
+        destination = "/" + "d" * 127
+        self.put_file(source, b"payload")
+        service, _events = self.svc(
+            "v0.6.1 FILE_RENAME 128/128 path boundary")
+
+        payload = rename_pl(source.encode("utf-8"), destination.encode("utf-8"))
+        self.assertEqual(len(payload), 260)
+        self.assertEqual(service.handle_rename(payload)[0], OK)
+        self.assertEqual(self.read_file(destination), b"payload")
+
+    def test_one_129_byte_path_is_erange(self):
+        source = b"/" + b"s" * 127
+        destination = b"/" + b"d" * 128
+        service, _events = self.svc(
+            "v0.6.1 FILE_RENAME rejects a 129-byte path")
+        self.put_file(source.decode("utf-8"), b"payload")
+
+        self.assertEqual(
+            service.handle_rename(rename_pl(source, destination))[0], ERANGE)
+
+
 class DeclaredTotalBoundaryTest(V061FsTestBase):
     def test_crossing_chunk_is_not_written_and_latches_erange(self):
         self.put_file("/bounded.bin", b"OLD")
@@ -254,7 +279,48 @@ class _FailingCloseWriter:
         raise OSError(errno.EIO, "injected close failure")
 
 
+class _NoneProgressWriter:
+    """Legal stream shape that reports no write progress as ``None``."""
+
+    def __init__(self, wrapped):
+        self._wrapped = wrapped
+
+    def write(self, _data):
+        return None
+
+    def close(self):
+        return self._wrapped.close()
+
+
 class PutDurabilityCutTest(V061FsTestBase):
+    def test_none_write_progress_latches_eio_without_advancing_crc_or_ack(self):
+        old = b"OLD DESTINATION"
+        new = b"NEW CONTENT"
+        self.put_file("/stalled.bin", old)
+        scratch = self.hpath("/stalled.bin.pbltmp")
+
+        def open_fn(path, mode):
+            wrapped = open(path, mode)
+            if path == scratch and mode == "wb":
+                return _NoneProgressWriter(wrapped)
+            return wrapped
+
+        service, events = self.svc(
+            "v0.6.1 a stalled portable write cannot commit phantom bytes",
+            open_fn=open_fn)
+        self.assertEqual(self.begin_put(service, b"/stalled.bin", new)[0], OK)
+        service.handle_put_data(put_data_pl(0, new))
+
+        self.assertEqual(
+            [u32(payload) for opcode, payload in events
+             if opcode == OP_PUT_ACK],
+            [0],
+            "None progress must leave the durable watermark at zero",
+        )
+        self.assertEqual(service.handle_put_end(p32(crc32(new)))[0], EIO)
+        self.assertEqual(self.read_file("/stalled.bin"), old)
+        self.assertFalse(os.path.exists(scratch))
+
     def test_close_failure_never_replaces_the_old_destination(self):
         old = b"OLD DESTINATION"
         new = b"NEW CONTENT"
@@ -280,6 +346,56 @@ class PutDurabilityCutTest(V061FsTestBase):
         self.assertEqual(service.handle_put_end(p32(crc32(new)))[0], EIO)
         self.assertEqual(self.read_file("/durable.bin"), old)
         self.assertFalse(os.path.exists(scratch))
+
+    def test_throwing_abort_remove_overrides_originating_status_with_eio(self):
+        old = b"OLD DESTINATION"
+        data = b"AB"
+        self.put_file("/throwing-abort.bin", old)
+        scratch = self.hpath("/throwing-abort.bin.pbltmp")
+        module = FS.obj(self, "v0.6.1 PUT abort cleanup status is authoritative")
+        service, _events = self.svc(
+            "v0.6.1 throwing PUT-abort removal is EIO")
+        self.assertEqual(
+            self.begin_put(service, b"/throwing-abort.bin", data)[0], OK)
+        service.handle_put_data(put_data_pl(0, data[:1]))
+        real_remove = module.os.remove
+
+        def remove_fn(path):
+            if path == scratch:
+                raise OSError(errno.EIO, "injected abort removal failure")
+            return real_remove(path)
+
+        with mock.patch.object(module.os, "remove", side_effect=remove_fn):
+            status = service.handle_put_end(p32(crc32(data)))[0]
+
+        self.assertEqual(status, EIO, "cleanup failure overrides ERANGE")
+        self.assertEqual(self.read_file("/throwing-abort.bin"), old)
+        self.assertTrue(os.path.exists(scratch))
+
+    def test_noop_abort_remove_is_detected_by_absence_verification(self):
+        old = b"OLD DESTINATION"
+        data = b"NEW CONTENT"
+        self.put_file("/noop-abort.bin", old)
+        scratch = self.hpath("/noop-abort.bin.pbltmp")
+        module = FS.obj(self, "v0.6.1 PUT abort verifies scratch absence")
+        service, _events = self.svc(
+            "v0.6.1 lying PUT-abort removal is EIO")
+        self.assertEqual(self.begin_put(service, b"/noop-abort.bin", data)[0], OK)
+        service.handle_put_data(put_data_pl(0, data))
+        real_remove = module.os.remove
+
+        def remove_fn(path):
+            if path == scratch:
+                return None
+            return real_remove(path)
+
+        with mock.patch.object(module.os, "remove", side_effect=remove_fn):
+            status = service.handle_put_end(p32(crc32(data) ^ 1))[0]
+
+        self.assertEqual(status, EIO, "cleanup failure overrides ECRC")
+        self.assertNotEqual(status, ECRC)
+        self.assertEqual(self.read_file("/noop-abort.bin"), old)
+        self.assertTrue(os.path.exists(scratch))
 
 
 class StatvfsAdmissionTest(V061FsTestBase):
@@ -560,6 +676,36 @@ class _PostScanMutationReader:
 
 
 class MalformedScratchRecoveryTest(V061FsTestBase):
+    def test_non_regular_scratch_fails_closed_without_open_or_removal(self):
+        module = FS.obj(self, "v0.6.1 resume accepts exact regular files only")
+        for index, mode in enumerate((0xA000, 0x2000, 0x1000, 0x0000)):
+            with self.subTest(mode=hex(mode)):
+                path = "/special-{}.bin".format(index)
+                old = b"OLD DESTINATION"
+                scratch_bytes = b"X"
+                self.put_file(path, old)
+                scratch = self.put_file(path + ".pbltmp", scratch_bytes)
+                service, _events = self.svc(
+                    "v0.6.1 special scratch type fails closed")
+                real_stat = module.os.stat
+
+                def stat_fn(candidate):
+                    result = real_stat(candidate)
+                    if candidate != scratch:
+                        return result
+                    values = list(result)
+                    values[0] = mode
+                    return tuple(values)
+
+                with mock.patch.object(module.os, "stat", side_effect=stat_fn):
+                    rsp = self.begin_put(
+                        service, path.encode("utf-8"), b"NEW")
+
+                self.assertEqual(rsp[0], EIO)
+                self.assertEqual(self.read_file(path), old)
+                self.assertEqual(
+                    self.read_file(path + ".pbltmp"), scratch_bytes)
+
     def test_empty_scratch_directory_is_removed_and_upload_restarts(self):
         os.mkdir(self.hpath("/fresh.bin.pbltmp"))
         service, _events = self.svc(

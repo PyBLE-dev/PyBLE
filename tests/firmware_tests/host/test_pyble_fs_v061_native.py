@@ -13,6 +13,9 @@
 
 import os
 import re
+import shutil
+import subprocess
+import tempfile
 import unittest
 
 
@@ -127,6 +130,16 @@ class NativeFsV061ContractTest(unittest.TestCase):
             "continue", body[suffix_at:budget_at],
             "the scratch predicate must skip the directory entry, not merely inspect it")
 
+    def test_mailbox_payload_holds_two_maximum_rename_paths(self):
+        capacity = re.search(
+            r"#\s*define\s+PBLE_FS_ITEM_PAYLOAD\s+(\d+)\b", self.source)
+        self.assertIsNotNone(capacity)
+        self.assertGreaterEqual(
+            int(capacity.group(1)), 2 + 128 + 2 + 128,
+            "the native mailbox cannot reject a protocol-valid 128/128 "
+            "FILE_RENAME before either path reaches the jail validator",
+        )
+
     def test_each_mutator_gates_active_put_after_all_path_resolution(self):
         cases = (
             ("fs_do_delete", 1, "fs_stat_path"),
@@ -198,6 +211,29 @@ class NativeFsV061ContractTest(unittest.TestCase):
         self.assertIn("PBLE_EIO", guard)
         self.assertIn("break", guard)
 
+    def test_every_native_read_rejects_backend_overreport_before_buffer_use(self):
+        cases = (
+            ("fs_crc_file", "PBLE_FS_SCRATCH"),
+            ("fs_crc_prefix", "want"),
+            ("fs_do_get", "chunk"),
+        )
+        for function, requested in cases:
+            with self.subTest(function=function):
+                body = _function_body(self.source, function)
+                read_at = body.find("sp->read")
+                crc_at = body.find("crc32_update", read_at)
+                self.assertTrue(0 <= read_at < crc_at)
+                guard = body[read_at:crc_at]
+                self.assertRegex(
+                    guard,
+                    r"\bn\s*>\s*\(?\s*{}\s*\)?".format(
+                        re.escape(requested)),
+                    "{} trusts a stream count larger than its {}-byte "
+                    "destination and may read beyond g_scratch".format(
+                        function, requested),
+                )
+                self.assertRegex(guard, r"\b(?:MP|PBLE)_EIO\b")
+
     def test_put_end_requires_a_successful_close_before_rename(self):
         functions = _defined_functions(self.source)
         close = functions["fs_put_close"]
@@ -215,6 +251,75 @@ class NativeFsV061ContractTest(unittest.TestCase):
         self.assertIn("PBLE_OK", gate)
         self.assertIn("return", gate)
         self.assertIn("fs_put_abort", gate)
+
+    def test_put_abort_returns_checked_cleanup_and_verifies_absence(self):
+        start, _end, abort = _function_span(self.source, "fs_put_abort")
+        signature = self.source[start:self.source.find("{", start)]
+        self.assertRegex(signature, r"\buint8_t\s+fs_put_abort\s*\(")
+        self.assertIn("fs_put_close", abort)
+        self.assertIn("mp_vfs_remove", abort)
+        self.assertGreaterEqual(
+            abort.find("fs_stat_path", abort.find("mp_vfs_remove")), 0,
+            "a nominally successful abort remove must be followed by stat",
+        )
+        self.assertIn("PBLE_EIO", abort)
+
+        end = _function_body(self.source, "fs_do_put_end")
+        self.assertRegex(
+            end,
+            r"(?:return|=)[^;\n]*fs_put_abort\s*\(",
+            "PUT_END must consume abort status instead of discarding it",
+        )
+
+    def test_resume_requires_exact_regular_file_mode(self):
+        start, end, _body = _function_span(self.source, "fs_mode_is_regular")
+        helper = self.source[start:end]
+        compiler = shutil.which(os.environ.get("CC", "cc"))
+        self.assertIsNotNone(compiler, "a host C compiler is required")
+        probe = (
+            "#include <stdbool.h>\n"
+            "typedef long mp_int_t;\n"
+            "#define MP_S_IFREG 0x8000\n"
+            + helper
+            + "\nint main(void) {\n"
+            "  if (!fs_mode_is_regular(0x8000)) return 20;\n"
+            "  if (!fs_mode_is_regular(0x81a4)) return 21;\n"
+            "  if (fs_mode_is_regular(0x4000)) return 22;\n"
+            "  if (fs_mode_is_regular(0xa000)) return 23;\n"
+            "  if (fs_mode_is_regular(0x2000)) return 24;\n"
+            "  if (fs_mode_is_regular(0x0000)) return 25;\n"
+            "  return 0;\n}\n"
+        )
+        with tempfile.TemporaryDirectory(prefix="pyble-v061-mode-") as temp:
+            source = os.path.join(temp, "mode_probe.c")
+            binary = os.path.join(temp, "mode_probe")
+            with open(source, "w", encoding="utf-8") as stream:
+                stream.write(probe)
+            built = subprocess.run(
+                [compiler, "-std=c11", "-Wall", "-Wextra", "-Werror",
+                 source, "-o", binary],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                text=True, check=False,
+            )
+            self.assertEqual(
+                built.returncode, 0,
+                "native mode probe did not compile:\n{}{}".format(
+                    built.stdout, built.stderr),
+            )
+            executed = subprocess.run(
+                [binary], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                text=True, check=False,
+            )
+            self.assertEqual(
+                executed.returncode, 0,
+                "native regular-file predicate accepted a non-regular mode; "
+                "probe exit {}".format(executed.returncode),
+            )
+
+        stat = _function_body(self.source, "fs_stat_path")
+        resume = _function_body(self.source, "pble_fs_resume_prefix")
+        self.assertIn("fs_mode_is_regular", stat)
+        self.assertRegex(resume, r"!\s*[A-Za-z_]*isreg")
 
     def test_put_begin_calls_checked_statvfs_admission_before_open(self):
         functions = _defined_functions(self.source)

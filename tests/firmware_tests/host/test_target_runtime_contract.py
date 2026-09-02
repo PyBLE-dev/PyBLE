@@ -528,6 +528,41 @@ def _elf32_sections(path: Path) -> dict[str, bytes]:
 
 
 class EffectiveManifestContractTests(unittest.TestCase):
+    def test_every_esp_boot_uses_shared_erased_only_lfs2_mount_authority(self):
+        for target in TARGETS:
+            with self.subTest(target=target):
+                boot = OVERLAYS / target / "_boot.py"
+                tree = ast.parse(boot.read_bytes(), filename=str(boot))
+                calls = [
+                    (_dotted_name(node.func), node)
+                    for node in ast.walk(tree)
+                    if isinstance(node, ast.Call)
+                ]
+                lfs_calls = [node for name, node in calls
+                             if name == "pyble_workspace.mount_lfs2"]
+                mount_calls = [node for name, node in calls
+                               if name == "vfs.mount"]
+                self.assertEqual(
+                    len(lfs_calls), 1,
+                    "{} must delegate to the full-device erased-media "
+                    "authority".format(target),
+                )
+                self.assertEqual(len(mount_calls), 1)
+                self.assertTrue(mount_calls[0].args)
+                self.assertIsInstance(
+                    mount_calls[0].args[0], ast.Call,
+                    "the mounted workspace must be the explicit LFS2 object",
+                )
+                self.assertEqual(
+                    _dotted_name(mount_calls[0].args[0].func),
+                    "pyble_workspace.mount_lfs2",
+                )
+                self.assertFalse(
+                    any(name == "inisetup.setup" for name, _node in calls),
+                    "{} may not delegate a destructive decision to upstream's "
+                    "block-0-only probe".format(target),
+                )
+
     def test_all_targets_resolve_the_exact_lean_runtime_allowlist(self):
         for target, board_name in TARGETS.items():
             with self.subTest(target=target), _resolved_manifest(

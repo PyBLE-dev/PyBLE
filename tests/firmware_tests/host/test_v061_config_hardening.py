@@ -227,6 +227,18 @@ class VersionedRecordTests(ConfigCase):
         self.assertEqual((config.label, config.auto_run), ("", 0))
         self.assert_fault(config, CONFIG_FAULT_CORRUPT)
 
+    def test_bounded_decoder_failure_selects_defaults_and_fault_marker(self):
+        self.write_json(self.primary, record("would-run", 1))
+        cls = DC.attr(self, "DeviceConfig", "v0.6.1 guarded record decoder")
+
+        with mock.patch.object(
+                cls, "_decode_record",
+                side_effect=MemoryError("injected bounded decode failure")):
+            config = cls(self.root, "9F3A", set_adv_name=self.adv.append)
+
+        self.assertEqual((config.label, config.auto_run), ("", 0))
+        self.assert_fault(config, CONFIG_FAULT_CORRUPT)
+
     def test_legacy_record_loads_and_migrates_only_on_next_successful_set(self):
         legacy = {"label": "legacy", "autorun": 1}
         self.write_json(self.primary, legacy)
@@ -382,6 +394,7 @@ class AtomicFailureTests(ConfigCase):
             status = config.set_label(b"new")
         self.assertEqual(status, EIO)
         self.assertEqual((config.label, config.auto_run), ("old", 1))
+        self.assert_fault(config, CONFIG_FAULT_CORRUPT)
         self.assertEqual(self.adv, [])
         self.assert_old_survives(before)
 
@@ -399,6 +412,7 @@ class AtomicFailureTests(ConfigCase):
             status = config.set_label(b"new")
         self.assertEqual(status, EIO)
         self.assertEqual((config.label, config.auto_run), ("old", 1))
+        self.assert_fault(config, CONFIG_FAULT_CORRUPT)
         self.assertEqual(self.adv, [])
         self.assert_old_survives(before)
 
@@ -416,6 +430,7 @@ class AtomicFailureTests(ConfigCase):
             status = config.set_autorun(0)
         self.assertEqual(status, EIO)
         self.assertEqual((config.label, config.auto_run), ("old", 1))
+        self.assert_fault(config, CONFIG_FAULT_CORRUPT)
         self.assert_old_survives(before)
 
     def test_sync_failure_returns_eio_and_keeps_old_commit(self):
@@ -426,6 +441,7 @@ class AtomicFailureTests(ConfigCase):
             status = config.set_autorun(0)
         self.assertEqual(status, EIO)
         self.assertEqual((config.label, config.auto_run), ("old", 1))
+        self.assert_fault(config, CONFIG_FAULT_CORRUPT)
         self.assert_old_survives(before)
 
     def test_rename_failure_returns_eio_and_keeps_old_commit(self):
@@ -435,6 +451,7 @@ class AtomicFailureTests(ConfigCase):
             status = config.set_label(b"new")
         self.assertEqual(status, EIO)
         self.assertEqual((config.label, config.auto_run), ("old", 1))
+        self.assert_fault(config, CONFIG_FAULT_CORRUPT)
         self.assertEqual(self.adv, [])
         self.assert_old_survives(before)
 

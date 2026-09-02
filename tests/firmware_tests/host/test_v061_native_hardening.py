@@ -27,7 +27,9 @@ ROOT = Path(__file__).resolve().parents[3]
 NATIVE = ROOT / "firmware" / "user_c_modules" / "pyble"
 RUNNER = (NATIVE / "pble_runner.c").read_text(encoding="utf-8")
 DEVICE_CONFIG = (NATIVE / "pble_device_config.c").read_text(encoding="utf-8")
+DEVICE_CONFIG_H = (NATIVE / "pble_device_config.h").read_text(encoding="utf-8")
 BOOT = (NATIVE / "pble_boot.c").read_text(encoding="utf-8")
+BOOT_H = (NATIVE / "pble_boot.h").read_text(encoding="utf-8")
 BLE = (NATIVE / "pble_ble.c").read_text(encoding="utf-8")
 
 
@@ -443,13 +445,85 @@ class NativeReassemblyTests(unittest.TestCase):
 
 
 class NativeLabelAndNvsTests(unittest.TestCase):
+    def test_bounded_fault_markers_have_retained_internal_read_seams(self):
+        self.assertRegex(
+            DEVICE_CONFIG_H,
+            r"\buint8_t\s+pble_dc_config_fault\s*\(\s*void\s*\)\s*;",
+            "the native identity marker must survive optimization and remain "
+            "available to the separately specified diagnostic surface",
+        )
+        self.assertRegex(
+            BOOT_H,
+            r"\buint8_t\s+pble_boot_config_fault\s*\(\s*void\s*\)\s*;",
+            "the native autorun marker needs the same internal read seam",
+        )
+        self.assertRegex(
+            code_only(c_function(DEVICE_CONFIG, "pble_dc_config_fault")),
+            r"return\s+dc_config_fault\s*;",
+        )
+        self.assertRegex(
+            code_only(c_function(BOOT, "pble_boot_config_fault")),
+            r"return\s+boot_config_fault\s*;",
+        )
+
+    def test_autorun_fault_latches_until_a_successful_repair_commit(self):
+        reader = code_only(c_function(BOOT, "pble_boot_autorun_enabled"))
+        self.assertNotRegex(
+            reader,
+            r"boot_config_fault\s*=\s*BOOT_CONFIG_OK",
+            "an ordinary missing/valid read is observation, not a repair cut",
+        )
+        setter = code_only(c_function(BOOT, "pble_boot_set_autorun"))
+        open_failure = re.search(
+            r"if\s*\([^{}]*nvs_open[^{}]*\)\s*\{(?P<body>[^{}]*)\}",
+            setter,
+            flags=re.DOTALL,
+        )
+        self.assertIsNotNone(open_failure)
+        self.assertIn("BOOT_CONFIG_CORRUPT", open_failure.group("body"))
+        self.assertRegex(
+            setter,
+            r"boot_config_fault\s*=\s*st\s*==\s*PBLE_OK\s*\?\s*"
+            r"BOOT_CONFIG_OK\s*:\s*BOOT_CONFIG_CORRUPT",
+            "only the SET_AUTORUN transaction resolves the latched marker",
+        )
+
+    def test_identity_persistence_failures_latch_the_field_fault_bits(self):
+        for function, fault in (
+            ("pble_dc_set_label", "DC_CONFIG_FAULT_LABEL"),
+            ("pble_dc_set_identify_led", "DC_CONFIG_FAULT_IDENTIFY"),
+        ):
+            with self.subTest(function=function):
+                setter = code_only(c_function(DEVICE_CONFIG, function))
+                open_failure = re.search(
+                    r"if\s*\([^{}]*nvs_open[^{}]*\)\s*\{(?P<body>[^{}]*)\}",
+                    setter,
+                    flags=re.DOTALL,
+                )
+                self.assertIsNotNone(open_failure)
+                self.assertIn(
+                    fault, open_failure.group("body"),
+                    "NVS-open failure must be visible to future diagnostics",
+                )
+                self.assertRegex(
+                    setter,
+                    r"if\s*\(\s*st\s*!=\s*PBLE_OK\s*\)\s*\{[^{}]*"
+                    r"dc_config_fault\s*\|=\s*{}".format(fault),
+                    "set/erase/commit failure must latch its field marker",
+                )
+
     def test_missing_nvs_namespace_is_clean_first_boot(self):
         autorun = code_only(c_function(BOOT, "pble_boot_autorun_enabled"))
-        self.assertRegex(
+        missing = re.search(
+            r"if\s*\(\s*open_rc\s*==\s*ESP_ERR_NVS_NOT_FOUND\s*\)\s*"
+            r"\{(?P<body>[^{}]*)\}",
             autorun,
-            r"open_rc\s*==\s*ESP_ERR_NVS_NOT_FOUND[\s\S]*"
-            r"boot_config_fault\s*=\s*BOOT_CONFIG_OK",
-            "an erased device without the NVS namespace is clean first boot",
+            flags=re.DOTALL,
+        )
+        self.assertIsNotNone(missing)
+        self.assertNotIn(
+            "BOOT_CONFIG_CORRUPT", missing.group("body"),
+            "an erased device without the NVS namespace is not a new fault",
         )
         init = code_only(c_function(DEVICE_CONFIG, "pble_dc_init"))
         self.assertRegex(

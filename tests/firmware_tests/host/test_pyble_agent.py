@@ -13,9 +13,9 @@
 # jailed <dest>.pbltmp persists), §6 (STOP -> RSP{OK}, active STOP's response
 # precedes interrupt delivery, idle STOP emits no RUN_STATE);
 # ports/rpi-pico2-w.md P1 (has_identify=0 -> IDENTIFY EUNSUPPORTED), P2
-# (transfers during an active RUN -> EBUSY; *_BEGIN validation/reservation is
-# answered inline at dispatch, only streaming/window pumping is supervisor
-# work), P4 (SOFT_REBOOT: RSP{OK} first, then the injected reset callable from
+# (transfers during an active RUN -> EBUSY; PUT validation and VFS work are
+# drained from a bounded supervisor mailbox, never the BTstack callback), P4
+# (SOFT_REBOOT: RSP{OK} first, then the injected reset callable from
 # the supervisor after a bounded TX-flush delay).
 #
 # Env-reality: the BLE link is the FakeLink below, which mimics ONLY the frozen
@@ -316,6 +316,21 @@ class AllOpcodesRegisteredTest(AgentTestBase):
                         "{} answered EUNSUPPORTED — no handler is registered "
                         "for it".format(name))
 
+    def test_set_identify_led_rejects_every_trailing_payload_byte(self):
+        agent, link = self.new_agent(
+            "P1 SET_IDENTIFY_LED exact portable payload grammar")
+
+        send(self, link, CMD_OPCODES["SET_IDENTIFY_LED"], b"\x00\x01\xff",
+             id_=8)
+
+        answers = rsps(link, CMD_OPCODES["SET_IDENTIFY_LED"], 8)
+        self.assertEqual(len(answers), 1)
+        self.assertEqual(
+            answers[0].payload[0], EBADREQ,
+            "SET_IDENTIFY_LED is exactly empty or two bytes; a valid prefix "
+            "cannot make trailing bytes disappear",
+        )
+
 
 class EmitTest(AgentTestBase):
     """emit() is the agent's EVT path: TYPE=EVT, ID=0, valid CRC (§3.1)."""
@@ -417,6 +432,115 @@ class DisconnectResetsPutStateTest(AgentTestBase):
                          "— a new *_BEGIN is not EBUSY")
         self.assertEqual(get[0].payload[1:5], struct.pack("<I", 11),
                          "GET_BEGIN OK carries [total_size:u32] (§5)")
+
+
+class PutMailboxContextTest(AgentTestBase):
+    """P2: PUT VFS work runs only when the supervisor drains its mailbox."""
+
+    def test_put_begin_does_no_vfs_work_or_response_inside_ble_callback(self):
+        agent, link = self.new_agent("P2 FILE_PUT_BEGIN supervisor mailbox")
+        calls = []
+
+        def handle(payload):
+            calls.append(bytes(payload))
+            return bytes((OK,)) + struct.pack("<I", 0)
+
+        agent._fs.handle_put_begin = handle
+        send(self, link, 0x15, p_put_begin(4, 0, "/mailbox.bin"), id_=170)
+
+        self.assertEqual(calls, [], "BTstack callback must return before VFS work")
+        self.assertEqual(rsps(link, 0x15, 170), [])
+        agent.poll()
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(rsps(link, 0x15, 170)[0].payload[0], OK)
+
+    def test_full_put_window_is_deferred_and_drained_in_wire_order(self):
+        agent, link = self.new_agent("P2 bounded FILE_PUT window mailbox")
+        depth = AGENT.attr(
+            self, "FS_MAILBOX_DEPTH", "P2 PUT mailbox depth = window + 2")
+        self.assertEqual(depth, 6)
+        data = b"ABCD"
+        send(self, link, 0x15,
+             p_put_begin(len(data), pyble_proto.crc32(data), "/window.bin"),
+             id_=171)
+        agent.poll()
+        self.assertEqual(rsps(link, 0x15, 171)[0].payload[0], OK)
+        link.sent[:] = []
+
+        for offset, value in enumerate(data):
+            send(self, link, 0x16,
+                 struct.pack("<I", offset) + bytes((value,)),
+                 id_=172 + offset)
+        self.assertEqual(evts(link, 0x41), [],
+                         "PUT_DATA cannot ACK from synchronous BLE context")
+        pump(agent, 6, self.now)
+        self.assertEqual(
+            [frame.payload for frame in evts(link, 0x41)],
+            [struct.pack("<I", offset) for offset in (1, 2, 3, 4)],
+        )
+
+        send(self, link, 0x17, struct.pack("<I", pyble_proto.crc32(data)),
+             id_=176)
+        self.assertEqual(rsps(link, 0x17, 176), [])
+        agent.poll()
+        self.assertEqual(rsps(link, 0x17, 176)[0].payload[0], OK)
+        with open(os.path.join(self.root, "window.bin"), "rb") as stream:
+            self.assertEqual(stream.read(), data)
+
+    def test_disconnect_cancels_queued_put_before_any_vfs_effect(self):
+        agent, link = self.new_agent("P2 disconnect cancels queued PUT")
+        dest = os.path.join(self.root, "cancelled.bin")
+        send(self, link, 0x15, p_put_begin(1, 0, "/cancelled.bin"), id_=177)
+        link.disconnect_cb()
+        agent.poll()
+        self.assertFalse(os.path.exists(dest))
+        self.assertFalse(os.path.exists(dest + ".pbltmp"))
+
+    def test_paused_stale_begin_cannot_republish_over_successor_session(self):
+        agent, link = self.new_agent(
+            "P2 PUT mailbox exact-session stale commit rejection")
+        self.addCleanup(agent._fs._close_put_file)
+        original_open = agent._fs._open
+        injected = [False]
+        opened_files = []
+        self.addCleanup(
+            lambda: [stream.close() for stream in opened_files
+                     if not stream.closed])
+
+        def reconnecting_open(path, mode):
+            opened = original_open(path, mode)
+            opened_files.append(opened)
+            if not injected[0] and path.endswith("predecessor.bin.pbltmp"):
+                injected[0] = True
+                link.disconnect_cb()
+                link.session += 1
+                link.connect_cb()
+                send(self, link, CMD_OPCODES["HELLO"], HELLO_PAYLOAD, id_=181)
+                send(self, link, CMD_OPCODES["FILE_PUT_BEGIN"],
+                     p_put_begin(1, pyble_proto.crc32(b"B"),
+                                 "/successor.bin"),
+                     id_=182)
+            return opened
+
+        agent._fs._open = reconnecting_open
+        send(self, link, CMD_OPCODES["FILE_PUT_BEGIN"],
+             p_put_begin(1, pyble_proto.crc32(b"A"), "/predecessor.bin"),
+             id_=180)
+        pump(agent, 3, self.now)
+
+        self.assertTrue(injected[0])
+        self.assertEqual(
+            rsps(link, CMD_OPCODES["FILE_PUT_BEGIN"], 180), [],
+            "session A cannot publish a response after its disconnect cut",
+        )
+        successor = rsps(link, CMD_OPCODES["FILE_PUT_BEGIN"], 182)
+        self.assertEqual(len(successor), 1)
+        self.assertEqual(successor[0].payload[0], OK)
+        self.assertTrue(
+            agent._fs._put_dest.endswith("successor.bin"),
+            "a paused session-A BEGIN must not overwrite session B's active "
+            "transfer state after disconnect invalidation",
+        )
 
 
 class TransfersDuringRunEbusyTest(AgentTestBase):

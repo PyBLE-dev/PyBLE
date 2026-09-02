@@ -6,7 +6,12 @@
 
 from __future__ import annotations
 
+import os
 import re
+import shutil
+import subprocess
+import tempfile
+import textwrap
 import unittest
 from pathlib import Path
 
@@ -401,6 +406,121 @@ class NativePrestartCancellationContractTests(unittest.TestCase):
         )
         guarded = braced_statement(worker[pickup:], guard.start())
         self.assertIn("runner_exec(", guarded)
+
+    def test_cancelled_prestart_run_still_emits_terminal_idle(self):
+        worker = code_only(c_function(RUNNER, "pble_runner_worker"))
+        self.assertRegex(
+            worker,
+            r"int\s+term\s*=\s*runner_terminal_transition\s*\([^;]+\);"
+            r"\s*runner_emit_state\s*\(\s*term\s*\)\s*;",
+            "STOP/SOFT before pickup emits IDLE without a preceding RUNNING",
+        )
+
+    def test_predecessor_terminal_clear_cannot_erase_successor_stdin(self):
+        compiler = shutil.which(os.environ.get("CC", "cc"))
+        self.assertIsNotNone(compiler, "a host C compiler is required")
+        transition = c_function(RUNNER, "runner_terminal_transition")
+        harness = textwrap.dedent(
+            r'''
+            #include <stdbool.h>
+            #include <stddef.h>
+            #include <stdint.h>
+
+            #define PBLE_RUN_RUNNING 1
+            #define PBLE_RUN_DONE 2
+            #define PBLE_RUN_ERROR 3
+            #define MP_OBJ_NULL 0
+            #define portMAX_DELAY 0xffffffffu
+            #define pdTRUE 1
+            #define configASSERT(value) do { if (!(value)) __builtin_trap(); } while (0)
+            #define MP_THREAD_GIL_EXIT() do { } while (0)
+            #define MP_THREAD_GIL_ENTER() do { } while (0)
+
+            typedef int portMUX_TYPE;
+            typedef int SemaphoreHandle_t;
+            typedef struct { int state; } pble_rsm_t;
+            typedef struct { uintptr_t mp_pending_exception; } mp_state_thread_t;
+
+            static portMUX_TYPE g_mux;
+            static SemaphoreHandle_t g_control_resolution_sem_storage = 1;
+            static SemaphoreHandle_t *g_control_resolution_sem =
+                &g_control_resolution_sem_storage;
+            static bool g_control_unresolved;
+            static bool g_stop_requested;
+            static pble_rsm_t g_rsm = {PBLE_RUN_RUNNING};
+            static mp_state_thread_t *g_worker_state;
+            static bool stdin_active = true;
+            static bool successor_reserved;
+            static bool runner_locked;
+
+            static void pble_console_stdin_begin(void) { stdin_active = true; }
+            static void pble_console_stdin_end(void) { stdin_active = false; }
+            static int pble_rsm_on_stopped(pble_rsm_t *rsm) {
+                rsm->state = 0;
+                return 0;
+            }
+            static int pble_rsm_on_finished(pble_rsm_t *rsm, bool ok) {
+                rsm->state = ok ? PBLE_RUN_DONE : PBLE_RUN_ERROR;
+                return rsm->state;
+            }
+            static int xSemaphoreTake(SemaphoreHandle_t *sem, uint32_t wait) {
+                (void)sem;
+                (void)wait;
+                return pdTRUE;
+            }
+            static void enter_runner(void) { runner_locked = true; }
+            static void exit_runner(void) {
+                runner_locked = false;
+                // Deterministically schedule the host task at the first point
+                // where the predecessor is no longer RUNNING and g_mux is free.
+                if (!successor_reserved && g_rsm.state != PBLE_RUN_RUNNING) {
+                    successor_reserved = true;
+                    g_rsm.state = PBLE_RUN_RUNNING;
+                    pble_console_stdin_begin();
+                }
+            }
+            #define taskENTER_CRITICAL(mux) do { (void)(mux); enter_runner(); } while (0)
+            #define taskEXIT_CRITICAL(mux) do { (void)(mux); exit_runner(); } while (0)
+            ''')
+        main = textwrap.dedent(
+            r'''
+            int main(void) {
+                int term = runner_terminal_transition(true);
+                if (term != PBLE_RUN_DONE) return 20;
+                if (!successor_reserved) return 21;
+                if (g_rsm.state != PBLE_RUN_RUNNING) return 22;
+                if (!stdin_active) return 23;
+                if (runner_locked) return 24;
+                return 0;
+            }
+            ''')
+        with tempfile.TemporaryDirectory(prefix="pyble-v061-run-stdin-") as temp:
+            source = Path(temp) / "runner_stdin_probe.c"
+            binary = Path(temp) / "runner_stdin_probe"
+            source.write_text(
+                harness + "\n" + transition + "\n" + main,
+                encoding="utf-8",
+            )
+            built = subprocess.run(
+                [compiler, "-std=c11", "-Wall", "-Wextra", "-Werror",
+                 str(source), "-o", str(binary)],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                text=True, check=False,
+            )
+            self.assertEqual(
+                built.returncode, 0,
+                "native terminal/stdin probe did not compile:\n{}{}".format(
+                    built.stdout, built.stderr),
+            )
+            executed = subprocess.run(
+                [str(binary)], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                text=True, check=False,
+            )
+            self.assertEqual(
+                executed.returncode, 0,
+                "predecessor terminal cleanup erased successor stdin; "
+                "probe exit {}".format(executed.returncode),
+            )
 
     def test_control_attempt_resolution_bridges_tx_without_lock_inversion(self):
         gate = self.control_gate_name()
