@@ -67,6 +67,18 @@ run() {
     "$SPDX_LINT" "$tmp"
   rm -r "$tmp/firmware/.picotool-cache"
 
+  mkdir -p "$tmp/firmware/licenses/evidence/rp2/picotool/2.3.0"
+  printf '/* exact unmodified third-party provenance evidence */\n' \
+    > "$tmp/firmware/licenses/evidence/rp2/picotool/2.3.0/libusb-version.h"
+  check "spdx_lint PRUNES only the exact libusb provenance header" \
+    "$SPDX_LINT" "$tmp"
+
+  printf '/* authored evidence lookalike without an SPDX header */\n' \
+    > "$tmp/firmware/licenses/evidence/rp2/picotool/2.3.0/libusb-version-local.h"
+  check_fail "spdx_lint still SCANS a provenance-header lookalike" \
+    "$SPDX_LINT" "$tmp"
+  rm "$tmp/firmware/licenses/evidence/rp2/picotool/2.3.0/libusb-version-local.h"
+
   # A non-compliant source file: no header.
   printf 'print("no header here")\n' \
     > "$tmp/firmware/pyble/missing_header.py"
