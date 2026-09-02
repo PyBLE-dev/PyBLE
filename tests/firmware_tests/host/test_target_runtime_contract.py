@@ -227,15 +227,17 @@ def _boot_failure_trace(failure: str) -> list[str]:
         return False
 
     console_stream = object()
+    workspace_bdev = object()
     modules = {
         "gc": types.SimpleNamespace(collect=lambda: trace.append("gc")),
         "sys": types.SimpleNamespace(path=["", ".frozen", "/lib"]),
         "vfs": types.SimpleNamespace(
-            mount=lambda *_args: trace.append("vfs.mount")
+            mount=lambda *_args: None
         ),
-        "flashbdev": types.SimpleNamespace(bdev=None),
+        "flashbdev": types.SimpleNamespace(bdev=workspace_bdev),
         "pyble_workspace": types.SimpleNamespace(
-            mount_lfs2=lambda *_args, **_kwargs: object()
+            mount_lfs2=lambda bdev, _vfs, **_kwargs:
+                object() if bdev is workspace_bdev else None
         ),
         "pble_ble": types.SimpleNamespace(
             init_agent=lambda: trace.append("agent.init"),
@@ -367,15 +369,17 @@ def _boot_frozen_resolution_probe(target: str, failure: str = "success"):
         _maybe_show_boot_splash=frozen_guard
     )
     console_stream = object()
+    workspace_bdev = object()
     modules = {
         "gc": types.SimpleNamespace(collect=lambda: trace.append(("gc",))),
         "sys": sys_module,
         "vfs": types.SimpleNamespace(
             mount=lambda *_args: trace.append(("vfs.mount",))
         ),
-        "flashbdev": types.SimpleNamespace(bdev=None),
+        "flashbdev": types.SimpleNamespace(bdev=workspace_bdev),
         "pyble_workspace": types.SimpleNamespace(
-            mount_lfs2=lambda *_args, **_kwargs: object()
+            mount_lfs2=lambda bdev, _vfs, **_kwargs:
+                object() if bdev is workspace_bdev else None
         ),
         "pble_ble": types.SimpleNamespace(
             init_agent=lambda: trace.append(("agent.init",)),
@@ -464,6 +468,48 @@ def _boot_frozen_resolution_probe(target: str, failure: str = "success"):
         "original_contents": original_contents,
         "process_control": process_control,
     }
+
+
+def _boot_workspace_failure_trace(target: str) -> list[tuple]:
+    """Execute one ESP boot with a shared-authority mount failure."""
+
+    trace: list[tuple] = []
+    workspace_bdev = object()
+
+    def mount_lfs2(bdev, _vfs, **kwargs):
+        trace.append(("workspace.mount", bdev, kwargs.get("progsize")))
+        raise OSError("synthetic nonblank workspace")
+
+    modules = {
+        "gc": types.SimpleNamespace(collect=lambda: trace.append(("gc",))),
+        "vfs": types.SimpleNamespace(
+            mount=lambda *_args: trace.append(("vfs.mount",))
+        ),
+        "flashbdev": types.SimpleNamespace(bdev=workspace_bdev),
+        "pyble_workspace": types.SimpleNamespace(mount_lfs2=mount_lfs2),
+        "pble_ble": types.SimpleNamespace(
+            init_agent=lambda: trace.append(("agent.init",))
+        ),
+    }
+
+    def fake_import(name, globals_=None, locals_=None, fromlist=(), level=0):
+        del globals_, locals_, fromlist, level
+        if name not in modules:
+            raise AssertionError("unexpected failed-workspace import: {}".format(name))
+        return modules[name]
+
+    exec_builtins = dict(vars(builtins))
+    exec_builtins["__import__"] = fake_import
+    exec_builtins["print"] = lambda *args, **kwargs: trace.append(
+        ("recovery.print", args, kwargs)
+    )
+    source_path = OVERLAYS / target / "_boot.py"
+    exec(
+        compile(source_path.read_bytes(), str(source_path), "exec"),
+        {"__builtins__": exec_builtins},
+        {},
+    )
+    return trace
 
 
 def _sdkconfig_values(path: Path) -> dict[str, str]:
@@ -562,6 +608,23 @@ class EffectiveManifestContractTests(unittest.TestCase):
                     "{} may not delegate a destructive decision to upstream's "
                     "block-0-only probe".format(target),
                 )
+
+    def test_workspace_mount_failure_skips_every_esp_agent_lifecycle(self):
+        for target in TARGETS:
+            with self.subTest(target=target):
+                trace = _boot_workspace_failure_trace(target)
+                self.assertEqual(trace[0][0], "workspace.mount")
+                self.assertIsNotNone(trace[0][1])
+                self.assertEqual(trace[0][2], 256)
+                recovery = [event for event in trace
+                            if event[0] == "recovery.print"]
+                self.assertEqual(len(recovery), 1)
+                self.assertEqual(recovery[0][2], {})
+                self.assertEqual(len(recovery[0][1]), 1)
+                self.assertIs(type(recovery[0][1][0]), str)
+                self.assertIn("recovery", recovery[0][1][0].lower())
+                self.assertFalse(any(event[0] == "vfs.mount" for event in trace))
+                self.assertFalse(any(event[0] == "agent.init" for event in trace))
 
     def test_all_targets_resolve_the_exact_lean_runtime_allowlist(self):
         for target, board_name in TARGETS.items():
