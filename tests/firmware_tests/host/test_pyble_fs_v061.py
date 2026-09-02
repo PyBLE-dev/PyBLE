@@ -7,7 +7,7 @@
 # implement it:
 #
 # * transfer scratch is never visible through FILE_LIST;
-# * namespace mutations are rejected while a PUT owns the transaction;
+# * namespace mutations are rejected while a PUT or GET owns the transaction;
 # * one DATA chunk may never cross the total declared by PUT_BEGIN;
 # * PUT admission keeps a fixed 64 KiB filesystem safety reserve; and
 # * malformed scratch is either normalised safely or rejected without touching
@@ -201,6 +201,69 @@ class ActivePutMutationTest(V061FsTestBase):
             EACCES,
             "FILE_RENAME must resolve both paths before applying EBUSY")
         self.assertEqual(self.read_file("/source.txt"), b"source")
+
+
+class ActiveGetMutationTest(V061FsTestBase):
+    """An admitted download conservatively owns every namespace mutation."""
+
+    def _begin_get(self):
+        self.put_file("/download.bin", b"download payload")
+        service, events = self.svc(
+            "v0.6.1 active GET serialises namespace mutations")
+        self.assertEqual(
+            service.handle_get_begin(
+                get_begin_pl(0, b"/download.bin"))[0],
+            OK,
+        )
+        return service, events
+
+    def test_all_valid_mutations_admitted_during_get_are_ebusy(self):
+        self.put_file("/source.txt", b"source")
+        service, _events = self._begin_get()
+
+        self.assertEqual(
+            service.handle_delete(path_pl(b"/missing.txt"))[0], EBUSY,
+            "active GET ownership must precede a valid path's existence probe",
+        )
+        self.assertEqual(
+            service.handle_mkdir(path_pl(b"/unrelated"))[0], EBUSY,
+            "even an unrelated MKDIR is conservatively serialized",
+        )
+        self.assertEqual(
+            service.handle_rename(
+                rename_pl(b"/source.txt", b"/renamed.txt"))[0],
+            EBUSY,
+            "even an unrelated RENAME is conservatively serialized",
+        )
+        self.assertFalse(os.path.exists(self.hpath("/unrelated")))
+        self.assertEqual(self.read_file("/source.txt"), b"source")
+        self.assertFalse(os.path.exists(self.hpath("/renamed.txt")))
+
+    def test_parse_and_jail_still_precede_active_get_busy_status(self):
+        self.put_file("/source.txt", b"source")
+        service, _events = self._begin_get()
+
+        self.assertEqual(service.handle_delete(b"\x01")[0], EBADREQ)
+        self.assertEqual(
+            service.handle_delete(path_pl(b"../escape"))[0], EACCES)
+        self.assertEqual(
+            service.handle_mkdir(path_pl(b"bad.pbltmp"))[0], EACCES)
+        self.assertEqual(
+            service.handle_rename(
+                rename_pl(b"/source.txt", b"../escape"))[0],
+            EACCES,
+        )
+
+    def test_read_only_list_and_stat_remain_available_during_get(self):
+        service, _events = self._begin_get()
+
+        stat = service.handle_stat(path_pl(b"/download.bin"))
+        self.assertEqual(stat[0], OK)
+        self.assertEqual(u32(stat, 1), len(b"download payload"))
+        listing = service.handle_list(path_pl(b"/"))
+        self.assertEqual(listing[0], OK)
+        _more, _count, entries = self.parse_list(listing)
+        self.assertIn("download.bin", [name for _kind, _size, name in entries])
 
 
 class RenameMailboxBoundaryTest(V061FsTestBase):

@@ -140,7 +140,7 @@ class NativeFsV061ContractTest(unittest.TestCase):
             "FILE_RENAME before either path reaches the jail validator",
         )
 
-    def test_each_mutator_gates_active_put_after_all_path_resolution(self):
+    def test_each_mutator_gates_every_active_transfer_after_path_resolution(self):
         cases = (
             ("fs_do_delete", 1, "fs_stat_path"),
             ("fs_do_mkdir", 1, "mp_vfs_mkdir"),
@@ -169,6 +169,47 @@ class NativeFsV061ContractTest(unittest.TestCase):
                 gate = body[busy_at:effect_at]
                 self.assertIn("PBLE_EBUSY", gate)
                 self.assertIn("return", gate)
+
+                get_busy_at = body.find("get_active_at_enqueue")
+                self.assertTrue(
+                    resolve_positions[-1] < get_busy_at < effect_at,
+                    "{} must consume the admission-time active-GET snapshot "
+                    "after jail resolution and before VFS".format(function),
+                )
+
+    def test_native_mailbox_snapshots_accepted_get_activity(self):
+        item = re.search(
+            r"typedef\s+struct\s*\{(?P<body>[^{}]*)\}\s*pble_fs_req_t\s*;",
+            self.source,
+            flags=re.DOTALL,
+        )
+        self.assertIsNotNone(item)
+        self.assertRegex(
+            item.group("body"),
+            r"\bbool\s+get_active_at_enqueue\s*;",
+            "each queued command must retain whether a GET owned its "
+            "admission instant",
+        )
+
+        enqueue = _function_body(self.source, "fs_enqueue")
+        self.assertIn("get_active_at_enqueue", enqueue)
+        self.assertIn("g_get_active", enqueue)
+        snapshot_at = enqueue.find("get_active_at_enqueue")
+        queue_at = enqueue.find("xQueueSend")
+        self.assertTrue(0 <= snapshot_at < queue_at)
+
+        get_body = _function_body(self.source, "fs_do_get")
+        self.assertIn("g_get_active", get_body)
+        self.assertRegex(
+            get_body,
+            r"g_get_active\s*=\s*true",
+            "GET must become active before its successful response commits",
+        )
+        self.assertRegex(
+            get_body,
+            r"g_get_active\s*=\s*false",
+            "every completed or aborted stream must release active GET",
+        )
 
     def test_put_data_checks_crossing_with_non_overflowing_math_before_write(self):
         body = _function_body(self.source, "fs_do_put_data")

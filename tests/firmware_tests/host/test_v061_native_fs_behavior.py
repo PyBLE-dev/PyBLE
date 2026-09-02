@@ -318,6 +318,7 @@ typedef struct {
     pble_session_token_t session;
     uint64_t vm_epoch;
     uint64_t transfer_generation;
+    bool get_active_at_enqueue;
     pble_rsp_ticket_t ticket;
     uint16_t len;
     uint8_t payload[PBLE_FS_ITEM_PAYLOAD];
@@ -1122,6 +1123,30 @@ static int scenario_mutation_gate(void) {
           "valid RENAME was not blocked by active PUT");
     CHECK(g_stat_calls == 0u && g_rename_calls == 0u,
           "busy RENAME reached VFS");
+
+    g_put_active = false;
+    request.get_active_at_enqueue = true;
+    set_path_request(&request, "/missing.py");
+    CHECK(fs_do_delete(&request, &extra) == PBLE_EBUSY,
+          "valid DELETE admitted during GET was not blocked");
+    CHECK(g_stat_calls == 0u && g_remove_calls == 0u,
+          "GET-busy DELETE reached VFS");
+    set_path_request(&request, "/new-dir");
+    CHECK(fs_do_mkdir(&request, &extra) == PBLE_EBUSY,
+          "valid MKDIR admitted during GET was not blocked");
+    CHECK(g_mkdir_calls == 0u, "GET-busy MKDIR reached VFS");
+    set_rename_request(&request, "/source.py", "/dest.py");
+    CHECK(fs_do_rename(&request, &extra) == PBLE_EBUSY,
+          "valid RENAME admitted during GET was not blocked");
+    CHECK(g_stat_calls == 0u && g_rename_calls == 0u,
+          "GET-busy RENAME reached VFS");
+
+    set_path_request(&request, "../escape");
+    CHECK(fs_do_delete(&request, &extra) == PBLE_EACCES,
+          "GET-busy DELETE applied EBUSY before jail rejection");
+    set_rename_request(&request, "/source.py", "../escape");
+    CHECK(fs_do_rename(&request, &extra) == PBLE_EACCES,
+          "GET-busy RENAME applied EBUSY before destination jail rejection");
     return 0;
 }
 
