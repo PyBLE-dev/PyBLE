@@ -13,6 +13,12 @@ maintainer guidance beside the source they govern.
 - [Hardware compatibility](specifications/hardware.md)
 - [Public roadmap](ROADMAP.md)
 
+## Proposed release plans
+
+- [Firmware v0.6.1 and v0.7.0 roadmap](planning/firmware-v0.6.1-v0.7.0-roadmap.md)
+  — v0.6.1 hardening is approved for implementation; the Reliable Projects
+  v0.7.0 scope remains proposed
+
 ## Detailed specifications
 
 - [`specifications/App/`](specifications/App/) — app requirements, test design,

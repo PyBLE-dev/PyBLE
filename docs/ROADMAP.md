@@ -3,6 +3,11 @@
 PyBLE is developed in public. This roadmap communicates direction rather than
 promising dates; accepted work is tracked through GitHub issues and milestones.
 
+The detailed [firmware v0.6.1 and v0.7.0 proposal](planning/firmware-v0.6.1-v0.7.0-roadmap.md)
+records the post-v0.6.0 contract-hardening and Reliable Projects candidates.
+The v0.6.1 hardening scope is approved for specification-first implementation;
+v0.7.0 remains non-normative and requires separate maintainer approval.
+
 ## Available now
 
 - iPad external beta through TestFlight
