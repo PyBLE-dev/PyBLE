@@ -2108,9 +2108,10 @@ HIL report, activation, and rollback are frozen in
 both at the versioned `pyble.dev` path and through the matching GitHub Release,
 with exact source-era profile parity: two hardware-tested beta profiles in v0.4.2,
 retained as immutable history; the unfinished three-profile v0.5.1 source candidate
-retained only as history; and exactly five profiles in the pending v0.6.0
-candidate. No v0.6.0 profile is published until the atomic five-profile gate
-passes (BLD-7/17…22). `DEVICE_INFO`/HELLO,
+retained only as history; exactly five profiles in the qualified v0.6.0
+release; and the same five profiles in the source-selected v0.6.1 increment.
+No v0.6.1 profile is published until its fresh atomic five-profile gate passes
+(BLD-7/17…22). `DEVICE_INFO`/HELLO,
 `manifest.json`/`release.json`, tag, and release notes make agent/protocol/
 upstream/source/artifact versions recoverable (BLD-13); the agent follows
 SemVer (BLD-12).
@@ -2148,6 +2149,7 @@ firmware/
     micropython/                    # Layer 1 — pinned submodule, pristine (CON-1/2)      [build-smith / .gitmodules]
   pyble/                            # Layer 3 — frozen-Python agent package (NFR-MAINT-2)
     __init__.py                     # empty placeholder package at S1 (do NOT populate)   [build-smith scaffold]
+    _version.py                     # selected agent identity                              [build-smith]
     pyble_agent.py                  # boot + dispatch surface + single-writer lock         [runtime-engineer]
     pyble_ble.py                    # NimBLE peripheral, GATT, fragmentation               [ble-transport-engineer]
     pyble_proto.py                  # frame codec, CRC32, dispatch                          [protocol-engineer]
@@ -2155,10 +2157,17 @@ firmware/
     pyble_fs.py                     # filesystem bridge + workspace jail                    [storage-engineer]
     pyble_console.py                # stdout/stderr tee + stdin feed                        [runtime-engineer]
     pyble_info.py                   # DEVICE_INFO/HELLO/caps + device-config store          [identity-engineer]
+    pyble_boot.py                   # autorun and boot helpers                              [runtime-engineer]
+    pyble_device_config.py          # durable portable label/autorun record                 [identity-engineer]
+    pyble_workspace.py              # shared guarded LFS2 mount/recovery authority          [storage-engineer]
   python_modules/                   # optional Layer-4 frozen user runtimes
     pyble_st7789.py                 # explicit ST7789 driver (exact-board variant only)     [runtime-engineer]
   user_c_modules/
-    pyble/                          # Layer 3 native hot paths — LATER, OI-3 (pble_*.c)    [ble-/protocol-engineer]
+    pyble/                          # Layer 3 native ESP agent                              [ble-/protocol-engineer]
+      micropython.cmake             # exact USER_C_MODULES source inventory                [build-smith]
+      pble_{ble,boot,console,device_config,fs,info,lock,proto,runner,termination,vm_lifecycle,wire}.c
+      pble_{ble,boot,console,device_config,fs,info,lock,proto,runner,termination,vm_lifecycle,wire}.h
+      pble_version.h                # selected native agent identity                       [build-smith]
   board_overlays/
     esp32/  esp32-s3/  esp32-c3/     # lean Layer-2 variants, copied at build prep          [build-smith]
     waveshare-esp32-s3-lcd-147b/     # exact-board esp32s3 build variant                    [build-smith]
