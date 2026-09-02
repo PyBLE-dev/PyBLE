@@ -181,6 +181,87 @@ class CandidateVersionToolLockRoutingTests(unittest.TestCase):
             fixture.close()
 
 
+class CandidateEvidenceReplayRoutingTests(unittest.TestCase):
+    def test_release_dispatch_forwards_v060_candidate_version_to_esp_replay(self):
+        evidence = Path("/synthetic/evidence")
+        build = Path("/synthetic/build")
+        repo = Path("/synthetic/validator")
+        bundle = Path("/synthetic/bundle")
+        release = {"identity": {"version": "0.6.0"}}
+
+        with mock.patch.object(
+            RELEASE,
+            "_audit_verify_packaged_build",
+            return_value=None,
+        ), mock.patch.object(
+            RELEASE,
+            "_audit_verify_release_inventory_evidence",
+            return_value=None,
+        ), mock.patch.object(
+            RELEASE,
+            "_audit_verify_v060_esp_semantic_replay",
+            return_value=None,
+        ) as replay:
+            RELEASE._audit_verify_release_evidence(
+                notice="synthetic notice",
+                evidence_dir=evidence,
+                build_root=build,
+                repo_root=repo,
+                bundle=bundle,
+                release=release,
+            )
+
+        replay.assert_called_once_with(
+            notice="synthetic notice",
+            evidence_dir=evidence,
+            build_root=build,
+            repo_root=repo,
+            firmware_version="0.6.0",
+        )
+
+    def test_v060_esp_replay_forwards_explicit_version_without_checkout_read(self):
+        receipt = {
+            "schema_version": 2,
+            "notice_sha256": "0" * 64,
+            "input_sha256": {},
+            "executed_artifacts": {},
+            "execution_identity": {},
+            "identities": [],
+            "evidence_sha256": {},
+            "release_inventory_path": "release-inventory.json",
+            "release_inventory_sha256": "1" * 64,
+        }
+        marker = "\n\nRP2 / Raspberry Pi Pico 2 W\n"
+        with mock.patch.object(
+            RELEASE,
+            "_audit_v060_canonical_json",
+            return_value=receipt,
+        ), mock.patch.object(
+            RELEASE,
+            "_audit_verify_esp_release_evidence",
+            return_value=None,
+        ) as verify_esp, mock.patch.object(
+            RELEASE,
+            "_read_lock",
+            side_effect=AssertionError(
+                "historical replay consulted validator versions.lock"
+            ),
+        ) as read_validator_lock:
+            RELEASE._audit_verify_v060_esp_semantic_replay(
+                notice="ESP" + marker + "RP2\n",
+                evidence_dir=Path("/synthetic/evidence"),
+                build_root=Path("/synthetic/build"),
+                repo_root=Path("/synthetic/validator"),
+                firmware_version="0.6.0",
+            )
+
+        read_validator_lock.assert_not_called()
+        self.assertEqual(
+            verify_esp.call_args.kwargs["firmware_version"],
+            "0.6.0",
+        )
+
+
 class CompareCliVersionRoutingTests(unittest.TestCase):
     def test_compare_cli_routes_repo_and_strict_source_version(self):
         with tempfile.TemporaryDirectory(
