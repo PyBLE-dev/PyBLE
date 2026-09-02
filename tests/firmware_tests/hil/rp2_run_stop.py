@@ -173,7 +173,13 @@ async def run(args):
     log = install_tap(central)
     try:
         # HELLO first (§7); adopt the negotiated MTU for fragmentation.
-        rsp = await central.send_cmd(wire.OP_HELLO, 1, b"app=rp2-run-stop\nversion=0\n")
+        rsp = await central.send_cmd(
+            wire.OP_HELLO,
+            1,
+            b"proto_versions=1\n"
+            b"app_name=rp2-run-stop\n"
+            b"app_version=0",
+        )
         if rsp_status(rsp) != wire.ST_OK:
             raise SystemExit("HELLO refused: %s" % status_name(rsp_status(rsp)))
         caps = {}
