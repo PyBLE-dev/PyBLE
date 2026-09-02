@@ -849,7 +849,14 @@ class FsBridge:
     def _resolve(self, path) -> str               # jail enforcement (FR-FS-10/11)
 ```
 
-**Key data structures / state:** active-upload context (`path`, `tmp_path`, `total_size`, `expected_crc`, `ack_offset`, running CRC accumulator, window bookkeeping); the static file I/O buffer; `fs_root` constant. Only **one** transfer is active at a time (serialized by the single-writer lock).
+**Key data structures / state:** active-upload context (`path`, `tmp_path`,
+`total_size`, `expected_crc`, `ack_offset`, running CRC accumulator, window
+bookkeeping); active-download ownership; the static file I/O buffer; `fs_root`
+constant. Only **one** transfer is active at a time (serialized by the
+single-writer lock). After payload parsing and jail resolution, every
+DELETE/MKDIR/RENAME is rejected with `EBUSY` while either transfer kind is
+active, even for an unrelated valid path; read-only FILE_LIST/FILE_STAT remain
+available.
 
 **Jail design ([§9.3](#93-path-jail-enforcement)):** every path is normalized and verified to resolve inside `fs_root`; `..` traversal or absolute escape → `EACCES` (FR-FS-10). Layer-2/Layer-3 paths are a forbidden set → `EACCES` (FR-FS-11, SEC-4, CON-10). Only `.py`/data artifacts accepted; `.mpy`/`.pyc` rejected (FR-FS-12, CON-3).
 
@@ -903,6 +910,17 @@ after an exact session/generation post-check in the same critical section as
 all field writes. DATA/END require exact ownership, and a successor may close
 and reclaim only a record whose stored generation is stale. This prevents a
 paused predecessor from clearing or adopting successor state.
+
+The native worker marks an accepted GET active under that same transfer mutex
+before committing its successful response and clears the exact generation on
+every stream exit. Because that worker remains occupied until the stream ends,
+a concurrently admitted namespace mutation snapshots the active-GET bit in its
+mailbox item. Once dequeued it still parses and jail-resolves all paths first,
+then returns `EBUSY` from the immutable snapshot before any namespace stat or
+mutation. A mutation admitted before GET activation is naturally serialized
+after the stream and is not retrospectively rejected. This preserves jail
+status precedence without letting queue serialization erase the fact that the
+command arrived during an active download.
 
 **Frozen-vs-native plan:** frozen for orchestration; the **chunk write + incremental CRC** inner loop is a native candidate on C3 (D1).
 

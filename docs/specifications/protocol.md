@@ -540,11 +540,14 @@ before wrap, so the quiescence seam cannot reintroduce ABA.
 - **`FILE_RENAME` (0x1A)** `[slen][src][dlen][dst]`: both jailed; src missing → `ENOENT`; dst a non-empty dir → `EACCES`; else atomic rename → `OK`. Each path independently retains the 128-byte maximum, so the receiver and any deferred-work envelope MUST accept the legal 260-byte request payload (`2 + 128 + 2 + 128`); 129 bytes in either path is `ERANGE`.
 
 The three namespace mutations parse and jail-resolve every supplied path first.
-While a PUT is active they then return `EBUSY` before any stat or mutation;
-therefore malformed payloads still take `EBADREQ`, forbidden paths still take
-`EACCES`, and a valid mutation takes `EBUSY` independent of path existence.
-`FILE_LIST` and `FILE_STAT` remain available during PUT. This serialization is
-only for the PBLE/1 bridge; ordinary user code retains direct VFS access.
+While a PUT or GET is active they then return `EBUSY` before any stat or
+mutation; therefore malformed payloads still take `EBADREQ`, forbidden paths
+still take `EACCES`, and a valid mutation takes `EBUSY` independent of path
+existence. This is deliberately conservative: DELETE, MKDIR, and RENAME are
+all serialized even when their valid paths do not name the file being
+transferred. `FILE_LIST` and `FILE_STAT` remain available during either
+transfer. This serialization is only for the PBLE/1 bridge; ordinary user code
+retains direct VFS access.
 
 **Resume on reconnect (F-10):** a link drop mid-`PUT` resets the in-RAM transfer state, but the jailed `<dest>.pbltmp` prefix persists on flash. A scratch prefix is resumable only when it is a regular file, `0 < length <= total_size`, exactly that many bytes are read and CRC'd, and its type and length remain stable through that scan. Only then may `FILE_PUT_BEGIN` return the verified length as a nonzero `resume_offset`, re-seed the running whole-file CRC, and set the watermark. A missing or zero-length regular scratch means a fresh upload. An oversized, short-read, unreadable, changed, or type-invalid scratch is malformed: the agent removes a malformed regular file or empty scratch directory, confirms absence, and restarts at zero. It never recursively removes, truncates, renames, or otherwise changes a nonempty scratch directory or the old destination; a nonempty scratch directory or failed safe removal returns `EIO`. A structurally valid but foreign prefix may resume, but the whole-file CRC at `FILE_PUT_END` remains the content-identity gate: `ECRC` deletes the scratch and keeps the old destination byte-for-byte.
 
