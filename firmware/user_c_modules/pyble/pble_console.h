@@ -54,6 +54,13 @@ extern const mp_print_t pble_console_stderr_print;
 uint8_t pble_console_input(const pble_frame_t *req, uint8_t *rsp, size_t *rlen,
                            const pble_session_token_t *session);
 
+// Run-scoped stdin lifecycle. RUN/autorun admission clears+activates; accepted
+// STOP and every terminal/VM-reset clear+deactivate; disconnect clears while
+// retaining activity so a continuing run may accept only successor-session data.
+void pble_console_stdin_begin(void);
+void pble_console_stdin_end(void);
+void pble_console_stdin_clear(void);
+
 // Worker stdin drain for input()/sys.stdin: next byte, or -1 when empty.
 int  pble_console_stdin_getchar(void);
 

@@ -67,6 +67,9 @@ bool pble_term_rotate_open(pble_term_state_t *state, uint16_t conn,
                            uint64_t new_generation);
 pble_term_effects_t pble_term_begin(pble_term_state_t *state, uint16_t conn,
                                     uint64_t generation, int64_t now_us);
+pble_term_effects_t pble_term_preclose_failed(pble_term_state_t *state,
+                                              uint16_t conn,
+                                              uint64_t generation);
 bool pble_term_watchdog_ticket(const pble_term_state_t *state, uint16_t conn,
                                uint64_t generation,
                                pble_term_watchdog_ticket_t *ticket);

@@ -288,6 +288,8 @@ static QueueHandle_t g_fs_q;
 static SemaphoreHandle_t g_fs_gate;
 static SemaphoreHandle_t g_fs_work;
 static bool g_fs_admission_open;
+static bool g_fs_registered;
+static uint64_t g_fs_registration_epoch;
 static portMUX_TYPE g_fs_transfer_mux = portMUX_INITIALIZER_UNLOCKED;
 static bool g_put_active;
 static char g_put_temp[PBLE_FS_PATH_BUF];
@@ -311,6 +313,12 @@ typedef struct {
 static lock_slot_t g_run_slot;
 static lock_slot_t g_xfer_slot;
 static portMUX_TYPE g_lock_mux = portMUX_INITIALIZER_UNLOCKED;
+static bool g_lock_registered;
+static uint64_t g_lock_registration_epoch;
+static uint64_t g_vm_epoch = UINT64_C(7);
+static uint64_t pble_vm_epoch_current(void) {
+    return g_vm_epoch;
+}
 """
 
 
@@ -342,6 +350,17 @@ static int scenario_filesystem(void) {
                 "without closing/preserving its rooted file\n");
         return 1;
     }
+
+    g_vm_epoch++;
+    g_root_pble_fs_put_file = MP_OBJ_NULL;  /* lifecycle reset owns the root */
+    pble_fs_register();
+    if (g_put_active || g_put_generation != 0u || g_put_temp[0] != '\0' ||
+        g_put_dest[0] != '\0' || g_put_total != 0u ||
+        g_put_crc_target != 0u || g_put_watermark != 0u ||
+        g_put_crc_running != 0xffffffffu || g_put_latched != 0u) {
+        fprintf(stderr, "new-VM pble_fs_register did not reset PUT state\n");
+        return 2;
+    }
     return 0;
 }
 
@@ -362,6 +381,15 @@ static int scenario_writer_locks(void) {
         fprintf(stderr,
                 "repeated pble_lock_register released live writer owners\n");
         return 1;
+    }
+
+    g_vm_epoch++;
+    pble_lock_register();
+    if (g_run_slot.held || g_xfer_slot.held ||
+        pble_lock_acquire(PBLE_W_RUN, 99u) != PBLE_OK ||
+        pble_lock_acquire(PBLE_W_XFER, 99u) != PBLE_OK) {
+        fprintf(stderr, "new-VM pble_lock_register did not reset owners\n");
+        return 3;
     }
     return 0;
 }

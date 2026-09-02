@@ -2090,11 +2090,18 @@ class NativeFsEpochContractTests(unittest.TestCase):
         session_context = reachable(
             {"fs_do_put_data"} | defined_calls(get_after_wait, "fs_do_get")
         )
+        cleanup_helpers = {"fs_close_local"}
+        cleanup = code_only(c_function(FS, "fs_close_local"))
+        self.assertEqual(len(VFS_EFFECT_RE.findall(cleanup)), 1)
+        self.assertIn("mp_stream_close(file)", cleanup)
+        self.assertIn("nlr_push", cleanup)
+        self.assertNotRegex(cleanup, VFS_VALID_RE)
+        self.assertNotRegex(cleanup, VFS_TICKET_VALID_RE)
         raw_functions = {
             name
             for name, body in function_bodies.items()
             if VFS_EFFECT_RE.search(body)
-        }
+        } - cleanup_helpers
         mixed_raw_helpers = (
             ticket_context & session_context & raw_functions
         ) - {"fs_do_get"}
@@ -2161,7 +2168,7 @@ class NativeFsEpochContractTests(unittest.TestCase):
         for name in function_names:
             body = function_bodies[name]
             effects = list(VFS_EFFECT_RE.finditer(body))
-            if not effects or name == "fs_do_get":
+            if not effects or name == "fs_do_get" or name in cleanup_helpers:
                 continue
             guarded_functions += 1
             with self.subTest(function=name):

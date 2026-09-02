@@ -191,6 +191,11 @@ static void inject_worker_kbd_interrupt(void) {
 // acceptance publishes stop intent; either outcome wakes a pickup waiter after
 // the predicate is final and the runner lock has been released.
 static void runner_control_attempt_resolve(bool accepted) {
+    if (accepted != false) {
+        // The response handoff is already committed. Close this run's stdin
+        // before releasing a pickup/terminal waiter into the accepted control.
+        pble_console_stdin_end();
+    }
     taskENTER_CRITICAL(&g_mux);
     configASSERT(g_control_unresolved);
     if (accepted) {
@@ -235,7 +240,17 @@ bool pble_runner_stop_requested(void) {
 static bool runner_exec(uint8_t mode, const char *data, size_t len) {
     nlr_buf_t nlr;
     bool ok;
+    mp_obj_dict_t *saved_globals = mp_globals_get();
+    mp_obj_dict_t *saved_locals = mp_locals_get();
     if (nlr_push(&nlr) == 0) {
+        mp_obj_t fresh_obj = mp_obj_new_dict(1);
+        mp_obj_dict_store(fresh_obj,
+                          MP_OBJ_NEW_QSTR(MP_QSTR___name__),
+                          MP_OBJ_NEW_QSTR(MP_QSTR___main__));
+        mp_obj_dict_t *fresh_globals = MP_OBJ_TO_PTR(fresh_obj);
+        mp_globals_set(fresh_globals);
+        mp_locals_set(fresh_globals);
+
         qstr src_name;
         mp_lexer_t *lex;
         if (mode == PBLE_RUN_MODE_FILE) {
@@ -251,8 +266,14 @@ static bool runner_exec(uint8_t mode, const char *data, size_t len) {
         // Deliver a STOP that raced code completion (pending KBI) so it lands.
         mp_handle_pending(MP_HANDLE_PENDING_CALLBACKS_AND_EXCEPTIONS);
         nlr_pop();
+        mp_globals_set(saved_globals);
+        mp_locals_set(saved_locals);
         ok = true;
     } else {
+        // The per-run dictionary is installed before any compile/execute work.
+        // Restore the worker context before traceback output or control waits.
+        mp_globals_set(saved_globals);
+        mp_locals_set(saved_locals);
         // STOP's injected KeyboardInterrupt is expected lifecycle control, not
         // a user failure. Suppress its traceback so it cannot compete with the
         // ordered STOP response and terminal idle event. Real exceptions keep
@@ -280,6 +301,10 @@ static int runner_terminal_transition(bool ok) {
         unresolved = g_control_unresolved;
         if (!unresolved) {
             bool stopped = g_stop_requested;
+            // Lock order is runner g_mux -> console ring mux.  Clear this
+            // predecessor's stdin before the RSM becomes reservable, so a
+            // successor RUN cannot begin and then be erased by late cleanup.
+            pble_console_stdin_end();
             term = stopped ? pble_rsm_on_stopped(&g_rsm)
                            : pble_rsm_on_finished(&g_rsm, ok);
             if (g_worker_state != NULL) {
@@ -353,9 +378,7 @@ void pble_runner_worker(void) {
         // Terminal transition: STOP -> idle; otherwise done/error. try/finally is
         // implicit — runner_exec always returns, so we always emit a terminal.
         int term = runner_terminal_transition(ok);
-        if (!stopped_before_start) {
-            runner_emit_state(term);   // RUN_STATE(idle | done | error)
-        }
+        runner_emit_state(term);   // RUN_STATE(idle | done | error)
     }
 }
 
@@ -434,6 +457,7 @@ uint8_t pble_runner_run(const pble_frame_t *req, uint8_t *rsp, size_t *rlen,
         return PBLE_NO_RSP;
     }
 
+    pble_console_stdin_begin();
     BaseType_t gave = xSemaphoreGive(g_run_sem);
     configASSERT(gave == pdTRUE);  // single reservation => binary sem was empty
     (void)gave;
@@ -600,6 +624,7 @@ uint8_t pble_runner_run_file(const char *path) {
     g_run_mode = PBLE_RUN_MODE_FILE;
     g_run_len = plen;
     memcpy(g_run_buf, path, plen);
+    pble_console_stdin_begin();
     xSemaphoreGive(g_run_sem);   // RUN_STATE(running) follows from the worker
     return PBLE_OK;
 }

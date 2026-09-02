@@ -96,6 +96,15 @@ pble_term_effects_t pble_term_begin(pble_term_state_t *state, uint16_t conn,
     return PBLE_TERM_EFFECT_ARM_WATCHDOG;
 }
 
+pble_term_effects_t pble_term_preclose_failed(pble_term_state_t *state,
+                                              uint16_t conn,
+                                              uint64_t generation) {
+    if (!pble_term_admits(state, conn, generation)) {
+        return PBLE_TERM_EFFECT_NONE;
+    }
+    return pble_term_restart(state);
+}
+
 bool pble_term_watchdog_ticket(const pble_term_state_t *state, uint16_t conn,
                                uint64_t generation,
                                pble_term_watchdog_ticket_t *ticket) {
