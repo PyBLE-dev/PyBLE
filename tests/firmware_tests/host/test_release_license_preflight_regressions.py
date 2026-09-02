@@ -37,6 +37,7 @@ def load_release_module():
 RELEASE, RELEASE_LOAD_ERROR = load_release_module()
 
 EXPECTED_PYBLE_C_SOURCES = (
+    "pble_wire.c",
     "pble_proto.c",
     "pble_ble.c",
     "pble_info.c",
@@ -116,7 +117,7 @@ class ReleaseLicensePreflightRegressionTests(unittest.TestCase):
         self.assertEqual(
             RELEASE._AUDIT_PYBLE_C_SOURCES,
             EXPECTED_PYBLE_C_SOURCES,
-            "the audit must freeze the same eleven first-party C sources as "
+            "the audit must freeze the same twelve first-party C sources as "
             "micropython.cmake",
         )
         source_root = REPO_ROOT / "firmware/user_c_modules/pyble"

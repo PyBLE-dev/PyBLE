@@ -84,6 +84,11 @@ CMD_OPCODES = {
 NO_RSP_OPCODES = {0x16, 0x31}   # CMD-only: the handler suppresses the RSP (§4)
 
 UNIQUE_ID = b"\x12\x34\x56\x78\x9a\xbc\x9f\x3a"   # -> device_id "9F3A"
+HELLO_PAYLOAD = (
+    b"proto_versions=1\n"
+    b"app_name=PyBLE\n"
+    b"app_version=0.2.0"
+)
 
 
 class FakeLink:
@@ -234,6 +239,21 @@ class AgentTestBase(unittest.TestCase):
         if arm_reset is not None:
             kwargs["arm_reset"] = arm_reset
         agent = cls(link, self.root, **kwargs)
+
+        # Legacy behavior tests below exercise already-negotiated commands. A
+        # strict v0.6.1 agent begins UNNEGOTIATED, so establish the real session
+        # precondition once and discard only this setup traffic. Tests dedicated
+        # to pre-HELLO/repeat/reset behavior use their own fresh harness.
+        self.assertIsNotNone(link.connect_cb, "Agent must bind on_connect")
+        link.connect_cb()
+        send(self, link, CMD_OPCODES["HELLO"], HELLO_PAYLOAD, id_=255)
+        hello = rsps(link, opcode=CMD_OPCODES["HELLO"], id_=255)
+        self.assertEqual(len(hello), 1, "legacy fixture HELLO must receive one RSP")
+        self.assertEqual(hello[0].payload[0], OK,
+                         "legacy fixture canonical HELLO must negotiate v1")
+        link.sent[:] = []
+        if order is not None:
+            order[:] = []
         return agent, link
 
 
@@ -270,7 +290,8 @@ class AllOpcodesRegisteredTest(AgentTestBase):
             with self.subTest(opcode=name):
                 agent, link = self.new_agent(
                     "F-25/§4 handler registered: {}".format(name))
-                send(self, link, op, id_=7)
+                payload = HELLO_PAYLOAD if op == CMD_OPCODES["HELLO"] else b""
+                send(self, link, op, payload, id_=7)
                 pump(agent, 2, self.now)
                 answers = rsps(link, opcode=op, id_=7)
                 if op == CMD_OPCODES["IDENTIFY"]:
@@ -348,6 +369,10 @@ class DisconnectResetsPutStateTest(AgentTestBase):
         with open(os.path.join(self.root, "g.txt"), "wb") as fh:
             fh.write(b"hello world")           # 11 bytes, for the later GET
         agent, link = self.new_agent(crit)
+        # F-10 intentionally retains the orphan file object for a future PUT
+        # resume; close that test-owned object after assertions so CPython's
+        # ResourceWarning does not obscure RED/green protocol results.
+        self.addCleanup(agent._fs._close_put_file)
 
         # Open an upload and land one in-order window chunk.
         body = b"ABCDEFGH"
@@ -374,6 +399,13 @@ class DisconnectResetsPutStateTest(AgentTestBase):
         self.assertTrue(os.path.exists(temp),
                         "the jailed <dest>.pbltmp MUST survive the disconnect "
                         "(it seeds the §5 resume_offset)")
+
+        # A reconnect is a fresh PBLE session and must re-negotiate before the
+        # single-transfer slot can be observed as free.
+        link.session += 1
+        link.connect_cb()
+        send(self, link, CMD_OPCODES["HELLO"], HELLO_PAYLOAD, id_=4)
+        self.assertEqual(rsps(link, CMD_OPCODES["HELLO"], 4)[0].payload[0], OK)
 
         # The single-transfer slot MUST be free again: a GET now succeeds.
         send(self, link, 0x12, p_get_begin(0, "/g.txt"), id_=5)
@@ -681,11 +713,11 @@ class InterruptIntentExceptionSafetyTest(AgentTestBase):
         agent._dispatcher.on_message = fail_dispatch
         try:
             with self.assertRaisesRegex(RuntimeError, "dispatch failure"):
-                send(self, link, 0x01, id_=70)
+                send(self, link, 0x01, HELLO_PAYLOAD, id_=70)
         finally:
             agent._dispatcher.on_message = real_dispatch
 
-        send(self, link, 0x01, id_=71)
+        send(self, link, 0x01, HELLO_PAYLOAD, id_=71)
         self.assertEqual(notifies, [],
                          "a later HELLO MUST NOT inherit stale interrupt intent")
 
@@ -711,7 +743,7 @@ class InterruptIntentExceptionSafetyTest(AgentTestBase):
             pyble_proto.encode = real_encode
         agent._runner._executing = False
 
-        send(self, link, 0x01, id_=74)
+        send(self, link, 0x01, HELLO_PAYLOAD, id_=74)
         self.assertEqual(notifies, [],
                          "encode failure MUST clear the STOP post-RSP intent")
 
@@ -738,7 +770,7 @@ class InterruptIntentExceptionSafetyTest(AgentTestBase):
             link.send_message = real_send
         agent._runner._executing = False
 
-        send(self, link, 0x01, id_=77)
+        send(self, link, 0x01, HELLO_PAYLOAD, id_=77)
         self.assertEqual(notifies, [],
                          "send failure MUST clear the STOP post-RSP intent")
 
