@@ -1,6 +1,6 @@
 # PyBLE — Product Requirements Document
 
-Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-08-03
+Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-09-02
 
 Project phase: **Implementation**. This is the apex requirements document; where it overlaps a deeper spec (protocol.md, firmware.md, app.md, hardware.md, architecture.md), the more specific spec wins on its own topic.
 
@@ -174,19 +174,20 @@ Each story selects the applicable categories; the protocol and firmware stories 
 - **Hardware-in-the-loop (HIL)** — on every exact profile claimed by the
   release: connect, `DEVICE_INFO`, run/stop, console streaming, and a clean
   multi-file upload without dropping the link, plus resume-on-reconnect and
-  the resource measurements above. The current v0.4.2 public-beta profile set
-  is exactly `esp32-4mb` plus `esp32-s3-n16r8`; production-browser installation
-  and interrupted-flash recovery passed, but the other formal HIL rows remain
-  pending. The earlier v0.5.1 source-candidate matrix was exactly
+  the resource measurements above. The historical v0.4.2 public-beta profile
+  set is exactly `esp32-4mb` plus `esp32-s3-n16r8`; production-browser
+  installation and interrupted-flash recovery passed, but its other formal HIL
+  rows remain pending. The earlier v0.5.1 source-candidate matrix was exactly
   `esp32-4mb`, `esp32-s3-n16r8`, and
   `waveshare-esp32-s3-lcd-147b`; no exact-byte qualification was completed for
-  it. The current v0.6.0 contract is the atomic five-profile order
+  it. The qualified public v0.6.0 release has the atomic five-profile order
   `esp32-4mb`, `esp32-s3-n16r8`, `waveshare-esp32-s3-lcd-147b`,
-  `esp32-c3-4mb`, and `rpi-pico2-w`; every row remains release-blocking. The
-  two S3 profiles require independent evidence because
-  their candidate contracts produce different immutable bytes. No v0.6.0
-  exact-byte qualification is asserted here. A milestone is gated by a working
-  HIL demo, not by merged code alone.
+  `esp32-c3-4mb`, and `rpi-pico2-w`; every exact v0.6.0 row completed its
+  release-blocking gates. The two S3 profiles required independent evidence
+  because their candidate contracts produced different immutable bytes. The
+  source-selected v0.6.1 tree retains the same atomic order, but every row is
+  release-blocking again and no v0.6.1 exact-byte qualification is asserted
+  here. A milestone is gated by a working HIL demo, not by merged code alone.
 
 ### §1B.4 SDD+TDD interlock
 

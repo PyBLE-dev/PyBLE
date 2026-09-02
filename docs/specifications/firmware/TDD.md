@@ -13,8 +13,9 @@ Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-09-02
 > release schema 4, and HIL V5. Immutable v0.4.2 replay retains its exact
 > two-profile release/HIL V2 contract. ADR-0037 fixes replacement-v0.6.0
 > profile reset and product-wide transfer SLOs; ADR-0038 routes predecessor and
-> replacement v0.6.0 derivations by source ancestry. Every replacement result
-> remains pending.
+> replacement v0.6.0 derivations by source ancestry. The replacement v0.6.0
+> result is the qualified five-profile baseline; every later source-selected
+> candidate, including v0.6.1, begins with fresh pending evidence.
 >
 > **Frozen v0.6.1 hardening design (2026-09-02, `[docs]`):**
 > [§2.11](#211-v061-hardening-architecture) fixes the implementation seams,
@@ -435,7 +436,7 @@ class BleLink:
     def on_disconnect(self, cb) -> None
 ```
 
-**Key data structures / state:** the GATT table (Service/RX/TX/INFO UUIDs from the [protocol.md §2](../protocol.md#2-ble-transport-gatt) constants mirror); a single **reassembly buffer** (static, sized `max_message`, see [§7.3](#73-buffer-sizing)); a fragment-index tracker (`FIRST`/`LAST`/`index mod 64`); negotiated MTU; connection handle plus monotonic boot-local connection generation and `CLOSED`/`OPEN`/`CLOSING`/`CLEANING`/`RESTARTING` state; logical TX owner plus mutex-protected stream generation; a pre-created generic-response callout; a pre-created task-dispatched failed-session watchdog; the **advertised name** — the device label when set, else `PyBLE-` + `device_id` (the last two BLE-MAC bytes in uppercase hex), used for the name only, never for access control ([§4.8](#48-device-config-store--label--identify-led-nvs), CON-7/SEC-7/SEC-11).
+**Key data structures / state:** the GATT table (Service/RX/TX/INFO UUIDs from the [protocol.md §2](../protocol.md#2-ble-transport-gatt) constants mirror); a single **reassembly buffer** (static, sized `max_message`, see [§7.3](#73-buffer-sizing)); a fragment-index tracker (`FIRST`/`LAST`/`index mod 64`); negotiated MTU; connection handle plus monotonic boot-local connection generation, an exact-session terminal-admission latch/start time, and `CLOSED`/`OPEN`/`CLOSING`/`CLEANING`/`RESTARTING` state; logical TX owner plus mutex-protected stream generation; a pre-created generic-response callout; a pre-created task-dispatched failed-session watchdog; the **advertised name** — the device label when set, else `PyBLE-` + `device_id` (the last two BLE-MAC bytes in uppercase hex), used for the name only, never for access control ([§4.8](#48-device-config-store--label--identify-led-nvs), CON-7/SEC-7/SEC-11).
 
 **VM-safe RX ownership:** the RX GATT callback calls the same non-blocking
 lifecycle-entry seam used by other host callbacks before it reads the fragment
@@ -467,23 +468,29 @@ ticket before normal re-advertising. A callback already queued after stop still
 revalidates inactive/token state and emits nothing.
 
 **Bounded failed-session teardown:** response-capacity refusal and publication
-expiry enter one shared exact-token state machine. Under the session critical
-section, `OPEN → CLOSING` happens first and repeated requests against the same
-token are no-ops. Public snapshot/live-for-admission checks return false for
-`CLOSING`; GATT dispatch, ticket reserve/validate, all response/event/control
-TX, and specialized `RUN`/`STOP`/`SOFT_REBOOT` paths therefore admit no later
-work or byte. This is a logical non-live gate only: retained tickets, work, and
-the token are physically cancelled/invalidated later, after exact cleanup has
-successfully stopped any required watchdog. Each TX attempt carries the
-originating full token to the sole Notify exit; taking a fresh generation
-snapshot from a reused numeric handle is not an ownership check. The physical
-recursive TX mutex is acquired before the session critical section wherever
-both are needed. The sole Notify exit keeps that mutex across its final exact
-token check and `ble_gatts_notify_custom`; connect/open, `OPEN → CLOSING`, and
-disconnect/reset cleanup claims use the same serialization. Thus a lifecycle
-transition cannot land between the final check and Notify. Lifecycle cleanup
-uses an internal exact-token match that can still recognize `CLOSING`; it does
-not make the token live again.
+expiry enter one shared exact-token state machine. Required termination first
+claims an exact-session terminal-admission latch and records the start of the
+one absolute termination deadline under the session critical section; repeated
+requests against that same token are no-ops. Public snapshot/live-for-admission
+checks treat the latch as non-live immediately, so GATT dispatch, ticket
+reserve/validate, all response/event/control TX, and specialized
+`RUN`/`STOP`/`SOFT_REBOOT` paths admit no later work or byte. The host then
+acquires the physical recursive TX mutex using only the deadline residual. A
+Notify that already passed its final exact-token check may finish during this
+bounded drain, but no new admission may begin. With TX ownership, the host
+revalidates the latch and, under the normal TX-then-session lock order, claims
+`OPEN → CLOSING`; failure to acquire the mutex by the deadline instead
+atomically claims `RESTARTING` and restarts. `CLOSING` remains a logical
+non-live gate only: retained tickets, work, and the token are physically
+cancelled/invalidated later, after exact cleanup has successfully stopped any
+required watchdog. Each TX attempt carries the originating full token to the
+sole Notify exit; taking a fresh generation snapshot from a reused numeric
+handle is not an ownership check. That exit keeps the TX mutex across its final
+exact-token check and `ble_gatts_notify_custom`; connect/open, the latched
+`OPEN → CLOSING` claim, and disconnect/reset cleanup use the same
+serialization. Thus a lifecycle transition cannot land between the final check
+and Notify. Lifecycle cleanup uses an internal exact-token match that can still
+recognize `CLOSING`; it does not make the token live again.
 
 The accepted-soft-reboot global closing gate is evaluated after structural,
 CRC, direction/ID, and version validation but before HELLO grammar, negotiation,
@@ -504,13 +511,16 @@ attempt while the reducer is not `CLOSED`, including numeric-handle reuse while
 an old token is `CLOSING`, `CLEANING`, or `RESTARTING`, invokes public
 non-returning `esp_restart()` instead of overwriting the retained token.
 
-On `OPEN → CLOSING`, the host reads `esp_timer_get_time()` once and stores one
-absolute deadline 2500 ms ahead. Its initial `esp_timer_start_once` interval is
-the positive residual `deadline - esp_timer_get_time()`, never a new 2500 ms;
-an already-reached deadline claims `RESTARTING` without arming or attempting
-GAP. Reducer begin, residual calculation, physical arm, and reducer arm
-acknowledgement are one uninterrupted session-critical transaction, so the
-task callback cannot consume the one-shot before logical arm acknowledgement.
+The terminal-admission latch reads `esp_timer_get_time()` once and records the
+start of the one absolute termination deadline before the TX drain. The later
+`OPEN → CLOSING` reducer step receives that same start and stores its deadline
+2500 ms ahead. Its initial `esp_timer_start_once` interval is the positive
+residual `deadline - esp_timer_get_time()`, never a new 2500 ms; a deadline
+reached before TX ownership or arm atomically claims `RESTARTING` without
+arming or attempting GAP. Reducer begin, immutable watchdog-ticket capture,
+residual calculation, physical arm, and reducer arm acknowledgement are one
+uninterrupted session-critical transaction under TX ownership, so the task
+callback cannot consume the one-shot before logical arm acknowledgement.
 After that transaction releases, exactly one `ble_gap_terminate` call occurs.
 An arm failure atomically claims `RESTARTING` and calls public non-returning
 `esp_restart()` without a GAP attempt. This order matters: the pinned HCI
@@ -1641,12 +1651,12 @@ v0.5.1 source-candidate contract measures the three exact profiles `esp32-4mb`,
 `esp32-s3-n16r8`, and `waveshare-esp32-s3-lcd-147b` independently. S3 PSRAM is
 useful Python headroom but
 MUST NOT conceal internal-RAM pressure, so the gate records Python GC memory
-and internal ESP-IDF heap separately. The v0.6.0 five-profile candidate
-includes the **ESP32-C3 floor** (single-core RISC-V, ~400 KB SRAM —
-[hardware.md §1](../hardware.md#1-supported-chip-families-v1)). Its
-candidate-bound measurement is mandatory and remains pending until the C3
-resource and HIL gates pass; source support or attached hardware alone is not
-qualification evidence.
+and internal ESP-IDF heap separately. The qualified v0.6.0 five-profile
+release includes the **ESP32-C3 floor** (single-core RISC-V, ~400 KB SRAM —
+[hardware.md §1](../hardware.md#1-supported-chip-families-v1)) and completed
+its candidate-bound C3 resource and HIL measurements. Every later candidate,
+including source-selected v0.6.1, must repeat that exact-profile measurement;
+source support or attached hardware alone is not qualification evidence.
 
 ### 8.2 Static vs dynamic
 
@@ -1899,9 +1909,9 @@ A schema-3 policy has exactly the five ordered threshold-bearing rows in
 specs.md §5.3.5. Four ESP rows use the existing application/partition,
 five-field heap, and NimBLE link facts. Pico uses raw-image limit/headroom,
 two-field GC snapshots, and BTstack facts. No row may borrow a passing result
-from another target. Fixed reset/goodput values are closed above; replacement
-image/headroom/heap values and every final-candidate observation remain
-pending.
+from another target. Fixed reset/goodput values are closed above. The qualified
+v0.6.0 image/headroom/heap and final-candidate observations are complete; every
+controlled current-source refresh begins with those observations pending.
 
 #### 8.5.3 Release evidence and failure semantics
 
@@ -1911,12 +1921,15 @@ the source-era record selected by browser-flashing.md §9: immutable `v0.4.2`
 replay retains `PYBLE_HIL_RECORDS_V2` schema 2; the rejected pre-split v0.5
 engineering shape is V3 and cannot publish split bytes; v0.5.1 retains
 `PYBLE_HIL_RECORDS_V4` schema 4; v0.6.0 uses
-`PYBLE_HIL_RECORDS_V5` schema 5. Current v0.6.0 observations remain pending.
+`PYBLE_HIL_RECORDS_V5` schema 5. The qualified v0.6.0 observations are
+finalized; every source-selected v0.6.1 observation requires fresh exact-byte
+evidence and remains pending until that candidate is finalized.
 The `719b211…` candidate's V5 bytes, HIL, and physical lineage are predecessor
 history and MUST NOT be replayed into the replacement. Source/docs/RED/GREEN,
-build, reproducibility, license, source, and audit gates precede replacement
-of the local unpublished tag; that annotated tag must then peel to candidate
-HEAD before audited candidate creation. Fresh HIL and finalization follow.
+build, reproducibility, license, source, and audit gates preceded replacement
+of the local unpublished v0.6.0 tag; its annotated release tag then peeled to
+candidate HEAD before audited candidate creation, fresh HIL, and finalization.
+The v0.6.1 candidate must repeat that ordering with its own source and bytes.
 Finalization may fill observations, operator fields, and derived
 checks only; it must prove the policy and build portions remain
 byte/semantically equal to the candidate.
@@ -2611,21 +2624,23 @@ Chip facts are owned by [hardware.md §1](../hardware.md#1-supported-chip-famili
   ([§5.4](#54-console-backpressure)) must be validated here first. The selected
   ESP32-C3-MINI-1-N4 v0.4/4 MiB/no-PSRAM engineering reference, complete gate
   matrix, and public-admission boundary live in the
-  [derived C3 contract](ports/esp32-c3-4mb.md); every result remains pending. If
-  frozen-Python does not fit, hot paths go native (D1,
+  [derived C3 contract](ports/esp32-c3-4mb.md). Its exact v0.6.0 results passed;
+  every source-selected v0.6.1 result starts pending. If frozen-Python does not
+  fit, hot paths go native (D1,
   [§8.6](#86-esp32-c3-mitigation)). The known `esp32-c3-4mb` provisioning
-  profile is defined only for C3 silicon revision v0.3 or newer but remains
-  unavailable in the current v0.4.2 public beta pending exact-profile HIL. Its
-  exact image revision window appears in pending v0.6.0 schema-4 metadata, but
-  its action remains inactive until C3-G0…C3-G6 and common HIL pass.
+  profile is defined only for C3 silicon revision v0.3 or newer. It was absent
+  from the historical v0.4.2 public beta, then qualified in v0.6.0 after its
+  schema-4 revision-window metadata, C3-G0…C3-G6, and common HIL passed. New
+  v0.6.1 bytes remain inactive until those gates pass again.
 
-- **rpi-pico2-w (selected, qualification pending):** single-core-agent model on RP2350 —
+- **rpi-pico2-w (qualified v0.6.0; v0.6.1 refresh pending):** single-core-agent model on RP2350 —
   BTstack SYNC events on the main thread, supervisor-owned execution, STOP via
   the dupterm interrupt-char channel. Design is owned by the derived port spec
   ([ports/rpi-pico2-w.md](ports/rpi-pico2-w.md)); nothing in §5 (ESP32 task
-  model) applies to it. Its v0.6.0 row uses verified UF2/manual BOOTSEL,
-  RP2-specific resource/BTstack evidence, and remains inactive until GP2 and
-  common V5 HIL pass.
+  model) applies to it. Its v0.6.0 row qualified with verified UF2/manual
+  BOOTSEL, RP2-specific resource/BTstack evidence, GP2, and common V5 HIL. Its
+  source-selected v0.6.1 row remains inactive until fresh instances of those
+  gates pass.
 
 ## 12. Error handling & status mapping
 
@@ -3075,9 +3090,10 @@ Design element → satisfied requirement IDs. Each `FR-*` block has at least one
 
 ## 16. Risks & open questions
 
-- **R1 — Footprint on ESP32-C3 (binding).** C3 real-hardware resource numbers
-  remain pending, so the selected v0.6.0 row cannot pass and the atomic release
-  cannot activate. Mitigation: run the same
+- **R1 — Footprint on ESP32-C3 (binding).** The qualified v0.6.0 C3
+  real-hardware resource numbers are baseline evidence only. Fresh
+  source-selected v0.6.1 numbers remain pending, so that candidate's C3 row and
+  atomic release cannot pass yet. Mitigation: run the same
   frozen method, and use native `USER_C_MODULE` hot paths if needed
   ([§8.6](#86-esp32-c3-mitigation)). Other profile results do not waive or
   predict the C3 result (OI-1, NFR-FP-CLOSE).
