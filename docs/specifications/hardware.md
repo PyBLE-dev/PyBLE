@@ -43,11 +43,11 @@ under the same PBLE/1 protocol.
 
 | Image profile | Required memory configuration | Provisioning check/action | Release status | Public compatibility claim |
 |---|---|---|---|---|
-| `esp32-4mb` | Classic ESP32; 4 MiB external SPI flash; no PSRAM assumed | `ESP32` | v0.4.2 hardware-tested beta; browser install/recovery passed; qualification pending. Current v0.6.0 source requires fresh exact-byte qualification. | Only boards whose module documentation confirms this flash layout |
-| `esp32-s3-n16r8` | ESP32-S3; 16 MiB flash; 8 MiB Octal PSRAM; lean board-neutral payload | `ESP32-S3` | v0.4.2 hardware-tested beta; browser install/recovery passed; qualification pending. Current v0.6.0 source requires independent exact-byte qualification. | N16R8-class modules only; no bundled TFT driver or splash |
-| `waveshare-esp32-s3-lcd-147b` | Exact Waveshare ESP32-S3-LCD-1.47B; 16 MiB flash; 8 MiB Octal PSRAM | ESP Web Serial · `ESP32-S3` | Selected for v0.6.0; exact-board qualification pending | B-version board only after the full candidate passes; exact image bundles the ST7789 runtime and fresh-install QR splash |
-| `esp32-c3-4mb` | ESP32-C3 revision v0.3 or newer; 4 MiB addressable flash; no PSRAM assumed | ESP Web Serial · `ESP32-C3` | Selected for v0.6.0; C3-G0…C3-G6 and common qualification pending | Exact generic profile after the full candidate passes |
-| `rpi-pico2-w` | Raspberry Pi Pico 2 W; RP2350 + CYW43439 | Browser-verified `firmware.uf2`; manual BOOTSEL copy | Selected for v0.6.0; GP2 and common qualification pending | Exact Pico 2 W profile after the full candidate passes |
+| `esp32-4mb` | Classic ESP32; 4 MiB external SPI flash; no PSRAM assumed | `ESP32` | Qualified in v0.6.0; current v0.6.1 source requires fresh exact-byte qualification. | Only boards whose module documentation confirms this flash layout |
+| `esp32-s3-n16r8` | ESP32-S3; 16 MiB flash; 8 MiB Octal PSRAM; lean board-neutral payload | `ESP32-S3` | Qualified in v0.6.0; current v0.6.1 source requires independent exact-byte qualification. | N16R8-class modules only; no bundled TFT driver or splash |
+| `waveshare-esp32-s3-lcd-147b` | Exact Waveshare ESP32-S3-LCD-1.47B; 16 MiB flash; 8 MiB Octal PSRAM | ESP Web Serial · `ESP32-S3` | Qualified in v0.6.0; fresh exact-board v0.6.1 qualification pending | B-version board only after the full candidate passes; exact image bundles the ST7789 runtime and fresh-install QR splash |
+| `esp32-c3-4mb` | ESP32-C3 revision v0.3 or newer; 4 MiB addressable flash; no PSRAM assumed | ESP Web Serial · `ESP32-C3` | Qualified in v0.6.0; fresh v0.6.1 C3-G0…C3-G6 and common qualification pending | Exact generic profile after the full candidate passes |
+| `rpi-pico2-w` | Raspberry Pi Pico 2 W; RP2350 + CYW43439 | Browser-verified `firmware.uf2`; manual BOOTSEL copy | Qualified in v0.6.0; fresh v0.6.1 GP2 and common qualification pending | Exact Pico 2 W profile after the full candidate passes |
 
 The installer family check cannot establish flash capacity, PSRAM type, USB
 wiring, or power integrity. The user therefore selects and confirms the exact

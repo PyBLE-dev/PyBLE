@@ -1733,11 +1733,11 @@ The foundational product decisions are resolved and recorded as Architecture Dec
   MicroPython/ESP-IDF lock bytes are candidate-frozen for v0.4.2, but the
   per-target footprint budgets and formal approval (especially **ESP32-C3**)
   remain open under §10.13. Candidate-freezing is not approval. The same
-  exact source-selected v0.6.0 lock file MUST be deliberately frozen as the
+  exact source-selected v0.6.1 lock file MUST be deliberately frozen as the
   immutable release-build/HIL input; historical v0.5.1 selection does not
   qualify a new candidate. The same candidate MUST then pass the
   complete exact-profile HIL matrix before its pins and resource gates are
-  approved. The replacement v0.6.0 prospective public set is exactly the five
+  approved. The v0.6.1 prospective public set remains exactly the five
   profiles in §10.12 (§10.9, §17.1, §21.2). A pin
   change creates a new candidate. New ADRs are added if a pin or budget
   changes materially.

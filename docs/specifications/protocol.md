@@ -255,13 +255,19 @@ reserved for exact `CLEANING` after any required watchdog stop succeeds.
 Repeated close requests for the same token are idempotent. Every TX attempt
 carries its originating full token to the sole Notify exit; a new snapshot of
 a reused numeric handle cannot substitute for that ownership. The physical
-recursive TX mutex has one lock order with lifecycle state: TX mutex first,
-then the session critical section. The final exact-token check and
-`ble_gatts_notify_custom` remain inside that TX ownership, and every
-connect/open, `OPEN → CLOSING`, and disconnect/reset cleanup claim uses the
-same serialization. A Notify therefore either completes while its token is
-still `OPEN`, or a winning lifecycle transition makes it fail before the
-NimBLE call. The state machine is `CLOSED`/`OPEN`/`CLOSING`/`CLEANING`/
+recursive TX mutex has one lock order with lifecycle state for ordinary TX,
+connect/open, and disconnect/reset cleanup: TX mutex first, then the session
+critical section. The final exact-token check and `ble_gatts_notify_custom`
+remain inside that TX ownership. Required termination first claims an exact-
+session terminal-admission latch under the session critical section and records
+the start of the one absolute termination deadline. Every live/admission check
+treats that latch as non-live before the host waits for the physical TX mutex
+using only the deadline residual. A Notify that already passed its final exact-
+token check may finish during that bounded drain; no new CMD, ticket, or TX
+admission can begin. With TX ownership, the host revalidates the latch and uses
+the normal TX-then-session lock order to claim `OPEN → CLOSING`. Failure to
+acquire the TX mutex by the deadline claims `RESTARTING` and restarts. The state
+machine is `CLOSED`/`OPEN`/`CLOSING`/`CLEANING`/
 `RESTARTING`, and neither a reused handle nor a later lifecycle event can open
 or clean a terminal `RESTARTING` token.
 
@@ -273,17 +279,20 @@ a nonzero generation and opens the exact token under the session critical
 section before exposing it. If the state is not `CLOSED`, the board restarts
 instead of overwriting an old token.
 
-The `OPEN → CLOSING` reducer step reads `esp_timer_get_time()` once and stores
-one absolute deadline 2500 ms ahead. The initial physical arm uses only the
-positive residual `deadline - esp_timer_get_time()`, never a fresh 2500 ms
-interval; reaching the deadline before the arm instead claims `RESTARTING`.
-The reducer begin, residual calculation, `esp_timer_start_once`, and reducer
-arm acknowledgement form one uninterrupted session-critical transaction. A
-task-dispatched callback therefore cannot consume the physical one-shot while
-the reducer still considers it unarmed. Only after a successful acknowledgement
-does the host make exactly one `ble_gap_terminate` call, outside that critical
-section. The deadline never moves. Initial arm failure claims `RESTARTING` and
-restarts without attempting GAP. Return `0` and `BLE_HS_EALREADY` mean only
+The terminal-admission latch reads `esp_timer_get_time()` once. The later
+`OPEN → CLOSING` reducer step receives that same start time and therefore
+stores one absolute deadline 2500 ms ahead. The initial physical arm uses only
+the positive residual `deadline - esp_timer_get_time()`, never a fresh 2500 ms
+interval; reaching the deadline before mutex acquisition or arm instead claims
+`RESTARTING`. Reducer begin, immutable watchdog-ticket capture, residual
+calculation, `esp_timer_start_once`, and reducer arm acknowledgement form one
+uninterrupted session-critical transaction while the TX mutex remains owned. A
+task-dispatched callback therefore cannot consume the physical
+one-shot while the reducer still considers it unarmed. Only after a successful
+acknowledgement does the host make exactly one `ble_gap_terminate` call, outside
+both locks. The deadline never moves. TX-drain timeout or initial arm failure
+claims `RESTARTING` and restarts without attempting GAP. Return `0` and
+`BLE_HS_EALREADY` mean only
 that GAP teardown is already pending; the agent waits for exact disconnect or
 NimBLE reset while the watchdog remains armed. Any other return claims
 `RESTARTING` and invokes public non-returning `esp_restart()` immediately. A

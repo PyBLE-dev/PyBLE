@@ -25,7 +25,7 @@ the final hash-locked bytes.
 | Upstream MicroPython board | generated `PYBLE_ESP32_C3` overlay target |
 | Provisioning profile under qualification | `esp32-c3-4mb` |
 | PBLE/1 `chip` value | `esp32-c3` |
-| Agent version | Canonical `versions.lock [pyble].agent_version`, currently `0.6.0`; identical across every maintained ESP and RP2 build target |
+| Agent version | Canonical `versions.lock [pyble].agent_version`, currently `0.6.1`; identical across every maintained ESP and RP2 build target |
 
 The module facts are cross-checked against Espressif's
 [ESP32-C3-MINI-1 series table](https://documentation.espressif.com/esp32-c3-mini-1_datasheet_en.html);

@@ -218,12 +218,21 @@ verify: shared native/portable unit, conformance, five-profile HIL)*
   failure to open MUST restart rather than overwrite retained state. Every TX
   attempt MUST carry its originating full token to the sole Notify exit. With
   physical TX mutex acquired before session state, that exit MUST serialize its
-  final exact-token check and Notify with connect/open, `OPEN → CLOSING`, and
-  cleanup claims. `CLOSING` makes work logically non-live but MUST NOT
+  final exact-token check and Notify with connect/open and cleanup claims.
+  Required termination MUST first claim an exact-session terminal-admission
+  latch and record the one absolute deadline under the session lock; every
+  live/admission check treats that latch as non-live. It then acquires the
+  physical TX mutex using only the residual of that same 2500 ms deadline,
+  revalidates the latch, and claims `OPEN → CLOSING` under the normal lock
+  order. A previously admitted Notify may finish during that bounded drain, but
+  no new admission may begin; timeout MUST claim `RESTARTING` and restart.
+  `CLOSING` makes work logically non-live but MUST NOT
   physically cancel it before exact cleanup successfully stops any required
-  watchdog. The initial arm MUST use the positive residual to the stored
-  absolute deadline, and reducer begin, physical arm, and arm acknowledgement
-  MUST be one uninterrupted session-critical transaction. Arm, GAP-error,
+  watchdog. Reducer begin MUST receive the latch's original start time, and the
+  initial arm MUST use the positive residual to the resulting stored absolute
+  deadline. Reducer begin, watchdog-ticket capture, residual calculation,
+  physical arm, and arm acknowledgement MUST be one uninterrupted session-
+  critical transaction under TX ownership. Arm, GAP-error,
   deadline, timer-stop, and residual-rearm failures MUST atomically claim
   terminal `RESTARTING` before public non-returning `esp_restart()`;
   later disconnect/reset/open operations cannot clear that claim. Exact
@@ -2074,10 +2083,10 @@ These are tracked, release-blocking where noted; they MUST be closed before the 
 - **OI-1 — Replacement static/heap values and final evidence pending.** The measurement method,
   exact current scope, evidence contract, and threshold derivation are frozen
   in §5.3. Reset and goodput are fixed; rederived static image/headroom and
-  heap values plus final evidence remain open. The v0.6.0 portion closes only when
+  heap values plus final evidence remain open. The v0.6.1 increment closes only when
   all five ordered profiles have one committed schema-3 policy row and passing
   final-candidate V5 evidence, including C3-G0…C3-G6 and Pico GP2. That state
-  MUST be described as **“qualified for the five-profile v0.6.0 release”**,
+  MUST be described as **“qualified for the five-profile v0.6.1 release”**,
   not as universal future-board qualification. — *(verify: size, build, HIL)*
 - **OI-2 — v0.4.2 pin selection is closed; current-candidate selection and
   release approval remain open.** The exact historical `versions.lock` bytes
@@ -2086,7 +2095,7 @@ These are tracked, release-blocking where noted; they MUST be closed before the 
   [§17.1](../prd.md), [`versions.lock`](../../../firmware/versions.lock)).
   That historical selection and the supplemental browser run were not complete
   hardware approval. Before current release builds and HIL, the exact committed
-  lock bytes are now source-selected with agent version v0.6.0. Before any
+  lock bytes are now source-selected with agent version v0.6.1. Before any
   release build or HIL, that exact committed state MUST be deliberately frozen
   as the candidate input. Selection is still not hardware approval: the exact
   candidate MUST pass HIL on every included profile in §5.3. Earlier v0.5.1

@@ -432,8 +432,8 @@ The measurement method is frozen in
 [firmware/specs.md §5.3](firmware/specs.md#53-footprint-gates-nfr-fp);
 the v0.4.2 two-profile policy and evidence remain immutable history. The
 exact-board split invalidates any pre-split v0.5 baseline for current-source
-qualification. The unfinished v0.5.1 candidate evidence cannot qualify the
-source-selected v0.6.0 tree, which requires a fresh controlled five-profile
+qualification. The qualified v0.6.0 evidence cannot qualify the
+source-selected v0.6.1 tree, which requires a fresh controlled five-profile
 refresh defined there. No current-source numeric qualification is claimed
 until the retained baseline, schema-3 policy, and final-candidate records
 exist.
@@ -441,11 +441,11 @@ The scope is profile-specific:
 
 | Profile | Current numeric status | Release effect |
 |---|---|---|
-| `esp32-4mb` | v0.4.2 browser install/recovery passed; refresh the current-source baseline and verify the final candidate | Required before any v0.6.0-derived candidate qualification and installer activation |
-| `esp32-s3-n16r8` | v0.4.2 browser install/recovery passed; measure the lean N16R8 bytes/runtime independently, derive thresholds, then verify the final candidate | Required before any v0.6.0-derived candidate qualification and installer activation |
-| `waveshare-esp32-s3-lcd-147b` | No public exact-byte qualification; measure the exact-board bytes/runtime independently, derive thresholds, then verify the final candidate and display gate | Required before any v0.6.0-derived candidate qualification and installer activation |
-| `esp32-c3-4mb` | Engineering contract frozen; all observations, threshold, and HIL rows pending ([derived contract](firmware/ports/esp32-c3-4mb.md)) | Blocks the atomic v0.6.0 qualified release until C3-G0…C3-G6 and the common final-candidate row pass |
-| `rpi-pico2-w` | GP2, the RP2 resource row, both-platform app HIL, verified-UF2 install, and BOOTSEL recovery all pending ([derived contract](firmware/ports/rpi-pico2-w.md)) | Blocks the atomic v0.6.0 qualified release until GP2 and the common final-candidate row pass |
+| `esp32-4mb` | Qualified for v0.6.0; refresh the current-source baseline and verify the v0.6.1 final candidate | Required before any v0.6.1 candidate qualification and installer activation |
+| `esp32-s3-n16r8` | Qualified for v0.6.0; measure the current lean N16R8 bytes/runtime independently, derive thresholds, then verify the v0.6.1 final candidate | Required before any v0.6.1 candidate qualification and installer activation |
+| `waveshare-esp32-s3-lcd-147b` | Qualified for v0.6.0; measure the exact-board bytes/runtime independently, then verify the v0.6.1 final candidate and display gate | Required before any v0.6.1 candidate qualification and installer activation |
+| `esp32-c3-4mb` | Qualified for v0.6.0; refresh C3-G0…C3-G6 and the common final-candidate row against the v0.6.1 source identity ([derived contract](firmware/ports/esp32-c3-4mb.md)) | Blocks atomic v0.6.1 qualification until the fresh exact-profile evidence passes |
+| `rpi-pico2-w` | Qualified for v0.6.0; refresh GP2, resource, app-HIL, verified-UF2, and BOOTSEL evidence for v0.6.1 ([derived contract](firmware/ports/rpi-pico2-w.md)) | Blocks atomic v0.6.1 qualification until the fresh exact-profile evidence passes |
 
 The enforced metrics are:
 
