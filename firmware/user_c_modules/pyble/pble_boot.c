@@ -33,29 +33,80 @@
 #define BOOT_KEY_AUTORUN "autorun"   // u8: 0 = off (default), 1 = on
 #define BOOT_MAIN_PATH   "/main.py"  // the opt-in auto-run entry at fs_root
 
+enum {
+    BOOT_CONFIG_OK = 0,
+    BOOT_CONFIG_CORRUPT = 1,
+};
+static uint8_t boot_config_fault;
+static bool boot_autorun_loaded;
+static bool boot_autorun_cached;
+
 // --- Persisted opt-in flag (FR-BOOT-3) ---------------------------------------
 bool pble_boot_autorun_enabled(void) {
+    if (boot_autorun_loaded) {
+        return boot_autorun_cached;
+    }
     uint8_t v = 0;                      // default off if the key is absent
     nvs_handle_t h;
-    if (nvs_open(BOOT_NS, NVS_READONLY, &h) == ESP_OK) {
-        (void)nvs_get_u8(h, BOOT_KEY_AUTORUN, &v);   // leaves 0 if not found
-        nvs_close(h);
+    esp_err_t open_rc = nvs_open(BOOT_NS, NVS_READONLY, &h);
+    if (open_rc == ESP_ERR_NVS_NOT_FOUND) {
+        // A never-created namespace is the clean erased-device first boot,
+        // not evidence of corrupt persisted configuration.
+        boot_autorun_loaded = true;
+        return false;
     }
-    return v != 0;
+    if (open_rc != ESP_OK) {
+        boot_config_fault = BOOT_CONFIG_CORRUPT;
+        boot_autorun_loaded = true;
+        return false;
+    }
+    esp_err_t rc = nvs_get_u8(h, BOOT_KEY_AUTORUN, &v);
+    nvs_close(h);
+    if (rc == ESP_ERR_NVS_NOT_FOUND) {
+        boot_autorun_loaded = true;
+        return false;
+    }
+    if (rc != ESP_OK || v > 1) {
+        boot_config_fault = BOOT_CONFIG_CORRUPT;
+        boot_autorun_loaded = true;
+        return false;
+    }
+    boot_autorun_cached = v == 1;
+    boot_autorun_loaded = true;
+    return v == 1;
+}
+
+uint8_t pble_boot_config_fault(void) {
+    return boot_config_fault;
 }
 
 uint8_t pble_boot_set_autorun(bool enable) {
+    // Establish the prior runtime value before beginning the transaction. NVS
+    // write/commit failure must leave that value observable through caps,
+    // DEVICE_INFO, and boot admission for the rest of this boot.
+    if (!boot_autorun_loaded) {
+        (void)pble_boot_autorun_enabled();
+    }
     nvs_handle_t h;
     if (nvs_open(BOOT_NS, NVS_READWRITE, &h) != ESP_OK) {
+        boot_config_fault = BOOT_CONFIG_CORRUPT;
         return PBLE_EIO;
     }
     uint8_t st = PBLE_OK;
     if (nvs_set_u8(h, BOOT_KEY_AUTORUN, enable ? 1 : 0) != ESP_OK) {
         st = PBLE_EIO;
     } else {
-        (void)nvs_commit(h);
+        esp_err_t commit_rc = nvs_commit(h);
+        if (commit_rc != ESP_OK) {
+            st = PBLE_EIO;
+        }
     }
     nvs_close(h);
+    if (st == PBLE_OK) {
+        boot_autorun_cached = enable;
+        boot_autorun_loaded = true;
+    }
+    boot_config_fault = st == PBLE_OK ? BOOT_CONFIG_OK : BOOT_CONFIG_CORRUPT;
     return st;
 }
 
@@ -67,11 +118,12 @@ uint8_t pble_boot_set_autorun_cmd(const pble_frame_t *req, uint8_t *rsp,
     if (rsp_len) {
         *rsp_len = 0;                   // RSP{status} carries no extra bytes
     }
-    // §4 SET_AUTORUN payload = [enable:u8]; anything shorter is malformed.
-    if (req == NULL || req->payload == NULL || req->len < 1) {
+    // §4 SET_AUTORUN payload is exactly one Boolean-domain byte.
+    if (req == NULL || req->payload == NULL || req->len != 1 ||
+        req->payload[0] > 1) {
         return PBLE_EBADREQ;
     }
-    return pble_boot_set_autorun(req->payload[0] != 0);
+    return pble_boot_set_autorun(req->payload[0] == 1);
 }
 
 // --- Opt-in auto-run at boot (FR-BOOT-3/4/6, FR-MODE-1) -----------------------
