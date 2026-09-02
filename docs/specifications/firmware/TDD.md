@@ -1948,6 +1948,16 @@ filesystem hardening; validates both workspace receipts; then publishes one
 canonical mode-`0600` private result without replacement. Any failed or
 interrupted operation retains no passing result.
 
+The same reviewed `v061_hardening_bench.py` executable exposes a separate
+workspace-receipt creation mode for each prerequisite boot. It accepts one
+exclusive canonical raw boot log in the exact grammar frozen by
+specs.md §5.3.4 and derives the candidate, install, source, qualification, and
+raw-log identities into a no-replace mode-`0600` receipt. The two receipt
+operations remain separate from the BLE scenario run because the decisive
+mount/format/refusal behavior occurs before the service exists. The later
+scenario run consumes both receipts; it never fabricates or silently skips
+them.
+
 `create-hil-completion` opens and validates that profile's private hardening
 result alongside the OI observation and existing target gate result. It
 derives the public hardening summary and check; neither may occur in operator
@@ -2435,9 +2445,15 @@ frozen inputs/output, checkout metadata, policy, license/notice bytes, and
 toolchain inputs before the eight ESP runs and repeats the full semantic
 observation immediately before publication. A byte change with restored
 timestamps is fatal. Tests require schema-v2 receipt coverage of all eight ESP
-identities and exactly the seven RP2 roles, plus the canonical five-profile
-schema-v1 release inventory; missing, extra, reordered, cross-profile, and
-self-consistently rehashed substitutions fail.
+identities and the candidate-version-selected RP2 roles: the historical seven
+for v0.6.0, or those same seven plus `build-tools` for v0.6.1. The eighth role
+must reopen the exact retained picotool archive/tree/lock/version identities,
+the two reviewed build-tool owners, and all component, license, attribution,
+and source/distribution provenance bytes. It never alters the generated
+firmware notice. Tests also require the canonical five-profile schema-v1
+release inventory; missing, extra, reordered, cross-profile, and
+self-consistently rehashed substitutions fail. A v0.6.0 candidate carrying the
+eighth role or a v0.6.1 candidate lacking it fails without publication.
 
 Pinned nested manifests are resolved by their literal package/module
 selections, and the result must equal generated frozen content. Archive member

@@ -31,10 +31,10 @@ the project’s conformance and hardware-validation gates.
 5. Third-party dependencies remain under their own licenses and must be
    recorded in the relevant dependency and notice files.
 
-The pinned, gitignored compiler trees at `firmware/.esp-idf` and
-`firmware/.arm-gnu` are third-party build inputs, not shippable source. Source
-gates prune those exact roots while continuing to scan similarly named
-authored directories.
+The pinned, gitignored compiler/tool trees at `firmware/.esp-idf`,
+`firmware/.arm-gnu`, and `firmware/.picotool` are third-party build inputs,
+not shippable source. Source gates prune those exact roots while continuing to
+scan similarly named authored directories.
 
 ## Spec-driven and test-driven development
 

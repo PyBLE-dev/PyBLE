@@ -1522,6 +1522,16 @@ pass/fail state, and bounded numeric measurements. It MUST NOT serialize a BLE
 address, device ID, device label, source/file content, console bytes, or
 exception text into that log.
 
+For result admission the raw log contains exactly one line for each scenario
+in `scenario_order`, with no start/end or free-text record. Every ordinary
+line has exactly `scenario` and `status`; `scenario` is that position's frozen
+scenario token and `status` is `passed`. The `resource-stability` line has the
+single additional integer key `sequential_runs`, exactly `50`. A runner may
+retain the canonical prefix ending in `status: "failed"` after an unsuccessful
+physical run, but that prefix can never mint a passing result. No other key,
+string value, number, array, nested object, empty log, or unbounded measurement
+is admissible to the passing-result writer.
+
 `scenario_order` and the insertion order of `scenarios` are exactly:
 
 ```json
@@ -1559,6 +1569,66 @@ advertisement. The nonblank result proves no format/write, one bounded
 recovery message, and no agent/autorun advertisement. `NOT-RUN`, a shared
 receipt, a non-sacrificial observation, a configuration-corruption proxy, or
 an observation from another profile/candidate fails closed.
+
+Each workspace receipt is canonical JSON with exactly these top-level keys in
+this order:
+
+```text
+schema_version
+measurement_contract
+observation_kind
+profile_id
+target
+firmware_version
+source_commit
+candidate_release_json_sha256
+install_sha256
+qualification_source_commit
+qualification_executable_sha256
+raw_log_sha256
+status
+```
+
+Its schema is integer `1`, contract is exactly
+`v061-workspace-provisioning-receipt-v1`, version is exactly `0.6.1`, and
+status is `passed`. Candidate/profile/install identities are derived from the
+protected candidate. Qualification source and executable are the reviewed
+checkout and exact `v061_hardening_bench.py` bytes used both to create the
+receipt and run the seven-scenario check; an operator cannot author those
+identity fields.
+
+The separately exclusive-created mode-`0600` raw boot log is canonical JSONL.
+An erased-media observation has exactly these four records in order:
+
+```json
+{"event":"media-precondition","state":"erased"}
+{"count":1,"event":"lfs2-format"}
+{"count":1,"event":"lfs2-remount"}
+{"event":"service-advertisement","status":"observed"}
+```
+
+A nonblank-incompatible-media observation instead has exactly:
+
+```json
+{"event":"media-precondition","state":"nonblank-incompatible"}
+{"count":0,"event":"media-write"}
+{"count":1,"event":"recovery-message"}
+{"event":"service-advertisement","status":"absent"}
+```
+
+Every displayed record has one trailing LF. The receipt-creation mode accepts
+only the protected candidate, exact profile and observation kind, this new
+raw-log path, the new output path, and the qualification checkout. It derives
+all identities and hashes, publishes one canonical exclusive mode-`0600`
+regular file without replacement, and rereads every input before and after
+publication. Missing, reordered, changed, linked, nonprivate, noncanonical,
+pre-existing, candidate-internal, or otherwise unsafe input/output leaves no
+receipt. This writer records a reviewed physical observation; it does not
+turn a host simulation or operator-edited summary into that observation.
+The output name ends in `.json`; its raw log is the same-directory sibling
+formed by replacing that suffix with `-raw.jsonl`. The writer enforces this
+relationship, and every later result validator reopens both the receipt and
+that derived sibling rather than trusting the copied raw-log digest alone.
 
 For v0.6.1 only, each protected candidate V5 record adds
 `v061_hardening: null` and `checks.v061_hardening: "pending"`. The mechanical

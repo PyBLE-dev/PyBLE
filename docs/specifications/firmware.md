@@ -264,6 +264,14 @@ The `rpi-pico2-w` release audit MUST distinguish a tool or file being used by
 the build from bytes being incorporated into the installable firmware. These
 terms are normative:
 
+Firmware v0.6.1 applies that same distinction to its pinned picotool package.
+Its additional private `build-tools` evidence role recursively accounts for
+the official archive and its composite executable plus bundled libusb, while
+excluding both host tools from the firmware's redistributed notice. The
+version-routed schema, exact owners, and provenance rules are frozen in
+[browser-flashing.md §6](firmware/browser-flashing.md#6-licensing-and-release-notes).
+Firmware v0.6.0 retains its exact seven-role audit and bytes.
+
 - A **build tool** is an executable which transforms or links inputs, including
   the GCC drivers and their resolved GCC/binutils helpers. It is part of the
   reproducibility and Eligible Compilation closure, but is not thereby a
