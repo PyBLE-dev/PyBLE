@@ -279,6 +279,22 @@ class NativeFreshGlobalsTests(unittest.TestCase):
 
 
 class NativeLabelAndNvsTests(unittest.TestCase):
+    def test_missing_nvs_namespace_is_clean_first_boot(self):
+        autorun = code_only(c_function(BOOT, "pble_boot_autorun_enabled"))
+        self.assertRegex(
+            autorun,
+            r"open_rc\s*==\s*ESP_ERR_NVS_NOT_FOUND[\s\S]*"
+            r"boot_config_fault\s*=\s*BOOT_CONFIG_OK",
+            "an erased device without the NVS namespace is clean first boot",
+        )
+        init = code_only(c_function(DEVICE_CONFIG, "pble_dc_init"))
+        self.assertRegex(
+            init,
+            r"else\s+if\s*\(\s*open_rc\s*!=\s*ESP_ERR_NVS_NOT_FOUND\s*\)"
+            r"[\s\S]*dc_config_fault",
+            "missing device-config namespace must not set a corruption fault",
+        )
+
     def test_set_and_load_share_the_strict_label_validator(self):
         self.assertIsNotNone(
             re.search(r"\bpble_dc_label_status\s*\(", DEVICE_CONFIG),
