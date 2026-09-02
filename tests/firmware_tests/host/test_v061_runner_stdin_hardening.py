@@ -267,6 +267,82 @@ class PortableAgentBoundaryTests(agent_support.AgentTestBase):
 
         self.assert_old_event_was_not_retargeted(link, observed, 0x40)
 
+    def test_pending_run_snapshots_successor_session_when_running_is_created(self):
+        agent, link = self.new_agent(
+            "v0.6.1 RUN_STATE creation is independent of RUN origin")
+        agent_support.send(
+            self, link, 0x20, bytes((1,)) + b"pass", id_=218)
+        self.assertEqual(
+            agent_support.rsps(link, opcode=0x20, id_=218)[0].payload,
+            b"\x00",
+        )
+
+        link.disconnect_cb()
+        link.session += 1
+        link.connect_cb()
+        agent_support.send(
+            self,
+            link,
+            agent_support.CMD_OPCODES["HELLO"],
+            agent_support.HELLO_PAYLOAD,
+            id_=219,
+        )
+        self.assertEqual(
+            agent_support.rsps(
+                link,
+                opcode=agent_support.CMD_OPCODES["HELLO"],
+                id_=219,
+            )[0].payload[0],
+            agent_support.OK,
+        )
+        link.sent[:] = []
+
+        agent.poll()
+
+        self.assertEqual(
+            agent_support.run_states(link),
+            [1, 2],
+            "running and done are created after reconnect and must bind the "
+            "then-current successor, not the RUN requester's stale token",
+        )
+
+    def test_terminal_transition_snapshots_session_that_reconnected_during_run(self):
+        agent, link = self.new_agent(
+            "v0.6.1 terminal RUN_STATE binds its own creation session")
+
+        def reconnect_during_execution(_mode, _data):
+            link.disconnect_cb()
+            link.session += 1
+            link.connect_cb()
+            agent_support.send(
+                self,
+                link,
+                agent_support.CMD_OPCODES["HELLO"],
+                agent_support.HELLO_PAYLOAD,
+                id_=220,
+            )
+            self.assertEqual(
+                agent_support.rsps(
+                    link,
+                    opcode=agent_support.CMD_OPCODES["HELLO"],
+                    id_=220,
+                )[0].payload[0],
+                agent_support.OK,
+            )
+            link.sent[:] = []
+
+        agent._runner._exec_fn = reconnect_during_execution
+        agent_support.send(
+            self, link, 0x20, bytes((1,)) + b"pass", id_=221)
+        agent.poll()
+
+        self.assertEqual(
+            agent_support.run_states(link),
+            [2],
+            "the terminal event created after reconnect must bind the live "
+            "successor even though RUN admission belonged to its predecessor",
+        )
+
     def test_console_chunk_keeps_its_creation_session_through_tx(self):
         agent, link = self.new_agent(
             "v0.6.1 portable CONSOLE_DATA exact-session event ownership")
