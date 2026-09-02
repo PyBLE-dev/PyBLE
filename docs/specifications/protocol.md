@@ -467,8 +467,18 @@ execution, interrupt, or reset side effect.
 | `0x40` | RUN_STATE | EVT | State transition: `idle` / `running` / `done` / `error`. |
 | `0x41` | FILE_PUT_ACK | EVT | Cumulative-offset acknowledgement for uploads (§5). |
 | `0x50` | SET_LABEL | CMD/RSP | Set the persisted device label (UTF-8, bounded length); it becomes the advertised name and `DEVICE_INFO.label`. Empty clears it back to `PyBLE-XXXX`. |
-| `0x51` | SET_IDENTIFY_LED | CMD/RSP | Configure the **single** optional identify status-LED: payload `[gpio:u8][active_level:u8]` (`active_level` 0=active-low, 1=active-high), persisted; **empty payload clears it**. `ERANGE` if `gpio` out of range, `EBADREQ` if `active_level`∉{0,1}. Device config only — **not** a routing/pin profile, never exposed to user code. |
+| `0x51` | SET_IDENTIFY_LED | CMD/RSP | Configure the **single** optional identify status-LED: payload is **exactly** `[gpio:u8][active_level:u8]` (`active_level` 0=active-low, 1=active-high), persisted; **exactly empty** payload clears it. Every other length, including trailing bytes, is `EBADREQ`; `ERANGE` if `gpio` is out of range, `EBADREQ` if `active_level`∉{0,1}. Device config only — **not** a routing/pin profile, never exposed to user code. |
 | `0x52` | IDENTIFY | CMD/RSP | Blink the configured identify LED (5 Hz) for an optional `[duration_ds:u8]` (1–50 deciseconds; absent/0 → default 20 = 2 s; >50 clamped). Non-blocking — `RSP{OK}` returns immediately. `EUNSUPPORTED` if no identify LED is configured. |
+
+Every opcode payload above and in §§5–7 is an exact grammar. A structured or
+fixed-length payload MUST be consumed in full; otherwise trailing bytes are
+`EBADREQ` with no handler side effect. This includes empty `DEVICE_INFO`,
+`STOP`, and `SOFT_REBOOT`; all path and offset/CRC forms; one-byte
+`SET_AUTORUN`; zero-or-two-byte `SET_IDENTIFY_LED`; and zero-or-one-byte
+`IDENTIFY`. A field explicitly defined as the remaining bytes—RUN file/source,
+`FILE_PUT_DATA` data, `CONSOLE_INPUT`, or `SET_LABEL`—naturally consumes that
+remainder. PBLE/1 has no implicit extension bytes; a future additive form needs
+a capability/opcode or a documented amendment before implementation.
 
 The ESP reference `IDENTIFY` timer must also close a task-dispatch race that is
 not visible on the wire. In the pinned ESP-IDF, a due periodic timer is
@@ -518,7 +528,7 @@ before wrap, so the quiescence seam cannot reintroduce ABA.
 - **`FILE_PUT_END` (0x17)** `[crc32:u32]` → `RSP [status]`. `watermark ≠ total_size` → `ERANGE`; a latched write error → `ENOSPC`/`EIO`; temp CRC ≠ `crc32` → `ECRC`. For every such failure, abort closes the scratch object, removes the scratch path non-recursively, and confirms absence before reporting the originating status; **the old file is kept** (FR-FS-14). A close/removal/absence-verification failure returns `EIO` instead, retains the old target, and never reports successful cleanup; any unremovable scratch remains reserved and hidden. Else fsync + `rename(temp,dest)` (atomic on LittleFS) → `OK`.
 - **`FILE_DELETE` (0x18)** `[plen][path]`: file → remove; empty dir → rmdir; non-empty dir → `EACCES` (no recursive delete); missing → `ENOENT`.
 - **`MKDIR` (0x19)** `[plen][path]`: already-a-dir → `OK` (idempotent); an existing file → `EBADREQ`; missing parent → `ENOENT`.
-- **`FILE_RENAME` (0x1A)** `[slen][src][dlen][dst]`: both jailed; src missing → `ENOENT`; dst a non-empty dir → `EACCES`; else atomic rename → `OK`.
+- **`FILE_RENAME` (0x1A)** `[slen][src][dlen][dst]`: both jailed; src missing → `ENOENT`; dst a non-empty dir → `EACCES`; else atomic rename → `OK`. Each path independently retains the 128-byte maximum, so the receiver and any deferred-work envelope MUST accept the legal 260-byte request payload (`2 + 128 + 2 + 128`); 129 bytes in either path is `ERANGE`.
 
 The three namespace mutations parse and jail-resolve every supplied path first.
 While a PUT is active they then return `EBUSY` before any stat or mutation;
@@ -528,6 +538,24 @@ therefore malformed payloads still take `EBADREQ`, forbidden paths still take
 only for the PBLE/1 bridge; ordinary user code retains direct VFS access.
 
 **Resume on reconnect (F-10):** a link drop mid-`PUT` resets the in-RAM transfer state, but the jailed `<dest>.pbltmp` prefix persists on flash. A scratch prefix is resumable only when it is a regular file, `0 < length <= total_size`, exactly that many bytes are read and CRC'd, and its type and length remain stable through that scan. Only then may `FILE_PUT_BEGIN` return the verified length as a nonzero `resume_offset`, re-seed the running whole-file CRC, and set the watermark. A missing or zero-length regular scratch means a fresh upload. An oversized, short-read, unreadable, changed, or type-invalid scratch is malformed: the agent removes a malformed regular file or empty scratch directory, confirms absence, and restarts at zero. It never recursively removes, truncates, renames, or otherwise changes a nonempty scratch directory or the old destination; a nonempty scratch directory or failed safe removal returns `EIO`. A structurally valid but foreign prefix may resume, but the whole-file CRC at `FILE_PUT_END` remains the content-identity gate: `ECRC` deletes the scratch and keeps the old destination byte-for-byte.
+
+Every queued or in-flight transfer operation owns the exact `{handle,
+connection generation, VM epoch}` from its command. Disconnect/VM invalidation
+atomically advances a transfer generation before successor work can publish
+state. In particular, a delayed `FILE_PUT_BEGIN` may finish one indivisible VFS
+call that began while its token was live, but after the mandatory revalidation
+it may only close its own newly opened object: it MUST NOT install or clear
+active-transfer state, clear/adopt successor state, emit an ACK, or publish a
+response. Transfer-state publication and its final ownership check form one
+indivisible cut. A later session may reclaim an active record only when that
+record's stored generation is stale; DATA and END require an exact generation
+match. These rules prevent a predecessor disconnect race from erasing or
+adopting a successor upload and change no PBLE/1 byte.
+
+Any VFS stream count is validated before the corresponding buffer range is
+read, CRC'd, copied, or exposed. It MUST be an integer in `0..requested`; a
+negative, non-integer, or over-reported count is `EIO`. A zero count before the
+promised extent is complete is a short read and is also `EIO`.
 
 **Upload admission (amended 2026-09-02):** PBLE/1 retains the existing
 `total_size:u32`; v0.6.1 adds no fixed-size capability. Before creating or
@@ -559,7 +587,7 @@ starting the PBLE/1 agent; migration/recovery is an explicit operator action.
 This is what makes the successful scratch-to-target replacement above an
 atomic filesystem commit rather than FAT's delete-then-rename sequence.
 
-**Workspace jail (F-17):** every path is canonicalized against `fs_root` at a **single chokepoint** before any vfs op; traversal (`../`) / absolute escapes outside `fs_root`, any component ending with the case-sensitive reserved `.pbltmp` suffix, and a case-sensitive reserved first canonical component relative to `fs_root` → `EACCES` (SEC-4). The reserved first component is any lowercase name beginning `pyble` or `pble`, or exact `boot.py` / `_boot.py`; the same basename below an ordinary first component is allowed, and ordinary root names such as `main.py` remain allowed. Scratch names are also hidden from listings as specified above. **`.py` / data only** — the agent never requires, generates, or accepts `.mpy` / `.pyc` transfer artifacts; no server-side compilation.
+**Workspace jail (F-17):** every path is strict scalar UTF-8 and is canonicalized against `fs_root` at a **single chokepoint** before any vfs op; malformed UTF-8 → `EBADREQ`, while traversal (`../`) / absolute escapes outside `fs_root`, any component ending with the case-sensitive reserved `.pbltmp` suffix, and a case-sensitive reserved first canonical component relative to `fs_root` → `EACCES` (SEC-4). The reserved first component is any lowercase name beginning `pyble` or `pble`, or exact `boot.py` / `_boot.py`; the same basename below an ordinary first component is allowed, and ordinary root names such as `main.py` remain allowed. Scratch names are also hidden from listings as specified above. **`.py` / data only** — the agent never requires, generates, or accepts `.mpy` / `.pyc` transfer artifacts; no server-side compilation.
 
 ## 6. Run / Stop / Console
 
@@ -648,6 +676,15 @@ atomic filesystem commit rather than FAT's delete-then-rename sequence.
   the gate, before timer arm. On failure the provisional FS/VM gates are aborted
   before pickup is released without stop intent. Timer-arm failure remains the documented
   post-acceptance non-returning restart exception.
+
+  While an accepted `SOFT_REBOOT` keeps global command admission closed, that
+  closing state has precedence over HELLO/session negotiation and malformed-
+  session violation accounting, including if a numeric handle is re-presented
+  before the 250 ms grace ends. Every otherwise structurally valid response-
+  bearing CMD, including `DEVICE_INFO`, `HELLO`, and a duplicate
+  `SOFT_REBOOT`, returns `EBUSY`; a no-response command is silently discarded.
+  No handler side effect or violation debit occurs. Only VM initialization may
+  reopen admission.
 - **`CONSOLE_DATA` (0x30, EVT, id 0)** payload `[stream:u8][bytes]` — `stream` 0=stdout, 1=stderr (FR-CON-1/2).
 - **`CONSOLE_INPUT` (0x31, CMD, no RSP)** payload `[bytes]` — appended to the active program's bounded `stdin` (`input()`/`sys.stdin`); fire-and-forget, no reply frame (FR-CON-3). Input received while no program is active is silently discarded. A successful RUN response-admission cut clears stdin before waking the runner; autorun admission does the same. Accepted STOP clears it after response handoff, and every terminal transition, disconnect, and VM reset clears it. Disconnect does not itself stop a continuing run, so the active flag remains true and a newly negotiated client may feed that same run; only the queued bytes from before the disconnect are lost. These boundaries prevent idle input and overflow from one run being consumed by another.
 - **`RUN_STATE` (0x40, EVT, id 0)** payload `[state:u8]` — 0 idle / 1 running / 2 done / 3 error (FR-RUN-7).
@@ -664,6 +701,13 @@ reconnect. This rule applies equally to command-started and opt-in auto-runs.
 It does not change `RUN` command admission: the matching response and execution
 cut remain bound to the command's originating session. USB is a local-debug
 mirror only — never a runtime transport (FR-CON-5).
+
+Terminal state publication, stdin deactivation/clear, and release of the
+single-run reservation are one ordered lifecycle cut. A successor RUN cannot
+become reservable until its predecessor's stdin is empty and inactive;
+terminal cleanup from the predecessor cannot later erase bytes admitted for
+the successor. The clear/deactivate operation is allocation-free, including
+under memory pressure.
 
 ## 7. HELLO & capabilities
 

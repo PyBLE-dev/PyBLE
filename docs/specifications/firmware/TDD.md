@@ -285,7 +285,18 @@ arithmetic and a constant 65,536-byte reserve, and occurs before scratch
 creation/growth. The active state records a latched boundary/write status so a
 chunk crossing `total_size` cannot partially write. The native worker retains
 its existing session/VFS bracketing; the portable implementation applies the
-same semantic reducer.
+same semantic reducer. Both implementations add a filesystem-local monotonic
+transfer generation. Queue insertion snapshots it; disconnect/VM invalidation
+advances it under the same transfer-state synchronization; and publication of
+BEGIN state, DATA/END ownership checks, successor stale-state reclamation, and
+final state clearing all compare it in the same critical cut. Portable PUT
+BEGIN/DATA/END perform every VFS effect in the supervisor-polled bounded
+mailbox, never in the BTstack RX callback; its depth is at least advertised
+window plus two. Native request storage accepts the full 260-byte legal
+`FILE_RENAME` body. Both reject a VFS read count outside `0..requested` before
+using the buffer, validate every path as strict scalar UTF-8 at the jail
+chokepoint, and recognize a regular scratch only when the complete file-type
+field equals a regular file.
 
 Configuration is candidate-first. ESP label, autorun, and Identify paths check
 every NVS set/erase/commit and change RAM/GPIO/advertising only after commit.
@@ -300,7 +311,11 @@ atomically renames; rename success is the only commit cut. A valid primary wins
 and stale temp is removed best-effort. Missing primary means defaults/no fault;
 invalid primary means defaults plus a bounded RAM fault marker and is never
 overwritten or replaced from temp. The exact validated legacy two-key object is
-accepted and migrates only on the next successful setting change.
+accepted and migrates only on the next successful setting change. Once a
+corrupt/read/persistence fault is observed, its bounded RAM marker remains
+latched until a successful repair of that same configuration domain; an absent
+first-boot key does not create or clear a fault. Internal read-only getters make
+the marker testable without adding a PBLE/1 field.
 
 The Pico boot overlay isolates mount choice in a host-testable helper. A normal
 mount performs no scan. Only an `OSError` mount-constructor failure enters a
@@ -308,7 +323,14 @@ complete, read-only block scan with one reused buffer; format occurs once only
 when all bytes are conclusively `0xFF`. Any nonblank byte, bad geometry/read,
 allocation failure, unexpected exception, or post-format remount failure makes
 zero further writes, emits one bounded USB recovery message, and skips agent
-and autorun startup. It never changes upstream MicroPython.
+and autorun startup. One frozen `pyble_workspace` helper is the shared authority
+for all five overlays. ESP overlays use that helper's explicit LFS2 constructor
+and full-device erased scan rather than upstream `inisetup`'s first-block
+heuristic. Geometry must provide exact positive integer program/block/count
+values, at least two blocks, `block_size >= 128`, and a derived cache size that
+is divisible by both 32 and the program size and itself divides the block size;
+otherwise provisioning fails before the first media read or write. It never
+changes upstream MicroPython.
 
 ## 3. Architecture overview
 
@@ -458,6 +480,13 @@ disconnect/reset cleanup claims use the same serialization. Thus a lifecycle
 transition cannot land between the final check and Notify. Lifecycle cleanup
 uses an internal exact-token match that can still recognize `CLOSING`; it does
 not make the token live again.
+
+The accepted-soft-reboot global closing gate is evaluated after structural,
+CRC, direction/ID, and version validation but before HELLO grammar, negotiation,
+opcode dispatch, or violation accounting. It maps every response-bearing CMD
+to `EBUSY` and drops no-response CMDs, even if a numeric handle is re-presented
+during the delivery grace. This keeps reconnects and duplicate reboot requests
+from bypassing the global VM boundary.
 
 Cold native initialization calls the reducer initializer exactly once per chip
 boot and pre-creates exactly one `ESP_TIMER_TASK` one-shot before NimBLE can
@@ -744,7 +773,12 @@ no-op. A separate resolved snapshot followed by a later terminal lock
 acquisition is forbidden because it recreates the race. Reservation-time
 cleanup may clear only an older, resolved idle-STOP flag/pending exception and
 never the unresolved gate. The same rules cover command RUN and the direct
-auto-run reservation.
+auto-run reservation. Terminal classification also deactivates and clears
+stdin before it releases the single-run reservation, under that same runner-
+domain cut. A successor reservation therefore cannot race with delayed
+predecessor cleanup, and the predecessor event uses a terminal-state value
+captured before admission can reopen. The stdin clear path mutates only
+preallocated ring state and remains allocation-free.
 
 Once admitted, the worker authors `RUN_STATE(running)` (FR-RUN-1). Each new
 `RUN_STATE` event atomically snapshots the then-current live full session token
@@ -846,6 +880,15 @@ events. No VFS operation or bounded chunk starts after token invalidation. An
 indivisible operation validly started before invalidation may finish, but the
 mandatory post-operation check suppresses every later VFS operation, response,
 or dependent event.
+
+The active transfer record includes the filesystem-local generation described
+by D11. The queue item snapshots that generation under the transfer mutex.
+Disconnect only advances the generation and invalidates ownership; it never
+directly clears worker-owned PUT fields. A worker may publish BEGIN state only
+after an exact session/generation post-check in the same critical section as
+all field writes. DATA/END require exact ownership, and a successor may close
+and reclaim only a record whose stored generation is stale. This prevents a
+paused predecessor from clearing or adopting successor state.
 
 **Frozen-vs-native plan:** frozen for orchestration; the **chunk write + incremental CRC** inner loop is a native candidate on C3 (D1).
 
@@ -1535,13 +1578,21 @@ Outbound EVTs (`0x13/0x14 FILE_GET_*`, `0x30 CONSOLE_DATA`, `0x40 RUN_STATE`, `0
 
 ### 7.3 Buffer sizing
 
-- **Reassembly buffer:** sized to `max_message` = the largest legal §3.1 message the agent accepts, derived from `max_file_size`/`chunk_size` in `caps`. Single static allocation (D3).
+- **Reassembly buffer:** one static allocation (D3) sized for the largest legal
+  §3.1 command. In v0.6.1 it MUST be at least 2059 bytes so `RUN` containing
+  `[mode=source] + 2048 source bytes` plus the six-byte header and four-byte CRC
+  reaches the runner; 2049 source bytes reaches that handler and returns
+  `ERANGE` rather than being dropped by transport. The reference native buffer
+  is 4096 bytes, and its footprint is measured on ESP32-C3.
 - **Per-fragment payload:** `MTU − 3` (ATT) − 1 (frag header), tracked from the negotiated MTU (FR-BLE-8). At MTU 247 this is 243 bytes.
 - **File I/O buffer:** one MTU-sized chunk (NFR-PERF-2, chunk = one MTU).
 - **TX staging:** bounded console + event queue ([§5.4](#54-console-backpressure)).
 - **Generic responses:** exactly two static 491-byte encoded-frame slots plus
   fixed metadata. At ATT MTU 23, `ceil(491 / 19) = 26` fragments. Neither
   command concurrency nor backpressure can allocate an unbounded buffer.
+- **Filesystem work item:** payload storage is at least 260 bytes for
+  `FILE_RENAME` with two maximum 128-byte paths; PUT mailbox depth is at least
+  advertised window plus two.
 
 ### 7.4 Windowed-upload state machine (resume + CRC)
 
@@ -1883,18 +1934,20 @@ If the frozen-Python agent does not fit C3's flash/heap with usable user-code he
 The workspace is a MicroPython LFS2 VFS rooted at `fs_root` (IF-FS) on every
 official profile. On ESP, the partition-table `data,fat` subtype is historical
 ESP-IDF block-container metadata, not the on-media filesystem: its `vfs` label
-selects MicroPython's LFS2 first-use provisioning. Each PyBLE ESP boot overlay
-constructs `VfsLfs2` explicitly so generic VFS autodetection cannot silently
-admit an existing FAT workspace whose replace operation is delete-then-rename.
+selects MicroPython's LFS2 first-use provisioning. Every overlay calls the same
+frozen `pyble_workspace.mount_lfs2` authority. It constructs `VfsLfs2`
+explicitly and scans the complete device before erased-media provisioning, so
+generic VFS autodetection and ESP upstream `inisetup`'s first-block heuristic
+cannot silently admit FAT or format media with a nonblank later block.
 A nonblank incompatible/corrupt ESP workspace fails closed without formatting
 or starting the agent; recovery/migration is an explicit operator action.
 
-The agent never repartitions at runtime. The Pico overlay may perform one
+The agent never repartitions at runtime. The shared helper may perform one
 first-use format only after a failed normal mount and a complete block scan
 proves every byte erased (`0xFF`); it never formats nonblank or uncertain media.
-This narrow provisioning case and ESP upstream `inisetup` provisioning of an
-erased `vfs` partition are the only runtime format paths. Partition geometry
-remains part of the per-profile build artifact (BLD-5).
+Invalid geometry fails before scanning. This narrow provisioning case is the
+only runtime format path. Partition geometry remains part of the per-profile
+build artifact (BLD-5).
 
 ### 9.2 Workspace layout
 
@@ -1934,7 +1987,9 @@ On Pico, the protected `/pyble_conf.json` uses D11's version/CRC and atomic
 temp-write/flush/sync/rename transaction. Invalid persisted state selects safe
 defaults plus a bounded internal marker and is never rewritten at boot. Both
 stores remain device UX state, not a routing/pin profile or capability map
-(D7, CON-13, FR-IDENT-5/6).
+(D7, CON-13, FR-IDENT-5/6). A domain's bounded fault marker latches across
+missing reads and failed writes until a successful durable repair of that
+domain; it is internal-only in v0.6.1.
 
 ## 10. Build system design
 
