@@ -19,6 +19,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import os
+import shutil
 import stat
 import subprocess
 import tempfile
@@ -256,7 +257,7 @@ class V061PicotoolObserverToctouTests(unittest.TestCase):
             self.assertTrue(executable.is_file())
             self.assertFalse(executable.is_symlink())
             self.assertEqual(executable.read_bytes(), ORIGINAL_TOOL)
-            self.assertEqual(stat.S_IMODE(executable.stat().st_mode), 0o755)
+            self.assertEqual(stat.S_IMODE(executable.stat().st_mode), 0o555)
             self.assertNotEqual(
                 executable.resolve(strict=True),
                 self.fixture.executable.resolve(strict=True),
@@ -361,6 +362,58 @@ class V061PicotoolObserverToctouTests(unittest.TestCase):
                     executable_path=self.fixture.lock["executable_path"],
                 )
         self.assertEqual(probe_calls, 1)
+
+    def test_private_probe_cannot_execute_a_transient_root_substitution(self):
+        """Restoring the checked root must not hide substituted execution."""
+
+        real_subprocess_run = subprocess.run
+        marker = self.fixture.root / "substituted-private-probe-ran"
+        probe_calls = 0
+
+        def version_probe(args, **kwargs):
+            nonlocal probe_calls
+            probe_calls += 1
+            probe_root = Path(kwargs["cwd"])
+            moved_root = probe_root.with_name(probe_root.name + "-original")
+            os.replace(probe_root, moved_root)
+            try:
+                substituted_directory = probe_root / "picotool"
+                substituted_directory.mkdir(parents=True, mode=0o755)
+                substituted = substituted_directory / "picotool"
+                substituted.write_bytes(
+                    b"#!/bin/sh\n"
+                    + b": > "
+                    + os.fsencode(marker)
+                    + b"\n"
+                    + b"printf '%s\\n' '"
+                    + VERSION_LINE.encode("utf-8")
+                    + b"'\n"
+                )
+                substituted.chmod(0o755)
+                return real_subprocess_run(args, **kwargs)
+            finally:
+                shutil.rmtree(probe_root)
+                os.replace(moved_root, probe_root)
+
+        with mock.patch.object(
+            RELEASE.subprocess,
+            "run",
+            side_effect=version_probe,
+        ):
+            try:
+                RELEASE._audit_run_picotool_snapshot(
+                    archive_payloads={"picotool/picotool": ORIGINAL_TOOL},
+                    member_inventory=copy.deepcopy(self.fixture.members),
+                    executable_path=self.fixture.lock["executable_path"],
+                )
+            except RELEASE.ReleaseError:
+                pass
+
+        self.assertEqual(probe_calls, 1)
+        self.assertFalse(
+            marker.exists(),
+            "[red] the private probe executed a transient substituted root",
+        )
 
     def test_rejects_world_writable_installed_root_before_probe(self):
         self.fixture.install.chmod(0o777)
