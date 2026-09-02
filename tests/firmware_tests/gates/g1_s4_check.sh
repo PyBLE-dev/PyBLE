@@ -100,13 +100,13 @@ hdr "G1.S4.2 F-05 RUN{mode:source} same lifecycle as file  [pyble_runner — run
 row "$(run_test test_pyble_runner.sh)" "RUN{source} -> RSP{OK} -> RUN_STATE(running) -> done/error; EBADREQ bad mode; ERANGE over-length; EBUSY while running (FR-RUN-2/4/7)"
 
 hdr "G1.S4.3 F-06 STOP + SOFT_REBOOT  [pyble_runner — runtime-engineer]"
-row "$(run_test test_pyble_runner.sh)" "STOP is idempotent and running STOP returns to idle; SOFT_REBOOT follows the frozen lifecycle (FR-RUN-5/6/8/10)"
+row "$(run_test test_pyble_agent.sh)" "portable agent integration covers idempotent STOP, active-run interruption ordering, and response-before-SOFT_REBOOT (FR-RUN-5/6/8/10)"
 
 hdr "G1.S4.4 F-07 console tee stdout/stderr + CONSOLE_INPUT stdin  [pyble_console — runtime-engineer]"
-row "$(run_test test_pyble_console.sh)" "CONSOLE_DATA stream tags, bounded CONSOLE_INPUT, no-RSP handling, and traceback/error behavior (FR-CON-1..5, FR-RUN-9)"
+row "$(run_test test_pyble_console.sh)" "portable console oracle covers stream tags, bounded input/output, and preserved traceback bytes (FR-CON-1..3, FR-RUN-9)"
 
 hdr "G1.S4.5 F-23 cap-gated IDENTIFY  [pyble_device_config + pyble_info — identity-engineer]"
-row "$(run_test test_pyble_device_config.sh)" "SET_IDENTIFY_LED persist/clear validation, bounded IDENTIFY behavior, and additive identify caps (FR-IDENT-2/3/4, §7)"
+row "$(run_test test_v061_native_hardening.sh)" "native guards cover the authoritative versioned Identify configuration and exact payload validation; timing/GPIO/caps remain HIL below (FR-IDENT-2/3/4, §7)"
 
 # --- Shared cross-language corpus (firmware <-> Dart pble) --------------------
 hdr "G1.S4.6 Shared PBLE/1 corpus — frozen frame-level S4 vectors still verify"
