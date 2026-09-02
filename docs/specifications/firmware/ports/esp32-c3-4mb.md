@@ -134,9 +134,10 @@ verify observation, its exact raw OI log, and the capture's slice and
 acquisition-log files, plus one new output path. It reopens and snapshots every
 input, derives the candidate and artifact digests, verifies the observation's
 raw-log digest against the reopened log and its reset-sample count as exactly
-10, and re-verifies the fully erased slice. The acquisition log is exactly the
-UTF-8 bytes `c3-post-oi-nvs-acquisition-v1\n`. Only then may it derive the
-empty inventory and summary, create the canonical receipt exclusively as one
+10, and re-verifies the fully erased slice. The acquisition log is exactly
+these two UTF-8 LF-terminated lines: `c3-post-oi-nvs-acquisition-v1` and
+`offset=0x9000 size=0x6000 captured=post-workload pre-evaluation`. Only then
+may it derive the empty inventory and summary and create the receipt as one
 mode-`0600` regular file, fsync it and its parent, and reopen and revalidate the
 same inode and bytes. Any unsafe, non-exclusive, changed, noncanonical,
 pre-existing, mismatched, or failed input/output publishes no receipt.
