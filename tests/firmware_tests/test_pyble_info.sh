@@ -3,9 +3,8 @@
 # Part of PyBLE (https://pyble.dev) — see /LICENSE.
 #
 # Wrapper so run_tests.sh (globs test_*.sh) drives the pyble_info host suite
-# under CPython. [red] (Sprint S3) until the owning engineer lands the module
-# [green]. DoR-BLOCKED banner is inside host/test_pyble_info.py — commit [red]
-# only after the gating protocol.md §6/§7/§9 freezes + specs.md FR mirror land.
+# under CPython. The file retains its original Sprint-S3 red→green provenance;
+# the gating protocol sections and production module are now frozen/present.
 # Exit non-zero on any failure.
 
 set -u
