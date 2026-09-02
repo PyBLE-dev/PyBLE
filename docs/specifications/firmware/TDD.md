@@ -2466,6 +2466,20 @@ release inventory; missing, extra, reordered, cross-profile, and
 self-consistently rehashed substitutions fail. A v0.6.0 candidate carrying the
 eighth role or a v0.6.1 candidate lacking it fails without publication.
 
+The build-tools seam additionally tests four synchronized mutations at the
+runtime probe boundary: an in-place executable rewrite, atomic executable
+replacement, substituted/symlinked package directory, and retained-archive
+rewrite. Production must run only a private tree reconstructed from verified
+archive bytes, then descriptor-reopen the full original archive/tree before
+acceptance. A positive test proves both observations occur and that the
+retained executable pathname is never launched. Separate routing tests prove
+that explicit candidate version selects tool-lock inputs without consulting
+the validator checkout version, and that the compare CLI derives and forwards
+the strict source version from its required repository root. The complete
+checked-in policy test freezes canonical policy/attribution digests, exact
+owner/member coverage, and every recursively referenced evidence asset; a
+four-key compact attribution must fail.
+
 Pinned nested manifests are resolved by their literal package/module
 selections, and the result must equal generated frozen content. Archive member
 names are a multiset: duplicate basenames are legal, while absent map members
