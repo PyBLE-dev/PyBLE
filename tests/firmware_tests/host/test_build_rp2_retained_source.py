@@ -53,13 +53,15 @@ PICOTOOL_TARGETS_RELEASE = (
 PICOTOOL_LIBUSB = b"synthetic pinned libusb bytes\n"
 
 
-def _picotool_archive() -> bytes:
+def _picotool_archive(
+    executable: bytes = PICOTOOL_EXECUTABLE,
+) -> bytes:
     output = io.BytesIO()
     with zipfile.ZipFile(output, "w") as archive:
         for name, value, mode in (
             (".keep", b"", stat.S_IFREG | 0o644),
             ("picotool/", b"", stat.S_IFDIR | 0o755),
-            ("picotool/picotool", PICOTOOL_EXECUTABLE, stat.S_IFREG | 0o755),
+            ("picotool/picotool", executable, stat.S_IFREG | 0o755),
             (
                 "picotool/picotoolConfig.cmake",
                 PICOTOOL_CONFIG,
@@ -937,6 +939,33 @@ class RP2RetainedSourceBehaviorTests(unittest.TestCase):
             fixture.cleanup()
 
     def test_every_retained_picotool_identity_is_checked_before_make(self) -> None:
+        def nonzero_version(fixture: RP2BuildFixture) -> None:
+            changed = PICOTOOL_EXECUTABLE + b"exit 1\n"
+            archive = _picotool_archive(changed)
+            fixture.picotool_executable.write_bytes(changed)
+            fixture.picotool_executable.chmod(0o755)
+            (
+                fixture.picotool
+                / ".pyble-dist"
+                / "picotool-2.3.0-test-mac.zip"
+            ).write_bytes(archive)
+            lock = fixture.firmware / "versions.lock"
+            text = lock.read_text(encoding="utf-8")
+            text = text.replace(
+                "archive_bytes = %d" % len(PICOTOOL_ARCHIVE),
+                "archive_bytes = %d" % len(archive),
+            )
+            text = text.replace(
+                _sha256(PICOTOOL_ARCHIVE),
+                _sha256(archive),
+            )
+            text = text.replace(
+                _sha256(PICOTOOL_EXECUTABLE),
+                _sha256(changed),
+            )
+            lock.write_text(text, encoding="utf-8")
+            _commit_all(fixture.repo, "nonzero picotool version fixture")
+
         def wrong_version(fixture: RP2BuildFixture) -> None:
             changed = PICOTOOL_EXECUTABLE.replace(b"v2.3.0", b"v2.3.1")
             fixture.picotool_executable.write_bytes(changed)
@@ -979,6 +1008,7 @@ class RP2RetainedSourceBehaviorTests(unittest.TestCase):
                 fixture.picotool / "picotool" / "picotoolTargets.cmake"
             ).unlink(),
             "runtime-version-line": wrong_version,
+            "runtime-version-nonzero": nonzero_version,
         }
         for label, mutate in cases.items():
             with self.subTest(identity=label):
