@@ -191,17 +191,19 @@ relative source layout until the license audit, candidate validation, and
 two-root byte comparison have completed:
 
 ```text
-.sources/esp32-4mb/micropython/
-.sources/esp32-s3-n16r8/micropython/
+.sources/esp32/micropython/
+.sources/esp32-s3/micropython/
 .sources/waveshare-esp32-s3-lcd-147b/micropython/
-.sources/esp32-c3-4mb/micropython/
+.sources/esp32-c3/micropython/
 .sources/rpi-pico2-w/micropython/
 ```
 
-Each path is an independent MicroPython checkout for exactly the named release
-profile. The generic and Waveshare S3 variants both compile IDF target
-`esp32s3`, but MUST NOT share mutable source/build state or collapse to one
-artifact.
+Each path is an independent MicroPython checkout for exactly the selected build
+target. Release profiles `esp32-4mb`, `esp32-s3-n16r8`, and `esp32-c3-4mb` map
+to targets `esp32`, `esp32-s3`, and `esp32-c3`, respectively; the Waveshare and
+Pico profile names already equal their build targets. The generic and Waveshare
+S3 variants both compile IDF target `esp32s3`, but MUST NOT share mutable
+source/build state or collapse to one artifact.
 Its `HEAD` MUST equal the full `versions.lock [micropython].commit`, its
 `origin` URL MUST equal the canonical `versions.lock [micropython].repo`, and
 its tracked tree MUST be clean when admitted and validated. Each target's
@@ -2272,15 +2274,21 @@ C3-G0…C3-G6; Pico binds GP0, GP1, and complete GP2. A missing private result,
 non-null input summary, failed sub-gate, changed input, or identity/hash
 mismatch leaves no public output.
 
-V5 release-license generation, candidate creation, physical-fact lineage,
-completion-fragment creation, report assembly, private gate validation, and
-copy-on-write finalization MUST derive the exact firmware version from
-`versions.lock` or the already-validated candidate `release.json`, as
-applicable. That exact value must match the release identity and tag, the
-heterogeneous license inventory, every V5 record, and every private result.
-Substituting a hard-coded v0.6.0 value for a v0.6.1 candidate is invalid and
-must publish no evidence or artifact. The two admitted release cores share the
-schema and profile order only; v0.6.0 evidence cannot qualify v0.6.1 bytes.
+V5 release-license generation, candidate creation, completion-fragment
+creation, report assembly, private gate validation, and copy-on-write
+finalization MUST derive the exact firmware version from `versions.lock` or the
+already-validated candidate `release.json`, as applicable. That exact value
+must match the release identity and tag, the heterogeneous license inventory,
+every V5 record, and every private result. Substituting a hard-coded v0.6.0
+value for a v0.6.1 candidate is invalid and must publish no evidence or
+artifact. The two admitted release cores share the schema and profile order
+only; v0.6.0 evidence cannot qualify v0.6.1 bytes.
+
+`physical-fact-lineage-v1` remains an exact v0.6.0-only administrative path.
+It cannot appear in, be derived for, or be consumed by a v0.6.1 observation,
+even if an operator supplies a structurally valid summary. Every v0.6.1 row
+must record a fresh physical power-cycle observation from its exact candidate
+bytes; the common validator rejects lineage before completion or finalization.
 
 The V5 envelope is unchanged across the v0.6.0 source eras and v0.6.1, but its
 policy derivation is source-bound. A candidate source at or before
