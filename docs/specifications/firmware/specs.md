@@ -932,8 +932,10 @@ upstream package and required runtime primitive for that target.
   retain `PYBLE_HIL_RECORDS_V2`/schema `2` with its original five-key object;
   the rejected shared-image engineering contract remains V3 and MUST NOT be
   published under the split source; v0.5.1 retains
-  `PYBLE_HIL_RECORDS_V4`/schema `4`, while the v0.6.0 five-profile successor
-  MUST use `PYBLE_HIL_RECORDS_V5`/schema `5`. Both retain the top-level
+  `PYBLE_HIL_RECORDS_V4`/schema `4`, while the v0.6.0 and v0.6.1 five-profile
+  source eras MUST use `PYBLE_HIL_RECORDS_V5`/schema `5`. V5 is not an approval
+  for the proposed v0.7.0 contract. Both retained source-era schemas include
+  the top-level
   `waveshare_lcd147b_qualification` extension. It is JSON `null` in a
   candidate and is replaced only by the validator-derived passed summary
   during finalization. V2 or V3 for a split release, V4 for an older release,
@@ -1469,10 +1471,12 @@ machine-verifiable. Candidate generation freezes the policy and build
 measurements; finalization may add HIL observations and operator sign-off but
 MUST NOT change those frozen fields. A changed firmware, manifest, policy, or
 candidate identity invalidates the affected evidence.
-For v0.6.0, derivation selection uses the bound policy/candidate source
-ancestry. The retained baseline's earlier `source_commit`, SemVer alone,
-schema alone, operator input, and the validator checkout are forbidden routing
-inputs.
+For V5 v0.6.0 and v0.6.1 candidates, derivation selection uses the bound
+policy/candidate source ancestry. The exact candidate version must propagate
+unchanged through license inventory, HIL records, lineage, completion, private
+gate validation, and finalization; v0.6.0 evidence cannot qualify v0.6.1. The
+retained baseline's earlier `source_commit`, SemVer alone, schema alone,
+operator input, and the validator checkout are forbidden routing inputs.
 
 #### 5.3.5 v0.6.0 five-profile successor policy and evidence
 
@@ -1483,6 +1487,13 @@ totals, immutable-baseline rules, and exact-byte candidate binding with the
 target discrimination below. ADR-0037 replaces only reset/goodput derivation
 for strict descendants of ADR-0038's source boundary; static image/headroom
 and heap derivation remain unchanged.
+
+The v0.6.1 hardening increment reuses this exact five-profile policy, release
+schema 4, and HIL V5 envelope, but starts with fresh candidate-bound evidence.
+Release writers and validators admit exactly the `0.6.0` and `0.6.1` release
+cores at this boundary and compare the full selected version wherever it is
+serialized; they MUST NOT silently substitute `0.6.0` or infer approval for a
+later release core.
 
 The controlled v0.6.0 baseline has schema version `2`, measurement contract
 `"oi1-five-profile-v1"`, and exactly `schema_version`,
