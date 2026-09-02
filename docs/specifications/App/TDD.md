@@ -180,7 +180,7 @@ abstract interface class BleSession {
 
 **Public interface (sketch):** internal codec types (`Frame`, `Fragmenter`, `Reassembler`, `Crc32`, `Correlator`, `FileTransfer`, `HelloNegotiator`) plus the public `PbleConnection implements Connection` ([§5.1](#51-the-connection-interface)).
 
-**Key data structures / state:** the protocol constants mirror (D7); the pending-request table keyed by `ID` (1–255) with completers and timeouts; the inbound reassembly accumulator (FIRST/LAST/index-mod-64); negotiated `caps` from HELLO (chip, mpy_version, fs_root, max_file_size, put_window `W`, chunk_size, has_sd, free_mem); the active upload/download context ([§8.4](#84-file-transfer-state-machine)); the console `StreamController<ConsoleEvent>` and run-state `ValueNotifier<ConnState>`.
+**Key data structures / state:** the protocol constants mirror (D7); the pending-request table keyed by `ID` (1–255) with completers and timeouts; the inbound reassembly accumulator (FIRST/LAST/index-mod-64); the exact negotiated `caps` from HELLO (`proto`, `agent`, `chip`, `mpy`, `fs_root`, `mtu`, `window`, `chunk`, `free_mem`, `has_sd`, `has_identify`, `identify_led`, `auto_run`, `device_id`, `label`); the active upload/download context with dynamic `FILE_PUT_BEGIN` capacity admission ([§8.4](#84-file-transfer-state-machine)); the console `StreamController<ConsoleEvent>` and run-state `ValueNotifier<ConnState>`.
 
 **Dependencies:** `lib/ble/` (byte transport) below; presents `Connection` (neutral types) above. Authored fresh, clean-room (FR-PBLE-15).
 

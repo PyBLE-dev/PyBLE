@@ -882,7 +882,12 @@ Conformance requirements:
 - The agent MUST return the correct PBLE/1 status code ([PBLE/1 §8](protocol.md#8-status--error-codes-1-byte-status-in-rsp)) for every command, including the error cases (`ENOENT`, `EACCES`, `ENOSPC`, `EBUSY`, `ECRC`, `ERANGE`, `EUNSUPPORTED`, etc.).
 - File transfer MUST implement the windowed-upload + CRC + resume model and download streaming + whole-file CRC verification from [PBLE/1 §5](protocol.md#5-file-transfer-the-reliability-core). A transfer MUST be reported `OK` only after a full-file CRC match.
 - The console MUST be **observe-anywhere**: `stdout`/`stderr` MUST stream regardless of which client triggered the run.
-- The agent MUST advertise its capabilities in HELLO (`chip`, `mpy_version`, `fs_root`, `max_file_size`, `put_window`, `chunk_size`, `has_sd`, `free_mem`) and MUST reject use of any feature it did not advertise.
+- The agent MUST advertise the frozen HELLO capability set (`proto`, `agent`,
+  `chip`, `mpy`, `fs_root`, `mtu`, `window`, `chunk`, `free_mem`, `has_sd`,
+  `has_identify`, `identify_led`, `auto_run`, `device_id`, and `label`) and MUST
+  reject use of any feature it did not advertise. PBLE/1 has no serialized
+  `max_file_size`; upload capacity is admitted dynamically by
+  [PBLE/1 §5](protocol.md#5-file-transfer-the-reliability-core).
 
 ### §10.9 Version pinning
 
@@ -1419,7 +1424,11 @@ PyBLE depends on third-party code at two layers (firmware upstream and Flutter p
 
 Compatibility is negotiated on the wire, not assumed (see [protocol.md §7](protocol.md#7-hello--capabilities)).
 
-- The first message after connect MUST be **HELLO**: the app sends `proto_versions[]` (the versions it supports) + `app_name`/`app_version`; the board replies with the chosen `proto_version` and a `caps` set (`chip`, `mpy_version`, `fs_root`, `max_file_size`, `put_window`, `chunk_size`, `has_sd`, `free_mem`).
+- The first message after connect MUST be **HELLO**: the app sends
+  `proto_versions[]` (the versions it supports) plus `app_name`/`app_version`;
+  the board replies with the chosen `proto` and the exact capability set named
+  in §10.8. There is no `max_file_size` key; `FILE_PUT_BEGIN` performs the
+  dynamic storage admission specified by PBLE/1 §5.
 - The app MUST refuse (with a clear message) a board whose `proto_version` it does not support, and MUST NOT use any feature the board did not advertise in `caps`.
 - The **INFO characteristic** read MUST return a `DEVICE_INFO`-equivalent payload so a client can identify a board (chip, MicroPython version, free memory) before subscribing (see [protocol.md §2](protocol.md#2-ble-transport-gatt)).
 - Each app release MUST declare a **minimum supported PBLE/1 capability baseline** and a minimum agent version it interoperates with; the agent likewise declares its minimum app expectations via capabilities. A mismatch surfaces as a "please update the firmware/app" prompt, never a silent failure.
@@ -1575,7 +1584,7 @@ Until every profile passes, no public qualification is asserted.
 |---|---|---|---|
 | **Time-to-connect** | Median wall-clock from "Connect" tap to editor-ready (TX subscribed, MTU negotiated, HELLO/DEVICE_INFO shown). | SHOULD be < 10 s on a first connect; < 5 s for a saved board. | Validate on HIL. |
 | **BLE connection success rate** | Fraction of connect attempts to an in-range, advertising board that reach editor-ready without manual retry. | SHOULD be > 95%, measured separately on iOS and Android. | Validate on HIL. |
-| **Upload/transfer reliability** | Fraction of file `put`/`get` operations that complete with a verified whole-file CRC match (no silent corruption). | MUST be > 99% for files up to the negotiated `max_file_size`. | Validate on HIL. |
+| **Upload/transfer reliability** | Fraction of file `put`/`get` operations that complete with a verified whole-file CRC match (no silent corruption). | MUST be > 99% for files accepted by the dynamic PBLE/1 §5 storage admission and within the release bench sizes. | Validate on HIL. |
 | **Multi-file upload integrity** | A back-to-back multi-file upload completes with zero dropped connections and every file CRC-verified. | MUST pass the reliability bench with zero drops (story F-11). | Validate on HIL. |
 | **Recovery success rate** | Fraction of cases where a runaway program (`while True`) is interrupted by **Stop** and the board returns to idle with BLE responsive throughout. | MUST be 100% barring hardware failure. | Validate on HIL. |
 | **Resume-on-reconnect** | Fraction of transfers interrupted by a simulated link drop that resume from the verified offset and finish CRC-clean. | SHOULD be 100% (story F-10). | Validate on HIL. |
