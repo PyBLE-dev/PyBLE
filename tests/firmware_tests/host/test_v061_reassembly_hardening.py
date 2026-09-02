@@ -207,6 +207,27 @@ class ReassemblyHardeningTest(unittest.TestCase):
         self.assertFalse(self.record_violation(link))
         self.assertEqual([11], recorder.disconnect_calls)
 
+    def test_empty_ble_write_discards_an_incomplete_fragment_run(self):
+        link, recorder, messages = self.new_link()
+
+        link._on_rx(self.first(b"prefix"))
+        link._on_rx(b"")
+        link._on_rx(self.continuation(1, b"stale", last=True))
+
+        self.assertEqual(
+            [], messages,
+            "a malformed empty GATT write must terminate, not merely debit, "
+            "the fragment run that preceded it",
+        )
+        # The empty write is one logical violation. Its now-discarded tail is
+        # suppressed, so six explicit units reach seven and the next reaches
+        # the exact disconnect bound of eight.
+        for _ in range(6):
+            self.assertTrue(self.record_violation(link))
+        self.assertEqual([], recorder.disconnect_calls)
+        self.assertFalse(self.record_violation(link))
+        self.assertEqual([11], recorder.disconnect_calls)
+
     def test_oversize_is_one_violation_and_all_tails_are_suppressed(self):
         link, recorder, messages = self.new_link()
         oversize_heads = []
