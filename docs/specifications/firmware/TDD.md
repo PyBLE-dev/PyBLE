@@ -1970,12 +1970,18 @@ the private reviewed manufacturer, model, and module-marking attestation for
 the selected exact physical profile because PBLE/1 intentionally exposes no
 carrier-board runtime identity. It runs the seven scenarios in the frozen order,
 including exactly 50 sequential RUNs, broad configuration durability, and
-filesystem hardening; validates both workspace receipts; then publishes one
-canonical mode-`0600` private result without replacement through that same
-preflight snapshot. The raw/result/receipt outputs are outside both candidate
-and qualification Git trees, and exclusive publication performs a final
-descriptor-relative reopen after all input callbacks. Any failed or interrupted
-operation retains no passing result.
+filesystem hardening. The stdin VM-reset subcase uses a non-expiring pre-input
+barrier, bounds both the complete stale-input write and the SOFT_REBOOT response,
+and at the accepted `RSP{OK}` cut requires the predecessor to remain running
+with no terminal/idle state and no stale-input echo. Only after that cut may it
+wait for disconnect, reconnect, negotiate, and prove the successor stays blocked
+until fresh input arrives. This prevents a slow accepted reboot from consuming
+the supposedly stale line before the reset. The runner validates both workspace
+receipts; then publishes one canonical mode-`0600` private result without
+replacement through that same preflight snapshot. The raw/result/receipt outputs
+are outside both candidate and qualification Git trees, and exclusive
+publication performs a final descriptor-relative reopen after all input
+callbacks. Any failed or interrupted operation retains no passing result.
 
 The same reviewed `v061_hardening_bench.py` executable exposes a separate
 workspace-receipt creation mode for each prerequisite boot. It accepts one
