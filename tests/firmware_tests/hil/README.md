@@ -60,6 +60,18 @@ negotiates with the new VM, then starts a successor input RUN. The successor
 must remain blocked until a fresh post-reset line is sent and must never echo
 the queued predecessor line. Host tests can prove this orchestration, but only
 executing it on each exact board/candidate supplies physical HIL evidence.
+
+The filesystem scenario repeats a deterministic 16 KiB GET for each
+active-download admission probe. The central records completion of the whole
+outbound command write and fails unless that cut precedes `FILE_GET_END`.
+Valid `FILE_DELETE`, `MKDIR`, and `FILE_RENAME` commands must then return
+`EBUSY` without changing their bench-owned source/destination paths. A
+representative malformed mutation must retain `EBADREQ`, a jailed mutation
+must retain `EACCES`, and `FILE_LIST` plus `FILE_STAT` must remain available.
+Every probe still verifies the complete GET byte stream, offsets, length, and
+whole-file CRC. Separate GETs are intentional: the native response pool has
+two slots, so accumulating several response-bearing commands behind one GET
+would test pool exhaustion instead of transfer serialization.
 Configuration durability includes label and autorun persistence/restoration
 and preserves an existing Identify configuration across reboot when the
 profile advertises Identify. Because PBLE/1 caps do not expose the persisted
