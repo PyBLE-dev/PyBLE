@@ -239,6 +239,49 @@ class DeclaredTotalBoundaryTest(V061FsTestBase):
         self.assertEqual(self.read_file("/exact.bin"), data)
 
 
+class _FailingCloseWriter:
+    """Write normally, then surface a deterministic durability-cut failure."""
+
+    def __init__(self, wrapped):
+        self._wrapped = wrapped
+
+    def write(self, data):
+        return self._wrapped.write(data)
+
+    def close(self):
+        self._wrapped.flush()
+        self._wrapped.close()
+        raise OSError(errno.EIO, "injected close failure")
+
+
+class PutDurabilityCutTest(V061FsTestBase):
+    def test_close_failure_never_replaces_the_old_destination(self):
+        old = b"OLD DESTINATION"
+        new = b"NEW CONTENT"
+        self.put_file("/durable.bin", old)
+        scratch = self.hpath("/durable.bin.pbltmp")
+
+        def open_fn(path, mode):
+            wrapped = open(path, mode)
+            if path == scratch and mode == "wb":
+                return _FailingCloseWriter(wrapped)
+            return wrapped
+
+        service, _events = self.svc(
+            "v0.6.1 failed PUT close cannot cross the atomic commit cut",
+            open_fn=open_fn)
+        self.assertEqual(
+            service.handle_put_begin(
+                put_begin_pl(len(new), crc32(new), b"/durable.bin"))[0],
+            OK,
+        )
+        service.handle_put_data(put_data_pl(0, new))
+
+        self.assertEqual(service.handle_put_end(p32(crc32(new)))[0], EIO)
+        self.assertEqual(self.read_file("/durable.bin"), old)
+        self.assertFalse(os.path.exists(scratch))
+
+
 class StatvfsAdmissionTest(V061FsTestBase):
     """PUT_BEGIN admission uses f_frsize/f_bavail and a 64 KiB reserve."""
 
