@@ -2168,6 +2168,13 @@ to `.sources/rpi-pico2-w/micropython/ports/rp2`. A build description that
 names the canonical submodule, another profile's checkout, or an
 escaped/symlinked location is fatal.
 
+The Pico configure boundary passes
+`-DFETCHCONTENT_FULLY_DISCONNECTED:BOOL=ON` and its post-build audit requires
+the exact `FETCHCONTENT_FULLY_DISCONNECTED:BOOL=ON` cache line. Host fixtures
+emit the same type produced by real CMake and independently replace it with
+`UNINITIALIZED=ON`, `BOOL=OFF`, and no entry; every replacement MUST fail
+before provenance admission and fail-clean the new output and retained source.
+
 All profile-scoped mutable preparation, including board-copy, ESP-IDF
 submodule/managed-component materialization, and RP2 frozen-module generation,
 runs inside that profile's checkout and build directory. No profile may share,

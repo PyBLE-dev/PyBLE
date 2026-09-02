@@ -231,6 +231,13 @@ mismatched existing destination.
 Every RP2 build MUST select the verified executable and
 `picotoolConfig.cmake` from that explicit tree, set `picotool_DIR` to the
 verified package directory, and disable CMake FetchContent network fallback.
+The configure command MUST pass the typed cache definition
+`-DFETCHCONTENT_FULLY_DISCONNECTED:BOOL=ON`, and the completed
+`CMakeCache.txt` MUST contain the exact line
+`FETCHCONTENT_FULLY_DISCONNECTED:BOOL=ON` before build provenance can be
+admitted. A missing entry, `OFF`, or an untyped `UNINITIALIZED=ON` entry is
+fatal; accepting the latter would validate a test-double artifact that real
+CMake normalizes to `BOOL` rather than the actual retained build state.
 An ambient `picotool`, Homebrew package, PATH order, CMake package registry,
 or SDK auto-download is never a reproducibility input. The provenance record
 MUST contain the exact locked version line obtained from the verified binary.
