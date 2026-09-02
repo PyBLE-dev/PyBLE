@@ -361,18 +361,26 @@ class V061HilBenchContractTests(unittest.TestCase):
         stdin = inspect.getsource(bench.run_stdin_isolation)
         positions = [
             stdin.find('"soft-reboot"'),
+            stdin.find("block_until_reset=True"),
             stdin.find("reboot-stale"),
+            stdin.find("asyncio.wait_for"),
+            stdin.find("_assert_run_still_active", stdin.find("reboot-stale")),
             stdin.find("_soft_reboot_connect_unnegotiated"),
+            stdin.find("on_accepted"),
             stdin.find("_negotiate(state)", stdin.find("reboot-stale")),
             stdin.find('"reboot-successor"'),
-            stdin.find("_assert_run_still_active", stdin.find("reboot-stale")),
+            stdin.find(
+                "_assert_run_still_active",
+                stdin.find('"reboot-successor"'),
+            ),
             stdin.find("reboot-fresh"),
         ]
         self.assertTrue(
             all(position >= 0 for position in positions)
             and positions == sorted(positions),
-            "stdin VM-reset case must queue stale input, reboot, negotiate, "
-            "then require fresh successor input",
+            "stdin VM-reset case must use a non-expiring predecessor, bound the "
+            "stale write, prove it active at reboot acceptance, negotiate, then "
+            "require fresh successor input",
         )
         self.assertNotIn(
             "OP_SET_IDENTIFY_LED",
