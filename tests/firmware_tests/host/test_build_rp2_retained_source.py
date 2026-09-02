@@ -848,6 +848,15 @@ class RP2RetainedSourceBehaviorTests(unittest.TestCase):
             serialized = json.dumps(records, sort_keys=True)
             self.assertNotIn("HOSTILE", serialized)
             final = final_records[0]
+            self.assertFalse(
+                any(
+                    str(argument).startswith("CMAKE_ARGS=")
+                    for argument in final["args"]
+                ),
+                "a command-line CMAKE_ARGS assignment prevents the upstream "
+                "RP2 Makefile from appending its board and manifest settings",
+            )
+            self.assertIn("CMAKE_ARGS", final["env"])
             build_configuration = " ".join(
                 [*final["args"], *final["env"].values()]
             )
