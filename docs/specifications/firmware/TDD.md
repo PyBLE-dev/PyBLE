@@ -2489,8 +2489,11 @@ mutations of the executable, package directory, and retained archive at the
 runtime probe boundary, including byte-identical inode replacement and an
 unsafe retained-root mode. Production must require exact mode `0700` on the
 retained root, run only a write-locked private tree reconstructed from verified
-archive bytes while retaining a no-follow executable descriptor, and recheck
-that descriptor and the complete private tree after execution. It then
+archive bytes while retaining no-follow root and executable descriptors, and
+resolve the executable relative to the descriptor-anchored child working
+directory. Tests transiently replace and restore the private root and prove
+that substituted code is never executed. Production rechecks both descriptors
+and the complete private tree after execution. It then
 descriptor-reopens the full original archive/tree and compares node identities
 before acceptance. A positive test proves both original-tree observations
 occur and that the retained executable pathname is never launched. Separate
