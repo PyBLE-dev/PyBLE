@@ -386,23 +386,40 @@ class PbleCentral:
             response=False,
         )
 
-    async def send_cmd(self, opcode, id_, payload=b"", timeout=10.0):
-        """Send a CMD and await the matching RSP (same opcode and ID)."""
+    async def send_cmd(
+        self,
+        opcode,
+        id_,
+        payload=b"",
+        timeout=10.0,
+        on_written=None,
+    ):
+        """Send a CMD and await the matching RSP (same opcode and ID).
+
+        ``on_written`` is an optional synchronous receipt hook for physical
+        benches that must prove every command fragment was accepted by the BLE
+        backend before an independently observed event boundary.  It is never
+        called after a partial or failed write.
+        """
         loop = asyncio.get_running_loop()
         started_at = loop.time()
         deadline = started_at + timeout
         self._discard_responses_for_id(id_)
+        write_completed = False
         try:
             await self._write(
                 wire.encode(wire.CMD, opcode, id_, payload),
                 response=True,
                 deadline=deadline,
             )
+            write_completed = True
         except _CommandDeadlineExpired:
             # An exact response received while the final acknowledged write
             # was pending remains authoritative; _await_rsp validates both
             # sides of its request-start/absolute-deadline arrival window.
             pass
+        if write_completed and on_written is not None:
+            on_written()
         return await self._await_rsp(
             opcode,
             id_,
