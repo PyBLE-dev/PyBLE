@@ -1,6 +1,6 @@
 # PyBLE Agent Firmware — Requirements Specification
 
-Status: **DRAFT (per-section freeze in effect)** · Owner: project maintainer · Last updated: 2026-08-20
+Status: **DRAFT (per-section freeze in effect)** · Owner: project maintainer · Last updated: 2026-09-02
 
 ### Freeze ledger (per-section, per PRD §1B.4)
 
@@ -31,6 +31,12 @@ effect only after their connection-bound response submission succeeds.
 the bounded `CONSOLE_INPUT` ring to the runner worker's standard input while
 remaining non-readable to the main REPL. Empty reads are non-blocking, never
 EOF, and readable polling reflects the same worker-owned ring state.
+
+**2026-09-02 §4 v0.6.1 hardening amendment:** the existing FR identifiers are
+amended below with wire-compatible HELLO/session guards, finite hostile-input
+bounds, fresh execution namespaces and stdin boundaries, durable validated
+configuration, safe upload/scratch rules, and non-destructive Pico storage
+recovery. No opcode, status, capability key, payload field, or UUID is added.
 
 **PBLE/1 dependency:** [protocol.md §2 (transport)](../protocol.md#2-ble-transport-gatt), [§3 (framing)](../protocol.md#3-framing), [§4 (opcodes)](../protocol.md#4-opcodes), and [§8 (status)](../protocol.md#8-status--error-codes-1-byte-status-in-rsp) are **FROZEN for v1.0**; the GATT UUID base, the §3.1 frame + §3.2 fragmentation, the opcode set + numbers, and the status set + numbers are now stable inputs to FR-BLE-1/8/10 and FR-PROTO-1…10. The §4/§8 freeze (2026-07-01) **closes OI-4** and completes the DoR for F-01 and F-02. **protocol.md §6/§7/§9 froze 2026-07-01 (S3)** — HELLO/caps, the RUN-file path, the version policy, and the 24 B label bound are stable, meeting DoR for F-03/F-16/F-22/F-04. **protocol.md §6 fully froze 2026-07-01 (S4)** — STOP/SOFT_REBOOT/console/RUN-source + the identify encodings, **closing OI-6** (F-05/F-06/F-07/F-23 DoR met).
 
@@ -185,6 +191,17 @@ Requirement voice is MUST / SHOULD / MAY. Each line: **ID** — statement — *(
 - **FR-BLE-11** — The BLE/agent task MUST keep servicing the link while a user program runs, so the link never depends on user-code progress. The generic-response callout MUST attempt exactly one zero-wait fragment per NimBLE-host callback and then return: success rearms after one RTOS tick when data remains; transient pressure rearms after at most 15 ms. A callback MUST NOT sleep, loop, retry inline, or block on TX capacity. Non-control/bulk TX MUST NOT interleave with its logically owned partial response. A pending single-fragment `RUN`, `STOP`, or `SOFT_REBOOT` response MAY wait under one absolute 15 ms deadline only for the current complete-message physical TX-mutex boundary and MUST prevent a later ordinary/bulk message from beginning. Once acquired, it MUST revalidate its session and make exactly one local Notify submission without waiting or retrying for mbuf/controller capacity; success MAY preempt between generic-response fragments. — *(source: PRD §10.6, §13.3, [firmware.md §5](../firmware.md#5-runtime-rules); verify: unit, HIL; story: F-06)*
 - **FR-BLE-12** — When a device label is set ([§4.9](#49-device-identity--identify-fr-ident), `SET_LABEL`), the persisted label MUST **replace** the default `PyBLE-XXXX` as the advertised device name so it is visible in the scan list **before connecting**; clearing the label (empty value) MUST restore the `PyBLE-XXXX` default. The advertised label MUST be bounded to the same length limit the board enforces on `SET_LABEL` (FR-IDENT-1). — *(source: PRD §10.7, [protocol.md §2](../protocol.md#2-ble-transport-gatt), [§4](../protocol.md#4-opcodes); verify: HIL, conformance; story: F-01)*
 
+**v0.6.1 amendment to FR-BLE-10.** Every RX `FIRST` MUST start one
+non-extending, monotonic, wrap-safe 5000 ms reassembly deadline; a continuation
+observed at `elapsed >= 5000 ms` cannot complete that run. One exact
+connection/VM epoch MUST retain a non-resetting count of at most eight protocol
+violations and suppress discarded-run tails until a new `FIRST`. On violation
+eight the agent MUST close admission, suppress the triggering reply, clear
+session-bound work, and invoke the existing bounded exact-session termination
+path once. Disconnect or VM rotation, and only those boundaries, reset the
+budget. — *(source: [protocol.md §3.2](../protocol.md#32-fragmentation-over-gatt);
+verify: shared native/portable unit, conformance, five-profile HIL)*
+
 ### 4.2 Protocol engine (FR-PROTO)
 
 - **FR-PROTO-1** — The agent MUST implement the **full** PBLE/1 v1.0 opcode set in [protocol.md §4](../protocol.md#4-opcodes); none are optional in v1.0. — *(source: PRD §10.8, [protocol.md §4](../protocol.md#4-opcodes); verify: conformance; story: F-02)*
@@ -270,6 +287,19 @@ Requirement voice is MUST / SHOULD / MAY. Each line: **ID** — statement — *(
 - **FR-PROTO-9** — A well-formed request for an opcode/feature the agent does not support MUST be answered with `EUNSUPPORTED`. — *(source: PRD §10.8, [protocol.md §8](../protocol.md#8-status--error-codes-1-byte-status-in-rsp); verify: conformance; story: F-02)*
 - **FR-PROTO-10** — The agent MUST NOT require or assume use of any capability it did not advertise in HELLO (`caps`); the wire behaviour MUST match the advertised baseline. — *(source: PRD §10.8, §18.3, [protocol.md §7](../protocol.md#7-hello--capabilities); verify: conformance; story: F-03, P-03)*
 
+**v0.6.1 amendments to FR-PROTO-2/3/5/7/8/9.** For every reassembled input,
+both reference agents MUST apply exact structural length, CRC, RX direction and
+nonzero request ID, frame version, HELLO/session admission, then opcode/payload
+semantics in that order. CRC rejection MUST be the same `EVT{id=0,ECRC}` on
+native and portable paths. Wrong-direction or ID-zero frames MUST be silent
+and handler-free. A structural failure may receive `EBADREQ` only when a safe
+complete header identifies a v1 `CMD` with nonzero ID. Before HELLO succeeds,
+response-bearing non-HELLO commands MUST return `EBADREQ`, while the two
+response-free opcodes are silently side-effect-free. Unknown opcodes after
+negotiation remain `EUNSUPPORTED`. — *(source: [protocol.md §3](../protocol.md#3-framing),
+[§7](../protocol.md#7-hello--capabilities); verify: one semantic corpus run
+against portable Python and compiled production C, plus conformance/HIL)*
+
 ### 4.3 Runner & execution control (FR-RUN)
 
 - **FR-RUN-1** — `RUN { mode: file }` MUST execute a `.py` file from the workspace only after local Notify acceptance of its matching `RSP{OK}`, then emit `RUN_STATE(running)`. The ESP reference handler MUST make a provisional, non-observable reservation and copy first, declare one specialized response attempt pending, wait under one absolute 15 ms deadline only for the current complete-message TX-mutex boundary, and wake the runner exactly once only after its one local Notify submission returns `PBLE_TX_OK`. Boundary-deadline expiry, no connection, a changed connection, or Notify backpressure MUST restore the exact prior runnable state and cause no response fallback, worker wake, execution, console output, or RUN event. At ATT MTU 23 the 11-byte response frame fits within the 19 PBLE/1 message bytes carried by one fragment. — *(source: PRD §8.2, §10.6, [protocol.md §6](../protocol.md#6-run--stop--console); verify: unit, HIL, conformance; story: F-04)*
@@ -325,6 +355,16 @@ Requirement voice is MUST / SHOULD / MAY. Each line: **ID** — statement — *(
 - **FR-RUN-9** — Normal completion MUST yield `RUN_STATE(done)`; an uncaught exception MUST stream the traceback as `CONSOLE_DATA(stderr, …)` and then emit `RUN_STATE(error)`. — *(source: PRD §8.2, [protocol.md §6](../protocol.md#6-run--stop--console); verify: HIL, conformance; story: F-04, F-07)*
 - **FR-RUN-10** — After `STOP` the agent MUST return the board to `RUN_STATE(idle)`. — *(source: PRD §8.3, §10.6, [protocol.md §6](../protocol.md#6-run--stop--console); verify: HIL; story: F-06)*
 
+**v0.6.1 amendment to FR-RUN-1/2/9.** Every accepted file, inline-source, or
+autorun execution MUST compile and execute with a newly allocated globals and
+locals dictionary containing `__name__ = "__main__"`; it MUST NOT inherit a
+variable created by an earlier run. The runner MUST restore its own prior
+globals/locals on both success and exception and MUST NOT clear the VM's main
+dictionary. This increment makes no portable promise for `__file__`, current
+directory, sibling imports, `sys.path`, or `sys.modules` cleanup. — *(source:
+[protocol.md §6](../protocol.md#6-run--stop--console); verify: unit,
+50-sequential-run resource gate, five-profile HIL)*
+
 ### 4.4 Filesystem bridge & workspace jail (FR-FS)
 
 - **FR-FS-1** — `FILE_LIST` MUST list a workspace directory rooted at `fs_root`. — *(source: PRD §8.4, §10.8, [protocol.md §4](../protocol.md#4-opcodes); verify: conformance, HIL; story: F-08)*
@@ -344,6 +384,21 @@ Requirement voice is MUST / SHOULD / MAY. Each line: **ID** — statement — *(
 - **FR-FS-15** — Filesystem errors MUST map to their PBLE/1 status codes (`ENOENT`, `ENOSPC`, `EACCES`, `EIO`, `ERANGE`) rather than failing silently. — *(source: PRD §9.2, §10.8, [protocol.md §8](../protocol.md#8-status--error-codes-1-byte-status-in-rsp); verify: conformance; story: F-08, F-09)*
 - **FR-FS-16** — The jail constrains the **PBLE/1 file bridge** only; user code MAY touch the filesystem normally at runtime via standard MicroPython `os`/`vfs`. — *(source: PRD §10.4, [firmware.md §5](../firmware.md#5-runtime-rules); verify: HIL; story: F-09)*
 
+**v0.6.1 amendments to FR-FS-1/4/7/8/9/14/15.** `FILE_LIST` MUST omit every
+basename ending in `.pbltmp` before stat/count/budget accounting. After all
+paths are parsed and jail-resolved, DELETE/MKDIR/RENAME during an active PUT
+MUST return `EBUSY` before stat or mutation. PUT data crossing declared total
+size MUST write nothing and latch `ERANGE`. A nonzero resume offset MUST denote
+exactly a stable regular-file prefix that was completely read and CRC'd;
+malformed scratch MUST be removed only by the non-recursive safe rules in
+protocol §5, or return `EIO`, while the old destination stays unchanged.
+`FILE_PUT_BEGIN` MUST use checked 64-bit `statvfs` arithmetic and the exact
+65,536-byte admission reserve in protocol §5; invalid geometry/overflow is
+`EIO`, and insufficient space is `ENOSPC` before scratch creation or growth.
+No `max_file_size` capability is added. — *(source:
+[protocol.md §5](../protocol.md#5-file-transfer-the-reliability-core); verify:
+portable/native unit, FAT+LFS2 conformance, five-profile HIL)*
+
 ### 4.5 Console (FR-CON)
 
 - **FR-CON-1** — The agent MUST tee the running program's `stdout`/`stderr` to BLE as `CONSOLE_DATA` events. — *(source: PRD §8.2, §10.3, [protocol.md §6](../protocol.md#6-run--stop--console); verify: HIL, conformance; story: F-07)*
@@ -352,14 +407,37 @@ Requirement voice is MUST / SHOULD / MAY. Each line: **ID** — statement — *(
 - **FR-CON-4** — The console MUST be **observe-anywhere**: `stdout`/`stderr` MUST stream regardless of which client triggered the run. Each newly formed `CONSOLE_DATA` chunk MUST atomically capture the then-current live `{connection handle, connection generation, VM epoch}`. If none exists, the chunk MUST be omitted rather than retained for a future client. All fragments and retries MUST retain the captured token; disconnect or VM-epoch change cancels old buffered work, and a later new chunk after reconnect MAY bind the successor. This applies equally to command-started and auto-run execution. — *(source: PRD §8.2, §10.8, [protocol.md §6](../protocol.md#6-run--stop--console); verify: unit, HIL; story: F-07)*
 - **FR-CON-5** — The agent MAY also mirror `stdout`/`stderr` to USB-serial when present, for **local debugging only**; USB serial MUST NOT be a runtime PBLE/1 transport. — *(source: PRD §10.3, §11.2, [firmware.md §5](../firmware.md#5-runtime-rules); verify: HIL; story: F-07)*
 
+**v0.6.1 amendment to FR-CON-3.** The bounded stdin ring MUST have an
+independent active-run admission flag. Idle input is silently discarded. The
+ring is activated and cleared only at successful RUN response admission (or
+autorun admission), deactivated and cleared after accepted STOP and every
+terminal/VM-reset boundary, and cleared without deactivation on disconnect so
+a continuing run may receive only fresh post-reconnect input. A failed RUN or
+failed STOP response MUST change neither lifecycle nor bytes. Poll/read MUST
+remain empty unless both the runner worker and stdin-active predicate match.
+— *(source: [protocol.md §6](../protocol.md#6-run--stop--console); verify:
+portable/native unit and five-profile blocked-input HIL)*
+
 ### 4.6 Device info / capabilities (FR-INFO)
 
 - **FR-INFO-1** — `DEVICE_INFO` MUST report at least `chip`, MicroPython version, free memory, `fs_root`, MTU, the stable `device_id` (the MAC-derived suffix, per FR-BLE-5), and `label` (the user-set device label, or empty when unset). — *(source: PRD §8.1, §10.8, [protocol.md §2](../protocol.md#2-ble-transport-gatt), [§4](../protocol.md#4-opcodes); verify: conformance, HIL; story: F-03)*
 - **FR-INFO-2** — `HELLO` MUST be the **first** exchange after connect, performing protocol-version and capability negotiation per [protocol.md §7](../protocol.md#7-hello--capabilities). — *(source: PRD §10.5, §18.3, [protocol.md §7](../protocol.md#7-hello--capabilities); verify: conformance, HIL; story: F-03)*
-- **FR-INFO-3** — The HELLO reply `caps` MUST include `chip`, `mpy_version`, `fs_root`, `max_file_size`, `put_window` (`W`), `chunk_size`, `has_sd`, `free_mem`, `device_id` (the stable MAC-derived suffix), `label` (the user-set label, or empty), `has_identify` (whether the board supports `IDENTIFY`), and `identify_led` (the configured identify-LED GPIO, or null). The client MUST offer an Identify action **only** when `has_identify` is set. These identity/identify caps are **additive within PBLE/1**; an older client simply ignores them. — *(source: PRD §10.8, §18.3, [protocol.md §7](../protocol.md#7-hello--capabilities), [§9](../protocol.md#9-versioning-policy); verify: conformance; story: F-03)*
+- **FR-INFO-3** — The HELLO reply `caps` MUST include the exact frozen serialized keys `proto`, `agent`, `chip`, `mpy`, `fs_root`, `mtu`, `window`, `chunk`, `free_mem`, `has_sd`, `has_identify`, `identify_led`, `auto_run`, `device_id`, and `label`. The client MUST offer an Identify action **only** when `has_identify` is set. These identity/identify caps are **additive within PBLE/1**; an older client simply ignores them. `max_file_size` was never a serialized key and MUST NOT be invented for v0.6.1; upload admission follows protocol §5. — *(source: PRD §10.8, §18.3, [protocol.md §7](../protocol.md#7-hello--capabilities), [§9](../protocol.md#9-versioning-policy); verify: conformance; story: F-03)*
 - **FR-INFO-4** — A read of the INFO characteristic MUST return a `DEVICE_INFO`-equivalent payload so a client can identify a board before subscribing. — *(source: PRD §10.7, §18.3, [protocol.md §2](../protocol.md#2-ble-transport-gatt); verify: HIL, conformance; story: F-01, F-03)*
 - **FR-INFO-5** — The agent MUST reply to `HELLO` with a chosen `proto_version` it supports, and MUST refuse (rather than silently mis-speak) a client whose offered versions it cannot satisfy. — *(source: PRD §18.3, [protocol.md §7](../protocol.md#7-hello--capabilities), [§9](../protocol.md#9-versioning-policy); verify: conformance; story: F-03, P-03)*
 - **FR-INFO-6** — `caps.has_sd` MUST reflect actual SD-card presence on the board. — *(source: PRD §10.3 (`pyble_info`), §10.8, [protocol.md §7](../protocol.md#7-hello--capabilities); verify: HIL; story: F-03)*
+
+**v0.6.1 amendments to FR-INFO-2/5.** TX notifications MUST be enabled before
+the first RX frame; discovery, INFO read, and optional MTU exchange are setup,
+not PBLE exchanges. HELLO MUST obey protocol §7's exact 192-byte ASCII grammar,
+required keys and bounds. A valid offer without version 1 is `EUNSUPPORTED`;
+malformed syntax is `EBADREQ`. Negotiation is exact connection/VM-epoch state,
+committed only when the final `RSP{OK}` fragment receives local Notify
+acceptance, reset by disconnect/VM rotation, and compatible repeated HELLO is
+idempotent. Failed repeated HELLO MUST NOT revoke an existing negotiation.
+— *(source: [protocol.md §2](../protocol.md#2-ble-transport-gatt),
+[§7](../protocol.md#7-hello--capabilities); verify: shared Dart/portable/native
+semantic corpus and five-profile HIL)*
 
 ### 4.7 Boot & lifecycle (FR-BOOT)
 
@@ -369,6 +447,18 @@ Requirement voice is MUST / SHOULD / MAY. Each line: **ID** — statement — *(
 - **FR-BOOT-4** — The agent MUST reach the advertising state independently of user-workspace validity; a syntactically broken or infinite-loop `main.py` MUST NOT prevent advertising or connection. — *(source: PRD §10.5, §13.1; verify: HIL; story: F-12)*
 - **FR-BOOT-5** — The agent MUST NOT depend on an editable `boot.py`/`main.py` for its own operation. — *(source: PRD §1A.3 rejection 5, §10.2; verify: HIL; story: F-12)*
 - **FR-BOOT-6** — A control-plane fault MUST fail safe to the advertising state rather than wedging the board. — *(source: PRD §13.1, §10.5; verify: HIL; story: F-12)*
+
+**v0.6.1 amendment to FR-BOOT-3/6.** Every persisted autorun value MUST be
+exactly 0 or 1; an invalid stored value is safely disabled and records only a
+bounded internal configuration fault. Every persistence call and commit MUST
+be checked, and a failure leaves the prior runtime/persisted behavior in
+effect. The Pico storage-corruption exception to normal advertise-safe recovery
+is deliberate: after a failed workspace mount, only a conclusively all-`0xFF`
+complete block device may be formatted once. Nonblank media or any inspection,
+allocation, or remount uncertainty MUST receive zero writes, skip agent and
+autorun startup, and remain available for bounded local USB recovery rather
+than falsely advertising a healthy workspace. — *(source:
+[rpi-pico2-w.md](ports/rpi-pico2-w.md); verify: unit and sacrificial-Pico HIL)*
 
 ### 4.8 Execution modes (FR-MODE)
 
@@ -392,6 +482,20 @@ are screenless.
 - **FR-IDENT-4** — `IDENTIFY` MUST return `EUNSUPPORTED` (0x0A) when no identify LED has been configured, and the board MUST report `has_identify = false` and `identify_led = null` in HELLO/`DEVICE_INFO` until one is configured. — *(source: PRD §10.8, [protocol.md §8](../protocol.md#8-status--error-codes-1-byte-status-in-rsp), [§7](../protocol.md#7-hello--capabilities); verify: conformance; story: F-03)*
 - **FR-IDENT-5** — The device label and the identify-LED configuration MUST **survive reboot** (persisted in NVS), so the advertised name, `has_identify`, and `identify_led` are stable across power cycles. — *(source: PRD §10.7, §10.5; verify: HIL, conformance; story: F-03, F-12)*
 - **FR-IDENT-6** — The identify blink MUST be **cosmetic only**: it MUST NOT be used for, or be repurposable as, GPIO routing for user code, a board-capability map, or any access-gating signal. — *(source: PRD §1A.3 rejection 3, §11.1, §11.3, [hardware.md §4](../hardware.md#4-what-pyble-does-not-do-with-hardware); verify: unit (structure); story: F-01, F-03)*
+
+**v0.6.1 amendments to FR-IDENT-1/2/5.** Label length MUST be checked before
+content: more than 24 encoded bytes is `ERANGE`; otherwise nonempty input MUST
+be strict UTF-8 without U+0000–U+001F or U+007F–U+009F controls, or return
+`EBADREQ`. All configuration changes MUST stage and validate a candidate, check
+every storage operation and commit, and update RAM, GPIO, caps, and advertising
+only after the durable commit cut. On ESP, Identify MUST use one authoritative
+four-byte NVS blob `id_cfg = [version=1, enabled, gpio, active_level]`; invalid
+authoritative data disables Identify and MUST NOT fall back to stale legacy
+keys. Absent authoritative data may load a wholly valid legacy key pair and
+migrate only on the next successful set/clear. Corrupt persisted state MUST
+select safe defaults and a bounded internal fault marker, never an unchecked
+partial configuration. — *(source: [protocol.md §7](../protocol.md#7-hello--capabilities);
+verify: fault-injection unit and reboot HIL)*
 
 ### 4.10 Standard user-code libraries (FR-LIB)
 

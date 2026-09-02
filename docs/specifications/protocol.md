@@ -1,6 +1,6 @@
 # PBLE/1 — PyBLE BLE Wire Protocol
 
-Status: **§2–§10 FROZEN for v1.0 (complete)** · Version: 1 · Last updated: 2026-08-15
+Status: **§2–§10 FROZEN for v1.0 (complete)** · Version: 1 · Last updated: 2026-09-02
 
 > PBLE/1 is a **clean-room, original** protocol authored for PyBLE. It reuses no closed-source wire format, opcodes, or UUIDs. It carries PyBLE's app↔board messages over a BLE GATT service.
 >
@@ -23,18 +23,24 @@ The 2026-08-15 runner-event amendment binds each newly created `RUN_STATE` and
 `CONSOLE_DATA` event to the live connection session at that instant. It changes
 no PBLE/1 byte.
 
+The 2026-09-02 v0.6.1 hardening amendment freezes HELLO request syntax and
+session state, inbound-validation precedence, bounded hostile-fragment
+handling, fresh RUN namespaces and stdin boundaries, upload admission and
+scratch recovery, and label-byte validation. It adds no opcode, status,
+capability key, payload field, UUID, or other PBLE/1 wire byte.
+
 **Freeze ledger (per-section):**
 
 | Section | Freeze status | Freeze act |
 |---|---|---|
-| §2 BLE transport (GATT) — Service/RX/TX/INFO UUID base, advertising, MTU | **FROZEN for v1.0 (amended)** | G0 · 2026-07-01; default-MTU delivery · 2026-08-15 · `[docs]` |
-| §3 Framing — §3.1 message frame, §3.2 fragmentation | **FROZEN for v1.0 (amended)** | G0 · 2026-07-01; restart/delivery semantics · 2026-08-15 · `[docs]` |
+| §2 BLE transport (GATT) — Service/RX/TX/INFO UUID base, advertising, MTU | **FROZEN for v1.0 (amended)** | G0 · 2026-07-01; default-MTU delivery · 2026-08-15; negotiation ordering · 2026-09-02 · `[docs]` |
+| §3 Framing — §3.1 message frame, §3.2 fragmentation | **FROZEN for v1.0 (amended)** | G0 · 2026-07-01; restart/delivery semantics · 2026-08-15; inbound bounds/precedence · 2026-09-02 · `[docs]` |
 | §4 Opcodes — the v1.0 opcode set + numbers | **FROZEN for v1.0** | G1 · 2026-07-01 · `[docs]` (closes OI-4) |
 | §8 Status / error codes — the 1-byte status set + numbers | **FROZEN for v1.0** | G1 · 2026-07-01 · `[docs]` |
-| §6 Run/Stop/Console — RUN{file,source}, RUN_STATE, EBUSY, STOP, SOFT_REBOOT, CONSOLE_DATA/INPUT | **FROZEN for v1.0 (amended)** | G1 · 2026-07-01; transactional RUN admission · 2026-08-14; default-MTU STOP/SOFT_REBOOT admission and per-event session binding · 2026-08-15 · `[docs]` (RUN-file at S3; STOP / console / RUN-source at S4) |
-| §7 HELLO & capabilities — caps field set, HELLO-first, INFO==DEVICE_INFO, label max = 24 B (label half of OI-6) | **FROZEN for v1.0** | G1 · 2026-07-01 · `[docs]` |
+| §6 Run/Stop/Console — RUN{file,source}, RUN_STATE, EBUSY, STOP, SOFT_REBOOT, CONSOLE_DATA/INPUT | **FROZEN for v1.0 (amended)** | G1 · 2026-07-01; transactional RUN admission · 2026-08-14; default-MTU STOP/SOFT_REBOOT admission and per-event session binding · 2026-08-15; namespace/stdin isolation · 2026-09-02 · `[docs]` (RUN-file at S3; STOP / console / RUN-source at S4) |
+| §7 HELLO & capabilities — caps field set, HELLO-first, INFO==DEVICE_INFO, label max = 24 B (label half of OI-6) | **FROZEN for v1.0 (amended)** | G1 · 2026-07-01; request/session syntax and label-byte validation · 2026-09-02 · `[docs]` |
 | §9 Versioning policy — accept only `VER 0x01`, refuse unsatisfiable, additive caps | **FROZEN for v1.0** | G1 · 2026-07-01 · `[docs]` |
-| §5 File transfer — read + windowed upload + workspace jail | **FROZEN for v1.0** | G1 · 2026-07-01 · `[docs]` |
+| §5 File transfer — read + windowed upload + workspace jail | **FROZEN for v1.0 (amended)** | G1 · 2026-07-01; scratch/mutation/admission hardening · 2026-09-02 · `[docs]` |
 | §10 Security — pairing/encryption baseline (non-gating), connected-client-trust, single active writer, no PII/MAC-gating/telemetry | **FROZEN for v1.0** | G1 · 2026-07-01 · `[docs]` |
 
 The §2 GATT UUID base (`7079626c-…`), the §3 frame + fragmentation bytes, the §4 opcode set + numbers, and the §8 status set + numbers are now **stable inputs** to the firmware M1 stories (F-01, F-02) and the app `pble` client. The §4/§8 freeze **closes OI-4**: opcode and status numbers no longer change within v1.0. No wire bytes changed at this freeze — it flips status only. **Note:** freezing §4 fixes the *opcode set and its numbers*; the label / identify **payload encodings** (`SET_LABEL` max byte-length, `SET_IDENTIFY_LED` GPIO+active-level encoding, `IDENTIFY` blink-duration bound) remain **OI-6** — owned by §4/§7 and frozen before their S3/S4 stories (F-22, F-23), not at this freeze.
@@ -80,6 +86,13 @@ PyBLE defines one primary GATT service with a PyBLE-owned 128-bit UUID base. The
   fragment progress MUST NOT restart or extend it.
 - **INFO characteristic:** a read returns the same payload as a `DEVICE_INFO` response (chip, MicroPython version, free memory, `fs_root`, MTU, the stable `device_id`, and the `label`), so a client can identify a board before subscribing.
 
+GATT discovery, enabling the TX characteristic's CCCD, an INFO read, and an
+optional MTU exchange are transport setup, not PBLE/1 message exchanges. A
+client MUST enable TX notifications before writing its first PBLE/1 frame so
+the board can deliver the HELLO response. The first complete PBLE/1 `CMD` in
+each connection/VM epoch is HELLO; reading INFO neither negotiates nor changes
+that ordering.
+
 ## 3. Framing
 
 > **FROZEN for v1.0 (G0 · 2026-07-01 · `[docs]`).** The §3.1 message frame and §3.2 fragmentation bytes are stable; amend only via a `[docs]` commit before dependent code. (`OPCODE` *values* are §4-owned and remain DRAFT; the frame *structure* is frozen.)
@@ -124,6 +137,39 @@ A message larger than one packet is split across consecutive RX writes (or TX no
 ```
 
 `FRAG_HDR` bits: `bit7 = FIRST`, `bit6 = LAST`, `bits5..0 = index mod 64`. The receiver concatenates `FRAGMENT DATA` from the `FIRST` packet through the `LAST` packet (indices increasing mod 64) to reconstruct the §3.1 message, then validates the CRC. Receipt of `FIRST` always abandons any incomplete fragment run and starts a new one; a non-`FIRST` packet with no active run or with the wrong next index is dropped. This restart rule lets a sender restart an identical whole frame after its logical message ownership was preempted, without completing a stale prefix; ordinary transient pressure alone retries only the unaccepted fragment. A frame whose CRC fails is dropped and answered with `EVT ERROR(ECRC)` referencing the opcode if known.
+
+**Inbound hardening (amended 2026-09-02).** Each `FIRST` starts one absolute
+**5000 ms** receive-reassembly deadline. Fragment progress never extends it.
+The receiver checks that deadline before accepting every continuation; an
+expired continuation discards the whole run. A new `FIRST` is always permitted
+to abandon and replace an incomplete or expired run. Reassembly storage remains
+bounded by the port's advertised/defined maximum message size; an oversize run
+is discarded as one run, and its trailing non-`FIRST` fragments are suppressed
+rather than counted repeatedly.
+
+The agent validates one completed inbound frame in this order: exact structural
+length, CRC, direction/request ID, `VER`, HELLO/session state, then opcode and
+handler payload. CRC failure is always the existing `EVT` with the offending
+opcode where safely available, `ID=0`, and payload `ECRC`; it is never a `RSP`.
+A structurally invalid frame receives `RSP{EBADREQ}` only when the complete
+six-byte header is safely present and identifies `VER=1`, `TYPE=CMD`, and a
+nonzero request ID;
+otherwise it is silently dropped. After structural and CRC validation, an
+inbound frame whose `TYPE` is not `CMD` or whose request ID is zero is silently
+dropped, preventing response loops. A different `VER` in an otherwise valid
+`CMD` receives `RSP{EBADREQ}`. An unknown opcode after successful negotiation
+receives `RSP{EUNSUPPORTED}`.
+
+Each exact connection/VM epoch has a monotonic malformed-input budget of
+**8 protocol violations**. The counted units are one per discarded bad
+fragment run/frame or rejected command: expired continuation, fragment gap or
+wrong index, oversize run, structural/CRC/`VER`/direction/ID failure, malformed
+HELLO syntax, and a non-HELLO command before negotiation. A valid but
+unsupported HELLO version offer, an unsupported opcode after negotiation, and
+handler-level payload/status errors do not consume this budget. On the eighth
+violation the agent clears RX state and terminates that exact session without
+attempting another error frame. Only disconnect or VM-epoch rotation clears
+the counter.
 
 The ESP reference agent lifecycle-gates the entire RX write callback, not only
 complete-message dispatch. Before reading or copying any fragment byte, the
@@ -458,7 +504,7 @@ before wrap, so the quiescence seam cannot reintroduce ABA.
 
 ### Read (F-08)
 
-- **`FILE_LIST` (0x10)** `[plen][path]` → `RSP [status]`; on `OK`, then `[more:u8][count:u16]` and count× `{[etype:u8][esize:u32][nlen:u16][name]}` (`etype` 0=file / 1=dir; `more`=1 if the listing was truncated to the worker buffer).
+- **`FILE_LIST` (0x10)** `[plen][path]` → `RSP [status]`; on `OK`, then `[more:u8][count:u16]` and count× `{[etype:u8][esize:u32][nlen:u16][name]}` (`etype` 0=file / 1=dir; `more`=1 if at least one **visible** entry was truncated to the worker buffer). Every entry whose basename ends with the case-sensitive reserved `.pbltmp` suffix is omitted before stat, count, and response-budget accounting, whether that entry is a file or directory.
 - **`FILE_STAT` (0x11)** `[plen][path]` → `RSP [status]`; on `OK`, then `[size:u32][crc32:u32]`. Missing path → `ENOENT`.
 - **`FILE_GET_BEGIN` (0x12)** `[offset:u32][plen][path]` → `RSP [status]`; on `OK`, then `[total_size:u32]`. The whole-file CRC is delivered in `FILE_GET_END` (not up front — avoids a pre-scan double read); `FILE_STAT` first if you want it early.
 - **`FILE_GET_DATA` (0x13, EVT, id 0)** `[offset:u32][bytes]` — one BLE packet each.
@@ -466,23 +512,50 @@ before wrap, so the quiescence seam cannot reintroduce ABA.
 
 ### Windowed upload (F-09) — sliding window, cumulative ACK, Go-Back-N
 
-- **`FILE_PUT_BEGIN` (0x15)** `[total_size:u32][crc32:u32][plen][path]` → `RSP [status]`; on `OK`, then `[resume_offset:u32]` (0 in S5; resume fills it later). Opens a jailed temp `<dest>.pbltmp` (truncated); watermark = 0.
-- **`FILE_PUT_DATA` (0x16, CMD, no RSP)** `[offset:u32][bytes]`. `offset==watermark` → write + advance + `ACK{watermark}`; `offset<watermark` → duplicate → re-`ACK` (idempotent); `offset>watermark` → gap → drop + `ACK{watermark}` (app resends from there). No out-of-order buffering.
+- **`FILE_PUT_BEGIN` (0x15)** `[total_size:u32][crc32:u32][plen][path]` → `RSP [status]`; on `OK`, then `[resume_offset:u32]`. It prepares the jailed sibling `<dest>.pbltmp`, verifies any resumable prefix, applies the admission rule below, and sets the watermark to `resume_offset`.
+- **`FILE_PUT_DATA` (0x16, CMD, no RSP)** `[offset:u32][bytes]`. `offset==watermark` and `offset + len(bytes) <= total_size` → write + advance + `ACK{watermark}`; `offset<watermark` → duplicate → re-`ACK` (idempotent); `offset>watermark` → gap → drop + `ACK{watermark}` (app resends from there). A chunk that would cross `total_size` writes no byte and latches `ERANGE` for `FILE_PUT_END`. No out-of-order buffering.
 - **`FILE_PUT_ACK` (0x41, EVT, id 0)** `[ack_offset:u32]` = highest contiguous byte written = next expected offset.
 - **`FILE_PUT_END` (0x17)** `[crc32:u32]` → `RSP [status]`. `watermark ≠ total_size` → `ERANGE`; a latched write error → `ENOSPC`/`EIO`; temp CRC ≠ `crc32` → `ECRC`. In **every** failure the temp is deleted and **the old file is kept** (FR-FS-14). Else fsync + `rename(temp,dest)` (atomic on LittleFS) → `OK`.
 - **`FILE_DELETE` (0x18)** `[plen][path]`: file → remove; empty dir → rmdir; non-empty dir → `EACCES` (no recursive delete); missing → `ENOENT`.
 - **`MKDIR` (0x19)** `[plen][path]`: already-a-dir → `OK` (idempotent); an existing file → `EBADREQ`; missing parent → `ENOENT`.
 - **`FILE_RENAME` (0x1A)** `[slen][src][dlen][dst]`: both jailed; src missing → `ENOENT`; dst a non-empty dir → `EACCES`; else atomic rename → `OK`.
 
-**Resume on reconnect (F-10):** a link drop mid-`PUT` resets the in-RAM transfer state, but the jailed `<dest>.pbltmp` + its watermark persist on flash. On reconnect a `FILE_PUT_BEGIN` for the same dest returns `resume_offset` = the existing temp length (the contiguous prefix the board itself wrote; the worker re-CRCs `temp[0,len)` to re-seed the running whole-file CRC and set the watermark). `temp_len > total_size` → truncate to 0 (`resume_offset = 0`). The app resumes `FILE_PUT_DATA` from `resume_offset`; the whole-file CRC at `FILE_PUT_END` stays the only correctness gate — a bad/foreign prefix → `ECRC`, temp deleted, **old file kept byte-for-byte** (never a silent corruption or restart-from-zero).
+The three namespace mutations parse and jail-resolve every supplied path first.
+While a PUT is active they then return `EBUSY` before any stat or mutation;
+therefore malformed payloads still take `EBADREQ`, forbidden paths still take
+`EACCES`, and a valid mutation takes `EBUSY` independent of path existence.
+`FILE_LIST` and `FILE_STAT` remain available during PUT. This serialization is
+only for the PBLE/1 bridge; ordinary user code retains direct VFS access.
 
-**Workspace jail (F-17):** every path is canonicalized against `fs_root` at a **single chokepoint** before any vfs op; traversal (`../`) / absolute escapes outside `fs_root`, any component ending with the case-sensitive reserved `.pbltmp` suffix, and a case-sensitive reserved first canonical component relative to `fs_root` → `EACCES` (SEC-4). The reserved first component is any lowercase name beginning `pyble` or `pble`, or exact `boot.py` / `_boot.py`; the same basename below an ordinary first component is allowed, and ordinary root names such as `main.py` remain allowed. **`.py` / data only** — the agent never requires, generates, or accepts `.mpy` / `.pyc` transfer artifacts; no server-side compilation.
+**Resume on reconnect (F-10):** a link drop mid-`PUT` resets the in-RAM transfer state, but the jailed `<dest>.pbltmp` prefix persists on flash. A scratch prefix is resumable only when it is a regular file, `0 < length <= total_size`, exactly that many bytes are read and CRC'd, and its type and length remain stable through that scan. Only then may `FILE_PUT_BEGIN` return the verified length as a nonzero `resume_offset`, re-seed the running whole-file CRC, and set the watermark. A missing or zero-length regular scratch means a fresh upload. An oversized, short-read, unreadable, changed, or type-invalid scratch is malformed: the agent removes a malformed regular file or empty scratch directory, confirms absence, and restarts at zero. It never recursively removes, truncates, renames, or otherwise changes a nonempty scratch directory or the old destination; a nonempty scratch directory or failed safe removal returns `EIO`. A structurally valid but foreign prefix may resume, but the whole-file CRC at `FILE_PUT_END` remains the content-identity gate: `ECRC` deletes the scratch and keeps the old destination byte-for-byte.
+
+**Upload admission (amended 2026-09-02):** PBLE/1 retains the existing
+`total_size:u32`; v0.6.1 adds no fixed-size capability. Before creating or
+growing scratch, `FILE_PUT_BEGIN` reads `statvfs(fs_root)` and applies a
+**65,536-byte safety reserve** using checked 64-bit arithmetic:
+
+```text
+unit      = f_frsize
+free      = f_bavail * unit
+remaining = total_size - resume_offset
+needed    = ceil(remaining / unit) * unit
+accept iff free >= 65,536 + needed
+```
+
+Zero/invalid geometry, invalid counters, or arithmetic overflow returns `EIO`;
+insufficient space returns `ENOSPC`. Existing scratch allocation is already
+reflected in `free`, so only its verified remainder is charged. Space occupied
+by the old destination is never credited because that file remains until the
+atomic commit. The reserve is admission headroom, not a promise about the exact
+post-write free count because VFS metadata can consume additional blocks.
+
+**Workspace jail (F-17):** every path is canonicalized against `fs_root` at a **single chokepoint** before any vfs op; traversal (`../`) / absolute escapes outside `fs_root`, any component ending with the case-sensitive reserved `.pbltmp` suffix, and a case-sensitive reserved first canonical component relative to `fs_root` → `EACCES` (SEC-4). The reserved first component is any lowercase name beginning `pyble` or `pble`, or exact `boot.py` / `_boot.py`; the same basename below an ordinary first component is allowed, and ordinary root names such as `main.py` remain allowed. Scratch names are also hidden from listings as specified above. **`.py` / data only** — the agent never requires, generates, or accepts `.mpy` / `.pyc` transfer artifacts; no server-side compilation.
 
 ## 6. Run / Stop / Console
 
 > **FROZEN for v1.0 (amended)** — RUN-file at G1 · S3; **`RUN{source}`, `STOP`, `SOFT_REBOOT`, `CONSOLE_DATA`, `CONSOLE_INPUT` frozen at G1 · S4 (2026-07-01 · `[docs]`)**; transactional RUN admission clarified 2026-08-14; default-MTU `STOP`/`SOFT_REBOOT` response-before-side-effect admission, per-event session binding, the runner pickup/control-resolution cut, and the bounded current-message TX-boundary wait clarified 2026-08-15. Wire below; amend only via a `[docs]` commit before dependent code.
 
-- **`RUN` (0x20)** payload `[mode:u8][data]` — `mode` 0=file (`data` = UTF-8 path), 1=source (`data` = UTF-8 snippet). → `RSP{status}` (`OK` | `EBUSY` if one already running, FR-RUN-4 | `EBADREQ` bad mode | `ERANGE` over-length), then `RUN_STATE(running)`. Both modes share one lifecycle. Completion → `RUN_STATE(done)`; an uncaught exception → `CONSOLE_DATA(stderr, traceback)` then `RUN_STATE(error)`. A missing/inaccessible file surfaces asynchronously (`CONSOLE_DATA(stderr)` + `RUN_STATE(error)`), not as the `RSP`.
+- **`RUN` (0x20)** payload `[mode:u8][data]` — `mode` 0=file (`data` = UTF-8 path), 1=source (`data` = UTF-8 snippet). → `RSP{status}` (`OK` | `EBUSY` if one already running, FR-RUN-4 | `EBADREQ` bad mode | `ERANGE` over-length), then `RUN_STATE(running)`. Both modes share one lifecycle. Completion → `RUN_STATE(done)`; an uncaught exception → `CONSOLE_DATA(stderr, traceback)` then `RUN_STATE(error)`. A missing/inaccessible file surfaces asynchronously (`CONSOLE_DATA(stderr)` + `RUN_STATE(error)`), not as the `RSP`. Every ordinary or autorun execution receives a fresh globals/locals dictionary containing `__name__ = "__main__"`; variables created by an earlier run are absent. PBLE/1 v0.6.1 does not yet define `__file__`, working-directory changes, sibling-import setup, or `sys.modules` cleanup.
 
   An otherwise valid, non-busy RUN is admitted transactionally. The ESP
   reference agent makes a provisional, non-observable reservation and copies
@@ -566,7 +639,7 @@ before wrap, so the quiescence seam cannot reintroduce ABA.
   before pickup is released without stop intent. Timer-arm failure remains the documented
   post-acceptance non-returning restart exception.
 - **`CONSOLE_DATA` (0x30, EVT, id 0)** payload `[stream:u8][bytes]` — `stream` 0=stdout, 1=stderr (FR-CON-1/2).
-- **`CONSOLE_INPUT` (0x31, CMD, no RSP)** payload `[bytes]` — appended to the running program's `stdin` (`input()`/`sys.stdin`); fire-and-forget, no reply frame (FR-CON-3).
+- **`CONSOLE_INPUT` (0x31, CMD, no RSP)** payload `[bytes]` — appended to the active program's bounded `stdin` (`input()`/`sys.stdin`); fire-and-forget, no reply frame (FR-CON-3). Input received while no program is active is silently discarded. A successful RUN response-admission cut clears stdin before waking the runner; autorun admission does the same. Accepted STOP clears it after response handoff, and every terminal transition, disconnect, and VM reset clears it. Disconnect does not itself stop a continuing run, so the active flag remains true and a newly negotiated client may feed that same run; only the queued bytes from before the disconnect are lost. These boundaries prevent idle input and overflow from one run being consumed by another.
 - **`RUN_STATE` (0x40, EVT, id 0)** payload `[state:u8]` — 0 idle / 1 running / 2 done / 3 error (FR-RUN-7).
 
 The console is **observe-anywhere**: `stdout`/`stderr` stream regardless of
@@ -584,11 +657,55 @@ mirror only — never a runtime transport (FR-CON-5).
 
 ## 7. HELLO & capabilities
 
-> **FROZEN for v1.0 (G1 · 2026-07-01 · `[docs]`).** The capability field set below, the **HELLO-is-the-first-exchange** rule, and the invariant that an **INFO-characteristic read returns the same `DEVICE_INFO` payload** are stable — the DoR for F-03 `pyble_info` and F-16. **Closes the label half of OI-6: the `SET_LABEL` / `label` maximum is 24 bytes (UTF-8 encoded); an over-length label is rejected with `ERANGE` and not stored, and the same bound applies to the advertised name.** **Closes the OI-6 remainder at S4:** `SET_IDENTIFY_LED` = `[gpio:u8][active_level:u8]` (empty clears), `IDENTIFY` = optional `[duration_ds:u8]` (1–50 ds, default 20, 5 Hz). Amend only via a `[docs]` commit before dependent code.
+> **FROZEN for v1.0 (G1 · 2026-07-01; amended 2026-09-02 · `[docs]`).** The capability field set below, the **HELLO-is-the-first-exchange** rule, and the invariant that an **INFO-characteristic read returns the same `DEVICE_INFO` payload** are stable — the DoR for F-03 `pyble_info` and F-16. **Closes the label half of OI-6: the `SET_LABEL` / `label` maximum is 24 bytes (UTF-8 encoded); an over-length label is rejected with `ERANGE` and not stored, and the same bound applies to the advertised name.** **Closes the OI-6 remainder at S4:** `SET_IDENTIFY_LED` = `[gpio:u8][active_level:u8]` (empty clears), `IDENTIFY` = optional `[duration_ds:u8]` (1–50 ds, default 20, 5 Hz). Amend only via a `[docs]` commit before dependent code.
 
-`HELLO { proto_versions[], app_name, app_version }` is the **first exchange after connect** (before subscribing to TX) → `RSP { proto_version, caps }` where `caps` includes: `chip` (the PBLE/1 wire key for a port-defined ASCII target identifier; the v1 reference agents emit `esp32`/`esp32-s3`/`esp32-c3`), `mpy_version`, `agent_version` (the PyBLE agent firmware SemVer), `fs_root`, `max_file_size`, `put_window W`, `chunk_size`, `has_sd`, `free_mem`, `device_id` (a stable, non-personal port-defined suffix; MAC-derived on the ESP32 reference port), `label` (the user-set device label, or empty; **max 24 bytes UTF-8, else `ERANGE`**), `has_identify` (the board supports `IDENTIFY`), `identify_led` (the configured identify-LED GPIO as a byte, or `0xFF` = none), and `auto_run` (whether `/main.py` auto-runs at boot: 0=off default, 1=on; set via `SET_AUTORUN`). Reading the **INFO characteristic returns the same `DEVICE_INFO` caps payload** (no subscription needed).
+`HELLO` is the first complete PBLE/1 frame after the §2 transport setup. Its
+request payload is newline-separated ASCII `key=value` text no longer than
+**192 bytes**. A valid request contains exactly one each of the required keys
+`proto_versions`, `app_name`, and `app_version`; key order is insignificant.
+Lines use LF (`0x0A`), one optional trailing LF is accepted, and empty interior
+lines are invalid. Each line is split at its first `=`. Keys match
+`[a-z][a-z0-9_]{0,31}`. Unknown well-formed keys with printable ASCII values no
+longer than 32 bytes are ignored. A duplicate or missing required key,
+CR/NUL/non-ASCII byte, malformed key/value line, or over-bound payload/value is
+`EBADREQ`.
 
-**Caps payload serialization (frozen 2026-07-02 · `[docs]`, S2-app coordination):** the caps payload is newline-separated ASCII `key=value` text, one pair per line, with the short key tokens the reference agent emits — `proto`, `agent`, `chip`, `mpy`, `fs_root`, `mtu`, `window`, `chunk`, `free_mem`, `has_sd`, `has_identify`, `identify_led` (integer GPIO; `255` = none), `auto_run`, `device_id`, `label` (may be empty). Booleans are `0`/`1`; integers are decimal. Clients MUST parse tolerantly — unknown keys are ignored (additive caps, §9) and key order is not significant. The `HELLO` RSP payload is `[status:u8]` followed by this same caps text.
+`proto_versions` is 1–8 comma-separated unsigned canonical decimal integers
+in `0..255`; empty elements, leading zeroes except the single token `0`, and
+non-digits are invalid. `app_name` and `app_version` are each 1–32 bytes of
+printable ASCII (`0x20..0x7E`). The v1 agent chooses version 1 exactly when the
+offer contains 1. A syntactically valid offer without 1 returns
+`EUNSUPPORTED`; malformed syntax returns `EBADREQ`. The agent neither persists,
+logs, nor echoes the two app-identification values.
+
+Each exact `{connection generation, VM epoch}` begins `UNNEGOTIATED`. INFO
+reads remain allowed and do not change it. Before negotiation, HELLO is the
+only command admitted to an opcode handler. Any other response-bearing command
+returns `EBADREQ` without side effects; `FILE_PUT_DATA` and `CONSOLE_INPUT`,
+whose opcodes define no `RSP`, are silently dropped without side effects. The
+session becomes `NEGOTIATED(v1)` only after the final fragment of its
+`HELLO RSP{OK}` is accepted by the bounded, session-bound local Notify path.
+Repeating a compatible HELLO is idempotent and returns current caps. A failed
+initial HELLO leaves the session unnegotiated; a failed repeated HELLO leaves
+an already negotiated session negotiated. Disconnect and VM-epoch rotation
+clear negotiation before later RX admission.
+
+The response contains the frozen caps text below; `proto=1` is the selected
+version and no additional selected-version byte exists. The fields describe
+`chip` (a port-defined target token), `agent` (agent SemVer), `mpy`, `fs_root`,
+`mtu`, `window`, `chunk`, `free_mem`, `has_sd`, `has_identify`, `identify_led`,
+`auto_run`, `device_id`, and `label`. Reading INFO returns the same caps text
+without subscription or negotiation. `max_file_size` was never a serialized
+PBLE/1 key and is not added in v0.6.1; §5 defines dynamic upload admission.
+
+**Caps payload serialization (frozen 2026-07-02; clarified 2026-09-02 · `[docs]`, S2-app coordination):** the caps payload is newline-separated UTF-8 `key=value` text, one pair per line, with the short key tokens the reference agent emits — `proto`, `agent`, `chip`, `mpy`, `fs_root`, `mtu`, `window`, `chunk`, `free_mem`, `has_sd`, `has_identify`, `identify_led` (integer GPIO; `255` = none), `auto_run`, `device_id`, `label` (may be empty). Keys and every non-label value are ASCII; `label` is the sole UTF-8 value. Booleans are `0`/`1`; integers are decimal. Clients MUST parse tolerantly — unknown keys are ignored (additive caps, §9) and key order is not significant. The `HELLO` RSP payload is `[status:u8]` followed by this same caps text.
+
+For `SET_LABEL`, encoded length is checked first: more than 24 bytes returns
+`ERANGE`. Otherwise nonempty input must be strict, well-formed UTF-8 and must
+not contain Unicode control code points U+0000–U+001F or U+007F–U+009F;
+failure returns `EBADREQ`. Empty input remains the clear operation. Rejected or
+failed persistence leaves the stored label, caps value, and advertisement
+unchanged.
 
 The client MUST treat `chip` as display/reference metadata rather than an
 allowlist: an unknown value does not block a conforming connection. It must not
@@ -621,7 +738,7 @@ client simply ignores them.
 
 ## 9. Versioning policy
 
-> **FROZEN for v1.0 (G1 · 2026-07-01 · `[docs]`).** v1.0 supports **exactly `VER = 0x01`** (`PBLE_PROTO_VERSION = 1`): a frame with any other `VER` is refused (`EBADREQ`), and a `HELLO` whose `proto_versions[]` does not include `1` is refused rather than served — the DoR for F-16 (FR-PROTO-7). Capabilities are additive within v1.0 (an older client ignores unknown caps). Amend only via a `[docs]` commit before dependent code.
+> **FROZEN for v1.0 (G1 · 2026-07-01; clarified 2026-09-02 · `[docs]`).** v1.0 supports **exactly `VER = 0x01`** (`PBLE_PROTO_VERSION = 1`). Under §3.1 response eligibility, an otherwise valid inbound `CMD` frame with another `VER` receives `EBADREQ`; a syntactically valid HELLO offer without version 1 receives `EUNSUPPORTED`; malformed HELLO syntax receives `EBADREQ`. A compatible repeated HELLO is idempotent. Capabilities are additive within v1.0 (an older client ignores unknown caps). Amend only via a `[docs]` commit before dependent code.
 
 `VER` and the HELLO `proto_versions[]` exchange let either side refuse or downgrade gracefully. Backward-incompatible changes bump the protocol to PBLE/2; additive opcodes are gated behind capability flags so old clients keep working. No silent wire-format changes within version 1.
 
