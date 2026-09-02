@@ -85,6 +85,7 @@ static uint8_t g_ring[PBLE_STDIN_RING];
 static uint16_t g_ring_head;   // next write
 static uint16_t g_ring_tail;   // next read
 static uint16_t g_ring_count;
+static bool g_stdin_active;
 static int64_t g_console_next_notify_us;
 
 // Emit staging: [stream][chunk]. Built only on the worker thread (single-writer),
@@ -219,6 +220,32 @@ const mp_print_t pble_console_stderr_print = { NULL, console_stderr_strn };
 // ============================================================================
 // stdin ring: CONSOLE_INPUT (0x31) -> ring -> worker getchar
 // ============================================================================
+static inline void stdin_ring_clear_locked(void) {
+    g_ring_head = 0;
+    g_ring_tail = 0;
+    g_ring_count = 0;
+}
+
+void pble_console_stdin_begin(void) {
+    taskENTER_CRITICAL(&g_ring_mux);
+    stdin_ring_clear_locked();
+    g_stdin_active = true;
+    taskEXIT_CRITICAL(&g_ring_mux);
+}
+
+void pble_console_stdin_end(void) {
+    taskENTER_CRITICAL(&g_ring_mux);
+    g_stdin_active = false;
+    stdin_ring_clear_locked();
+    taskEXIT_CRITICAL(&g_ring_mux);
+}
+
+void pble_console_stdin_clear(void) {
+    taskENTER_CRITICAL(&g_ring_mux);
+    stdin_ring_clear_locked();
+    taskEXIT_CRITICAL(&g_ring_mux);
+}
+
 // 0x31 host task: append bytes, dropping any overflow (bounded — never grows the
 // heap, never blocks the host task). Fire-and-forget: no RSP frame.
 uint8_t pble_console_input(const pble_frame_t *req, uint8_t *rsp, size_t *rlen,
@@ -230,13 +257,15 @@ uint8_t pble_console_input(const pble_frame_t *req, uint8_t *rsp, size_t *rlen,
     }
     if (req != NULL && req->payload != NULL && req->len > 0) {
         taskENTER_CRITICAL(&g_ring_mux);
-        for (uint16_t i = 0; i < req->len; i++) {
-            if (g_ring_count >= PBLE_STDIN_RING) {
-                break;   // full: drop the overflow tail (bounded)
+        if (g_stdin_active) {
+            for (uint16_t i = 0; i < req->len; i++) {
+                if (g_ring_count >= PBLE_STDIN_RING) {
+                    break;   // full: drop the overflow tail (bounded)
+                }
+                g_ring[g_ring_head] = req->payload[i];
+                g_ring_head = (uint16_t)((g_ring_head + 1) % PBLE_STDIN_RING);
+                g_ring_count++;
             }
-            g_ring[g_ring_head] = req->payload[i];
-            g_ring_head = (uint16_t)((g_ring_head + 1) % PBLE_STDIN_RING);
-            g_ring_count++;
         }
         taskEXIT_CRITICAL(&g_ring_mux);
     }
@@ -246,8 +275,11 @@ uint8_t pble_console_input(const pble_frame_t *req, uint8_t *rsp, size_t *rlen,
 // Worker stdin drain for input()/sys.stdin: next byte, or -1 when empty.
 int pble_console_stdin_getchar(void) {
     int c = -1;
+    if (!on_worker()) {
+        return c;
+    }
     taskENTER_CRITICAL(&g_ring_mux);
-    if (g_ring_count > 0) {
+    if (g_stdin_active && g_ring_count > 0) {
         c = g_ring[g_ring_tail];
         g_ring_tail = (uint16_t)((g_ring_tail + 1) % PBLE_STDIN_RING);
         g_ring_count--;
@@ -259,7 +291,7 @@ int pble_console_stdin_getchar(void) {
 static bool stdin_ring_readable(void) {
     bool readable;
     taskENTER_CRITICAL(&g_ring_mux);
-    readable = g_ring_count > 0;
+    readable = g_stdin_active && g_ring_count > 0;
     taskEXIT_CRITICAL(&g_ring_mux);
     return readable;
 }
@@ -270,6 +302,7 @@ void pble_console_vm_detach(void) {
 
 void pble_console_vm_reset(void) {
     taskENTER_CRITICAL(&g_ring_mux);
+    g_stdin_active = false;
     g_ring_head = 0;
     g_ring_tail = 0;
     g_ring_count = 0;

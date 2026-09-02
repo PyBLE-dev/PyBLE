@@ -18,6 +18,7 @@
 #include "freertos/task.h"
 
 #include "pble_lock.h"
+#include "pble_vm_lifecycle.h"
 
 // pble_fs_on_disconnect is owned by storage-engineer (pble_fs.c, F-10 resume).
 // Weak reference: until that strong definition ships, the symbol resolves to NULL
@@ -34,6 +35,8 @@ typedef struct {
 static lock_slot_t g_run_slot;    // W_RUN
 static lock_slot_t g_xfer_slot;   // W_XFER
 static portMUX_TYPE g_lock_mux = portMUX_INITIALIZER_UNLOCKED;
+static bool g_lock_registered;
+static uint64_t g_lock_registration_epoch;
 
 // Select the slot for a writer class, or NULL for an invalid class.
 static lock_slot_t *lock_slot_for(pble_writer_t who) {
@@ -90,10 +93,17 @@ void pble_lock_on_disconnect(uint16_t conn) {
 }
 
 void pble_lock_register(void) {
+    uint64_t epoch = pble_vm_epoch_current();
     taskENTER_CRITICAL(&g_lock_mux);
+    if (g_lock_registered && g_lock_registration_epoch == epoch) {
+        taskEXIT_CRITICAL(&g_lock_mux);
+        return;
+    }
     g_run_slot.held = false;
     g_run_slot.conn = 0;
     g_xfer_slot.held = false;
     g_xfer_slot.conn = 0;
+    g_lock_registration_epoch = epoch;
+    g_lock_registered = true;
     taskEXIT_CRITICAL(&g_lock_mux);
 }

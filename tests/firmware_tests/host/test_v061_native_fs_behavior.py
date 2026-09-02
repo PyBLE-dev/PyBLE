@@ -98,6 +98,7 @@ PRODUCTION_FUNCTIONS = (
     "pble_fs_resolve",
     "fs_is_forbidden_artifact",
     "fs_str",
+    "fs_close_local",
     "fs_open",
     "fs_chunk",
     "fs_mode_is_regular",

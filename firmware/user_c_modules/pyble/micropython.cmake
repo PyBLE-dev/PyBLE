@@ -9,6 +9,7 @@
 add_library(usermod_pyble INTERFACE)
 
 target_sources(usermod_pyble INTERFACE
+    ${CMAKE_CURRENT_LIST_DIR}/pble_wire.c
     ${CMAKE_CURRENT_LIST_DIR}/pble_proto.c
     ${CMAKE_CURRENT_LIST_DIR}/pble_ble.c
     ${CMAKE_CURRENT_LIST_DIR}/pble_info.c

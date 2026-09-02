@@ -117,6 +117,9 @@ typedef struct {
     uint64_t ready_order;
     bool retain_completion;
     bool completion_ok;
+    // Set only for a syntactically valid, v1-compatible HELLO RSP{OK}.
+    // Negotiation is committed when its final fragment is locally accepted.
+    bool commit_hello;
 } pble_rsp_slot_t;
 
 static pble_rsp_slot_t s_rsp_pool[PBLE_RSP_POOL_DEPTH];
@@ -127,6 +130,52 @@ static bool s_rsp_initialized;
 static int8_t s_rsp_active_slot = -1;
 static uint64_t s_rsp_ready_order;
 static bool s_rsp_tx_owned;
+
+// PBLE negotiation belongs to one exact connection-generation/VM-epoch
+// identity.  The response callout and host RX task share this state through
+// the existing response-pool critical section.
+static pble_wire_session_t s_wire_session;
+static pble_session_token_t s_wire_session_token;
+static bool s_wire_session_bound;
+
+static bool pble_proto_session_matches(
+    const pble_session_token_t *left, const pble_session_token_t *right) {
+    return left != NULL && right != NULL && left->conn == right->conn &&
+           left->generation == right->generation &&
+           left->vm_epoch == right->vm_epoch;
+}
+
+static void pble_proto_wire_session_snapshot(
+    const pble_session_token_t *token, pble_wire_session_t *wire_session) {
+    taskENTER_CRITICAL(&s_rsp_mux);
+    if (!s_wire_session_bound ||
+        !pble_proto_session_matches(&s_wire_session_token, token)) {
+        pble_wire_session_reset(&s_wire_session);
+        s_wire_session_token = *token;
+        s_wire_session_bound = true;
+    }
+    *wire_session = s_wire_session;
+    taskEXIT_CRITICAL(&s_rsp_mux);
+}
+
+static void pble_proto_wire_session_commit_locked(
+    const pble_session_token_t *token) {
+    if (s_wire_session_bound &&
+        pble_proto_session_matches(&s_wire_session_token, token)) {
+        pble_wire_session_commit_v1(&s_wire_session);
+    }
+}
+
+static void pble_proto_wire_session_reset_locked(
+    const pble_session_token_t *token) {
+    if (token == NULL ||
+        (s_wire_session_bound &&
+         pble_proto_session_matches(&s_wire_session_token, token))) {
+        pble_wire_session_reset(&s_wire_session);
+        memset(&s_wire_session_token, 0, sizeof(s_wire_session_token));
+        s_wire_session_bound = false;
+    }
+}
 
 static bool pble_rsp_has_pending_locked(void) {
     for (uint8_t i = 0; i < PBLE_RSP_POOL_DEPTH; i++) {
@@ -163,6 +212,7 @@ static void pble_rsp_recycle_locked(pble_rsp_slot_t *slot) {
     slot->index = 0;
     slot->retain_completion = false;
     slot->completion_ok = false;
+    slot->commit_hello = false;
     slot->incarnation++;
     if (slot->incarnation == 0) {
         slot->incarnation = 1;
@@ -211,6 +261,7 @@ bool pble_rsp_reserve(const pble_session_token_t *session,
         slot->ticket.session = *session;
         slot->ticket.vm_epoch = vm_epoch;
         slot->retain_completion = false;
+        slot->commit_hello = false;
         slot->state = PBLE_RSP_CLAIMED;
         pble_rsp_ticket_t claim_ticket = slot->ticket;
         taskEXIT_CRITICAL(&s_rsp_mux);
@@ -273,6 +324,19 @@ bool pble_rsp_expect_completion(const pble_rsp_ticket_t *ticket) {
     }
     taskEXIT_CRITICAL(&s_rsp_mux);
     return valid;
+}
+
+static void pble_rsp_mark_hello_commit(const pble_rsp_ticket_t *ticket) {
+    if (ticket == NULL || ticket->slot >= PBLE_RSP_POOL_DEPTH) {
+        return;
+    }
+    taskENTER_CRITICAL(&s_rsp_mux);
+    pble_rsp_slot_t *slot = &s_rsp_pool[ticket->slot];
+    if (pble_rsp_ticket_matches_locked(slot, ticket) &&
+        slot->state == PBLE_RSP_RESERVED) {
+        slot->commit_hello = true;
+    }
+    taskEXIT_CRITICAL(&s_rsp_mux);
 }
 
 bool pble_rsp_publish(const pble_rsp_ticket_t *ticket, uint8_t opcode,
@@ -392,6 +456,7 @@ void pble_rsp_cancel_session(const pble_session_token_t *session) {
     }
     uint32_t wake_mask = 0;
     taskENTER_CRITICAL(&s_rsp_mux);
+    pble_proto_wire_session_reset_locked(session);
     for (uint8_t i = 0; i < PBLE_RSP_POOL_DEPTH; i++) {
         pble_rsp_slot_t *slot = &s_rsp_pool[i];
         if (slot->state != PBLE_RSP_FREE &&
@@ -499,6 +564,10 @@ void pble_rsp_tx_result(const pble_rsp_tx_t *tx, uint32_t stream_generation,
             slot->offset = (uint16_t)(offset + accepted);
             slot->index = (uint8_t)(index + 1);
             if (slot->offset >= slot->frame_len) {
+                if (slot->commit_hello) {
+                    pble_proto_wire_session_commit_locked(
+                        &slot->ticket.session);
+                }
                 s_rsp_active_slot = -1;
                 if (slot->retain_completion) {
                     slot->completion_ok = true;
@@ -551,6 +620,9 @@ bool pble_rsp_release_owner_if_idle(void) {
 }
 
 void pble_proto_vm_reset(void) {
+    taskENTER_CRITICAL(&s_rsp_mux);
+    pble_proto_wire_session_reset_locked(NULL);
+    taskEXIT_CRITICAL(&s_rsp_mux);
     if (!s_rsp_initialized) {
         return;
     }
@@ -618,54 +690,83 @@ void pble_proto_refuse(uint8_t opcode, uint8_t id_, uint8_t status,
 // entire operation, including fire-and-forget and special RUN handlers.
 static void pble_proto_dispatch_admitted(
     const uint8_t *msg, size_t len, const pble_session_token_t *session) {
+    pble_wire_session_t wire_session;
+    pble_proto_wire_session_snapshot(session, &wire_session);
+    pble_wire_decision_t decision;
+    bool reboot_closing = !pble_vm_reboot_command_admitted(false);
+    pble_wire_decide_with_closing(&wire_session, msg, len, reboot_closing,
+                                  &decision);
+
+    // The transport owns one reducer for fragment and complete-frame faults.
+    // It closes admission on violation eight, so no response/event from that
+    // terminal violation may be queued afterward.
+    if (decision.violation && !reboot_closing &&
+        !pble_ble_record_protocol_violation(session)) {
+        return;
+    }
+    if (decision.action == PBLE_WIRE_DROP) {
+        return;
+    }
+    if (decision.action == PBLE_WIRE_EVT) {
+        (void)pble_proto_emit(decision.opcode, &decision.status, 1u, session);
+        return;
+    }
+
     pble_frame_t f = {0};
-    int rc = pble_proto_decode(msg, len, &f);
+    int rc = -1;
     bool invoke_handler = false;
-    uint8_t opcode = (len > 2) ? msg[2] : 0;
-    uint8_t id_ = (len > 3) ? msg[3] : 0;
-    uint8_t status = PBLE_EBADREQ;
+    uint8_t opcode = decision.opcode;
+    uint8_t id_ = decision.id;
+    uint8_t status = decision.status;
     size_t extra = 0;
     pble_handler_t h = NULL;
     pble_deferred_handler_t deferred = NULL;
     pble_handler_kind_t kind = PBLE_HANDLER_GENERIC;
 
-    if (rc >= 0) {
+    // A compatible HELLO uses its registered handler to append the capability
+    // text.  Every other PBLE_WIRE_RSP is already a status-only guard result.
+    if (decision.action == PBLE_WIRE_DISPATCH || decision.commit_hello) {
+        rc = pble_proto_decode(msg, len, &f);
+        if (rc < 0) {
+            return;  // pble_wire admitted only a complete v1 frame.
+        }
         opcode = f.opcode;
         id_ = f.id;
         uint32_t got = (uint32_t)msg[len - 4] |
                        ((uint32_t)msg[len - 3] << 8) |
                        ((uint32_t)msg[len - 2] << 16) |
                        ((uint32_t)msg[len - 1] << 24);
+        // Retain this local invariant as defense in depth.  pble_wire already
+        // applied CRC before direction, version, session, and opcode gates.
         if (pble_proto_crc32(msg, len - PBLE_CRC_LEN) != got) {
-            status = PBLE_ECRC;
-        } else {
-            kind = (pble_handler_kind_t)s_handler_kinds[f.opcode];
-            h = s_handlers[f.opcode];
-            deferred = s_deferred_handlers[f.opcode];
+            return;
+        }
 
-            if (!pble_vm_reboot_command_admitted(
-                    f.opcode == PBLE_OP_SOFT_REBOOT)) {
-                // During an accepted SOFT_REBOOT grace, response-bearing
-                // commands receive a bounded EBUSY refusal while fire-and-
-                // forget commands remain effect-free and response-free.
-                if (kind == PBLE_HANDLER_NO_RESPONSE) {
-                    return;
-                }
-                status = PBLE_EBUSY;
-            } else if (kind == PBLE_HANDLER_NO_RESPONSE && h != NULL) {
-                (void)h(&f, s_rsp + 1, &extra, session);
+        kind = (pble_handler_kind_t)s_handler_kinds[f.opcode];
+        h = s_handlers[f.opcode];
+        deferred = s_deferred_handlers[f.opcode];
+
+        if (!pble_vm_reboot_command_admitted(
+                f.opcode == PBLE_OP_SOFT_REBOOT)) {
+            // During an accepted SOFT_REBOOT grace, response-bearing commands
+            // receive EBUSY while fire-and-forget commands remain effect-free.
+            if (kind == PBLE_HANDLER_NO_RESPONSE) {
                 return;
-            } else if (kind == PBLE_HANDLER_SPECIAL && h != NULL) {
-                pble_handler_t special_handler = h;
-                status = special_handler(&f, s_rsp + 1, &extra, session);
-                if (status == PBLE_NO_RSP) {
-                    return;
-                }
-            } else if (h == NULL && deferred == NULL) {
-                status = PBLE_EUNSUPPORTED;
-            } else {
-                invoke_handler = true;
             }
+            status = PBLE_EBUSY;
+        } else if (kind == PBLE_HANDLER_NO_RESPONSE && h != NULL) {
+            (void)h(&f, s_rsp + 1, &extra, session);
+            return;
+        } else if (kind == PBLE_HANDLER_SPECIAL && h != NULL) {
+            pble_handler_t special_handler = h;
+            status = special_handler(&f, s_rsp + 1, &extra, session);
+            if (status == PBLE_NO_RSP) {
+                return;
+            }
+        } else if (h == NULL && deferred == NULL) {
+            status = PBLE_EUNSUPPORTED;
+        } else {
+            invoke_handler = true;
         }
     }
 
@@ -692,10 +793,13 @@ static void pble_proto_dispatch_admitted(
         extra = PBLE_RSP_MAX;
     }
     s_rsp[0] = status;
+    if (decision.commit_hello && status == PBLE_OK) {
+        pble_rsp_mark_hello_commit(&ticket);
+    }
     (void)pble_rsp_publish(&ticket, opcode, id_, s_rsp, 1 + extra);
 }
 
-// Decode → §9/CRC gates → category-aware route → reserved generic RSP.
+// Exact-session wire admission → category-aware route → reserved generic RSP.
 void pble_proto_dispatch(const uint8_t *msg, size_t len, uint16_t conn) {
     pble_session_token_t session;
     if (!pble_ble_session_snapshot(conn, &session)) {
