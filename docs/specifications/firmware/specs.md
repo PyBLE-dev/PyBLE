@@ -1514,7 +1514,13 @@ candidate `release.json`, and profile install digest MUST match one immutable
 candidate. The qualification source and executable digests bind the reviewed
 post-freeze runner that produced the result. The raw log is separately
 exclusive-created, redacted, canonical JSON Lines; its lowercase SHA-256 is
-bound by the result.
+bound by the result. Every raw-log line is one JSON object encoded as UTF-8
+with keys in lexicographic order, no insignificant whitespace, no non-finite
+number, and one trailing LF; blank lines and a missing final LF are invalid.
+The runner constructs those objects only from fixed phase/scenario tokens,
+pass/fail state, and bounded numeric measurements. It MUST NOT serialize a BLE
+address, device ID, device label, source/file content, console bytes, or
+exception text into that log.
 
 `scenario_order` and the insertion order of `scenarios` are exactly:
 
