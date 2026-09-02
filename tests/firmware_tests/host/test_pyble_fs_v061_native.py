@@ -178,6 +178,26 @@ class NativeFsV061ContractTest(unittest.TestCase):
         self.assertIn("fs_put_ack", body[latch_at:write_at])
         self.assertIn("return", body[latch_at:write_at])
 
+    def test_put_data_rejects_zero_or_impossible_stream_progress(self):
+        body = _function_body(self.source, "fs_do_put_data")
+        write_at = body.find("sp->write")
+        progress_at = body.find("done +=", write_at)
+        self.assertGreaterEqual(write_at, 0)
+        self.assertGreater(progress_at, write_at)
+        guard = body[write_at:progress_at]
+        self.assertRegex(
+            guard,
+            r"\bw\s*==\s*0",
+            "a zero-byte successful write must not spin the filesystem worker",
+        )
+        self.assertRegex(
+            guard,
+            r"\bw\s*>\s*\(?\s*n\s*-\s*done\s*\)?",
+            "an impossible over-report must not advance beyond the input chunk",
+        )
+        self.assertIn("PBLE_EIO", guard)
+        self.assertIn("break", guard)
+
     def test_put_begin_calls_checked_statvfs_admission_before_open(self):
         functions = _defined_functions(self.source)
         providers = [
