@@ -177,6 +177,10 @@ firmware/.esp-idf/
 # [arm_gnu_toolchain] by firmware/scripts/install_arm_toolchain.sh (X-13).
 firmware/.arm-gnu/
 .arm-gnu/
+# Official picotool distribution retained from versions.lock [picotool]. Only
+# this exact firmware-local install root is excluded; authored lookalikes stay
+# visible to source gates and Git.
+firmware/.picotool/
 # firmware/upstream/micropython/ is now a tracked git submodule (see .gitmodules);
 # its working tree is managed by git-submodule, not ignored here.
 

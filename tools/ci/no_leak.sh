@@ -62,6 +62,7 @@ if ! scan_forbidden_files < <(
     \( -path '*/upstream' \
        -o -path '*/.esp-idf' \
        -o -path "$ROOT/firmware/.arm-gnu" \
+       -o -path "$ROOT/firmware/.picotool" \
        -o -path '*/build' \
        -o -path '*/__pycache__' \
        -o -path '*/managed_components' \

@@ -84,3 +84,28 @@ source_archive_format = "tar.xz"
 source_archive_sha256 = "e6405f20f8a817a50d92dbf7974d0ee77708dfdf9e79900a59c5d343b464ef9c"
 source_manifest_path = "firmware/licenses/evidence/rp2/arm-gnu-toolchain/14.2.rel1/source-manifest.txt"
 source_manifest_sha256 = "470cdb8bae9f5fed96c17b10834bbd22820e933cfad99914c3f37997cae36745"
+
+[picotool]
+# Official Raspberry Pi Pico SDK Tools macOS distribution used by the rp2
+# configure/build and provisioning flow. The archive itself is retained below
+# the gitignored install tree so every build can revalidate the exact input.
+version = "2.3.0"
+version_line = "picotool v2.3.0 (Darwin, AppleClang-15.0.0.15000309, Release)"
+source_repo = "https://github.com/raspberrypi/picotool.git"
+source_ref = "2.3.0"
+source_commit = "6f6458d792b93685a11423b244a585eaa99eafcf"
+distribution_repo = "https://github.com/raspberrypi/pico-sdk-tools.git"
+distribution_ref = "v2.3.0-0"
+distribution_commit = "ad9e4a8375253cf4886bf168ea1a8d2746aadf24"
+url = "https://github.com/raspberrypi/pico-sdk-tools/releases/download/v2.3.0-0/picotool-2.3.0-mac.zip"
+archive_filename = "picotool-2.3.0-mac.zip"
+archive_bytes = 1980457
+archive_format = "zip"
+sha256 = "085ea99ccc2d64309e967a72e307fb113838713a46ba45bf7e156e519cca7d8e"
+cmake_dir = "picotool"
+executable_path = "picotool/picotool"
+executable_sha256 = "a4b3c4e64dea7b99e810c5c777bf13fb2722b8d0355e0b64a28244ddc1b0f8b5"
+cmake_config_path = "picotool/picotoolConfig.cmake"
+cmake_config_sha256 = "ca12b6fee18e6583713cfdcb2e81886aaee741d40304ea2cc88c4f5b2df2b6c3"
+bundled_libusb_path = "picotool/libusb-1.0.0.dylib"
+bundled_libusb_sha256 = "b3d0c88bcb04fe61e4f56bc304a31fef56e19ee5ec2edaebd0fce44afb2b9237"
