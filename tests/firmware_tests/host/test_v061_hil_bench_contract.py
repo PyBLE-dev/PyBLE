@@ -13,6 +13,7 @@ import importlib.util
 import inspect
 from pathlib import Path
 import sys
+import tempfile
 import unittest
 
 
@@ -41,6 +42,29 @@ SCENARIOS = (
     "filesystem-hardening",
 )
 
+EVIDENCE_OPTIONS = (
+    "--candidate-dir",
+    "--workspace-erased-receipt",
+    "--workspace-nonblank-receipt",
+    "--raw-log",
+    "--result",
+)
+
+
+def evidence_argv(root="/private/v061"):
+    return [
+        "--candidate-dir",
+        root + "/candidate",
+        "--workspace-erased-receipt",
+        root + "/erased-media.json",
+        "--workspace-nonblank-receipt",
+        root + "/nonblank-media.json",
+        "--raw-log",
+        root + "/hardening.jsonl",
+        "--result",
+        root + "/hardening-result.json",
+    ]
+
 
 def load_bench():
     if not BENCH_PATH.is_file():
@@ -54,7 +78,7 @@ def load_bench():
 
 
 class V061HilBenchContractTests(unittest.TestCase):
-    def test_cli_requires_one_exact_profile_and_private_address(self):
+    def test_cli_requires_exact_profile_address_and_candidate_bound_outputs(self):
         bench = load_bench()
         self.assertEqual(bench.PROFILE_CHIPS, PROFILE_CHIPS)
         self.assertEqual(bench.PROFILE_ORDER, tuple(PROFILE_CHIPS))
@@ -63,58 +87,101 @@ class V061HilBenchContractTests(unittest.TestCase):
             [],
             ["--address", "private-address"],
             ["--profile", "esp32-4mb"],
-            ["--profile", "esp32", "--address", "private-address"],
-        ):
-            with self.subTest(argv=argv), self.assertRaises(SystemExit):
-                bench._parse_args(argv)
-
-        args = bench._parse_args(
-            ["--profile", "esp32-4mb", "--address", "private-address"]
-        )
-        self.assertEqual(args.profile, "esp32-4mb")
-        self.assertEqual(args.expect_agent, "0.6.1")
-        self.assertEqual(args.address, "private-address")
-
-    def test_destructive_workspace_provisioning_is_never_silently_skipped(self):
-        bench = load_bench()
-        for argv in (
             [
                 "--profile",
-                "esp32-4mb",
+                "esp32",
                 "--address",
                 "private-address",
-                "--require-workspace-provisioning",
-            ],
-            [
-                "--profile",
-                "esp32-4mb",
-                "--address",
-                "private-address",
-                "--sacrificial-media",
+                *evidence_argv(),
             ],
         ):
             with self.subTest(argv=argv), self.assertRaises(SystemExit):
                 bench._parse_args(argv)
 
-        ordinary = bench._parse_args(
-            ["--profile", "esp32-4mb", "--address", "private-address"]
-        )
-        destructive = bench._parse_args(
-            [
+        with tempfile.TemporaryDirectory(prefix="pyble-v061-cli-valid-") as tmp:
+            root = Path(tmp)
+            (root / "candidate").mkdir()
+            for name in ("erased-media.json", "nonblank-media.json"):
+                receipt = root / name
+                receipt.write_text("{}\n", encoding="utf-8")
+                receipt.chmod(0o600)
+            complete = [
                 "--profile",
                 "esp32-4mb",
                 "--address",
                 "private-address",
-                "--require-workspace-provisioning",
-                "--sacrificial-media",
+                *evidence_argv(str(root)),
             ]
-        )
-        self.assertEqual(
-            bench.workspace_prerequisite(ordinary), "NOT-RUN(nondestructive)"
-        )
-        self.assertEqual(
-            bench.workspace_prerequisite(destructive),
-            "FAIL(requires-out-of-band-blank-and-nonblank-boot-observations)",
+            for option in EVIDENCE_OPTIONS:
+                index = complete.index(option)
+                incomplete = complete[:index] + complete[index + 2 :]
+                with self.subTest(missing=option), self.assertRaises(SystemExit):
+                    bench._parse_args(incomplete)
+
+            try:
+                args = bench._parse_args(complete)
+            except SystemExit as exc:
+                self.fail(
+                    "[red] complete candidate-bound v0.6.1 CLI was rejected: %s"
+                    % exc
+                )
+            self.assertEqual(args.profile, "esp32-4mb")
+            self.assertEqual(args.expect_agent, "0.6.1")
+            self.assertEqual(args.address, "private-address")
+            self.assertEqual(args.candidate_dir, root / "candidate")
+            self.assertEqual(
+                args.workspace_erased_receipt,
+                root / "erased-media.json",
+            )
+            self.assertEqual(
+                args.workspace_nonblank_receipt,
+                root / "nonblank-media.json",
+            )
+            self.assertEqual(args.raw_log, root / "hardening.jsonl")
+            self.assertEqual(args.result, root / "hardening-result.json")
+            for substituted_version in ("0.6.0", "0.6.2", "1.0.0"):
+                with self.subTest(expect_agent=substituted_version):
+                    with self.assertRaises(SystemExit):
+                        bench._parse_args(
+                            [
+                                *complete,
+                                "--expect-agent",
+                                substituted_version,
+                            ]
+                        )
+
+    def test_workspace_not_run_and_legacy_acknowledgement_flags_are_ineligible(self):
+        bench = load_bench()
+        with tempfile.TemporaryDirectory(prefix="pyble-v061-cli-legacy-") as tmp:
+            root = Path(tmp)
+            (root / "candidate").mkdir()
+            for name in ("erased-media.json", "nonblank-media.json"):
+                receipt = root / name
+                receipt.write_text("{}\n", encoding="utf-8")
+                receipt.chmod(0o600)
+            base = [
+                "--profile",
+                "esp32-4mb",
+                "--address",
+                "private-address",
+                *evidence_argv(str(root)),
+            ]
+            try:
+                bench._parse_args(base)
+            except SystemExit as exc:
+                self.fail("[red] safe v0.6.1 base CLI was rejected: %s" % exc)
+            for legacy in (
+                "--require-workspace-provisioning",
+                "--sacrificial-media",
+            ):
+                with self.subTest(option=legacy), self.assertRaises(SystemExit):
+                    bench._parse_args([*base, legacy])
+
+        source = BENCH_PATH.read_text(encoding="utf-8")
+        self.assertNotIn("NOT-RUN(nondestructive)", source)
+        self.assertNotIn(
+            "requires-out-of-band-blank-and-nonblank-boot-observations",
+            source,
         )
 
     def test_scenario_inventory_is_v061_only_and_is_executed(self):
@@ -196,8 +263,14 @@ class V061HilBenchContractTests(unittest.TestCase):
             bench.run_label_durability: (
                 "OP_SET_LABEL",
                 "LABEL_24",
+                "OP_SET_AUTORUN",
+                "auto_run",
+                "OP_IDENTIFY",
+                "has_identify",
+                "identify_led",
                 "OP_SOFT_REBOOT",
                 "advertisement",
+                "restore",
             ),
             bench.run_filesystem_hardening: (
                 ".pbltmp",
@@ -215,12 +288,17 @@ class V061HilBenchContractTests(unittest.TestCase):
             for token in tokens:
                 with self.subTest(function=function.__name__, token=token):
                     self.assertIn(token, source)
+        self.assertNotIn(
+            "OP_SET_IDENTIFY_LED",
+            inspect.getsource(bench.run_label_durability),
+            "the target-neutral runner must preserve owner Identify configuration",
+        )
 
         self.assertEqual(len(bench.LABEL_24.encode("utf-8")), 24)
         self.assertEqual(bench.SEQUENTIAL_RUNS, 50)
         self.assertEqual(bench.CAPACITY_RESERVE, 65536)
 
-    def test_resource_evaluation_and_public_result_are_deterministic(self):
+    def test_resource_evaluation_and_redacted_console_result_are_deterministic(self):
         bench = load_bench()
         thresholds = {"gc_free_min_bytes": 4096}
         healthy = [
@@ -235,7 +313,10 @@ class V061HilBenchContractTests(unittest.TestCase):
         ]
         below = healthy + [{"gc_free_bytes": 4095}]
         self.assertEqual(bench.resource_failures(healthy, thresholds), [])
-        self.assertIn("monotonic", " ".join(bench.resource_failures(leaking, thresholds)))
+        self.assertIn(
+            "monotonic",
+            " ".join(bench.resource_failures(leaking, thresholds)),
+        )
         self.assertIn("floor", " ".join(bench.resource_failures(below, thresholds)))
 
         caps = {
@@ -248,15 +329,137 @@ class V061HilBenchContractTests(unittest.TestCase):
             "PASS",
             "esp32-4mb",
             caps,
-            "NOT-RUN(nondestructive)",
+            "passed",
         )
         self.assertEqual(
             result,
             "V061 HARDENING PASS (profile=esp32-4mb chip=esp32 "
-            "agent=0.6.1 scenarios=7 workspace=NOT-RUN(nondestructive))",
+            "agent=0.6.1 scenarios=7 workspace=passed)",
         )
         for private in ("private-address", "SECRET", "private-label"):
             self.assertNotIn(private, result)
+
+    def test_runner_uses_the_shared_gate_and_publishes_only_after_all_scenarios(self):
+        bench = load_bench()
+        writer = getattr(bench, "write_private_result", None)
+        self.assertTrue(
+            callable(writer),
+            "[red] v0.6.1 HIL needs a canonical exclusive private-result writer",
+        )
+        self.assertEqual(
+            set(inspect.signature(writer).parameters),
+            {
+                "candidate_dir",
+                "profile_id",
+                "scenario_results",
+                "workspace_erased_receipt",
+                "workspace_nonblank_receipt",
+                "raw_log",
+                "result",
+                "qualification_repo_root",
+            },
+        )
+
+        source = inspect.getsource(bench.run)
+        positions = [source.find('"%s"' % name) for name in SCENARIOS]
+        self.assertTrue(all(position >= 0 for position in positions))
+        self.assertEqual(positions, sorted(positions))
+        writer_position = source.find("write_private_result(")
+        self.assertGreater(writer_position, positions[-1])
+        self.assertIn("workspace_erased_receipt", source)
+        self.assertIn("workspace_nonblank_receipt", source)
+        self.assertIn("raw_log", source)
+
+    def test_result_and_raw_log_paths_are_new_and_outside_candidate(self):
+        bench = load_bench()
+        with tempfile.TemporaryDirectory(prefix="pyble-v061-hil-cli-") as tmp:
+            root = Path(tmp)
+            candidate = root / "candidate"
+            candidate.mkdir()
+            for name in ("erased-media.json", "nonblank-media.json"):
+                receipt = root / name
+                receipt.write_text("{}\n", encoding="utf-8")
+                receipt.chmod(0o600)
+            valid = [
+                "--profile",
+                "esp32-4mb",
+                "--address",
+                "private-address",
+                *evidence_argv(str(root)),
+            ]
+            (root / "hardening-result.json").write_text(
+                "owner data\n", encoding="utf-8"
+            )
+            with self.assertRaises(SystemExit):
+                bench._parse_args(valid)
+
+            (root / "hardening-result.json").unlink()
+            (root / "hardening.jsonl").write_text(
+                "owner data\n", encoding="utf-8"
+            )
+            with self.assertRaises(SystemExit):
+                bench._parse_args(valid)
+
+            (root / "hardening.jsonl").unlink()
+            try:
+                accepted = bench._parse_args(valid)
+            except SystemExit as exc:
+                self.fail(
+                    "[red] safe output paths were rejected before path cases: %s"
+                    % exc
+                )
+            self.assertEqual(accepted.result, root / "hardening-result.json")
+            self.assertEqual(accepted.raw_log, root / "hardening.jsonl")
+
+            inside = list(valid)
+            inside[inside.index("--result") + 1] = str(candidate / "result.json")
+            with self.assertRaises(SystemExit):
+                bench._parse_args(inside)
+
+            inside = list(valid)
+            inside[inside.index("--raw-log") + 1] = str(candidate / "raw.jsonl")
+            with self.assertRaises(SystemExit):
+                bench._parse_args(inside)
+
+            same = list(valid)
+            same[same.index("--result") + 1] = same[
+                same.index("--raw-log") + 1
+            ]
+            with self.assertRaises(SystemExit):
+                bench._parse_args(same)
+
+            symlink_parent_target = root / "external-output-parent"
+            symlink_parent_target.mkdir()
+            symlink_parent = root / "linked-output-parent"
+            symlink_parent.symlink_to(
+                symlink_parent_target,
+                target_is_directory=True,
+            )
+            linked = list(valid)
+            linked[linked.index("--result") + 1] = str(
+                symlink_parent / "result.json"
+            )
+            with self.assertRaises(SystemExit):
+                bench._parse_args(linked)
+            self.assertFalse((symlink_parent_target / "result.json").exists())
+
+            broken = root / "broken-result.json"
+            broken.symlink_to(root / "missing-target.json")
+            broken_output = list(valid)
+            broken_output[broken_output.index("--result") + 1] = str(broken)
+            with self.assertRaises(SystemExit):
+                bench._parse_args(broken_output)
+
+            candidate_target = root / "candidate-target"
+            candidate_target.mkdir()
+            candidate_link = root / "candidate-link"
+            candidate_link.symlink_to(candidate_target, target_is_directory=True)
+            linked_candidate = list(valid)
+            linked_candidate[linked_candidate.index("--candidate-dir") + 1] = str(
+                candidate_link
+            )
+            with self.assertRaises(SystemExit):
+                bench._parse_args(linked_candidate)
 
 
 if __name__ == "__main__":

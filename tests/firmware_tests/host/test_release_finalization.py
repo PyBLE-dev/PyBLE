@@ -23,6 +23,7 @@
 #         waveshare_lcd147b_qualification_result: Path,
 #         esp32_c3_qualification_result: Path,
 #         rpi_pico2_w_qualification_result: Path,
+#         v061_hardening_result_paths: list[Path] | None,
 #     ) -> Path
 #
 #   firmware/scripts/release_bundle.py finalize-public
@@ -54,6 +55,8 @@ import sys
 import tempfile
 import unittest
 from unittest import mock
+
+import test_v061_hardening_release_gate as v061_fixture
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -129,6 +132,11 @@ except Exception as exc:  # pragma: no cover - rendered by the seam tests.
 HAVE_RELEASE = RELEASE is not None
 HAVE_FINALIZER = HAVE_RELEASE and callable(
     getattr(RELEASE, "finalize_public_bundle", None)
+)
+HAVE_V061_RESULT_SET = (
+    HAVE_RELEASE
+    and v061_fixture.HAVE_GATE
+    and callable(getattr(RELEASE, "_validate_v061_hardening_result_set", None))
 )
 
 
@@ -1012,6 +1020,7 @@ class FinalizationSeamRedTests(unittest.TestCase):
                 "waveshare_lcd147b_qualification_result",
                 "esp32_c3_qualification_result",
                 "rpi_pico2_w_qualification_result",
+                "v061_hardening_result_paths",
             },
         )
 
@@ -1024,6 +1033,135 @@ class FinalizationSeamRedTests(unittest.TestCase):
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertIn("finalize-public", completed.stdout)
+        command_help = subprocess.run(
+            [
+                sys.executable,
+                os.fspath(RELEASE_SCRIPT),
+                "finalize-public",
+                "--help",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(command_help.returncode, 0, command_help.stderr)
+        self.assertIn("--v061-hardening-result", command_help.stdout)
+
+    def test_v061_finalization_reopens_exactly_five_private_results_twice(self):
+        helper = getattr(RELEASE, "_validate_v061_hardening_result_set", None)
+        self.assertTrue(
+            callable(helper),
+            "[red] finalization needs one exact five-result hardening authority",
+        )
+        if callable(helper):
+            self.assertEqual(
+                set(inspect.signature(helper).parameters),
+                {
+                    "result_paths",
+                    "candidate_dir",
+                    "completed_hil",
+                    "firmware_version",
+                    "source_commit",
+                    "candidate_release_json_sha256",
+                    "qualification_source_commit",
+                    "qualification_executable_sha256",
+                },
+            )
+
+        source = inspect.getsource(RELEASE.finalize_public_bundle)
+        self.assertIn("v061_hardening_result_paths", source)
+        self.assertIn("_validate_v061_hardening_result_set", source)
+
+
+@unittest.skipUnless(
+    HAVE_V061_RESULT_SET,
+    "[red] v0.6.1 five-result finalization gate is not implemented",
+)
+class V061HardeningResultSetRedTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory(
+            prefix="pyble-v061-finalization-results-"
+        )
+        self.root = Path(self.temporary.name)
+        self.candidate = self.root / "candidate"
+        self.candidate.mkdir()
+        self.paths = []
+        self.completed = {"records": []}
+        for index, (profile_id, _target) in enumerate(
+            v061_fixture.PROFILE_TARGETS.items()
+        ):
+            artifact_name = (
+                "firmware.uf2" if profile_id == PICO_PROFILE_ID else "firmware.bin"
+            )
+            artifact = self.candidate / profile_id / artifact_name
+            artifact.parent.mkdir()
+            artifact.write_bytes(("candidate-%s" % profile_id).encode("ascii"))
+            value = v061_fixture.valid_result(profile_id=profile_id)
+            value["install_sha256"] = sha256_path(artifact)
+            path = self.root / ("%02d-%s.json" % (index, profile_id))
+            path.write_bytes(v061_fixture.canonical_json_bytes(value))
+            path.chmod(0o600)
+            self.paths.append(path)
+            self.completed["records"].append(
+                {
+                    "profile_id": profile_id,
+                    "v061_hardening": {
+                        "measurement_contract": (
+                            "v061-hardening-seven-scenario-v1"
+                        ),
+                        "scenario_order": list(v061_fixture.SCENARIO_ORDER),
+                        "scenarios": {
+                            name: "passed"
+                            for name in v061_fixture.SCENARIO_ORDER
+                        },
+                        "sequential_runs": 50,
+                        "workspace_provisioning": {
+                            name: "passed"
+                            for name in v061_fixture.WORKSPACE_ORDER
+                        },
+                        "private_result_sha256": sha256_path(path),
+                    },
+                }
+            )
+
+    def tearDown(self):
+        self.temporary.cleanup()
+
+    def validate(self, paths=None):
+        return RELEASE._validate_v061_hardening_result_set(
+            result_paths=self.paths if paths is None else paths,
+            candidate_dir=self.candidate,
+            completed_hil=self.completed,
+            firmware_version="0.6.1",
+            source_commit="1" * 40,
+            candidate_release_json_sha256="2" * 64,
+            qualification_source_commit="4" * 40,
+            qualification_executable_sha256="5" * 64,
+        )
+
+    def test_exact_profile_order_is_accepted(self):
+        self.assertIsNotNone(self.validate())
+
+    def test_missing_extra_duplicate_or_swapped_result_is_rejected(self):
+        cases = {
+            "missing": self.paths[:-1],
+            "extra": [*self.paths, self.paths[0]],
+            "duplicate": [self.paths[0], self.paths[0], *self.paths[2:]],
+            "swapped": [self.paths[1], self.paths[0], *self.paths[2:]],
+            "reordered": list(reversed(self.paths)),
+        }
+        for name, paths in cases.items():
+            with self.subTest(case=name), self.assertRaises(RELEASE.ReleaseError):
+                self.validate(paths)
+
+    def test_post_validation_canonical_mutation_no_longer_matches_report(self):
+        self.validate()
+        value = json.loads(self.paths[0].read_text(encoding="utf-8"))
+        value["raw_log_sha256"] = "9" * 64
+        self.paths[0].write_bytes(v061_fixture.canonical_json_bytes(value))
+        self.paths[0].chmod(0o600)
+        with self.assertRaises(RELEASE.ReleaseError):
+            self.validate()
 
 
 @unittest.skipUnless(

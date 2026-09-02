@@ -118,6 +118,9 @@ def pending_v5_payload(version: str = "0.6.0") -> dict[str, object]:
         }
         if not is_rp2:
             record["manifest_sha256"] = profile["manifest"]["sha256"]
+        if version == "0.6.1":
+            record["checks"]["v061_hardening"] = "pending"
+            record["v061_hardening"] = None
         records.append(record)
     return {
         "schema_version": 5,
@@ -370,7 +373,9 @@ class V5CompletionAndPromotionContractTests(unittest.TestCase):
                 )
             self.assertEqual(payload, json.loads(output.read_text(encoding="utf-8")))
 
-    def test_completion_writer_propagates_v061_without_v060_substitution(self) -> None:
+    def test_completion_writer_requires_v061_hardening_without_v060_substitution(
+        self,
+    ) -> None:
         pending = pending_v5_payload("0.6.1")
         release = {
             "identity": {"version": "0.6.1", "tag": "firmware-v0.6.1"},
@@ -399,8 +404,8 @@ class V5CompletionAndPromotionContractTests(unittest.TestCase):
                 RELEASE,
                 "_validate_qualification_observation",
                 side_effect=lambda value, *_args, **_kwargs: value,
-            ) as validate_observation:
-                created = RELEASE.create_hil_completion_fragment(
+            ), self.assertRaises(RELEASE.ReleaseError):
+                RELEASE.create_hil_completion_fragment(
                     candidate_dir=candidate,
                     profile_id=profile_id,
                     operator_input_path=operator_path,
@@ -410,18 +415,7 @@ class V5CompletionAndPromotionContractTests(unittest.TestCase):
                     profile_qualification_result=None,
                 )
 
-            self.assertEqual(Path(created), output)
-            self.assertEqual(
-                json.loads(output.read_text(encoding="utf-8")),
-                completion_fragment(profile_id),
-            )
-            self.assertTrue(
-                any(
-                    call.kwargs.get("firmware_version") == "0.6.1"
-                    for call in validate_observation.call_args_list
-                ),
-                "the candidate version must reach observation validation",
-            )
+            self.assertFalse(output.exists())
 
     def test_completion_writer_rejects_operator_gate_fields_or_wrong_private_phase(
         self,
