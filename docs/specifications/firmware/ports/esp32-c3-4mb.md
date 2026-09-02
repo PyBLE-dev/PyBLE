@@ -127,6 +127,20 @@ summary omits the private receipt body; its private-result digest binds the
 validated receipt transitively. The application and VFS regions remain
 subject to their existing exact-byte and functional checks.
 
+The qualification gate executable MUST provide a
+`create-post-oi-nvs-receipt` operation; a human-authored receipt is not an
+admissible workflow. It accepts the immutable candidate directory, canonical
+verify observation, its exact raw OI log, and the capture's slice and
+acquisition-log files, plus one new output path. It reopens and snapshots every
+input, derives the candidate and artifact digests, verifies the observation's
+raw-log digest against the reopened log and its reset-sample count as exactly
+10, and re-verifies the fully erased slice. The acquisition log is exactly the
+UTF-8 bytes `c3-post-oi-nvs-acquisition-v1\n`. Only then may it derive the
+empty inventory and summary, create the canonical receipt exclusively as one
+mode-`0600` regular file, fsync it and its parent, and reopen and revalidate the
+same inode and bytes. Any unsafe, non-exclusive, changed, noncanonical,
+pre-existing, mismatched, or failed input/output publishes no receipt.
+
 The existing V5 `provisioning_install: passed` check remains the mechanical
 full-chip-erase/install attestation and MUST still be present. The NVS receipt
 does not duplicate or replace that check.

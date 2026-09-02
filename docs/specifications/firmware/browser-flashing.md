@@ -2436,6 +2436,20 @@ The operation does not run a gate, infer a pass from a build, create a
 threshold, or turn pending evidence into a result. This section freezes an
 evidence-writing workflow and records no passed result.
 
+Before C3 `create-result`, the same module's
+`create-post-oi-nvs-receipt` operation is the sole receipt-authoring path. Its
+positional inputs are the immutable candidate directory, canonical verify
+observation, exact raw OI log, raw NVS slice, acquisition log, and a new
+receipt output path. All private evidence inputs MUST be stable exclusive
+mode-`0600` regular files. The operation derives rather than accepts every
+candidate, artifact, observation, raw-log, slice, acquisition-log, geometry,
+integrity, and empty-inventory field; the acquisition log is exactly
+`c3-post-oi-nvs-acquisition-v1\n`. It writes canonical JSON with exclusive
+mode `0600`, fsyncs file and parent, reopens the same inode, and repeats the
+complete validation before success. A pre-existing output or any input race,
+mode/link violation, digest mismatch, noncanonical observation, wrong reset
+count, non-erased slice, or output verification failure leaves no receipt.
+
 For `esp32-c3-4mb`, `create-result` additionally requires three explicit
 post-OI NVS evidence paths — the canonical inventory receipt, the raw NVS
 slice, and its acquisition log; Pico rejects those inputs. Each MUST be a
