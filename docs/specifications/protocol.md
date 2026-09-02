@@ -513,9 +513,9 @@ before wrap, so the quiescence seam cannot reintroduce ABA.
 ### Windowed upload (F-09) — sliding window, cumulative ACK, Go-Back-N
 
 - **`FILE_PUT_BEGIN` (0x15)** `[total_size:u32][crc32:u32][plen][path]` → `RSP [status]`; on `OK`, then `[resume_offset:u32]`. It prepares the jailed sibling `<dest>.pbltmp`, verifies any resumable prefix, applies the admission rule below, and sets the watermark to `resume_offset`.
-- **`FILE_PUT_DATA` (0x16, CMD, no RSP)** `[offset:u32][bytes]`. `offset==watermark` and `offset + len(bytes) <= total_size` → write + advance + `ACK{watermark}`; `offset<watermark` → duplicate → re-`ACK` (idempotent); `offset>watermark` → gap → drop + `ACK{watermark}` (app resends from there). A chunk that would cross `total_size` writes no byte and latches `ERANGE` for `FILE_PUT_END`. No out-of-order buffering.
+- **`FILE_PUT_DATA` (0x16, CMD, no RSP)** `[offset:u32][bytes]`. `offset==watermark` and `offset + len(bytes) <= total_size` → write + advance + `ACK{watermark}`; `offset<watermark` → duplicate → re-`ACK` (idempotent); `offset>watermark` → gap → drop + `ACK{watermark}` (app resends from there). A chunk that would cross `total_size` writes no byte and latches `ERANGE` for `FILE_PUT_END`. Watermark and CRC advance only after the VFS reports exact, positive progress covering the entire input chunk; `None`, zero, an impossible count, or an incomplete write latches `EIO`. No out-of-order buffering.
 - **`FILE_PUT_ACK` (0x41, EVT, id 0)** `[ack_offset:u32]` = highest contiguous byte written = next expected offset.
-- **`FILE_PUT_END` (0x17)** `[crc32:u32]` → `RSP [status]`. `watermark ≠ total_size` → `ERANGE`; a latched write error → `ENOSPC`/`EIO`; temp CRC ≠ `crc32` → `ECRC`. In **every** failure the temp is deleted and **the old file is kept** (FR-FS-14). Else fsync + `rename(temp,dest)` (atomic on LittleFS) → `OK`.
+- **`FILE_PUT_END` (0x17)** `[crc32:u32]` → `RSP [status]`. `watermark ≠ total_size` → `ERANGE`; a latched write error → `ENOSPC`/`EIO`; temp CRC ≠ `crc32` → `ECRC`. For every such failure, abort closes the scratch object, removes the scratch path non-recursively, and confirms absence before reporting the originating status; **the old file is kept** (FR-FS-14). A close/removal/absence-verification failure returns `EIO` instead, retains the old target, and never reports successful cleanup; any unremovable scratch remains reserved and hidden. Else fsync + `rename(temp,dest)` (atomic on LittleFS) → `OK`.
 - **`FILE_DELETE` (0x18)** `[plen][path]`: file → remove; empty dir → rmdir; non-empty dir → `EACCES` (no recursive delete); missing → `ENOENT`.
 - **`MKDIR` (0x19)** `[plen][path]`: already-a-dir → `OK` (idempotent); an existing file → `EBADREQ`; missing parent → `ENOENT`.
 - **`FILE_RENAME` (0x1A)** `[slen][src][dlen][dst]`: both jailed; src missing → `ENOENT`; dst a non-empty dir → `EACCES`; else atomic rename → `OK`.
@@ -548,6 +548,16 @@ reflected in `free`, so only its verified remainder is charged. Space occupied
 by the old destination is never credited because that file remains until the
 atomic commit. The reserve is admission headroom, not a promise about the exact
 post-write free count because VFS metadata can consume additional blocks.
+
+**Workspace filesystem.** Official PyBLE images mount their internal workspace
+as LFS2 on all five profiles. The ESP partition-table `data,fat` subtype is only
+ESP-IDF block-container metadata; the label `vfs` selects MicroPython's LFS2
+first-use provisioning and the on-media format is LFS2. ESP boot must construct
+the LFS2 VFS explicitly instead of accepting the generic FAT fallback. A
+nonblank incompatible or corrupt workspace fails closed without formatting or
+starting the PBLE/1 agent; migration/recovery is an explicit operator action.
+This is what makes the successful scratch-to-target replacement above an
+atomic filesystem commit rather than FAT's delete-then-rename sequence.
 
 **Workspace jail (F-17):** every path is canonicalized against `fs_root` at a **single chokepoint** before any vfs op; traversal (`../`) / absolute escapes outside `fs_root`, any component ending with the case-sensitive reserved `.pbltmp` suffix, and a case-sensitive reserved first canonical component relative to `fs_root` → `EACCES` (SEC-4). The reserved first component is any lowercase name beginning `pyble` or `pble`, or exact `boot.py` / `_boot.py`; the same basename below an ordinary first component is allowed, and ordinary root names such as `main.py` remain allowed. Scratch names are also hidden from listings as specified above. **`.py` / data only** — the agent never requires, generates, or accepts `.mpy` / `.pyc` transfer artifacts; no server-side compilation.
 
