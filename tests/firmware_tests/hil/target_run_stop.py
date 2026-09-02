@@ -396,7 +396,11 @@ async def run(args):
     caps = {}
     try:
         hello = await central.send_cmd(
-            wire.OP_HELLO, 1, b"app=target-run-stop\nversion=0\n"
+            wire.OP_HELLO,
+            1,
+            b"proto_versions=1\n"
+            b"app_name=target-run-stop\n"
+            b"app_version=0",
         )
         if rsp_status(hello) != wire.ST_OK:
             raise ValueError("HELLO was refused")

@@ -136,7 +136,11 @@ async def run(args):
     central = await PbleCentral.connect(args.address)
     try:
         hello = await central.send_cmd(
-            wire.OP_HELLO, 1, b"app=target-smoke\nversion=0\n"
+            wire.OP_HELLO,
+            1,
+            b"proto_versions=1\n"
+            b"app_name=target-smoke\n"
+            b"app_version=0",
         )
         if rsp_status(hello) != wire.ST_OK:
             raise ValueError("HELLO status is %s" % status_name(rsp_status(hello)))

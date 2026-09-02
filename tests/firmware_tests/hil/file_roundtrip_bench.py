@@ -53,7 +53,13 @@ def _path_field(path):
 
 
 async def _hello(c, id_):
-    rsp = await c.send_cmd(wire.OP_HELLO, id_, b"app=bench\nversion=0\n")
+    rsp = await c.send_cmd(
+        wire.OP_HELLO,
+        id_,
+        b"proto_versions=1\n"
+        b"app_name=bench\n"
+        b"app_version=0",
+    )
     if rsp_status(rsp) != wire.ST_OK:
         raise SystemExit("HELLO refused: %s" % status_name(rsp_status(rsp)))
     caps = {}
