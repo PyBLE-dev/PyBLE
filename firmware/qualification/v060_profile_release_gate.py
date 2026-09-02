@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
 # Part of PyBLE (https://pyble.dev) — see /LICENSE.
-"""Pure release boundary for v0.6.0 C3 and Pico qualification results.
+"""Pure V5 release boundary for v0.6.0/v0.6.1 C3 and Pico results.
 
 Physical runners own device access, operator interaction, and detailed bench
 evidence.  This standard-library-only module admits a deliberately small,
@@ -34,6 +34,7 @@ RECEIPT_SCHEMA_VERSION = 1
 MAX_RESULT_BYTES = 64 * 1024
 C3_PROFILE_ID = "esp32-c3-4mb"
 PICO_PROFILE_ID = "rpi-pico2-w"
+V5_RELEASE_CORES = ((0, 6, 0), (0, 6, 1))
 # Frozen C3 post-OI NVS raw-slice identity (ports/esp32-c3-4mb.md): the only
 # passing capture is the fully erased partition at the frozen geometry.
 C3_NVS_PARTITION_OFFSET = 0x9000
@@ -160,6 +161,22 @@ _FILE_ID_FIELDS = (
 def _require(condition: bool, message: str) -> None:
     if not condition:
         raise QualificationError(message)
+
+
+def _require_v5_release_version(value: Any, label: str) -> str:
+    """Admit canonical SemVer whose release core is approved for V5."""
+
+    _require(
+        type(value) is str and _SEMVER_RE.fullmatch(value) is not None,
+        "%s firmware version is not canonical SemVer" % label,
+    )
+    release = value.split("+", 1)[0].split("-", 1)[0]
+    release_core = tuple(int(part) for part in release.split("."))
+    _require(
+        release_core in V5_RELEASE_CORES,
+        "%s requires firmware release core 0.6.0 or 0.6.1" % label,
+    )
+    return value
 
 
 def _exact_dict(value: Any, keys: set[str], label: str) -> dict[str, Any]:
@@ -300,10 +317,9 @@ def _validate_expected_inputs(
         expected_profile_id in _GATES_BY_PROFILE,
         "expected qualification profile is unsupported",
     )
-    _require(
-        type(expected_version) is str
-        and _SEMVER_RE.fullmatch(expected_version) is not None,
-        "expected firmware version is invalid",
+    _require_v5_release_version(
+        expected_version,
+        "expected V5 qualification",
     )
     _require(
         type(candidate_release_json_sha256) is str
@@ -1017,7 +1033,7 @@ def _validate_candidate_release(
     artifact_size: int,
     artifact_sha256: str,
 ) -> str:
-    """Validate the frozen V4 five-profile metadata used by this gate writer."""
+    """Validate the frozen V5 five-profile metadata used by this gate writer."""
 
     value = _exact_dict(
         release,
@@ -1030,14 +1046,17 @@ def _validate_candidate_release(
         {"version", "tag", "agent_version", "protocol_version", "built_at"},
         "candidate release identity",
     )
+    version = _require_v5_release_version(
+        identity["version"],
+        "candidate V5 qualification",
+    )
     _require(
-        identity["version"] == "0.6.0"
-        and identity["tag"] == "firmware-v0.6.0"
-        and identity["agent_version"] == "0.6.0"
+        identity["tag"] == "firmware-v%s" % version
+        and identity["agent_version"] == version
         and identity["protocol_version"] == "PBLE/1"
         and type(identity["built_at"]) is str
         and _UTC_RE.fullmatch(identity["built_at"]) is not None,
-        "candidate is not the exact v0.6.0 release source era",
+        "candidate is not an approved exact V5 release source",
     )
     _validate_candidate_provenance(value["provenance"])
     _require(
@@ -1186,7 +1205,7 @@ def _validate_candidate_release(
             expected_path=expected_path,
             label="candidate document %s" % key,
         )
-    return identity["version"]
+    return version
 
 
 def _candidate_snapshot(
