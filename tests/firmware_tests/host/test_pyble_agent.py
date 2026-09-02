@@ -756,11 +756,11 @@ class InterruptIntentExceptionSafetyTest(AgentTestBase):
         agent._runner._executing = True
         real_send = link.send_message
 
-        def fail_stop_send(msg):
+        def fail_stop_send(msg, *args, **kwargs):
             frame = pyble_proto.decode(msg)
             if frame.type == RSP and frame.opcode == 0x21 and frame.id == 76:
                 raise RuntimeError("deterministic send failure")
-            real_send(msg)
+            return real_send(msg, *args, **kwargs)
 
         link.send_message = fail_stop_send
         try:
@@ -816,11 +816,11 @@ class ControlCommitTransactionTest(AgentTestBase):
         send(self, link, 0x20, bytes((1,)) + b"x = 2", id_=92)
         real_send = link.send_message
 
-        def fail_soft_rsp(msg):
+        def fail_soft_rsp(msg, *args, **kwargs):
             frame = pyble_proto.decode(msg)
             if frame.type == RSP and frame.opcode == 0x22 and frame.id == 93:
                 raise RuntimeError("deterministic SOFT send failure")
-            real_send(msg)
+            return real_send(msg, *args, **kwargs)
 
         link.send_message = fail_soft_rsp
         try:
@@ -1012,6 +1012,21 @@ class SoftRebootClosingTest(AgentTestBase):
         send(self, link, 0x7F, id_=150)
         self.assertEqual(rsps(link, 0x7F, 150)[0].payload[0], EBUSY,
                          "unknown valid commands are gated while closing too")
+
+    def test_closing_gate_keeps_zero_id_requests_silent(self):
+        agent, link = self.new_agent(
+            "F-27/P4 closing preserves protocol direction/id precedence")
+        send(self, link, 0x22, id_=157)
+        before = len(link.sent)
+
+        link.message_cb(pyble_proto.encode(CMD, 0x20, 0, b"\x01x = 1"))
+
+        self.assertEqual(
+            len(link.sent), before,
+            "a valid-CRC CMD with ID=0 stays silent while closing",
+        )
+        self.assertIsNone(agent._runner._pending,
+                          "the zero-ID RUN must never reach its handler")
 
     def test_closing_gate_prevents_inline_persistent_and_console_mutation(self):
         keep = os.path.join(self.root, "keep.txt")
