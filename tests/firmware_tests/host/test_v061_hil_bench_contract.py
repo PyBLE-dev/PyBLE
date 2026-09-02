@@ -32,6 +32,34 @@ PROFILE_CHIPS = {
     "rpi-pico2-w": "rpi-pico2-w",
 }
 
+PROFILE_BOARD_IDENTITIES = {
+    "esp32-4mb": {
+        "board_manufacturer": "Espressif Systems",
+        "board_model": "Electronically identified ESP32 development board",
+        "module_marking": "ESP32-D0WD revision v1.0 (esptool)",
+    },
+    "esp32-s3-n16r8": {
+        "board_manufacturer": "Espressif Systems",
+        "board_model": "Electronically identified ESP32-S3 development board",
+        "module_marking": "ESP32-S3 QFN56 revision v0.1 (esptool)",
+    },
+    "waveshare-esp32-s3-lcd-147b": {
+        "board_manufacturer": "Waveshare",
+        "board_model": "ESP32-S3-LCD-1.47B",
+        "module_marking": "ESP32-S3R8",
+    },
+    "esp32-c3-4mb": {
+        "board_manufacturer": "Espressif Systems",
+        "board_model": "Electronically identified ESP32-C3 development board",
+        "module_marking": "ESP32-C3 QFN32 revision v0.4 (esptool)",
+    },
+    "rpi-pico2-w": {
+        "board_manufacturer": "Raspberry Pi Ltd",
+        "board_model": "Raspberry Pi Pico 2 W",
+        "module_marking": "RP2350 + CYW43439",
+    },
+}
+
 SCENARIOS = (
     "transport-session",
     "fragment-hardening",
@@ -51,7 +79,8 @@ EVIDENCE_OPTIONS = (
 )
 
 
-def evidence_argv(root="/private/v061"):
+def evidence_argv(root="/private/v061", profile="esp32-4mb"):
+    identity = PROFILE_BOARD_IDENTITIES[profile]
     return [
         "--candidate-dir",
         root + "/candidate",
@@ -63,6 +92,12 @@ def evidence_argv(root="/private/v061"):
         root + "/hardening.jsonl",
         "--result",
         root + "/hardening-result.json",
+        "--board-manufacturer",
+        identity["board_manufacturer"],
+        "--board-model",
+        identity["board_model"],
+        "--module-marking",
+        identity["module_marking"],
     ]
 
 
@@ -359,12 +394,32 @@ class V061HilBenchContractTests(unittest.TestCase):
                 "qualification_repo_root",
             },
         )
+        token_writer = getattr(
+            bench,
+            "write_private_result_from_preflight",
+            None,
+        )
+        self.assertTrue(
+            callable(token_writer),
+            "[red] long-running HIL must publish from its original preflight token",
+        )
+        if callable(token_writer):
+            self.assertEqual(
+                set(inspect.signature(token_writer).parameters),
+                {"preflight", "scenario_results", "raw_log", "result"},
+            )
 
         source = inspect.getsource(bench.run)
         positions = [source.find('"%s"' % name) for name in SCENARIOS]
         self.assertTrue(all(position >= 0 for position in positions))
         self.assertEqual(positions, sorted(positions))
-        writer_position = source.find("write_private_result(")
+        preflight_position = source.find("preflight_result_inputs(")
+        self.assertGreaterEqual(preflight_position, 0)
+        self.assertLess(preflight_position, positions[0])
+        board_preflight_position = source.find("preflight_board_workspace(")
+        self.assertGreater(board_preflight_position, positions[0])
+        self.assertLess(board_preflight_position, positions[1])
+        writer_position = source.find("write_private_result_from_preflight(")
         self.assertGreater(writer_position, positions[-1])
         self.assertIn("workspace_erased_receipt", source)
         self.assertIn("workspace_nonblank_receipt", source)
