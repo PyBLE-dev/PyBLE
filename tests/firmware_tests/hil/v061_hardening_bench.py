@@ -97,6 +97,8 @@ SEQUENTIAL_RUNS = 50
 CAPACITY_RESERVE = 65536
 ACTIVE_GET_BYTES = 16384
 STDIN_OVERFLOW_BYTES = 400
+STDIN_RESET_WRITE_TIMEOUT_S = 2.0
+STDIN_RESET_RESPONSE_TIMEOUT_S = 2.0
 LABEL_24 = "ทดสอบไทย"
 
 ST_IDLE = 0
@@ -381,12 +383,18 @@ async def _assert_run_still_active(central, cursor, boundary):
     )
 
 
-def _input_source(case, delay_ms=0):
+def _input_source(case, delay_ms=0, block_until_reset=False):
     _require(re.fullmatch(r"[a-z-]{1,32}", case) is not None, "invalid input case")
+    _require(
+        not (delay_ms and block_until_reset),
+        "stdin source cannot be delayed and reset-blocked",
+    )
     prompt = "__PYBLE_V061_STDIN_%s_PROMPT__" % case
     echo = "__PYBLE_V061_STDIN_%s_ECHO__=" % case
     delay = ""
-    if delay_ms:
+    if block_until_reset:
+        delay = "while True: pass\n"
+    elif delay_ms:
         delay = (
             "import time\n"
             "_v061_deadline=time.ticks_add(time.ticks_ms(),%d)\n"
@@ -403,8 +411,8 @@ def _input_source(case, delay_ms=0):
     return source, prompt.encode("ascii"), echo.encode("ascii")
 
 
-async def _start_input_run(state, case, delay_ms=0):
-    source, prompt, echo = _input_source(case, delay_ms)
+async def _start_input_run(state, case, delay_ms=0, block_until_reset=False):
+    source, prompt, echo = _input_source(case, delay_ms, block_until_reset)
     cursor = state.central.event_cursor()
     response = await state.central.send_cmd(
         wire.OP_RUN,
@@ -430,6 +438,24 @@ async def _finish_input_run(state, cursor, echo_prefix, value):
     )
     _require(_console_bytes(events, 1) == b"", "stdin RUN emitted stderr")
     return stdout
+
+
+def _assert_stdin_reset_acceptance(
+    central,
+    cursor,
+    echo_prefix,
+    stale_value,
+):
+    """Prove stale stdin remained unconsumed at accepted reboot RSP{OK}."""
+    events = _events_after(central, cursor)
+    _require(
+        _states(events) == [ST_RUNNING],
+        "stdin predecessor was not exclusively running at reset acceptance",
+    )
+    _require(
+        echo_prefix + stale_value not in _console_bytes(events, 0),
+        "stdin predecessor consumed stale input before reset acceptance",
+    )
 
 
 def _put_begin_payload(path, data_size, checksum):
@@ -977,16 +1003,38 @@ async def run_stdin_isolation(state):
     # VM reset: queue a complete line while an active RUN is deliberately busy.
     # An acknowledged SOFT_REBOOT must destroy that queue. The new-VM RUN must
     # remain blocked until it receives a fresh post-reset line.
-    await _start_input_run(state, "soft-reboot", delay_ms=5000)
-    await state.central.send_cmd_no_rsp(
-        wire.OP_CONSOLE_INPUT,
-        state.ids.next(),
-        b"reboot-stale\n",
+    cursor, echo = await _start_input_run(
+        state,
+        "soft-reboot",
+        block_until_reset=True,
     )
+    stale_value = b"reboot-stale"
+    try:
+        await asyncio.wait_for(
+            state.central.send_cmd_no_rsp(
+                wire.OP_CONSOLE_INPUT,
+                state.ids.next(),
+                stale_value + b"\n",
+            ),
+            timeout=STDIN_RESET_WRITE_TIMEOUT_S,
+        )
+    except asyncio.TimeoutError as exc:
+        raise BenchFailure("stale stdin write exceeded its reset proof bound") from exc
+    await _assert_run_still_active(state.central, cursor, "pre-reset stale stdin")
     expected_name = (
         state.caps.get("label") or "PyBLE-%s" % state.caps["device_id"]
     )
-    await _soft_reboot_connect_unnegotiated(state, expected_name)
+    await _soft_reboot_connect_unnegotiated(
+        state,
+        expected_name,
+        response_timeout_s=STDIN_RESET_RESPONSE_TIMEOUT_S,
+        on_accepted=lambda central: _assert_stdin_reset_acceptance(
+            central,
+            cursor,
+            echo,
+            stale_value,
+        ),
+    )
     await _negotiate(state)
     cursor, echo = await _start_input_run(state, "reboot-successor")
     await _assert_run_still_active(state.central, cursor, "SOFT_REBOOT/VM reset")
@@ -1033,11 +1081,23 @@ async def _wait_advertisement(state, expected_name):
     raise BenchFailure("expected persisted advertisement was not observed")
 
 
-async def _soft_reboot_connect_unnegotiated(state, expected_name):
+async def _soft_reboot_connect_unnegotiated(
+    state,
+    expected_name,
+    *,
+    response_timeout_s=10.0,
+    on_accepted=None,
+):
     """Take acknowledged SOFT_REBOOT to a connected, unnegotiated successor."""
     central = state.central
-    response = await central.send_cmd(wire.OP_SOFT_REBOOT, state.ids.next())
+    response = await central.send_cmd(
+        wire.OP_SOFT_REBOOT,
+        state.ids.next(),
+        timeout=response_timeout_s,
+    )
     _status_is(response, wire.ST_OK, "SOFT_REBOOT")
+    if on_accepted is not None:
+        on_accepted(central)
     await _wait_disconnected(central)
     state.central = None
     await _wait_advertisement(state, expected_name)
