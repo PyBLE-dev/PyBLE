@@ -503,6 +503,24 @@ An approved release increment requires, in order:
 9. deterministic release build, provenance, SBOM/license, no-leak, DCO, and
    publication review.
 
+### 9.1 Recorded v0.6.1 process deviation
+
+Step 2 was not completed before v0.6.1 implementation began. Milestone
+[Firmware v0.6.1 — Contract hardening](https://github.com/PyBLE-dev/PyBLE/milestone/1)
+and focused issues [#24](https://github.com/PyBLE-dev/PyBLE/issues/24),
+[#25](https://github.com/PyBLE-dev/PyBLE/issues/25),
+[#26](https://github.com/PyBLE-dev/PyBLE/issues/26),
+[#27](https://github.com/PyBLE-dev/PyBLE/issues/27), and
+[#28](https://github.com/PyBLE-dev/PyBLE/issues/28) were created
+retrospectively on 2026-09-03. This restores explicit ownership, acceptance
+criteria, and remaining-work tracking, but it does not retroactively satisfy
+the required ordering and must not be represented as doing so. Issues #25–#28
+record source/host completion; #24 remains open and exclusively owns fresh
+candidate-bound five-profile physical qualification and release admission.
+Firmware v0.6.1 therefore remains source-selected, unqualified, unpublished,
+and unavailable to installers until #24 closes. This deviation approves no
+v0.7.0 scope and creates no precedent for a future release.
+
 ## 10. Maintainer review checklist
 
 Before implementation begins, the maintainer should explicitly approve or
