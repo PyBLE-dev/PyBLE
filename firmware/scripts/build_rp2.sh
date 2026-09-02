@@ -41,6 +41,7 @@ REPO_ROOT="$(cd "$FW/.." && pwd -P)"
 LOCK="${PYBLE_LOCK_FILE:-$FW/versions.lock}"
 CANONICAL_UPSTREAM="${PYBLE_CANONICAL_UPSTREAM_DIR:-$FW/upstream/micropython}"
 TOOLCHAIN_DIR="${PYBLE_ARM_TOOLCHAIN_DIR:-$FW/.arm-gnu}"
+PICOTOOL_DIR="${PYBLE_PICOTOOL_DIR:-$FW/.picotool}"
 BUILD_ROOT="${PYBLE_BUILD_ROOT:-$FW/build}"
 SHA_DRIFT="$REPO_ROOT/tools/ci/sha_drift.sh"
 PREPARE="$HERE/prepare.sh"
@@ -243,6 +244,249 @@ assert_regular_file() {
   fi
 }
 
+# Verify the retained official picotool ZIP and every extracted member before
+# any compiler/build command runs. The build-side replay requires the same
+# types, exact modes, and bytes admitted by the installer; links, injected
+# paths, missing package files, or changed content fail closed.
+verify_picotool_tree() {
+  python3 - "$LOCK" "$PICOTOOL_DIR" <<'PY'
+from __future__ import annotations
+
+import hashlib
+import os
+from pathlib import Path, PurePosixPath
+import re
+import stat
+import sys
+import tomllib
+import zipfile
+
+
+lock_path = Path(sys.argv[1])
+root = Path(sys.argv[2])
+
+
+def reject(message: str) -> "NoReturn":
+    raise SystemExit("build_rp2.sh: " + message)
+
+
+def digest(path: Path) -> str:
+    value = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            value.update(chunk)
+    return value.hexdigest()
+
+
+def regular(path: Path) -> bool:
+    try:
+        mode = path.lstat().st_mode
+    except FileNotFoundError:
+        return False
+    return stat.S_ISREG(mode) and not path.is_symlink()
+
+
+def safe_relative(value: object, label: str, *, basename: bool = False) -> str:
+    if not isinstance(value, str) or not value:
+        reject(f"[picotool] {label} is missing")
+    path = PurePosixPath(value)
+    if (
+        path.is_absolute()
+        or value.endswith("/")
+        or any(part in ("", ".", "..") for part in path.parts)
+        or (basename and len(path.parts) != 1)
+    ):
+        reject(f"[picotool] {label} is unsafe")
+    return value
+
+
+try:
+    document = tomllib.loads(lock_path.read_text(encoding="utf-8"))
+except (OSError, UnicodeError, tomllib.TOMLDecodeError) as error:
+    reject(f"cannot read versions.lock: {error}")
+pin = document.get("picotool")
+if not isinstance(pin, dict):
+    reject("versions.lock has no [picotool] pin")
+
+required_keys = {
+    "version",
+    "version_line",
+    "source_repo",
+    "source_ref",
+    "source_commit",
+    "distribution_repo",
+    "distribution_ref",
+    "distribution_commit",
+    "url",
+    "archive_filename",
+    "archive_bytes",
+    "archive_format",
+    "sha256",
+    "cmake_dir",
+    "executable_path",
+    "executable_sha256",
+    "cmake_config_path",
+    "cmake_config_sha256",
+    "bundled_libusb_path",
+    "bundled_libusb_sha256",
+}
+if set(pin) != required_keys:
+    reject("[picotool] fields differ from the reviewed pin schema")
+if pin.get("archive_format") != "zip":
+    reject("[picotool] archive_format must be zip")
+if not isinstance(pin.get("archive_bytes"), int) or isinstance(
+    pin.get("archive_bytes"), bool
+) or pin["archive_bytes"] <= 0:
+    reject("[picotool] archive_bytes is invalid")
+for key in (
+    "sha256",
+    "executable_sha256",
+    "cmake_config_sha256",
+    "bundled_libusb_sha256",
+):
+    if not isinstance(pin.get(key), str) or re.fullmatch(
+        r"[0-9a-f]{64}", pin[key]
+    ) is None:
+        reject(f"[picotool] {key} is invalid")
+
+archive_name = safe_relative(pin.get("archive_filename"), "archive_filename", basename=True)
+cmake_dir = safe_relative(pin.get("cmake_dir"), "cmake_dir")
+executable_path = safe_relative(pin.get("executable_path"), "executable_path")
+config_path = safe_relative(pin.get("cmake_config_path"), "cmake_config_path")
+libusb_path = safe_relative(pin.get("bundled_libusb_path"), "bundled_libusb_path")
+if cmake_dir != "picotool":
+    reject("[picotool] cmake_dir differs from the reviewed package root")
+for value, label in (
+    (executable_path, "executable_path"),
+    (config_path, "cmake_config_path"),
+    (libusb_path, "bundled_libusb_path"),
+):
+    if PurePosixPath(value).parts[0] != cmake_dir:
+        reject(f"[picotool] {label} escapes cmake_dir")
+
+try:
+    root_mode = root.lstat().st_mode
+except OSError as error:
+    reject(f"pinned picotool tree is unavailable: {error}")
+if not stat.S_ISDIR(root_mode) or stat.S_ISLNK(root_mode):
+    reject("pinned picotool root is symlinked or not a directory")
+
+retained = root / ".pyble-dist" / archive_name
+if not regular(retained):
+    reject("retained picotool archive is missing or not regular")
+if retained.stat().st_size != pin["archive_bytes"]:
+    reject("retained picotool archive size differs from versions.lock")
+if digest(retained) != pin["sha256"]:
+    reject("retained picotool archive digest differs from versions.lock")
+
+expected: dict[str, tuple[str, int, bytes | None]] = {
+    ".pyble-dist": ("dir", 0o755, None),
+    f".pyble-dist/{archive_name}": (
+        "file",
+        0o644,
+        retained.read_bytes(),
+    ),
+}
+seen: set[str] = set()
+required_members = {
+    ".keep",
+    "picotool/",
+    executable_path,
+    config_path,
+    "picotool/picotoolConfigVersion.cmake",
+    "picotool/picotoolTargets.cmake",
+    "picotool/picotoolTargets-release.cmake",
+    libusb_path,
+}
+try:
+    with zipfile.ZipFile(retained, "r") as archive:
+        for info in archive.infolist():
+            name = info.filename
+            if name in seen:
+                reject(f"retained picotool ZIP has duplicate member {name}")
+            seen.add(name)
+            if info.flag_bits & 0x1:
+                reject(f"retained picotool ZIP has encrypted member {name}")
+            path = PurePosixPath(name)
+            if (
+                path.is_absolute()
+                or not path.parts
+                or any(part in ("", ".", "..") for part in path.parts)
+                or not (name == ".keep" or path.parts[0] == "picotool")
+            ):
+                reject(f"retained picotool ZIP has unsafe member {name}")
+            unix_mode = info.external_attr >> 16
+            kind = stat.S_IFMT(unix_mode)
+            relative = name.rstrip("/")
+            if info.is_dir():
+                if kind not in (0, stat.S_IFDIR) or not name.endswith("/"):
+                    reject(f"retained picotool ZIP directory is invalid: {name}")
+                expected[relative] = (
+                    "dir",
+                    stat.S_IMODE(unix_mode) or 0o755,
+                    None,
+                )
+            else:
+                if name.endswith("/") or kind not in (0, stat.S_IFREG):
+                    reject(f"retained picotool ZIP type is unsupported: {name}")
+                expected[relative] = (
+                    "file",
+                    stat.S_IMODE(unix_mode) or 0o644,
+                    archive.read(info),
+                )
+        bad = archive.testzip()
+        if bad is not None:
+            reject(f"retained picotool ZIP CRC failed: {bad}")
+except (OSError, zipfile.BadZipFile, RuntimeError) as error:
+    reject(f"retained picotool ZIP is invalid: {error}")
+missing_archive_members = required_members - seen
+if missing_archive_members:
+    reject(
+        "retained picotool ZIP lacks required members: "
+        + ", ".join(sorted(missing_archive_members))
+    )
+
+observed: set[str] = set()
+for current, directories, files in os.walk(root, topdown=True, followlinks=False):
+    current_path = Path(current)
+    for name in [*directories, *files]:
+        child = current_path / name
+        relative = child.relative_to(root).as_posix()
+        observed.add(relative)
+        wanted = expected.get(relative)
+        if wanted is None:
+            reject(f"pinned picotool tree has unexpected member {relative}")
+        mode = child.lstat().st_mode
+        wanted_kind, wanted_mode, wanted_bytes = wanted
+        if wanted_kind == "dir":
+            if not stat.S_ISDIR(mode) or stat.S_ISLNK(mode):
+                reject(f"pinned picotool directory type changed: {relative}")
+        else:
+            if not stat.S_ISREG(mode) or stat.S_ISLNK(mode):
+                reject(f"pinned picotool file type changed: {relative}")
+            if child.read_bytes() != wanted_bytes:
+                reject(f"pinned picotool member bytes changed: {relative}")
+        if stat.S_IMODE(mode) != wanted_mode:
+            reject(f"pinned picotool member mode changed: {relative}")
+if observed != set(expected):
+    reject(
+        "pinned picotool tree lacks members: "
+        + ", ".join(sorted(set(expected) - observed))
+    )
+
+for relative, wanted, label in (
+    (executable_path, pin["executable_sha256"], "executable"),
+    (config_path, pin["cmake_config_sha256"], "CMake config"),
+    (libusb_path, pin["bundled_libusb_sha256"], "bundled libusb"),
+):
+    path = root / relative
+    if not regular(path) or digest(path) != wanted:
+        reject(f"pinned picotool {label} identity differs from versions.lock")
+if not os.access(root / executable_path, os.X_OK):
+    reject("pinned picotool executable lacks owner execute permission")
+PY
+}
+
 assert_build_subdirectory() {
   path="$1"
   label="$2"
@@ -411,6 +655,46 @@ case "$GOT_GCC" in
 esac
 echo "build_rp2.sh: pinned ARM toolchain OK — $GOT_GCC"
 
+# The build consumes only the official, retained picotool package selected by
+# versions.lock [picotool]. Verify its archive/member closure before creating a
+# retained MicroPython source tree or invoking any make/CMake process.
+if [ -L "$PICOTOOL_DIR" ] || [ ! -d "$PICOTOOL_DIR" ]; then
+  echo "build_rp2.sh: pinned picotool is not installed at $PICOTOOL_DIR" >&2
+  echo "  run: firmware/scripts/install_picotool.sh" >&2
+  exit 1
+fi
+if ! PICOTOOL_DIR="$(cd "$PICOTOOL_DIR" 2>/dev/null && pwd -P)"; then
+  echo "build_rp2.sh: cannot resolve the pinned picotool tree" >&2
+  exit 1
+fi
+PYBLE_PICOTOOL_DIR="$PICOTOOL_DIR"
+export PYBLE_PICOTOOL_DIR
+PICOTOOL_CMAKE_DIR="$(lock_field picotool cmake_dir)"
+PICOTOOL_EXECUTABLE_PATH="$(lock_field picotool executable_path)"
+PICOTOOL_VERSION_LINE="$(lock_field "picotool" "version_line")"
+if [ -z "$PICOTOOL_CMAKE_DIR" ] || [ -z "$PICOTOOL_EXECUTABLE_PATH" ] \
+  || [ -z "$PICOTOOL_VERSION_LINE" ]; then
+  echo "build_rp2.sh: versions.lock [picotool] lacks cmake_dir, executable_path, or version_line" >&2
+  exit 1
+fi
+verify_picotool_tree || {
+  echo "build_rp2.sh: retained picotool distribution failed verification" >&2
+  exit 1
+}
+PICOTOOL_EXECUTABLE="$PICOTOOL_DIR/$PICOTOOL_EXECUTABLE_PATH"
+PICOTOOL_PACKAGE_DIR="$PICOTOOL_DIR/$PICOTOOL_CMAKE_DIR"
+if ! PICOTOOL_VER="$("$PICOTOOL_EXECUTABLE" version 2>/dev/null)"; then
+  echo "build_rp2.sh: pinned tool identity probe failed" >&2
+  exit 1
+fi
+if [ "$PICOTOOL_VER" != "$PICOTOOL_VERSION_LINE" ]; then
+  echo "build_rp2.sh: pinned tool identity differs from versions.lock" >&2
+  echo "  pinned : $PICOTOOL_VERSION_LINE" >&2
+  echo "  found  : ${PICOTOOL_VER:-none}" >&2
+  exit 1
+fi
+echo "build_rp2.sh: pinned picotool OK — $PICOTOOL_VER"
+
 # A missing or mismatched pinned compiler is the first actionable build
 # prerequisite. Validate the complete nested source graph only after that
 # prerequisite passes, so a fresh checkout cannot mask the install guidance
@@ -567,7 +851,38 @@ unset \
   CMAKE_CXX_COMPILER_LAUNCHER \
   CMAKE_ASM_COMPILER_LAUNCHER \
   RULE_LAUNCH_COMPILE \
-  RULE_LAUNCH_LINK
+  RULE_LAUNCH_LINK \
+  CMAKE_ARGS \
+  picotool_DIR \
+  FETCHCONTENT_FULLY_DISCONNECTED \
+  FETCHCONTENT_SOURCE_DIR_PICOTOOL \
+  PICOTOOL_FETCH_FROM_GIT_PATH \
+  PICOTOOL_FORCE_FETCH_FROM_GIT \
+  CMAKE_FIND_USE_PACKAGE_REGISTRY \
+  CMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY \
+  CMAKE_PREFIX_PATH
+
+# Bind Pico SDK's CMake configure to the verified package and make every
+# fallback/network or ambient package-registry path unavailable. These values
+# are supplied both in CMAKE_ARGS (the MicroPython rp2 Makefile interface) and
+# the environment so nested configure steps cannot inherit hostile settings.
+CMAKE_ARGS="-Dpicotool_DIR=$PICOTOOL_PACKAGE_DIR \
+-DFETCHCONTENT_FULLY_DISCONNECTED=ON \
+-DCMAKE_FIND_USE_PACKAGE_REGISTRY=OFF \
+-DCMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY=OFF \
+-DPICOTOOL_FORCE_FETCH_FROM_GIT=OFF"
+picotool_DIR="$PICOTOOL_PACKAGE_DIR"
+FETCHCONTENT_FULLY_DISCONNECTED=ON
+PICOTOOL_FORCE_FETCH_FROM_GIT=OFF
+CMAKE_FIND_USE_PACKAGE_REGISTRY=OFF
+CMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY=OFF
+export \
+  CMAKE_ARGS \
+  picotool_DIR \
+  FETCHCONTENT_FULLY_DISCONNECTED \
+  PICOTOOL_FORCE_FETCH_FROM_GIT \
+  CMAKE_FIND_USE_PACKAGE_REGISTRY \
+  CMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY
 
 make -C "$RETAINED_UPSTREAM/mpy-cross" BUILD=build || {
   echo "build_rp2.sh: mpy-cross build failed" >&2
@@ -618,7 +933,12 @@ CMAKE_CACHE="$OUT/CMakeCache.txt"
 for expected_cache_line in \
   "CMAKE_HOME_DIRECTORY:INTERNAL=$PORT_DIR" \
   "MICROPY_BOARD_DIR:UNINITIALIZED=$PORT_DIR/boards/$BOARD" \
-  "PICO_SDK_PATH:PATH=$RETAINED_UPSTREAM/lib/pico-sdk"
+  "PICO_SDK_PATH:PATH=$RETAINED_UPSTREAM/lib/pico-sdk" \
+  "picotool_DIR:UNINITIALIZED=$PICOTOOL_PACKAGE_DIR" \
+  "FETCHCONTENT_FULLY_DISCONNECTED:UNINITIALIZED=ON" \
+  "PICOTOOL_FORCE_FETCH_FROM_GIT:UNINITIALIZED=OFF" \
+  "CMAKE_FIND_USE_PACKAGE_REGISTRY:UNINITIALIZED=OFF" \
+  "CMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY:UNINITIALIZED=OFF"
 do
   grep -Fx "$expected_cache_line" "$CMAKE_CACHE" >/dev/null || {
     echo "build_rp2.sh: CMake cache does not bind retained source: $expected_cache_line" >&2
@@ -674,11 +994,20 @@ assert_source_graph "$RETAINED_UPSTREAM" retained-final || exit 1
 # and mpy-cross output. Any tracked mutation still fails via assert_source_graph;
 # nested checkouts remain exactly clean and independently attributable.
 
-PICOTOOL_VER="$(picotool version 2>/dev/null | head -n 1 || true)"
-case "$PICOTOOL_VER" in
-  "picotool v"[0-9]*.[0-9]*.[0-9]*) : ;;
-  *) echo "build_rp2.sh: picotool version identity is missing or invalid" >&2; exit 1 ;;
-esac
+# Replay the complete retained-tool identity after compilation so provenance
+# cannot admit a build whose picotool tree changed mid-run.
+verify_picotool_tree || {
+  echo "build_rp2.sh: retained picotool distribution changed during build" >&2
+  exit 1
+}
+if ! PICOTOOL_VER="$("$PICOTOOL_EXECUTABLE" version 2>/dev/null)"; then
+  echo "build_rp2.sh: pinned tool identity probe failed after build" >&2
+  exit 1
+fi
+if [ "$PICOTOOL_VER" != "$PICOTOOL_VERSION_LINE" ]; then
+  echo "build_rp2.sh: pinned tool identity changed during build" >&2
+  exit 1
+fi
 
 PROVENANCE="$OUT/pyble-build-provenance.json"
 PROVENANCE_TMP="$OUT/.pyble-build-provenance.json.$$"

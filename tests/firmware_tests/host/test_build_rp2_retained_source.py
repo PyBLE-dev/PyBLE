@@ -146,7 +146,7 @@ def _git(path: Path, *arguments: str) -> str:
 def _write_executable(path: Path, source: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(textwrap.dedent(source).lstrip(), encoding="utf-8")
-    path.chmod(path.stat().st_mode | stat.S_IXUSR)
+    path.chmod(0o755)
 
 
 def _commit_all(path: Path, message: str) -> str:
