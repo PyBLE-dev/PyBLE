@@ -1880,13 +1880,21 @@ If the frozen-Python agent does not fit C3's flash/heap with usable user-code he
 
 ### 9.1 VFS / LittleFS
 
-The workspace is a MicroPython VFS rooted at `fs_root` (IF-FS): FAT on the ESP
-profiles and LFS2 on Pico 2 W. The agent never repartitions at runtime. The
-Pico overlay may perform one first-use format only after a failed normal mount
-and a complete block scan proves every byte erased (`0xFF`); it never formats
-nonblank or uncertain media. This narrow provisioning case is the only runtime
-format path and is specified by D11. Partition geometry remains part of the
-per-profile build artifact (BLD-5).
+The workspace is a MicroPython LFS2 VFS rooted at `fs_root` (IF-FS) on every
+official profile. On ESP, the partition-table `data,fat` subtype is historical
+ESP-IDF block-container metadata, not the on-media filesystem: its `vfs` label
+selects MicroPython's LFS2 first-use provisioning. Each PyBLE ESP boot overlay
+constructs `VfsLfs2` explicitly so generic VFS autodetection cannot silently
+admit an existing FAT workspace whose replace operation is delete-then-rename.
+A nonblank incompatible/corrupt ESP workspace fails closed without formatting
+or starting the agent; recovery/migration is an explicit operator action.
+
+The agent never repartitions at runtime. The Pico overlay may perform one
+first-use format only after a failed normal mount and a complete block scan
+proves every byte erased (`0xFF`); it never formats nonblank or uncertain media.
+This narrow provisioning case and ESP upstream `inisetup` provisioning of an
+erased `vfs` partition are the only runtime format paths. Partition geometry
+remains part of the per-profile build artifact (BLD-5).
 
 ### 9.2 Workspace layout
 
@@ -1912,7 +1920,10 @@ mid-transfer or by a dropped link (FR-FS-9, NFR-REL-2/3). Listings hide that
 suffix. Resume accepts only a stable, completely CRC-scanned regular-file
 prefix; malformed scratch follows the non-recursive recovery reducer in
 protocol §5. Admission preflights block-rounded remaining bytes plus the
-65,536-byte reserve. FS errors map to PBLE/1 status codes (FR-FS-15).
+65,536-byte reserve. Every failed PUT closes, non-recursively removes, and
+absence-verifies its scratch; cleanup failure overrides the originating status
+with `EIO` while preserving the old target. FS errors map to PBLE/1 status
+codes (FR-FS-15).
 
 ### 9.5 Device config persistence (NVS)
 

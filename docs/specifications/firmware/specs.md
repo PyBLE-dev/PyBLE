@@ -397,7 +397,8 @@ protocol §5, or return `EIO`, while the old destination stays unchanged.
 `EIO`, and insufficient space is `ENOSPC` before scratch creation or growth.
 No `max_file_size` capability is added. — *(source:
 [protocol.md §5](../protocol.md#5-file-transfer-the-reliability-core); verify:
-portable/native unit, FAT+LFS2 conformance, five-profile HIL)*
+portable/native unit, LFS2 conformance on every profile, incompatible-media
+fail-closed boot, five-profile HIL)*
 
 ### 4.5 Console (FR-CON)
 
