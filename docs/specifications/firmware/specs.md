@@ -400,9 +400,11 @@ directory, sibling imports, `sys.path`, or `sys.modules` cleanup. — *(source:
 
 **v0.6.1 amendments to FR-FS-1/4/7/8/9/14/15.** `FILE_LIST` MUST omit every
 basename ending in `.pbltmp` before stat/count/budget accounting. After all
-paths are parsed and jail-resolved, DELETE/MKDIR/RENAME during an active PUT
-MUST return `EBUSY` before stat or mutation. PUT data crossing declared total
-size MUST write nothing and latch `ERANGE`. A nonzero resume offset MUST denote
+paths are parsed and jail-resolved, DELETE/MKDIR/RENAME during an active PUT or
+GET MUST return `EBUSY` before stat or mutation, including when the valid
+mutation path is unrelated to the transfer path. `FILE_LIST` and `FILE_STAT`
+remain available during either transfer. PUT data crossing declared total size
+MUST write nothing and latch `ERANGE`. A nonzero resume offset MUST denote
 exactly a stable regular-file prefix that was completely read and CRC'd;
 malformed scratch MUST be removed only by the non-recursive safe rules in
 protocol §5, or return `EIO`, while the old destination stays unchanged.
