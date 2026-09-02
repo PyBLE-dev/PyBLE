@@ -69,6 +69,36 @@ def write_json(path: Path, value: object, *, private: bool = False) -> None:
         path.chmod(0o600)
 
 
+def release_license_replay(fixture: object) -> contextlib.ExitStack:
+    """Patch the release module exercised by this suite's direct calls."""
+
+    stack = contextlib.ExitStack()
+    stack.enter_context(
+        mock.patch.object(
+            RELEASE,
+            "_audit_load_tool_lock",
+            return_value=fixture.license_fixture.tool_lock,
+        )
+    )
+    stack.enter_context(
+        mock.patch.object(
+            RELEASE,
+            "_audit_observe_rp2_license_inputs",
+            return_value=copy.deepcopy(
+                fixture.license_fixture.rp2_observation
+            ),
+        )
+    )
+    stack.enter_context(
+        mock.patch.object(
+            RELEASE,
+            "_audit_verify_v060_esp_semantic_replay",
+            return_value=None,
+        )
+    )
+    return stack
+
+
 def git_head(root: Path = REPO_ROOT) -> str:
     return subprocess.run(
         ["git", "-C", os.fspath(root), "rev-parse", "HEAD"],
@@ -301,6 +331,9 @@ class V061CompletionLifecycleTests(unittest.TestCase):
         expected = lifecycle_fixture.completion_fragment(
             self.fixture.profile_id
         )
+        expected["oi1_observation"] = {
+            "fixture": "fresh-physical-observation"
+        }
         expected["checks"]["v061_hardening"] = "passed"
         expected["v061_hardening"] = hardening_summary(
             self.fixture.hardening_result
@@ -373,9 +406,15 @@ class V060CompletionCompatibilityTests(unittest.TestCase):
                 fixture.output,
             )
             value = json.loads(fixture.output.read_text(encoding="utf-8"))
+            expected = lifecycle_fixture.completion_fragment(
+                fixture.profile_id
+            )
+            expected["oi1_observation"] = {
+                "fixture": "fresh-physical-observation"
+            }
             self.assertEqual(
                 value,
-                lifecycle_fixture.completion_fragment(fixture.profile_id),
+                expected,
             )
             self.assertNotIn("v061_hardening", value)
             self.assertNotIn("v061_hardening", value["checks"])
@@ -868,7 +907,7 @@ class V060FinalizationCompatibilityTests(unittest.TestCase):
             self.assertEqual(fixture.finalize(baseline), baseline)
 
             explicit_none = fixture.license_fixture.root / "historical-none"
-            with fixture.license_replay():
+            with release_license_replay(fixture):
                 result = RELEASE.finalize_public_bundle(
                     candidate_dir=fixture.candidate,
                     completed_hil_report=fixture.completed_hil,
@@ -900,7 +939,9 @@ class V060FinalizationCompatibilityTests(unittest.TestCase):
             unexpected.write_bytes(b"unexpected v0.6.1 result\n")
             unexpected.chmod(0o600)
             rejected = fixture.license_fixture.root / "historical-rejected"
-            with fixture.license_replay(), self.assertRaises(RELEASE.ReleaseError):
+            with release_license_replay(fixture), self.assertRaises(
+                RELEASE.ReleaseError
+            ):
                 RELEASE.finalize_public_bundle(
                     candidate_dir=fixture.candidate,
                     completed_hil_report=fixture.completed_hil,
