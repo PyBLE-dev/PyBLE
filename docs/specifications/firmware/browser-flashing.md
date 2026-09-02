@@ -774,6 +774,14 @@ copies its complete member record and adds only
 `classification: "packaging-metadata"`. Array order is the archive order
 frozen by the port contract, except owner roots and nonsoftware members, which
 are lexically path-sorted.
+Production admission accepts only the complete seven-key attribution document
+(`schema_version`, `archive`, `archive_members`, `components`,
+`distribution_provenance`, `libusb_binary_provenance`, and `source`) and the
+exact frozen canonical bytes of that document and its policy. A compact or
+self-consistently rehashed test attribution is never a production schema. The
+validator recursively reopens every referenced component, license, notice,
+source-archive, and packaging-provenance asset and requires its recorded
+digest before admitting the policy.
 That record distinguishes exact vendored-tree identities from upstream origin
 statements and records pico-sdk-tools' Apache-2.0 license as packaging
 provenance only. The archive is an aggregate container, not an Apache-2.0
@@ -784,6 +792,26 @@ Both build-tool owners and all their license inputs participate in the audit
 receipt but are excluded from the redistributed firmware
 `THIRD_PARTY_LICENSES.txt`, because neither host tool is present in the
 firmware image.
+
+The build-tools observer opens the retained install below one no-follow
+directory descriptor, rejects linked regular members, and proves exact member
+types, modes, bytes, and directory identity. It reconstructs a private
+byte-for-byte probe tree from the verified archive and executes `picotool
+version` only from that private tree; it never executes the pathname in the
+mutable retained install. After the probe callback it reopens the retained
+archive and complete installed tree and requires the same identities before
+minting evidence. A file rewrite, atomic replacement, link substitution,
+path-component substitution, or archive mutation at the probe boundary is
+fatal.
+
+Candidate replay passes the candidate firmware version into tool-lock loading
+before any version-specific policy path is opened. A newer validator checkout
+may contain later locked input pairs, but an older candidate neither opens nor
+receives them. Conversely, a candidate requiring a missing version-specific
+pair fails closed. The `compare` command requires `--repo-root`, derives the
+strict source version from that checkout's `versions.lock`, and passes both
+the root and version to reproducibility validation; its CLI has no
+versionless v0.6.1 path.
 
 The observer starts from the exact retained `firmware.elf`, its
 `CMakeFiles/firmware.dir/link.txt`, `firmware.elf.map`, CMake cache, build
