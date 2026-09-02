@@ -1942,11 +1942,22 @@ For exact version `0.6.1`, the protected V5 record also starts with
 `v061_hardening: null` and a pending hardening check. The physical hardening
 runner receives the protected candidate, the exact profile, two separately
 acquired candidate-bound sacrificial workspace receipts, a new raw-log path,
-and a new result path. It runs the seven scenarios in the frozen order,
+and a new result path. Before BLE access it validates the complete committed
+qualification dependency closure and retains the candidate/receipt/source
+snapshot that the final writer must consume. After negotiation and before any
+mutation it refuses a board containing either `/v061_hil` or `/main.py`; the
+former protects an existing namespace and the latter prevents the autorun
+durability reboots from executing owner code. The live invocation also carries
+the private reviewed manufacturer, model, and module-marking attestation for
+the selected exact physical profile because PBLE/1 intentionally exposes no
+carrier-board runtime identity. It runs the seven scenarios in the frozen order,
 including exactly 50 sequential RUNs, broad configuration durability, and
 filesystem hardening; validates both workspace receipts; then publishes one
-canonical mode-`0600` private result without replacement. Any failed or
-interrupted operation retains no passing result.
+canonical mode-`0600` private result without replacement through that same
+preflight snapshot. The raw/result/receipt outputs are outside both candidate
+and qualification Git trees, and exclusive publication performs a final
+descriptor-relative reopen after all input callbacks. Any failed or interrupted
+operation retains no passing result.
 
 The same reviewed `v061_hardening_bench.py` executable exposes a separate
 workspace-receipt creation mode for each prerequisite boot. It accepts one

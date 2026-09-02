@@ -1522,6 +1522,21 @@ pass/fail state, and bounded numeric measurements. It MUST NOT serialize a BLE
 address, device ID, device label, source/file content, console bytes, or
 exception text into that log.
 
+Before opening a BLE connection, the runner MUST validate and retain one
+immutable preflight snapshot of the protected candidate, both workspace
+receipts and their derived raw siblings, and the qualification checkout. The
+qualification checkout is admissible only when the committed bytes at `HEAD`
+match the complete authored execution closure: the hardening bench, its shared
+evidence gate, `_pble_bench.py`, `_pble_central.py`, `_pble_wire.py`,
+`target_smoke.py`, `oi1-gates.json`, and `versions.lock`. The final result
+writer MUST consume that same preflight token and revalidate every member
+before and after exclusive publication; taking a new unrelated snapshot only
+after the physical scenarios is forbidden. Receipt, raw-log, and result
+outputs MUST be outside both the candidate and the qualification Git checkout.
+After its input callback, every exclusive evidence writer MUST reopen the
+visible output through its retained parent descriptor and recheck the exact
+inode, one-link mode-`0600` state, size, and bytes before reporting success.
+
 For result admission the raw log contains exactly one line for each scenario
 in `scenario_order`, with no start/end or free-text record. Every ordinary
 line has exactly `scenario` and `status`; `scenario` is that position's frozen
@@ -1557,6 +1572,20 @@ so the target-neutral runner MUST NOT rewrite `SET_IDENTIFY_LED` or claim that
 it can reconstruct an owner's exact setting. A profile which does not advertise
 Identify records no invented Identify pass. A scenario may not be omitted,
 reordered, retried into a pass, or replaced by host/model evidence.
+
+The live runner is intentionally not a general-purpose operation on an owner's
+working board. After connecting and negotiating, but before any file or
+configuration mutation, it MUST prove that both the fixed `/v061_hil` scratch
+root and `/main.py` are absent. A collision aborts without deletion or
+configuration change. This precondition makes every later delete apply only
+to a namespace created by this bench and prevents either autorun durability
+reboot from executing owner code. PBLE/1 deliberately reports the underlying
+chip rather than a provisioning or carrier-board profile, so exact-board
+attribution remains a controlled operator attestation rather than a new
+runtime capability: the live invocation MUST supply the reviewed manufacturer,
+board model, and module marking for the selected one of the five physical
+qualification profiles. Those private values are checked against the frozen
+v0.6.1 bench inventory and are never copied into the raw log or result.
 
 `workspace_provisioning` has exactly `erased-media-first-boot` and
 `nonblank-media-refusal`, in that order. Each value has exactly
