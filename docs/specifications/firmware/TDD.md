@@ -976,6 +976,13 @@ class Agent:
 
 **Key data structures / state:** the lifecycle FSM state; the single-writer lock (`_thread.allocate_lock` or asyncio lock); references to all module instances; a fail-safe handler that returns the board to advertising on a control-plane fault (FR-BOOT-6, NFR-REL-1).
 
+**Portable event ownership:** one `emit(..., expected_session)` chokepoint sends
+every event against the exact session captured when the logical event was
+created. Runner state, console chunks, upload ACKs, and download data/end never
+take a fresh connection snapshot at final TX. Disconnect or handle reuse makes
+the send fail/silent; it cannot retarget a successor. Deferred filesystem items
+carry that same immutable session through their supervisor mailbox.
+
 **Boot policy:** initialize and request advertising (FR-BOOT-1). The exact-board
 variant then attempts its separately guarded splash; lean generic S3, classic,
 and C3 proceed directly. All variants start runner and filesystem workers,
