@@ -166,7 +166,9 @@ class RP2ControlInputBindingTests(unittest.TestCase):
             mock.patch.object(
                 RELEASE,
                 "_audit_load_tool_lock",
-                side_effect=lambda _root: self.fixture.tool_lock(),
+                side_effect=lambda _root, firmware_version=None: (
+                    self.fixture.tool_lock()
+                ),
             ),
             mock.patch.object(
                 RELEASE,
