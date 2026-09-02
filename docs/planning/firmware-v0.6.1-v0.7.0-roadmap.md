@@ -4,7 +4,7 @@
 
 Status: **v0.6.1 APPROVED for implementation; v0.7.0 remains PROPOSED**  
 Baseline: **qualified firmware v0.6.0**  
-Last updated: **2026-09-02**
+Last updated: **2026-09-03**
 
 ## 1. Purpose and status
 
@@ -80,22 +80,24 @@ implementations:
 2. **Transition-only run state.** `RUN_STATE` events created without a live
    connection are omitted. A client reconnecting during autorun or a manual
    run cannot query an authoritative snapshot.
-3. **Inconsistent execution isolation.** The native ESP runner executes in a
+3. **v0.6.0 execution-isolation discrepancy.** The native ESP runner executes in a
    reused module/global context, while the Pico runner creates a fresh
    `{"__name__": "__main__"}` dictionary. File RUN does not define portable
    `__file__`, working-directory, sibling-import, or project-module cleanup
    semantics.
-4. **Input and console loss are not attributable.** The bounded stdin ring can
+4. **v0.6.0 input and console loss are not attributable.** The bounded stdin ring can
    accept input while idle and can drop overflow. Bounded console output may
    also be dropped under sustained congestion without a user-visible loss
    counter.
 5. **Transfers cannot be inspected or explicitly aborted.** Disconnect
    preserves PUT scratch for resume, but there is no status/abort operation or
    complete storage preflight. Stale scratch can consume space.
-6. **Capability-contract discrepancy.** `max_file_size` appears in PBLE/1
-   semantic prose and firmware requirements but is absent from the frozen
-   serialized-key list and both v0.6.0 agent payloads. This must be resolved in
-   the specifications before implementation.
+6. **Resolved for v0.6.1 — capability-contract discrepancy.** Historical
+   semantic prose named `max_file_size`, but it was absent from the frozen
+   serialized-key list and both v0.6.0 agent payloads. The v0.6.1 protocol and
+   firmware amendments preserve that wire reality: no such key is invented,
+   and `FILE_PUT_BEGIN` performs dynamic, overflow-checked free-space admission
+   with the specified filesystem reserve.
 7. **Protocol and persistence hardening gaps.** HELLO version offers and some
    inbound frame invariants need stronger agent enforcement; native and
    portable CRC-error behavior need executable parity; configuration writes
@@ -110,7 +112,7 @@ The relevant frozen contracts are [PBLE/1 file transfer](../specifications/proto
 [HELLO and capabilities](../specifications/protocol.md#7-hello--capabilities),
 and the [Pico 2 W port contract](../specifications/firmware/ports/rpi-pico2-w.md).
 
-## 4. Proposed v0.6.1 — contract hardening
+## 4. Approved v0.6.1 — contract hardening
 
 v0.6.1 should introduce no new public operation or payload. Its purpose is to
 make the existing PBLE/1 and firmware contracts consistently true on both
@@ -155,6 +157,10 @@ while refusing malformed or nonconforming third-party traffic.
 
 Fresh execution changes observable behavior and therefore requires a firmware
 specification amendment and compatibility tests even though it adds no opcode.
+The frozen amendment scopes fresh globals to ordinary and autorun execution;
+it does not prohibit a future capability-gated persistent interactive mode,
+which would need its own specification and must not silently weaken ordinary
+`RUN` isolation.
 
 ### 4.3 Configuration durability and byte validation
 
@@ -177,11 +183,18 @@ specification amendment and compatibility tests even though it adds no opcode.
 - Serialize DELETE, RENAME, and other conflicting mutations against an active
   transfer.
 - Resolve and enforce the effective upload size and a filesystem safety
-  reserve consistently across FAT and LFS2.
+  reserve on the official LFS2 workspace.
 - Recover safely from malformed scratch state without damaging the previous
   destination file.
 - Never automatically format a nonblank workspace merely because mounting or
   configuration loading failed.
+
+The official images standardize on LFS2 across all five profiles under
+[ADR-0047](../decisions/0047-standardize-official-workspaces-on-lfs2.md). The
+ESP partition-table `data,fat` subtype is container metadata, not an on-media
+FAT claim. Explicit LFS2 construction and fail-closed incompatible-media
+handling resolve this roadmap's former FAT/LFS2 ambiguity without changing the
+qualified v0.6.0 bytes.
 
 ## 5. Proposed v0.7.0 — Reliable Projects
 
@@ -217,7 +230,8 @@ position. The specification must define:
   error or produces documented best-effort results;
 - the single-transfer interaction and cancellation behavior;
 - connection/VM-epoch binding and disconnect cleanup;
-- FAT/LFS2 ordering expectations;
+- LFS2 ordering expectations for the five official profiles, with any future
+  alternative VFS requiring its own explicit semantics and qualification;
 - bounded memory and notification pacing; and
 - exclusion of internal scratch/configuration artifacts.
 
@@ -384,7 +398,8 @@ provisioning method may fill another row.
   congestion, disconnect, and VM reset.
 - For mutation during enumeration, prove the separately approved snapshot,
   restart-required error, or documented best-effort semantics exactly.
-- Exercise both FAT and LFS2 and prove internal artifacts are never returned.
+- Exercise LFS2 on all five official profiles and prove internal artifacts are
+  never returned; any future alternative VFS requires separate qualification.
 
 ### 7.4 Transfer status and abort
 
@@ -493,7 +508,7 @@ An approved release increment requires, in order:
 Before implementation begins, the maintainer should explicitly approve or
 revise:
 
-- [ ] the v0.6.1 hardening / v0.7.0 feature-release split;
+- [x] the v0.6.1 hardening / v0.7.0 feature-release split;
 - [ ] v0.7.0's P0 versus P1 scope;
 - [ ] streaming directory enumeration and mutation behavior;
 - [ ] fresh per-run globals and project-local import cleanup semantics;
