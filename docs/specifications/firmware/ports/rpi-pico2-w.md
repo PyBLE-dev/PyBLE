@@ -1,6 +1,6 @@
 # PyBLE — rpi-pico2-w port (Raspberry Pi Pico 2 W: RP2350 + CYW43439)
 
-Status: **P1–P9 FROZEN for the F-25/F-26/F-27/X-13 stories (`[docs]` 2026-08-11)**; P10 gates and P11 open items are living, and every result remains **PENDING**. Derived per [firmware/specs.md §1.1](../specs.md); [ADR-0030](../../../decisions/0030-pico2w-portable-python-agent-first.md) records the portable-Python-first deviation, while [ADR-0033](../../../decisions/0033-qualify-v060-as-five-profile-heterogeneous-release.md) defines the heterogeneous v0.6.0 release admission. Cited upstream facts refer to the pinned MicroPython v1.28.0 submodule.
+Status: **P1–P9 FROZEN (v0.6.1 hardening amended 2026-09-02)**; P10 gates and P11 open items are living, and every new v0.6.1 result remains **PENDING**. Derived per [firmware/specs.md §1.1](../specs.md); [ADR-0030](../../../decisions/0030-pico2w-portable-python-agent-first.md) records the portable-Python-first deviation, while [ADR-0033](../../../decisions/0033-qualify-v060-as-five-profile-heterogeneous-release.md) defines only the historical heterogeneous v0.6.0 release admission. Cited upstream facts refer to the pinned MicroPython v1.28.0 submodule.
 
 ## P1. Identity & caps (FROZEN)
 
@@ -17,6 +17,14 @@ Status: **P1–P9 FROZEN for the F-25/F-26/F-27/X-13 stories (`[docs]` 2026-08-1
 - Transfers during an active RUN return `EBUSY` (legal §8; the ESP32 port's concurrent fs-worker behavior is restored only by a future core1 increment — OI-P5).
 - A RUN reservation is not yet execution. If an accepted STOP or SOFT_REBOOT arrives after the RUN response but before supervisor pickup, the supervisor MUST consume the reserved request as cancelled, MUST NOT compile or execute its file/source or emit `RUN_STATE(running)`, and MUST emit the terminal `RUN_STATE(idle)`. Supervisor pickup MUST publish the executing marker before its final cancellation check; that store is the linearization cut. Control accepted before the store sets cancellation intent which the final check consumes, while control accepted after the store observes execution and takes the P3 post-RSP interrupt path. There MUST be no check-then-publish gap in which an accepted control command neither cancels nor interrupts the source.
 - After a SOFT_REBOOT response is successfully handed to BLE, the agent enters a closing state. Global command admission MUST run before every handler until reset: every valid non-SOFT_REBOOT command which normally has a response returns `EBUSY`, including unknown opcodes, while `FILE_PUT_DATA` and `CONSOLE_INPUT` are dropped because those commands have no response. No rejected handler may execute or mutate runtime, filesystem, label, autorun, console, or runner state. A duplicate SOFT_REBOOT also returns `EBUSY` without moving the deadline. The supervisor may consume the already-cancelled reservation and recover its terminal state, but MUST NOT start new user work or pump filesystem work while closing.
+- The dispatcher starts each connection/supervisor epoch unnegotiated, parses
+  the exact protocol §7 HELLO request, and commits negotiation from the final-
+  fragment `send_message(..., on_published=...)` receipt only. Pre-HELLO work,
+  compatible repeats, INFO reads, and reset use the common §7 state machine.
+- `make_exec_fn` MUST allocate one fresh `{"__name__": "__main__"}` globals/
+  locals dictionary for every file/source/autorun call. No object holding a
+  prior run's variables is reused; v0.6.1 adds no `__file__` or import-project
+  semantics.
 
 ## P3. STOP (FROZEN)
 
@@ -61,11 +69,36 @@ The successful response commit fixes one deadline at `now + 250 ms` and arms an 
 
 ## P5. Persistence (FROZEN — no NVS on rp2)
 
-`/pyble_conf.json` on the LFS2 vfs: `{"label": str ≤24 UTF-8 bytes, "autorun": 0|1}`. The top-level reserved `pyble` prefix in the workspace jail shields it from PBLE/1 clients. Survives soft/hard reset; a filesystem reformat wipes it (accepted; identity is not stored there).
+`/pyble_conf.json` on LFS2 uses exactly
+`{"version":1,"label":<str>,"autorun":0|1,"crc32":<u32>}` with key order
+irrelevant, no extra keys, and an encoded-file cap of 256 bytes. CRC is PBLE/1
+IEEE CRC-32 over `b"PBLECFG" + b"\x01" + bytes((autorun,
+len(label_utf8))) + label_utf8`. Labels obey protocol §7 strict UTF-8/control
+rules. CRC is corruption detection, not authentication.
+
+Each SET stages a validated candidate without changing RAM, writes complete
+JSON to `/.pyble_conf.json.pbltmp`, flushes and closes it, calls `os.sync()`,
+then atomically renames over the primary. Rename success is the sole commit cut;
+before it, failure removes temp best-effort and retains old primary/RAM/name.
+A valid primary wins and stale temp is removed best-effort. Missing primary is
+first boot: defaults, no fault, never promote temp. Invalid, oversize,
+unknown-version, wrong-type, or CRC-failed primary selects safe defaults plus a
+bounded `CONFIG_CORRUPT` RAM marker; it is never overwritten/promoted at boot.
+The exact legacy two-key object is accepted after current type/label validation
+and migrates only on the next successful SET. The reserved top-level/suffix
+rules shield both files from PBLE/1.
 
 ## P6. Ingest bounds (FROZEN)
 
-Reassembled RX message cap **4096 bytes** (covers RUN source ≤ 2048 + headers); oversize → drop + `RSP ERANGE` with best-effort opcode/id echo (the ESP32-HIL-verified ERANGE-on-oversize behavior). Per-handler bounds: path ≤ 128, RUN source ≤ 2048, label ≤ 24 UTF-8 bytes.
+Reassembled RX message cap **4096 bytes** (covers RUN source ≤ 2048 + headers).
+Oversize records one violation, discards tails until `FIRST`, and returns
+`RSP{ERANGE}` only if the latched complete header is safely v1/CMD/nonzero and
+the violation is below the eighth; otherwise it is silent. Each `FIRST` starts
+the protocol §3.2 absolute 5000 ms deadline. The exact-session violation limit
+is 8 and calls `BLE.gap_disconnect(handle)` through the common close path.
+Per-handler bounds: path ≤128, RUN source ≤2048, HELLO ≤192, label ≤24 encoded
+bytes. Protocol/session state is reset on disconnect and supervisor epoch
+rebuild.
 
 ## P7. Transport bindings (FROZEN)
 
@@ -73,7 +106,7 @@ Reassembled RX message cap **4096 bytes** (covers RUN source ≤ 2048 + headers)
 
 ## P8. Console & pacing (FROZEN method and refill horizon)
 
-One `io.IOBase` object serving three roles: stdout tee (gated on the run-active flag — the main-thread equivalent of the ESP32 worker-origin gate) emitting `CONSOLE_DATA` `[stream:u8][bytes ≤200]` chunks; a 256-byte stdin ring (drop-on-overflow) for `CONSOLE_INPUT`; and the `0x03` STOP channel (P3). BTstack queues congested notifies on the heap rather than dropping (the inverse of the ESP32 mbuf-starve loss mode): emission uses the bounded token bucket below; a dead link degrades to drop-and-continue, never a wedge.
+One `io.IOBase` object serving three roles: stdout tee (gated on the run-active flag — the main-thread equivalent of the ESP32 worker-origin gate) emitting `CONSOLE_DATA` `[stream:u8][bytes ≤200]` chunks; a 256-byte stdin ring (drop-on-overflow) for active-program `CONSOLE_INPUT`; and the `0x03` STOP channel (P3). Stdin owns `begin` (clear+activate), `end` (clear+deactivate), and `clear` (preserve activity) under the ring lock. Successful final-fragment RUN response publication invokes `begin` before supervisor wake; autorun admission invokes it directly; accepted STOP and terminal/reset invoke `end`; disconnect invokes `clear`. Idle input is discarded and failed RUN/STOP publication changes nothing. BTstack queues congested notifies on the heap rather than dropping (the inverse of the ESP32 mbuf-starve loss mode): emission uses the bounded token bucket below; a dead link degrades to drop-and-continue, never a wedge.
 
 The portable token bucket has exact capacity `TX_CAPACITY = 2048` tokens,
 exact refill rate `TX_REFILL_PER_MS = 20` tokens per millisecond, and exact
@@ -136,6 +169,16 @@ bytes. ADR-0033 selects Pico for the v0.6.0 candidate without qualifying it.
 Its profile may enter a finalized public selector only after P10 (including
 GP2), the schema-3 resource row, verified-UF2 install/recovery, and the common
 five-profile exact-byte gates pass.
+
+**v0.6.1 non-destructive mount amendment.** The overlay first attempts one
+ordinary `VfsLfs2` construction/mount. Only an `OSError` constructor failure
+may enter a complete read-only scan using ioctl block count/size and one reused
+buffer. Exactly all-`0xFF` media permits one `mkfs` and one remount. A nonblank
+byte anywhere, invalid geometry, ioctl/read/allocation failure, unexpected
+exception, or failed post-format remount performs no further write, prints one
+bounded USB recovery message, and skips agent/autorun. Configuration corruption
+never participates in this decision. The implementation remains an overlay;
+upstream MicroPython is untouched.
 
 ## P10. Gates (per PRD §1B.7 sub-gate allowance; G0–G4 untouched)
 

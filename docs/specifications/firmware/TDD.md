@@ -1,6 +1,6 @@
 # PyBLE Agent Firmware — Technical Design Document (TDD)
 
-Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-08-20
+Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-09-02
 
 > **Frozen at G0 (2026-07-01, `[docs]`):** the source-tree layout ([§10.5](#105-source-layout-frozen)), which realizes the frozen NFR-MAINT-2 six-module design and the [specs.md](specs.md) §5.1/§5.6/§6/§8 freeze. Design narrative elsewhere in this doc remains DRAFT and is pinned per-story by its `[red]` tests ([§4](#4-module-design)).
 >
@@ -15,6 +15,11 @@ Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-08-20
 > profile reset and product-wide transfer SLOs; ADR-0038 routes predecessor and
 > replacement v0.6.0 derivations by source ancestry. Every replacement result
 > remains pending.
+>
+> **Frozen v0.6.1 hardening design (2026-09-02, `[docs]`):**
+> [§2.11](#211-v061-hardening-architecture) fixes the implementation seams,
+> transaction cuts, and host/HIL proof boundary for the approved v0.6.1
+> roadmap. It adds no PBLE/1 wire surface.
 >
 > **Frozen optional ST7789 user-runtime design (2026-08-01, `[docs]`,
 > [ADR-0023](../../decisions/0023-explicit-st7789-user-runtime.md)):**
@@ -235,6 +240,75 @@ owner. The readiness wait may release the GIL safely because runner/filesystem
 workers are created only after the frozen path is restored. — *(implements
 ADR-0024; satisfies
 FR-SPLASH-1…9 and preserves FR-BOOT-4/6.)*
+
+### 2.11 v0.6.1 hardening architecture
+
+**Decision (D11, 2026-09-02):** v0.6.1 changes existing semantics without
+changing PBLE/1 bytes. Portable Python and native C MUST consume the same HELLO
+and frame-guard vectors. The production native CRC/frame/HELLO decisions live
+in a dependency-free `pble_wire.c/.h` unit compiled both into firmware and by
+the host test harness; a source-text proxy or Python twin is not evidence for
+native behavior. Structural decode is separate from CRC, direction, version,
+and session admission so the protocol §3 precedence is executable rather than
+an accidental call order.
+
+The protocol layer owns one `UNNEGOTIATED`/`NEGOTIATED(v1)` state keyed by the
+full BLE session token and VM epoch. HELLO parsing is bounded and allocation-
+free on native C. A response-pool item records whether successful completion
+commits HELLO; only final-fragment local Notify acceptance may publish that
+state. The portable TX completion callback is the equivalent cut. Disconnect
+and VM reset clear it before new RX admission. Invalid repeated HELLO cannot
+clear a valid state.
+
+The BLE reassembler adds `started_ms`, `active`, `expected_index`, and
+`discard_tail` plus an exact-session `violation_count`. Its clock is injectable
+in portable tests and uses the port monotonic clock in production. Deadline
+checks use wrap-safe elapsed arithmetic and the inclusive 5000 ms boundary.
+All violation sites call one reducer; its eighth result closes admission and
+routes to the existing bounded termination mechanism without sending the
+triggering error. RX storage remains statically/boundedly allocated.
+
+Every runner execution saves the worker's globals/locals, allocates a fresh
+dictionary containing only `__name__ = "__main__"`, installs it as both globals
+and locals, then restores the saved dictionaries in both normal and NLR error
+paths. Console stdin has a separate active predicate under its existing ring
+lock and three operations: `begin` clears+activates, `end` clears+deactivates,
+and `clear` preserves activity. RUN/autorun admission, accepted control,
+terminal, disconnect, and VM reset call only the operation assigned by
+protocol §6; failed response admission calls none.
+
+The filesystem bridge treats `.pbltmp` as invisible control-plane state. One
+resume helper returns explicit `{status, offset, crc}` and never maps malformed
+scratch silently to a fresh upload. Namespace mutations resolve paths before
+the active-PUT gate. Admission reads `statvfs`, uses checked 64-bit block
+arithmetic and a constant 65,536-byte reserve, and occurs before scratch
+creation/growth. The active state records a latched boundary/write status so a
+chunk crossing `total_size` cannot partially write. The native worker retains
+its existing session/VFS bracketing; the portable implementation applies the
+same semantic reducer.
+
+Configuration is candidate-first. ESP label, autorun, and Identify paths check
+every NVS set/erase/commit and change RAM/GPIO/advertising only after commit.
+Identify uses one authoritative raw four-byte `id_cfg` blob
+`[1, enabled, gpio, active_level]`; an absent blob alone permits validated
+legacy-pair loading, while an invalid present blob fails closed. Pico keeps
+`/pyble_conf.json` but v1 is exactly the key set
+`{version,label,autorun,crc32}`, at most 256 encoded bytes. Its IEEE CRC-32 is
+over `b"PBLECFG" + b"\x01" + bytes((autorun, label_len)) + label_utf8`.
+It writes `/.pyble_conf.json.pbltmp`, flushes/closes, calls `os.sync()`, and
+atomically renames; rename success is the only commit cut. A valid primary wins
+and stale temp is removed best-effort. Missing primary means defaults/no fault;
+invalid primary means defaults plus a bounded RAM fault marker and is never
+overwritten or replaced from temp. The exact validated legacy two-key object is
+accepted and migrates only on the next successful setting change.
+
+The Pico boot overlay isolates mount choice in a host-testable helper. A normal
+mount performs no scan. Only an `OSError` mount-constructor failure enters a
+complete, read-only block scan with one reused buffer; format occurs once only
+when all bytes are conclusively `0xFF`. Any nonblank byte, bad geometry/read,
+allocation failure, unexpected exception, or post-format remount failure makes
+zero further writes, emits one bounded USB recovery message, and skips agent
+and autorun startup. It never changes upstream MicroPython.
 
 ## 3. Architecture overview
 
@@ -820,8 +894,8 @@ class Info:
     def device_info(self) -> bytes        # chip, mpy ver, free_mem, fs_root, MTU,
                                           # device_id, label (FR-INFO-1)
     def hello_reply(self, offered_versions) -> tuple  # (proto_version, caps) | refuse (FR-INFO-5)
-    def caps(self) -> dict                 # chip, mpy_version, fs_root, max_file_size,
-                                           # put_window W, chunk_size, has_sd, free_mem,
+    def caps(self) -> dict                 # frozen short keys: proto/agent/chip/mpy,
+                                           # fs_root/mtu/window/chunk/has_sd/free_mem,
                                            # device_id, label, has_identify, identify_led
     def info_payload(self) -> bytes        # DEVICE_INFO-equivalent for INFO read (FR-INFO-4)
     def set_label(self, payload) -> bytes        # 0x50 -> DeviceConfig.set_label (FR-IDENT-1)
@@ -831,7 +905,13 @@ class Info:
 
 **Key data structures / state:** the `caps` dict (FR-INFO-3); supported `proto_versions`; SD-presence detection result (FR-INFO-6); the auto-run capability flag (opt-in, FR-BOOT-3 — flag name owned by [protocol.md §7](../protocol.md#7-hello--capabilities), OI-5); a handle to the device-config store ([§4.8](#48-device-config-store--label--identify-led-nvs)) supplying `device_id`/`label`/`has_identify`/`identify_led`. All chip-varying values read at runtime (D2) from `os.uname()`, `gc.mem_free()`, `sys.platform`.
 
-**Negotiation:** `HELLO` is the first exchange after connect (FR-INFO-2); a client whose offered versions cannot be satisfied is refused rather than silently mis-spoken (FR-INFO-5). The agent advertises only what it implements (FR-PROTO-10).
+**Negotiation:** TX subscription precedes the first RX frame. The bounded
+protocol §7 parser accepts only the canonical request grammar, and one
+connection/VM session stays unnegotiated until final local acceptance of its
+successful HELLO response. The dispatch gate rejects or drops pre-HELLO work,
+disconnect/reset clears state, and compatible repeat is idempotent. INFO reads
+do not negotiate. The agent advertises only what it implements
+(FR-PROTO-10), and v0.6.1 does not add `max_file_size`.
 
 **Frozen-vs-native plan:** frozen.
 
@@ -1800,7 +1880,13 @@ If the frozen-Python agent does not fit C3's flash/heap with usable user-code he
 
 ### 9.1 VFS / LittleFS
 
-The workspace is a MicroPython VFS (LittleFS) rooted at `fs_root` (IF-FS). The agent does not reformat or repartition at runtime; the partition table is part of the per-chip build artifact (BLD-5).
+The workspace is a MicroPython VFS rooted at `fs_root` (IF-FS): FAT on the ESP
+profiles and LFS2 on Pico 2 W. The agent never repartitions at runtime. The
+Pico overlay may perform one first-use format only after a failed normal mount
+and a complete block scan proves every byte erased (`0xFF`); it never formats
+nonblank or uncertain media. This narrow provisioning case is the only runtime
+format path and is specified by D11. Partition geometry remains part of the
+per-profile build artifact (BLD-5).
 
 ### 9.2 Workspace layout
 
@@ -1820,11 +1906,24 @@ This is Layer 4 — served, not part of the agent. `.mpy`/`.pyc` are neither req
 
 ### 9.4 Atomicity
 
-Uploads write to a `.tmp` sibling and `os.rename` over the target only after whole-file CRC verification, so a target file is never corrupted mid-transfer or by a dropped link (FR-FS-9, NFR-REL-2/3). FS errors map to PBLE/1 status codes (FR-FS-15).
+Uploads write to the reserved `.pbltmp` sibling and rename over the target only
+after whole-file CRC verification, so a target file is never corrupted
+mid-transfer or by a dropped link (FR-FS-9, NFR-REL-2/3). Listings hide that
+suffix. Resume accepts only a stable, completely CRC-scanned regular-file
+prefix; malformed scratch follows the non-recursive recovery reducer in
+protocol §5. Admission preflights block-rounded remaining bytes plus the
+65,536-byte reserve. FS errors map to PBLE/1 status codes (FR-FS-15).
 
 ### 9.5 Device config persistence (NVS)
 
-The device label and identify-LED config persist in a small **NVS namespace** (`esp32.NVS`) — **not** in the LittleFS workspace and **not** under `fs_root`. This keeps the per-device UX state stable across reboot (FR-IDENT-5) while staying **outside** the path jail ([§9.3](#93-path-jail-enforcement)) and outside anything user code or PBLE/1 file opcodes can reach. It is read at boot to derive the advertised name and the identity caps, and written only by `SET_LABEL`/`SET_IDENTIFY_LED`. It is **not** a routing/pin profile or capability map (D7, CON-13, FR-IDENT-6).
+On ESP, the device label, autorun byte, and authoritative four-byte Identify
+record persist in the NVS namespace `pyble`, outside `fs_root`. Every change is
+candidate-first and visible in RAM/GPIO/advertising only after checked commit.
+On Pico, the protected `/pyble_conf.json` uses D11's version/CRC and atomic
+temp-write/flush/sync/rename transaction. Invalid persisted state selects safe
+defaults plus a bounded internal marker and is never rewritten at boot. Both
+stores remain device UX state, not a routing/pin profile or capability map
+(D7, CON-13, FR-IDENT-5/6).
 
 ## 10. Build system design
 
