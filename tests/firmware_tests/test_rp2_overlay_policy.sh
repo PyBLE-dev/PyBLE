@@ -71,6 +71,7 @@ expected = (
     "pyble_info.py",
     "pyble_proto.py",
     "pyble_runner.py",
+    "pyble_workspace.py",
 )
 tree = ast.parse(open(sys.argv[1], encoding="utf-8").read())
 matches = []
