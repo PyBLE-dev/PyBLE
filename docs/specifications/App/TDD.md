@@ -506,6 +506,38 @@ UI reads down (watch providers) and writes up (call `Connection` methods / DAO m
 - **Test compatibility:** a test overriding `connectionProvider` directly with a `FakeConnection` still **wins** (the override replaces the derived body), so the existing widget/golden suite (`shell_harness.pumpShell`) is untouched. New connect-flow tests inject `FakeScanner` + a `ConnectionFactory` returning `FakeConnection` + a fake `BleReadinessSource` through a `PbleConnectionManager`, or override `connectionManagerProvider` with a fake manager — no fake radio / fake `BleLink` needed (FR-CONN-7, D5).
 - The `ConnectController` (`Notifier`) projecting the manager into `ConnectState` for the connect surface lives in `lib/connect` ([§4.8](#48-libconnect--scanconnect-flow-ui)); it is the one place with the connect-flow intents.
 
+**Owned-link teardown clarification (2026-09-06, FR-CONNECT-7).**
+
+`PbleConnection.fromLink` owns the exact supplied `BleLink` and the
+`BleByteTransport` it constructs. Its first `dispose()` retires the connection,
+removes link/event listeners, aborts in-flight work, calls that link's
+`disconnect()` exactly once, and releases the owned byte adapter and protocol
+resources. Concurrent/repeated disposals await the same completion, including
+the same failure. Cleanup must still attempt the remaining resources if one
+step fails; preserve the first failure and its stack. A terminal HELLO failure
+on this owned-link path must close it, and a late HELLO/event must never publish
+`ready` or touch disposed notifiers. The direct `PbleConnection(engine: ...)`
+constructor retains its existing protocol-engine lifetime semantics but does
+not disconnect or dispose a caller-owned byte transport.
+
+The manager retires its old facade binding before awaiting teardown, and waits
+for the old owned connection's close before opening a replacement. Every
+connect/disconnect/dispose intent invalidates earlier pending connect results.
+If an uncancellable factory returns a board after supersession, close that
+exact stale board once without attaching it or changing the current selected
+board, phase, or error. Failures from stale work remain with that operation;
+they must not overwrite a newer session. Manager disposal prevents new work,
+releases its streams/notifiers even on board-close failure, and is idempotent.
+No new wire command, permission flow, board identity gate, reset, version bump,
+or automatic connection retry is introduced by this clarification.
+
+Host regressions must exercise the real HELLO-ready `PbleConnection` over a
+recording fake `BleLink`, including physical-disconnect call/state, shared
+dispose completion, late HELLO, cleanup failure, external transport ownership,
+replacement and late factory results after disconnect/disposal. Existing
+connection/facade and wire-conformance tests remain required. Host tests alone
+do not fill the physical ordinary-disconnect/reconnect rows on either tablet.
+
 ### 6.3 Single active writer / serialization
 
 The app is one client to one board (SEC-2). `PbleConnection` serializes mutating operations (`runFile`/`runSource`/`putFile`/`delete`/`mkdir`/`rename`/`softReboot`) through an internal queue so commands cannot interleave; a `RUN` while running surfaces `EBUSY` as `EBusy` ([§14](#14-error-handling--mapping)) rather than corrupting state (FR-RUN-3). Read-only ops (`listDir`, `deviceInfo`) and `stop` are not blocked behind a long transfer beyond correctness.
