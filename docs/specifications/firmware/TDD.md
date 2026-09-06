@@ -2436,6 +2436,15 @@ pico-sdk, BTstack and its actually linked third parties, CYW43, TinyUSB, and
 every contributing ARM GNU/newlib runtime archive. Deleting or substituting
 one class fails even when the remaining evidence is canonically rehashed.
 
+ESP frozen-payload tests MUST reach the production observer with a real
+descriptor-captured retained board layout and literal manifest selections.
+They distinguish a flat workspace destination from its canonical-source-relative
+`pyble/` copy, and preserve already-prefixed and historical package selections.
+Missing nested copies, matching flat decoys, stale bytes, file/directory
+symlinks, and duplicate frozen destinations are rejection cases. The existing
+lock-generated version exception and overlay byte checks remain independently
+covered; tests must not replace the snapshot or byte comparison with a model.
+
 RP2 environment-proof tests MUST run the actual checked-in build driver through
 the production Arm observer's parser boundary. They separately cover the strict
 `unset` command and the exact pinned offline CMake assignment/export block,

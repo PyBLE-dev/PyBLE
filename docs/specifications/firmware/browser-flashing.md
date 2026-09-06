@@ -1573,6 +1573,19 @@ The following ESP-IDF resolution rules are part of that fail-closed mapping:
    tree; materializing such an ambient tree is neither an audit prerequisite
    nor substitute evidence for bytes used by the build.
 
+   A frozen destination is not necessarily its generated board source path.
+   `prepare.sh` materializes a selected canonical `firmware/pyble/<relative>`
+   source at `BOARD_DIR/pyble/<relative>`, independently of the manifest's
+   destination. In particular, the flat frozen `pyble_workspace.py` destination
+   uses `BOARD_DIR/pyble/pyble_workspace.py`; already-prefixed `pyble/...`
+   destinations MUST NOT gain a second `pyble/` prefix. The audit MUST derive
+   that physical copy path from the canonical source-relative path, retain the
+   original frozen destination, and compare the exact retained copy bytes.
+   A flat matching decoy cannot replace a missing or changed nested copy.
+   The lock-generated `_version.py` exception, overlay copies, separately
+   admitted first-party modules, and upstream selections keep their existing
+   validation rules.
+
    The collector MUST open every component of that exact retained `BOARD_DIR`
    descriptor-relatively without following links, capture its complete bytes
    and node identities, and materialize a byte-identical execution snapshot in
