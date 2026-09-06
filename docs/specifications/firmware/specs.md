@@ -572,6 +572,34 @@ start in that case. Inspection MUST neither rerun mounting nor modify media.
 Fresh source-bound performance/resource and physical qualification gates
 apply to all five changed images; the observer does not waive those gates.
 
+**Native-USB acquisition-tool output amendment (2026-09-06).** The maintained
+host acquisition tool MUST preserve the same single device-generated
+`PYBLE_WORKSPACE_OBSERVATION:` JSON line when inspecting native-USB refusal
+recovery. With deasserted DTR, the pinned native CDC output path may overwrite
+pending bytes; a successful short UID response does not prove a longer
+unpaced observation print will be complete. For the exact Waveshare and Pico
+profiles, generate the observation once, serialize once, require an ASCII
+line of at most 1,024 bytes, and emit it through `sys.stdout.write` in chunks
+of at most 16 characters with a 50 ms delay after each chunk. A 100 ms drain
+interval precedes and follows output. No extra framing, per-chunk newlines,
+hex encoding, host-created observation fields, or repair of missing bytes is
+allowed. The leading and trailing newline and all JSON bytes are unchanged.
+The maximum deliberately requested pacing is 3,400 ms; the existing absolute
+12-second stdout read deadline, transcript bound, exact raw-REPL delimiters,
+empty-stderr requirement, and outer acquisition deadline remain fail-closed.
+
+This is transient host-test-tool generated inspection code, not firmware image
+code or an app workflow change. DTR and RTS remain deasserted, raw-REPL entry
+must not soft-reset the VM, the exact physical UID must be checked first, and
+the sealed boot getter is called only once for the fresh challenge. All
+candidate/source, nonce, actual media readback, advertisement, and publication
+gates remain unchanged. The original raw bytes, including failed captures,
+must be retained. Other observation transports retain their existing behavior.
+An adversarial overwritable-FIFO host test must demonstrate the old long-print
+loss and exact paced output under an explicit bounded drain model. A stdout
+write return is not delivery proof. Host tests do not establish USB scheduling
+guarantees or replace final-candidate HIL.
+
 The complete-device erased scan accepts a read status only when it is `None`,
 boolean `True`, or exact integer zero, matching successful native block-read
 outcomes. Boolean `False` is a failed read, not integer-zero success. Floating

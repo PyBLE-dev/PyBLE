@@ -99,6 +99,13 @@ all derived acquisition siblings. Detailed fields and fail-closed predicates
 are frozen in firmware specs §4.7 and §5.3.4. Changes to the observer require
 fresh five-profile build, resource/performance, and physical qualification.
 
+The host-generated native-USB refusal query paces the same one JSON line in
+16-character stdout writes, separated by 50 ms, with a 1,024-byte ASCII ceiling
+and bounded pre/post drain intervals. This avoids one-shot FIFO pressure while
+leaving DTR/RTS and the original VM boot unchanged. It is not a new receipt
+format or a guarantee of delivery: missing bytes, delimiters, nonce, or fields
+still fail the existing parser and acquisition. Keep failed raw captures.
+
 Use `v061_workspace_acquire.py` for the physical acquisition, with a clean
 qualification checkout, protected final candidate, reviewed mode-`0600`
 private binding JSON, and a new receipt filename in a private directory:
