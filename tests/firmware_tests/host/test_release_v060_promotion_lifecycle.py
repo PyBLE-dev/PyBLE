@@ -257,7 +257,7 @@ def provision_qualification_root(root: Path) -> None:
     """Provision a hermetic qualification root the completion writer accepts.
 
     The writer reads firmware/versions.lock, the committed OI-1 policy, and
-    the retained a8be631d baseline under the qualification root
+    the exact retained baseline bound by that policy under the qualification root
     (release_bundle._load_qualification_policy), and proves the candidate's
     source-era ancestry with git against that same root.  Copy the REAL files
     so the fixture exercises the production parse and threshold verification,
@@ -276,13 +276,10 @@ def provision_qualification_root(root: Path) -> None:
     (gates_dir / "oi1-gates.json").write_bytes(
         (repo / "firmware" / "qualification" / "oi1-gates.json").read_bytes()
     )
-    baseline_rel = Path("docs") / "validation" / "firmware" / "oi1"
-    baseline_dir = root / baseline_rel
-    baseline_dir.mkdir(parents=True)
-    baseline_name = "a8be631df46590166307aa41afaea30b39e29230.json"
-    (baseline_dir / baseline_name).write_bytes(
-        (repo / baseline_rel / baseline_name).read_bytes()
-    )
+    policy, _ = RELEASE._load_qualification_policy(repo)
+    baseline_rel = Path(policy["baseline_evidence"]["path"])
+    (root / baseline_rel).parent.mkdir(parents=True)
+    (root / baseline_rel).write_bytes((repo / baseline_rel).read_bytes())
     (root / ".git").write_text(
         "gitdir: %s\n" % _repo_git("rev-parse", "--absolute-git-dir"),
         encoding="utf-8",
