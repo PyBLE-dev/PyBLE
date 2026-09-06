@@ -249,7 +249,7 @@ class WorkspaceHardwareLifecycleTests(unittest.IsolatedAsyncioTestCase):
         import target_smoke
         self.backend.binding["profile_id"] = "waveshare-esp32-s3-lcd-147b"
         central = SimpleNamespace(send_cmd=mock.AsyncMock(return_value=SimpleNamespace(payload=b"\0")),
-                                  disconnect=mock.AsyncMock())
+                                  disconnect=mock.AsyncMock(), is_connected=False)
         with mock.patch.object(HARDWARE, "_usb_exact"), \
              mock.patch.object(HARDWARE.importlib.metadata, "version", return_value="3.0.2"), \
              mock.patch.object(_pble_central.PbleCentral, "connect", return_value=central), \
@@ -372,6 +372,58 @@ class WorkspaceHardwareLifecycleTests(unittest.IsolatedAsyncioTestCase):
                 await real_wait_for(task, 0.2)
         self.assertTrue(bounded_cleanup, "BLE teardown never used a bounded wait")
         self.assertTrue(all(0 < seconds <= 5 for seconds in bounded_cleanup))
+
+    def rom_context(self, value, rom):
+        adapter = HARDWARE._EspAdapter(value, self.root, mock.Mock())
+        adapter._check = mock.Mock()
+        tool_chip = {"esp32-4mb": "esp32", "esp32-s3-n16r8": "esp32s3"}[value["profile_id"]]
+        factory = mock.Mock(return_value=rom)
+        tool = SimpleNamespace(detect_chip=mock.Mock(side_effect=AssertionError("autodetection is not permitted")))
+        self.enterContext(mock.patch.dict(sys.modules, {
+            "esptool": tool,
+            "esptool.config": SimpleNamespace(load_config_file=lambda: (None, None)),
+            "esptool.targets": SimpleNamespace(CHIP_DEFS={tool_chip: factory})}))
+        self.enterContext(mock.patch.object(HARDWARE.importlib.metadata, "version",
+            side_effect=lambda name: {"esptool": "4.12.0", "pyserial": "3.5"}[name]))
+        self.enterContext(mock.patch.object(HARDWARE, "_usb_exact"))
+        return adapter, factory, tool
+
+    async def test_expected_rom_is_retained_before_exactly_one_connect_and_no_autodetection(self):
+        rom = SimpleNamespace(connect=mock.Mock(side_effect=OSError("single connect stopped")))
+        value = binding()
+        adapter, factory, tool = self.rom_context(value, rom)
+        with self.assertRaisesRegex(OSError, "single connect stopped"):
+            adapter._connect()
+        self.assertIs(adapter.esp, rom)
+        factory.assert_called_once_with(value["loader_usb"]["port"], 115200)
+        rom.connect.assert_called_once_with("default_reset", attempts=1, detecting=True)
+        tool.detect_chip.assert_not_called()
+
+    async def test_modern_rom_actual_chip_id_must_match_not_only_selected_class_constants(self):
+        rom = SimpleNamespace(connect=mock.Mock(), IS_STUB=False, sync_stub_detected=False,
+                              CHIP_NAME="ESP32-S3", IMAGE_CHIP_ID=9,
+                              get_chip_id=mock.Mock(return_value=5), read_mac=mock.Mock())
+        adapter, _factory, tool = self.rom_context(binding(), rom)
+        with self.assertRaisesRegex(ValueError, "ROM chip ID"):
+            adapter._connect()
+        rom.get_chip_id.assert_called_once_with()
+        rom.read_mac.assert_not_called()
+        tool.detect_chip.assert_not_called()
+
+    async def test_classic_rom_uses_actual_magic_without_unsupported_security_info_probe(self):
+        value = binding()
+        value["profile_id"] = "esp32-4mb"
+        value["flash"].update(chip="ESP32", chip_id=0, size_bytes=0x400000, jedec_id=0x164068)
+        rom = SimpleNamespace(connect=mock.Mock(), IS_STUB=False, sync_stub_detected=False,
+                              CHIP_NAME="ESP32", IMAGE_CHIP_ID=0, CHIP_DETECT_MAGIC_REG_ADDR=0x40001000,
+                              read_reg=mock.Mock(return_value=0), get_chip_id=mock.Mock(), read_mac=mock.Mock())
+        adapter, _factory, tool = self.rom_context(value, rom)
+        with self.assertRaisesRegex(ValueError, "classic ROM magic"):
+            adapter._connect()
+        rom.read_reg.assert_called_once_with(0x40001000)
+        rom.get_chip_id.assert_not_called()
+        rom.read_mac.assert_not_called()
+        tool.detect_chip.assert_not_called()
 
 
 if __name__ == "__main__":
