@@ -198,7 +198,7 @@ async def _upload_one(c, path, data, window, chunk, next_id,
             piece = data[next_off:next_off + chunk]
             await c.send_cmd_no_rsp(
                 wire.OP_FILE_PUT_DATA,
-                0,  # DATA is no-RSP; id irrelevant
+                next_id(),  # No RSP, but every CMD still needs a nonzero ID.
                 next_off.to_bytes(4, "little") + piece)
             next_off += len(piece)
 
