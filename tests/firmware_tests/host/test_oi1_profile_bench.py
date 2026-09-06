@@ -10,6 +10,7 @@ import contextlib
 import copy
 import errno
 import hashlib
+import importlib.util
 import inspect
 import io
 import json
@@ -31,6 +32,27 @@ import _pble_bench as bench  # noqa: E402
 from _pble_central import PbleCentral  # noqa: E402
 import _pble_wire as wire  # noqa: E402
 import oi1_profile_bench as profile_bench  # noqa: E402
+
+
+def load_release_module():
+    spec = importlib.util.spec_from_file_location(
+        "pyble_release_profile_bench_contract",
+        REPO_ROOT / "firmware" / "scripts" / "release_bundle.py",
+    )
+    if spec is None or spec.loader is None:
+        raise AssertionError("cannot construct release_bundle.py import spec")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+RELEASE = load_release_module()
+CURRENT_POLICY_PATH = REPO_ROOT / "firmware" / "qualification" / "oi1-gates.json"
+
+
+def load_current_policy():
+    payload = CURRENT_POLICY_PATH.read_bytes()
+    return json.loads(payload.decode("utf-8")), hashlib.sha256(payload).hexdigest()
 
 
 PROFILE_ORDER = (
@@ -391,6 +413,88 @@ def _valid_observation(profile_id):
     }
 
 
+class CurrentPolicyBindingTest(unittest.TestCase):
+    def setUp(self):
+        self.policy = json.loads(CURRENT_POLICY_PATH.read_bytes())
+        self.baseline_path = REPO_ROOT / self.policy["baseline_evidence"]["path"]
+        self.baseline = json.loads(self.baseline_path.read_bytes())
+
+    @staticmethod
+    def canonical(value):
+        return (json.dumps(value, indent=2, sort_keys=True) + "\n").encode("utf-8")
+
+    @contextlib.contextmanager
+    def changed_inputs(self, policy, baseline=None):
+        # Override only selected reads; real checkout ancestry and every other
+        # source/evidence check remain active. No repository file is written.
+        replacements = {CURRENT_POLICY_PATH: self.canonical(policy)}
+        if baseline is not None:
+            replacements[self.baseline_path] = self.canonical(baseline)
+        original_read = Path.read_bytes
+
+        def read(path):
+            return replacements[path] if path in replacements else original_read(path)
+
+        with mock.patch.object(Path, "read_bytes", autospec=True, side_effect=read):
+            yield
+
+    def test_active_policy_uses_actual_checkout_era_and_full_validator(self):
+        with mock.patch.object(
+            RELEASE,
+            "_qualification_derivation_for_checkout",
+            wraps=RELEASE._qualification_derivation_for_checkout,
+        ) as selector:
+            policy, digest = load_current_policy()
+        self.assertEqual(policy, self.policy)
+        self.assertEqual(digest, hashlib.sha256(CURRENT_POLICY_PATH.read_bytes()).hexdigest())
+        selector.assert_called_once_with(
+            REPO_ROOT, RELEASE._read_lock(REPO_ROOT)["pyble"]["agent_version"]
+        )
+
+    def test_every_profile_threshold_is_bound_to_actual_baseline(self):
+        for index, profile in enumerate(self.policy["profiles"]):
+            for key in profile["thresholds"]:
+                with self.subTest(profile=profile["profile_id"], threshold=key):
+                    changed = copy.deepcopy(self.policy)
+                    changed["profiles"][index]["thresholds"][key] += 1
+                    with self.changed_inputs(changed), self.assertRaisesRegex(
+                        RELEASE.ReleaseError, "thresholds were not derived from baseline"
+                    ):
+                        load_current_policy()
+
+    def test_changed_baseline_digest_is_rejected(self):
+        changed = copy.deepcopy(self.policy)
+        changed["baseline_evidence"]["sha256"] = "0" * 64
+        with self.changed_inputs(changed), self.assertRaisesRegex(
+            RELEASE.ReleaseError, "baseline evidence digest changed"
+        ):
+            load_current_policy()
+
+    def test_rehashed_baseline_source_filename_mismatch_is_rejected(self):
+        baseline = copy.deepcopy(self.baseline)
+        baseline["source_commit"] = "0" * 40
+        changed = copy.deepcopy(self.policy)
+        changed["baseline_evidence"]["sha256"] = hashlib.sha256(
+            self.canonical(baseline)
+        ).hexdigest()
+        with self.changed_inputs(changed, baseline), self.assertRaisesRegex(
+            RELEASE.ReleaseError, "source commit disagrees with its filename"
+        ):
+            load_current_policy()
+
+    def test_rehashed_incomplete_baseline_observations_are_rejected(self):
+        baseline = copy.deepcopy(self.baseline)
+        baseline["profiles"][0]["oi1_observation"][
+            "reset_to_service_advertisement_ms"
+        ].pop()
+        changed = copy.deepcopy(self.policy)
+        changed["baseline_evidence"]["sha256"] = hashlib.sha256(
+            self.canonical(baseline)
+        ).hexdigest()
+        with self.changed_inputs(changed, baseline), self.assertRaises(RELEASE.ReleaseError):
+            load_current_policy()
+
+
 class FrozenConstantsTest(unittest.TestCase):
     def test_exact_v060_candidate_profiles_and_common_workload_are_frozen(self):
         self.assertEqual(tuple(bench.PROFILE_ORDER), CURRENT_PROFILE_ORDER)
@@ -427,7 +531,8 @@ class FrozenConstantsTest(unittest.TestCase):
             REPO_ROOT / "firmware" / "qualification" / "oi1-gates.json"
         )
         payload = policy_path.read_bytes()
-        policy = json.loads(payload.decode("utf-8"))
+        policy, policy_sha256 = load_current_policy()
+        self.assertEqual(policy_sha256, hashlib.sha256(payload).hexdigest())
 
         self.assertEqual(policy["schema_version"], 3)
         self.assertEqual(
