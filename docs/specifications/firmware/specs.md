@@ -511,6 +511,63 @@ heuristic is not an admissible provisioning path. Invalid geometry fails before
 the first read or write. — *(source:
 [rpi-pico2-w.md](ports/rpi-pico2-w.md); verify: unit and sacrificial-Pico HIL)*
 
+**v0.6.1 measured boot-observation amendment (2026-09-06).** The official
+overlays MUST acquire one bounded, retained observation of their actual
+workspace boot, rather than infer operation counts from source or unchanged
+media. `mount_lfs2(..., observe_boot=True)` starts that observation once per
+VM; its default `False` preserves the existing unobserved helper interface.
+A repeated observed call MUST fail without replacing the first observation.
+The observed block-device adapter MUST count actual `writeblocks` invocations
+and block-erase `ioctl(6, ...)` invocations before backend dispatch, including
+failed or idempotent calls and calls made by the initial LFS2 constructor.
+Reads retain the original block-device method; the adapter MUST preserve
+backend arguments, return values, and errors. These are measured requests at
+the official native block-device boundary, not claimed flash-bus pulse counts.
+
+Initial mount, format, and remount attempts are counted immediately before
+the actual respective call. Format/remount completions are counted only after
+successful return. The existing complete-device erased scan alone controls
+format admission: observation faults, missing entropy, allocation failure,
+counter overflow, or uncertain storage MUST NOT authorize a format or retry.
+The observation records whether that scan proved erased or nonblank media;
+normal healthy mounts remain uninspected. The overlays call `boot_attached()`
+only after the actual `vfs.mount` succeeds. On failure, `boot_recovery()` emits
+the existing one fixed local recovery line and counts its attempted and
+completed emission. Either terminal path seals the record. Later filesystem
+use or repeated accessor calls MUST NOT change its counts; repeated terminal
+calls MUST be refused without emitting another recovery line.
+
+The internal accessor `pyble_workspace.read_boot_observation(challenge)`
+accepts exactly 32 lowercase hexadecimal characters and returns a detached
+mapping with exactly these keys:
+
+```text
+schema_version boot_id challenge mount_attempts
+format_attempts format_completions remount_attempts remount_completions
+program_calls erase_calls workspace_attached recovery_attempts
+recovery_emissions complete fault overflow media_state
+```
+
+The schema is integer `1`; `boot_id` is a fresh per-VM 16-byte random value
+encoded as 32 lowercase hex characters, not device identity or an
+authorization signal. `challenge` echoes this read's fresh host nonce, without
+changing retained state. Counters are nonnegative integers saturating at
+65,535; attempted overflow latches `overflow` and `fault`. The four state
+flags are booleans. `media_state` is exactly `uninspected`, `erased`,
+`nonblank`, or `uncertain`. Before initialization the accessor raises; an
+incomplete or faulted observation may be inspected but MUST NOT qualify.
+Expected initial mount failure followed by a conclusive nonblank refusal is
+not itself an observation fault. Failed entropy, inspection, formatting,
+remount, or attachment cannot become a passing observation.
+
+This internal diagnostic adds no PBLE/1 opcode, capability, or payload. A
+successful boot may be inspected through a bounded read-only existing RUN;
+that supports Pico's supervisor-owned main thread without interrupting it.
+Refusal is inspected through the existing USB REPL, since no BLE agent may
+start in that case. Inspection MUST neither rerun mounting nor modify media.
+Fresh source-bound performance/resource and physical qualification gates
+apply to all five changed images; the observer does not waive those gates.
+
 ### 4.8 Execution modes (FR-MODE)
 
 - **FR-MODE-1** — The agent MUST support **agent mode (idle)**: advertising and/or connected, servicing PBLE/1 file/info/console-input commands with no user program executing; `RUN_STATE` reports `idle`. — *(source: PRD §10.6, [protocol.md §6](../protocol.md#6-run--stop--console); verify: HIL, conformance; story: F-03, F-12)*
@@ -1619,6 +1676,7 @@ candidate_release_json_sha256
 install_sha256
 qualification_source_commit
 qualification_executable_sha256
+acquisition_sha256
 raw_log_sha256
 status
 ```
@@ -1630,6 +1688,52 @@ protected candidate. Qualification source and executable are the reviewed
 checkout and exact `v061_hardening_bench.py` bytes used both to create the
 receipt and run the seven-scenario check; an operator cannot author those
 identity fields.
+
+The 2026-09-06 acquisition amendment additionally requires a derived private
+`<stem>-acquisition.json` sibling. Its digest is `acquisition_sha256`; a
+four-line summary alone is never sufficient evidence. The acquisition has
+schema integer `1`, contract `v061-workspace-acquisition-v1`, and binds the
+same profile/target/version/source/candidate/install and qualification
+identities, the reviewed collector digest, a fresh challenge and boot ID,
+exact workspace media geometry, and the selected physical board binding.
+It independently binds the derived `<stem>-install.bin`, `<stem>-pre.bin`, `<stem>-post.bin`,
+`<stem>-response.bin`, `<stem>-advertisements.jsonl`, and
+`<stem>-measurement.jsonl` siblings. These contain the actually read-back
+candidate loadable bytes, complete workspace readbacks, the observed
+nonce-bearing firmware response, fresh service-scan
+callbacks and their bounded watch interval, and the ordered live acquisition
+steps. The collector must acquire and validate these facts, not fill expected
+records from an operator assertion. All raw identity/media/transport details
+remain private. Every sibling is exclusive-created, mode `0600`, stable,
+regular, and subject to the same no-link/no-replacement rules as the receipt.
+The install readback MUST equal the candidate's merged ESP image span at its
+declared offset or the ordered nonoverlapping RP2 UF2 data segments; a claimed
+successful install without retained matching readback bytes is insufficient.
+Successful boot inspection also retains a real `os.statvfs('/')` result. A
+native-USB endpoint may appear after the recovery line was emitted; its sealed
+measured emission counter can supply that fact without inventing host-captured
+text. The collector never substitutes a literal expected line for absent USB
+bytes. Raw details and derived redacted summary are independently bound.
+
+Erased-media admission requires an all-`0xFF` complete pre-read, a changed
+post-read, a complete/fault-free/nonoverflowed boot record with
+`media_state=erased`, one initial mount, exactly one attempted/completed
+format and remount, positive measured program-plus-erase calls, successful
+workspace attachment, no recovery emission, and a fresh observed service
+advertisement. Nonblank admission requires a deliberately incompatible
+nonblank pre-read, byte-identical complete post-read, a complete/fault-free/
+nonoverflowed record with `media_state=nonblank`, one initial mount, zero
+format/remount/program/erase calls, failed attachment, exactly one recovery
+attempt and emission, and no matching service throughout an uninterrupted
+post-boot watch of at least ten seconds. Partial, stale, cross-board,
+cross-candidate, reordered, nonce-mismatched, or missing observations fail.
+The initial-mount counter excludes the separately counted remount.
+
+Private hardening workspace rows additionally carry a safe same-directory
+`receipt_file` basename and `acquisition_sha256`. Each later validator,
+including finalization, MUST reopen that receipt and its full derived raw
+closure and recheck all bindings. The public redacted summary remains free of
+these private filenames and physical identities. v0.6.0 evidence is unchanged.
 
 The separately exclusive-created mode-`0600` raw boot log is canonical JSONL.
 An erased-media observation has exactly these four records in order:

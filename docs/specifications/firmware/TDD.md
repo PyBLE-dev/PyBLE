@@ -1993,6 +1993,31 @@ mount/format/refusal behavior occurs before the service exists. The later
 scenario run consumes both receipts; it never fabricates or silently skips
 them.
 
+The 2026-09-06 measured-boot amendment adds red-to-green coverage for the
+optional observed mount, actual initial-constructor/mkfs/remount ordering,
+attempt versus completion counts, direct read-method binding, and wrapped
+write/erase attempts including failed and idempotent operations. Each test
+uses a fresh module instance to model a VM. Cover missing/bad entropy,
+inspection/allocation/format/remount/attachment failures, counter saturation,
+one-shot initialization and terminal sealing, immutable detached snapshots,
+strict fresh challenge echo, and zero additional recovery emissions. Normal
+unobserved callers retain their existing behavior and block-device identity.
+All five overlay tests prove observed mounting, attachment sealing only after
+`vfs.mount`, and bounded recovery sealing before any possible agent startup.
+
+The workspace acquisition tests MUST exercise the live collector's event
+sequence and reject an expected four-line summary without measured siblings.
+Fixtures prove exact native-media geometry and pre/post bytes, real response
+parsing with challenge/boot identity, actual counter predicates, scanner
+start/callback/end ordering, missing/incomplete watches, and interrupted
+acquisition. Every retained sibling participates in immutable acquisition and
+receipt bindings. Mutation, link substitution, wrong target/candidate,
+replayed response, false zero-write inference from unchanged bytes alone,
+and any manually supplied operation count cannot produce a passing receipt.
+Private-result and finalization tests reopen this entire closure rather than
+trust its previously copied digest. Host simulations validate the harness;
+only its execution on the exact physical candidate supplies HIL evidence.
+
 `create-hil-completion` opens and validates that profile's private hardening
 result alongside the OI observation and existing target gate result. It
 derives the public hardening summary and check; neither may occur in operator

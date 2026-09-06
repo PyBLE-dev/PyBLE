@@ -86,6 +86,19 @@ modify a user's working board to obtain either result. `NOT-RUN`, reused
 v0.6.0 evidence, a receipt from another profile, or a configuration-corruption
 test cannot qualify v0.6.1.
 
+The measured-boot amendment of 2026-09-06 requires the actual retained
+`pyble_workspace.read_boot_observation(challenge)` response, complete private
+pre/post workspace readbacks, and a fresh bounded advertisement watch. The
+four-line canonical summary is derived from that acquisition; it cannot be
+entered by an operator or inferred from expected source behavior. Success can
+be queried through a bounded existing PBLE/1 RUN (including Pico); failure is
+queried through USB REPL with no agent advertisement. Both paths only read the
+sealed original boot observation and must never rerun the mount helper.
+The private receipt and each later hardening/finalization step bind and reopen
+all derived acquisition siblings. Detailed fields and fail-closed predicates
+are frozen in firmware specs §4.7 and §5.3.4. Changes to the observer require
+fresh five-profile build, resource/performance, and physical qualification.
+
 The live runner receives the protected candidate directory, exact profile,
 private BLE address, both receipt paths, and new raw-log/output paths. It emits
 no passing result unless all seven live scenarios and both pre-service
