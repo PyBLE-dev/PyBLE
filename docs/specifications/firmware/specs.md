@@ -1706,9 +1706,15 @@ steps. The collector must acquire and validate these facts, not fill expected
 records from an operator assertion. All raw identity/media/transport details
 remain private. Every sibling is exclusive-created, mode `0600`, stable,
 regular, and subject to the same no-link/no-replacement rules as the receipt.
-The install readback MUST equal the candidate's merged ESP image span at its
-declared offset or the ordered nonoverlapping RP2 UF2 data segments; a claimed
-successful install without retained matching readback bytes is insufficient.
+For ESP, the install readback MUST equal the candidate's merged image span at
+its declared offset. For RP2, the retained representation is the candidate UF2
+container with every data payload replaced by actual same-address physical
+readback bytes. Candidate headers, block order, and container padding are
+retained as metadata, not claimed as flash reads; the collector validates
+nonoverlapping data ranges and must actually read every payload range. The
+retained representation's digest MUST equal the candidate install digest.
+A claimed successful install without retained matching readback payloads is
+insufficient.
 Successful boot inspection also retains a real `os.statvfs('/')` result. A
 native-USB endpoint may appear after the recovery line was emitted; its sealed
 measured emission counter can supply that fact without inventing host-captured
