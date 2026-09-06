@@ -9,7 +9,10 @@ import importlib.util
 from pathlib import Path
 import struct
 import sys
+import tempfile
+from types import SimpleNamespace
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[3]
 HIL = ROOT / "tests/firmware_tests/hil"
@@ -171,6 +174,112 @@ class WorkspaceHardwareGuardTests(unittest.TestCase):
         for invalid in (True, 0, 256, 4095, 8192):
             with self.subTest(block_size=invalid), self.assertRaises(ValueError):
                 fn(invalid)
+
+    def test_known_native_application_is_not_mistaken_for_wrong_loader(self):
+        self.api("validate_binding")
+        application = binding()["application_usb"]
+        loader = dict(application, vid=0x303a, pid=0x1001)
+        with mock.patch.object(HARDWARE, "_ports", return_value=[application]):
+            self.assertFalse(HARDWARE._usb_exact(loader, absent_ok=True, alternate=application))
+        wrong = dict(application, serial_number="OTHER-TARGET")
+        with mock.patch.object(HARDWARE, "_ports", return_value=[wrong]), self.assertRaises(ValueError):
+            HARDWARE._usb_exact(loader, absent_ok=True, alternate=application)
+
+    def test_duplicate_serial_alias_must_be_idle_before_open(self):
+        self.api("validate_binding")
+        selected = binding()["application_usb"]
+        alias = dict(selected, port="/dev/cu.duplicate-test-alias")
+        with mock.patch.object(HARDWARE, "_ports", return_value=[selected, alias]), \
+             mock.patch.object(HARDWARE.subprocess, "run", return_value=SimpleNamespace(returncode=0, stdout=b"occupied")) as run:
+            with self.assertRaises(ValueError):
+                HARDWARE._usb_exact(selected, idle=True)
+            self.assertEqual(run.call_args.args[0], ["/usr/sbin/lsof", selected["port"], alias["port"]])
+
+
+class WorkspaceHardwareLifecycleTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.assertIsNotNone(HARDWARE)
+        self.temporary = tempfile.TemporaryDirectory(prefix="pyble-hardware-host-")
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        self.backend = HARDWARE.WorkspaceHardware(binding(), repo_root=self.root, candidate_dir=self.root)
+        self.backend.work_dir = self.root
+        self.backend.kind = "erased-media-first-boot"
+
+    async def test_boot_cannot_precede_complete_pre_read_or_repeat(self):
+        self.backend.adapter = SimpleNamespace(boot=mock.AsyncMock(return_value=b"first boot"))
+        for phase in ("new", "prepared", "pre-reading", "booted", "observed"):
+            self.backend.phase = phase
+            with self.subTest(phase=phase), self.assertRaises(ValueError):
+                await self.backend.boot()
+        self.backend.adapter.boot.assert_not_awaited()
+        self.backend.phase = "pre-read"
+        self.assertEqual(await self.backend.boot(), b"first boot")
+        self.assertEqual(self.backend.phase, "booted")
+        with self.assertRaises(ValueError):
+            await self.backend.boot()
+        self.backend.adapter.boot.assert_awaited_once()
+
+    async def test_failed_actual_read_does_not_authorize_boot(self):
+        self.backend.phase = "prepared"
+        self.backend.adapter = SimpleNamespace(read_flash=mock.AsyncMock(return_value=b"short"),
+                                               boot=mock.AsyncMock())
+        with self.assertRaises(ValueError):
+            await self.backend.read_media(0x210000, 0xdf0000)
+        with self.assertRaises(ValueError):
+            await self.backend.boot()
+        self.backend.adapter.boot.assert_not_awaited()
+
+    async def test_wrong_transport_or_repeated_observation_never_contacts_runtime(self):
+        self.backend.phase = "booted"
+        self.backend._ble_command = mock.AsyncMock()
+        self.backend._usb_command = mock.AsyncMock()
+        for challenge, transport in (("a" * 32, "usb-repl"), ("A" * 32, "pble-run")):
+            with self.assertRaises(ValueError):
+                await self.backend.observe(challenge, transport)
+        self.backend._ble_command.assert_not_awaited()
+        self.backend._usb_command.assert_not_awaited()
+
+    async def test_wave_hello_validates_chip_not_board_profile_token(self):
+        import _pble_central
+        import target_smoke
+        self.backend.binding["profile_id"] = "waveshare-esp32-s3-lcd-147b"
+        central = SimpleNamespace(send_cmd=mock.AsyncMock(return_value=SimpleNamespace(payload=b"\0")),
+                                  disconnect=mock.AsyncMock())
+        with mock.patch.object(HARDWARE, "_usb_exact"), \
+             mock.patch.object(HARDWARE.importlib.metadata, "version", return_value="3.0.2"), \
+             mock.patch.object(_pble_central.PbleCentral, "connect", return_value=central), \
+             mock.patch.object(target_smoke, "validate_caps", side_effect=RuntimeError("stop after caps")) as validate:
+            with self.assertRaisesRegex(RuntimeError, "stop after caps"):
+                await self.backend._ble_command("pass")
+            self.assertEqual(validate.call_args.args[1], "esp32-s3")
+        central.disconnect.assert_awaited_once()
+
+    async def test_close_never_resets_or_implicitly_boots(self):
+        adapter = SimpleNamespace(close=mock.AsyncMock(), boot=mock.AsyncMock())
+        self.backend.adapter = adapter
+        await self.backend.close()
+        await self.backend.close()
+        adapter.boot.assert_not_awaited()
+        self.assertEqual(self.backend.phase, "closed")
+
+    async def test_raw_repl_reentry_explicitly_exits_previous_raw_mode_without_soft_reset(self):
+        writes = []
+        class Port:
+            def open(self):
+                pass
+            def close(self):
+                pass
+            def write(self, raw):
+                writes.append(raw)
+                raise OSError("stop after entry bytes")
+        serial = SimpleNamespace(Serial=lambda **kwargs: Port())
+        with mock.patch.dict(sys.modules, {"serial": serial}), \
+             mock.patch.object(HARDWARE.importlib.metadata, "version", return_value="3.5"), \
+             mock.patch.object(HARDWARE, "_usb_exact"):
+            with self.assertRaisesRegex(OSError, "stop after entry bytes"):
+                self.backend._usb_command_sync("pass", False)
+        self.assertEqual(writes, [b"\x03\x03\x02\x01"])
 
 
 if __name__ == "__main__":
