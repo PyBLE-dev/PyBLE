@@ -107,12 +107,15 @@ class _OwnedLink implements BleLink {
   }
 }
 
-Future<({PbleConnection connection, _OwnedLink link})> _ready() async {
+Future<({PbleConnection connection, _OwnedLink link})> _ready({
+  Duration dataTimeout = const Duration(seconds: 8),
+}) async {
   final _OwnedLink link = _OwnedLink();
   final PbleConnection connection = PbleConnection.fromLink(
     link: link,
     appName: 'PyBLE',
     appVersion: '0.2.0',
+    dataTimeout: dataTimeout,
   );
   link.state.value = BleLinkState.connected;
   await pumpEventQueue();
@@ -271,6 +274,27 @@ void main() {
       },
     );
 
+    test('queued GET begin cannot create a transfer after disposal', () async {
+      final r = await _ready(dataTimeout: const Duration(milliseconds: 20));
+      final Future<Uint8List> download = r.connection.getFile('owned.bin');
+      final Future<void> rejected = expectLater(
+        download,
+        throwsA(isA<NotConnectedException>()),
+      );
+      await pumpEventQueue();
+      final PbleFrame begin = r.link.frames.last;
+      r.link.deliver(
+        PbleFrame(
+          type: Pble.typeRsp,
+          opcode: begin.opcode,
+          id: begin.id,
+          payload: Uint8List.fromList(<int>[0, 1, 0, 0, 0]),
+        ),
+      );
+      await r.connection.dispose();
+      await rejected;
+    });
+
     test(
       'terminal owned HELLO refusal closes physical link automatically',
       () async {
@@ -293,6 +317,62 @@ void main() {
   });
 
   group('FR-CONNECT-7 manager ownership and late factories', () {
+    test('disposal stops the owned scanner once', () async {
+      final FakeScanner scanner = FakeScanner();
+      final manager = PbleConnectionManager(
+        scanner: scanner,
+        readiness: FakeSeamReadiness(BleReadiness.ready),
+        connectionFactory: (_) => throw StateError('not requested'),
+      );
+      addTearDown(scanner.dispose);
+      await manager.startScan();
+      expect(scanner.scanning, isTrue);
+      await manager.dispose();
+      await manager.dispose();
+      expect(scanner.scanning, isFalse);
+      expect(scanner.stopScanCount, 1);
+    });
+
+    test(
+      'same physical ID waits for pending acquisition and stale close',
+      () async {
+        final a = await _ready();
+        final Completer<Connection> firstFactory = Completer<Connection>();
+        int factoryCalls = 0;
+        final manager = _manager((_) async {
+          factoryCalls++;
+          if (factoryCalls == 1) return firstFactory.future;
+          // Wrappers share one physical radio, as the native plugin does by ID.
+          a.link.state.value = BleLinkState.connected;
+          return PbleConnection.fromLink(
+            link: a.link,
+            appName: 'PyBLE',
+            appVersion: '0.2.0',
+          );
+        });
+        final Future<void> first = manager.connect('same-board');
+        await pumpEventQueue();
+        final Future<void> second = manager.connect('same-board');
+        await pumpEventQueue();
+        final int beforeFirstResult = factoryCalls;
+        a.link.closeGate = Completer<void>();
+        firstFactory.complete(a.connection);
+        await pumpEventQueue();
+        final int beforeStaleClose = factoryCalls;
+        a.link.closeGate!.complete();
+        await Future.wait(<Future<void>>[first, second]);
+        await pumpEventQueue();
+        a.link.answerHello();
+        await pumpEventQueue();
+        expect(beforeFirstResult, 1);
+        expect(beforeStaleClose, 1);
+        expect(factoryCalls, 2);
+        expect(a.link.disconnectCalls, 1);
+        expect(a.link.state.value, BleLinkState.connected);
+        expect(manager.phase.value, ConnectPhase.connected);
+      },
+    );
+
     test('ordinary manager Disconnect closes the real ready link', () async {
       final r = await _ready();
       final manager = _manager((_) async => r.connection);
