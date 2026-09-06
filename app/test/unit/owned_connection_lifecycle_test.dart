@@ -3,7 +3,6 @@
 
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -121,8 +120,9 @@ Future<({PbleConnection connection, _OwnedLink link})> _ready() async {
   await pumpEventQueue();
   expect(connection.state.value, ConnState.ready);
   addTearDown(() async {
-    if (link.closeGate case final Completer<void> gate when !gate.isCompleted)
+    if (link.closeGate case final Completer<void> gate when !gate.isCompleted) {
       gate.complete();
+    }
     try {
       await connection.dispose();
     } catch (_) {}

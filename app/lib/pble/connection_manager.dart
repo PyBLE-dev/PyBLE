@@ -336,12 +336,14 @@ class PbleConnectionManager implements ConnectionManager {
   Future<void> _retire(Connection board) {
     final Future<void> closing = Future<void>.sync(board.dispose);
     _retirements.add(closing);
-    // The original future retains any error for its owning operation; this
-    // bookkeeping branch must not create a second unhandled error future.
+    // Remove only successful retirements. A failed physical close is not proof
+    // that another link can safely be opened; later operations must still see
+    // that failure. Consume this bookkeeping branch's error without replacing
+    // the original future or issuing an automatic disconnect retry.
     unawaited(
       closing.then<void>(
         (_) => _retirements.remove(closing),
-        onError: (Object _, StackTrace __) => _retirements.remove(closing),
+        onError: (Object _, StackTrace _) {},
       ),
     );
     return closing;
