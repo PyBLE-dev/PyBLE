@@ -8,6 +8,14 @@ firmware-test-author**; none of this ships in the firmware image.
 A milestone gate is green **only on a real-hardware HIL demo**, not on merged
 code (PRD §1B.7). These drivers are that demo, made repeatable.
 
+Every valid outbound `CMD`, including no-response `FILE_PUT_DATA`, uses a
+request ID in 1–255. Transfer data and controls share a wrapping allocator;
+each Go-Back-N resend obtains another valid ID without waiting for a data
+`RSP`. ID zero is reserved for `EVT` and intentional malformed-input tests.
+Host regression coverage must exercise more than 255 submissions and feed
+captured frames through the unchanged native wire-admission decision. These
+tool checks do not replace actual candidate/board HIL evidence.
+
 ## Files
 
 | File | Role |
