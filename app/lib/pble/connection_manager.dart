@@ -160,6 +160,9 @@ class PbleConnectionManager implements ConnectionManager {
   ScanHit? _selected;
   Object? _lastError;
   bool _disposed = false;
+  int _intent = 0;
+  Future<void>? _disposeFuture;
+  final Set<Future<void>> _retirements = <Future<void>>{};
 
   @override
   Connection get connection => _facade;
@@ -181,6 +184,7 @@ class PbleConnectionManager implements ConnectionManager {
 
   @override
   Future<void> startScan({Duration? timeout}) async {
+    _ensureActive();
     // Fire-and-forget: a broadcast-subscription cancel() future never completes
     // under `tester.pump()` (FakeAsync), which would stall connect/stopScan in
     // every widget test. The listener is removed synchronously either way; the
@@ -199,6 +203,7 @@ class PbleConnectionManager implements ConnectionManager {
 
   @override
   Future<void> stopScan() async {
+    _ensureActive();
     // Fire-and-forget: a broadcast-subscription cancel() future never completes
     // under `tester.pump()` (FakeAsync), which would stall connect/stopScan in
     // every widget test. The listener is removed synchronously either way; the
@@ -208,13 +213,18 @@ class PbleConnectionManager implements ConnectionManager {
     await _scanner.stopScan();
     // Only fall back to idle when no board is live (a connected session keeps
     // its connected/connecting phase).
-    if (_liveBoard == null && _phase.value == ConnectPhase.scanning) {
+    if (!_disposed &&
+        _liveBoard == null &&
+        _phase.value == ConnectPhase.scanning) {
       _phase.value = ConnectPhase.idle;
     }
   }
 
   @override
   Future<void> connect(String id) async {
+    _ensureActive();
+    final int intent = ++_intent;
+    _detachAndRetire();
     // Scanning and GATT do not run together — stop the scan first (FR-BLE-5).
     // Fire-and-forget: a broadcast-subscription cancel() future never completes
     // under `tester.pump()` (FakeAsync), which would stall connect/stopScan in
@@ -222,13 +232,20 @@ class PbleConnectionManager implements ConnectionManager {
     // completion signal is not needed here (matches _StableFacade.detach below).
     unawaited(_scanSub?.cancel());
     _scanSub = null;
-    await _scanner.stopScan();
-
     _selected = _hits[id] ?? ScanHit(id: id, name: '', rssi: 0);
     _lastError = null;
     _phase.value = ConnectPhase.connecting;
     try {
+      await _scanner.stopScan();
+      // A previous Disconnect/replacement may still own a physical close.
+      // Do not open another board until those exact retirements complete.
+      await Future.wait(_retirements.toList());
+      if (!_isCurrent(intent)) return;
       final Connection board = await _connectionFactory(id);
+      if (!_isCurrent(intent)) {
+        await _retire(board);
+        return;
+      }
       _liveBoard = board;
       _facade.attach(board);
       // Derive the phase from the freshly attached board's live state (the
@@ -236,28 +253,55 @@ class PbleConnectionManager implements ConnectionManager {
       // attaches already-ready with no state change).
       _phase.value = _phaseForConn(_facade.state.value);
     } catch (error) {
-      _lastError = error;
-      _phase.value = ConnectPhase.failed;
+      if (_isCurrent(intent)) {
+        _lastError = error;
+        _phase.value = ConnectPhase.failed;
+      }
       rethrow;
     }
   }
 
   @override
   Future<void> disconnect() async {
-    final Connection? board = _liveBoard;
-    // Null the live board BEFORE detaching so the facade's reset to
-    // disconnected does not drive the phase (we set it to idle explicitly).
-    _liveBoard = null;
-    _facade.detach();
-    await board?.dispose();
+    _ensureActive();
+    final int intent = ++_intent;
+    _detachAndRetire();
     _selected = null;
-    _phase.value = ConnectPhase.idle;
+    try {
+      await Future.wait(_retirements.toList());
+      if (_isCurrent(intent)) {
+        _lastError = null;
+        _phase.value = ConnectPhase.idle;
+      }
+    } catch (error) {
+      if (_isCurrent(intent)) {
+        _lastError = error;
+        _phase.value = ConnectPhase.failed;
+      }
+      rethrow;
+    }
   }
 
   @override
-  Future<void> dispose() async {
-    if (_disposed) return;
+  Future<void> dispose() {
+    if (_disposeFuture case final Future<void> pending) return pending;
     _disposed = true;
+    _intent++;
+    return _disposeFuture = Future<void>.microtask(_disposeResources);
+  }
+
+  Future<void> _disposeResources() async {
+    Object? firstError;
+    StackTrace? firstStack;
+    Future<void> attempt(FutureOr<void> Function() action) async {
+      try {
+        await action();
+      } catch (error, stack) {
+        firstError ??= error;
+        firstStack ??= stack;
+      }
+    }
+
     // Fire-and-forget: a broadcast-subscription cancel() future never completes
     // under `tester.pump()` (FakeAsync), which would stall connect/stopScan in
     // every widget test. The listener is removed synchronously either way; the
@@ -265,18 +309,48 @@ class PbleConnectionManager implements ConnectionManager {
     unawaited(_scanSub?.cancel());
     _scanSub = null;
     _facade.state.removeListener(_onFacadeState);
+    _detachAndRetire();
+    _selected = null;
+    await attempt(() => Future.wait(_retirements.toList()));
+    await attempt(_scanResults.close);
+    await attempt(_facade.dispose);
+    await attempt(_phase.dispose);
+    if (firstError != null) {
+      Error.throwWithStackTrace(firstError!, firstStack!);
+    }
+  }
+
+  bool _isCurrent(int intent) => !_disposed && _intent == intent;
+
+  void _ensureActive() {
+    if (_disposed) throw StateError('connection manager disposed');
+  }
+
+  void _detachAndRetire() {
     final Connection? board = _liveBoard;
     _liveBoard = null;
-    await board?.dispose();
-    await _scanResults.close();
-    await _facade.dispose();
-    _phase.dispose();
+    _facade.detach();
+    if (board != null) _retire(board);
+  }
+
+  Future<void> _retire(Connection board) {
+    final Future<void> closing = Future<void>.sync(board.dispose);
+    _retirements.add(closing);
+    // The original future retains any error for its owning operation; this
+    // bookkeeping branch must not create a second unhandled error future.
+    unawaited(
+      closing.then<void>(
+        (_) => _retirements.remove(closing),
+        onError: (Object _, StackTrace __) => _retirements.remove(closing),
+      ),
+    );
+    return closing;
   }
 
   // Track the session phase off the stable facade's live ConnState. Only
   // meaningful while a board is attached; scan/failure phases own the idle path.
   void _onFacadeState() {
-    if (_liveBoard == null) return;
+    if (_disposed || _liveBoard == null) return;
     _phase.value = _phaseForConn(_facade.state.value);
   }
 

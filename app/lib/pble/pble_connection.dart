@@ -72,12 +72,14 @@ class PbleConnection implements Connection, ConnectionDirectoryListingSource {
     required String appVersion,
     Duration dataTimeout = const Duration(seconds: 8),
   }) {
+    final BleByteTransport transport = BleByteTransport(link);
     final PbleConnection conn = PbleConnection(
-      engine: PbleEngine(BleByteTransport(link)),
+      engine: PbleEngine(transport),
       appName: appName,
       appVersion: appVersion,
       dataTimeout: dataTimeout,
     );
+    conn._ownedTransport = transport;
     conn._observeLink(link);
     return conn;
   }
@@ -97,14 +99,20 @@ class PbleConnection implements Connection, ConnectionDirectoryListingSource {
 
   // fromLink observation (null when constructed directly over a transport).
   BleLink? _observedLink;
+  BleByteTransport? _ownedTransport;
   VoidCallback? _linkListener;
+  bool _disposed = false;
+  Future<void>? _disposeFuture;
+  int _handshakeGeneration = 0;
 
   void _observeLink(BleLink link) {
     _observedLink = link;
     _linkListener = () {
+      if (_disposed) return;
       switch (link.linkState.value) {
         case BleLinkState.connecting:
         case BleLinkState.reconnecting:
+          _handshakeGeneration++;
           _state.value = ConnState.connecting;
         case BleLinkState.connected:
           // Re-negotiate HELLO on every (re)connect (TDD §7.3). A failed
@@ -112,6 +120,8 @@ class PbleConnection implements Connection, ConnectionDirectoryListingSource {
           // deliberately not rethrown here — nothing awaits a link callback.
           unawaited(handshake().catchError((_) {}));
         case BleLinkState.disconnected:
+          _handshakeGeneration++;
+          _hello = null;
           _state.value = ConnState.disconnected;
           // Abort any in-flight transfer NOW: a reconnect re-HELLOs and the
           // board clears its transfer context on disconnect, so an orphaned
@@ -173,12 +183,28 @@ class PbleConnection implements Connection, ConnectionDirectoryListingSource {
   /// `ready`; on any failure it returns to `disconnected` and the typed error
   /// (e.g. [UnsupportedProtocolException], a §8 subtype) is rethrown.
   Future<void> handshake() async {
+    _ensureActive();
+    final int generation = ++_handshakeGeneration;
     _state.value = ConnState.connecting;
     try {
-      _hello = await _negotiator.negotiate();
+      final HelloResult hello = await _negotiator.negotiate();
+      if (_disposed || generation != _handshakeGeneration) {
+        throw const NotConnectedException('connection changed during HELLO');
+      }
+      _hello = hello;
       _state.value = ConnState.ready;
     } catch (_) {
-      _state.value = ConnState.disconnected;
+      if (!_disposed && generation == _handshakeGeneration) {
+        _state.value = ConnState.disconnected;
+        if (_observedLink != null) {
+          // An unusable owned session must not leave the radio connected.
+          // Keep the negotiation error as this operation's original failure;
+          // a close error remains available from the shared dispose future.
+          try {
+            await dispose();
+          } catch (_) {}
+        }
+      }
       rethrow;
     }
   }
@@ -424,6 +450,7 @@ class PbleConnection implements Connection, ConnectionDirectoryListingSource {
   /// runs while a REAL error is propagating, and a dead link (the common cause)
   /// would otherwise replace the caller's honest error with a timeout.
   Future<void> _releaseBoardTransfer(int crc) async {
+    if (_disposed) return;
     try {
       await _engine
           .request(
@@ -484,22 +511,55 @@ class PbleConnection implements Connection, ConnectionDirectoryListingSource {
   }
 
   @override
-  Future<void> dispose() async {
-    _downloadStallTimer?.cancel();
-    _putStallTimer?.cancel();
-    if (_linkListener != null) {
-      _observedLink?.linkState.removeListener(_linkListener!);
+  Future<void> dispose() {
+    if (_disposeFuture case final Future<void> pending) return pending;
+    _disposed = true;
+    _handshakeGeneration++;
+    // Store the shared future before notifying listeners or closing the link:
+    // either can re-enter dispose synchronously.
+    return _disposeFuture = Future<void>.microtask(_disposeResources);
+  }
+
+  Future<void> _disposeResources() async {
+    Object? firstError;
+    StackTrace? firstStack;
+    Future<void> attempt(FutureOr<void> Function() action) async {
+      try {
+        await action();
+      } catch (error, stack) {
+        firstError ??= error;
+        firstStack ??= stack;
+      }
     }
-    await _eventsSub.cancel();
-    await _engine.dispose();
-    await _runStateController.close();
-    await _consoleController.close();
-    _state.dispose();
+
+    _hello = null;
+    _state.value = ConnState.disconnected;
+    _abortTransfers(const NotConnectedException('connection disposed'));
+    await attempt(() {
+      if (_linkListener != null) {
+        _observedLink?.linkState.removeListener(_linkListener!);
+      }
+    });
+    // Begin protocol retirement and the exact owned physical close together;
+    // a failing subscription cleanup must not skip physical disconnect.
+    await Future.wait(<Future<void>>[
+      attempt(_eventsSub.cancel),
+      attempt(_engine.dispose),
+      if (_observedLink case final BleLink link) attempt(link.disconnect),
+    ]);
+    await attempt(() => _ownedTransport?.dispose());
+    await attempt(_runStateController.close);
+    await attempt(_consoleController.close);
+    await attempt(_state.dispose);
+    if (firstError != null) {
+      Error.throwWithStackTrace(firstError!, firstStack!);
+    }
   }
 
   // --- inbound EVT routing (protocol.md §6 / §5) -----------------------------
 
   void _onEvent(PbleFrame frame) {
+    if (_disposed) return;
     final int op = frame.opcode;
     final Uint8List p = frame.payload;
 
@@ -593,12 +653,19 @@ class PbleConnection implements Connection, ConnectionDirectoryListingSource {
   // --- helpers ---------------------------------------------------------------
 
   /// Builds a CMD frame on [op] with a fresh correlation ID.
-  PbleFrame _cmd(PbleOpcode op, List<int> payload) => PbleFrame(
-    type: Pble.typeCmd,
-    opcode: op.code,
-    id: _engine.nextId(),
-    payload: Uint8List.fromList(payload),
-  );
+  PbleFrame _cmd(PbleOpcode op, List<int> payload) {
+    _ensureActive();
+    return PbleFrame(
+      type: Pble.typeCmd,
+      opcode: op.code,
+      id: _engine.nextId(),
+      payload: Uint8List.fromList(payload),
+    );
+  }
+
+  void _ensureActive() {
+    if (_disposed) throw const NotConnectedException('connection disposed');
+  }
 
   /// Throws the typed §8 exception for a non-OK RSP `[status]` byte; OK returns.
   void _checkStatus(PbleFrame rsp) {
@@ -619,6 +686,7 @@ class PbleConnection implements Connection, ConnectionDirectoryListingSource {
   /// Claims the single active-transfer slot (SEC-2 / FR-CONN-9); a concurrent
   /// transfer is refused with [EBusy] BEFORE any BEGIN frame is sent.
   void _beginTransfer() {
+    _ensureActive();
     if (_transferActive) {
       throw const EBusy('another file transfer is already active');
     }
