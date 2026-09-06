@@ -690,6 +690,24 @@ class WorkspaceHardware:
                   "print('\\nPYBLE_WORKSPACE_OBSERVATION:'+json.dumps({"
                   "'observation':pyble_workspace.read_boot_observation('%s'),"
                   "'workspace_probe':%s}))" % (challenge, probe))
+        if transport == "usb-repl" and self.binding["profile_id"] in (
+                "waveshare-esp32-s3-lcd-147b", "rpi-pico2-w"):
+            # Native CDC may overwrite a full TX FIFO with DTR deasserted.
+            # Pace the SAME device-generated line, not a new receipt format.
+            # Requested delays total at most 3400 ms, below the unchanged
+            # absolute 12-second stdout deadline. A write return is not proof
+            # of delivery; raw-REPL framing and the final parser still decide.
+            source = ("import os,json,pyble_workspace,sys,time\n"
+                      "_pyble_line='\\nPYBLE_WORKSPACE_OBSERVATION:'+json.dumps({"
+                      "'observation':pyble_workspace.read_boot_observation('%s'),"
+                      "'workspace_probe':None})+'\\n'\n"
+                      "if len(_pyble_line)>1024 or any(ord(c)>127 for c in _pyble_line):\n"
+                      " raise ValueError('workspace observation exceeds ASCII output bound')\n"
+                      "time.sleep_ms(100)\n"
+                      "for _pyble_offset in range(0,len(_pyble_line),16):\n"
+                      " sys.stdout.write(_pyble_line[_pyble_offset:_pyble_offset+16])\n"
+                      " time.sleep_ms(50)\n"
+                      "time.sleep_ms(100)" % challenge)
         until = time.monotonic() + 15
         while not _usb_exact(self.binding["application_usb"], absent_ok=True,
                              alternate=self.binding["loader_usb"]):

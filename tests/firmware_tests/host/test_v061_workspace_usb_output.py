@@ -5,7 +5,6 @@
 
 No board, BLE, serial endpoint, firmware image, or physical receipt is used.
 """
-import asyncio
 import builtins
 import copy
 import json
@@ -71,7 +70,7 @@ def expected_output(observation):
     return b"\n" + PREFIX + json.dumps({"observation": observation, "workspace_probe": None}).encode() + b"\n"
 
 
-def execute_source(source, observation, fifo):
+def execute_source(source, observation, fifo, *, inspect_spies=None):
     getter = mock.Mock(return_value=copy.deepcopy(observation))
     serializer = mock.Mock(wraps=json.dumps)
     modules = {"os": SimpleNamespace(statvfs=mock.Mock(side_effect=AssertionError("refusal cannot probe filesystem"))),
@@ -85,6 +84,8 @@ def execute_source(source, observation, fifo):
     def printed(*values, sep=" ", end="\n"):
         fifo.write(sep.join(str(value) for value in values) + end)
     environment = {"__builtins__": {**vars(builtins), "__import__": imported, "print": printed}}
+    if inspect_spies:
+        inspect_spies(getter, serializer)
     exec(compile(source, "<host-generated-readonly-query>", "exec"), environment)
     return getter, serializer
 
@@ -146,11 +147,14 @@ class NativeUSBOutputTests(unittest.IsolatedAsyncioTestCase):
         source = await self.source_for()
         observation = self.observation()
         fifo = OverwritableFIFO()
+        spies = []
         def mutate():
+            self.assertEqual([spy.call_count for spy in spies], [1, 1])
             observation["mount_attempts"] = 65535
         wanted = expected_output(observation)
         fifo.on_sleep = mutate
-        getter, serializer = execute_source(source, observation, fifo)
+        getter, serializer = execute_source(
+            source, observation, fifo, inspect_spies=lambda *values: spies.extend(values))
         self.assertEqual(fifo.finish(), wanted)
         getter.assert_called_once()
         serializer.assert_called_once()
