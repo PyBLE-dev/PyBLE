@@ -147,7 +147,14 @@ class PbleEngine {
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;
-    await _inboundSub.cancel();
+    Object? cancelError;
+    StackTrace? cancelStack;
+    try {
+      await _inboundSub.cancel();
+    } catch (error, stack) {
+      cancelError = error;
+      cancelStack = stack;
+    }
     for (final _PendingRequest pending in _pending.values) {
       if (!pending.completer.isCompleted) {
         pending.completer.completeError(
@@ -157,6 +164,9 @@ class PbleEngine {
     }
     _pending.clear();
     await _events.close();
+    if (cancelError != null) {
+      Error.throwWithStackTrace(cancelError, cancelStack!);
+    }
   }
 }
 

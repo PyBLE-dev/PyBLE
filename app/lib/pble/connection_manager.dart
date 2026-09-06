@@ -163,6 +163,7 @@ class PbleConnectionManager implements ConnectionManager {
   int _intent = 0;
   Future<void>? _disposeFuture;
   final Set<Future<void>> _retirements = <Future<void>>{};
+  final Map<String, Future<void>> _openings = <String, Future<void>>{};
 
   @override
   Connection get connection => _facade;
@@ -241,17 +242,26 @@ class PbleConnectionManager implements ConnectionManager {
       // Do not open another board until those exact retirements complete.
       await Future.wait(_retirements.toList());
       if (!_isCurrent(intent)) return;
-      final Connection board = await _connectionFactory(id);
-      if (!_isCurrent(intent)) {
-        await _retire(board);
-        return;
+      if (_openings[id] case final Future<void> previous) {
+        // Native wrappers with the same ID share one physical link. Finish
+        // the stale acquisition AND its teardown before opening that ID again.
+        // Its factory error belongs to its caller; a failed physical close is
+        // independently retained in _retirements and must still block us.
+        try {
+          await previous;
+        } catch (_) {}
+        await Future.wait(_retirements.toList());
+        if (!_isCurrent(intent)) return;
       }
-      _liveBoard = board;
-      _facade.attach(board);
-      // Derive the phase from the freshly attached board's live state (the
-      // listener also fires on the sync-up, but re-derive to cover a board that
-      // attaches already-ready with no state change).
-      _phase.value = _phaseForConn(_facade.state.value);
+      final Future<void> opening = Future<void>.microtask(
+        () => _openAndPublish(id, intent),
+      );
+      _openings[id] = opening;
+      try {
+        await opening;
+      } finally {
+        if (identical(_openings[id], opening)) _openings.remove(id);
+      }
     } catch (error) {
       if (_isCurrent(intent)) {
         _lastError = error;
@@ -259,6 +269,18 @@ class PbleConnectionManager implements ConnectionManager {
       }
       rethrow;
     }
+  }
+
+  Future<void> _openAndPublish(String id, int intent) async {
+    if (!_isCurrent(intent)) return;
+    final Connection board = await _connectionFactory(id);
+    if (!_isCurrent(intent)) {
+      await _retire(board);
+      return;
+    }
+    _liveBoard = board;
+    _facade.attach(board);
+    _phase.value = _phaseForConn(_facade.state.value);
   }
 
   @override
@@ -311,7 +333,10 @@ class PbleConnectionManager implements ConnectionManager {
     _facade.state.removeListener(_onFacadeState);
     _detachAndRetire();
     _selected = null;
-    await attempt(() => Future.wait(_retirements.toList()));
+    await Future.wait(<Future<void>>[
+      attempt(_scanner.stopScan),
+      attempt(() => Future.wait(_retirements.toList())),
+    ]);
     await attempt(_scanResults.close);
     await attempt(_facade.dispose);
     await attempt(_phase.dispose);

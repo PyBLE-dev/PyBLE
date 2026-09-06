@@ -303,6 +303,7 @@ class PbleConnection implements Connection, ConnectionDirectoryListingSource {
       final PbleFrame begin = await _engine.request(
         _cmd(PbleOpcode.fileGetBegin, <int>[..._u32(0), ..._pathField(path)]),
       );
+      _ensureActive();
       _checkStatus(begin);
       final int total = _readU32(begin.payload, 1);
 
@@ -347,6 +348,7 @@ class PbleConnection implements Connection, ConnectionDirectoryListingSource {
           ..._pathField(path),
         ]),
       );
+      _ensureActive();
       _checkStatus(begin);
       // resume_offset (FR-PBLE-10): a board holding a verified prefix returns it
       // so the window starts mid-file — never re-send the verified bytes.
