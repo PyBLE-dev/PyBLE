@@ -1099,6 +1099,7 @@ class V061HardeningResultSetRedTests(unittest.TestCase):
             value = v061_fixture.valid_result(profile_id=profile_id)
             value["install_sha256"] = sha256_path(artifact)
             path = self.root / ("%02d-%s.json" % (index, profile_id))
+            v061_fixture.attach_result_workspace(path, value, artifact.read_bytes())
             path.write_bytes(v061_fixture.canonical_json_bytes(value))
             path.chmod(0o600)
             self.paths.append(path)
