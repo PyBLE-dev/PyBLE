@@ -2436,6 +2436,17 @@ pico-sdk, BTstack and its actually linked third parties, CYW43, TinyUSB, and
 every contributing ARM GNU/newlib runtime archive. Deleting or substituting
 one class fails even when the remaining evidence is canonically rehashed.
 
+RP2 environment-proof tests MUST run the actual checked-in build driver through
+the production Arm observer's parser boundary. They separately cover the strict
+`unset` command and the exact pinned offline CMake assignment/export block,
+including the case-sensitive `picotool_DIR` name. Missing/duplicate markers or
+variables, malformed names/continuations, lost GCC or package-discovery scrub
+coverage, inserted shell commands, changed offline values and incomplete exports
+are red cases. The historical scrub-only form remains source-version-selected;
+it cannot satisfy the v0.6.1 pinned-picotool contract. Existing cache, compile
+recipe, helper/archive, depfile, runtime notice and source-identity gates remain
+unchanged.
+
 The same fixtures derive every compiler depfile belonging to the linked
 firmware target from its C/C++ DependInfo records; assembly records, for which
 CMake does not emit `.o.d`, bind their source bytes directly. Unlinked host

@@ -444,6 +444,23 @@ BIN, and UF2 digests. An absent recipe, extra Target Code object, changed tool
 or helper, unknown flag path, unmapped member/header, or source/archive mismatch
 MUST fail closed before a public candidate can be assembled.
 
+The RP2 build-driver environment proof MUST parse the one marked `unset`
+command independently of later CMake setup. Its one-name-per-line grammar
+accepts case-sensitive shell identifiers, including `picotool_DIR`, requires
+the exact continuation/terminal structure, rejects duplicate names, and still
+requires every GCC resolution and launcher override to be scrubbed. For
+v0.6.1 and later, all pinned-picotool discovery controls MUST also be scrubbed;
+the complete intervening assignment/export block before the first retained
+`mpy-cross` build MUST equal the reviewed offline package configuration. It
+sets the verified `PICOTOOL_PACKAGE_DIR`, typed
+`FETCHCONTENT_FULLY_DISCONNECTED:BOOL=ON`, disabled package registries and
+disabled forced fetching. Missing or additional commands, changed values,
+substitutions, or incomplete exports MUST fail; the auditor MUST NOT execute
+the shell or ignore an unknown intervening block. Earlier source versions
+retain the scrub-only form without this later package setup. This parser
+correction does not change build provenance, candidate-source identity,
+Eligible Compilation evidence, or qualification-root requirements.
+
 ## 7. Footprint budget (provisional, per target)
 
 The measurement method is frozen in
