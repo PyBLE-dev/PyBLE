@@ -516,6 +516,11 @@ Manager disposal must also stop its owned scanner, including a scan still waitin
 for adapter readiness. A native link's connection-state subscription must be
 released even when physical disconnect fails; the physical error remains visible.
 
+An already-submitted byte write may finish after retirement, but its continuation
+must not submit another fragment. Pending request rejection must already have an
+error observer while a write is awaiting completion. A complete on-time response
+recorded before retirement remains authoritative; normal deadlines are unchanged.
+
 `PbleConnection.fromLink` owns the exact supplied `BleLink` and the
 `BleByteTransport` it constructs. Its first `dispose()` retires the connection,
 removes link/event listeners, aborts in-flight work, calls that link's
