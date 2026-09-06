@@ -6,6 +6,8 @@
 No USB, serial, BLE, flash programming, or physical qualification occurs here.
 """
 import importlib.util
+import hashlib
+import asyncio
 from pathlib import Path
 import struct
 import sys
@@ -193,7 +195,9 @@ class WorkspaceHardwareGuardTests(unittest.TestCase):
              mock.patch.object(HARDWARE.subprocess, "run", return_value=SimpleNamespace(returncode=0, stdout=b"occupied")) as run:
             with self.assertRaises(ValueError):
                 HARDWARE._usb_exact(selected, idle=True)
-            self.assertEqual(run.call_args.args[0], ["/usr/sbin/lsof", selected["port"], alias["port"]])
+            self.assertEqual(run.call_args.args[0], ["/usr/sbin/lsof", selected["port"],
+                selected["port"].replace("/dev/cu.", "/dev/tty."), alias["port"],
+                alias["port"].replace("/dev/cu.", "/dev/tty.")])
 
 
 class WorkspaceHardwareLifecycleTests(unittest.IsolatedAsyncioTestCase):
@@ -280,6 +284,94 @@ class WorkspaceHardwareLifecycleTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaisesRegex(OSError, "stop after entry bytes"):
                 self.backend._usb_command_sync("pass", False)
         self.assertEqual(writes, [b"\x03\x03\x02\x01"])
+
+    async def test_esp_erase_needs_unchanged_candidate_and_verified_full_chip_digest(self):
+        validate = mock.Mock(side_effect=ValueError("candidate changed"))
+        adapter = HARDWARE._EspAdapter(binding(), self.root, validate)
+        adapter._check = mock.Mock()
+        adapter.esp = SimpleNamespace(erase_flash=mock.Mock(), flash_md5sum=mock.Mock(return_value="bad"))
+        with self.assertRaisesRegex(ValueError, "candidate changed"):
+            adapter._erase()
+        adapter.esp.erase_flash.assert_not_called()
+        validate.side_effect = None
+        with self.assertRaisesRegex(ValueError, "complete flash erase"):
+            adapter._erase()
+        self.assertFalse(adapter.erased)
+        adapter.esp.flash_md5sum.assert_called_once_with(0, 0x1000000)
+
+    async def test_esp_write_retains_exact_loader_and_never_adds_force_or_reset_flags(self):
+        raw = b"host-only firmware bytes"
+        validate = mock.Mock()
+        adapter = HARDWARE._EspAdapter(binding(), self.root, validate)
+        adapter._check = mock.Mock()
+        adapter.erased = True
+        adapter.esp = SimpleNamespace(_port=SimpleNamespace(is_open=True),
+                                     flash_md5sum=mock.Mock(return_value=hashlib.md5(raw).hexdigest()))
+        tool = SimpleNamespace(main=mock.Mock())
+        with mock.patch.dict(sys.modules, {"esptool": tool}):
+            adapter._write(0, raw, "host-input.bin")
+        argv = tool.main.call_args.args[0]
+        self.assertEqual(tool.main.call_args.kwargs, {"esp": adapter.esp})
+        self.assertEqual(argv[argv.index("--before") + 1], "no_reset_no_sync")
+        self.assertEqual(argv[argv.index("--after") + 1], "no_reset_stub")
+        self.assertEqual(argv[argv.index("--connect-attempts") + 1], "1")
+        self.assertEqual(argv[-2:], ["0x0", str(self.root / "host-input.bin")])
+        self.assertNotIn("--force", argv)
+        self.assertNotIn("--erase-all", argv)
+        self.assertNotIn("--encrypt", argv)
+        self.assertEqual(validate.call_count, 2)
+
+    async def test_esp_failed_read_keeps_real_bytes_from_becoming_candidate_evidence(self):
+        adapter = HARDWARE._EspAdapter(binding(), self.root, mock.Mock())
+        adapter._check = mock.Mock()
+        adapter.esp = SimpleNamespace(flash_md5sum=mock.Mock(return_value=hashlib.md5(b"good").hexdigest()),
+                                     read_flash=mock.Mock(return_value=b"evil"))
+        with self.assertRaisesRegex(ValueError, "actual flash read"):
+            adapter._read(0, 4)
+
+    async def test_candidate_byte_change_prevents_esp_write_even_after_successful_erase(self):
+        adapter = HARDWARE._EspAdapter(binding(), self.root,
+                                      mock.Mock(side_effect=ValueError("changed candidate")))
+        adapter._check = mock.Mock()
+        adapter.erased = True
+        tool = SimpleNamespace(main=mock.Mock())
+        with mock.patch.dict(sys.modules, {"esptool": tool}), self.assertRaisesRegex(ValueError, "changed candidate"):
+            adapter._write(0, b"new", "unadmitted.bin")
+        tool.main.assert_not_called()
+        self.assertFalse((self.root / "unadmitted.bin").exists())
+
+    async def test_cancelled_ble_command_bounds_disconnect_even_when_backend_hangs(self):
+        import _pble_central
+        import target_smoke
+        started = asyncio.Event()
+        never = asyncio.Event()
+        command_count = [0]
+        async def send(*args, **kwargs):
+            command_count[0] += 1
+            if command_count[0] == 2:
+                started.set()
+                await never.wait()
+            return SimpleNamespace(payload=b"\0")
+        central = SimpleNamespace(send_cmd=send, disconnect=mock.AsyncMock(side_effect=never.wait),
+                                  events=[], confirm_caps_mtu=mock.Mock(), is_connected=True)
+        real_wait_for = asyncio.wait_for
+        bounded_cleanup = []
+        async def bounded(awaitable, timeout):
+            bounded_cleanup.append(timeout)
+            return await real_wait_for(awaitable, min(timeout, 0.01))
+        with mock.patch.object(HARDWARE, "_usb_exact"), \
+             mock.patch.object(HARDWARE.importlib.metadata, "version", return_value="3.0.2"), \
+             mock.patch.object(_pble_central.PbleCentral, "connect", return_value=central), \
+             mock.patch.object(target_smoke, "parse_caps", return_value={"auto_run": "0", "mtu": "247"}), \
+             mock.patch.object(target_smoke, "validate_caps"), \
+             mock.patch.object(HARDWARE.asyncio, "wait_for", side_effect=bounded):
+            task = asyncio.create_task(self.backend._ble_command("pass"))
+            await real_wait_for(started.wait(), 0.2)
+            task.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await real_wait_for(task, 0.2)
+        self.assertTrue(bounded_cleanup, "BLE teardown never used a bounded wait")
+        self.assertTrue(all(0 < seconds <= 5 for seconds in bounded_cleanup))
 
 
 if __name__ == "__main__":
