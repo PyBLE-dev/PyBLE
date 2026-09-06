@@ -17,6 +17,7 @@ import 'package:pyble/pble/fragment.dart';
 import 'package:pyble/pble/frame.dart';
 import 'package:pyble/pble/pble_connection.dart';
 import 'package:pyble/pble/pble_constants.dart';
+import 'package:pyble/pble/pble_exception.dart';
 import 'package:pyble/pble/scanner.dart';
 
 import '../support/fake_readiness_seam.dart';
@@ -240,6 +241,37 @@ void main() {
     });
 
     test(
+      'disposal aborts an active download without another command',
+      () async {
+        final r = await _ready();
+        final Future<Uint8List> download = r.connection.getFile('owned.bin');
+        final Future<void> rejected = expectLater(
+          download,
+          throwsA(isA<NotConnectedException>()),
+        );
+        await pumpEventQueue();
+        final PbleFrame begin = r.link.frames.last;
+        r.link.deliver(
+          PbleFrame(
+            type: Pble.typeRsp,
+            opcode: begin.opcode,
+            id: begin.id,
+            payload: Uint8List.fromList(<int>[0, 1, 0, 0, 0]),
+          ),
+        );
+        await pumpEventQueue();
+        final int count = r.link.writes.length;
+        await r.connection.dispose();
+        await rejected;
+        await expectLater(
+          r.connection.runFile('owned.bin'),
+          throwsA(isA<NotConnectedException>()),
+        );
+        expect(r.link.writes, hasLength(count));
+      },
+    );
+
+    test(
       'terminal owned HELLO refusal closes physical link automatically',
       () async {
         final _OwnedLink link = _OwnedLink();
@@ -381,5 +413,50 @@ void main() {
       expect(manager.lastError, same(failure));
       expect(r.link.state.listeners, isEmpty);
     });
+
+    test('failed old physical close blocks replacement factory', () async {
+      final a = await _ready();
+      final b = await _ready();
+      final StateError failure = StateError('old board still connected');
+      bool openedB = false;
+      final manager = _manager((String id) async {
+        if (id == 'a') return a.connection;
+        openedB = true;
+        return b.connection;
+      });
+      await manager.connect('a');
+      a.link.closeFailure = failure;
+      await expectLater(manager.connect('b'), throwsA(same(failure)));
+      expect(openedB, isFalse);
+      expect(manager.phase.value, ConnectPhase.failed);
+      expect(manager.lastError, same(failure));
+      expect(a.link.state.value, BleLinkState.connected);
+      // An already-failed retirement is not proof of a physically closed link.
+      await expectLater(manager.connect('b'), throwsA(same(failure)));
+      expect(openedB, isFalse);
+      expect(a.link.disconnectCalls, 1);
+    });
+
+    test(
+      'manager disposal shares failure and still closes facade streams',
+      () async {
+        final r = await _ready();
+        final StateError failure = StateError('close failure');
+        final manager = _manager((_) async => r.connection);
+        await manager.connect('a');
+        r.link.closeFailure = failure;
+        final Future<void> streams = Future.wait(<Future<void>>[
+          manager.connection.console.drain<void>(),
+          manager.connection.runState.drain<void>(),
+          manager.scanResults.drain<void>(),
+        ]);
+        final Future<void> first = manager.dispose();
+        expect(identical(first, manager.dispose()), isTrue);
+        await expectLater(first, throwsA(same(failure)));
+        await streams;
+        await expectLater(manager.dispose(), throwsA(same(failure)));
+        expect(r.link.disconnectCalls, 1);
+      },
+    );
   });
 }
