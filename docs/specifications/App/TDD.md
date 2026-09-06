@@ -508,6 +508,14 @@ UI reads down (watch providers) and writes up (call `Connection` methods / DAO m
 
 **Owned-link teardown clarification (2026-09-06, FR-CONNECT-7).**
 
+The same physical device may be represented by more than one asynchronous
+factory result. A replacement for the same device ID must wait until an older
+pending acquisition and its stale-result teardown have finished before invoking
+another factory for that ID. Wrapper identity alone is not physical ownership.
+Manager disposal must also stop its owned scanner, including a scan still waiting
+for adapter readiness. A native link's connection-state subscription must be
+released even when physical disconnect fails; the physical error remains visible.
+
 `PbleConnection.fromLink` owns the exact supplied `BleLink` and the
 `BleByteTransport` it constructs. Its first `dispose()` retires the connection,
 removes link/event listeners, aborts in-flight work, calls that link's
