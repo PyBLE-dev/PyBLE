@@ -291,6 +291,23 @@ def provision_qualification_root(root: Path) -> None:
 
 @unittest.skipUnless(HAVE_RELEASE, RELEASE_LOAD_ERROR)
 class V5CompletionAndPromotionContractTests(unittest.TestCase):
+    def test_qualification_fixture_preserves_committed_policy_baseline_closure(self) -> None:
+        """ADR-0038/0039: retain actual policy inputs, not an old active path."""
+
+        repo = Path(_support.REPO_ROOT)
+        expected_policy, expected_digest = RELEASE._load_qualification_policy(repo)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            provision_qualification_root(root)
+            actual_policy, actual_digest = RELEASE._load_qualification_policy(root)
+            self.assertEqual(actual_policy, expected_policy)
+            self.assertEqual(actual_digest, expected_digest)
+            baseline_rel = Path(expected_policy["baseline_evidence"]["path"])
+            self.assertEqual(
+                (root / baseline_rel).read_bytes(),
+                (repo / baseline_rel).read_bytes(),
+            )
+
     def test_completion_writer_derives_profile_and_gate_fields(self) -> None:
         pending = pending_v5_payload()
         release = {
