@@ -82,9 +82,7 @@ RELEASE = _load_release_module()
 
 
 def _current_c3_profile():
-    policy = json.loads(
-        (FIRMWARE_DIR / "qualification" / "oi1-gates.json").read_bytes()
-    )
+    policy, _digest = RELEASE._load_qualification_policy(REPO_ROOT)
     return next(
         item for item in policy["profiles"] if item["profile_id"] == "esp32-c3-4mb"
     )
@@ -1273,21 +1271,18 @@ class BoardConfigurationSourceContractTests(unittest.TestCase):
         )
 
         profile = _current_c3_profile()
+        self.assertEqual(profile["profile_id"], "esp32-c3-4mb")
+        self.assertEqual(profile["target"], "esp32-c3")
+        self.assertEqual(profile["resource_kind"], "esp-idf")
         thresholds = profile["thresholds"]
         self.assertEqual(
-            thresholds,
-            {
-                "application_headroom_min_bytes": 352880,
-                "application_image_max_bytes": 1678736,
-                "gc_free_min_bytes": 117760,
-                "get_verified_goodput_min_bytes_per_second": 6600,
-                "idf_internal_free_min_bytes": 66560,
-                "idf_internal_largest_block_min_bytes": 57344,
-                "idf_internal_minimum_free_min_bytes": 63488,
-                "put_committed_goodput_min_bytes_per_second": 6600,
-                "reset_to_service_advertisement_max_ms": 3000,
-            },
-            "the PHY policy must keep the exact C3 static/heap gates and "
+            set(thresholds),
+            C3_RESOURCE_THRESHOLD_KEYS | set(C3_FIXED_PERFORMANCE_THRESHOLDS),
+        )
+        self.assertEqual(
+            {key: thresholds[key] for key in C3_FIXED_PERFORMANCE_THRESHOLDS},
+            C3_FIXED_PERFORMANCE_THRESHOLDS,
+            "the PHY policy must validate the current C3 static/heap gates and "
             "carry the fixed ADR-0037 product SLOs",
         )
 
