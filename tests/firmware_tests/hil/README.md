@@ -99,6 +99,37 @@ all derived acquisition siblings. Detailed fields and fail-closed predicates
 are frozen in firmware specs §4.7 and §5.3.4. Changes to the observer require
 fresh five-profile build, resource/performance, and physical qualification.
 
+Use `v061_workspace_acquire.py` for the physical acquisition, with a clean
+qualification checkout, protected final candidate, reviewed mode-`0600`
+private binding JSON, and a new receipt filename in a private directory:
+
+```sh
+python tests/firmware_tests/hil/v061_workspace_acquire.py \
+  --candidate-dir /absolute/private/candidate \
+  --profile esp32-4mb --kind erased-media-first-boot \
+  --binding /absolute/private/esp32-4mb-binding.json \
+  --output /absolute/private/esp32-4mb/erased.json \
+  --allow-disposable-erase
+```
+
+This command **erases the selected board**, installs the exact candidate,
+and acquires actual measurements; retain an independently verified owner
+backup and explicit disposable-media authorization first. Repeat separately
+with `--kind nonblank-media-refusal` and a new `nonblank.json` output. The
+binding includes exact application/loader USB endpoints and topology, physical
+UID/MAC, chip/flash geometry, and reviewed transfer settings. Never guess a
+binding from a short advertising suffix. The maintained schema rejects other
+fields; private identities must not enter public documentation or Git.
+
+The macOS adapter uses Bleak `3.0.2`, pyserial `3.5`, esptool `4.12.0` for ESP,
+and the exact repository-pinned picotool for Pico. Use a dedicated local
+environment and retain its dependency versions; do not mutate the compiler
+environment. The collector publishes no passing receipt on interruption or
+partial acquisition and never automatically re-erases after failure. It
+finishes post-readback in loader mode; returning to normal runtime or another
+clean install is a separate, explicitly sequenced qualification operation.
+Keep both receipts and all their siblings beside the later hardening result.
+
 The live runner receives the protected candidate directory, exact profile,
 private BLE address, both receipt paths, and new raw-log/output paths. It emits
 no passing result unless all seven live scenarios and both pre-service

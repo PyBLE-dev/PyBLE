@@ -90,6 +90,7 @@ RECEIPT_KEYS = (
     "install_sha256",
     "qualification_source_commit",
     "qualification_executable_sha256",
+    "acquisition_sha256",
     "raw_log_sha256",
     "status",
 )
@@ -146,6 +147,7 @@ def valid_receipt(
         "install_sha256": "3" * 64,
         "qualification_source_commit": "4" * 40,
         "qualification_executable_sha256": "5" * 64,
+        "acquisition_sha256": "a" * 64 if observation_kind == WORKSPACE_ORDER[0] else "b" * 64,
         "raw_log_sha256": (
             "6" * 64
             if observation_kind == WORKSPACE_ORDER[0]
@@ -185,12 +187,16 @@ def valid_result(*, profile_id: str = "esp32-4mb") -> dict:
         "workspace_provisioning": {
             WORKSPACE_ORDER[0]: {
                 "status": "passed",
+                "receipt_file": "erased.json",
                 "receipt_sha256": hashlib.sha256(erased).hexdigest(),
+                "acquisition_sha256": "a" * 64,
                 "raw_log_sha256": "6" * 64,
             },
             WORKSPACE_ORDER[1]: {
                 "status": "passed",
+                "receipt_file": "nonblank.json",
                 "receipt_sha256": hashlib.sha256(nonblank).hexdigest(),
+                "acquisition_sha256": "b" * 64,
                 "raw_log_sha256": "7" * 64,
             },
         },
@@ -268,6 +274,48 @@ def workspace_raw_log(observation_kind: str) -> bytes:
     return canonical_json_lines(values)
 
 
+def write_acquisition_fixture(path, observation_kind, receipt, artifact_bytes):
+    """Synthetic physical-byte fixture; it is never release/HIL evidence."""
+    import test_v061_workspace_acquisition as acquisition
+    validation = {
+        "expected_profile_id": receipt["profile_id"],
+        "expected_target": receipt["target"],
+        "expected_version": receipt["firmware_version"],
+        "expected_source_commit": receipt["source_commit"],
+        "candidate_release_json_sha256": receipt["candidate_release_json_sha256"],
+        "expected_install_sha256": receipt["install_sha256"],
+        "expected_qualification_source_commit": receipt["qualification_source_commit"],
+        "expected_qualification_executable_sha256": receipt["qualification_executable_sha256"],
+    }
+    _, _, _, value = acquisition.acquisition_fixture(
+        path.parent, observation_kind, receipt_name=path.name,
+        profile_id=receipt["profile_id"], validation=validation, install=artifact_bytes)
+    return hashlib.sha256(canonical_json_bytes(value)).hexdigest()
+
+
+def attach_result_workspace(path, value, artifact_bytes):
+    """Attach synthetic measured-byte siblings to a private-result fixture."""
+    for kind, suffix in zip(WORKSPACE_ORDER, ("erased", "nonblank")):
+        receipt_path = path.with_name(path.stem + "-" + suffix + ".json")
+        receipt = valid_receipt(kind, profile_id=value["profile_id"])
+        for field in ("source_commit", "candidate_release_json_sha256", "install_sha256",
+                      "qualification_source_commit", "qualification_executable_sha256"):
+            receipt[field] = value[field]
+        raw = workspace_raw_log(kind)
+        private_write(receipt_path.with_name(receipt_path.stem + "-raw.jsonl"), raw)
+        receipt["raw_log_sha256"] = hashlib.sha256(raw).hexdigest()
+        receipt["acquisition_sha256"] = write_acquisition_fixture(
+            receipt_path, kind, receipt, artifact_bytes)
+        receipt_raw = canonical_json_bytes(receipt)
+        private_write(receipt_path, receipt_raw)
+        value["workspace_provisioning"][kind] = {
+            "status": "passed", "receipt_file": receipt_path.name,
+            "receipt_sha256": hashlib.sha256(receipt_raw).hexdigest(),
+            "acquisition_sha256": receipt["acquisition_sha256"],
+            "raw_log_sha256": receipt["raw_log_sha256"],
+        }
+
+
 def writer_fixture(root: Path, profile_id: str) -> dict[str, object]:
     candidate = root / "candidate"
     filename = "firmware.uf2" if profile_id == "rpi-pico2-w" else "firmware.bin"
@@ -311,6 +359,8 @@ def writer_fixture(root: Path, profile_id: str) -> dict[str, object]:
         receipt["raw_log_sha256"] = hashlib.sha256(
             boot_log.read_bytes()
         ).hexdigest()
+        receipt["acquisition_sha256"] = write_acquisition_fixture(
+            path, observation_kind, receipt, artifact_bytes)
         private_write(path, canonical_json_bytes(receipt))
         receipts.append(path)
     raw_log = root / "hardening.jsonl"
@@ -593,6 +643,7 @@ class V061HardeningPayloadValidationTests(unittest.TestCase):
                         "receipt_sha256": hashlib.sha256(
                             canonical_json_bytes(receipt)
                         ).hexdigest(),
+                        "acquisition_sha256": receipt["acquisition_sha256"],
                         "raw_log_sha256": receipt["raw_log_sha256"],
                     },
                 )
@@ -659,6 +710,16 @@ class V061WorkspaceReceiptWriterTests(unittest.TestCase):
         selected_output = expected_output if output_path is None else Path(output_path)
         if not selected_raw.exists() and not selected_raw.is_symlink():
             private_write(selected_raw, workspace_raw_log(observation_kind))
+        acquisition = selected_output.with_name(selected_output.stem + "-acquisition.json")
+        if selected_output.parent == self.root and not acquisition.exists():
+            receipt = valid_receipt(observation_kind, profile_id=self.profile_id)
+            receipt["candidate_release_json_sha256"] = hashlib.sha256(self.release_path.read_bytes()).hexdigest()
+            receipt["install_sha256"] = hashlib.sha256(self.artifact.read_bytes()).hexdigest()
+            receipt["qualification_source_commit"] = subprocess.run(
+                ["git", "rev-parse", "HEAD"], cwd=ROOT, check=True,
+                capture_output=True, text=True).stdout.strip()
+            receipt["qualification_executable_sha256"] = hashlib.sha256(BENCH_PATH.read_bytes()).hexdigest()
+            write_acquisition_fixture(selected_output, observation_kind, receipt, self.artifact.read_bytes())
         return GATE.create_workspace_receipt(
             candidate_dir=self.candidate,
             profile_id=self.profile_id,
@@ -798,6 +859,7 @@ class V061WorkspaceReceiptWriterTests(unittest.TestCase):
                 artifact.read_bytes()
             ).hexdigest()
             path = root / "result.json"
+            attach_result_workspace(path, value, artifact.read_bytes())
             path.write_bytes(canonical_json_bytes(value))
             path.chmod(0o600)
             kwargs = validation_kwargs()

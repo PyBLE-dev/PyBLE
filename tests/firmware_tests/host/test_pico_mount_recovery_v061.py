@@ -489,7 +489,8 @@ class OverlayIntegrationTest(unittest.TestCase):
             def mkfs(cls, _bdev, *, progsize):
                 calls.append(("direct-mkfs", progsize))
 
-        def mount_lfs2(_bdev, _vfs_module, *, progsize):
+        def mount_lfs2(_bdev, _vfs_module, *, progsize, observe_boot=False):
+            self.assertIs(observe_boot, True)
             calls.append(("recovery-helper", progsize))
             raise MountFailure(errno.EIO, "nonblank mount failed")
 
@@ -499,6 +500,10 @@ class OverlayIntegrationTest(unittest.TestCase):
                 VfsLfs2=DirectLfs2,
                 mount=lambda _fs, path: calls.append(("vfs-mount", path))),
             "pyble_boot": types.SimpleNamespace(mount_lfs2=mount_lfs2),
+            "pyble_workspace": types.SimpleNamespace(
+                boot_attached=lambda: calls.append(("unexpected-attachment",)),
+                boot_recovery=lambda: print(
+                    "PyBLE workspace recovery is required; reconnect by USB.")),
             "pyble_agent": types.SimpleNamespace(
                 main=lambda: calls.append(("agent-main",))),
         }
@@ -536,7 +541,8 @@ class OverlayIntegrationTest(unittest.TestCase):
             def mkfs(cls, _bdev, *, progsize):
                 calls.append(("direct-mkfs", progsize))
 
-        def mount_lfs2(_bdev, _vfs_module, *, progsize):
+        def mount_lfs2(_bdev, _vfs_module, *, progsize, observe_boot=False):
+            self.assertIs(observe_boot, True)
             calls.append(("recovery-helper", progsize))
             return constructed
 
@@ -549,6 +555,10 @@ class OverlayIntegrationTest(unittest.TestCase):
             "rp2": types.SimpleNamespace(Flash=lambda: bdev),
             "vfs": types.SimpleNamespace(VfsLfs2=DirectLfs2, mount=attach),
             "pyble_boot": types.SimpleNamespace(mount_lfs2=mount_lfs2),
+            "pyble_workspace": types.SimpleNamespace(
+                boot_attached=lambda: calls.append(("unexpected-attachment",)),
+                boot_recovery=lambda: print(
+                    "PyBLE workspace recovery is required; reconnect by USB.")),
             "pyble_agent": types.SimpleNamespace(
                 main=lambda: calls.append(("agent-main",))),
         }
@@ -595,7 +605,8 @@ class OverlayIntegrationTest(unittest.TestCase):
                     def mkfs(cls, _bdev, *, progsize):
                         calls.append(("direct-mkfs", progsize))
 
-                def mount_lfs2(_bdev, _vfs_module, *, progsize):
+                def mount_lfs2(_bdev, _vfs_module, *, progsize, observe_boot=False):
+                    self.assertIs(observe_boot, True)
                     calls.append(("recovery-helper", progsize))
                     raise failure
 
@@ -605,6 +616,10 @@ class OverlayIntegrationTest(unittest.TestCase):
                         VfsLfs2=DirectLfs2,
                         mount=lambda _fs, path: calls.append(("vfs-mount", path))),
                     "pyble_boot": types.SimpleNamespace(mount_lfs2=mount_lfs2),
+                    "pyble_workspace": types.SimpleNamespace(
+                        boot_attached=lambda: calls.append(("unexpected-attachment",)),
+                        boot_recovery=lambda: print(
+                            "PyBLE workspace recovery is required; reconnect by USB.")),
                     "pyble_agent": types.SimpleNamespace(
                         main=lambda: calls.append(("agent-main",))),
                 }

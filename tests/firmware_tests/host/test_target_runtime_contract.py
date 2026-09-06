@@ -184,6 +184,13 @@ def _node_contains_line(node: ast.AST, line: int) -> bool:
     return node.lineno <= line <= getattr(node, "end_lineno", node.lineno)
 
 
+def _observed_mount_fixture(expected_bdev, bdev, options):
+    """Keep lifecycle fakes strict about the official measured-boot call."""
+    if bdev is not expected_bdev or options != {"progsize": 256, "observe_boot": True}:
+        raise AssertionError("boot must mount the exact workspace with observation enabled")
+    return object()
+
+
 def _boot_failure_trace(failure: str) -> list[str]:
     """Execute frozen boot with host fakes and inject one splash failure.
 
@@ -237,7 +244,9 @@ def _boot_failure_trace(failure: str) -> list[str]:
         "flashbdev": types.SimpleNamespace(bdev=workspace_bdev),
         "pyble_workspace": types.SimpleNamespace(
             mount_lfs2=lambda bdev, _vfs, **_kwargs:
-                object() if bdev is workspace_bdev else None
+                _observed_mount_fixture(workspace_bdev, bdev, _kwargs),
+            boot_attached=lambda: None,
+            boot_recovery=lambda: trace.append("unexpected.workspace.recovery"),
         ),
         "pble_ble": types.SimpleNamespace(
             init_agent=lambda: trace.append("agent.init"),
@@ -379,7 +388,9 @@ def _boot_frozen_resolution_probe(target: str, failure: str = "success"):
         "flashbdev": types.SimpleNamespace(bdev=workspace_bdev),
         "pyble_workspace": types.SimpleNamespace(
             mount_lfs2=lambda bdev, _vfs, **_kwargs:
-                object() if bdev is workspace_bdev else None
+                _observed_mount_fixture(workspace_bdev, bdev, _kwargs),
+            boot_attached=lambda: None,
+            boot_recovery=lambda: trace.append(("unexpected.workspace.recovery",)),
         ),
         "pble_ble": types.SimpleNamespace(
             init_agent=lambda: trace.append(("agent.init",)),
@@ -477,6 +488,7 @@ def _boot_workspace_failure_trace(target: str) -> list[tuple]:
     workspace_bdev = object()
 
     def mount_lfs2(bdev, _vfs, **kwargs):
+        _observed_mount_fixture(workspace_bdev, bdev, kwargs)
         trace.append(("workspace.mount", bdev, kwargs.get("progsize")))
         raise OSError("synthetic nonblank workspace")
 
@@ -486,7 +498,15 @@ def _boot_workspace_failure_trace(target: str) -> list[tuple]:
             mount=lambda *_args: trace.append(("vfs.mount",))
         ),
         "flashbdev": types.SimpleNamespace(bdev=workspace_bdev),
-        "pyble_workspace": types.SimpleNamespace(mount_lfs2=mount_lfs2),
+        "pyble_workspace": types.SimpleNamespace(
+            mount_lfs2=mount_lfs2,
+            boot_attached=lambda: trace.append(("unexpected.workspace.attachment",)),
+            boot_recovery=lambda: trace.append((
+                "recovery.print",
+                ("PyBLE workspace recovery is required; reconnect by USB.",),
+                {},
+            )),
+        ),
         "pble_ble": types.SimpleNamespace(
             init_agent=lambda: trace.append(("agent.init",))
         ),

@@ -41,6 +41,9 @@ HAVE_GATE = gate_fixture.HAVE_GATE
 
 QUALIFICATION_SOURCE_PATHS = (
     "firmware/qualification/v061_hardening_release_gate.py",
+    "tests/firmware_tests/hil/v061_workspace_acquire.py",
+    "tests/firmware_tests/hil/_v061_workspace_hardware.py",
+    "tests/firmware_tests/hil/_v061_workspace_pico.py",
     "tests/firmware_tests/hil/v061_hardening_bench.py",
     "tests/firmware_tests/hil/_pble_bench.py",
     "tests/firmware_tests/hil/_pble_central.py",
@@ -178,6 +181,13 @@ def rewrite_receipt_qualification(fixture: dict[str, object], checkout: Path) ->
         value = json.loads(path.read_text(encoding="utf-8"))
         value["qualification_source_commit"] = commit
         value["qualification_executable_sha256"] = executable_digest
+        acquisition_path = path.with_name(path.stem + "-acquisition.json")
+        acquisition = json.loads(acquisition_path.read_text())
+        acquisition["qualification_source_commit"] = commit
+        acquisition["qualification_executable_sha256"] = executable_digest
+        acquisition_raw = gate_fixture.canonical_json_bytes(acquisition)
+        private_write(acquisition_path, acquisition_raw)
+        value["acquisition_sha256"] = gate_fixture.hashlib.sha256(acquisition_raw).hexdigest()
         private_write(path, gate_fixture.canonical_json_bytes(value))
 
 

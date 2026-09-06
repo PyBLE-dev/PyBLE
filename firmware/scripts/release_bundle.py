@@ -27797,6 +27797,12 @@ def _v061_hardening_qualification_binding(
         == _V061_HARDENING_GATE_SOURCE_SHA256,
         "loaded v0.6.1 hardening validator changed",
     )
+    try:
+        closure_snapshot = gate._qualification_snapshot(root)
+    except gate.QualificationError as exc:
+        raise ReleaseError(
+            "v0.6.1 hardening acquisition source closure changed: %s" % exc
+        ) from exc
     return {
         "source_commit": _git_output(
             root,
@@ -27807,6 +27813,7 @@ def _v061_hardening_qualification_binding(
         "executable_sha256": hashlib.sha256(executable_raw).hexdigest(),
         "gate_snapshot": gate_snapshot,
         "executable_snapshot": executable_snapshot,
+        "closure_snapshot": closure_snapshot,
     }
 
 

@@ -246,6 +246,8 @@ class CompletionFixture:
         value["qualification_executable_sha256"] = sha256_path(
             hardening_fixture.BENCH_PATH
         )
+        hardening_fixture.attach_result_workspace(
+            self.hardening_result, value, self.artifact.read_bytes())
         self.hardening_value = value
         self.hardening_result.write_bytes(
             hardening_fixture.canonical_json_bytes(value)
@@ -645,6 +647,8 @@ class SyntheticV061FinalizationFixture:
             value["qualification_source_commit"] = qualification_commit
             value["qualification_executable_sha256"] = qualification_sha256
             path = self.root / ("%02d-%s-hardening.json" % (index, profile_id))
+            hardening_fixture.attach_result_workspace(
+                path, value, self.artifacts[profile_id].read_bytes())
             path.write_bytes(hardening_fixture.canonical_json_bytes(value))
             path.chmod(0o600)
             summary = hardening_fixture.GATE.validate_result_file(
@@ -893,6 +897,32 @@ class V061FinalizationLifecycleTests(unittest.TestCase):
             list(self.fixture.root.glob(".%s.*" % output.name)),
             [],
         )
+
+    def test_late_workspace_measurement_mutation_leaves_no_publication(self):
+        validator = RELEASE._validate_v061_hardening_result_set
+        attempts = 0
+
+        def validate_then_mutate(**kwargs):
+            nonlocal attempts
+            attempts += 1
+            summary = validator(**kwargs)
+            if attempts == 1:
+                result = self.fixture.hardening_results[0]
+                value = json.loads(result.read_bytes())
+                row = value["workspace_provisioning"][hardening_fixture.WORKSPACE_ORDER[0]]
+                receipt = result.parent / row["receipt_file"]
+                raw = receipt.with_name(receipt.stem + "-response.bin")
+                raw.write_bytes(raw.read_bytes() + b"late raw replacement\n")
+                raw.chmod(0o600)
+            return summary
+
+        output = self.fixture.root / "late-workspace-mutation-public-v0.6.1"
+        with mock.patch.object(RELEASE, "_validate_v061_hardening_result_set",
+                               side_effect=validate_then_mutate), self.assertRaises(RELEASE.ReleaseError):
+            self.fixture.finalize(output)
+        self.assertEqual(attempts, 2)
+        self.assertFalse(output.exists() or output.is_symlink())
+        self.assertEqual(list(self.fixture.root.glob(".%s.*" % output.name)), [])
 
 
 @unittest.skipUnless(

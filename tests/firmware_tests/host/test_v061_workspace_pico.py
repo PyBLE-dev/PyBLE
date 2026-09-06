@@ -13,7 +13,7 @@ import struct
 import sys
 import tempfile
 import unittest
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -227,12 +227,14 @@ class PicoAdapterGuardTests(unittest.TestCase):
         cls = self.api("PicoAdapter")
         async def exercise(directory):
             adapter = cls(binding(), repo_root=ROOT, work_dir=directory)
+            adapter._tool = Path("/host-test-only/picotool")
             adapter._run = AsyncMock(return_value=DEVICE_INFO)
             await adapter.connect()
             with self.assertRaises((ValueError, RuntimeError)):
                 await adapter.write_image(uf2_image())
             self.assertEqual(adapter._run.await_args_list[0].args[0], ["info", "-a"])
             self.assertEqual(adapter._run.await_count, 1)
+            await adapter.close()
         with tempfile.TemporaryDirectory() as directory:
             asyncio.run(exercise(Path(directory)))
 
@@ -240,6 +242,7 @@ class PicoAdapterGuardTests(unittest.TestCase):
         cls = self.api("PicoAdapter")
         async def exercise(directory):
             adapter = cls(binding(), repo_root=ROOT, work_dir=directory)
+            adapter._tool = Path("/host-test-only/picotool")
             adapter._run = AsyncMock(return_value=DEVICE_INFO)
             await adapter.connect()
             adapter.read_flash = AsyncMock(return_value=b"\0" + b"\xff" * (0x400000 - 1))
@@ -250,6 +253,109 @@ class PicoAdapterGuardTests(unittest.TestCase):
             self.assertEqual([item.args[0] for item in adapter._run.await_args_list],
                              [["info", "-a"], ["erase", "-a"]])
             adapter.read_flash.assert_awaited_once_with(0, 0x400000)
+            await adapter.close()
+        with tempfile.TemporaryDirectory() as directory:
+            asyncio.run(exercise(Path(directory)))
+
+    def test_complete_sequence_reads_real_payload_and_preserves_erased_tail(self):
+        cls = self.api("PicoAdapter")
+        footprint = self.api("pico_programmed_footprint")(uf2_image())
+        async def exercise(directory):
+            adapter = cls(binding(), repo_root=ROOT, work_dir=directory)
+            adapter._tool = Path("/host-test-only/picotool")
+            flash = bytearray(b"owner" + b"\xff" * (0x400000 - 5))
+            commands = []
+            async def run(args, **kwargs):
+                commands.append(args)
+                if args[0] == "info":
+                    return DEVICE_INFO
+                if args[0] == "erase":
+                    flash[:] = b"\xff" * len(flash)
+                elif args[0] == "load":
+                    path, admitted = kwargs["input_guard"]
+                    self.assertEqual(path.read_bytes(), admitted)
+                    if "-o" in args:
+                        flash[0x180000:0x182000] = admitted
+                    else:
+                        flash[:len(footprint)] = footprint
+                return b""
+            async def read(offset, size):
+                return bytes(flash[offset:offset + size])
+            adapter._run = AsyncMock(side_effect=run)
+            adapter.read_flash = AsyncMock(side_effect=read)
+            await adapter.connect()
+            await adapter.erase()
+            await adapter.write_image(uf2_image())
+            self.assertEqual(await adapter.read_install(uf2_image()), uf2_image())
+            flash[0] = 0xA5
+            actual = await adapter.read_install(uf2_image())
+            self.assertEqual(actual[544], 0xA5)
+            self.assertNotEqual(actual, uf2_image())
+            flash[0] = 1
+            await adapter.write_prefix(0x180000, b"\0" * 8192)
+            self.assertEqual(bytes(flash[0x180000:]), b"\0" * 8192 + b"\xff" * (0x280000 - 8192))
+            self.assertEqual(bytes(flash[:len(footprint)]), footprint)
+            for operation in (adapter.erase(), adapter.write_image(uf2_image()),
+                              adapter.write_prefix(0x180000, b"\0" * 8192)):
+                with self.assertRaises(ValueError):
+                    await operation
+            await adapter.boot()
+            with self.assertRaises(ValueError):
+                await adapter.boot()
+            await adapter.close()
+            self.assertEqual([args[:2] for args in commands],
+                [["info", "-a"], ["erase", "-a"], ["load", "-v"], ["load", "-v"], ["reboot", "-a"]])
+            self.assertEqual(adapter.read_flash.await_args_list[0].args, (0, 0x400000))
+            self.assertIn(((0, 512),), [(item.args,) for item in adapter.read_flash.await_args_list])
+        with tempfile.TemporaryDirectory() as directory:
+            asyncio.run(exercise(Path(directory)))
+
+    def test_picotool_command_is_exactly_selected_and_input_is_rechecked(self):
+        cls = self.api("PicoAdapter")
+        async def exercise(directory):
+            adapter = cls(binding(), repo_root=ROOT, work_dir=directory)
+            adapter._tool = Path("/host-test-only/picotool")
+            adapter._tools_guard = lambda: None
+            adapter.loader_present = AsyncMock(return_value=True)
+            adapter._child = AsyncMock(return_value=b"verified")
+            path = adapter._new_file("admitted.bin", b"unchanged")
+            self.assertEqual(await adapter._run(["load", "-v", str(path)], input_guard=(path, b"unchanged")), b"verified")
+            command = adapter._child.await_args.args[0]
+            self.assertEqual(command[-6:], ["--ser", "0123456789ABCDEF", "--vid", "0x2e8a", "--pid", "0xf"])
+            self.assertNotIn("-f", command)
+            self.assertNotIn("-F", command)
+            with self.assertRaises(ValueError):
+                await adapter._run(["load", "-v", str(path)], input_guard=(path, b"different"))
+            self.assertEqual(adapter._child.await_count, 1)
+            await adapter.close()
+        with tempfile.TemporaryDirectory() as directory:
+            asyncio.run(exercise(Path(directory)))
+
+    def test_child_timeout_terminates_and_retains_partial_command_artifacts(self):
+        cls = self.api("PicoAdapter")
+        async def exercise(directory):
+            adapter = cls(binding(), repo_root=ROOT, work_dir=directory)
+            stopped = asyncio.Event()
+            class Process:
+                returncode = None
+                terminated = False
+                async def wait(self):
+                    await stopped.wait()
+                    return self.returncode
+                def terminate(self):
+                    self.terminated = True
+                    self.returncode = -15
+                    stopped.set()
+            process = Process()
+            with patch.object(PICO.asyncio, "create_subprocess_exec", AsyncMock(return_value=process)):
+                with self.assertRaises(asyncio.TimeoutError):
+                    await adapter._child(["host-only-fake-child"], 0.001)
+            self.assertTrue(process.terminated)
+            self.assertIsNone(adapter._process)
+            self.assertEqual(len(list(directory.glob("*command.json"))), 1)
+            self.assertEqual(len(list(directory.glob("*output.log"))), 1)
+            self.assertEqual(len(list(directory.glob("*command-end.json"))), 1)
+            await adapter.close()
         with tempfile.TemporaryDirectory() as directory:
             asyncio.run(exercise(Path(directory)))
 
