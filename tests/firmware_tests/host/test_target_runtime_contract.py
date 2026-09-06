@@ -31,6 +31,7 @@ import tempfile
 import tomllib
 import types
 import unittest
+from unittest import mock
 
 
 HOST_DIR = Path(__file__).resolve().parent
@@ -50,6 +51,43 @@ TARGETS = {
     "esp32-c3": "PYBLE_ESP32_C3",
 }
 EXACT_BOARD_TARGET = "waveshare-esp32-s3-lcd-147b"
+C3_RESOURCE_THRESHOLD_KEYS = {
+    "application_headroom_min_bytes",
+    "application_image_max_bytes",
+    "gc_free_min_bytes",
+    "idf_internal_free_min_bytes",
+    "idf_internal_largest_block_min_bytes",
+    "idf_internal_minimum_free_min_bytes",
+}
+C3_FIXED_PERFORMANCE_THRESHOLDS = {
+    "get_verified_goodput_min_bytes_per_second": 6600,
+    "put_committed_goodput_min_bytes_per_second": 6600,
+    "reset_to_service_advertisement_max_ms": 3000,
+}
+
+
+def _load_release_module():
+    spec = importlib.util.spec_from_file_location(
+        "pyble_release_target_runtime_contract",
+        FIRMWARE_DIR / "scripts" / "release_bundle.py",
+    )
+    if spec is None or spec.loader is None:
+        raise AssertionError("cannot construct release_bundle.py import spec")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+RELEASE = _load_release_module()
+
+
+def _current_c3_profile():
+    policy = json.loads(
+        (FIRMWARE_DIR / "qualification" / "oi1-gates.json").read_bytes()
+    )
+    return next(
+        item for item in policy["profiles"] if item["profile_id"] == "esp32-c3-4mb"
+    )
 
 EXPECTED_FROZEN_PATHS = Counter(
     {
@@ -1234,16 +1272,7 @@ class BoardConfigurationSourceContractTests(unittest.TestCase):
             "C3 must run full PHY calibration instead of growing PHY NVS state",
         )
 
-        policy = json.loads(
-            (FIRMWARE_DIR / "qualification" / "oi1-gates.json").read_text(
-                encoding="utf-8"
-            )
-        )
-        profile = next(
-            item
-            for item in policy["profiles"]
-            if item["profile_id"] == "esp32-c3-4mb"
-        )
+        profile = _current_c3_profile()
         thresholds = profile["thresholds"]
         self.assertEqual(
             thresholds,
@@ -1261,6 +1290,43 @@ class BoardConfigurationSourceContractTests(unittest.TestCase):
             "the PHY policy must keep the exact C3 static/heap gates and "
             "carry the fixed ADR-0037 product SLOs",
         )
+
+    def test_c3_phy_storage_cannot_be_reenabled(self):
+        with mock.patch(
+            __name__ + "._sdkconfig_values",
+            return_value={"CONFIG_ESP_PHY_CALIBRATION_AND_DATA_STORAGE": "y"},
+        ), self.assertRaisesRegex(AssertionError, "C3 must run full PHY calibration"):
+            self.test_c3_disables_phy_calibration_storage_without_relaxing_oi1()
+
+    def test_c3_policy_loader_failure_is_not_ignored(self):
+        with mock.patch.object(
+            RELEASE, "_load_qualification_policy",
+            side_effect=RELEASE.ReleaseError("injected policy validation failure"),
+        ), self.assertRaisesRegex(RELEASE.ReleaseError, "injected policy validation failure"):
+            _current_c3_profile()
+
+    def test_c3_resource_threshold_mutations_are_rejected(self):
+        policy_path = FIRMWARE_DIR / "qualification" / "oi1-gates.json"
+        original_read = Path.read_bytes
+        for key in sorted(C3_RESOURCE_THRESHOLD_KEYS):
+            with self.subTest(threshold=key):
+                changed = json.loads(policy_path.read_bytes())
+                profile = next(
+                    item for item in changed["profiles"]
+                    if item["profile_id"] == "esp32-c3-4mb"
+                )
+                profile["thresholds"][key] += 1
+                payload = (json.dumps(changed, indent=2, sort_keys=True) + "\n").encode()
+
+                def read(path):
+                    return payload if path == policy_path else original_read(path)
+
+                with mock.patch.object(
+                    Path, "read_bytes", autospec=True, side_effect=read
+                ), self.assertRaisesRegex(
+                    RELEASE.ReleaseError, "thresholds were not derived from baseline esp32-c3-4mb"
+                ):
+                    _current_c3_profile()
 
 
 class GeneratedRuntimeContractTests(unittest.TestCase):
