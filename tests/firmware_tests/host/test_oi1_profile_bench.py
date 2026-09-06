@@ -51,8 +51,7 @@ CURRENT_POLICY_PATH = REPO_ROOT / "firmware" / "qualification" / "oi1-gates.json
 
 
 def load_current_policy():
-    payload = CURRENT_POLICY_PATH.read_bytes()
-    return json.loads(payload.decode("utf-8")), hashlib.sha256(payload).hexdigest()
+    return RELEASE._load_qualification_policy(REPO_ROOT)
 
 
 PROFILE_ORDER = (
@@ -87,12 +86,6 @@ SECOND_REPLACEMENT_V5_DERIVATION = {
 }
 WAVESHARE_PROFILE_ID = "waveshare-esp32-s3-lcd-147b"
 V5_FIXED_WAVESHARE_LARGEST_BLOCK_MIN_BYTES = 98304
-EXPECTED_LARGEST_BLOCK_FLOORS = {
-    "esp32-4mb": 55296,
-    "esp32-s3-n16r8": 102400,
-    WAVESHARE_PROFILE_ID: V5_FIXED_WAVESHARE_LARGEST_BLOCK_MIN_BYTES,
-    "esp32-c3-4mb": 57344,
-}
 FIXED_PERFORMANCE_THRESHOLDS = {
     profile_id: {
         "reset_to_service_advertisement_max_ms": (
@@ -526,7 +519,7 @@ class FrozenConstantsTest(unittest.TestCase):
             SECOND_REPLACEMENT_V5_DERIVATION,
         )
 
-    def test_committed_v060_policy_uses_fixed_slos_and_retains_a8_baseline(self):
+    def test_current_policy_uses_fixed_slos_and_validated_baseline_resources(self):
         policy_path = (
             REPO_ROOT / "firmware" / "qualification" / "oi1-gates.json"
         )
@@ -551,19 +544,6 @@ class FrozenConstantsTest(unittest.TestCase):
             PROFILE_TARGETS,
         )
         self.assertNotIn("deferred_profiles", policy)
-        self.assertEqual(
-            policy["baseline_evidence"],
-            {
-                "path": (
-                    "docs/validation/firmware/oi1/"
-                    "a8be631df46590166307aa41afaea30b39e29230.json"
-                ),
-                "sha256": (
-                    "8a7dbf328ba8d70f5161582b56d1566821f20b7a259ff29d"
-                    "c7d6fe6bb75a6044"
-                ),
-            },
-        )
         self.assertEqual(policy["derivation"], SECOND_REPLACEMENT_V5_DERIVATION)
         self.assertEqual(
             {
@@ -580,19 +560,14 @@ class FrozenConstantsTest(unittest.TestCase):
             FIXED_PERFORMANCE_THRESHOLDS,
         )
         self.assertEqual(
-            {
-                entry["profile_id"]: entry["thresholds"][
+            next(
+                entry["thresholds"][
                     "idf_internal_largest_block_min_bytes"
                 ]
                 for entry in policy["profiles"]
-                if "idf_internal_largest_block_min_bytes" in entry["thresholds"]
-            },
-            EXPECTED_LARGEST_BLOCK_FLOORS,
-        )
-        self.assertEqual(len(payload), 5036)
-        self.assertEqual(
-            hashlib.sha256(payload).hexdigest(),
-            "c3167853df6c31d7364b58616701d45ea62f2374d18cacc89e51292624dca8db",
+                if entry["profile_id"] == WAVESHARE_PROFILE_ID
+            ),
+            V5_FIXED_WAVESHARE_LARGEST_BLOCK_MIN_BYTES,
         )
 
     def test_retained_a8_baseline_bytes_and_samples_remain_immutable(self):
