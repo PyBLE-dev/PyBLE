@@ -2004,6 +2004,11 @@ strict fresh challenge echo, and zero additional recovery emissions. Normal
 unobserved callers retain their existing behavior and block-device identity.
 All five overlay tests prove observed mounting, attachment sealing only after
 `vfs.mount`, and bounded recovery sealing before any possible agent startup.
+Erased-scan status tests cover both observed and unobserved callers: `None`,
+exact integer zero, and boolean `True` succeed, while `False`, floating zero,
+and custom equality-to-zero objects fail without formatting. Collector tests
+round-trip the actual firmware getter through JSON with reordered mapping
+keys; exact key sets remain required without imposing MicroPython dict order.
 
 The workspace acquisition tests MUST exercise the live collector's event
 sequence and reject an expected four-line summary without measured siblings.

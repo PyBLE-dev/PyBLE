@@ -548,6 +548,10 @@ program_calls erase_calls workspace_attached recovery_attempts
 recovery_emissions complete fault overflow media_state
 ```
 
+The accessor and its MicroPython JSON transport have no mapping-order
+requirement. Consumers require the exact key set and field types; canonical
+host-side evidence files retain their separately specified byte ordering.
+
 The schema is integer `1`; `boot_id` is a fresh per-VM 16-byte random value
 encoded as 32 lowercase hex characters, not device identity or an
 authorization signal. `challenge` echoes this read's fresh host nonce, without
@@ -567,6 +571,12 @@ Refusal is inspected through the existing USB REPL, since no BLE agent may
 start in that case. Inspection MUST neither rerun mounting nor modify media.
 Fresh source-bound performance/resource and physical qualification gates
 apply to all five changed images; the observer does not waive those gates.
+
+The complete-device erased scan accepts a read status only when it is `None`,
+boolean `True`, or exact integer zero, matching successful native block-read
+outcomes. Boolean `False` is a failed read, not integer-zero success. Floating
+zero and custom objects that merely compare equal to zero are uncertain
+statuses and MUST NOT grant format authority, even with an all-erased buffer.
 
 ### 4.8 Execution modes (FR-MODE)
 
