@@ -294,7 +294,6 @@ void main() {
         WidgetTester tester,
       ) async {
         final SemanticsHandle semantics = tester.ensureSemantics();
-        addTearDown(semantics.dispose);
         await _pumpAbout(tester, size: size, textScale: 2, highContrast: true);
         await tester.pumpAndSettle();
         final Finder policy = find.byKey(const Key('aboutPrivacyPolicyAction'));
@@ -315,6 +314,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
         expect(find.text('viwat.v@chula.ac.th').hitTestable(), findsOneWidget);
+        semantics.dispose();
       });
     }
   });
