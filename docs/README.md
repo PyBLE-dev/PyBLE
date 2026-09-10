@@ -58,6 +58,8 @@ bundled offline examples required by its own product contracts.
 
 ## Testing and release handoff
 
+- [Google Play open-testing submission packet](publication/google-play-open-testing.md)
+  — app `0.2.0 (8)`, listing fields, graphics, declarations and tester setup
 - [PyBLE 0.2.0 (5) TestFlight description and test
   plan](testing/testflight/0.2.0-build-5.md)
 - [PyBLE 0.1.0 (4) TestFlight description and test

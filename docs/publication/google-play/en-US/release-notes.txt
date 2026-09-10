@@ -1,0 +1,9 @@
+<en-US>
+Open testing for PyBLE 0.2.0.
+- Edit MicroPython with syntax highlighting, line numbers and adjustable text size.
+- Review public GitHub examples at a pinned commit before importing.
+- Select and delete multiple visible board files with exact confirmation.
+- View board identity, firmware and an offline privacy policy.
+- Use offline Blocks with numeric GPIOs or named pins.
+A compatible board running the PyBLE agent is required. Initial firmware setup needs a computer.
+</en-US>

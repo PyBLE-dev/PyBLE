@@ -1,0 +1,33 @@
+Code on your MicroPython board from an Android tablet with PyBLE, a free, open-source IDE that connects over Bluetooth Low Energy.
+
+A compatible board running the PyBLE agent is required to use the editor, files, Blocks and console. Python programs run on the connected board. PyBLE does not run Python on your Android device.
+
+EDIT, SAVE AND RUN
+Write MicroPython with syntax highlighting, line numbers and adjustable editor text size. Save programs wirelessly, run them when you choose, stop execution and read live console output. Use console input with programs that request it.
+
+MANAGE BOARD FILES
+Browse folders, create and open files, transfer code and manage the board workspace. Review exact filenames before deleting multiple selected files. Board-control files are protected.
+
+BUILD WITH BLOCKS
+Use bundled offline Blocks examples, GPIO and NeoPixel blocks to create MicroPython programs. Preview generated Python, save the program with its Blocks companion and run it explicitly. Hardware blocks require the correct pins, wiring and board capabilities.
+
+IMPORT PUBLIC EXAMPLES
+Optionally browse a public GitHub repository, choose a branch or enter an advanced ref, and review a pinned commit and exact destination before importing selected .py files. No GitHub account or token is needed. Downloaded code never opens or runs automatically.
+
+DESIGNED FOR TABLETS
+Switch between portrait and landscape layouts and adjust code size for your workspace. The current app interface is in English.
+
+BEFORE YOU CONNECT
+Install the matching PyBLE agent firmware on your board using the instructions at https://pyble.dev/flash. Initial provisioning needs a computer and a suitable cable. Back up the board first because firmware installation can erase its existing files.
+
+The documented firmware profiles include classic ESP32 with 4 MiB flash, ESP32-S3 N16R8, ESP32-C3 with 4 MiB flash, the exact Waveshare ESP32-S3-LCD-1.47B, and Raspberry Pi Pico 2 W. Match the exact hardware and profile. Stock MicroPython alone is insufficient; other boards need a compatible PBLE/1 agent.
+
+LOCAL WORK, OPTIONAL INTERNET
+No PyBLE account, ads, subscriptions or in-app purchases. Editing, BLE, board files, Blocks and Run work without internet once a compatible board is connected. Public GitHub import is optional and needs internet access. Your programs travel directly to your selected board over BLE. See the privacy policy for Bluetooth and optional GitHub data handling.
+
+OPEN TESTING
+This is a pre-release version. Keep backups and use disposable files when testing deletion. Report problems through https://pyble.dev/support or viwat.v@chula.ac.th.
+
+Setup and tutorials: https://pyble.dev/learn
+Privacy policy: https://pyble.dev/privacy
+Source code: https://github.com/PyBLE-dev/PyBLE
