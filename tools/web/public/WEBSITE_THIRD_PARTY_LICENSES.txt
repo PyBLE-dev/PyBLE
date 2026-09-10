@@ -563,11 +563,11 @@ License file: LICENSE
    limitations under the License.
 
 ================================================================================
-@next/env 16.2.12
+@next/env 16.3.4
 Installed path: node_modules/@next/env
 SPDX license: MIT
-Source: https://registry.npmjs.org/@next/env/-/env-16.2.12.tgz
-License file: reviewed fallback for node_modules/@next/env@16.2.12
+Source: https://registry.npmjs.org/@next/env/-/env-16.3.4.tgz
+License file: reviewed fallback for node_modules/@next/env@16.3.4
 
 The MIT License (MIT)
 
@@ -1088,10 +1088,10 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ================================================================================
-@swc/helpers 0.5.15
+@swc/helpers 0.5.23
 Installed path: node_modules/@swc/helpers
 SPDX license: Apache-2.0
-Source: https://registry.npmjs.org/@swc/helpers/-/helpers-0.5.15.tgz
+Source: https://registry.npmjs.org/@swc/helpers/-/helpers-0.5.23.tgz
 License file: LICENSE
 
                               Apache License
@@ -3995,10 +3995,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ================================================================================
-next 16.2.12
+next 16.3.4
 Installed path: node_modules/next
 SPDX license: MIT
-Source: https://registry.npmjs.org/next/-/next-16.2.12.tgz
+Source: https://registry.npmjs.org/next/-/next-16.3.4.tgz
 License file: license.md
 
 The MIT License (MIT)
