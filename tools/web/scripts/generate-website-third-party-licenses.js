@@ -60,7 +60,7 @@ SOFTWARE.`;
 
 const reviewedLicenseFallbacks = {
   "node_modules/@next/env": {
-    version: "16.2.12",
+    version: "16.3.4",
     text: mitLicense(
       "Copyright (c) 2025 Vercel, Inc.",
       "The MIT License (MIT)",
