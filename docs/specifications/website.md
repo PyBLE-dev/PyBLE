@@ -546,6 +546,16 @@ Publish a coherent full static site from one release selector; partial page
 overlays must not leave other current-release pages on an older version.
 Preserve versioned firmware artifacts, all tutorials and capture assets.
 
+The repository README and public roadmap MUST identify the current published
+v0.6.1 firmware separately from historical v0.6.0 qualification and citation
+snapshots. The README MUST link the exact v0.6.1 source, descriptor digest,
+release/recovery material and owner confirmation without claiming completed
+automated HIL. Getting-started guidance MUST use the editable official examples
+URL and branch chooser, describe a writable board subfolder and review before
+import, and retain explicit destructive-provisioning warnings. The App source
+version and prepared store handoffs MUST NOT be presented as proof of a live
+store release. Link the tutorial center and firmware functional reference.
+
 ## 4. Brand and visual contract
 
 The canonical prompt-chip SVG in `app/assets/branding/` is the source asset. A
