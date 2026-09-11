@@ -18594,7 +18594,9 @@ def _audit_frozen_payload_proof(
         if resolved_source.is_relative_to(overlay_root):
             copied_relative = destination
         elif resolved_source.is_relative_to(pyble_root):
-            copied_relative = destination
+            copied_relative = (
+                "pyble/" + resolved_source.relative_to(pyble_root).as_posix()
+            )
         else:
             continue
         copied_bytes = _audit_retained_generated_board_snapshot_file(
