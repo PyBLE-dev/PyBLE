@@ -1469,8 +1469,8 @@ def _write_exclusive_result(
             and (after.st_dev, after.st_ino) == created_identity,
             "qualification result output is unsafe",
         )
-        os.close(descriptor)
-        descriptor = -1
+        # Pin this inode through validation and rollback. Otherwise unlinking
+        # the output can let a replacement reuse its device/inode identity.
 
         _verify_output_parent(chain)
         read_flags = os.O_RDONLY | os.O_NOFOLLOW
@@ -1522,17 +1522,17 @@ def _write_exclusive_result(
                 os.close(reader)
             except OSError:
                 pass
-        if descriptor >= 0:
-            try:
-                os.close(descriptor)
-            except OSError:
-                pass
         if created and not preserve:
             _remove_created_result(
                 parent_descriptor,
                 output.name,
                 created_identity,
             )
+        if descriptor >= 0:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
         _close_directory_chain(chain)
 
 

@@ -1274,8 +1274,8 @@ def _write_exclusive(
             and (after.st_dev, after.st_ino) == created_identity,
             "evidence output is unsafe",
         )
-        os.close(descriptor)
-        descriptor = -1
+        # Pin this inode through validation and rollback. Otherwise unlinking
+        # the output can let a replacement reuse its device/inode identity.
         _verify_directory_chain(chain, "evidence output parent")
         read_flags = os.O_RDONLY | os.O_NOFOLLOW
         if hasattr(os, "O_CLOEXEC"):
@@ -1318,12 +1318,12 @@ def _write_exclusive(
     except OSError as exc:
         raise QualificationError("evidence output could not be created safely") from exc
     finally:
-        if descriptor >= 0:
-            os.close(descriptor)
         if reader >= 0:
             os.close(reader)
         if created and not preserve:
             _remove_created(parent_fd, output.name, created_identity)
+        if descriptor >= 0:
+            os.close(descriptor)
         _close_directory_chain(chain)
 
 
