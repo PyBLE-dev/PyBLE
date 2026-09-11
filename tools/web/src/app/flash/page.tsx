@@ -64,14 +64,14 @@ export default function FlashPage() {
           {ownerConfirmed
             ? " Firmware v0.6.1 is available for all five board profiles following qualification confirmed by the project owner."
             : preview
-            ? ` LOCAL ENGINEERING PREVIEW v${preview.version} — UNQUALIFIED. This is not a public release.`
-            : publicBeta
-              ? " The current v0.4.2 installer is a hardware-tested firmware beta. Production Chrome erase/install and deliberately interrupted-flash recovery passed on both exact profiles. Complete release qualification is still pending; this is not a qualified release."
-              : qualifiedPublic
-                ? ` Qualified v${release.version} firmware is available for all ${exactProfileCountLabel(release.profiles.length)} exact release profiles.`
-                : candidate
-                  ? ` This protected, access-controlled v${release.version} release candidate is staged for hardware qualification. Hardware validation is pending on every included profile; the public install action stays unavailable until it passes.`
-                  : " No firmware release is selected for this build; installation remains unavailable."}
+              ? ` LOCAL ENGINEERING PREVIEW v${preview.version} — UNQUALIFIED. This is not a public release.`
+              : publicBeta
+                ? " The current v0.4.2 installer is a hardware-tested firmware beta. Production Chrome erase/install and deliberately interrupted-flash recovery passed on both exact profiles. Complete release qualification is still pending; this is not a qualified release."
+                : qualifiedPublic
+                  ? ` Qualified v${release.version} firmware is available for all ${exactProfileCountLabel(release.profiles.length)} exact release profiles.`
+                  : candidate
+                    ? ` This protected, access-controlled v${release.version} release candidate is staged for hardware qualification. Hardware validation is pending on every included profile; the public install action stays unavailable until it passes.`
+                    : " No firmware release is selected for this build; installation remains unavailable."}
         </p>
       </PageIntro>
 

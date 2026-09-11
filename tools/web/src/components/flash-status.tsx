@@ -160,8 +160,11 @@ function policyFailure(release: FirmwareReleaseDescriptor | null | undefined) {
       body: "No firmware release is selected for this build. Check the current public installer before provisioning.",
     };
   }
-  if (release.deployment !== "public" && release.deployment !== "candidate" &&
-      !isOwnerConfirmedFirmwareRelease(release)) {
+  if (
+    release.deployment !== "public" &&
+    release.deployment !== "candidate" &&
+    !isOwnerConfirmedFirmwareRelease(release)
+  ) {
     if (
       release.deployment !== "public-beta" ||
       !isExactPublicBetaFirmwareRelease(release)
@@ -491,10 +494,10 @@ function FlashStatusForRelease({
             {ownerConfirmed
               ? "Owner-qualified release"
               : candidate
-              ? "Protected release candidate"
-              : publicBeta
-                ? "Hardware-tested firmware beta"
-                : "Qualified release"}
+                ? "Protected release candidate"
+                : publicBeta
+                  ? "Hardware-tested firmware beta"
+                  : "Qualified release"}
           </h2>
         </div>
       </div>
@@ -504,14 +507,20 @@ function FlashStatusForRelease({
         className="flash-status__message"
       >
         {ownerConfirmed ? (
-          <>Firmware v0.6.1 qualification was confirmed by the project owner.
-            {" "}<a href="/firmware-v0.6.1-owner-confirmation.md">Publication record</a>.
-            {" "}Select and verify your exact board profile before installation.</>
-        ) : candidate
-          ? "Protected release candidate: hardware validation is pending."
-          : publicBeta
-            ? "Hardware-tested firmware beta: exact PyBLE v0.4.2 browser installation and interrupted-flash recovery passed on real esp32-4mb and esp32-s3-n16r8 hardware. Complete release qualification is still pending; this is not a qualified release."
-            : "Select and verify the exact module profile before installation."}
+          <>
+            Firmware v0.6.1 qualification was confirmed by the project owner.{" "}
+            <a href="/firmware-v0.6.1-owner-confirmation.md">
+              Publication record
+            </a>
+            . Select and verify your exact board profile before installation.
+          </>
+        ) : candidate ? (
+          "Protected release candidate: hardware validation is pending."
+        ) : publicBeta ? (
+          "Hardware-tested firmware beta: exact PyBLE v0.4.2 browser installation and interrupted-flash recovery passed on real esp32-4mb and esp32-s3-n16r8 hardware. Complete release qualification is still pending; this is not a qualified release."
+        ) : (
+          "Select and verify the exact module profile before installation."
+        )}
       </div>
 
       {heterogeneous ? (

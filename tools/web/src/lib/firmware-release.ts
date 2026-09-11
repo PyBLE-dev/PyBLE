@@ -74,7 +74,8 @@ export type HistoricalFirmwareProfileId =
   (typeof historicalFirmwareProfileTable)[number]["id"];
 export type PlannedFirmwareProfileId =
   (typeof plannedFirmwareProfileTable)[number]["id"];
-export type FirmwareDeployment = "public" | "candidate" | "public-beta" | "owner-confirmed";
+export type FirmwareDeployment =
+  "public" | "candidate" | "public-beta" | "owner-confirmed";
 export type FirmwareHilStatus = "pending" | "passed";
 export type FirmwareProvisioningKind =
   "esp-web-serial" | "verified-uf2-bootsel";
