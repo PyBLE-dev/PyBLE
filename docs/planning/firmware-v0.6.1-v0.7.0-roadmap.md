@@ -2,8 +2,10 @@
 
 # Firmware v0.6.1 and v0.7.0 roadmap
 
-Status: **v0.6.1 APPROVED for implementation; v0.7.0 remains PROPOSED**  
-Baseline: **qualified firmware v0.6.0**  
+Status: **v0.6.1 APPROVED for implementation; v0.7.0 remains PROPOSED**
+
+Baseline: **qualified firmware v0.6.0**
+
 Last updated: **2026-09-03**
 
 ## 1. Purpose and status

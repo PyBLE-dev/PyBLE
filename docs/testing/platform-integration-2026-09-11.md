@@ -34,6 +34,7 @@ with it present.
 
 - Flutter analysis: no issues.
 - Flutter non-golden suite: 894 tests passed.
+- Flutter pixel-golden suite: 31 tests passed; Dart formatting passed.
 - Complete website check: formatting, lint, type checking, zero-vulnerability
   dependency audit, license checks, 342 tests in 23 files, compatibility check,
   and both static and Sites builds passed.
@@ -52,9 +53,12 @@ and its distinction from incomplete automated HIL remain unchanged.
 
 ## Cleanup boundary
 
-Auxiliary worktree directories, including dirty edits and ignored backups, are
-archived intact outside the active repository. Git metadata, a verified bundle,
-original branch/HEAD mappings and restoration instructions accompany them.
+All 18 auxiliary worktree directories, including dirty edits and ignored
+backups, were archived intact outside the active repository. Git metadata, a
+verified bundle, original branch/HEAD mappings and restoration instructions
+accompany them in the sibling `PyBLE-Archives/git-cleanup-20260911/` directory.
+Twenty-seven obsolete local branch names were removed after preservation;
+only `main` and `release/v061-platform-consolidation` remain active locally.
 Private qualification experiments are preserved, not silently merged into the
 production branch. The primary generated MicroPython board inputs are untouched.
 
