@@ -1,6 +1,6 @@
 # PyBLE — Product Requirements Document
 
-Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-08-03
+Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-09-02
 
 Project phase: **Implementation**. This is the apex requirements document; where it overlaps a deeper spec (protocol.md, firmware.md, app.md, hardware.md, architecture.md), the more specific spec wins on its own topic.
 
@@ -174,19 +174,20 @@ Each story selects the applicable categories; the protocol and firmware stories 
 - **Hardware-in-the-loop (HIL)** — on every exact profile claimed by the
   release: connect, `DEVICE_INFO`, run/stop, console streaming, and a clean
   multi-file upload without dropping the link, plus resume-on-reconnect and
-  the resource measurements above. The current v0.4.2 public-beta profile set
-  is exactly `esp32-4mb` plus `esp32-s3-n16r8`; production-browser installation
-  and interrupted-flash recovery passed, but the other formal HIL rows remain
-  pending. The earlier v0.5.1 source-candidate matrix was exactly
+  the resource measurements above. The historical v0.4.2 public-beta profile
+  set is exactly `esp32-4mb` plus `esp32-s3-n16r8`; production-browser
+  installation and interrupted-flash recovery passed, but its other formal HIL
+  rows remain pending. The earlier v0.5.1 source-candidate matrix was exactly
   `esp32-4mb`, `esp32-s3-n16r8`, and
   `waveshare-esp32-s3-lcd-147b`; no exact-byte qualification was completed for
-  it. The current v0.6.0 contract is the atomic five-profile order
+  it. The qualified public v0.6.0 release has the atomic five-profile order
   `esp32-4mb`, `esp32-s3-n16r8`, `waveshare-esp32-s3-lcd-147b`,
-  `esp32-c3-4mb`, and `rpi-pico2-w`; every row remains release-blocking. The
-  two S3 profiles require independent evidence because
-  their candidate contracts produce different immutable bytes. No v0.6.0
-  exact-byte qualification is asserted here. A milestone is gated by a working
-  HIL demo, not by merged code alone.
+  `esp32-c3-4mb`, and `rpi-pico2-w`; every exact v0.6.0 row completed its
+  release-blocking gates. The two S3 profiles required independent evidence
+  because their candidate contracts produced different immutable bytes. The
+  source-selected v0.6.1 tree retains the same atomic order, but every row is
+  release-blocking again and no v0.6.1 exact-byte qualification is asserted
+  here. A milestone is gated by a working HIL demo, not by merged code alone.
 
 ### §1B.4 SDD+TDD interlock
 
@@ -882,7 +883,12 @@ Conformance requirements:
 - The agent MUST return the correct PBLE/1 status code ([PBLE/1 §8](protocol.md#8-status--error-codes-1-byte-status-in-rsp)) for every command, including the error cases (`ENOENT`, `EACCES`, `ENOSPC`, `EBUSY`, `ECRC`, `ERANGE`, `EUNSUPPORTED`, etc.).
 - File transfer MUST implement the windowed-upload + CRC + resume model and download streaming + whole-file CRC verification from [PBLE/1 §5](protocol.md#5-file-transfer-the-reliability-core). A transfer MUST be reported `OK` only after a full-file CRC match.
 - The console MUST be **observe-anywhere**: `stdout`/`stderr` MUST stream regardless of which client triggered the run.
-- The agent MUST advertise its capabilities in HELLO (`chip`, `mpy_version`, `fs_root`, `max_file_size`, `put_window`, `chunk_size`, `has_sd`, `free_mem`) and MUST reject use of any feature it did not advertise.
+- The agent MUST advertise the frozen HELLO capability set (`proto`, `agent`,
+  `chip`, `mpy`, `fs_root`, `mtu`, `window`, `chunk`, `free_mem`, `has_sd`,
+  `has_identify`, `identify_led`, `auto_run`, `device_id`, and `label`) and MUST
+  reject use of any feature it did not advertise. PBLE/1 has no serialized
+  `max_file_size`; upload capacity is admitted dynamically by
+  [PBLE/1 §5](protocol.md#5-file-transfer-the-reliability-core).
 
 ### §10.9 Version pinning
 
@@ -1419,7 +1425,11 @@ PyBLE depends on third-party code at two layers (firmware upstream and Flutter p
 
 Compatibility is negotiated on the wire, not assumed (see [protocol.md §7](protocol.md#7-hello--capabilities)).
 
-- The first message after connect MUST be **HELLO**: the app sends `proto_versions[]` (the versions it supports) + `app_name`/`app_version`; the board replies with the chosen `proto_version` and a `caps` set (`chip`, `mpy_version`, `fs_root`, `max_file_size`, `put_window`, `chunk_size`, `has_sd`, `free_mem`).
+- The first message after connect MUST be **HELLO**: the app sends
+  `proto_versions[]` (the versions it supports) plus `app_name`/`app_version`;
+  the board replies with the chosen `proto` and the exact capability set named
+  in §10.8. There is no `max_file_size` key; `FILE_PUT_BEGIN` performs the
+  dynamic storage admission specified by PBLE/1 §5.
 - The app MUST refuse (with a clear message) a board whose `proto_version` it does not support, and MUST NOT use any feature the board did not advertise in `caps`.
 - The **INFO characteristic** read MUST return a `DEVICE_INFO`-equivalent payload so a client can identify a board (chip, MicroPython version, free memory) before subscribing (see [protocol.md §2](protocol.md#2-ble-transport-gatt)).
 - Each app release MUST declare a **minimum supported PBLE/1 capability baseline** and a minimum agent version it interoperates with; the agent likewise declares its minimum app expectations via capabilities. A mismatch surfaces as a "please update the firmware/app" prompt, never a silent failure.
@@ -1575,7 +1585,7 @@ Until every profile passes, no public qualification is asserted.
 |---|---|---|---|
 | **Time-to-connect** | Median wall-clock from "Connect" tap to editor-ready (TX subscribed, MTU negotiated, HELLO/DEVICE_INFO shown). | SHOULD be < 10 s on a first connect; < 5 s for a saved board. | Validate on HIL. |
 | **BLE connection success rate** | Fraction of connect attempts to an in-range, advertising board that reach editor-ready without manual retry. | SHOULD be > 95%, measured separately on iOS and Android. | Validate on HIL. |
-| **Upload/transfer reliability** | Fraction of file `put`/`get` operations that complete with a verified whole-file CRC match (no silent corruption). | MUST be > 99% for files up to the negotiated `max_file_size`. | Validate on HIL. |
+| **Upload/transfer reliability** | Fraction of file `put`/`get` operations that complete with a verified whole-file CRC match (no silent corruption). | MUST be > 99% for files accepted by the dynamic PBLE/1 §5 storage admission and within the release bench sizes. | Validate on HIL. |
 | **Multi-file upload integrity** | A back-to-back multi-file upload completes with zero dropped connections and every file CRC-verified. | MUST pass the reliability bench with zero drops (story F-11). | Validate on HIL. |
 | **Recovery success rate** | Fraction of cases where a runaway program (`while True`) is interrupted by **Stop** and the board returns to idle with BLE responsive throughout. | MUST be 100% barring hardware failure. | Validate on HIL. |
 | **Resume-on-reconnect** | Fraction of transfers interrupted by a simulated link drop that resume from the verified offset and finish CRC-clean. | SHOULD be 100% (story F-10). | Validate on HIL. |
@@ -1724,11 +1734,11 @@ The foundational product decisions are resolved and recorded as Architecture Dec
   MicroPython/ESP-IDF lock bytes are candidate-frozen for v0.4.2, but the
   per-target footprint budgets and formal approval (especially **ESP32-C3**)
   remain open under §10.13. Candidate-freezing is not approval. The same
-  exact source-selected v0.6.0 lock file MUST be deliberately frozen as the
+  exact source-selected v0.6.1 lock file MUST be deliberately frozen as the
   immutable release-build/HIL input; historical v0.5.1 selection does not
   qualify a new candidate. The same candidate MUST then pass the
   complete exact-profile HIL matrix before its pins and resource gates are
-  approved. The replacement v0.6.0 prospective public set is exactly the five
+  approved. The v0.6.1 prospective public set remains exactly the five
   profiles in §10.12 (§10.9, §17.1, §21.2). A pin
   change creates a new candidate. New ADRs are added if a pin or budget
   changes materially.

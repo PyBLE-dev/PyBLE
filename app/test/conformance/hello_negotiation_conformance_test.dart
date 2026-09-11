@@ -17,11 +17,11 @@
 //     PbleStatusException is REPLACED by the per-status subtypes, so eInternal
 //     maps to EInternal — TDD §14.1, A-11 contract).
 //
-// SCOPE (S2): the HELLO/caps PAYLOAD byte-serialization is DRAFT and is NOT in
-// the shared corpus; this suite asserts against the HIL-observed newline
-// key=value caps text (agent v0.4.0) with a TOLERANT parser. Byte-level HELLO
-// firmware conformance is deferred until protocol.md §7 freezes the payload
-// encoding.
+// v0.6.1: request serialization is frozen and consumed from the SAME semantic
+// corpus as portable Python and dependency-free native C (TDD D11). Dart owns
+// the client expectations: it emits canonical request bytes and maps the
+// board's frozen status/caps response; agent-only invalid-input admission is
+// asserted by the Python/C consumers of that same file.
 //
 // CURRENTLY RED: `lib/pble/{engine,hello,pble_constants,pble_exception}.dart`
 // and the extended DeviceInfo do not exist yet. HAND-OFF: `lib/pble/**` →
@@ -41,6 +41,8 @@ import 'package:pyble/pble/pble_constants.dart';
 import 'package:pyble/pble/types.dart';
 
 import '../support/fake_byte_transport.dart';
+import '../support/hex.dart';
+import '../support/repo_paths.dart';
 
 /// The real agent's HIL-observed caps text (agent v0.4.0), with the chosen
 /// [proto] overridable to exercise the version-refusal path.
@@ -72,6 +74,25 @@ Uint8List helloRspPayload({
 ]);
 
 void main() {
+  final Map<String, dynamic> sessionCorpus =
+      jsonDecode(v061SessionCorpus().readAsStringSync())
+          as Map<String, dynamic>;
+  final Map<String, Map<String, dynamic>> helloVectors =
+      <String, Map<String, dynamic>>{
+        for (final Map<String, dynamic> value
+            in (sessionCorpus['hello_cases'] as List)
+                .cast<Map<String, dynamic>>())
+          value['name'] as String: value,
+      };
+
+  Uint8List vectorPayload(String name) {
+    final Map<String, dynamic> vector = helloVectors[name]!;
+    final String? ascii = vector['payload_ascii'] as String?;
+    return ascii != null
+        ? Uint8List.fromList(ascii.codeUnits)
+        : Uint8List.fromList(hexToBytes(vector['payload_hex'] as String));
+  }
+
   late FakeByteTransport transport;
   late PbleEngine engine;
   late HelloNegotiator negotiator;
@@ -82,7 +103,7 @@ void main() {
     negotiator = HelloNegotiator(
       engine: engine,
       appName: 'PyBLE',
-      appVersion: '0.1.0',
+      appVersion: '0.2.0',
     );
   });
 
@@ -103,6 +124,13 @@ void main() {
         final PbleFrame sent = transport.sentFrames.single;
         expect(sent.type, Pble.typeCmd);
         expect(sent.opcode, PbleOpcode.hello.code);
+        expect(
+          sent.payload,
+          orderedEquals(vectorPayload('canonical_current_app')),
+          reason:
+              'Dart must emit the exact canonical HELLO bytes consumed by '
+              'portable Python and native C',
+        );
 
         transport.deliverFrame(
           PbleFrame(
@@ -120,6 +148,36 @@ void main() {
         expect(caps.mpyVersion, '1.28.0');
         expect(caps.freeMem, 8495096);
         expect(caps.fsRoot, '/');
+      },
+    );
+
+    test(
+      'offer [2] uses shared bytes and EUNSUPPORTED maps distinctly',
+      () async {
+        final Future<HelloResult> pending = negotiator.negotiate(
+          offer: <int>[2],
+        );
+        await pumpEventQueue();
+        final PbleFrame sent = transport.sentFrames.single;
+        final Map<String, dynamic> vector =
+            helloVectors['well_formed_offer_without_v1']!;
+
+        expect(
+          sent.payload,
+          orderedEquals(vectorPayload(vector['name'] as String)),
+        );
+        expect(vector['expected_status'], PbleStatus.eUnsupported.code);
+        transport.deliverFrame(
+          PbleFrame(
+            type: Pble.typeRsp,
+            opcode: PbleOpcode.hello.code,
+            id: sent.id,
+            payload: Uint8List.fromList(<int>[
+              vector['expected_status'] as int,
+            ]),
+          ),
+        );
+        await expectLater(pending, throwsA(isA<EUnsupported>()));
       },
     );
 

@@ -3,23 +3,36 @@
 PyBLE is developed in public. This roadmap communicates direction rather than
 promising dates; accepted work is tracked through GitHub issues and milestones.
 
+The detailed [firmware v0.6.1 and v0.7.0 proposal](planning/firmware-v0.6.1-v0.7.0-roadmap.md)
+records the post-v0.6.0 contract-hardening and Reliable Projects candidates.
+The v0.6.1 hardening implementation has been published on owner confirmation;
+v0.7.0 remains non-normative and requires separate maintainer approval.
+
 ## Available now
 
 - iPad external beta through TestFlight
 - PBLE/1 editing, run/stop, console, and file workflows over BLE
 - Offline Blockly with beginner GPIO and NeoPixel examples
-- Browser installation for the exact `esp32-4mb` and `esp32-s3-n16r8` profiles
-  as the v0.4.2 hardware-tested beta; production Chrome install/recovery passed
-  on both profiles
+- The published firmware v0.6.1 covers five exact profiles: four ESP
+  Web Serial installers and the verified Pico 2 W UF2/manual-BOOTSEL path.
+  Publication follows the owner's qualification confirmation, recorded in the
+  [owner confirmation](https://pyble.dev/firmware-v0.6.1-owner-confirmation.md).
+  Incomplete automated evidence is preserved unchanged; the qualified v0.6.0
+  release remains a separate historical baseline.
+- Guided [tutorials](https://pyble.dev/learn) with reviewed Lenovo captures,
+  the [firmware functional reference](https://pyble.dev/features), and the
+  separate [official example collection](https://github.com/PyBLE-dev/examples)
 - MIT-licensed app, agent firmware, protocol, website, tests, and release tools
 
 ## Near term
 
-- Qualify the app 0.2.0 beta train, starting at globally monotonic build 5,
-  across the retained iPad/Android and five-profile hardware test scope
-- Complete the app, PBLE/1, resource, and remaining firmware release
-  qualification for the exact v0.4.2 bytes
-- Complete real-hardware qualification before enabling the ESP32-C3 installer
+- Continue the app 0.2.0 beta train; source is currently `0.2.0+8`. The
+  [prepared build-8 handoff](testing/google-play/0.2.0-build-8.md) is not proof
+  of store publication or validation of subsequent source changes.
+- Reconcile the original automated qualification tracker
+  [#24](https://github.com/PyBLE-dev/PyBLE/issues/24) with the recorded
+  owner-confirmed v0.6.1 publication without inventing missing measurements.
+- Review the proposed v0.7.0 Reliable Projects scope before implementation.
 - Expand user-facing setup, recovery, and board-specific wiring guidance
 - Open and document the Android beta distribution path
 - Convert remaining pre-public planning references into focused GitHub issues

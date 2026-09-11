@@ -1,0 +1,386 @@
+{
+  "_meta": {
+    "description": "Shared PBLE/1 v0.6.1 semantic vectors for strict HELLO parsing, per-session negotiation, inbound direction/ID gates, and validation precedence. Payloads are exact bytes; status values are PBLE/1 section 8 bytes.",
+    "scope": "Portable Python and compiled native C consume the agent expectations; Dart consumes the canonical client HELLO bytes and frame fields.",
+    "spdx": "MIT",
+    "version": 1
+  },
+  "constants": {
+    "protocol_version": 1,
+    "hello_max_bytes": 192,
+    "hello_max_offers": 8,
+    "hello_key_max_bytes": 32,
+    "hello_value_max_bytes": 32,
+    "hello_app_field_max_bytes": 32,
+    "rx_reassembly_deadline_ms": 5000,
+    "session_violation_limit": 8
+  },
+  "hello_cases": [
+    {
+      "name": "canonical_current_app",
+      "payload_ascii": "proto_versions=1\napp_name=PyBLE\napp_version=0.2.0",
+      "expected_status": 0,
+      "negotiates_v1": true,
+      "violation_delta": 0
+    },
+    {
+      "name": "offer_order_unknown_key_and_trailing_lf",
+      "payload_ascii": "proto_versions=2,1\napp_name=Third Party\napp_version=1.2.3\nfuture=x=y\n",
+      "expected_status": 0,
+      "negotiates_v1": true,
+      "violation_delta": 0
+    },
+    {
+      "name": "two_trailing_lf_are_not_canonical",
+      "payload_ascii": "proto_versions=1\napp_name=PyBLE\napp_version=0.2.0\n\n",
+      "expected_status": 1,
+      "negotiates_v1": false,
+      "violation_delta": 1
+    },
+    {
+      "name": "well_formed_offer_without_v1",
+      "payload_ascii": "proto_versions=2\napp_name=PyBLE\napp_version=0.2.0",
+      "expected_status": 10,
+      "negotiates_v1": false,
+      "violation_delta": 0
+    },
+    {
+      "name": "version_decimal_leading_zero_is_not_canonical",
+      "payload_ascii": "proto_versions=01\napp_name=PyBLE\napp_version=0.2.0",
+      "expected_status": 1,
+      "negotiates_v1": false,
+      "violation_delta": 1
+    },
+    {
+      "name": "version_decimal_exceeds_uint8",
+      "payload_ascii": "proto_versions=256\napp_name=PyBLE\napp_version=0.2.0",
+      "expected_status": 1,
+      "negotiates_v1": false,
+      "violation_delta": 1
+    },
+    {
+      "name": "more_than_eight_version_offers",
+      "payload_ascii": "proto_versions=0,1,2,3,4,5,6,7,8\napp_name=PyBLE\napp_version=0.2.0",
+      "expected_status": 1,
+      "negotiates_v1": false,
+      "violation_delta": 1
+    },
+    {
+      "name": "missing_proto_versions",
+      "payload_ascii": "app_name=PyBLE\napp_version=0.2.0",
+      "expected_status": 1,
+      "negotiates_v1": false,
+      "violation_delta": 1
+    },
+    {
+      "name": "duplicate_required_key",
+      "payload_ascii": "proto_versions=1\nproto_versions=1\napp_name=PyBLE\napp_version=0.2.0",
+      "expected_status": 1,
+      "negotiates_v1": false,
+      "violation_delta": 1
+    },
+    {
+      "name": "duplicate_app_name",
+      "payload_ascii": "proto_versions=1\napp_name=PyBLE\napp_name=Other\napp_version=0.2.0",
+      "expected_status": 1,
+      "negotiates_v1": false,
+      "violation_delta": 1
+    },
+    {
+      "name": "duplicate_app_version",
+      "payload_ascii": "proto_versions=1\napp_name=PyBLE\napp_version=0.2.0\napp_version=0.2.1",
+      "expected_status": 1,
+      "negotiates_v1": false,
+      "violation_delta": 1
+    },
+    {
+      "name": "empty_version_list_element",
+      "payload_ascii": "proto_versions=1,,2\napp_name=PyBLE\napp_version=0.2.0",
+      "expected_status": 1,
+      "negotiates_v1": false,
+      "violation_delta": 1
+    },
+    {
+      "name": "empty_interior_line",
+      "payload_ascii": "proto_versions=1\n\napp_name=PyBLE\napp_version=0.2.0",
+      "expected_status": 1,
+      "negotiates_v1": false,
+      "violation_delta": 1
+    },
+    {
+      "name": "invalid_unknown_key_character",
+      "payload_ascii": "proto_versions=1\napp_name=PyBLE\napp_version=0.2.0\nbad-key=x",
+      "expected_status": 1,
+      "negotiates_v1": false,
+      "violation_delta": 1
+    },
+    {
+      "name": "unknown_key_33_bytes",
+      "payload_ascii": "proto_versions=1\napp_name=PyBLE\napp_version=0.2.0\nkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk=x",
+      "expected_status": 1,
+      "negotiates_v1": false,
+      "violation_delta": 1
+    },
+    {
+      "name": "carriage_return_is_not_hello_ascii",
+      "payload_hex": "70726f746f5f76657273696f6e733d310d0a6170705f6e616d653d5079424c450a6170705f76657273696f6e3d302e322e30",
+      "expected_status": 1,
+      "negotiates_v1": false,
+      "violation_delta": 1
+    },
+    {
+      "name": "non_ascii_app_name",
+      "payload_hex": "70726f746f5f76657273696f6e733d310a6170705f6e616d653dff0a6170705f76657273696f6e3d302e322e30",
+      "expected_status": 1,
+      "negotiates_v1": false,
+      "violation_delta": 1
+    },
+    {
+      "name": "app_name_33_bytes",
+      "payload_ascii": "proto_versions=1\napp_name=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\napp_version=0.2.0",
+      "expected_status": 1,
+      "negotiates_v1": false,
+      "violation_delta": 1
+    },
+    {
+      "name": "empty_app_version",
+      "payload_ascii": "proto_versions=1\napp_name=PyBLE\napp_version=",
+      "expected_status": 1,
+      "negotiates_v1": false,
+      "violation_delta": 1
+    },
+    {
+      "name": "app_version_33_bytes",
+      "payload_ascii": "proto_versions=1\napp_name=PyBLE\napp_version=111111111111111111111111111111111",
+      "expected_status": 1,
+      "negotiates_v1": false,
+      "violation_delta": 1
+    },
+    {
+      "name": "unknown_value_33_bytes",
+      "payload_ascii": "proto_versions=1\napp_name=PyBLE\napp_version=0.2.0\nfuture=XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+      "expected_status": 1,
+      "negotiates_v1": false,
+      "violation_delta": 1
+    },
+    {
+      "name": "unknown_value_nonprintable",
+      "payload_ascii": "proto_versions=1\napp_name=PyBLE\napp_version=0.2.0\nfuture=x\ty",
+      "expected_status": 1,
+      "negotiates_v1": false,
+      "violation_delta": 1
+    },
+    {
+      "name": "unknown_value_splits_at_first_equals",
+      "payload_ascii": "proto_versions=1\napp_name=PyBLE\napp_version=0.2.0\nfuture=x=y",
+      "expected_status": 0,
+      "negotiates_v1": true,
+      "violation_delta": 0
+    },
+    {
+      "name": "payload_193_bytes",
+      "payload_hex": "70726f746f5f76657273696f6e733d310a6170705f6e616d653d5079424c450a6170705f76657273696f6e3d302e322e300a6675747572655f613d41414141414141414141414141414141414141414141414141414141414141410a6675747572655f623d42424242424242424242424242424242424242424242424242424242424242420a6675747572655f633d43434343434343434343434343434343434343434343434343434343434343430a65787472613d4444444444444444444444",
+      "expected_status": 1,
+      "negotiates_v1": false,
+      "violation_delta": 1
+    }
+  ],
+  "inbound_cases": [
+    {
+      "name": "pre_hello_response_bearing_command",
+      "initial_state": "unnegotiated",
+      "frame": {"ver": 1, "type": 1, "opcode": 2, "id": 7, "payload_hex": ""},
+      "guard": {"action": "rsp", "opcode": 2, "id": 7, "status": 1},
+      "expected": {"wire": "rsp", "opcode": 2, "id": 7, "status": 1},
+      "violation_delta": 1
+    },
+    {
+      "name": "pre_hello_no_response_command_has_no_effect",
+      "initial_state": "unnegotiated",
+      "frame": {"ver": 1, "type": 1, "opcode": 49, "id": 8, "payload_hex": "78"},
+      "guard": {"action": "drop"},
+      "expected": {"wire": "none", "effect": "console_input_empty"},
+      "violation_delta": 1
+    },
+    {
+      "name": "post_hello_command_is_admitted",
+      "initial_state": "negotiated",
+      "frame": {"ver": 1, "type": 1, "opcode": 2, "id": 9, "payload_hex": ""},
+      "guard": {"action": "dispatch", "opcode": 2, "id": 9},
+      "expected": {"wire": "rsp", "opcode": 2, "id": 9, "status": 0},
+      "violation_delta": 0
+    },
+    {
+      "name": "valid_crc_inbound_rsp_is_silent",
+      "initial_state": "negotiated",
+      "frame": {"ver": 1, "type": 2, "opcode": 2, "id": 10, "payload_hex": "00"},
+      "guard": {"action": "drop"},
+      "expected": {"wire": "none"},
+      "violation_delta": 1
+    },
+    {
+      "name": "valid_crc_inbound_evt_is_silent",
+      "initial_state": "negotiated",
+      "frame": {"ver": 1, "type": 3, "opcode": 64, "id": 0, "payload_hex": "01"},
+      "guard": {"action": "drop"},
+      "expected": {"wire": "none"},
+      "violation_delta": 1
+    },
+    {
+      "name": "valid_crc_command_id_zero_is_silent",
+      "initial_state": "negotiated",
+      "frame": {"ver": 1, "type": 1, "opcode": 2, "id": 0, "payload_hex": ""},
+      "guard": {"action": "drop"},
+      "expected": {"wire": "none"},
+      "violation_delta": 1
+    },
+    {
+      "name": "bad_crc_command_precedes_session_gate",
+      "initial_state": "unnegotiated",
+      "frame": {"ver": 1, "type": 1, "opcode": 2, "id": 11, "payload_hex": "", "corrupt_crc": true},
+      "guard": {"action": "evt", "opcode": 2, "id": 0, "status": 8},
+      "expected": {"wire": "evt", "opcode": 2, "id": 0, "status": 8},
+      "violation_delta": 1
+    },
+    {
+      "name": "bad_crc_precedes_wrong_direction_gate",
+      "initial_state": "unnegotiated",
+      "frame": {"ver": 1, "type": 2, "opcode": 2, "id": 12, "payload_hex": "00", "corrupt_crc": true},
+      "guard": {"action": "evt", "opcode": 2, "id": 0, "status": 8},
+      "expected": {"wire": "evt", "opcode": 2, "id": 0, "status": 8},
+      "violation_delta": 1
+    },
+    {
+      "name": "valid_crc_unsupported_frame_version",
+      "initial_state": "negotiated",
+      "frame": {"ver": 2, "type": 1, "opcode": 2, "id": 13, "payload_hex": ""},
+      "guard": {"action": "rsp", "opcode": 2, "id": 13, "status": 1},
+      "expected": {"wire": "rsp", "opcode": 2, "id": 13, "status": 1},
+      "violation_delta": 1
+    },
+    {
+      "name": "short_input_without_safe_correlation_is_silent",
+      "initial_state": "negotiated",
+      "raw_hex": "010101",
+      "guard": {"action": "drop"},
+      "expected": {"wire": "none"},
+      "violation_delta": 1
+    },
+    {
+      "name": "length_mismatch_with_safe_header_is_refused",
+      "initial_state": "negotiated",
+      "raw_hex": "010102090500f75c519f",
+      "guard": {"action": "rsp", "opcode": 2, "id": 9, "status": 1},
+      "expected": {"wire": "rsp", "opcode": 2, "id": 9, "status": 1},
+      "violation_delta": 1
+    },
+    {
+      "name": "length_mismatch_wrong_direction_is_silent",
+      "initial_state": "negotiated",
+      "raw_hex": "01020209050000000000",
+      "guard": {"action": "drop"},
+      "expected": {"wire": "none"},
+      "violation_delta": 1
+    },
+    {
+      "name": "length_mismatch_zero_id_is_silent",
+      "initial_state": "negotiated",
+      "raw_hex": "01010200050000000000",
+      "guard": {"action": "drop"},
+      "expected": {"wire": "none"},
+      "violation_delta": 1
+    },
+    {
+      "name": "length_mismatch_unsupported_version_is_silent",
+      "initial_state": "negotiated",
+      "raw_hex": "02010209050000000000",
+      "guard": {"action": "drop"},
+      "expected": {"wire": "none"},
+      "violation_delta": 1
+    },
+    {
+      "name": "unknown_opcode_after_hello_is_not_a_violation",
+      "initial_state": "negotiated",
+      "frame": {"ver": 1, "type": 1, "opcode": 126, "id": 14, "payload_hex": ""},
+      "guard": {"action": "rsp", "opcode": 126, "id": 14, "status": 10},
+      "expected": {"wire": "rsp", "opcode": 126, "id": 14, "status": 10},
+      "violation_delta": 0
+    },
+    {
+      "name": "valid_crc_wrong_direction_precedes_unsupported_version",
+      "initial_state": "negotiated",
+      "frame": {"ver": 2, "type": 2, "opcode": 2, "id": 15, "payload_hex": "00"},
+      "guard": {"action": "drop"},
+      "expected": {"wire": "none"},
+      "violation_delta": 1
+    },
+    {
+      "name": "valid_crc_zero_id_precedes_unsupported_version",
+      "initial_state": "negotiated",
+      "frame": {"ver": 2, "type": 1, "opcode": 2, "id": 0, "payload_hex": ""},
+      "guard": {"action": "drop"},
+      "expected": {"wire": "none"},
+      "violation_delta": 1
+    },
+    {
+      "name": "pre_hello_unknown_opcode_hits_session_gate_first",
+      "initial_state": "unnegotiated",
+      "frame": {"ver": 1, "type": 1, "opcode": 126, "id": 16, "payload_hex": ""},
+      "guard": {"action": "rsp", "opcode": 126, "id": 16, "status": 1},
+      "expected": {"wire": "rsp", "opcode": 126, "id": 16, "status": 1},
+      "violation_delta": 1
+    }
+  ],
+  "session_sequences": [
+    {
+      "name": "compatible_repeat_is_idempotent",
+      "steps": [
+        {"action": "hello", "case": "canonical_current_app", "id": 1, "wire": "rsp", "status": 0},
+        {"action": "hello", "case": "canonical_current_app", "id": 2, "wire": "rsp", "status": 0},
+        {"action": "command", "opcode": 2, "id": 3, "wire": "rsp", "status": 0}
+      ]
+    },
+    {
+      "name": "failed_repeat_preserves_negotiated_state",
+      "steps": [
+        {"action": "hello", "case": "canonical_current_app", "id": 4, "wire": "rsp", "status": 0},
+        {"action": "hello", "case": "well_formed_offer_without_v1", "id": 5, "wire": "rsp", "status": 10},
+        {"action": "command", "opcode": 2, "id": 6, "wire": "rsp", "status": 0}
+      ]
+    },
+    {
+      "name": "malformed_repeat_preserves_negotiated_state",
+      "steps": [
+        {"action": "hello", "case": "canonical_current_app", "id": 11, "wire": "rsp", "status": 0},
+        {"action": "hello", "case": "missing_proto_versions", "id": 12, "wire": "rsp", "status": 1},
+        {"action": "command", "opcode": 2, "id": 13, "wire": "rsp", "status": 0}
+      ]
+    },
+    {
+      "name": "disconnect_and_reconnect_clear_negotiation",
+      "steps": [
+        {"action": "hello", "case": "canonical_current_app", "id": 7, "wire": "rsp", "status": 0},
+        {"action": "reconnect"},
+        {"action": "command", "opcode": 2, "id": 8, "wire": "rsp", "status": 1}
+      ]
+    },
+    {
+      "name": "unpublished_hello_does_not_negotiate",
+      "steps": [
+        {"action": "hello", "case": "canonical_current_app", "id": 9, "accept_send": false, "wire": "none"},
+        {"action": "command", "opcode": 2, "id": 10, "wire": "rsp", "status": 1}
+      ]
+    }
+  ],
+  "violation_budget_case": {
+    "name": "eighth_pre_hello_command_terminates_once_without_reply",
+    "frame": {"ver": 1, "type": 1, "opcode": 2, "payload_hex": ""},
+    "first_id": 100,
+    "responses_before_limit": 7,
+    "response_status_before_limit": 1,
+    "wire_at_limit": "none",
+    "termination_count_at_limit": 1,
+    "wire_after_limit": "none",
+    "termination_count_after_limit": 1
+  }
+}

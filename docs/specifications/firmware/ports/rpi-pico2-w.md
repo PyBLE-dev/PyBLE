@@ -1,6 +1,6 @@
 # PyBLE — rpi-pico2-w port (Raspberry Pi Pico 2 W: RP2350 + CYW43439)
 
-Status: **P1–P9 FROZEN for the F-25/F-26/F-27/X-13 stories (`[docs]` 2026-08-11)**; P10 gates and P11 open items are living, and every result remains **PENDING**. Derived per [firmware/specs.md §1.1](../specs.md); [ADR-0030](../../../decisions/0030-pico2w-portable-python-agent-first.md) records the portable-Python-first deviation, while [ADR-0033](../../../decisions/0033-qualify-v060-as-five-profile-heterogeneous-release.md) defines the heterogeneous v0.6.0 release admission. Cited upstream facts refer to the pinned MicroPython v1.28.0 submodule.
+Status: **P1–P9 FROZEN (v0.6.1 hardening amended 2026-09-02)**; P10 gates and P11 open items are living, and every new v0.6.1 result remains **PENDING**. Derived per [firmware/specs.md §1.1](../specs.md); [ADR-0030](../../../decisions/0030-pico2w-portable-python-agent-first.md) records the portable-Python-first deviation, while [ADR-0033](../../../decisions/0033-qualify-v060-as-five-profile-heterogeneous-release.md) defines only the historical heterogeneous v0.6.0 release admission. Cited upstream facts refer to the pinned MicroPython v1.28.0 submodule.
 
 ## P1. Identity & caps (FROZEN)
 
@@ -17,6 +17,14 @@ Status: **P1–P9 FROZEN for the F-25/F-26/F-27/X-13 stories (`[docs]` 2026-08-1
 - Transfers during an active RUN return `EBUSY` (legal §8; the ESP32 port's concurrent fs-worker behavior is restored only by a future core1 increment — OI-P5).
 - A RUN reservation is not yet execution. If an accepted STOP or SOFT_REBOOT arrives after the RUN response but before supervisor pickup, the supervisor MUST consume the reserved request as cancelled, MUST NOT compile or execute its file/source or emit `RUN_STATE(running)`, and MUST emit the terminal `RUN_STATE(idle)`. Supervisor pickup MUST publish the executing marker before its final cancellation check; that store is the linearization cut. Control accepted before the store sets cancellation intent which the final check consumes, while control accepted after the store observes execution and takes the P3 post-RSP interrupt path. There MUST be no check-then-publish gap in which an accepted control command neither cancels nor interrupts the source.
 - After a SOFT_REBOOT response is successfully handed to BLE, the agent enters a closing state. Global command admission MUST run before every handler until reset: every valid non-SOFT_REBOOT command which normally has a response returns `EBUSY`, including unknown opcodes, while `FILE_PUT_DATA` and `CONSOLE_INPUT` are dropped because those commands have no response. No rejected handler may execute or mutate runtime, filesystem, label, autorun, console, or runner state. A duplicate SOFT_REBOOT also returns `EBUSY` without moving the deadline. The supervisor may consume the already-cancelled reservation and recover its terminal state, but MUST NOT start new user work or pump filesystem work while closing.
+- The dispatcher starts each connection/supervisor epoch unnegotiated, parses
+  the exact protocol §7 HELLO request, and commits negotiation from the final-
+  fragment `send_message(..., on_published=...)` receipt only. Pre-HELLO work,
+  compatible repeats, INFO reads, and reset use the common §7 state machine.
+- `make_exec_fn` MUST allocate one fresh `{"__name__": "__main__"}` globals/
+  locals dictionary for every file/source/autorun call. No object holding a
+  prior run's variables is reused; v0.6.1 adds no `__file__` or import-project
+  semantics.
 
 ## P3. STOP (FROZEN)
 
@@ -61,11 +69,36 @@ The successful response commit fixes one deadline at `now + 250 ms` and arms an 
 
 ## P5. Persistence (FROZEN — no NVS on rp2)
 
-`/pyble_conf.json` on the LFS2 vfs: `{"label": str ≤24 UTF-8 bytes, "autorun": 0|1}`. The top-level reserved `pyble` prefix in the workspace jail shields it from PBLE/1 clients. Survives soft/hard reset; a filesystem reformat wipes it (accepted; identity is not stored there).
+`/pyble_conf.json` on LFS2 uses exactly
+`{"version":1,"label":<str>,"autorun":0|1,"crc32":<u32>}` with key order
+irrelevant, no extra keys, and an encoded-file cap of 256 bytes. CRC is PBLE/1
+IEEE CRC-32 over `b"PBLECFG" + b"\x01" + bytes((autorun,
+len(label_utf8))) + label_utf8`. Labels obey protocol §7 strict UTF-8/control
+rules. CRC is corruption detection, not authentication.
+
+Each SET stages a validated candidate without changing RAM, writes complete
+JSON to `/.pyble_conf.json.pbltmp`, flushes and closes it, calls `os.sync()`,
+then atomically renames over the primary. Rename success is the sole commit cut;
+before it, failure removes temp best-effort and retains old primary/RAM/name.
+A valid primary wins and stale temp is removed best-effort. Missing primary is
+first boot: defaults, no fault, never promote temp. Invalid, oversize,
+unknown-version, wrong-type, or CRC-failed primary selects safe defaults plus a
+bounded `CONFIG_CORRUPT` RAM marker; it is never overwritten/promoted at boot.
+The exact legacy two-key object is accepted after current type/label validation
+and migrates only on the next successful SET. The reserved top-level/suffix
+rules shield both files from PBLE/1.
 
 ## P6. Ingest bounds (FROZEN)
 
-Reassembled RX message cap **4096 bytes** (covers RUN source ≤ 2048 + headers); oversize → drop + `RSP ERANGE` with best-effort opcode/id echo (the ESP32-HIL-verified ERANGE-on-oversize behavior). Per-handler bounds: path ≤ 128, RUN source ≤ 2048, label ≤ 24 UTF-8 bytes.
+Reassembled RX message cap **4096 bytes** (covers RUN source ≤ 2048 + headers).
+Oversize records one violation, discards tails until `FIRST`, and returns
+`RSP{ERANGE}` only if the latched complete header is safely v1/CMD/nonzero and
+the violation is below the eighth; otherwise it is silent. Each `FIRST` starts
+the protocol §3.2 absolute 5000 ms deadline. The exact-session violation limit
+is 8 and calls `BLE.gap_disconnect(handle)` through the common close path.
+Per-handler bounds: path ≤128, RUN source ≤2048, HELLO ≤192, label ≤24 encoded
+bytes. Protocol/session state is reset on disconnect and supervisor epoch
+rebuild.
 
 ## P7. Transport bindings (FROZEN)
 
@@ -73,7 +106,7 @@ Reassembled RX message cap **4096 bytes** (covers RUN source ≤ 2048 + headers)
 
 ## P8. Console & pacing (FROZEN method and refill horizon)
 
-One `io.IOBase` object serving three roles: stdout tee (gated on the run-active flag — the main-thread equivalent of the ESP32 worker-origin gate) emitting `CONSOLE_DATA` `[stream:u8][bytes ≤200]` chunks; a 256-byte stdin ring (drop-on-overflow) for `CONSOLE_INPUT`; and the `0x03` STOP channel (P3). BTstack queues congested notifies on the heap rather than dropping (the inverse of the ESP32 mbuf-starve loss mode): emission uses the bounded token bucket below; a dead link degrades to drop-and-continue, never a wedge.
+One `io.IOBase` object serving three roles: stdout tee (gated on the run-active flag — the main-thread equivalent of the ESP32 worker-origin gate) emitting `CONSOLE_DATA` `[stream:u8][bytes ≤200]` chunks; a 256-byte stdin ring (drop-on-overflow) for active-program `CONSOLE_INPUT`; and the `0x03` STOP channel (P3). Stdin owns `begin` (clear+activate), `end` (clear+deactivate), and `clear` (preserve activity) under the ring lock. Successful final-fragment RUN response publication invokes `begin` before supervisor wake; autorun admission invokes it directly; accepted STOP and terminal/reset invoke `end`; disconnect invokes `clear`. Idle input is discarded and failed RUN/STOP publication changes nothing. BTstack queues congested notifies on the heap rather than dropping (the inverse of the ESP32 mbuf-starve loss mode): emission uses the bounded token bucket below; a dead link degrades to drop-and-continue, never a wedge.
 
 The portable token bucket has exact capacity `TX_CAPACITY = 2048` tokens,
 exact refill rate `TX_REFILL_PER_MS = 20` tokens per millisecond, and exact
@@ -117,11 +150,108 @@ the complete GP2 matrix remain release-blocking.
 
 ## P9. Build & provisioning contract (RP2-BLD, FROZEN)
 
-Board `PYBLE_RPI_PICO2_W`; overlay `firmware/board_overlays/rpi-pico2-w/` (five files: `mpconfigboard.cmake`, `mpconfigvariant.cmake`, `mpconfigboard.h`, `manifest.py`, `_boot.py`); `build_rp2.sh` with the same `--plan`/fail-clean contract as `build.sh`; pinned **ARM GNU 14.2.Rel1** via `versions.lock [arm_gnu_toolchain]` (verify-or-fail, never a silent substitution — BLD-4 equivalent; the unpinned Homebrew arm-none-eabi-gcc on PATH must never be selected); BUILD dir outside the submodule; artifacts `firmware.uf2` (primary), `firmware.elf`, `firmware.bin`, provenance JSON (`port: "rp2"`); hard image-size gate **≤ 1,572,864 bytes**; flash = `picotool load -v -x`; BOOTSEL re-entry = `picotool reboot -f -u` or BLE RUN of `machine.bootloader()`.
+Board `PYBLE_RPI_PICO2_W`; overlay `firmware/board_overlays/rpi-pico2-w/` (five files: `mpconfigboard.cmake`, `mpconfigvariant.cmake`, `mpconfigboard.h`, `manifest.py`, `_boot.py`); `build_rp2.sh` with the same `--plan`/fail-clean contract as `build.sh`; pinned **ARM GNU 14.2.Rel1** via `versions.lock [arm_gnu_toolchain]` (verify-or-fail, never a silent substitution — BLD-4 equivalent; the unpinned Homebrew arm-none-eabi-gcc on PATH must never be selected); BUILD dir outside the submodule; artifacts `firmware.uf2` (primary), `firmware.elf`, `firmware.bin`, `firmware.elf.map`, provenance JSON (`port: "rp2"`); hard image-size gate **≤ 1,572,864 bytes**; flash = `picotool load -v -x`; BOOTSEL re-entry = `picotool reboot -f -u` or BLE RUN of `machine.bootloader()`.
 
 The installer default `firmware/.arm-gnu/` is a gitignored, pinned third-party
 compiler tree. Authored-source gates MUST prune that exact root, as they do
 `firmware/.esp-idf`, while similarly named authored paths remain in scope.
+
+**v0.6.1 deterministic picotool amendment.** `versions.lock [picotool]` pins
+the official Raspberry Pi Pico SDK Tools macOS distribution at picotool
+`2.3.0`: tag `v2.3.0-0`, archive `picotool-2.3.0-mac.zip`, exact archive byte
+length `1980457`, and archive SHA-256
+`085ea99ccc2d64309e967a72e307fb113838713a46ba45bf7e156e519cca7d8e`.
+The lock also binds source tag `2.3.0` at commit
+`6f6458d792b93685a11423b244a585eaa99eafcf`, distribution commit
+`ad9e4a8375253cf4886bf168ea1a8d2746aadf24`, extracted executable SHA-256
+`a4b3c4e64dea7b99e810c5c777bf13fb2722b8d0355e0b64a28244ddc1b0f8b5`,
+and CMake package-config SHA-256
+`ca12b6fee18e6583713cfdcb2e81886aaee741d40304ea2cc88c4f5b2df2b6c3`.
+The `[picotool]` table has exactly these keys; path values are normalized,
+nonempty, relative POSIX paths without `.`/`..` components, and the URL's
+final path component equals `archive_filename`:
+
+```text
+version
+version_line
+source_repo
+source_ref
+source_commit
+distribution_repo
+distribution_ref
+distribution_commit
+url
+archive_filename
+archive_bytes
+archive_format
+sha256
+cmake_dir
+executable_path
+executable_sha256
+cmake_config_path
+cmake_config_sha256
+bundled_libusb_path
+bundled_libusb_sha256
+```
+
+For this pin, `cmake_dir`, `executable_path`, `cmake_config_path`, and
+`bundled_libusb_path` are respectively `picotool`, `picotool/picotool`,
+`picotool/picotoolConfig.cmake`, and
+`picotool/libusb-1.0.0.dylib`; the bundled libusb SHA-256 is
+`b3d0c88bcb04fe61e4f56bc304a31fef56e19ee5ec2edaebd0fce44afb2b9237`.
+The verified ZIP has exactly the following member inventory. Modes are the
+complete Unix modes carried by the ZIP metadata; the digest of the directory
+entry and zero-byte `.keep` is the SHA-256 of empty content.
+
+| Member | Kind | Mode | Bytes | SHA-256 |
+| --- | --- | ---: | ---: | --- |
+| `picotool/` | directory | `040755` | 0 | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
+| `picotool/picotoolTargets-release.cmake` | regular | `100644` | 767 | `e40085002e565de850554e772c90f1a1c4cffb545f853eaa231b145e498f7c0f` |
+| `picotool/picotoolConfigVersion.cmake` | regular | `100644` | 2,303 | `61485a18a59a186d7cb82ddf7686c5f1f4def81726568ae49fd0033db368f7e3` |
+| `picotool/rp2350_otp_contents.json` | regular | `100644` | 367,931 | `1838713d5f94316c4c61558cb82d3346831235dc41f9b0f02151e6eda3f22fc2` |
+| `picotool/libusb-1.0.0.dylib` | regular | `100444` | 328,336 | `b3d0c88bcb04fe61e4f56bc304a31fef56e19ee5ec2edaebd0fce44afb2b9237` |
+| `picotool/enc_bootloader_mbedtls.elf` | regular | `100644` | 29,484 | `c5d17fcbb4f1ee41751dc782d86c1fc6629d8da3484e1a1cadc3ba4bec4d6044` |
+| `picotool/picotoolTargets.cmake` | regular | `100644` | 3,856 | `043655d4bc215fb3a05d4a04f92cabc0be9bbdb0834717b0211e80106b4d1aae` |
+| `picotool/picotoolConfig.cmake` | regular | `100644` | 96 | `ca12b6fee18e6583713cfdcb2e81886aaee741d40304ea2cc88c4f5b2df2b6c3` |
+| `picotool/xip_ram_perms.elf` | regular | `100644` | 34,004 | `afac0e166ee9b632f84717c7db02e7e5e648f03a51cc4795938adcd282c6103b` |
+| `picotool/picotool` | regular | `100755` | 5,673,800 | `a4b3c4e64dea7b99e810c5c777bf13fb2722b8d0355e0b64a28244ddc1b0f8b5` |
+| `picotool/enc_bootloader.elf` | regular | `100644` | 20,104 | `9ce3c424d61226225d2c1f5b80a8854f15174b09dd447e58e4439240b274fb3d` |
+| `.keep` | regular | `100644` | 0 | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
+
+The installer MUST verify the archive topology, byte length, digests,
+executable mode, and exact locked version line before atomically publishing
+the gitignored `firmware/.picotool/` tree. It MUST reject links, special files,
+duplicate or escaping members, unexpected top-level entries, partial trees,
+unsafe lock paths, URL/basename disagreement, and pre-existing mismatched
+destinations without leaving build state. Idempotent admission reopens the
+retained archive and proves every extracted path, regular-file byte, and mode
+matches that archive with no added entry; it never repairs or replaces a
+mismatched existing destination.
+
+Every RP2 build MUST select the verified executable and
+`picotoolConfig.cmake` from that explicit tree, set `picotool_DIR` to the
+verified package directory, and disable CMake FetchContent network fallback.
+The configure command MUST pass the typed cache definition
+`-DFETCHCONTENT_FULLY_DISCONNECTED:BOOL=ON`, and the completed
+`CMakeCache.txt` MUST contain the exact line
+`FETCHCONTENT_FULLY_DISCONNECTED:BOOL=ON` before build provenance can be
+admitted. A missing entry, `OFF`, or an untyped `UNINITIALIZED=ON` entry is
+fatal; accepting the latter would validate a test-double artifact that real
+CMake normalizes to `BOOL` rather than the actual retained build state.
+An ambient `picotool`, Homebrew package, PATH order, CMake package registry,
+or SDK auto-download is never a reproducibility input. The provenance record
+MUST contain the exact locked version line obtained from the verified binary.
+The build-tool archive and extracted tree are Eligible Compilation inputs,
+not installable firmware components; their source/license disposition remains
+part of the RP2 license audit.
+
+Pull requests MUST run one real `rpi-pico2-w` build in an isolated
+`macos-15` arm64 CI job after the source and host gates. That job installs both
+pinned tools, initializes the exact retained RP2 submodules, rejects any other
+host/architecture, runs `build_rp2.sh rpi-pico2-w`, and retains
+`firmware.uf2`, `firmware.bin`, `firmware.elf`, `firmware.elf.map`, and the
+provenance JSON. Authored-source/no-leak/SPDX gates may prune only the exact
+`.picotool` root; similarly named authored paths remain in scope.
 
 **Release-history ruling (recorded 2026-08-11):** the published v0.4.2 ESP32
 bytes and their evidence remain immutable. `[targets_rp2]` and
@@ -136,6 +266,16 @@ bytes. ADR-0033 selects Pico for the v0.6.0 candidate without qualifying it.
 Its profile may enter a finalized public selector only after P10 (including
 GP2), the schema-3 resource row, verified-UF2 install/recovery, and the common
 five-profile exact-byte gates pass.
+
+**v0.6.1 non-destructive mount amendment.** The overlay first attempts one
+ordinary `VfsLfs2` construction/mount. Only an `OSError` constructor failure
+may enter a complete read-only scan using ioctl block count/size and one reused
+buffer. Exactly all-`0xFF` media permits one `mkfs` and one remount. A nonblank
+byte anywhere, invalid geometry, ioctl/read/allocation failure, unexpected
+exception, or failed post-format remount performs no further write, prints one
+bounded USB recovery message, and skips agent/autorun. Configuration corruption
+never participates in this decision. The implementation remains an overlay;
+upstream MicroPython is untouched.
 
 ## P10. Gates (per PRD §1B.7 sub-gate allowance; G0–G4 untouched)
 
@@ -173,8 +313,11 @@ check remains exact.
   browser-verified exact UF2 download and manual BOOTSEL copy; and an
   interrupted/failed-copy recovery using the same verified UF2. *Verify:
   HIL/size/app/provisioning.* "Hardware-tested"/supported flips ONLY when GP2
-  and the common v0.6.0 release gates pass. Until then the profile remains a
-  visibly pending candidate, never an active qualified selector.
+  and the common exact-version release gates pass. The v0.6.0 result is the
+  qualified baseline; the v0.6.1 refresh remains pending until its fresh
+  candidate-bound build, seven-scenario hardening, workspace-provisioning,
+  app, and physical rows all pass. Until then the v0.6.1 profile is never an
+  active qualified selector.
 
 ### P10.1 v0.6.0 release evidence (FROZEN by ADR-0033)
 

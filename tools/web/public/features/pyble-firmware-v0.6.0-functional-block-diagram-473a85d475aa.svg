@@ -1,0 +1,303 @@
+<!-- SPDX-License-Identifier: MIT -->
+<!-- Part of PyBLE (https://pyble.dev) — see /LICENSE. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1470" viewBox="0 0 1920 1470" role="img" aria-labelledby="diagram-title diagram-description">
+  <title id="diagram-title">PyBLE firmware 0.6.0 PBLE/1 functional block diagram</title>
+  <desc id="diagram-description">A functional architecture diagram, not a board drawing or pinout. The PyBLE app communicates over Bluetooth Low Energy through the PBLE/1 transport and protocol engine to identity, filesystem, runner, console, boot, and lifecycle modules in a compatible MicroPython device. A lower strip lists the five exact HIL-passed release profiles and their constraints.</desc>
+
+  <defs>
+    <marker id="arrow-blue" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L10,4 L0,8 Z" fill="#2d5bff" />
+    </marker>
+    <marker id="arrow-blue-start" markerWidth="10" markerHeight="8" refX="1" refY="4" orient="auto" markerUnits="strokeWidth">
+      <path d="M10,0 L0,4 L10,8 Z" fill="#2d5bff" />
+    </marker>
+    <marker id="arrow-ink" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L10,4 L0,8 Z" fill="#244568" />
+    </marker>
+    <pattern id="agent-pattern" width="12" height="12" patternUnits="userSpaceOnUse">
+      <path d="M0 12 L12 0" stroke="#d8e8fb" stroke-width="1" />
+    </pattern>
+    <style>
+      text { font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .title { fill: #081b35; font-size: 42px; font-weight: 800; letter-spacing: -1.2px; }
+      .subtitle { fill: #45617f; font-size: 20px; font-weight: 600; }
+      .eyebrow { fill: #2d5bff; font-size: 14px; font-weight: 800; letter-spacing: 1.5px; }
+      .boundary-label { fill: #14365d; font-size: 19px; font-weight: 800; letter-spacing: .4px; }
+      .module-title { fill: #0a2748; font-size: 19px; font-weight: 800; }
+      .module-code { fill: #53708f; font-size: 13px; font-weight: 700; }
+      .body { fill: #1d3b5c; font-size: 15px; font-weight: 560; }
+      .body-small { fill: #294867; font-size: 13.5px; font-weight: 560; }
+      .tiny { fill: #486783; font-size: 12px; font-weight: 600; }
+      .white { fill: #ffffff; }
+      .module { fill: #ffffff; stroke: #315d8f; stroke-width: 2; rx: 10; }
+      .module-blue { fill: #eef6ff; stroke: #2d5bff; stroke-width: 2; rx: 10; }
+      .module-cyan { fill: #effaff; stroke: #2388b8; stroke-width: 2; rx: 10; }
+      .module-green { fill: #effbf6; stroke: #218963; stroke-width: 2; rx: 10; }
+      .module-amber { fill: #fff8e9; stroke: #9b6b14; stroke-width: 2; rx: 10; }
+      .module-violet { fill: #f6f2ff; stroke: #7557b7; stroke-width: 2; rx: 10; }
+      .wire { fill: none; stroke: #2d5bff; stroke-width: 3; marker-end: url(#arrow-blue); }
+      .wire-bi { fill: none; stroke: #2d5bff; stroke-width: 3; marker-start: url(#arrow-blue-start); marker-end: url(#arrow-blue); }
+      .wire-ink { fill: none; stroke: #244568; stroke-width: 2.3; marker-end: url(#arrow-ink); }
+      .wire-dashed { fill: none; stroke: #416f98; stroke-width: 2; stroke-dasharray: 8 6; marker-end: url(#arrow-ink); }
+      .junction { fill: #2d5bff; }
+      .profile-title { fill: #0a2748; font-size: 16px; font-weight: 800; }
+      .profile-body { fill: #294867; font-size: 12.5px; font-weight: 560; }
+    </style>
+  </defs>
+
+  <rect width="1920" height="1470" fill="#f5f8fc" />
+  <rect x="0" y="0" width="1920" height="112" fill="#ffffff" />
+  <path d="M0 111.5 H1920" stroke="#cedbec" />
+
+  <text x="42" y="32" class="eyebrow">QUALIFIED PUBLIC RELEASE · PBLE/1</text>
+  <text x="42" y="78" class="title">PyBLE firmware 0.6.0</text>
+  <text x="525" y="75" class="subtitle">One embedded PBLE/1 control plane · five exact HIL-passed profiles</text>
+
+  <g text-anchor="middle">
+    <rect x="1225" y="27" width="160" height="42" rx="21" fill="#eaf2ff" stroke="#2d5bff" stroke-width="1.5" />
+    <text x="1305" y="53" fill="#173f70" font-size="12" font-weight="800">24 PBLE/1 OPCODES</text>
+    <rect x="1395" y="27" width="245" height="42" rx="21" fill="#eaf9f3" stroke="#218963" stroke-width="1.5" />
+    <text x="1517.5" y="53" fill="#145f45" font-size="12" font-weight="800">5/5 HIL-PASSED PROFILES</text>
+    <rect x="1650" y="27" width="235" height="42" rx="21" fill="#fff6df" stroke="#9b6b14" stroke-width="1.5" />
+    <text x="1767.5" y="53" fill="#73500e" font-size="12" font-weight="800">PYBLE: MIT · NO AGENT TELEMETRY</text>
+  </g>
+
+  <text x="42" y="137" fill="#536f8c" font-size="14" font-weight="700">Functional architecture — not a board drawing, board detector, schematic, or pinout.</text>
+
+  <!-- External app and provisioning -->
+  <rect x="34" y="218" width="286" height="318" class="module-blue" />
+  <rect x="34" y="218" width="286" height="58" rx="10" fill="#2d5bff" />
+  <path d="M34 266 H320" stroke="#2d5bff" stroke-width="20" />
+  <text x="56" y="255" fill="#ffffff" font-size="24" font-weight="800">PyBLE app</text>
+  <text x="56" y="296" class="module-code">iPadOS · Android</text>
+  <text x="56" y="331" class="body">• Discover and read capabilities</text>
+  <text x="56" y="360" class="body">• List, transfer and manage files</text>
+  <text x="56" y="389" class="body">• Run · stop · soft reboot</text>
+  <text x="56" y="418" class="body">• Live stdout · stderr · stdin</text>
+  <text x="56" y="447" class="body">• Persist label and autorun</text>
+  <text x="56" y="476" class="body">• Configure Identify on ESP</text>
+  <rect x="56" y="496" width="242" height="24" rx="12" fill="#dceaff" />
+  <text x="177" y="513" fill="#194d84" font-size="12" font-weight="800" text-anchor="middle">BLE-FIRST AFTER SETUP</text>
+
+  <rect x="34" y="628" width="286" height="184" class="module-amber" />
+  <text x="56" y="663" class="module-title">One-time provisioning</text>
+  <text x="56" y="692" class="body-small">ESP profiles</text>
+  <text x="56" y="716" class="body">Desktop Chromium · Web Serial</text>
+  <text x="56" y="746" class="body-small">Pico 2 W</text>
+  <text x="56" y="770" class="body">Verified UF2 · manual BOOTSEL</text>
+  <text x="56" y="797" fill="#7b4d08" font-size="13" font-weight="800">ERASES INSTALLED FIRMWARE + WORKSPACE</text>
+
+  <!-- Compatible device boundary -->
+  <rect x="356" y="154" width="1528" height="874" rx="18" fill="#ffffff" stroke="#173f70" stroke-width="3" />
+  <rect x="356" y="154" width="1528" height="44" rx="18" fill="url(#agent-pattern)" />
+  <path d="M356 198 H1884" stroke="#173f70" stroke-width="2" />
+  <text x="380" y="183" class="boundary-label">COMPATIBLE MICROPYTHON + BLE DEVICE · QUALIFIED PYBLE IMAGE</text>
+  <text x="1858" y="183" fill="#315d8f" font-size="13" font-weight="800" text-anchor="end">AGENT EMBEDDED / FROZEN</text>
+
+  <!-- Main transport wires, behind blocks -->
+  <path d="M320 303 H384" class="wire" />
+  <path d="M384 348 H320" class="wire" />
+  <path d="M384 393 H320" class="wire" />
+  <text x="352" y="293" fill="#1a4f84" font-size="11" font-weight="800" text-anchor="middle">RX</text>
+  <text x="352" y="340" fill="#1a4f84" font-size="11" font-weight="800" text-anchor="middle">TX</text>
+  <text x="352" y="385" fill="#1a4f84" font-size="11" font-weight="800" text-anchor="middle">INFO</text>
+
+  <path d="M532 404 V429" class="wire-ink" />
+  <path d="M881 404 V429" class="wire-ink" />
+  <path d="M1222 404 V429" class="wire-ink" />
+  <path d="M1614 404 V429" class="wire-ink" />
+  <path d="M703 292 H724" class="wire-dashed" />
+
+  <path d="M544 524 V558" class="wire-ink" />
+  <path d="M907 524 V558" class="wire-ink" />
+  <path d="M1245 524 V558" class="wire-ink" />
+  <path d="M1620 524 V558" class="wire-ink" />
+
+  <!-- Top modules -->
+  <rect x="384" y="222" width="319" height="182" class="module-blue" />
+  <text x="406" y="253" class="module-title">BLE GATT transport</text>
+  <text x="681" y="253" class="module-code" text-anchor="end">pyble_ble</text>
+  <text x="406" y="284" class="body">Advertising · service UUID · local name</text>
+  <text x="406" y="311" class="body">RX Write / Write Without Response</text>
+  <text x="406" y="338" class="body">TX Notify · INFO Read</text>
+  <text x="406" y="365" class="body">Preferred MTU 247 · valid down to 23</text>
+  <text x="406" y="392" class="body">Fragment reassembly · MTU-aware chunks</text>
+
+  <rect x="724" y="222" width="314" height="182" class="module-cyan" />
+  <text x="746" y="253" class="module-title">Identity &amp; capabilities</text>
+  <text x="1016" y="253" class="module-code" text-anchor="end">pyble_info</text>
+  <text x="746" y="284" class="body">HELLO first · DEVICE_INFO · INFO value</text>
+  <text x="746" y="311" class="body">15 emitted capability keys</text>
+  <text x="746" y="338" class="body">Stable device_id · label ≤ 24 bytes</text>
+  <text x="746" y="365" class="body">PyBLE-XXXX or persisted user label</text>
+  <text x="746" y="392" class="body">Optional GPIO Identify · ESP profiles only</text>
+
+  <rect x="1060" y="222" width="324" height="182" class="module-green" />
+  <text x="1082" y="253" class="module-title">Boot &amp; persistence</text>
+  <text x="1362" y="253" class="module-code" text-anchor="end">pyble_agent</text>
+  <text x="1082" y="284" class="body">Agent starts independently of workspace</text>
+  <text x="1082" y="311" class="body">Advertise and wait by default</text>
+  <text x="1082" y="338" class="body">Optional /main.py autorun · default off</text>
+  <text x="1082" y="365" class="body">Bad user code cannot block advertising</text>
+  <text x="1082" y="392" class="body">Persistent label · autorun · ESP Identify</text>
+
+  <rect x="1406" y="222" width="424" height="182" class="module-amber" />
+  <text x="1428" y="253" class="module-title">Security &amp; privacy boundary</text>
+  <text x="1808" y="253" class="module-code" text-anchor="end">PBLE/1 v1</text>
+  <text x="1428" y="284" class="body">No application authentication · client trusted</text>
+  <text x="1428" y="311" class="body">ESP Just Works pairing/bonding is not access-gating</text>
+  <text x="1428" y="338" class="body">Identity and label never authorize operations</text>
+  <text x="1428" y="365" class="body">Advertised label is public · avoid personal data</text>
+  <text x="1428" y="392" class="body">PyBLE agent sends no telemetry and needs no cloud service</text>
+
+  <!-- Central protocol backbone -->
+  <rect x="384" y="429" width="1446" height="95" rx="10" fill="#0c2e55" stroke="#2f8cff" stroke-width="2.5" />
+  <text x="406" y="462" fill="#ffffff" font-size="21" font-weight="800">PBLE/1 protocol engine</text>
+  <text x="657" y="462" fill="#9fd5ff" font-size="14" font-weight="800">pyble_proto</text>
+  <text x="406" y="491" fill="#dcecff" font-size="15" font-weight="650">VER 1 · CMD / RSP / EVT · request IDs · CRC32 frames · opcode dispatch · OK + 11 error statuses</text>
+  <text x="406" y="513" fill="#95bce2" font-size="12.5" font-weight="700">INFO 01–02 · FILES 10–1A + 41 · RUN 20–23 + 40 · CONSOLE 30–31 · IDENTITY 50–52</text>
+  <rect x="1678" y="448" width="128" height="50" rx="25" fill="#2d5bff" />
+  <text x="1742" y="479" fill="#ffffff" font-size="17" font-weight="850" text-anchor="middle">24 OPCODES</text>
+
+  <!-- Handler modules -->
+  <rect x="384" y="558" width="321" height="220" class="module-cyan" />
+  <text x="406" y="589" class="module-title">Filesystem bridge</text>
+  <text x="683" y="589" class="module-code" text-anchor="end">pyble_fs</text>
+  <text x="406" y="620" class="body">LIST · STAT · offset GET + whole-file CRC</text>
+  <text x="406" y="647" class="body">Windowed PUT · ACK · resume</text>
+  <text x="406" y="674" class="body">.pbltmp temp · CRC verify · rename</text>
+  <text x="406" y="701" class="body">DELETE file / empty dir · MKDIR · RENAME</text>
+  <text x="406" y="728" class="body">One transfer · 128-byte path · workspace jail</text>
+  <text x="406" y="755" class="body">.mpy / .pyc rejected · .py + data</text>
+
+  <rect x="729" y="558" width="356" height="220" class="module-green" />
+  <text x="751" y="589" class="module-title">Run &amp; control</text>
+  <text x="1063" y="589" class="module-code" text-anchor="end">pyble_runner</text>
+  <text x="751" y="620" class="body">RUN file path ≤ 128 bytes</text>
+  <text x="751" y="647" class="body">RUN inline source ≤ 2,048 bytes</text>
+  <text x="751" y="674" class="body">One program · idle / running / done / error</text>
+  <text x="751" y="701" class="body">Idempotent STOP · runner-only interrupt</text>
+  <text x="751" y="728" class="body">SOFT_REBOOT · response before side effect</text>
+  <text x="751" y="755" class="body">Stoppable /main.py autorun · opt-in only</text>
+
+  <rect x="1109" y="558" width="272" height="220" class="module-violet" />
+  <text x="1131" y="589" class="module-title">Live console</text>
+  <text x="1359" y="589" class="module-code" text-anchor="end">pyble_console</text>
+  <text x="1131" y="620" class="body">stdout · stderr stream tags</text>
+  <text x="1131" y="647" class="body">stdin for input() / sys.stdin</text>
+  <text x="1131" y="674" class="body">200-byte output chunks</text>
+  <text x="1131" y="701" class="body">256-byte input staging</text>
+  <text x="1131" y="728" class="body">Paced; flood output may drop</text>
+  <text x="1131" y="755" class="body">Connection-session isolation</text>
+
+  <rect x="1405" y="558" width="425" height="220" class="module-blue" />
+  <text x="1427" y="589" class="module-title">Lifecycle &amp; reliability</text>
+  <text x="1808" y="589" class="module-code" text-anchor="end">agent control plane</text>
+  <text x="1427" y="620" class="body">BLE remains responsive while user code runs</text>
+  <text x="1427" y="647" class="body">Bounded queues, buffers, retry and congestion work</text>
+  <text x="1427" y="674" class="body">Connection generation + VM epoch binding</text>
+  <text x="1427" y="701" class="body">Stale responses, events and work are discarded</text>
+  <text x="1427" y="728" class="body">CRC, resume, atomic commit and recovery evidence</text>
+  <text x="1427" y="755" class="body">Pico filesystem transfer during RUN → EBUSY</text>
+
+  <!-- Runtime connectors -->
+  <path d="M544 778 V842" class="wire-bi" />
+  <path d="M907 778 V842" class="wire-bi" />
+  <path d="M1245 778 V810 H1005 V842" class="wire-bi" />
+  <path d="M1114 907 H1140" class="wire-bi" />
+  <path d="M1456 907 H1484" class="wire" />
+
+  <!-- Upstream runtime -->
+  <rect x="384" y="820" width="1446" height="177" rx="12" fill="#f8fbff" stroke="#315d8f" stroke-width="2.3" />
+  <rect x="384" y="820" width="1446" height="38" rx="12" fill="#dbeaff" />
+  <path d="M384 858 H1830" stroke="#315d8f" stroke-width="1.5" />
+  <text x="406" y="846" class="module-title">Upstream MicroPython v1.28.0 · normal user runtime</text>
+  <text x="1808" y="846" class="module-code" text-anchor="end">zero PyBLE upstream patches</text>
+
+  <rect x="405" y="875" width="306" height="101" class="module-cyan" />
+  <text x="425" y="903" class="module-title">User workspace VFS</text>
+  <text x="425" y="929" class="body-small">/main.py · /lib/*.py · ordinary data</text>
+  <text x="425" y="951" class="body-small">FAT on ESP · LFS2 on Pico · has_sd=0</text>
+  <text x="425" y="972" fill="#486783" font-size="11" font-weight="600">PBLE jail does not restrict user os/VFS APIs</text>
+
+  <rect x="747" y="875" width="367" height="101" class="module-green" />
+  <text x="767" y="903" class="module-title">User program / VM</text>
+  <text x="767" y="929" class="body-small">machine · os · VFS · asyncio on every profile</text>
+  <text x="767" y="951" class="body-small">Explicit pins, buses and hardware-safe user code</text>
+  <text x="767" y="972" class="tiny">micropython.kbd_intr(-1) can defeat remote STOP</text>
+
+  <rect x="1140" y="875" width="316" height="101" class="module-amber" />
+  <text x="1160" y="903" class="module-title">Standard hardware APIs</text>
+  <text x="1160" y="929" fill="#294867" font-size="12.2" font-weight="560">machine APIs available on the selected port/board</text>
+  <text x="1160" y="951" fill="#294867" font-size="12.2" font-weight="560">Explicit pins and buses through user code only</text>
+  <text x="1160" y="972" fill="#486783" font-size="11" font-weight="600">No agent GPIO routing, pin map or detection</text>
+
+  <rect x="1484" y="875" width="325" height="101" class="module-violet" />
+  <text x="1504" y="903" class="module-title">Explicit bundled extras</text>
+  <text x="1504" y="929" class="body-small">ESP: upstream NeoPixel module</text>
+  <text x="1504" y="951" class="body-small">Waveshare exact image: ST7789 + boot splash</text>
+  <text x="1504" y="972" class="tiny">No display opcode · generic S3 omits display code</text>
+
+  <!-- Provisioning path, intentionally outside normal BLE links -->
+  <path d="M320 720 H337 V988 H356" fill="none" stroke="#9b6b14" stroke-width="2.5" stroke-dasharray="9 7" marker-end="url(#arrow-ink)" />
+  <text x="338" y="853" fill="#73500e" font-size="12" font-weight="800" text-anchor="middle" transform="rotate(-90 338 853)">INSTALL EXACT QUALIFIED IMAGE</text>
+
+  <!-- Release profile strip -->
+  <text x="42" y="1064" class="eyebrow">EXACT RELEASE PROFILES · TEXT CONSTRAINTS, NOT PHYSICAL BOARD APPEARANCE</text>
+  <rect x="40" y="1080" width="1838" height="48" rx="8" fill="#0c2e55" />
+  <text x="60" y="1110" fill="#ffffff" font-size="15" font-weight="750">Shared: PBLE/1 · MicroPython v1.28.0 · capabilities · files · safe Run/Stop · console · exact-byte HIL passed</text>
+  <text x="1856" y="1110" fill="#9fd5ff" font-size="14" font-weight="800" text-anchor="end">MTU 247 observed · chunk 229</text>
+
+  <rect x="40" y="1146" width="1390" height="214" rx="12" fill="#ffffff" stroke="#2d5bff" stroke-width="2" />
+  <rect x="40" y="1146" width="1390" height="42" rx="12" fill="#eaf2ff" />
+  <path d="M40 1188 H1430" stroke="#2d5bff" />
+  <text x="60" y="1174" class="module-title">ESP profiles · native C agent · NimBLE · W=8 · FAT · ESP Web Serial · upstream NeoPixel</text>
+
+  <rect x="60" y="1208" width="320" height="128" rx="8" fill="#f8fbff" stroke="#7d9fc2" />
+  <text x="76" y="1234" class="profile-title">esp32-4mb</text>
+  <text x="76" y="1260" class="profile-body">Classic ESP32</text>
+  <text x="76" y="1282" class="profile-body">Exactly 4 MiB flash</text>
+  <text x="76" y="1304" class="profile-body">No PSRAM required</text>
+  <text x="76" y="1326" class="profile-body">Approx. 2 MiB FAT workspace</text>
+
+  <rect x="394" y="1208" width="320" height="128" rx="8" fill="#f8fbff" stroke="#7d9fc2" />
+  <text x="410" y="1234" class="profile-title">esp32-s3-n16r8</text>
+  <text x="410" y="1260" class="profile-body">ESP32-S3 · 16 MiB flash</text>
+  <text x="410" y="1282" class="profile-body">8 MiB Octal PSRAM</text>
+  <text x="410" y="1304" class="profile-body">Lean, board-neutral N16R8 image</text>
+  <text x="410" y="1326" class="profile-body">No TFT driver or splash</text>
+
+  <rect x="728" y="1208" width="348" height="128" rx="8" fill="#f5f1ff" stroke="#7557b7" />
+  <text x="744" y="1234" class="profile-title">waveshare-esp32-s3-lcd-147b</text>
+  <text x="744" y="1260" class="profile-body">Exact LCD 1.47B B-version · N16R8</text>
+  <text x="744" y="1282" class="profile-body">pyble_st7789 display runtime</text>
+  <text x="744" y="1304" class="profile-body">Fresh-install splash enabled</text>
+  <text x="744" y="1326" class="profile-body">Persistently disableable</text>
+
+  <rect x="1090" y="1208" width="320" height="128" rx="8" fill="#f8fbff" stroke="#7d9fc2" />
+  <text x="1106" y="1234" class="profile-title">esp32-c3-4mb</text>
+  <text x="1106" y="1260" class="profile-body">ESP32-C3 revision v0.3+</text>
+  <text x="1106" y="1282" class="profile-body">Exactly 4 MiB flash</text>
+  <text x="1106" y="1304" class="profile-body">No PSRAM required</text>
+  <text x="1106" y="1326" class="profile-body">Approx. 2 MiB FAT workspace</text>
+
+  <rect x="1450" y="1146" width="428" height="214" rx="12" fill="#ffffff" stroke="#218963" stroke-width="2" />
+  <rect x="1450" y="1146" width="428" height="42" rx="12" fill="#eaf9f3" />
+  <path d="M1450 1188 H1878" stroke="#218963" />
+  <text x="1470" y="1174" class="module-title">Pico profile · portable frozen-Python agent</text>
+  <text x="1470" y="1219" class="profile-title">rpi-pico2-w</text>
+  <text x="1470" y="1247" class="profile-body">RP2350 + CYW43439 · BTstack · W=4 · LFS2</text>
+  <text x="1470" y="1271" class="profile-body">Verified UF2 download + manual BOOTSEL copy</text>
+  <text x="1470" y="1295" class="profile-body">Named LED usable from user code</text>
+  <text x="1470" y="1319" class="profile-body">Identify and NeoPixel are not claimed in v0.6.0</text>
+  <text x="1470" y="1343" class="profile-body">Filesystem transfer during active RUN → EBUSY</text>
+
+  <!-- Critical release caveats -->
+  <rect x="40" y="1380" width="1838" height="58" rx="10" fill="#fff6df" stroke="#9b6b14" stroke-width="1.5" />
+  <text x="60" y="1404" fill="#68470b" font-size="13.5" font-weight="800">IMPORTANT</text>
+  <text x="154" y="1404" fill="#68470b" font-size="13.5" font-weight="650">Profiles describe compatible image constraints, not carrier-board appearance or pin maps. Matching N16R8 memory does not identify a display board.</text>
+  <text x="154" y="1427" fill="#68470b" font-size="13.5" font-weight="650">Only the explicitly selected Waveshare B-version image includes ST7789/splash. Installation is destructive; everyday use after setup is BLE-first.</text>
+
+  <text x="40" y="1460" fill="#45617f" font-size="11.5" font-weight="650">Public firmware v0.6.0 · PBLE/1 · source and complete machine-readable release evidence: pyble.dev/firmware/v0.6.0/</text>
+  <text x="1880" y="1460" fill="#45617f" font-size="11.5" font-weight="650" text-anchor="end">Original PyBLE diagram · no vendor artwork or board renderings</text>
+</svg>

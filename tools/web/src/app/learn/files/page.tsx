@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Part of PyBLE (https://pyble.dev) — see /LICENSE.
 
+import { TutorialAppCapture } from "@/components/tutorial-app-capture";
 import { TutorialCallout } from "@/components/tutorial-callout";
 import { TutorialPage, type TutorialStep } from "@/components/tutorial-page";
 import { pageMetadata } from "@/lib/site";
@@ -17,22 +18,23 @@ const steps: readonly TutorialStep[] = [
     title: "Work below the board root",
     body: (
       <p>
-        Open Files and create or enter <code>/examples</code>. If it already
-        contains valuable work, make a new disposable child folder instead. Keep
+        Open Files and create or enter a disposable child folder such as{" "}
+        <code>/tutorial-capture</code>. You may instead work below{" "}
+        <code>/examples</code> when that folder contains no valuable work. Keep
         the breadcrumb visible and confirm the exact current path before every
         mutation.
       </p>
     ),
     expected:
-      "Files shows /examples, or the disposable child you chose, as the current board folder.",
+      "Files shows /tutorial-capture, or the disposable child you chose, as the current board folder.",
   },
   {
     title: "Create, open, edit, save, and refresh",
     body: (
       <p>
         Create <code>delete_me_one.py</code> and <code>delete_me_two.py</code>.
-        Open each file, enter a harmless print line, Save, return to Files, and
-        choose Refresh. Use only files you are prepared to lose.
+        Leave them empty for this deletion exercise, return to Files, and choose
+        Refresh. Use only files you are prepared to lose.
       </p>
     ),
     expected:
@@ -60,6 +62,7 @@ const steps: readonly TutorialStep[] = [
         Confirm in Files that neither disposable file was removed.
       </p>
     ),
+    visual: <TutorialAppCapture capture="filesMultiDeleteReview" />,
     expected:
       "the dialog closes and both files remain; cancellation issues no deletion.",
   },
@@ -106,10 +109,10 @@ export default function FilesTutorial() {
       <section aria-labelledby="files-before">
         <h2 id="files-before">Before you begin</h2>
         <p>
-          Practice only with disposable files in <code>/examples</code> or a
-          child folder. Files can create, open, edit, save, refresh, and remove
-          board content, but this lesson does not promise direct export to
-          tablet storage.
+          Practice only with disposable files in <code>/tutorial-capture</code>,{" "}
+          <code>/examples</code>, or a child folder. Files can create, open,
+          edit, save, refresh, and remove board content, but this lesson does
+          not promise direct export to tablet storage.
         </p>
         <TutorialCallout title="Deletion is permanent" tone="warning">
           <p>
@@ -117,6 +120,20 @@ export default function FilesTutorial() {
             It runs sequentially, is fail-fast, and is not atomic. If a later
             deletion fails or the session changes, files already deleted remain
             deleted and later targets are unattempted.
+          </p>
+        </TutorialCallout>
+        <TutorialCallout title="Firmware v0.6.1 storage" tone="note">
+          <p>
+            All five official profiles use LFS2. Back up files before migrating
+            an older FAT workspace and use the documented installer. If storage
+            cannot mount, nonblank or uncertain media is preserved without
+            starting the agent; explicit USB recovery is required. It is not
+            silently reformatted.
+          </p>
+          <p>
+            Finish or cancel an active PUT or GET before deleting, renaming, or
+            creating a directory. Those mutations return EBUSY during a
+            transfer; listing and inspecting files remain available.
           </p>
         </TutorialCallout>
       </section>

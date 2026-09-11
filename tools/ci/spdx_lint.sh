@@ -42,6 +42,9 @@ done < <(find "$ROOT" \
                -o -path '*/firmware/.esp-idf' \
                -o -path '*/.esp-idf' \
                -o -path "$ROOT/firmware/.arm-gnu" \
+               -o -path "$ROOT/firmware/.picotool" \
+               -o -path "$ROOT/firmware/licenses/evidence/rp2/picotool/2.3.0/libusb-version.h" \
+               -o -path "$ROOT/firmware/licenses/evidence/rp2/picotool/2.3.0/libusb-version_nano.h" \
                -o -path '*/.idf_tools' \
                -o -path '*/.claude' \
                -o -path '*/docs' \

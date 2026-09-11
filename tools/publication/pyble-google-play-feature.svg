@@ -1,0 +1,43 @@
+<!-- SPDX-License-Identifier: MIT -->
+<!-- Part of PyBLE (https://pyble.dev) — see /LICENSE. -->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
+     width="1024" height="500" viewBox="0 0 1024 500" role="img"
+     aria-labelledby="title description">
+  <title id="title">PyBLE — MicroPython over Bluetooth</title>
+  <desc id="description">PyBLE branding beside a code and wireless signal illustration. Editor, Blocks, Console and Files.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#081B35"/>
+      <stop offset="1" stop-color="#123F70"/>
+    </linearGradient>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1" fill="#83BDFF" fill-opacity=".15"/>
+    </pattern>
+  </defs>
+  <rect width="1024" height="500" fill="url(#bg)"/>
+  <rect x="530" width="494" height="500" fill="url(#grid)"/>
+  <path d="M840-100C608 99 629 430 915 608" fill="none" stroke="#2F8CFF" stroke-opacity=".12" stroke-width="90"/>
+  <image x="64" y="60" width="56" height="56"
+         href="../../app/assets/branding/pyble-prompt-chip.svg"
+         xlink:href="../../app/assets/branding/pyble-prompt-chip.svg"/>
+  <text x="133" y="100" font-family="Helvetica Neue, Arial, sans-serif"
+        font-size="32" font-weight="700" fill="#F4F7FF">PyBLE</text>
+  <g font-family="Helvetica Neue, Arial, sans-serif" font-weight="700"
+     font-size="54" letter-spacing="-1.6">
+    <text x="72" y="211" fill="#F4F7FF">MicroPython.</text>
+    <text x="72" y="280" fill="#75B8FF">Over Bluetooth.</text>
+  </g>
+  <text x="75" y="336" fill="#CBDFF7" font-family="Helvetica Neue, Arial, sans-serif"
+        font-size="22">Build ideas on a compatible board.</text>
+  <text x="75" y="418" fill="#A9C9ED" font-family="Helvetica Neue, Arial, sans-serif"
+        font-size="18">Editor · Blocks · Console · Files</text>
+  <!-- An editorial code illustration, not an app screenshot or device frame. -->
+  <g transform="translate(609 167)">
+    <path d="M0 8H192M0 152H192" fill="none" stroke="#589FEC" stroke-opacity=".45" stroke-width="2"/>
+    <path d="M19 45L43 67L19 89" fill="none" stroke="#75B8FF" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M65 89H105" fill="none" stroke="#F4F7FF" stroke-width="8" stroke-linecap="round"/>
+    <text x="18" y="125" font-family="Menlo, monospace" font-size="19" fill="#CBE3FF">print('Hello!')</text>
+    <path d="M237 48C248 61 248 81 237 94M260 29C282 52 282 90 260 113M284 10C318 44 318 98 284 132"
+          fill="none" stroke="#2F8CFF" stroke-width="7" stroke-linecap="round"/>
+  </g>
+</svg>

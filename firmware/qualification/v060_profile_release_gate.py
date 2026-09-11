@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
 # Part of PyBLE (https://pyble.dev) — see /LICENSE.
-"""Pure release boundary for v0.6.0 C3 and Pico qualification results.
+"""Pure V5 release boundary for v0.6.0/v0.6.1 C3 and Pico results.
 
 Physical runners own device access, operator interaction, and detailed bench
 evidence.  This standard-library-only module admits a deliberately small,
@@ -34,6 +34,7 @@ RECEIPT_SCHEMA_VERSION = 1
 MAX_RESULT_BYTES = 64 * 1024
 C3_PROFILE_ID = "esp32-c3-4mb"
 PICO_PROFILE_ID = "rpi-pico2-w"
+V5_RELEASE_CORES = ((0, 6, 0), (0, 6, 1))
 # Frozen C3 post-OI NVS raw-slice identity (ports/esp32-c3-4mb.md): the only
 # passing capture is the fully erased partition at the frozen geometry.
 C3_NVS_PARTITION_OFFSET = 0x9000
@@ -42,6 +43,11 @@ C3_POST_OI_NVS_SLICE_SHA256 = (
     "1df8949b2e345ab8c00cb81fb6b83686e20a4080f969e5cd8b8d520a07cdaba2"
 )
 C3_POST_OI_NVS_RESET_SAMPLES = 10
+C3_POST_OI_NVS_ACQUISITION_LOG = (
+    b"c3-post-oi-nvs-acquisition-v1\n"
+    b"offset=0x9000 size=0x6000 captured=post-workload pre-evaluation\n"
+)
+MAX_OI_RAW_LOG_BYTES = 64 * 1024 * 1024
 _POST_OI_NVS_BINDING_KEYS = {"receipt_sha256", "receipt_size_bytes", "summary"}
 _POST_OI_NVS_SUMMARY_KEYS = {
     "schema_version",
@@ -160,6 +166,22 @@ _FILE_ID_FIELDS = (
 def _require(condition: bool, message: str) -> None:
     if not condition:
         raise QualificationError(message)
+
+
+def _require_v5_release_version(value: Any, label: str) -> str:
+    """Admit canonical SemVer whose release core is approved for V5."""
+
+    _require(
+        type(value) is str and _SEMVER_RE.fullmatch(value) is not None,
+        "%s firmware version is not canonical SemVer" % label,
+    )
+    release = value.split("+", 1)[0].split("-", 1)[0]
+    release_core = tuple(int(part) for part in release.split("."))
+    _require(
+        release_core in V5_RELEASE_CORES,
+        "%s requires firmware release core 0.6.0 or 0.6.1" % label,
+    )
+    return value
 
 
 def _exact_dict(value: Any, keys: set[str], label: str) -> dict[str, Any]:
@@ -300,10 +322,9 @@ def _validate_expected_inputs(
         expected_profile_id in _GATES_BY_PROFILE,
         "expected qualification profile is unsupported",
     )
-    _require(
-        type(expected_version) is str
-        and _SEMVER_RE.fullmatch(expected_version) is not None,
-        "expected firmware version is invalid",
+    _require_v5_release_version(
+        expected_version,
+        "expected V5 qualification",
     )
     _require(
         type(candidate_release_json_sha256) is str
@@ -469,6 +490,10 @@ def _reopen_c3_post_oi_nvs_evidence(
         exclusive=True,
     )
     slice_digest = _validate_c3_post_oi_nvs_slice_bytes(slice_raw)
+    _require(
+        log_raw == C3_POST_OI_NVS_ACQUISITION_LOG,
+        "C3 post-OI NVS acquisition marker changed",
+    )
     receipt = _exact_dict(
         _strict_json(receipt_raw),
         {"summary", "inventory"},
@@ -1017,7 +1042,7 @@ def _validate_candidate_release(
     artifact_size: int,
     artifact_sha256: str,
 ) -> str:
-    """Validate the frozen V4 five-profile metadata used by this gate writer."""
+    """Validate the frozen V5 five-profile metadata used by this gate writer."""
 
     value = _exact_dict(
         release,
@@ -1030,14 +1055,17 @@ def _validate_candidate_release(
         {"version", "tag", "agent_version", "protocol_version", "built_at"},
         "candidate release identity",
     )
+    version = _require_v5_release_version(
+        identity["version"],
+        "candidate V5 qualification",
+    )
     _require(
-        identity["version"] == "0.6.0"
-        and identity["tag"] == "firmware-v0.6.0"
-        and identity["agent_version"] == "0.6.0"
+        identity["tag"] == "firmware-v%s" % version
+        and identity["agent_version"] == version
         and identity["protocol_version"] == "PBLE/1"
         and type(identity["built_at"]) is str
         and _UTC_RE.fullmatch(identity["built_at"]) is not None,
-        "candidate is not the exact v0.6.0 release source era",
+        "candidate is not an approved exact V5 release source",
     )
     _validate_candidate_provenance(value["provenance"])
     _require(
@@ -1186,7 +1214,7 @@ def _validate_candidate_release(
             expected_path=expected_path,
             label="candidate document %s" % key,
         )
-    return identity["version"]
+    return version
 
 
 def _candidate_snapshot(
@@ -1266,6 +1294,96 @@ def _candidate_identity(
 
     snapshot = _candidate_snapshot(candidate_dir, profile_id)
     return snapshot[0], snapshot[1], snapshot[2], snapshot[3]
+
+
+def _c3_post_oi_nvs_receipt_source_snapshot(
+    *,
+    candidate_dir: Path,
+    observation_path: Path,
+    oi1_raw_log_path: Path,
+    post_oi_nvs_slice_path: Path,
+    post_oi_nvs_acquisition_log_path: Path,
+) -> tuple[tuple[Any, ...], dict[str, Any]]:
+    """Reopen, validate, and bind every input used to derive one receipt."""
+
+    candidate_snapshot = _candidate_snapshot(Path(candidate_dir), C3_PROFILE_ID)
+    release_sha256 = candidate_snapshot[1]
+    artifact_sha256 = candidate_snapshot[3]
+    observation_raw, observation_identity = _stable_regular_bytes(
+        Path(observation_path),
+        label="C3 OI verify observation",
+        maximum=MAX_RESULT_BYTES,
+        exclusive=True,
+    )
+    observation = _strict_json(observation_raw)
+    raw_log, raw_log_identity = _stable_regular_bytes(
+        Path(oi1_raw_log_path),
+        label="C3 OI verify raw log",
+        maximum=MAX_OI_RAW_LOG_BYTES,
+        exclusive=True,
+    )
+    slice_raw, slice_identity = _stable_regular_bytes(
+        Path(post_oi_nvs_slice_path),
+        label="C3 post-OI NVS raw slice",
+        maximum=C3_NVS_PARTITION_SIZE,
+        exclusive=True,
+    )
+    acquisition_raw, acquisition_identity = _stable_regular_bytes(
+        Path(post_oi_nvs_acquisition_log_path),
+        label="C3 post-OI NVS acquisition log",
+        maximum=len(C3_POST_OI_NVS_ACQUISITION_LOG),
+        exclusive=True,
+    )
+
+    raw_log_sha256 = hashlib.sha256(raw_log).hexdigest()
+    observed_raw_log_sha256 = observation.get("raw_log_sha256")
+    reset_samples = observation.get("reset_to_service_advertisement_ms")
+    _require(
+        type(observed_raw_log_sha256) is str
+        and _SHA256_RE.fullmatch(observed_raw_log_sha256) is not None
+        and observed_raw_log_sha256 == raw_log_sha256,
+        "C3 OI verify observation does not bind the reopened raw log",
+    )
+    _require(
+        type(reset_samples) is list
+        and len(reset_samples) == C3_POST_OI_NVS_RESET_SAMPLES,
+        "C3 OI verify observation must contain exactly %d reset samples"
+        % C3_POST_OI_NVS_RESET_SAMPLES,
+    )
+    slice_sha256 = _validate_c3_post_oi_nvs_slice_bytes(slice_raw)
+    _require(
+        acquisition_raw == C3_POST_OI_NVS_ACQUISITION_LOG,
+        "C3 post-OI NVS acquisition marker changed",
+    )
+    summary = {
+        "schema_version": RECEIPT_SCHEMA_VERSION,
+        "profile_id": C3_PROFILE_ID,
+        "candidate_release_json_sha256": release_sha256,
+        "candidate_firmware_sha256": artifact_sha256,
+        "oi1_raw_sha256": raw_log_sha256,
+        "reset_samples": len(reset_samples),
+        "partition_offset": C3_NVS_PARTITION_OFFSET,
+        "partition_size": C3_NVS_PARTITION_SIZE,
+        "nvs_slice_sha256": slice_sha256,
+        "nvs_slice_size_bytes": len(slice_raw),
+        "acquisition_log_sha256": hashlib.sha256(acquisition_raw).hexdigest(),
+        "acquisition_log_size_bytes": len(acquisition_raw),
+        "integrity": "passed",
+        "written_namespaces": [],
+    }
+    _validate_post_oi_nvs_summary(
+        summary,
+        candidate_release_json_sha256=release_sha256,
+        artifact_sha256=artifact_sha256,
+    )
+    source_snapshot = (
+        candidate_snapshot,
+        (observation_raw, observation_identity),
+        (raw_log, raw_log_identity),
+        (slice_raw, slice_identity),
+        (acquisition_raw, acquisition_identity),
+    )
+    return source_snapshot, summary
 
 
 def _remove_created_result(
@@ -1351,8 +1469,8 @@ def _write_exclusive_result(
             and (after.st_dev, after.st_ino) == created_identity,
             "qualification result output is unsafe",
         )
-        os.close(descriptor)
-        descriptor = -1
+        # Pin this inode through validation and rollback. Otherwise unlinking
+        # the output can let a replacement reuse its device/inode identity.
 
         _verify_output_parent(chain)
         read_flags = os.O_RDONLY | os.O_NOFOLLOW
@@ -1404,18 +1522,94 @@ def _write_exclusive_result(
                 os.close(reader)
             except OSError:
                 pass
-        if descriptor >= 0:
-            try:
-                os.close(descriptor)
-            except OSError:
-                pass
         if created and not preserve:
             _remove_created_result(
                 parent_descriptor,
                 output.name,
                 created_identity,
             )
+        if descriptor >= 0:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
         _close_directory_chain(chain)
+
+
+def create_post_oi_nvs_receipt_file(
+    *,
+    candidate_dir: Path,
+    observation_path: Path,
+    oi1_raw_log_path: Path,
+    post_oi_nvs_slice_path: Path,
+    post_oi_nvs_acquisition_log_path: Path,
+    output_path: Path,
+) -> Path:
+    """Derive one canonical candidate-bound C3 post-OI NVS receipt."""
+
+    candidate = Path(candidate_dir)
+    observation = Path(observation_path)
+    raw_log = Path(oi1_raw_log_path)
+    nvs_slice = Path(post_oi_nvs_slice_path)
+    acquisition_log = Path(post_oi_nvs_acquisition_log_path)
+    source_snapshot, summary = _c3_post_oi_nvs_receipt_source_snapshot(
+        candidate_dir=candidate,
+        observation_path=observation,
+        oi1_raw_log_path=raw_log,
+        post_oi_nvs_slice_path=nvs_slice,
+        post_oi_nvs_acquisition_log_path=acquisition_log,
+    )
+    candidate_snapshot = source_snapshot[0]
+    release_sha256 = candidate_snapshot[1]
+    artifact_sha256 = candidate_snapshot[3]
+    candidate_root = candidate_snapshot[4]
+    output = _absolute_lexical_path(
+        output_path,
+        "C3 post-OI NVS receipt",
+    )
+    _require(
+        not output.is_relative_to(candidate_root),
+        "C3 post-OI NVS receipt must not be inside the candidate",
+    )
+    receipt_raw = _expected_post_oi_nvs_receipt_bytes(summary)
+    expected_binding = {
+        "receipt_sha256": hashlib.sha256(receipt_raw).hexdigest(),
+        "receipt_size_bytes": len(receipt_raw),
+        "summary": summary,
+    }
+
+    def validate_before_preserve() -> None:
+        _require(
+            _reopen_c3_post_oi_nvs_evidence(
+                output,
+                nvs_slice,
+                acquisition_log,
+                candidate_release_json_sha256=release_sha256,
+                artifact_sha256=artifact_sha256,
+            )
+            == expected_binding,
+            "C3 post-OI NVS receipt changed while it was created",
+        )
+        repeated_snapshot, repeated_summary = (
+            _c3_post_oi_nvs_receipt_source_snapshot(
+                candidate_dir=candidate,
+                observation_path=observation,
+                oi1_raw_log_path=raw_log,
+                post_oi_nvs_slice_path=nvs_slice,
+                post_oi_nvs_acquisition_log_path=acquisition_log,
+            )
+        )
+        _require(
+            repeated_snapshot == source_snapshot and repeated_summary == summary,
+            "C3 post-OI NVS receipt inputs changed while it was created",
+        )
+
+    _write_exclusive_result(
+        output,
+        receipt_raw,
+        post_write_check=validate_before_preserve,
+    )
+    return output
 
 
 def create_result_file(
@@ -1525,8 +1719,9 @@ def _main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=__doc__,
         epilog=(
-            "create-result derives candidate identity and accepts one "
-            "--passed-gate per frozen profile gate"
+            "Receipt creation derives every claim from retained private "
+            "evidence; create-result accepts one --passed-gate per frozen "
+            "profile gate"
         ),
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -1561,17 +1756,41 @@ def _main(argv: list[str] | None = None) -> int:
         dest="post_oi_nvs_acquisition_log",
         help="C3-only exclusive mode-0600 NVS acquisition log",
     )
+    receipt_parser = subparsers.add_parser("create-post-oi-nvs-receipt")
+    receipt_parser.add_argument("candidate_dir", type=Path)
+    receipt_parser.add_argument("observation_path", type=Path)
+    receipt_parser.add_argument("oi1_raw_log_path", type=Path)
+    receipt_parser.add_argument("post_oi_nvs_slice_path", type=Path)
+    receipt_parser.add_argument(
+        "post_oi_nvs_acquisition_log_path",
+        type=Path,
+    )
+    receipt_parser.add_argument("output_path", type=Path)
     args = parser.parse_args(argv)
     try:
-        created = create_result_file(
-            candidate_dir=args.candidate_dir,
-            profile_id=args.profile_id,
-            passed_gates=args.passed_gates,
-            output_path=args.output_path,
-            post_oi_nvs_receipt_path=args.post_oi_nvs_receipt,
-            post_oi_nvs_slice_path=args.post_oi_nvs_slice,
-            post_oi_nvs_acquisition_log_path=args.post_oi_nvs_acquisition_log,
-        )
+        if args.command == "create-post-oi-nvs-receipt":
+            created = create_post_oi_nvs_receipt_file(
+                candidate_dir=args.candidate_dir,
+                observation_path=args.observation_path,
+                oi1_raw_log_path=args.oi1_raw_log_path,
+                post_oi_nvs_slice_path=args.post_oi_nvs_slice_path,
+                post_oi_nvs_acquisition_log_path=(
+                    args.post_oi_nvs_acquisition_log_path
+                ),
+                output_path=args.output_path,
+            )
+        else:
+            created = create_result_file(
+                candidate_dir=args.candidate_dir,
+                profile_id=args.profile_id,
+                passed_gates=args.passed_gates,
+                output_path=args.output_path,
+                post_oi_nvs_receipt_path=args.post_oi_nvs_receipt,
+                post_oi_nvs_slice_path=args.post_oi_nvs_slice,
+                post_oi_nvs_acquisition_log_path=(
+                    args.post_oi_nvs_acquisition_log
+                ),
+            )
     except QualificationError as exc:
         print("qualification result creation failed: %s" % exc, file=sys.stderr)
         return 1
@@ -1587,6 +1806,7 @@ __all__ = (
     "PICO_PROFILE_ID",
     "QualificationError",
     "canonical_json_bytes",
+    "create_post_oi_nvs_receipt_file",
     "create_result_file",
     "post_oi_nvs_evidence_paths",
     "private_result_snapshot",

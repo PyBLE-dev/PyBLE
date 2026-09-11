@@ -416,6 +416,25 @@ class V060LicenseGenerationTests(unittest.TestCase):
             )
         self.assertEqual(verified, inventory)
 
+    def test_v061_generation_rejects_a_v060_lock_without_picotool_evidence(self) -> None:
+        lock_path = self.fixture.repo / "firmware" / "versions.lock"
+        lock_text = lock_path.read_text(encoding="utf-8", errors="strict")
+        self.assertEqual(lock_text.count('agent_version = "0.6.0"'), 1)
+        lock_path.write_text(
+            lock_text.replace(
+                'agent_version = "0.6.0"',
+                'agent_version = "0.6.1"',
+            ),
+            encoding="utf-8",
+        )
+
+        with self.assertRaises(RELEASE.ReleaseError):
+            self.fixture.audit(verifier_side_effect=self.semantic_replay)
+        self.assertFalse(
+            self.fixture.evidence.exists(),
+            "a v0.6.1 audit without the pinned picotool disposition published evidence",
+        )
+
     def test_exact_esp_review_bytes_survive_cross_process_semantic_replay(self) -> None:
         self.fixture.audit(verifier_side_effect=self.semantic_replay)
         expected_path = self.fixture.root / "expected-esp-review-sha256.json"
@@ -448,6 +467,7 @@ module._audit_verify_v060_esp_semantic_replay(
     evidence_dir=Path(evidence),
     build_root=Path(build),
     repo_root=Path(repo),
+    firmware_version="0.6.0",
 )
 '''
         completed = subprocess.run(

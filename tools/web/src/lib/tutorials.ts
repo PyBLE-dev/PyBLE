@@ -168,7 +168,7 @@ export const tutorials = [
     outcomes: [
       "Use the named onboard LED safely",
       "Run finite LED patterns designed for the exact Pico 2 W profile",
-      "Recognize that firmware 0.6.0 does not claim NeoPixel on this profile",
+      "Recognize that firmware 0.6.1 does not claim NeoPixel on this profile",
     ],
     summary: "Use the exact Pico 2 W onboard LED surface.",
     description:
@@ -271,7 +271,7 @@ export const firmwareProfiles = [
     installMethod: "UF2 / BOOTSEL",
     requirements: "Exact Raspberry Pi Pico 2 W board",
     guidance:
-      "This exact-board profile supports the named onboard LED; it does not claim NeoPixel in firmware 0.6.0.",
+      "This exact-board profile supports the named onboard LED; it does not claim NeoPixel in firmware 0.6.1.",
   },
 ] as const satisfies readonly TutorialFirmwareProfile[];
 
@@ -695,6 +695,10 @@ const examples = [
   }),
 ] as const satisfies readonly ExampleRecord[];
 
+export const tutorialFirmwareReference = "0.6.1";
+
+// Immutable examples provenance: this is its original baseline, not the
+// current firmware guidance above.
 export const examplesSnapshot = {
   repositoryUrl: examplesRepositoryUrl,
   commit: examplesCommit,

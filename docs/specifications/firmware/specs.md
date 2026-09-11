@@ -1,6 +1,6 @@
 # PyBLE Agent Firmware — Requirements Specification
 
-Status: **DRAFT (per-section freeze in effect)** · Owner: project maintainer · Last updated: 2026-08-20
+Status: **DRAFT (per-section freeze in effect)** · Owner: project maintainer · Last updated: 2026-09-03
 
 ### Freeze ledger (per-section, per PRD §1B.4)
 
@@ -31,6 +31,12 @@ effect only after their connection-bound response submission succeeds.
 the bounded `CONSOLE_INPUT` ring to the runner worker's standard input while
 remaining non-readable to the main REPL. Empty reads are non-blocking, never
 EOF, and readable polling reflects the same worker-owned ring state.
+
+**2026-09-02 §4 v0.6.1 hardening amendment:** the existing FR identifiers are
+amended below with wire-compatible HELLO/session guards, finite hostile-input
+bounds, fresh execution namespaces and stdin boundaries, durable validated
+configuration, safe upload/scratch rules, and non-destructive Pico storage
+recovery. No opcode, status, capability key, payload field, or UUID is added.
 
 **PBLE/1 dependency:** [protocol.md §2 (transport)](../protocol.md#2-ble-transport-gatt), [§3 (framing)](../protocol.md#3-framing), [§4 (opcodes)](../protocol.md#4-opcodes), and [§8 (status)](../protocol.md#8-status--error-codes-1-byte-status-in-rsp) are **FROZEN for v1.0**; the GATT UUID base, the §3.1 frame + §3.2 fragmentation, the opcode set + numbers, and the status set + numbers are now stable inputs to FR-BLE-1/8/10 and FR-PROTO-1…10. The §4/§8 freeze (2026-07-01) **closes OI-4** and completes the DoR for F-01 and F-02. **protocol.md §6/§7/§9 froze 2026-07-01 (S3)** — HELLO/caps, the RUN-file path, the version policy, and the 24 B label bound are stable, meeting DoR for F-03/F-16/F-22/F-04. **protocol.md §6 fully froze 2026-07-01 (S4)** — STOP/SOFT_REBOOT/console/RUN-source + the identify encodings, **closing OI-6** (F-05/F-06/F-07/F-23 DoR met).
 
@@ -185,6 +191,17 @@ Requirement voice is MUST / SHOULD / MAY. Each line: **ID** — statement — *(
 - **FR-BLE-11** — The BLE/agent task MUST keep servicing the link while a user program runs, so the link never depends on user-code progress. The generic-response callout MUST attempt exactly one zero-wait fragment per NimBLE-host callback and then return: success rearms after one RTOS tick when data remains; transient pressure rearms after at most 15 ms. A callback MUST NOT sleep, loop, retry inline, or block on TX capacity. Non-control/bulk TX MUST NOT interleave with its logically owned partial response. A pending single-fragment `RUN`, `STOP`, or `SOFT_REBOOT` response MAY wait under one absolute 15 ms deadline only for the current complete-message physical TX-mutex boundary and MUST prevent a later ordinary/bulk message from beginning. Once acquired, it MUST revalidate its session and make exactly one local Notify submission without waiting or retrying for mbuf/controller capacity; success MAY preempt between generic-response fragments. — *(source: PRD §10.6, §13.3, [firmware.md §5](../firmware.md#5-runtime-rules); verify: unit, HIL; story: F-06)*
 - **FR-BLE-12** — When a device label is set ([§4.9](#49-device-identity--identify-fr-ident), `SET_LABEL`), the persisted label MUST **replace** the default `PyBLE-XXXX` as the advertised device name so it is visible in the scan list **before connecting**; clearing the label (empty value) MUST restore the `PyBLE-XXXX` default. The advertised label MUST be bounded to the same length limit the board enforces on `SET_LABEL` (FR-IDENT-1). — *(source: PRD §10.7, [protocol.md §2](../protocol.md#2-ble-transport-gatt), [§4](../protocol.md#4-opcodes); verify: HIL, conformance; story: F-01)*
 
+**v0.6.1 amendment to FR-BLE-10.** Every RX `FIRST` MUST start one
+non-extending, monotonic, wrap-safe 5000 ms reassembly deadline; a continuation
+observed at `elapsed >= 5000 ms` cannot complete that run. One exact
+connection/VM epoch MUST retain a non-resetting count of at most eight protocol
+violations and suppress discarded-run tails until a new `FIRST`. On violation
+eight the agent MUST close admission, suppress the triggering reply, clear
+session-bound work, and invoke the existing bounded exact-session termination
+path once. Disconnect or VM rotation, and only those boundaries, reset the
+budget. — *(source: [protocol.md §3.2](../protocol.md#32-fragmentation-over-gatt);
+verify: shared native/portable unit, conformance, five-profile HIL)*
+
 ### 4.2 Protocol engine (FR-PROTO)
 
 - **FR-PROTO-1** — The agent MUST implement the **full** PBLE/1 v1.0 opcode set in [protocol.md §4](../protocol.md#4-opcodes); none are optional in v1.0. — *(source: PRD §10.8, [protocol.md §4](../protocol.md#4-opcodes); verify: conformance; story: F-02)*
@@ -201,12 +218,21 @@ Requirement voice is MUST / SHOULD / MAY. Each line: **ID** — statement — *(
   failure to open MUST restart rather than overwrite retained state. Every TX
   attempt MUST carry its originating full token to the sole Notify exit. With
   physical TX mutex acquired before session state, that exit MUST serialize its
-  final exact-token check and Notify with connect/open, `OPEN → CLOSING`, and
-  cleanup claims. `CLOSING` makes work logically non-live but MUST NOT
+  final exact-token check and Notify with connect/open and cleanup claims.
+  Required termination MUST first claim an exact-session terminal-admission
+  latch and record the one absolute deadline under the session lock; every
+  live/admission check treats that latch as non-live. It then acquires the
+  physical TX mutex using only the residual of that same 2500 ms deadline,
+  revalidates the latch, and claims `OPEN → CLOSING` under the normal lock
+  order. A previously admitted Notify may finish during that bounded drain, but
+  no new admission may begin; timeout MUST claim `RESTARTING` and restart.
+  `CLOSING` makes work logically non-live but MUST NOT
   physically cancel it before exact cleanup successfully stops any required
-  watchdog. The initial arm MUST use the positive residual to the stored
-  absolute deadline, and reducer begin, physical arm, and arm acknowledgement
-  MUST be one uninterrupted session-critical transaction. Arm, GAP-error,
+  watchdog. Reducer begin MUST receive the latch's original start time, and the
+  initial arm MUST use the positive residual to the resulting stored absolute
+  deadline. Reducer begin, watchdog-ticket capture, residual calculation,
+  physical arm, and arm acknowledgement MUST be one uninterrupted session-
+  critical transaction under TX ownership. Arm, GAP-error,
   deadline, timer-stop, and residual-rearm failures MUST atomically claim
   terminal `RESTARTING` before public non-returning `esp_restart()`;
   later disconnect/reset/open operations cannot clear that claim. Exact
@@ -270,6 +296,24 @@ Requirement voice is MUST / SHOULD / MAY. Each line: **ID** — statement — *(
 - **FR-PROTO-9** — A well-formed request for an opcode/feature the agent does not support MUST be answered with `EUNSUPPORTED`. — *(source: PRD §10.8, [protocol.md §8](../protocol.md#8-status--error-codes-1-byte-status-in-rsp); verify: conformance; story: F-02)*
 - **FR-PROTO-10** — The agent MUST NOT require or assume use of any capability it did not advertise in HELLO (`caps`); the wire behaviour MUST match the advertised baseline. — *(source: PRD §10.8, §18.3, [protocol.md §7](../protocol.md#7-hello--capabilities); verify: conformance; story: F-03, P-03)*
 
+**v0.6.1 amendments to FR-PROTO-2/3/5/7/8/9.** For every reassembled input,
+both reference agents MUST apply exact structural length, CRC, RX direction and
+nonzero request ID, frame version, HELLO/session admission, then opcode/payload
+semantics in that order. CRC rejection MUST be the same `EVT{id=0,ECRC}` on
+native and portable paths. Wrong-direction or ID-zero frames MUST be silent
+and handler-free. A structural failure may receive `EBADREQ` only when a safe
+complete header identifies a v1 `CMD` with nonzero ID. Before HELLO succeeds,
+response-bearing non-HELLO commands MUST return `EBADREQ`, while the two
+response-free opcodes are silently side-effect-free. Unknown opcodes after
+negotiation remain `EUNSUPPORTED`. Every known opcode parser MUST consume the
+exact frozen payload grammar; trailing bytes after a structured/fixed payload
+are handler-free `EBADREQ`. During an accepted soft-reboot closing interval,
+the global gate runs before HELLO/session/opcode admission and violation
+accounting: response-bearing CMDs return `EBUSY`, no-response CMDs are dropped,
+and neither path debits the malformed-input budget. — *(source: [protocol.md §3](../protocol.md#3-framing),
+[§7](../protocol.md#7-hello--capabilities); verify: one semantic corpus run
+against portable Python and compiled production C, plus conformance/HIL)*
+
 ### 4.3 Runner & execution control (FR-RUN)
 
 - **FR-RUN-1** — `RUN { mode: file }` MUST execute a `.py` file from the workspace only after local Notify acceptance of its matching `RSP{OK}`, then emit `RUN_STATE(running)`. The ESP reference handler MUST make a provisional, non-observable reservation and copy first, declare one specialized response attempt pending, wait under one absolute 15 ms deadline only for the current complete-message TX-mutex boundary, and wake the runner exactly once only after its one local Notify submission returns `PBLE_TX_OK`. Boundary-deadline expiry, no connection, a changed connection, or Notify backpressure MUST restore the exact prior runnable state and cause no response fallback, worker wake, execution, console output, or RUN event. At ATT MTU 23 the 11-byte response frame fits within the 19 PBLE/1 message bytes carried by one fragment. — *(source: PRD §8.2, §10.6, [protocol.md §6](../protocol.md#6-run--stop--console); verify: unit, HIL, conformance; story: F-04)*
@@ -325,6 +369,19 @@ Requirement voice is MUST / SHOULD / MAY. Each line: **ID** — statement — *(
 - **FR-RUN-9** — Normal completion MUST yield `RUN_STATE(done)`; an uncaught exception MUST stream the traceback as `CONSOLE_DATA(stderr, …)` and then emit `RUN_STATE(error)`. — *(source: PRD §8.2, [protocol.md §6](../protocol.md#6-run--stop--console); verify: HIL, conformance; story: F-04, F-07)*
 - **FR-RUN-10** — After `STOP` the agent MUST return the board to `RUN_STATE(idle)`. — *(source: PRD §8.3, §10.6, [protocol.md §6](../protocol.md#6-run--stop--console); verify: HIL; story: F-06)*
 
+**v0.6.1 amendment to FR-RUN-1/2/9.** Every accepted file, inline-source, or
+autorun execution MUST compile and execute with a newly allocated globals and
+locals dictionary containing `__name__ = "__main__"`; it MUST NOT inherit a
+variable created by an earlier run. The runner MUST restore its own prior
+globals/locals on both success and exception and MUST NOT clear the VM's main
+dictionary. Fresh globals for ordinary and autorun execution preserve a future
+capability-gated persistent interactive namespace; that separate mode MUST be
+specified explicitly and MUST NOT silently weaken ordinary `RUN` isolation.
+This increment makes no portable promise for `__file__`, current
+directory, sibling imports, `sys.path`, or `sys.modules` cleanup. — *(source:
+[protocol.md §6](../protocol.md#6-run--stop--console); verify: unit,
+50-sequential-run resource gate, five-profile HIL)*
+
 ### 4.4 Filesystem bridge & workspace jail (FR-FS)
 
 - **FR-FS-1** — `FILE_LIST` MUST list a workspace directory rooted at `fs_root`. — *(source: PRD §8.4, §10.8, [protocol.md §4](../protocol.md#4-opcodes); verify: conformance, HIL; story: F-08)*
@@ -344,6 +401,39 @@ Requirement voice is MUST / SHOULD / MAY. Each line: **ID** — statement — *(
 - **FR-FS-15** — Filesystem errors MUST map to their PBLE/1 status codes (`ENOENT`, `ENOSPC`, `EACCES`, `EIO`, `ERANGE`) rather than failing silently. — *(source: PRD §9.2, §10.8, [protocol.md §8](../protocol.md#8-status--error-codes-1-byte-status-in-rsp); verify: conformance; story: F-08, F-09)*
 - **FR-FS-16** — The jail constrains the **PBLE/1 file bridge** only; user code MAY touch the filesystem normally at runtime via standard MicroPython `os`/`vfs`. — *(source: PRD §10.4, [firmware.md §5](../firmware.md#5-runtime-rules); verify: HIL; story: F-09)*
 
+**v0.6.1 amendments to FR-FS-1/4/7/8/9/14/15.** `FILE_LIST` MUST omit every
+basename ending in `.pbltmp` before stat/count/budget accounting. After all
+paths are parsed and jail-resolved, DELETE/MKDIR/RENAME during an active PUT or
+GET MUST return `EBUSY` before stat or mutation, including when the valid
+mutation path is unrelated to the transfer path. `FILE_LIST` and `FILE_STAT`
+remain available during either transfer. PUT data crossing declared total size
+MUST write nothing and latch `ERANGE`. A nonzero resume offset MUST denote
+exactly a stable regular-file prefix that was completely read and CRC'd;
+malformed scratch MUST be removed only by the non-recursive safe rules in
+protocol §5, or return `EIO`, while the old destination stays unchanged.
+`FILE_PUT_BEGIN` MUST use checked 64-bit `statvfs` arithmetic and the exact
+65,536-byte admission reserve in protocol §5; invalid geometry/overflow is
+`EIO`, and insufficient space is `ENOSPC` before scratch creation or growth.
+No `max_file_size` capability is added. — *(source:
+[protocol.md §5](../protocol.md#5-file-transfer-the-reliability-core); verify:
+portable/native unit, LFS2 conformance on every profile, incompatible-media
+fail-closed boot, five-profile HIL)*
+
+Deferred PUT work MUST be exact-session and exact transfer-generation owned.
+Disconnect/VM invalidation advances that generation atomically; a delayed
+predecessor may close only its own newly opened object and MUST NOT publish,
+clear, or adopt successor state. BEGIN publication, DATA/END checks, stale-owner
+reclamation, and terminal clear MUST compare ownership in their transfer-state
+critical cut. Portable VFS work runs only from its bounded supervisor mailbox;
+native storage MUST accept a 260-byte legal two-maximum-path `FILE_RENAME`.
+Every VFS read count is range-checked before buffer use; portable binary reads
+require exact `bytes`. A short/invalid read before response admission is `EIO`,
+while one after successful GET admission aborts without `FILE_GET_END`. Every
+path is strict scalar UTF-8, and exact regular-file type—not merely “not a
+directory”—is required for scratch resume. — *(source:
+[protocol.md §5](../protocol.md#5-file-transfer-the-reliability-core); verify:
+portable/native compiled race, boundary, and hostile-VFS unit tests)*
+
 ### 4.5 Console (FR-CON)
 
 - **FR-CON-1** — The agent MUST tee the running program's `stdout`/`stderr` to BLE as `CONSOLE_DATA` events. — *(source: PRD §8.2, §10.3, [protocol.md §6](../protocol.md#6-run--stop--console); verify: HIL, conformance; story: F-07)*
@@ -352,14 +442,46 @@ Requirement voice is MUST / SHOULD / MAY. Each line: **ID** — statement — *(
 - **FR-CON-4** — The console MUST be **observe-anywhere**: `stdout`/`stderr` MUST stream regardless of which client triggered the run. Each newly formed `CONSOLE_DATA` chunk MUST atomically capture the then-current live `{connection handle, connection generation, VM epoch}`. If none exists, the chunk MUST be omitted rather than retained for a future client. All fragments and retries MUST retain the captured token; disconnect or VM-epoch change cancels old buffered work, and a later new chunk after reconnect MAY bind the successor. This applies equally to command-started and auto-run execution. — *(source: PRD §8.2, §10.8, [protocol.md §6](../protocol.md#6-run--stop--console); verify: unit, HIL; story: F-07)*
 - **FR-CON-5** — The agent MAY also mirror `stdout`/`stderr` to USB-serial when present, for **local debugging only**; USB serial MUST NOT be a runtime PBLE/1 transport. — *(source: PRD §10.3, §11.2, [firmware.md §5](../firmware.md#5-runtime-rules); verify: HIL; story: F-07)*
 
+**v0.6.1 amendment to FR-CON-3.** The bounded stdin ring MUST have an
+independent active-run admission flag. Idle input is silently discarded. The
+ring is activated and cleared only at successful RUN response admission (or
+autorun admission), deactivated and cleared after accepted STOP and every
+terminal/VM-reset boundary, and cleared without deactivation on disconnect so
+a continuing run may receive only fresh post-reconnect input. A failed RUN or
+failed STOP response MUST change neither lifecycle nor bytes. Poll/read MUST
+remain empty unless both the runner worker and stdin-active predicate match.
+— *(source: [protocol.md §6](../protocol.md#6-run--stop--console); verify:
+portable/native unit and five-profile blocked-input HIL)*
+
+Terminal state selection, stdin deactivate/clear, and release of the run
+reservation MUST be one ordered lifecycle cut. A successor RUN is not
+reservable before that clear, predecessor cleanup MUST NOT erase successor
+input, and the predecessor terminal event uses the state captured before
+admission reopens. Clearing uses preallocated state and MUST succeed without
+allocation. — *(source: [protocol.md §6](../protocol.md#6-run--stop--console);
+verify: portable/native deterministic interleaving and allocation-failure unit
+tests)*
+
 ### 4.6 Device info / capabilities (FR-INFO)
 
 - **FR-INFO-1** — `DEVICE_INFO` MUST report at least `chip`, MicroPython version, free memory, `fs_root`, MTU, the stable `device_id` (the MAC-derived suffix, per FR-BLE-5), and `label` (the user-set device label, or empty when unset). — *(source: PRD §8.1, §10.8, [protocol.md §2](../protocol.md#2-ble-transport-gatt), [§4](../protocol.md#4-opcodes); verify: conformance, HIL; story: F-03)*
 - **FR-INFO-2** — `HELLO` MUST be the **first** exchange after connect, performing protocol-version and capability negotiation per [protocol.md §7](../protocol.md#7-hello--capabilities). — *(source: PRD §10.5, §18.3, [protocol.md §7](../protocol.md#7-hello--capabilities); verify: conformance, HIL; story: F-03)*
-- **FR-INFO-3** — The HELLO reply `caps` MUST include `chip`, `mpy_version`, `fs_root`, `max_file_size`, `put_window` (`W`), `chunk_size`, `has_sd`, `free_mem`, `device_id` (the stable MAC-derived suffix), `label` (the user-set label, or empty), `has_identify` (whether the board supports `IDENTIFY`), and `identify_led` (the configured identify-LED GPIO, or null). The client MUST offer an Identify action **only** when `has_identify` is set. These identity/identify caps are **additive within PBLE/1**; an older client simply ignores them. — *(source: PRD §10.8, §18.3, [protocol.md §7](../protocol.md#7-hello--capabilities), [§9](../protocol.md#9-versioning-policy); verify: conformance; story: F-03)*
+- **FR-INFO-3** — The HELLO reply `caps` MUST include the exact frozen serialized keys `proto`, `agent`, `chip`, `mpy`, `fs_root`, `mtu`, `window`, `chunk`, `free_mem`, `has_sd`, `has_identify`, `identify_led`, `auto_run`, `device_id`, and `label`. The client MUST offer an Identify action **only** when `has_identify` is set. These identity/identify caps are **additive within PBLE/1**; an older client simply ignores them. `max_file_size` was never a serialized key and MUST NOT be invented for v0.6.1; upload admission follows protocol §5. — *(source: PRD §10.8, §18.3, [protocol.md §7](../protocol.md#7-hello--capabilities), [§9](../protocol.md#9-versioning-policy); verify: conformance; story: F-03)*
 - **FR-INFO-4** — A read of the INFO characteristic MUST return a `DEVICE_INFO`-equivalent payload so a client can identify a board before subscribing. — *(source: PRD §10.7, §18.3, [protocol.md §2](../protocol.md#2-ble-transport-gatt); verify: HIL, conformance; story: F-01, F-03)*
 - **FR-INFO-5** — The agent MUST reply to `HELLO` with a chosen `proto_version` it supports, and MUST refuse (rather than silently mis-speak) a client whose offered versions it cannot satisfy. — *(source: PRD §18.3, [protocol.md §7](../protocol.md#7-hello--capabilities), [§9](../protocol.md#9-versioning-policy); verify: conformance; story: F-03, P-03)*
 - **FR-INFO-6** — `caps.has_sd` MUST reflect actual SD-card presence on the board. — *(source: PRD §10.3 (`pyble_info`), §10.8, [protocol.md §7](../protocol.md#7-hello--capabilities); verify: HIL; story: F-03)*
+
+**v0.6.1 amendments to FR-INFO-2/5.** TX notifications MUST be enabled before
+the first RX frame; discovery, INFO read, and optional MTU exchange are setup,
+not PBLE exchanges. HELLO MUST obey protocol §7's exact 192-byte ASCII grammar,
+required keys and bounds. A valid offer without version 1 is `EUNSUPPORTED`;
+malformed syntax is `EBADREQ`. Negotiation is exact connection/VM-epoch state,
+committed only when the final `RSP{OK}` fragment receives local Notify
+acceptance, reset by disconnect/VM rotation, and compatible repeated HELLO is
+idempotent. Failed repeated HELLO MUST NOT revoke an existing negotiation.
+— *(source: [protocol.md §2](../protocol.md#2-ble-transport-gatt),
+[§7](../protocol.md#7-hello--capabilities); verify: shared Dart/portable/native
+semantic corpus and five-profile HIL)*
 
 ### 4.7 Boot & lifecycle (FR-BOOT)
 
@@ -369,6 +491,120 @@ Requirement voice is MUST / SHOULD / MAY. Each line: **ID** — statement — *(
 - **FR-BOOT-4** — The agent MUST reach the advertising state independently of user-workspace validity; a syntactically broken or infinite-loop `main.py` MUST NOT prevent advertising or connection. — *(source: PRD §10.5, §13.1; verify: HIL; story: F-12)*
 - **FR-BOOT-5** — The agent MUST NOT depend on an editable `boot.py`/`main.py` for its own operation. — *(source: PRD §1A.3 rejection 5, §10.2; verify: HIL; story: F-12)*
 - **FR-BOOT-6** — A control-plane fault MUST fail safe to the advertising state rather than wedging the board. — *(source: PRD §13.1, §10.5; verify: HIL; story: F-12)*
+
+**v0.6.1 amendment to FR-BOOT-3/6.** Every persisted autorun value MUST be
+exactly 0 or 1; an invalid stored value is safely disabled and records only a
+bounded internal configuration fault. Every persistence call and commit MUST
+be checked, and a failure leaves the prior runtime/persisted behavior in
+effect. A corrupt/read/persistence marker remains latched until a successful
+durable repair of that same configuration domain; an absent first-boot key
+neither creates nor clears one. The marker has an internal read-only test seam
+but no v0.6.1 wire field. The Pico storage-corruption exception to normal advertise-safe recovery
+is deliberate: after a failed workspace mount, only a conclusively all-`0xFF`
+complete block device may be formatted once. Nonblank media or any inspection,
+allocation, or remount uncertainty MUST receive zero writes, skip agent and
+autorun startup, and remain available for bounded local USB recovery rather
+than falsely advertising a healthy workspace. All five overlays MUST use one
+frozen `pyble_workspace.mount_lfs2` authority with explicit LFS2 construction
+and a complete-device erased scan; ESP upstream `inisetup`'s first-block
+heuristic is not an admissible provisioning path. Invalid geometry fails before
+the first read or write. — *(source:
+[rpi-pico2-w.md](ports/rpi-pico2-w.md); verify: unit and sacrificial-Pico HIL)*
+
+**v0.6.1 measured boot-observation amendment (2026-09-06).** The official
+overlays MUST acquire one bounded, retained observation of their actual
+workspace boot, rather than infer operation counts from source or unchanged
+media. `mount_lfs2(..., observe_boot=True)` starts that observation once per
+VM; its default `False` preserves the existing unobserved helper interface.
+A repeated observed call MUST fail without replacing the first observation.
+The observed block-device adapter MUST count actual `writeblocks` invocations
+and block-erase `ioctl(6, ...)` invocations before backend dispatch, including
+failed or idempotent calls and calls made by the initial LFS2 constructor.
+Reads retain the original block-device method; the adapter MUST preserve
+backend arguments, return values, and errors. These are measured requests at
+the official native block-device boundary, not claimed flash-bus pulse counts.
+
+Initial mount, format, and remount attempts are counted immediately before
+the actual respective call. Format/remount completions are counted only after
+successful return. The existing complete-device erased scan alone controls
+format admission: observation faults, missing entropy, allocation failure,
+counter overflow, or uncertain storage MUST NOT authorize a format or retry.
+The observation records whether that scan proved erased or nonblank media;
+normal healthy mounts remain uninspected. The overlays call `boot_attached()`
+only after the actual `vfs.mount` succeeds. On failure, `boot_recovery()` emits
+the existing one fixed local recovery line and counts its attempted and
+completed emission. Either terminal path seals the record. Later filesystem
+use or repeated accessor calls MUST NOT change its counts; repeated terminal
+calls MUST be refused without emitting another recovery line.
+
+The internal accessor `pyble_workspace.read_boot_observation(challenge)`
+accepts exactly 32 lowercase hexadecimal characters and returns a detached
+mapping with exactly these keys:
+
+```text
+schema_version boot_id challenge mount_attempts
+format_attempts format_completions remount_attempts remount_completions
+program_calls erase_calls workspace_attached recovery_attempts
+recovery_emissions complete fault overflow media_state
+```
+
+The accessor and its MicroPython JSON transport have no mapping-order
+requirement. Consumers require the exact key set and field types; canonical
+host-side evidence files retain their separately specified byte ordering.
+
+The schema is integer `1`; `boot_id` is a fresh per-VM 16-byte random value
+encoded as 32 lowercase hex characters, not device identity or an
+authorization signal. `challenge` echoes this read's fresh host nonce, without
+changing retained state. Counters are nonnegative integers saturating at
+65,535; attempted overflow latches `overflow` and `fault`. The four state
+flags are booleans. `media_state` is exactly `uninspected`, `erased`,
+`nonblank`, or `uncertain`. Before initialization the accessor raises; an
+incomplete or faulted observation may be inspected but MUST NOT qualify.
+Expected initial mount failure followed by a conclusive nonblank refusal is
+not itself an observation fault. Failed entropy, inspection, formatting,
+remount, or attachment cannot become a passing observation.
+
+This internal diagnostic adds no PBLE/1 opcode, capability, or payload. A
+successful boot may be inspected through a bounded read-only existing RUN;
+that supports Pico's supervisor-owned main thread without interrupting it.
+Refusal is inspected through the existing USB REPL, since no BLE agent may
+start in that case. Inspection MUST neither rerun mounting nor modify media.
+Fresh source-bound performance/resource and physical qualification gates
+apply to all five changed images; the observer does not waive those gates.
+
+**Native-USB acquisition-tool output amendment (2026-09-06).** The maintained
+host acquisition tool MUST preserve the same single device-generated
+`PYBLE_WORKSPACE_OBSERVATION:` JSON line when inspecting native-USB refusal
+recovery. With deasserted DTR, the pinned native CDC output path may overwrite
+pending bytes; a successful short UID response does not prove a longer
+unpaced observation print will be complete. For the exact Waveshare and Pico
+profiles, generate the observation once, serialize once, require an ASCII
+line of at most 1,024 bytes, and emit it through `sys.stdout.write` in chunks
+of at most 16 characters with a 50 ms delay after each chunk. A 100 ms drain
+interval precedes and follows output. No extra framing, per-chunk newlines,
+hex encoding, host-created observation fields, or repair of missing bytes is
+allowed. The leading and trailing newline and all JSON bytes are unchanged.
+The maximum deliberately requested pacing is 3,400 ms; the existing absolute
+12-second stdout read deadline, transcript bound, exact raw-REPL delimiters,
+empty-stderr requirement, and outer acquisition deadline remain fail-closed.
+
+This is transient host-test-tool generated inspection code, not firmware image
+code or an app workflow change. DTR and RTS remain deasserted, raw-REPL entry
+must not soft-reset the VM, the exact physical UID must be checked first, and
+the sealed boot getter is called only once for the fresh challenge. All
+candidate/source, nonce, actual media readback, advertisement, and publication
+gates remain unchanged. The original raw bytes, including failed captures,
+must be retained. Other observation transports retain their existing behavior.
+An adversarial overwritable-FIFO host test must demonstrate the old long-print
+loss and exact paced output under an explicit bounded drain model. A stdout
+write return is not delivery proof. Host tests do not establish USB scheduling
+guarantees or replace final-candidate HIL.
+
+The complete-device erased scan accepts a read status only when it is `None`,
+boolean `True`, or exact integer zero, matching successful native block-read
+outcomes. Boolean `False` is a failed read, not integer-zero success. Floating
+zero and custom objects that merely compare equal to zero are uncertain
+statuses and MUST NOT grant format authority, even with an all-erased buffer.
 
 ### 4.8 Execution modes (FR-MODE)
 
@@ -392,6 +628,23 @@ are screenless.
 - **FR-IDENT-4** — `IDENTIFY` MUST return `EUNSUPPORTED` (0x0A) when no identify LED has been configured, and the board MUST report `has_identify = false` and `identify_led = null` in HELLO/`DEVICE_INFO` until one is configured. — *(source: PRD §10.8, [protocol.md §8](../protocol.md#8-status--error-codes-1-byte-status-in-rsp), [§7](../protocol.md#7-hello--capabilities); verify: conformance; story: F-03)*
 - **FR-IDENT-5** — The device label and the identify-LED configuration MUST **survive reboot** (persisted in NVS), so the advertised name, `has_identify`, and `identify_led` are stable across power cycles. — *(source: PRD §10.7, §10.5; verify: HIL, conformance; story: F-03, F-12)*
 - **FR-IDENT-6** — The identify blink MUST be **cosmetic only**: it MUST NOT be used for, or be repurposable as, GPIO routing for user code, a board-capability map, or any access-gating signal. — *(source: PRD §1A.3 rejection 3, §11.1, §11.3, [hardware.md §4](../hardware.md#4-what-pyble-does-not-do-with-hardware); verify: unit (structure); story: F-01, F-03)*
+
+**v0.6.1 amendments to FR-IDENT-1/2/5.** Label length MUST be checked before
+content: more than 24 encoded bytes is `ERANGE`; otherwise nonempty input MUST
+be strict UTF-8 without U+0000–U+001F or U+007F–U+009F controls, or return
+`EBADREQ`. `SET_IDENTIFY_LED` accepts exactly zero bytes to clear or exactly
+two bytes to set; every other length is `EBADREQ`. All configuration changes MUST stage and validate a candidate, check
+every storage operation and commit, and update RAM, GPIO, caps, and advertising
+only after the durable commit cut. On ESP, Identify MUST use one authoritative
+four-byte NVS blob `id_cfg = [version=1, enabled, gpio, active_level]`; invalid
+authoritative data disables Identify and MUST NOT fall back to stale legacy
+keys. Absent authoritative data may load a wholly valid legacy key pair and
+migrate only on the next successful set/clear. Corrupt persisted state MUST
+select safe defaults and a bounded internal fault marker, never an unchecked
+partial configuration. Read and persistence failures latch that domain's
+marker until a successful durable repair; ordinary missing/valid reads do not
+erase an earlier fault. — *(source: [protocol.md §7](../protocol.md#7-hello--capabilities);
+verify: fault-injection unit and reboot HIL)*
 
 ### 4.10 Standard user-code libraries (FR-LIB)
 
@@ -779,8 +1032,10 @@ upstream package and required runtime primitive for that target.
   retain `PYBLE_HIL_RECORDS_V2`/schema `2` with its original five-key object;
   the rejected shared-image engineering contract remains V3 and MUST NOT be
   published under the split source; v0.5.1 retains
-  `PYBLE_HIL_RECORDS_V4`/schema `4`, while the v0.6.0 five-profile successor
-  MUST use `PYBLE_HIL_RECORDS_V5`/schema `5`. Both retain the top-level
+  `PYBLE_HIL_RECORDS_V4`/schema `4`, while the v0.6.0 and v0.6.1 five-profile
+  source eras MUST use `PYBLE_HIL_RECORDS_V5`/schema `5`. V5 is not an approval
+  for the proposed v0.7.0 contract. Both retained source-era schemas include
+  the top-level
   `waveshare_lcd147b_qualification` extension. It is JSON `null` in a
   candidate and is replaced only by the validator-derived passed summary
   during finalization. V2 or V3 for a split release, V4 for an older release,
@@ -1316,10 +1571,279 @@ machine-verifiable. Candidate generation freezes the policy and build
 measurements; finalization may add HIL observations and operator sign-off but
 MUST NOT change those frozen fields. A changed firmware, manifest, policy, or
 candidate identity invalidates the affected evidence.
-For v0.6.0, derivation selection uses the bound policy/candidate source
-ancestry. The retained baseline's earlier `source_commit`, SemVer alone,
-schema alone, operator input, and the validator checkout are forbidden routing
-inputs.
+For V5 v0.6.0 and v0.6.1 candidates, derivation selection uses the bound
+policy/candidate source ancestry. The exact candidate version must propagate
+unchanged through license inventory, HIL records, completion, private gate
+validation, and finalization; v0.6.0 evidence cannot qualify v0.6.1. The
+retained baseline's earlier `source_commit`, SemVer alone, schema alone,
+operator input, and the validator checkout are forbidden routing inputs.
+
+The one-field `physical-fact-lineage-v1` carry-forward remains limited to its
+exact v0.6.0 contract and is not a v0.6.1 evidence source. Every v0.6.1 profile
+MUST provide a fresh physical power-cycle observation for its exact candidate;
+the common observation validator MUST reject a lineage summary when the
+selected firmware version is v0.6.1.
+
+##### v0.6.1 hardening result
+
+Every v0.6.1 V5 profile additionally requires one private, canonical,
+exclusive-created mode-`0600` hardening result. The exact top-level keys are:
+
+```text
+schema_version
+measurement_contract
+profile_id
+target
+firmware_version
+source_commit
+candidate_release_json_sha256
+install_sha256
+qualification_source_commit
+qualification_executable_sha256
+scenario_order
+scenarios
+workspace_provisioning
+raw_log_sha256
+status
+```
+
+`schema_version` is integer `1`; `measurement_contract` is exactly
+`v061-hardening-seven-scenario-v1`; `firmware_version` is exactly `0.6.1`;
+and `status` is `passed`. Profile, target, selected source commit, protected
+candidate `release.json`, and profile install digest MUST match one immutable
+candidate. The qualification source and executable digests bind the reviewed
+post-freeze runner that produced the result. The raw log is separately
+exclusive-created, redacted, canonical JSON Lines; its lowercase SHA-256 is
+bound by the result. Every raw-log line is one JSON object encoded as UTF-8
+with keys in lexicographic order, no insignificant whitespace, no non-finite
+number, and one trailing LF; blank lines and a missing final LF are invalid.
+The runner constructs those objects only from fixed phase/scenario tokens,
+pass/fail state, and bounded numeric measurements. It MUST NOT serialize a BLE
+address, device ID, device label, source/file content, console bytes, or
+exception text into that log.
+
+Before opening a BLE connection, the runner MUST validate and retain one
+immutable preflight snapshot of the protected candidate, both workspace
+receipts and their derived raw siblings, and the qualification checkout. The
+qualification checkout is admissible only when the committed bytes at `HEAD`
+match the complete authored execution closure: the hardening bench, its shared
+evidence gate, `_pble_bench.py`, `_pble_central.py`, `_pble_wire.py`,
+`target_smoke.py`, `oi1-gates.json`, and `versions.lock`. The final result
+writer MUST consume that same preflight token and revalidate every member
+before and after exclusive publication; taking a new unrelated snapshot only
+after the physical scenarios is forbidden. Receipt, raw-log, and result
+outputs MUST be outside both the candidate and the qualification Git checkout.
+After its input callback, every exclusive evidence writer MUST reopen the
+visible output through its retained parent descriptor and recheck the exact
+inode, one-link mode-`0600` state, size, and bytes before reporting success.
+The writer MUST retain an open descriptor for its originally created inode
+through final validation and any failure cleanup. Closing its last descriptor
+earlier permits inode-number reuse after an unlink, so a device/inode comparison
+alone can mistake a replacement for the writer's file. Failure cleanup MUST
+leave replacement files untouched and release the original descriptor only
+after its ownership check and any unlink have completed.
+
+For result admission the raw log contains exactly one line for each scenario
+in `scenario_order`, with no start/end or free-text record. Every ordinary
+line has exactly `scenario` and `status`; `scenario` is that position's frozen
+scenario token and `status` is `passed`. The `resource-stability` line has the
+single additional integer key `sequential_runs`, exactly `50`. A runner may
+retain the canonical prefix ending in `status: "failed"` after an unsuccessful
+physical run, but that prefix can never mint a passing result. No other key,
+string value, number, array, nested object, empty log, or unbounded measurement
+is admissible to the passing-result writer.
+
+`scenario_order` and the insertion order of `scenarios` are exactly:
+
+```json
+[
+  "transport-session",
+  "fragment-hardening",
+  "run-isolation",
+  "resource-stability",
+  "stdin-isolation",
+  "configuration-durability",
+  "filesystem-hardening"
+]
+```
+
+Each scenario object has exactly `status: "passed"`, except
+`resource-stability`, which additionally has exactly
+`sequential_runs: 50`. Configuration durability proves valid/rejected label
+bytes, label and advertisement persistence, autorun persistence and
+restoration, and, when `has_identify=1`, preservation of the existing Identify
+configuration across reboot plus a successful `IDENTIFY` before and after that
+reboot. The caps expose the configured GPIO but not its persisted active level,
+so the target-neutral runner MUST NOT rewrite `SET_IDENTIFY_LED` or claim that
+it can reconstruct an owner's exact setting. A profile which does not advertise
+Identify records no invented Identify pass. A scenario may not be omitted,
+reordered, retried into a pass, or replaced by host/model evidence.
+
+The live runner is intentionally not a general-purpose operation on an owner's
+working board. After connecting and negotiating, but before any file or
+configuration mutation, it MUST prove that both the fixed `/v061_hil` scratch
+root and `/main.py` are absent. A collision aborts without deletion or
+configuration change. This precondition makes every later delete apply only
+to a namespace created by this bench and prevents either autorun durability
+reboot from executing owner code. PBLE/1 deliberately reports the underlying
+chip rather than a provisioning or carrier-board profile, so exact-board
+attribution remains a controlled operator attestation rather than a new
+runtime capability: the live invocation MUST supply the reviewed manufacturer,
+board model, and module marking for the selected one of the five physical
+qualification profiles. Those private values are checked against the frozen
+v0.6.1 bench inventory and are never copied into the raw log or result.
+
+`workspace_provisioning` has exactly `erased-media-first-boot` and
+`nonblank-media-refusal`, in that order. Each value has exactly
+`status: "passed"`, `receipt_sha256`, and `raw_log_sha256`. Each receipt is a
+separate canonical, exclusive-created mode-`0600` result from a sacrificial
+physical-media boot using the same profile and candidate; it binds the same
+version/source/candidate/install identities and its exclusive raw boot log.
+The erased-media result proves one allowed LFS2 format/remount and subsequent
+advertisement. The nonblank result proves no format/write, one bounded
+recovery message, and no agent/autorun advertisement. `NOT-RUN`, a shared
+receipt, a non-sacrificial observation, a configuration-corruption proxy, or
+an observation from another profile/candidate fails closed.
+
+Each workspace receipt is canonical JSON with exactly these top-level keys in
+this order:
+
+```text
+schema_version
+measurement_contract
+observation_kind
+profile_id
+target
+firmware_version
+source_commit
+candidate_release_json_sha256
+install_sha256
+qualification_source_commit
+qualification_executable_sha256
+acquisition_sha256
+raw_log_sha256
+status
+```
+
+Its schema is integer `1`, contract is exactly
+`v061-workspace-provisioning-receipt-v1`, version is exactly `0.6.1`, and
+status is `passed`. Candidate/profile/install identities are derived from the
+protected candidate. Qualification source and executable are the reviewed
+checkout and exact `v061_hardening_bench.py` bytes used both to create the
+receipt and run the seven-scenario check; an operator cannot author those
+identity fields.
+
+The 2026-09-06 acquisition amendment additionally requires a derived private
+`<stem>-acquisition.json` sibling. Its digest is `acquisition_sha256`; a
+four-line summary alone is never sufficient evidence. The acquisition has
+schema integer `1`, contract `v061-workspace-acquisition-v1`, and binds the
+same profile/target/version/source/candidate/install and qualification
+identities, the reviewed collector digest, a fresh challenge and boot ID,
+exact workspace media geometry, and the selected physical board binding.
+It independently binds the derived `<stem>-install.bin`, `<stem>-pre.bin`, `<stem>-post.bin`,
+`<stem>-response.bin`, `<stem>-advertisements.jsonl`, and
+`<stem>-measurement.jsonl` siblings. These contain the actually read-back
+candidate loadable bytes, complete workspace readbacks, the observed
+nonce-bearing firmware response, fresh service-scan
+callbacks and their bounded watch interval, and the ordered live acquisition
+steps. The collector must acquire and validate these facts, not fill expected
+records from an operator assertion. All raw identity/media/transport details
+remain private. Every sibling is exclusive-created, mode `0600`, stable,
+regular, and subject to the same no-link/no-replacement rules as the receipt.
+For ESP, the install readback MUST equal the candidate's merged image span at
+its declared offset. For RP2, the retained representation is the candidate UF2
+container with every data payload replaced by actual same-address physical
+readback bytes. Candidate headers, block order, and container padding are
+retained as metadata, not claimed as flash reads; the collector validates
+nonoverlapping data ranges and must actually read every payload range. The
+retained representation's digest MUST equal the candidate install digest.
+A claimed successful install without retained matching readback payloads is
+insufficient.
+Successful boot inspection also retains a real `os.statvfs('/')` result. A
+native-USB endpoint may appear after the recovery line was emitted; its sealed
+measured emission counter can supply that fact without inventing host-captured
+text. The collector never substitutes a literal expected line for absent USB
+bytes. Raw details and derived redacted summary are independently bound.
+
+Erased-media admission requires an all-`0xFF` complete pre-read, a changed
+post-read, a complete/fault-free/nonoverflowed boot record with
+`media_state=erased`, one initial mount, exactly one attempted/completed
+format and remount, positive measured program-plus-erase calls, successful
+workspace attachment, no recovery emission, and a fresh observed service
+advertisement. Nonblank admission requires a deliberately incompatible
+nonblank pre-read, byte-identical complete post-read, a complete/fault-free/
+nonoverflowed record with `media_state=nonblank`, one initial mount, zero
+format/remount/program/erase calls, failed attachment, exactly one recovery
+attempt and emission, and no matching service throughout an uninterrupted
+post-boot watch of at least ten seconds. Partial, stale, cross-board,
+cross-candidate, reordered, nonce-mismatched, or missing observations fail.
+The initial-mount counter excludes the separately counted remount.
+
+Private hardening workspace rows additionally carry a safe same-directory
+`receipt_file` basename and `acquisition_sha256`. Each later validator,
+including finalization, MUST reopen that receipt and its full derived raw
+closure and recheck all bindings. The public redacted summary remains free of
+these private filenames and physical identities. v0.6.0 evidence is unchanged.
+
+The separately exclusive-created mode-`0600` raw boot log is canonical JSONL.
+An erased-media observation has exactly these four records in order:
+
+```json
+{"event":"media-precondition","state":"erased"}
+{"count":1,"event":"lfs2-format"}
+{"count":1,"event":"lfs2-remount"}
+{"event":"service-advertisement","status":"observed"}
+```
+
+A nonblank-incompatible-media observation instead has exactly:
+
+```json
+{"event":"media-precondition","state":"nonblank-incompatible"}
+{"count":0,"event":"media-write"}
+{"count":1,"event":"recovery-message"}
+{"event":"service-advertisement","status":"absent"}
+```
+
+Every displayed record has one trailing LF. The receipt-creation mode accepts
+only the protected candidate, exact profile and observation kind, this new
+raw-log path, the new output path, and the qualification checkout. It derives
+all identities and hashes, publishes one canonical exclusive mode-`0600`
+regular file without replacement, and rereads every input before and after
+publication. Missing, reordered, changed, linked, nonprivate, noncanonical,
+pre-existing, candidate-internal, or otherwise unsafe input/output leaves no
+receipt. This writer records a reviewed physical observation; it does not
+turn a host simulation or operator-edited summary into that observation.
+The output name ends in `.json`; its raw log is the same-directory sibling
+formed by replacing that suffix with `-raw.jsonl`. The writer enforces this
+relationship, and every later result validator reopens both the receipt and
+that derived sibling rather than trusting the copied raw-log digest alone.
+
+For v0.6.1 only, each protected candidate V5 record adds
+`v061_hardening: null` and `checks.v061_hardening: "pending"`. The mechanical
+completion path replaces those with `checks.v061_hardening: "passed"` and a
+privacy-safe `v061_hardening` object having exactly:
+
+```text
+measurement_contract
+scenario_order
+scenarios
+sequential_runs
+workspace_provisioning
+private_result_sha256
+```
+
+The summary repeats the exact contract/order, maps every scenario and both
+workspace observations to `passed`, records `sequential_runs: 50`, and binds
+the complete private result by lowercase SHA-256. It exposes no address,
+device ID, label, media bytes, raw log, console payload, or exception text.
+An operator input cannot contain either the check or summary.
+`create-hil-completion` validates and derives them from the selected profile's
+private result; report assembly requires five distinct matching results; and
+finalization reopens and revalidates exactly those five private files before
+publishing. Missing, extra, duplicated, swapped, reordered, changed, stale, or
+identity-inconsistent input produces no completed/public output. The
+historical v0.6.0 V5 record keys, seven-check map, completion fragments, and
+rendered bytes remain unchanged; no hardening field may appear there.
 
 #### 5.3.5 v0.6.0 five-profile successor policy and evidence
 
@@ -1330,6 +1854,13 @@ totals, immutable-baseline rules, and exact-byte candidate binding with the
 target discrimination below. ADR-0037 replaces only reset/goodput derivation
 for strict descendants of ADR-0038's source boundary; static image/headroom
 and heap derivation remain unchanged.
+
+The v0.6.1 hardening increment reuses this exact five-profile policy, release
+schema 4, and HIL V5 envelope, but starts with fresh candidate-bound evidence.
+Release writers and validators admit exactly the `0.6.0` and `0.6.1` release
+cores at this boundary and compare the full selected version wherever it is
+serialized; they MUST NOT silently substitute `0.6.0` or infer approval for a
+later release core.
 
 The controlled v0.6.0 baseline has schema version `2`, measurement contract
 `"oi1-five-profile-v1"`, and exactly `schema_version`,
@@ -1930,10 +2461,12 @@ These are tracked, release-blocking where noted; they MUST be closed before the 
 - **OI-1 — Replacement static/heap values and final evidence pending.** The measurement method,
   exact current scope, evidence contract, and threshold derivation are frozen
   in §5.3. Reset and goodput are fixed; rederived static image/headroom and
-  heap values plus final evidence remain open. The v0.6.0 portion closes only when
+  heap values plus final evidence remain open. The v0.6.1 increment closes only when
   all five ordered profiles have one committed schema-3 policy row and passing
-  final-candidate V5 evidence, including C3-G0…C3-G6 and Pico GP2. That state
-  MUST be described as **“qualified for the five-profile v0.6.0 release”**,
+  final-candidate V5 evidence, including C3-G0…C3-G6, Pico GP2, and each
+  profile's candidate-bound seven-scenario hardening result plus both
+  sacrificial workspace-provisioning receipts. That state
+  MUST be described as **“qualified for the five-profile v0.6.1 release”**,
   not as universal future-board qualification. — *(verify: size, build, HIL)*
 - **OI-2 — v0.4.2 pin selection is closed; current-candidate selection and
   release approval remain open.** The exact historical `versions.lock` bytes
@@ -1942,7 +2475,7 @@ These are tracked, release-blocking where noted; they MUST be closed before the 
   [§17.1](../prd.md), [`versions.lock`](../../../firmware/versions.lock)).
   That historical selection and the supplemental browser run were not complete
   hardware approval. Before current release builds and HIL, the exact committed
-  lock bytes are now source-selected with agent version v0.6.0. Before any
+  lock bytes are now source-selected with agent version v0.6.1. Before any
   release build or HIL, that exact committed state MUST be deliberately frozen
   as the candidate input. Selection is still not hardware approval: the exact
   candidate MUST pass HIL on every included profile in §5.3. Earlier v0.5.1

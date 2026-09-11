@@ -23,11 +23,11 @@
 import os
 
 import pyble_runner
+from pyble_workspace import mount_lfs2
 
 MAIN_PATH = "/main.py"      # the single opt-in auto-run entry at fs_root
 
 _S_IFDIR = 0x4000           # stat st_mode directory bit (POSIX + MicroPython)
-
 
 def _is_file(path):
     """True iff `path` exists and is a regular file (mp_import_stat FILE

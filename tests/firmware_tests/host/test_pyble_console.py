@@ -48,8 +48,12 @@
 #                                       # traceback path uses out(STDERR, ...))
 #     .readinto(buf) -> 1 | None        # 1 byte into buf[0], or None if empty;
 #                                       # armed STOP_CHAR preempts buffered stdin
-#     .feed_input(b) -> None            # CONSOLE_INPUT: bounded ring; on
-#                                       # overflow the EXCESS TAIL is dropped
+#     .begin_input()                    # RUN admission: clear + admit stdin
+#     .end_input()                      # STOP/terminal/reset: clear + reject
+#     .clear_input()                    # disconnect: clear, retain admission
+#     .feed_input(b) -> None            # CONSOLE_INPUT: idle-discard; while
+#                                       # admitted, bounded ring whose overflow
+#                                       # drops the EXCESS TAIL
 #     .inject_stop() -> bool            # atomically arm 0x03 + call notify once;
 #                                       # False rolls the arm back on notify error
 #     .set_stop_retry(retry)            # install two-stage scheduled recovery
@@ -127,6 +131,15 @@ def drain(testcase, con, limit=1000):
                   "deactivates dupterm (extmod/os_dupterm.c)")
         out.append(buf[0])
     testcase.fail("readinto never drained — ring not bounded?")
+
+
+def begin_input(testcase, con):
+    """Enter the v0.6.1 per-run stdin boundary with a reasoned RED failure."""
+    testcase.assertTrue(
+        hasattr(con, "begin_input"),
+        "v0.6.1 run-scoped stdin requires Console.begin_input()",
+    )
+    con.begin_input()
 
 
 class ConstantsAndShapeTest(unittest.TestCase):
@@ -591,6 +604,7 @@ class ReadIntoTest(unittest.TestCase):
 
     def test_feed_then_read_one_byte_at_a_time(self):
         con, _, _ = make_console(self, self.CRIT)
+        begin_input(self, con)
         self.assertIsNone(con.feed_input(b"ab"),
                           "CONSOLE_INPUT is fire-and-forget: feed_input "
                           "returns None (no RSP frame, §6)")
@@ -610,6 +624,7 @@ class RingOverflowTest(unittest.TestCase):
 
     def test_overflow_drops_the_new_bytes(self):
         con, _, _ = make_console(self, self.CRIT)
+        begin_input(self, con)
         con.feed_input(b"A" * 256)
         con.feed_input(b"Z")                   # full: dropped
         self.assertEqual(drain(self, con), b"A" * 256,
@@ -617,6 +632,7 @@ class RingOverflowTest(unittest.TestCase):
 
     def test_partial_overflow_keeps_the_head_of_the_feed(self):
         con, _, _ = make_console(self, self.CRIT)
+        begin_input(self, con)
         con.feed_input(b"A" * 250)
         con.feed_input(b"0123456789")          # room for 6: keep head, drop tail
         self.assertEqual(drain(self, con), b"A" * 250 + b"012345",
@@ -644,6 +660,7 @@ class InjectStopTest(unittest.TestCase):
 
     def test_stop_preempts_buffered_stdin(self):
         con, _, notifies = make_console(self, self.CRIT)
+        begin_input(self, con)
         con.feed_input(b"xy")
         self.assertTrue(con.inject_stop())
         self.assertEqual(drain(self, con), b"\x03xy",
@@ -656,6 +673,7 @@ class InjectStopTest(unittest.TestCase):
             raise RuntimeError("schedule queue full")
 
         con, _, _ = make_console(self, self.CRIT, notify=queue_full)
+        begin_input(self, con)
         con.feed_input(b"xy")
 
         self.assertFalse(

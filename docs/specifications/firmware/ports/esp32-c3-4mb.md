@@ -25,7 +25,7 @@ the final hash-locked bytes.
 | Upstream MicroPython board | generated `PYBLE_ESP32_C3` overlay target |
 | Provisioning profile under qualification | `esp32-c3-4mb` |
 | PBLE/1 `chip` value | `esp32-c3` |
-| Agent version | Canonical `versions.lock [pyble].agent_version`, currently `0.6.0`; identical across every maintained ESP and RP2 build target |
+| Agent version | Canonical `versions.lock [pyble].agent_version`, currently `0.6.1`; identical across every maintained ESP and RP2 build target |
 
 The module facts are cross-checked against Espressif's
 [ESP32-C3-MINI-1 series table](https://documentation.espressif.com/esp32-c3-mini-1_datasheet_en.html);
@@ -126,6 +126,21 @@ evidence, but a failed run MUST NOT mint any passing result. The public
 summary omits the private receipt body; its private-result digest binds the
 validated receipt transitively. The application and VFS regions remain
 subject to their existing exact-byte and functional checks.
+
+The qualification gate executable MUST provide a
+`create-post-oi-nvs-receipt` operation; a human-authored receipt is not an
+admissible workflow. It accepts the immutable candidate directory, canonical
+verify observation, its exact raw OI log, and the capture's slice and
+acquisition-log files, plus one new output path. It reopens and snapshots every
+input, derives the candidate and artifact digests, verifies the observation's
+raw-log digest against the reopened log and its reset-sample count as exactly
+10, and re-verifies the fully erased slice. The acquisition log is exactly
+these two UTF-8 LF-terminated lines: `c3-post-oi-nvs-acquisition-v1` and
+`offset=0x9000 size=0x6000 captured=post-workload pre-evaluation`. Only then
+may it derive the empty inventory and summary and create the receipt as one
+mode-`0600` regular file, fsync it and its parent, and reopen and revalidate the
+same inode and bytes. Any unsafe, non-exclusive, changed, noncanonical,
+pre-existing, mismatched, or failed input/output publishes no receipt.
 
 The existing V5 `provisioning_install: passed` check remains the mechanical
 full-chip-erase/install attestation and MUST still be present. The NVS receipt

@@ -660,19 +660,58 @@ class StrictPrivateResultTests(unittest.TestCase):
 
 @unittest.skipUnless(RELEASE is not None, RELEASE_ERROR)
 class V5SummaryBindingTests(unittest.TestCase):
-    def payload(self) -> dict[str, object]:
+    def hardening_summary(self, index: int) -> dict[str, object]:
+        scenarios = (
+            "transport-session",
+            "fragment-hardening",
+            "run-isolation",
+            "resource-stability",
+            "stdin-isolation",
+            "configuration-durability",
+            "filesystem-hardening",
+        )
+        workspace = (
+            "erased-media-first-boot",
+            "nonblank-media-refusal",
+        )
+        return {
+            "measurement_contract": "v061-hardening-seven-scenario-v1",
+            "scenario_order": list(scenarios),
+            "scenarios": {name: "passed" for name in scenarios},
+            "sequential_runs": 50,
+            "workspace_provisioning": {
+                name: "passed" for name in workspace
+            },
+            "private_result_sha256": "%064x" % (index + 1),
+        }
+
+    def payload(self, *, firmware_version: str = VERSION) -> dict[str, object]:
+        records = [
+            {
+                "profile_id": profile_id,
+                "profile_gate_summary": None,
+            }
+            for profile_id in PROFILE_ORDER
+        ]
+        if firmware_version == "0.6.1":
+            for index, record in enumerate(records):
+                record["checks"] = {
+                    "provisioning_install": "passed",
+                    "provisioning_recovery": "passed",
+                    "advertising_info_hello": "passed",
+                    "pble_workflow": "passed",
+                    "safe_boot_reconnect": "passed",
+                    "filesystem_resume_reliability": "passed",
+                    "footprint_reliability": "passed",
+                    "v061_hardening": "passed",
+                }
+                record["v061_hardening"] = self.hardening_summary(index)
         return {
             "schema_version": 5,
             "candidate_release_json_sha256": RELEASE_DIGEST,
             "qualification_policy_sha256": "1" * 64,
             "qualification_policy": {"fixture": True},
-            "records": [
-                {
-                    "profile_id": profile_id,
-                    "profile_gate_summary": None,
-                }
-                for profile_id in PROFILE_ORDER
-            ],
+            "records": records,
             "waveshare_lcd147b_qualification": None,
             "esp32_c3_qualification": None,
             "rpi_pico2_w_qualification": None,
@@ -724,6 +763,44 @@ class V5SummaryBindingTests(unittest.TestCase):
         for profile_id in PROFILE_ORDER[:3]:
             self.assertIsNone(by_id[profile_id]["profile_gate_summary"])
 
+    def test_binder_accepts_the_exact_v061_v5_source_version(self) -> None:
+        payload = self.payload(firmware_version="0.6.1")
+        waveshare, c3, pico = self.summaries()
+        by_id = {record["profile_id"]: record for record in payload["records"]}
+        by_id[C3_PROFILE]["profile_gate_summary"] = copy.deepcopy(c3["gates"])
+        by_id[PICO_PROFILE]["profile_gate_summary"] = copy.deepcopy(pico["gates"])
+
+        bound = self.binder()(
+            payload,
+            waveshare_lcd147b_summary=waveshare,
+            esp32_c3_summary=c3,
+            rpi_pico2_w_summary=pico,
+            firmware_version="0.6.1",
+        )
+
+        self.assertEqual(bound["waveshare_lcd147b_qualification"], waveshare)
+        self.assertEqual(bound["esp32_c3_qualification"], c3)
+        self.assertEqual(bound["rpi_pico2_w_qualification"], pico)
+
+        legacy = self.payload()
+        legacy_by_id = {
+            record["profile_id"]: record for record in legacy["records"]
+        }
+        legacy_by_id[C3_PROFILE]["profile_gate_summary"] = copy.deepcopy(
+            c3["gates"]
+        )
+        legacy_by_id[PICO_PROFILE]["profile_gate_summary"] = copy.deepcopy(
+            pico["gates"]
+        )
+        with self.assertRaises(RELEASE.ReleaseError):
+            self.binder()(
+                legacy,
+                waveshare_lcd147b_summary=waveshare,
+                esp32_c3_summary=c3,
+                rpi_pico2_w_summary=pico,
+                firmware_version="0.6.1",
+            )
+
     def test_binder_rejects_partial_changed_or_wrong_phase_inputs(self) -> None:
         binder = self.binder()
         waveshare, c3, pico = self.summaries()
@@ -758,7 +835,10 @@ class V5SummaryBindingTests(unittest.TestCase):
         wrong_schema = self.payload()
         wrong_schema["schema_version"] = 4
         cases["wrong-schema"] = (wrong_schema, waveshare, c3, pico, VERSION)
-        cases["wrong-version"] = (self.payload(), waveshare, c3, pico, "0.6.1")
+        cases["pre-v5-version"] = (self.payload(), waveshare, c3, pico, "0.5.1")
+        cases["unapproved-future-version"] = (
+            self.payload(), waveshare, c3, pico, "0.7.0"
+        )
         missing_record = self.payload()
         missing_record["records"] = missing_record["records"][:-1]
         cases["missing-record"] = (missing_record, waveshare, c3, pico, VERSION)

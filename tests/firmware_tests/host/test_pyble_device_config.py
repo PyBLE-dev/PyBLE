@@ -8,29 +8,23 @@
 # identity-engineer -> firmware/pyble/pyble_device_config.py (native twin
 # pble_device_config.c).
 #
-# =====================================================================
-# DoR STATUS — BLOCKED (do NOT commit [red] before the freeze):
-#   protocol.md §7 (label/device_id carried in caps) is DRAFT, and the OI-6
-#   label max-length freeze [docs] mirror (architect froze PBLE_LABEL_MAX=24
-#   in the native contract) has not landed in protocol.md §4/§7 + specs.md
-#   FR-IDENT-1. Until then this suite asserts ONLY the FROZEN SEMANTICS via the
-#   scaffold API: the 24-byte bound (architect freeze), advertised-name
-#   derivation (§2 FROZEN, FR-BLE-5/12), empty-clears, over-length -> ERANGE
-#   (§8 FROZEN), and never-gates-access (SEC-11/CON-7). It NEVER hardcodes a
-#   DRAFT SET_LABEL body byte. NVS persist-across-reboot + scan-list visibility
-#   are HIL-only (see gates/g1_s3_check.sh).
-# =====================================================================
+# Historical TDD provenance: the first [red] version deliberately avoided an
+# unfrozen SET_LABEL body. Protocol §7 and the OI-6 label mirror are now frozen,
+# so this is an active regression suite for the 24-byte bound, advertised-name
+# derivation, empty clear, ERANGE, strict UTF-8, and display-only identity.
+# Persistence across reboot and scan-list visibility remain HIL-only.
 #
 # FROZEN references: protocol.md §2 (advertising: label replaces name, MAC-
-# suffix device_id), §4 (0x50 SET_LABEL), §8 (ERANGE 0x09); specs.md FR-BLE-5/12,
+# suffix device_id), §4 (0x50 SET_LABEL), §7 (payload), §8 (ERANGE 0x09); specs.md FR-BLE-5/12,
 # FR-IDENT-1, SEC-10/11, CON-7; architect freeze OI-6 = 24 bytes UTF-8.
 #
 # ---------------------------------------------------------------------------
 # INTERFACE PINNED BY THIS [red] TEST (identity-engineer implements to it):
 #   pyble_device_config.PBLE_LABEL_MAX : int == 24   # UTF-8 encoded bytes
 #   pyble_device_config.label_status(utf8: bytes) -> int
-#         # PURE bound decision: OK(0x00) if len<=MAX (incl. empty=clear),
-#         # ERANGE(0x09) if over. The NVS store/clear is layered on top (HIL).
+#         # PURE validator: length is checked first (ERANGE if over); otherwise
+#         # malformed UTF-8 or C0/C1/DEL controls -> EBADREQ; empty=clear and a
+#         # valid control-free label -> OK. Persistence is layered on top.
 #   pyble_device_config.adv_name(device_id: str, label: str) -> str
 #         # SINGLE SOURCE: label if non-empty else "PyBLE-"+device_id
 #         # (pyble_ble.advertised_name delegates here — F-22 refactor).
@@ -50,8 +44,8 @@ LABEL_MAX = 24  # OI-6 architect freeze (UTF-8 encoded bytes)
 
 
 class LabelBoundTest(unittest.TestCase):
-    """FR-IDENT-1 / SEC-10 / OI-6: bounded UTF-8 label; over-length -> ERANGE
-    and NOT stored; the bound is measured in ENCODED BYTES, not codepoints."""
+    """FR-IDENT-1 / SEC-10 / OI-6: validated, bounded UTF-8 label; the
+    bound is measured in ENCODED BYTES, not codepoints."""
 
     def test_frozen_bound_is_24_bytes(self):
         self.assertEqual(DC.attr(self, "PBLE_LABEL_MAX", "F-22/OI-6 label max = 24 bytes"),

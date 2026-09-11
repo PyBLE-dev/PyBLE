@@ -8,18 +8,10 @@
 # firmware/pyble/pyble_proto.py (native twin pble_proto.c). The HELLO-side of
 # F-16 (version negotiation, FR-INFO-5) lives in test_pyble_info.py.
 #
-# =====================================================================
-# DoR STATUS — BLOCKED on §9 freeze (accept-only-VER-0x01 / refusal policy).
-#   protocol.md §9 (Versioning policy) is DRAFT (freeze ledger, 2026-07-01).
-#   The VER-byte itself (§3.1) and EUNSUPPORTED (§8) are FROZEN, so the
-#   MECHANISM is testable; the REFUSAL POLICY wording is §9-DRAFT. Commit
-#   [red] only after §9 freezes + specs.md FR-PROTO-7 mirror lands.
-# =====================================================================
-#
-# FROZEN references: §3.1 VER=0x01, §4 opcode set, §8 status set (EUNSUPPORTED
-# 0x0A, EBADREQ 0x01), architect contract dispatch guard note. This file NEVER
-# redefines the wire; the corrupt/other-version frames are built with a CORRECT
-# CRC (zlib oracle) so the failure is the VER guard, not a CRC reject.
+# FROZEN references: §3.1 VER=0x01, §3.2 validation precedence, §4 opcode set,
+# §8 status set, and §9 refusal policy (amended 2026-09-02). This file NEVER
+# redefines the wire; other-version frames use the zlib CRC oracle so each test
+# can distinguish the CRC gate from direction and version refusal.
 #
 # INTERFACE PINNED (protocol-engineer implements to it, already pinned by
 # test_pyble_proto.py): pyble_proto.decode / .Dispatcher().on_message.
@@ -66,10 +58,12 @@ class AcceptOnlyVer0x01Test(unittest.TestCase):
         decode = PROTO.attr(self, "decode", "F-16/FR-PROTO-7 decode")
         d = disp_cls()
         out = d.on_message(oracle_frame(0x02, CMD, HELLO, 1, b""))
-        # Guard note: reject -> EVT ERROR(EBADREQ). Assert it is NOT a normal RSP
-        # OK and DOES carry an error status, so the client is not mis-spoken to.
+        # A safely correlatable, direction-valid VER2 CMD is refused by a v1 RSP
+        # that echoes its opcode/ID; it is never accepted or answered OK.
         self.assertIsNotNone(out, "a VER!=0x01 frame MUST be answered, not ignored silently")
         ans = decode(bytes(out))
+        self.assertEqual(RSP, ans.type)
+        self.assertEqual((HELLO, 1), (ans.opcode, ans.id))
         self.assertNotEqual(ans.payload[0], 0x00,
                             "a VER!=0x01 frame MUST NOT be answered OK")
         self.assertEqual(ans.payload[0], EBADREQ,
@@ -83,6 +77,29 @@ class AcceptOnlyVer0x01Test(unittest.TestCase):
         d.register(HELLO, lambda fr: seen.__setitem__("n", seen["n"] + 1) or b"\x00")
         d.on_message(oracle_frame(VER, CMD, HELLO, 1, b""))
         self.assertEqual(seen["n"], 1, "a valid VER=0x01 CMD MUST still dispatch")
+
+    def test_crc_failure_precedes_version_refusal(self):
+        disp_cls = PROTO.attr(
+            self, "Dispatcher", "v0.6.1 structure -> CRC -> VER precedence")
+        decode = PROTO.attr(self, "decode", "v0.6.1 bad VER/bad CRC response")
+        msg = oracle_frame(0x02, CMD, HELLO, 2, b"")
+        msg = msg[:-1] + bytes((msg[-1] ^ 0x01,))
+        out = disp_cls().on_message(msg)
+        self.assertIsNotNone(out)
+        answer = decode(bytes(out))
+        self.assertEqual((EVT, HELLO, 0),
+                         (answer.type, answer.opcode, answer.id))
+        self.assertEqual(b"\x08", bytes(answer.payload),
+                         "bad CRC is ECRC even when VER is also unsupported")
+
+    def test_direction_gate_precedes_version_refusal(self):
+        disp_cls = PROTO.attr(
+            self, "Dispatcher", "v0.6.1 CRC -> direction -> VER precedence")
+        out = disp_cls().on_message(oracle_frame(0x02, RSP, HELLO, 3, b"\x00"))
+        self.assertIsNone(
+            out,
+            "a valid-CRC inbound RSP is silent; unsupported VER cannot turn it "
+            "into a response loop")
 
 
 class UnknownOpcodeEunsupportedTest(unittest.TestCase):

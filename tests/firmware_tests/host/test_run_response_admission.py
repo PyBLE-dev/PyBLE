@@ -368,6 +368,44 @@ class NativeRunAdmissionContractTests(unittest.TestCase):
         self.assertIn("taskEXIT_CRITICAL(&g_mux)", failure_body)
         self.assertIn("return PBLE_NO_RSP;", failure_body)
         self.assertNotIn("xSemaphoreGive", failure_body)
+        self.assertNotIn(
+            "pble_console_stdin_begin", failure_body,
+            "a failed RUN response must preserve the prior stdin bytes/lease",
+        )
+        self.assertGreater(
+            body.find("pble_console_stdin_begin()"),
+            failure.end(),
+            "stdin admission/clear belongs strictly after successful TX",
+        )
+
+    def test_failed_stop_submit_cannot_end_or_clear_live_stdin(self):
+        stop = code_only(c_function(RUNNER, "pble_runner_stop"))
+        failure = re.search(
+            r"if\s*\(\s*tx_rc\s*!=\s*PBLE_TX_OK\s*\)\s*"
+            r"\{(?P<body>.*?)\n\s*\}",
+            stop,
+            flags=re.DOTALL,
+        )
+        self.assertIsNotNone(failure)
+        self.assertIn("runner_control_attempt_resolve(false)", failure.group("body"))
+        self.assertNotIn("pble_console_stdin_end", failure.group("body"))
+
+        resolve = code_only(
+            c_function(RUNNER, "runner_control_attempt_resolve")
+        )
+        accepted = re.search(
+            r"if\s*\(\s*accepted\s*!=\s*false\s*\)\s*"
+            r"\{(?P<body>.*?)\}",
+            resolve,
+            flags=re.DOTALL,
+        )
+        self.assertIsNotNone(accepted)
+        self.assertIn("pble_console_stdin_end()", accepted.group("body"))
+        self.assertEqual(
+            resolve.count("pble_console_stdin_end()"),
+            1,
+            "only accepted control publication may close stdin",
+        )
 
     def test_handoff_is_initialized_and_the_binary_give_is_an_invariant(self):
         body = code_only(c_function(RUNNER, "pble_runner_run"))

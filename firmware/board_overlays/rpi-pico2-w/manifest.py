@@ -37,6 +37,7 @@ freeze(
         "pyble_info.py",
         "pyble_proto.py",
         "pyble_runner.py",
+        "pyble_workspace.py",
     ),
     opt=3,
 )

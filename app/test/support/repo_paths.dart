@@ -41,3 +41,9 @@ String gateScript(String name) => '${repoRoot().path}/tools/ci/$name';
 File conformanceCorpus() => File(
   '${repoRoot().path}/tests/firmware_tests/host/conformance/corpus.json',
 );
+
+/// Shared PBLE/1 v0.6.1 HELLO/session semantic vectors (TDD D11).
+File v061SessionCorpus() => File(
+  '${repoRoot().path}/tests/firmware_tests/host/conformance/'
+  'v061_session_vectors.json',
+);

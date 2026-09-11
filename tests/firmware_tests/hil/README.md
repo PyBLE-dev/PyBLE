@@ -8,6 +8,14 @@ firmware-test-author**; none of this ships in the firmware image.
 A milestone gate is green **only on a real-hardware HIL demo**, not on merged
 code (PRD §1B.7). These drivers are that demo, made repeatable.
 
+Every valid outbound `CMD`, including no-response `FILE_PUT_DATA`, uses a
+request ID in 1–255. Transfer data and controls share a wrapping allocator;
+each Go-Back-N resend obtains another valid ID without waiting for a data
+`RSP`. ID zero is reserved for `EVT` and intentional malformed-input tests.
+Host regression coverage must exercise more than 255 submissions and feed
+captured frames through the unchanged native wire-admission decision. These
+tool checks do not replace actual candidate/board HIL evidence.
+
 ## Files
 
 | File | Role |
@@ -20,6 +28,7 @@ code (PRD §1B.7). These drivers are that demo, made repeatable.
 | `file_roundtrip_bench.py` | Upload/download regression bench for the reported 11.9 KiB stall: consumes HELLO caps, supports an exact canonical `--expect-chip`, and now requires contiguous unique GET offsets plus exact bytes/size/CRC. |
 | `target_smoke.py` | Target-neutral service/HELLO/DEVICE_INFO/INFO identity smoke. It requires an explicit expected chip, defaults the expected agent to `versions.lock`, and excludes BLE address, device ID, and label from its result line. |
 | `target_run_stop.py` | Target-neutral busy-loop and print-flood RUN/STOP lifecycle bench. It proves one matching `RSP{OK}` before one idle event in less than 500 ms, then runs a bounded same-link console nonce before file-mode cleanup. |
+| `v061_hardening_bench.py` | Exact-profile v0.6.1 physical hardening orchestrator. It executes the seven frozen scenarios in order, including exactly 50 sequential RUNs, validates both separately acquired sacrificial workspace receipts, and writes a candidate-bound canonical private result plus redacted raw log without replacement. |
 
 ## Prerequisites (HIL runner only)
 
@@ -28,12 +37,132 @@ python3 -m pip install bleak pyserial
 ```
 
 Plus a board flashed with the exact firmware candidate under test. v0.6.0 is
-one atomic five-profile matrix, in this order: `esp32-4mb`,
+the qualified baseline; v0.6.1 repeats one fresh atomic five-profile matrix in
+this same order: `esp32-4mb`,
 `esp32-s3-n16r8`, `waveshare-esp32-s3-lcd-147b`, `esp32-c3-4mb`, and
 `rpi-pico2-w`. Run them sequentially when USB capacity is limited; they do not
 need to be connected simultaneously. A missing profile blocks the whole
 release. Neither a serial-port name nor a chip family alone proves the required
 board, flash, PSRAM, or provisioning profile.
+
+## v0.6.1 hardening qualification
+
+Each exact profile requires one new private result from
+`v061_hardening_bench.py`. The live portion proves, in order,
+`transport-session`, `fragment-hardening`, `run-isolation`,
+`resource-stability`, `stdin-isolation`, `configuration-durability`, and
+`filesystem-hardening`. Resource stability is exactly 50 sequential runs.
+The transport/session scenario first proves ordinary disconnect/reconnect
+negotiation isolation. It then writes a bounded sentinel into volatile VM
+state, completes the acknowledged `SOFT_REBOOT` path, reconnects after the
+board advertises again, and requires a pre-HELLO `DEVICE_INFO` command to
+return `EBADREQ`. Only a new HELLO may reopen command admission, after which a
+bounded RUN must prove that the volatile sentinel is absent. This binds the
+negotiation-reset observation to a proven VM rotation rather than treating a
+BLE reconnect alone as VM-reset evidence.
+
+The stdin scenario covers idle, terminal, overflow/STOP, disconnect, and VM
+reset independently. For the VM-reset boundary it starts an active delayed
+input RUN, queues a stale complete line, accepts `SOFT_REBOOT`, reconnects and
+negotiates with the new VM, then starts a successor input RUN. The successor
+must remain blocked until a fresh post-reset line is sent and must never echo
+the queued predecessor line. Host tests can prove this orchestration, but only
+executing it on each exact board/candidate supplies physical HIL evidence.
+
+The filesystem scenario repeats a deterministic 16 KiB GET for each
+active-download admission probe. The central records completion of the whole
+outbound command write and fails unless that cut precedes `FILE_GET_END`.
+Valid `FILE_DELETE`, `MKDIR`, and `FILE_RENAME` commands must then return
+`EBUSY` without changing their bench-owned source/destination paths. A
+representative malformed mutation must retain `EBADREQ`, a jailed mutation
+must retain `EACCES`, and `FILE_LIST` plus `FILE_STAT` must remain available.
+Every probe still verifies the complete GET byte stream, offsets, length, and
+whole-file CRC. Separate GETs are intentional: the native response pool has
+two slots, so accumulating several response-bearing commands behind one GET
+would test pool exhaustion instead of transfer serialization.
+Configuration durability includes label and autorun persistence/restoration
+and preserves an existing Identify configuration across reboot when the
+profile advertises Identify. Because PBLE/1 caps do not expose the persisted
+active level, the target-neutral bench invokes Identify before and after reboot
+but does not rewrite an owner's LED configuration.
+
+Workspace first-boot behavior occurs before BLE service startup and is
+therefore acquired separately on sacrificial media. Before the live run,
+retain one candidate-bound canonical receipt/raw log for erased-media LFS2
+creation and one for nonblank incompatible-media refusal. Do not erase or
+modify a user's working board to obtain either result. `NOT-RUN`, reused
+v0.6.0 evidence, a receipt from another profile, or a configuration-corruption
+test cannot qualify v0.6.1.
+
+The measured-boot amendment of 2026-09-06 requires the actual retained
+`pyble_workspace.read_boot_observation(challenge)` response, complete private
+pre/post workspace readbacks, and a fresh bounded advertisement watch. The
+four-line canonical summary is derived from that acquisition; it cannot be
+entered by an operator or inferred from expected source behavior. Success can
+be queried through a bounded existing PBLE/1 RUN (including Pico); failure is
+queried through USB REPL with no agent advertisement. Both paths only read the
+sealed original boot observation and must never rerun the mount helper.
+The private receipt and each later hardening/finalization step bind and reopen
+all derived acquisition siblings. Detailed fields and fail-closed predicates
+are frozen in firmware specs §4.7 and §5.3.4. Changes to the observer require
+fresh five-profile build, resource/performance, and physical qualification.
+
+The host-generated native-USB refusal query paces the same one JSON line in
+16-character stdout writes, separated by 50 ms, with a 1,024-byte ASCII ceiling
+and bounded pre/post drain intervals. This avoids one-shot FIFO pressure while
+leaving DTR/RTS and the original VM boot unchanged. It is not a new receipt
+format or a guarantee of delivery: missing bytes, delimiters, nonce, or fields
+still fail the existing parser and acquisition. Keep failed raw captures.
+
+Use `v061_workspace_acquire.py` for the physical acquisition, with a clean
+qualification checkout, protected final candidate, reviewed mode-`0600`
+private binding JSON, and a new receipt filename in a private directory:
+
+```sh
+python tests/firmware_tests/hil/v061_workspace_acquire.py \
+  --candidate-dir /absolute/private/candidate \
+  --profile esp32-4mb --kind erased-media-first-boot \
+  --binding /absolute/private/esp32-4mb-binding.json \
+  --output /absolute/private/esp32-4mb/erased.json \
+  --allow-disposable-erase
+```
+
+This command **erases the selected board**, installs the exact candidate,
+and acquires actual measurements; retain an independently verified owner
+backup and explicit disposable-media authorization first. Repeat separately
+with `--kind nonblank-media-refusal` and a new `nonblank.json` output. The
+binding includes exact application/loader USB endpoints and topology, physical
+UID/MAC, chip/flash geometry, and reviewed transfer settings. Never guess a
+binding from a short advertising suffix. The maintained schema rejects other
+fields; private identities must not enter public documentation or Git.
+
+The macOS adapter uses Bleak `3.0.2`, pyserial `3.5`, esptool `4.12.0` for ESP,
+and the exact repository-pinned picotool for Pico. Use a dedicated local
+environment and retain its dependency versions; do not mutate the compiler
+environment. The collector publishes no passing receipt on interruption or
+partial acquisition and never automatically re-erases after failure. It
+finishes post-readback in loader mode; returning to normal runtime or another
+clean install is a separate, explicitly sequenced qualification operation.
+Keep both receipts and all their siblings beside the later hardening result.
+
+The live runner receives the protected candidate directory, exact profile,
+private BLE address, both receipt paths, and new raw-log/output paths. It emits
+no passing result unless all seven live scenarios and both pre-service
+receipts pass against the same v0.6.1 candidate. The output and log are
+exclusive mode-`0600` files and must remain outside Git. The release workflow
+passes the result to `create-hil-completion`; the operator input never contains
+the derived hardening check or summary. Finalization reopens all five private
+results, so copying a result line or editing HIL Markdown is not evidence.
+
+The runner validates the protected candidate, both receipts and raw siblings,
+and the complete committed qualification-code closure before it connects. It
+then requires `/v061_hil` and `/main.py` to be absent before making any board
+change. Use a controlled qualification board: a collision is a hard refusal,
+not permission to delete an owner's files. The invocation also requires the
+reviewed manufacturer, model, and module marking for the selected physical
+profile. That operator attestation is the exact-board authority because
+PBLE/1 intentionally reports chip identity, not a carrier-board or provisioning
+profile; the private values never enter result evidence.
 
 For controlled reset samples, select an explicit USB serial adapter for the
 same board. The orchestrator uses the common ESP development-board wiring:
@@ -300,9 +429,9 @@ python3 ../../../firmware/scripts/release_bundle.py \
     <private>/esp32-c3-4mb-private-result.json
 ```
 
-The workflow-contract host test remains deliberately RED until these two safe
-writers land. Do not work around it by hand-authoring a private result,
-`profile_gate_summary`, candidate digest, or artifact digest.
+These safe writers are the only supported path. Do not work around them by
+hand-authoring a private result, `profile_gate_summary`, candidate digest, or
+artifact digest.
 
 After exactly five fragments exist, create the completed report without
 editing Markdown:

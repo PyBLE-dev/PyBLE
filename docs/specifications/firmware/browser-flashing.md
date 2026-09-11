@@ -1,12 +1,14 @@
 # PyBLE Firmware Browser Provisioning and Release Bundle
 
-Status: **FROZEN v1.32** · Owner: project maintainer · Frozen:
-2026-08-20 (`[docs]`; ADR-0033 adds the exact five-profile v0.6.0 successor
-with release schema 4, HIL V5, OI policy schema 3, four ESP Web Serial images,
-and one verified-UF2/manual-BOOTSEL path; every new gate remains pending;
-ADR-0037 fixes replacement-era reset and transfer product SLOs; ADR-0038
-replaces an unpublished local v0.6.0 candidate by source ancestry; immutable
-v0.4.2, v0.5.1, and predecessor-v0.6.0 contracts are preserved)
+Status: **FROZEN v1.33** · Owner: project maintainer · Frozen:
+2026-09-02 (`[docs]`; ADR-0033 established the exact five-profile v0.6.0
+successor with release schema 4, HIL V5, OI policy schema 3, four ESP Web
+Serial images, and one verified-UF2/manual-BOOTSEL path; ADR-0037 fixes
+replacement-era reset and transfer product SLOs; ADR-0038 replaces an
+unpublished local v0.6.0 candidate by source ancestry; the qualified v0.6.0
+result is the baseline; the v0.6.1 amendment retains V5 while requiring fresh,
+exact-version evidence; immutable v0.4.2, v0.5.1, and predecessor-v0.6.0
+contracts are preserved)
 
 This document is the source of truth for the initial browser-provisioning
 release bundle. It refines
@@ -45,8 +47,10 @@ The fifth row is deliberately heterogeneous:
 
 The exact profile order is `esp32-4mb`, `esp32-s3-n16r8`,
 `waveshare-esp32-s3-lcd-147b`, `esp32-c3-4mb`, `rpi-pico2-w`. All five are
-release-blocking. C3-G0…C3-G6 and Pico GP2 remain pending prerequisites; no
-profile becomes active until the complete exact-byte v0.6.0 matrix passes.
+release-blocking. The complete exact-byte v0.6.0 matrix, including C3-G0…C3-G6
+and Pico GP2, passed and is the qualified baseline. The v0.6.1 candidate must
+repeat every gate with fresh evidence; no v0.6.1 profile becomes active until
+that complete atomic matrix passes.
 
 ### 1.1 Loopback-only five-target approval preview
 
@@ -187,17 +191,19 @@ relative source layout until the license audit, candidate validation, and
 two-root byte comparison have completed:
 
 ```text
-.sources/esp32-4mb/micropython/
-.sources/esp32-s3-n16r8/micropython/
+.sources/esp32/micropython/
+.sources/esp32-s3/micropython/
 .sources/waveshare-esp32-s3-lcd-147b/micropython/
-.sources/esp32-c3-4mb/micropython/
+.sources/esp32-c3/micropython/
 .sources/rpi-pico2-w/micropython/
 ```
 
-Each path is an independent MicroPython checkout for exactly the named release
-profile. The generic and Waveshare S3 variants both compile IDF target
-`esp32s3`, but MUST NOT share mutable source/build state or collapse to one
-artifact.
+Each path is an independent MicroPython checkout for exactly the selected build
+target. Release profiles `esp32-4mb`, `esp32-s3-n16r8`, and `esp32-c3-4mb` map
+to targets `esp32`, `esp32-s3`, and `esp32-c3`, respectively; the Waveshare and
+Pico profile names already equal their build targets. The generic and Waveshare
+S3 variants both compile IDF target `esp32s3`, but MUST NOT share mutable
+source/build state or collapse to one artifact.
 Its `HEAD` MUST equal the full `versions.lock [micropython].commit`, its
 `origin` URL MUST equal the canonical `versions.lock [micropython].repo`, and
 its tracked tree MUST be clean when admitted and validated. Each target's
@@ -710,14 +716,16 @@ The generator MUST:
 **Independent RP2 policy and observer.**
 `firmware/licenses/rp2-license-policy.json` is a separate reviewed, hash-bound
 input. Its exact top-level keys are `schema_version`, `profile_id`, `target`,
-and `source_owners`; `schema_version` is the exact JSON integer `1`, and the
+and `source_owners`; `schema_version` is the exact JSON integer `2`, and the
 identity is exactly `rpi-pico2-w`. Each canonical, identifier-sorted owner has
 exactly `id`, `source_roots`, `source_ref`, `source_url`,
 `source_spdx_expression`, `selected_spdx_expression`, `copyright`,
-`license_texts`, `notice_files`, and `disposition`. A source root has exactly
-`namespace` and `path`, where the namespace is `repo`, `micropython`, or
-`arm-gnu-toolchain`; a license-text record has exactly `identifier`, `path`,
-and `sha256`; and a notice record has exactly `path` and `sha256`. Lists are
+`license_texts`, `notice_files`, and `disposition`, except the five exact ARM
+GNU owners that additionally carry their frozen `component_kind`. A source
+root has exactly `namespace` and `path`, where the namespace is `repo`,
+`micropython`, or `arm-gnu-toolchain`; a license-text record has exactly
+`identifier`, `path`, and `sha256`; and a notice record has exactly `path` and
+`sha256`. Lists are
 nonempty where applicable, unique, and canonical. The most-specific lexical
 root in one namespace owns an input; no owner or equal-specificity ambiguity
 is fatal. Every owner MUST contribute an observed input, while every observed
@@ -728,6 +736,89 @@ compiler/newlib runtime classes). Thus the catalog represents every mandatory
 dependency class below but is not an unsafe fixed-count allowlist. A boolean
 or numerically equal fractional schema version is invalid. The policy MUST NOT
 import an ESP package identity or resolution as proof for an RP2 input.
+
+Firmware v0.6.1 adds a second, independently reviewed input,
+`firmware/licenses/rp2-build-tools-license-policy.json`, only to audit the
+host picotool distribution used by its RP2 build. Firmware v0.6.0 never opens
+or interprets this file. The new policy has exact top-level keys
+`schema_version`, `profile_id`, `target`, `distribution_provenance`,
+`source_owners`, and `nonsoftware_members`; its schema is exact integer `1`
+and its two identities are `rpi-pico2-w`. Its source-owner shape is the RP2
+schema-2 shape with required `component_kind: "build-tool"`, but its only
+namespace is `picotool-distribution` and its exact, sorted owner IDs are
+`picotool-composite-build-tool` and `picotool-libusb-build-tool`. The former
+owns each regular software member except libusb and selects the owner-scoped
+`LicenseRef-PyBLE-Picotool-2.3.0-Composite`; its complete reviewed component
+manifest retains picotool and Pico SDK BSD-3-Clause, clipp and nlohmann JSON
+MIT, littlefs BSD-3-Clause, the exact ooFatFs R0.13c grant, selected MIT for
+whereami, selected Apache-2.0 for Mbed TLS, and the CMake package-script
+grant. The latter owns only `picotool/libusb-1.0.0.dylib`, selects
+`LGPL-2.1-or-later`, and binds libusb tag `v1.0.30`, commit
+`87a55632db62c9bdc58cd31d3ccfa673f1bb017f`, source-archive SHA-256
+`fea36f34f9156400209595e300840767ab1a385ede1dc7ee893015aea9c6dbaf`,
+and the complete COPYING plus attribution inputs.
+
+`distribution_provenance` binds the exact `[picotool]` lock table, official
+archive bytes and 12-entry member inventory frozen by the Pico 2 W port
+contract, runtime version line, source repo/tag/commit, and distribution
+repo/tag/commit. It also binds the reviewed
+`firmware/licenses/evidence/rp2/picotool/2.3.0/distribution-attribution-v1.json`.
+Its exact keys are `picotool_lock`, `retained_archive`, `member_inventory`,
+`runtime_version_line`, `source`, `distribution`, and `attribution`.
+`picotool_lock` is an exact copy of the frozen lock table;
+`retained_archive` has exactly `path`, `bytes`, and `sha256`; every member has
+exactly `path`, `kind`, `mode`, `bytes`, and `sha256`; `source` and
+`distribution` each have exactly `repo`, `ref`, and `commit`; and
+`attribution` has exactly `path` and `sha256`. Every nonsoftware-member record
+copies its complete member record and adds only
+`classification: "packaging-metadata"`. Array order is the archive order
+frozen by the port contract, except owner roots and nonsoftware members, which
+are lexically path-sorted.
+Production admission accepts only the complete seven-key attribution document
+(`schema_version`, `archive`, `archive_members`, `components`,
+`distribution_provenance`, `libusb_binary_provenance`, and `source`) and the
+exact frozen canonical bytes of that document and its policy. A compact or
+self-consistently rehashed test attribution is never a production schema. The
+validator recursively reopens every referenced component, license, notice,
+source-archive, and packaging-provenance asset and requires its recorded
+digest before admitting the policy.
+That record distinguishes exact vendored-tree identities from upstream origin
+statements and records pico-sdk-tools' Apache-2.0 license as packaging
+provenance only. The archive is an aggregate container, not an Apache-2.0
+owner. The directory entry and `.keep` are the exact sorted
+`nonsoftware_members` and are explicitly classified as packaging metadata;
+they cannot disappear, acquire an owner, or mask an unowned software member.
+Both build-tool owners and all their license inputs participate in the audit
+receipt but are excluded from the redistributed firmware
+`THIRD_PARTY_LICENSES.txt`, because neither host tool is present in the
+firmware image.
+
+The build-tools observer opens the retained install below one no-follow
+directory descriptor, requires the install root itself to be a directory with
+exact private mode `0700`, rejects linked regular members, and proves exact
+member types, modes, bytes, and node identities. It reconstructs and validates
+a private byte-for-byte probe tree from the verified archive, then removes
+every write bit and retains no-follow descriptors for its root directory and
+executable across the probe. The child resolves the relative executable only
+after entering that descriptor-anchored root, so transient substitution of the
+private tree's pathname cannot select code. It executes `picotool version` only
+from that write-locked private tree; it never executes the pathname in the
+mutable retained install. Both descriptors and the complete locked probe tree
+must have the same bytes and identities after execution. The observer then
+reopens the retained archive
+and complete installed tree and requires the same identities before minting
+evidence. A file rewrite, atomic replacement, mode change, link substitution,
+path-component substitution, or archive mutation at the probe boundary is
+fatal.
+
+Candidate replay passes the candidate firmware version into tool-lock loading
+before any version-specific policy path is opened. A newer validator checkout
+may contain later locked input pairs, but an older candidate neither opens nor
+receives them. Conversely, a candidate requiring a missing version-specific
+pair fails closed. The `compare` command requires `--repo-root`, derives the
+strict source version from that checkout's `versions.lock`, and passes both
+the root and version to reproducibility validation; its CLI has no
+versionless v0.6.1 path.
 
 The observer starts from the exact retained `firmware.elf`, its
 `CMakeFiles/firmware.dir/link.txt`, `firmware.elf.map`, CMake cache, build
@@ -772,7 +863,8 @@ GNU roots is fatal. Every dependency is attributed to one most-specific RP2
 policy owner. A generated build dependency is admitted only through an exact
 recorded derivation whose source/configuration inputs are themselves owned and
 hashed; generated bytes never create an inferred license owner. The semantic
-hash, all seven RP2 role documents where applicable, and public replay cover
+hash, all release-selected RP2 role documents where applicable, and public
+replay cover
 the depfile bytes, object/source relationship, ordered dependency records,
 owner identity, and dependency bytes.
 
@@ -967,8 +1059,16 @@ fatal.
 The v0.6 audit emits a canonical `audit-receipt.json` with exact JSON integer
 `schema_version: 2`. It binds the notice, complete input/evidence hashes,
 execution identity, release inventory, all eight ESP role identities, and
-exactly these seven RP2 evidence roles: `linked-inputs`, `frozen-modules`,
-`pico-sdk`, `btstack`, `cyw43`, `tinyusb`, and `arm-gnu-runtime`. The canonical
+one firmware-version-selected RP2 role list. Firmware v0.6.0 retains exactly
+these seven roles and their historical bytes: `linked-inputs`,
+`frozen-modules`, `pico-sdk`, `btstack`, `cyw43`, `tinyusb`, and
+`arm-gnu-runtime`. Firmware v0.6.1 appends exactly one eighth role,
+`build-tools`. Its evidence document binds the retained archive, all 12
+members and modes, exact lock and runtime identity, reviewed
+provenance/component manifests, two build-tool owners, and every required
+license/attribution byte. The same candidate-derived firmware version selects
+the role list, policy, and evidence schema throughout; the validator
+checkout's current lock cannot silently reinterpret a candidate. The canonical
 schema-v1 `release-inventory.json` contains exactly the five release profiles
 in policy order, binds each packaged provenance, and distinguishes each ESP
 application/bootloader raw and reviewed document from the Pico role
@@ -1047,8 +1147,8 @@ The following ESP-IDF resolution rules are part of that fail-closed mapping:
    file, an admitted described directory marker, or a `CONFIG_ONLY` component
    root, except for these pinned application-`main` inputs:
 
-   - the eleven repository-owned files
-     `firmware/user_c_modules/pyble/{pble_proto,pble_ble,pble_info,pble_device_config,pble_runner,pble_console,pble_fs,pble_lock,pble_boot,pble_vm_lifecycle,pble_termination}.c`;
+   - the twelve repository-owned files
+     `firmware/user_c_modules/pyble/{pble_proto,pble_wire,pble_ble,pble_info,pble_device_config,pble_runner,pble_console,pble_fs,pble_lock,pble_boot,pble_vm_lifecycle,pble_termination}.c`;
    - the fourteen files in the selected target's immutable retained
      `.sources/<target>/micropython/lib/berkeley-db-1.xx` tree:
      `btree/{bt_close,bt_conv,bt_debug,bt_delete,bt_get,bt_open,bt_overflow,bt_page,bt_put,bt_search,bt_seq,bt_split,bt_utils}.c`
@@ -1086,7 +1186,7 @@ The following ESP-IDF resolution rules are part of that fail-closed mapping:
    into the application ELF. The selected output-basename multiset MUST equal
    the parsed archive-member multiset exactly. Each selected source MUST also
    belong to that same component's exact described file or directory marker;
-   an application `main` archive may additionally own the exact eleven pinned
+   an application `main` archive may additionally own the exact twelve pinned
    PyBLE sources above. A file or root described by one component MUST NOT
    authorize a linked output owned by another component, and the pinned
    Berkeley DB sources remain direct-object-only.
@@ -1123,7 +1223,7 @@ The following ESP-IDF resolution rules are part of that fail-closed mapping:
    - `CMakeFiles/<app-elf>.dir/project_elf_src_<idf-target>.c.obj` for the
      zero-byte role-root ELF anchor;
    - application `CMakeFiles/micropython.elf.dir/<absolute-PyBLE-source>.obj`
-     for the eleven repository-owned PyBLE C sources; and
+     for the twelve repository-owned PyBLE C sources; and
    - application
      `esp-idf/main/CMakeFiles/micropy_extmod_btree.dir/<absolute-retained-source>.obj`
      for the fourteen retained Berkeley DB sources.
@@ -1473,6 +1573,19 @@ The following ESP-IDF resolution rules are part of that fail-closed mapping:
    tree; materializing such an ambient tree is neither an audit prerequisite
    nor substitute evidence for bytes used by the build.
 
+   A frozen destination is not necessarily its generated board source path.
+   `prepare.sh` materializes a selected canonical `firmware/pyble/<relative>`
+   source at `BOARD_DIR/pyble/<relative>`, independently of the manifest's
+   destination. In particular, the flat frozen `pyble_workspace.py` destination
+   uses `BOARD_DIR/pyble/pyble_workspace.py`; already-prefixed `pyble/...`
+   destinations MUST NOT gain a second `pyble/` prefix. The audit MUST derive
+   that physical copy path from the canonical source-relative path, retain the
+   original frozen destination, and compare the exact retained copy bytes.
+   A flat matching decoy cannot replace a missing or changed nested copy.
+   The lock-generated `_version.py` exception, overlay copies, separately
+   admitted first-party modules, and upstream selections keep their existing
+   validation rules.
+
    The collector MUST open every component of that exact retained `BOARD_DIR`
    descriptor-relatively without following links, capture its complete bytes
    and node identities, and materialize a byte-identical execution snapshot in
@@ -1705,7 +1818,12 @@ Automated release tests MUST cover:
   flash-capacity checks;
 - exact manifest schema, paths, profile parity, and forbidden redirect/origin
   cases;
-- exact v0.6.0 five-profile resource-policy schema 3 and HIL V5 schema, plus
+- exact v0.6.0/v0.6.1 five-profile resource-policy schema 3 and HIL V5 schema,
+  with every current-candidate version binding checked end to end, plus
+  the version-routed v0.6.1 seven-scenario hardening result, exactly 50
+  sequential runs, two candidate-bound workspace-provisioning receipts,
+  private-result digest/TOCTOU validation, and proof that v0.6.0 retains its
+  prior record/check bytes, plus
   historical schema-2/V4 replay,
   baseline/policy/candidate
   hash binding, derivation arithmetic, threshold-boundary and one-unit-crossing
@@ -1737,10 +1855,11 @@ wrong source-era marker, an additional marker, or keys not defined below are
 invalid. These are admission requirements; they do not assert that a v0.5.1
 HIL report or qualified public bundle exists.
 
-The v0.6.0 report instead contains exactly one
+The v0.6.0 and v0.6.1 reports instead contain exactly one
 `PYBLE_HIL_RECORDS_V5` schema-5 object with five records in §1 order and the
-target-discriminated contract in §9.5. V5 is required only for v0.6.0 and MUST
-NOT reclassify V2/V4 history.
+target-discriminated contract in §9.5. V5 admission is limited to release cores
+`0.6.0` and `0.6.1`; it MUST NOT reclassify V2/V4 history or pre-authorize the
+proposed v0.7.0 contract.
 
 ```text
 <!-- PYBLE_HIL_RECORDS_V2
@@ -2266,8 +2385,36 @@ C3-G0…C3-G6; Pico binds GP0, GP1, and complete GP2. A missing private result,
 non-null input summary, failed sub-gate, changed input, or identity/hash
 mismatch leaves no public output.
 
-The V5 envelope is unchanged across the unpublished v0.6.0 source eras,
-but its policy derivation is source-bound. A candidate source at or before
+V5 release-license generation, candidate creation, completion-fragment
+creation, report assembly, private gate validation, and copy-on-write
+finalization MUST derive the exact firmware version from `versions.lock` or the
+already-validated candidate `release.json`, as applicable. That exact value
+must match the release identity and tag, the heterogeneous license inventory,
+every V5 record, and every private result. Substituting a hard-coded v0.6.0
+value for a v0.6.1 candidate is invalid and must publish no evidence or
+artifact. The two admitted release cores share the schema and profile order
+only; v0.6.0 evidence cannot qualify v0.6.1 bytes.
+
+`physical-fact-lineage-v1` remains an exact v0.6.0-only administrative path.
+It cannot appear in, be derived for, or be consumed by a v0.6.1 observation,
+even if an operator supplies a structurally valid summary. Every v0.6.1 row
+must record a fresh physical power-cycle observation from its exact candidate
+bytes; the common validator rejects lineage before completion or finalization.
+
+Every v0.6.1 row also binds the private
+`v061-hardening-seven-scenario-v1` result frozen in firmware specs §5.3.4.
+The candidate record has `v061_hardening: null` and the additional pending
+check. Mechanical completion alone may derive the privacy-safe summary and
+passed check from the profile-exact private result. Finalization reopens all
+five private results, binds their canonical SHA-256 values to those summaries,
+and rejects a workspace `NOT-RUN`, a run count other than 50, any scenario or
+receipt mismatch, or any candidate/profile/source/install/qualification
+identity drift. Version `0.6.0` rejects the field, check, private-result input,
+and summary so its existing V5 encoding is not reinterpreted.
+
+The V5 top-level envelope is unchanged across the v0.6.0 source eras and
+v0.6.1; the per-record hardening extension is exact-version-routed, and policy
+derivation remains source-bound. A candidate source at or before
 `5620f2fdc672b440548119e3431cfa4f4ed3f5a3` retains
 `fixed-product-slo-3000-v3` and `floor-95pct-min-100-v2`. A strict
 descendant of that boundary at or before
@@ -2307,10 +2454,13 @@ app_hil
 profile_gate_summary
 ```
 
-`checks` has exactly `provisioning_install`, `provisioning_recovery`,
-`advertising_info_hello`, `pble_workflow`, `safe_boot_reconnect`,
-`filesystem_resume_reliability`, and `footprint_reliability`. Every value is
-`pending` in a candidate and `passed` after validation. `app_hil` has exactly
+For v0.6.0, `checks` has exactly `provisioning_install`,
+`provisioning_recovery`, `advertising_info_hello`, `pble_workflow`,
+`safe_boot_reconnect`, `filesystem_resume_reliability`, and
+`footprint_reliability`. For v0.6.1 it has those exact keys plus
+`v061_hardening`, and the record additionally has the exact
+`v061_hardening` field described above. Every check is `pending` in a
+candidate and `passed` after validation. `app_hil` has exactly
 `ipad` and `android`; pending entries are JSON `null`, while each completed
 entry has exactly non-empty `app_version`, `app_build`, `os_major`, and
 `status: "passed"`. One platform cannot substitute for the other.
@@ -2397,6 +2547,13 @@ changes no candidate byte. `assemble-hil-report` then accepts exactly five of
 these fragments, in any input order, and still derives
 `footprint_reliability` itself.
 
+For v0.6.1, the same operation additionally requires the selected profile's
+exclusive mode-`0600` hardening result. It derives `v061_hardening` and its
+check from that file and rejects either field in operator input. The completed
+fragment carries only the privacy-safe summary and private-result digest;
+finalization takes all five private files separately and revalidates them
+rather than treating a copied fragment as qualification authority.
+
 The C3/Pico gate module provides a separate `create-result` operation so the
 private result never requires hand-authored identity or digest fields. It
 accepts the immutable candidate directory, exact profile ID, one explicit
@@ -2411,6 +2568,22 @@ and physical-observation records have actually passed and remain retained.
 The operation does not run a gate, infer a pass from a build, create a
 threshold, or turn pending evidence into a result. This section freezes an
 evidence-writing workflow and records no passed result.
+
+Before C3 `create-result`, the same module's
+`create-post-oi-nvs-receipt` operation is the sole receipt-authoring path. Its
+positional inputs are the immutable candidate directory, canonical verify
+observation, exact raw OI log, raw NVS slice, acquisition log, and a new
+receipt output path. All private evidence inputs MUST be stable exclusive
+mode-`0600` regular files. The operation derives rather than accepts every
+candidate, artifact, observation, raw-log, slice, acquisition-log, geometry,
+integrity, and empty-inventory field. The acquisition log is exactly the two
+LF-terminated lines `c3-post-oi-nvs-acquisition-v1` and
+`offset=0x9000 size=0x6000 captured=post-workload pre-evaluation`. It writes
+canonical JSON with exclusive mode `0600`, fsyncs file and parent, reopens the
+same inode, and repeats the complete validation before success. A pre-existing
+output or any input race,
+mode/link violation, digest mismatch, noncanonical observation, wrong reset
+count, non-erased slice, or output verification failure leaves no receipt.
 
 For `esp32-c3-4mb`, `create-result` additionally requires three explicit
 post-OI NVS evidence paths — the canonical inventory receipt, the raw NVS
@@ -2478,7 +2651,8 @@ envelope: only `HIL_REPORT.md`, the corresponding HIL statuses/report digest
 in `release.json`, and their `SHA256SUMS` entries may change. Every install,
 resource, component, manifest, schema, license, release-note, and recovery byte
 must equal the protected candidate. V5 finalization is atomic across all five
-records and three summaries; partial promotion is forbidden. This section
+records and three target summaries and, for v0.6.1, all five hardening
+summaries/private-result bindings; partial promotion is forbidden. This section
 freezes a contract and records no passed gate.
 
 ## 10. Activation and rollback
@@ -2497,8 +2671,10 @@ selector or staged-root environment variables MUST NOT reclassify public-page
 or no-firmware Sites fixtures. The test runner MUST exercise this isolation
 even when the surrounding release build exports candidate variables. The
 public action may become `active` only when every automated gate is green,
-all five v0.6.0 HIL rows say `passed`, the Waveshare, C3, and Pico derived
-summaries are present and passed, the maintainer approves the exact hashes,
+all five exact-version HIL rows say `passed`, the Waveshare, C3, and Pico
+derived summaries are present and passed, every v0.6.1 row additionally has
+its validated seven-scenario/workspace hardening summary when applicable, the
+maintainer approves the exact hashes,
 and the canonical same-origin bytes pass publication verification. If a
 pre-v1 mirror exists, its files and bytes MUST agree before activation; v1.0 and
 later require that mirror to be the matching GitHub Release. A missing,

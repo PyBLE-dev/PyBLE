@@ -4,7 +4,8 @@
 #
 # Wrapper so run_tests.sh (which globs test_*.sh) drives the F-25 rpi-pico2-w
 # console host suite (port spec P3/P8: run-gate, [stream][<=200] chunking,
-# token-bucket budget, readinto 1-or-None, 256 B stdin ring, inject_stop)
+# token-bucket budget, readinto 1-or-None, run-scoped 256 B stdin ring,
+# inject_stop)
 # under CPython. RED until agent-engineer lands firmware/pyble/pyble_console.py
 # [green]. Exit non-zero on any failure.
 

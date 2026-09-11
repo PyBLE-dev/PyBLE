@@ -177,111 +177,129 @@ void main() {
     },
   );
 
-  testWidgets('About and licenses preserve the complete live Blocks session', (
-    WidgetTester tester,
-  ) async {
-    const String editorSource = 'print("keep editor buffer")\n';
-    const String blocksSource = 'print("keep visual workspace")\n';
-    final _CompleteRecordingConnection connection =
-        _CompleteRecordingConnection(initial: ConnState.running);
-    await pumpShell(tester, connection: connection, surface: ipadLandscape);
-    final ProviderContainer container = _containerOf(tester);
+  testWidgets(
+    'About, licenses and privacy preserve the complete live Blocks session',
+    (WidgetTester tester) async {
+      const String editorSource = 'print("keep editor buffer")\n';
+      const String blocksSource = 'print("keep visual workspace")\n';
+      final _CompleteRecordingConnection connection =
+          _CompleteRecordingConnection(initial: ConnState.running);
+      await pumpShell(tester, connection: connection, surface: ipadLandscape);
+      final ProviderContainer container = _containerOf(tester);
 
-    container.read(editorDocumentProvider.notifier).setContent(editorSource);
-    container.read(selectedSurfaceProvider.notifier).state = AppSurface.blocks;
-    await tester.pump();
+      container.read(editorDocumentProvider.notifier).setContent(editorSource);
+      container.read(selectedSurfaceProvider.notifier).state =
+          AppSurface.blocks;
+      await tester.pump();
 
-    final BlocksBridgeResult admitted = container
-        .read(blocksDocumentProvider.notifier)
-        .receiveBridgeMessage(
-          jsonEncode(<String, Object?>{
-            'version': kBlocksBridgeVersion,
-            'type': 'snapshot',
-            'revision': 7,
-            'source': blocksSource,
-            'workspace': <String, Object?>{
-              'blocks': <String, Object?>{
-                'languageVersion': 0,
-                'blocks': <Object?>[
-                  <String, Object?>{
-                    'type': 'text_print',
-                    'id': 'about-round-trip',
-                  },
-                ],
+      final BlocksBridgeResult admitted = container
+          .read(blocksDocumentProvider.notifier)
+          .receiveBridgeMessage(
+            jsonEncode(<String, Object?>{
+              'version': kBlocksBridgeVersion,
+              'type': 'snapshot',
+              'revision': 7,
+              'source': blocksSource,
+              'workspace': <String, Object?>{
+                'blocks': <String, Object?>{
+                  'languageVersion': 0,
+                  'blocks': <Object?>[
+                    <String, Object?>{
+                      'type': 'text_print',
+                      'id': 'about-round-trip',
+                    },
+                  ],
+                },
               },
-            },
-          }),
-        );
-    expect(admitted, BlocksBridgeResult.snapshotAccepted);
+            }),
+          );
+      expect(admitted, BlocksBridgeResult.snapshotAccepted);
 
-    // Subscribe before scripting the broadcast event so the provider retains
-    // the live execution state throughout the nested route round trip.
-    container.read(runStateProvider);
-    connection.emitConsole(
-      ConsoleStream.stdout,
-      'live output stays\n'.codeUnits,
-    );
-    connection.emitRunState(RunState.running);
-    await tester.pump();
-    await tester.pump();
+      // Subscribe before scripting the broadcast event so the provider retains
+      // the live execution state throughout the nested route round trip.
+      container.read(runStateProvider);
+      connection.emitConsole(
+        ConsoleStream.stdout,
+        'live output stays\n'.codeUnits,
+      );
+      connection.emitRunState(RunState.running);
+      await tester.pump();
+      await tester.pump();
 
-    final EditorDocument editorBefore = container.read(editorDocumentProvider);
-    final BlocksDocument blocksBefore = container.read(blocksDocumentProvider);
-    final List<ConsoleEvent> consoleBefore = container.read(
-      consoleBufferProvider,
-    );
-    final int verbsBeforeAbout = connection.verbCalls;
+      final EditorDocument editorBefore = container.read(
+        editorDocumentProvider,
+      );
+      final BlocksDocument blocksBefore = container.read(
+        blocksDocumentProvider,
+      );
+      final List<ConsoleEvent> consoleBefore = container.read(
+        consoleBufferProvider,
+      );
+      final int verbsBeforeAbout = connection.verbCalls;
 
-    expect(container.read(selectedSurfaceProvider), AppSurface.blocks);
-    expect(editorBefore.content, editorSource);
-    expect(editorBefore.dirty, isTrue);
-    expect(blocksBefore.program?.source, blocksSource);
-    expect(blocksBefore.retainedWorkspaceJson, contains('about-round-trip'));
-    expect(consoleBefore, hasLength(1));
-    expect(find.textContaining('live output stays'), findsWidgets);
-    expect(container.read(runStateProvider).value, RunState.running);
-    expect(connection.state.value, ConnState.running);
-    expect(
-      find.byKey(const ValueKey<String>('blocksWorkspaceHost-0')),
-      findsOneWidget,
-    );
+      expect(container.read(selectedSurfaceProvider), AppSurface.blocks);
+      expect(editorBefore.content, editorSource);
+      expect(editorBefore.dirty, isTrue);
+      expect(blocksBefore.program?.source, blocksSource);
+      expect(blocksBefore.retainedWorkspaceJson, contains('about-round-trip'));
+      expect(consoleBefore, hasLength(1));
+      expect(find.textContaining('live output stays'), findsWidgets);
+      expect(container.read(runStateProvider).value, RunState.running);
+      expect(connection.state.value, ConnState.running);
+      expect(
+        find.byKey(const ValueKey<String>('blocksWorkspaceHost-0')),
+        findsOneWidget,
+      );
 
-    await tester.tap(find.byTooltip('About PyBLE'));
-    await tester.pumpAndSettle();
-    expect(find.byType(AboutPage), findsOneWidget);
+      await tester.tap(find.byTooltip('About PyBLE'));
+      await tester.pumpAndSettle();
+      expect(find.byType(AboutPage), findsOneWidget);
 
-    final Finder licenses = find.byKey(
-      const Key('aboutOpenSourceLicensesAction'),
-    );
-    await tester.ensureVisible(licenses);
-    await tester.pumpAndSettle();
-    await tester.tap(licenses);
-    await tester.pumpAndSettle();
-    expect(find.byType(LicensePage), findsOneWidget);
+      final Finder licenses = find.byKey(
+        const Key('aboutOpenSourceLicensesAction'),
+      );
+      await tester.ensureVisible(licenses);
+      await tester.pumpAndSettle();
+      await tester.tap(licenses);
+      await tester.pumpAndSettle();
+      expect(find.byType(LicensePage), findsOneWidget);
 
-    await tester.pageBack();
-    await tester.pumpAndSettle();
-    expect(find.byType(AboutPage), findsOneWidget);
-    expect(find.byType(LicensePage), findsNothing);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(find.byType(AboutPage), findsOneWidget);
+      expect(find.byType(LicensePage), findsNothing);
 
-    await tester.pageBack();
-    await tester.pumpAndSettle();
-    expect(find.byType(AboutPage), findsNothing);
-    expect(container.read(selectedSurfaceProvider), AppSurface.blocks);
-    expect(container.read(editorDocumentProvider), editorBefore);
-    expect(container.read(blocksDocumentProvider), same(blocksBefore));
-    expect(container.read(consoleBufferProvider), same(consoleBefore));
-    expect(container.read(runStateProvider).value, RunState.running);
-    expect(container.read(connectionProvider), same(connection));
-    expect(connection.state.value, ConnState.running);
-    expect(connection.verbCalls, verbsBeforeAbout);
-    _expectNoRecordedMutations(connection);
-    expect(find.textContaining('live output stays'), findsWidgets);
-    expect(
-      find.byKey(const ValueKey<String>('blocksWorkspaceHost-0')),
-      findsOneWidget,
-    );
-  });
+      final Finder privacy = find.byKey(const Key('aboutPrivacyPolicyAction'));
+      expect(privacy, findsOneWidget);
+      await tester.ensureVisible(privacy);
+      await tester.pumpAndSettle();
+      await tester.tap(privacy);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('privacyPolicyPage')), findsOneWidget);
+      expect(connection.verbCalls, verbsBeforeAbout);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(find.byType(AboutPage), findsOneWidget);
+
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(find.byType(AboutPage), findsNothing);
+      expect(container.read(selectedSurfaceProvider), AppSurface.blocks);
+      expect(container.read(editorDocumentProvider), editorBefore);
+      expect(container.read(blocksDocumentProvider), same(blocksBefore));
+      expect(container.read(consoleBufferProvider), same(consoleBefore));
+      expect(container.read(runStateProvider).value, RunState.running);
+      expect(container.read(connectionProvider), same(connection));
+      expect(connection.state.value, ConnState.running);
+      expect(connection.verbCalls, verbsBeforeAbout);
+      _expectNoRecordedMutations(connection);
+      expect(find.textContaining('live output stays'), findsWidgets);
+      expect(
+        find.byKey(const ValueKey<String>('blocksWorkspaceHost-0')),
+        findsOneWidget,
+      );
+    },
+  );
 
   testWidgets('compact Soft-reboot menu item retains its Connection action', (
     WidgetTester tester,

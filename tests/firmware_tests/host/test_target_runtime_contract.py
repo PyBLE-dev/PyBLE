@@ -31,6 +31,7 @@ import tempfile
 import tomllib
 import types
 import unittest
+from unittest import mock
 
 
 HOST_DIR = Path(__file__).resolve().parent
@@ -50,11 +51,45 @@ TARGETS = {
     "esp32-c3": "PYBLE_ESP32_C3",
 }
 EXACT_BOARD_TARGET = "waveshare-esp32-s3-lcd-147b"
+C3_RESOURCE_THRESHOLD_KEYS = {
+    "application_headroom_min_bytes",
+    "application_image_max_bytes",
+    "gc_free_min_bytes",
+    "idf_internal_free_min_bytes",
+    "idf_internal_largest_block_min_bytes",
+    "idf_internal_minimum_free_min_bytes",
+}
+C3_FIXED_PERFORMANCE_THRESHOLDS = {
+    "get_verified_goodput_min_bytes_per_second": 6600,
+    "put_committed_goodput_min_bytes_per_second": 6600,
+    "reset_to_service_advertisement_max_ms": 3000,
+}
+
+
+def _load_release_module():
+    spec = importlib.util.spec_from_file_location(
+        "pyble_release_target_runtime_contract",
+        FIRMWARE_DIR / "scripts" / "release_bundle.py",
+    )
+    if spec is None or spec.loader is None:
+        raise AssertionError("cannot construct release_bundle.py import spec")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+RELEASE = _load_release_module()
+
+
+def _current_c3_profile():
+    policy, _digest = RELEASE._load_qualification_policy(REPO_ROOT)
+    return next(
+        item for item in policy["profiles"] if item["profile_id"] == "esp32-c3-4mb"
+    )
 
 EXPECTED_FROZEN_PATHS = Counter(
     {
         "flashbdev.py": 1,
-        "inisetup.py": 1,
         "asyncio/__init__.py": 1,
         "asyncio/core.py": 1,
         "asyncio/event.py": 1,
@@ -68,12 +103,12 @@ EXPECTED_FROZEN_PATHS = Counter(
         "pyble/__init__.py": 1,
         "pyble/pyble_ble.py": 1,
         "pyble/pyble_proto.py": 1,
+        "pyble_workspace.py": 1,
     }
 )
 
 EXPECTED_FROZEN_SYMBOLS = {
     "flashbdev",
-    "inisetup",
     "asyncio___init__",
     "asyncio_core",
     "asyncio_event",
@@ -87,6 +122,7 @@ EXPECTED_FROZEN_SYMBOLS = {
     "pyble___init__",
     "pyble_pyble_ble",
     "pyble_pyble_proto",
+    "pyble_workspace",
 }
 
 
@@ -184,6 +220,13 @@ def _node_contains_line(node: ast.AST, line: int) -> bool:
     return node.lineno <= line <= getattr(node, "end_lineno", node.lineno)
 
 
+def _observed_mount_fixture(expected_bdev, bdev, options):
+    """Keep lifecycle fakes strict about the official measured-boot call."""
+    if bdev is not expected_bdev or options != {"progsize": 256, "observe_boot": True}:
+        raise AssertionError("boot must mount the exact workspace with observation enabled")
+    return object()
+
+
 def _boot_failure_trace(failure: str) -> list[str]:
     """Execute frozen boot with host fakes and inject one splash failure.
 
@@ -227,15 +270,19 @@ def _boot_failure_trace(failure: str) -> list[str]:
         return False
 
     console_stream = object()
+    workspace_bdev = object()
     modules = {
         "gc": types.SimpleNamespace(collect=lambda: trace.append("gc")),
         "sys": types.SimpleNamespace(path=["", ".frozen", "/lib"]),
         "vfs": types.SimpleNamespace(
-            mount=lambda *_args: trace.append("vfs.mount")
+            mount=lambda *_args: None
         ),
-        "flashbdev": types.SimpleNamespace(bdev=None),
-        "inisetup": types.SimpleNamespace(
-            setup=lambda: trace.append("inisetup.setup")
+        "flashbdev": types.SimpleNamespace(bdev=workspace_bdev),
+        "pyble_workspace": types.SimpleNamespace(
+            mount_lfs2=lambda bdev, _vfs, **_kwargs:
+                _observed_mount_fixture(workspace_bdev, bdev, _kwargs),
+            boot_attached=lambda: None,
+            boot_recovery=lambda: trace.append("unexpected.workspace.recovery"),
         ),
         "pble_ble": types.SimpleNamespace(
             init_agent=lambda: trace.append("agent.init"),
@@ -367,15 +414,19 @@ def _boot_frozen_resolution_probe(target: str, failure: str = "success"):
         _maybe_show_boot_splash=frozen_guard
     )
     console_stream = object()
+    workspace_bdev = object()
     modules = {
         "gc": types.SimpleNamespace(collect=lambda: trace.append(("gc",))),
         "sys": sys_module,
         "vfs": types.SimpleNamespace(
             mount=lambda *_args: trace.append(("vfs.mount",))
         ),
-        "flashbdev": types.SimpleNamespace(bdev=None),
-        "inisetup": types.SimpleNamespace(
-            setup=lambda: trace.append(("inisetup.setup",))
+        "flashbdev": types.SimpleNamespace(bdev=workspace_bdev),
+        "pyble_workspace": types.SimpleNamespace(
+            mount_lfs2=lambda bdev, _vfs, **_kwargs:
+                _observed_mount_fixture(workspace_bdev, bdev, _kwargs),
+            boot_attached=lambda: None,
+            boot_recovery=lambda: trace.append(("unexpected.workspace.recovery",)),
         ),
         "pble_ble": types.SimpleNamespace(
             init_agent=lambda: trace.append(("agent.init",)),
@@ -466,6 +517,57 @@ def _boot_frozen_resolution_probe(target: str, failure: str = "success"):
     }
 
 
+def _boot_workspace_failure_trace(target: str) -> list[tuple]:
+    """Execute one ESP boot with a shared-authority mount failure."""
+
+    trace: list[tuple] = []
+    workspace_bdev = object()
+
+    def mount_lfs2(bdev, _vfs, **kwargs):
+        _observed_mount_fixture(workspace_bdev, bdev, kwargs)
+        trace.append(("workspace.mount", bdev, kwargs.get("progsize")))
+        raise OSError("synthetic nonblank workspace")
+
+    modules = {
+        "gc": types.SimpleNamespace(collect=lambda: trace.append(("gc",))),
+        "vfs": types.SimpleNamespace(
+            mount=lambda *_args: trace.append(("vfs.mount",))
+        ),
+        "flashbdev": types.SimpleNamespace(bdev=workspace_bdev),
+        "pyble_workspace": types.SimpleNamespace(
+            mount_lfs2=mount_lfs2,
+            boot_attached=lambda: trace.append(("unexpected.workspace.attachment",)),
+            boot_recovery=lambda: trace.append((
+                "recovery.print",
+                ("PyBLE workspace recovery is required; reconnect by USB.",),
+                {},
+            )),
+        ),
+        "pble_ble": types.SimpleNamespace(
+            init_agent=lambda: trace.append(("agent.init",))
+        ),
+    }
+
+    def fake_import(name, globals_=None, locals_=None, fromlist=(), level=0):
+        del globals_, locals_, fromlist, level
+        if name not in modules:
+            raise AssertionError("unexpected failed-workspace import: {}".format(name))
+        return modules[name]
+
+    exec_builtins = dict(vars(builtins))
+    exec_builtins["__import__"] = fake_import
+    exec_builtins["print"] = lambda *args, **kwargs: trace.append(
+        ("recovery.print", args, kwargs)
+    )
+    source_path = OVERLAYS / target / "_boot.py"
+    exec(
+        compile(source_path.read_bytes(), str(source_path), "exec"),
+        {"__builtins__": exec_builtins},
+        {},
+    )
+    return trace
+
+
 def _sdkconfig_values(path: Path) -> dict[str, str]:
     values: dict[str, str] = {}
     for line in path.read_text(encoding="utf-8").splitlines():
@@ -528,6 +630,58 @@ def _elf32_sections(path: Path) -> dict[str, bytes]:
 
 
 class EffectiveManifestContractTests(unittest.TestCase):
+    def test_every_esp_boot_uses_shared_erased_only_lfs2_mount_authority(self):
+        for target in TARGETS:
+            with self.subTest(target=target):
+                boot = OVERLAYS / target / "_boot.py"
+                tree = ast.parse(boot.read_bytes(), filename=str(boot))
+                calls = [
+                    (_dotted_name(node.func), node)
+                    for node in ast.walk(tree)
+                    if isinstance(node, ast.Call)
+                ]
+                lfs_calls = [node for name, node in calls
+                             if name == "pyble_workspace.mount_lfs2"]
+                mount_calls = [node for name, node in calls
+                               if name == "vfs.mount"]
+                self.assertEqual(
+                    len(lfs_calls), 1,
+                    "{} must delegate to the full-device erased-media "
+                    "authority".format(target),
+                )
+                self.assertEqual(len(mount_calls), 1)
+                self.assertTrue(mount_calls[0].args)
+                self.assertIsInstance(
+                    mount_calls[0].args[0], ast.Call,
+                    "the mounted workspace must be the explicit LFS2 object",
+                )
+                self.assertEqual(
+                    _dotted_name(mount_calls[0].args[0].func),
+                    "pyble_workspace.mount_lfs2",
+                )
+                self.assertFalse(
+                    any(name == "inisetup.setup" for name, _node in calls),
+                    "{} may not delegate a destructive decision to upstream's "
+                    "block-0-only probe".format(target),
+                )
+
+    def test_workspace_mount_failure_skips_every_esp_agent_lifecycle(self):
+        for target in TARGETS:
+            with self.subTest(target=target):
+                trace = _boot_workspace_failure_trace(target)
+                self.assertEqual(trace[0][0], "workspace.mount")
+                self.assertIsNotNone(trace[0][1])
+                self.assertEqual(trace[0][2], 256)
+                recovery = [event for event in trace
+                            if event[0] == "recovery.print"]
+                self.assertEqual(len(recovery), 1)
+                self.assertEqual(recovery[0][2], {})
+                self.assertEqual(len(recovery[0][1]), 1)
+                self.assertIs(type(recovery[0][1][0]), str)
+                self.assertIn("recovery", recovery[0][1][0].lower())
+                self.assertFalse(any(event[0] == "vfs.mount" for event in trace))
+                self.assertFalse(any(event[0] == "agent.init" for event in trace))
+
     def test_all_targets_resolve_the_exact_lean_runtime_allowlist(self):
         for target, board_name in TARGETS.items():
             with self.subTest(target=target), _resolved_manifest(
@@ -622,7 +776,7 @@ class EffectiveManifestContractTests(unittest.TestCase):
 
                 for required in (
                     "vfs.mount",
-                    "inisetup.setup",
+                    "pyble_workspace.mount_lfs2",
                     "pble_ble.init_agent",
                     "os.dupterm",
                     "pble_boot.maybe_autorun",
@@ -717,7 +871,7 @@ class EffectiveManifestContractTests(unittest.TestCase):
                     by_name["pble_ble.init_agent"][0].lineno,
                 )
                 self.assertLess(
-                    by_name["inisetup.setup"][0].lineno,
+                    by_name["pyble_workspace.mount_lfs2"][0].lineno,
                     by_name["pble_ble.init_agent"][0].lineno,
                 )
 
@@ -902,8 +1056,8 @@ class BoardConfigurationSourceContractTests(unittest.TestCase):
             expected = tomllib.load(handle)["pyble"]["agent_version"]
         self.assertEqual(
             expected,
-            "0.6.0",
-            "the combined Pico 2 W source must advance the agent minor version",
+            "0.6.1",
+            "the v0.6.1 hardening source must advance the patch version",
         )
         package_source = (FIRMWARE_DIR / "pyble" / "__init__.py").read_text(
             encoding="utf-8"
@@ -1116,33 +1270,58 @@ class BoardConfigurationSourceContractTests(unittest.TestCase):
             "C3 must run full PHY calibration instead of growing PHY NVS state",
         )
 
-        policy = json.loads(
-            (FIRMWARE_DIR / "qualification" / "oi1-gates.json").read_text(
-                encoding="utf-8"
-            )
-        )
-        profile = next(
-            item
-            for item in policy["profiles"]
-            if item["profile_id"] == "esp32-c3-4mb"
-        )
+        profile = _current_c3_profile()
+        self.assertEqual(profile["profile_id"], "esp32-c3-4mb")
+        self.assertEqual(profile["target"], "esp32-c3")
+        self.assertEqual(profile["resource_kind"], "esp-idf")
         thresholds = profile["thresholds"]
         self.assertEqual(
-            thresholds,
-            {
-                "application_headroom_min_bytes": 352880,
-                "application_image_max_bytes": 1678736,
-                "gc_free_min_bytes": 117760,
-                "get_verified_goodput_min_bytes_per_second": 6600,
-                "idf_internal_free_min_bytes": 66560,
-                "idf_internal_largest_block_min_bytes": 57344,
-                "idf_internal_minimum_free_min_bytes": 63488,
-                "put_committed_goodput_min_bytes_per_second": 6600,
-                "reset_to_service_advertisement_max_ms": 3000,
-            },
-            "the PHY policy must keep the exact C3 static/heap gates and "
+            set(thresholds),
+            C3_RESOURCE_THRESHOLD_KEYS | set(C3_FIXED_PERFORMANCE_THRESHOLDS),
+        )
+        self.assertEqual(
+            {key: thresholds[key] for key in C3_FIXED_PERFORMANCE_THRESHOLDS},
+            C3_FIXED_PERFORMANCE_THRESHOLDS,
+            "the PHY policy must validate the current C3 static/heap gates and "
             "carry the fixed ADR-0037 product SLOs",
         )
+
+    def test_c3_phy_storage_cannot_be_reenabled(self):
+        with mock.patch(
+            __name__ + "._sdkconfig_values",
+            return_value={"CONFIG_ESP_PHY_CALIBRATION_AND_DATA_STORAGE": "y"},
+        ), self.assertRaisesRegex(AssertionError, "C3 must run full PHY calibration"):
+            self.test_c3_disables_phy_calibration_storage_without_relaxing_oi1()
+
+    def test_c3_policy_loader_failure_is_not_ignored(self):
+        with mock.patch.object(
+            RELEASE, "_load_qualification_policy",
+            side_effect=RELEASE.ReleaseError("injected policy validation failure"),
+        ), self.assertRaisesRegex(RELEASE.ReleaseError, "injected policy validation failure"):
+            _current_c3_profile()
+
+    def test_c3_resource_threshold_mutations_are_rejected(self):
+        policy_path = FIRMWARE_DIR / "qualification" / "oi1-gates.json"
+        original_read = Path.read_bytes
+        for key in sorted(C3_RESOURCE_THRESHOLD_KEYS):
+            with self.subTest(threshold=key):
+                changed = json.loads(policy_path.read_bytes())
+                profile = next(
+                    item for item in changed["profiles"]
+                    if item["profile_id"] == "esp32-c3-4mb"
+                )
+                profile["thresholds"][key] += 1
+                payload = (json.dumps(changed, indent=2, sort_keys=True) + "\n").encode()
+
+                def read(path):
+                    return payload if path == policy_path else original_read(path)
+
+                with mock.patch.object(
+                    Path, "read_bytes", autospec=True, side_effect=read
+                ), self.assertRaisesRegex(
+                    RELEASE.ReleaseError, "thresholds were not derived from baseline esp32-c3-4mb"
+                ):
+                    _current_c3_profile()
 
 
 class GeneratedRuntimeContractTests(unittest.TestCase):

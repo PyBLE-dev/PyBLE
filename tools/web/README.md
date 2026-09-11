@@ -7,9 +7,12 @@ The statically authored Next.js site for `pyble.dev`. It explains the PyBLE
 workflow and capability-defined board vision, distinguishes that vision from
 the exact profiles available today, publishes privacy and support information,
 hosts the policy-gated browser installer, and publishes the static PyBLE
-learning center. The production selector currently offers qualified public
-firmware v0.6.0 for five exact profiles: `esp32-4mb`, `esp32-s3-n16r8`,
-`waveshare-esp32-s3-lcd-147b`, `esp32-c3-4mb`, and `rpi-pico2-w`.
+learning center. Its release-bound firmware reference presents an original
+functional diagram and an equivalent reflowing explanation without depicting
+fabricated boards or pinouts. The production selector currently offers
+qualified public firmware v0.6.0 for five exact profiles: `esp32-4mb`,
+`esp32-s3-n16r8`, `waveshare-esp32-s3-lcd-147b`, `esp32-c3-4mb`, and
+`rpi-pico2-w`.
 
 ## Why Next.js
 
@@ -28,14 +31,15 @@ introduce a second page source or an application backend.
 
 ## Routes
 
-| Route      | Purpose                                                                    |
-| ---------- | -------------------------------------------------------------------------- |
-| `/`        | Product story, verified capabilities, platform vision, and current targets |
-| `/app`     | Stable app landing page for iPad and Android testing channels              |
-| `/privacy` | Separate app and website privacy disclosures                               |
-| `/support` | Beta quick start, troubleshooting, and report checklist                    |
-| `/flash`   | Fail-closed Web Serial installer, exact profiles, and recovery             |
-| `/learn`   | Ordered tutorial hub, compatibility legend, and learning tracks            |
+| Route       | Purpose                                                                     |
+| ----------- | --------------------------------------------------------------------------- |
+| `/`         | Product story, verified capabilities, platform vision, and current targets  |
+| `/app`      | Stable app landing page for iPad and Android testing channels               |
+| `/privacy`  | Separate app and website privacy disclosures                                |
+| `/support`  | Beta quick start, troubleshooting, and report checklist                     |
+| `/flash`    | Fail-closed Web Serial installer, exact profiles, and recovery              |
+| `/features` | Release-bound firmware architecture, operations, profiles, limits, evidence |
+| `/learn`    | Ordered tutorial hub, compatibility legend, and learning tracks             |
 
 The ten statically authored tutorials are `/learn/setup`,
 `/learn/first-program`, `/learn/files`, `/learn/github-import`,
@@ -44,6 +48,13 @@ The ten statically authored tutorials are `/learn/setup`,
 `/learn/waveshare-lcd-147b`. Each route is prerendered, canonical, present in
 the sitemap, delegated explicitly by the Sites adapter, and served by an exact
 Nginx mapping. Unknown `/learn/*` paths retain the authored static 404.
+
+`/features` is a static, versioned explanation of qualified firmware v0.6.0;
+it does not replace `/flash` as the authority for what can be installed now.
+Its reviewed same-origin SVG remains available at a single exact, fingerprinted
+path and is accompanied by equivalent semantic HTML for small screens and
+assistive technology. The adapter deliberately delegates only that asset under
+the `/features/` namespace, so an unknown feature path retains the static 404.
 
 `pyble.dev` is canonical. `pyble.org` is redirected at the hosting edge, not by
 this static application.

@@ -83,12 +83,12 @@ class PublicClaimsTest(unittest.TestCase):
             REPO_ROOT / "tools" / "web" / "README.md"
         ).read_text(encoding="utf-8")
 
-    def test_readme_identifies_the_qualified_v060_release(self) -> None:
+    def test_readme_identifies_the_owner_confirmed_v061_release(self) -> None:
         firmware = markdown_section(self.readme, "What works")
         normalized = " ".join(firmware.split())
 
         self.assertIn(
-            "qualified public v0.6.0 release",
+            "owner-confirmed public v0.6.1 release",
             normalized,
         )
         self.assertIn("all five exact release profiles", normalized)
@@ -100,7 +100,11 @@ class PublicClaimsTest(unittest.TestCase):
         self.assertIn("`waveshare-esp32-s3-lcd-147b`", firmware)
         self.assertIn("`esp32-c3-4mb`", firmware)
         self.assertIn("`rpi-pico2-w`", firmware)
-        self.assertEqual(firmware.count("Qualified v0.6.0"), 5)
+        self.assertEqual(firmware.count("Owner-confirmed v0.6.1"), 5)
+        self.assertIn("automated qualification records remain incomplete", normalized)
+        self.assertIn("LFS2", firmware)
+        self.assertIn("fresh globals", normalized)
+        self.assertNotIn("All five exact-byte HIL rows passed", firmware)
         self.assertNotIn("v0.4.2 hardware-tested beta", firmware)
         self.assertNotIn("Planned; unavailable", firmware)
         self.assertNotIn("in-progress `0.6.0`", firmware)
@@ -115,11 +119,11 @@ class PublicClaimsTest(unittest.TestCase):
         self.assertIn("generated MicroPython", caption)
         self.assertNotRegex(caption, r"(?i)pictured|board|module")
 
-    def test_readme_try_steps_use_the_qualified_v060_release_safely(self) -> None:
+    def test_readme_try_steps_use_the_published_v061_release_safely(self) -> None:
         try_section = markdown_section(self.readme, "Try PyBLE")
         normalized = " ".join(try_section.split())
 
-        self.assertIn("qualified v0.6.0 release", normalized)
+        self.assertIn("published v0.6.1 release", normalized)
         self.assertIn("four ESP profiles", normalized)
         self.assertIn("Web Serial", try_section)
         self.assertIn("Pico 2 W", try_section)
@@ -131,27 +135,31 @@ class PublicClaimsTest(unittest.TestCase):
         self.assertIn("back up", try_section)
         self.assertIn("Flashing erases the board", try_section)
         self.assertNotIn("v0.4.2 hardware-tested beta", try_section)
+        self.assertIn("https://github.com/PyBLE-dev/examples", try_section)
+        self.assertIn("branch chooser", normalized)
+        self.assertIn("editable", normalized)
+        self.assertIn("/examples", try_section)
+        self.assertIn("pyble_hello_console.py", try_section)
+        self.assertIn("https://pyble.dev/learn", self.readme)
+        self.assertIn("https://pyble.dev/features", self.readme)
+        self.assertNotIn("examples/github-import", try_section)
 
-    def test_current_public_surfaces_agree_on_beta_and_c3_state(self) -> None:
+    def test_current_public_surfaces_agree_on_v061_publication(self) -> None:
         combined = "\n".join(
             (self.home_page, self.site_copy, self.support_page, self.roadmap)
         )
 
         for wording in (
-            "v0.4.2",
-            "hardware-tested beta",
-            "browser install/recovery passed",
-            "release qualification pending",
+            "v0.6.1",
+            "owner-confirmed",
             "esp32-4mb",
             "esp32-s3-n16r8",
+            "esp32-c3-4mb",
+            "rpi-pico2-w",
         ):
             self.assertIn(wording, combined)
-        self.assertIn("Production Chrome install", combined)
-        self.assertIn("interrupted-flash recovery passed", combined)
         self.assertNotIn("full HIL pending", combined)
         self.assertNotIn("use it at your own risk", combined.lower())
-        self.assertIn("ESP32-C3", combined)
-        self.assertRegex(combined, r"(?is)ESP32-C3.{0,180}unavailable")
         for stale in (
             "public browser installer stays unavailable",
             "public installer is unavailable while v0.4.2 HIL runs",
@@ -160,11 +168,29 @@ class PublicClaimsTest(unittest.TestCase):
         ):
             self.assertNotIn(stale, combined)
 
+        available = " ".join(
+            markdown_section(self.roadmap, "Available now").split()
+        )
+        self.assertIn("published firmware v0.6.1", available)
+        self.assertIn("owner confirmation", available)
+        self.assertIn("five exact profiles", available)
+        self.assertIn("Pico 2 W", available)
+        self.assertNotIn("v0.4.2", self.roadmap)
+
         near_term = markdown_section(self.roadmap, "Near term")
         self.assertIn(
-            "Complete the app, PBLE/1, resource, and remaining firmware release",
+            "v0.7.0",
             near_term,
         )
+        self.assertIn("automated qualification", near_term)
+
+    def test_readme_distinguishes_app_source_from_store_availability(self) -> None:
+        firmware = markdown_section(self.readme, "What works")
+        normalized = " ".join(firmware.split())
+        self.assertIn("0.2.0+8", firmware)
+        self.assertIn("does not establish a live store release", normalized)
+        self.assertIn("offline privacy policy", normalized)
+        self.assertIn("multi-file deletion", normalized)
 
     def test_production_browser_claim_is_bound_to_public_evidence(self) -> None:
         evidence = self.browser_validation
@@ -230,31 +256,31 @@ class PublicClaimsTest(unittest.TestCase):
 
     def test_public_surfaces_link_the_release_evidence_and_changelog(self) -> None:
         self.assertIn(
-            "https://pyble.dev/firmware/v0.6.0/release.json",
+            "https://pyble.dev/firmware/v0.6.1/release.json",
             self.readme,
         )
         self.assertIn(
-            "https://pyble.dev/firmware/v0.6.0/RELEASE_NOTES.md",
+            "https://pyble.dev/firmware/v0.6.1/RELEASE_NOTES.md",
             self.readme,
         )
         self.assertIn(
-            "https://pyble.dev/firmware/v0.6.0/SHA256SUMS",
+            "https://pyble.dev/firmware/v0.6.1/SHA256SUMS",
             self.readme,
         )
         self.assertIn(
-            "https://pyble.dev/firmware/v0.6.0/RECOVERY.md",
+            "https://pyble.dev/firmware/v0.6.1/RECOVERY.md",
             self.readme,
         )
         self.assertIn(
-            "https://github.com/PyBLE-dev/PyBLE/tree/firmware-v0.6.0",
+            "https://github.com/PyBLE-dev/PyBLE/tree/c8f549eeabe6d2b8c2766eab022517944bb09c8c",
             self.readme,
         )
         self.assertIn(
-            "c2940281a14feddb55c48de15ac18087e9317d1b7130e514fab5a209b046a1e6",
+            "71f6aca6df07e31a1f54c7f70a48d82c7fe26b1c8ca0626a8ffc57c804fbb1bd",
             self.readme,
         )
         self.assertIn(
-            "0c7230d6708797c241160ba71fbd37e6b22f180a",
+            "https://pyble.dev/firmware-v0.6.1-owner-confirmation.md",
             self.readme,
         )
         self.assertIn(
@@ -301,7 +327,7 @@ class PublicClaimsTest(unittest.TestCase):
         ):
             self.assertNotIn(stale, unreleased)
 
-    def test_public_specifications_describe_the_exact_beta_without_overclaim(
+    def test_public_specifications_distinguish_beta_and_qualified_release(
         self,
     ) -> None:
         combined = "\n".join(
@@ -339,8 +365,11 @@ class PublicClaimsTest(unittest.TestCase):
 
         self.assertRegex(
             self.hardware_overview,
-            r"(?s)`esp32-4mb`.{0,240}hardware-tested beta.{0,200}"
-            r"`esp32-s3-n16r8`.{0,240}hardware-tested beta",
+            r"(?s)`esp32-4mb`.{0,240}Qualified in v0\.6\.0; current "
+            r"v0\.6\.1 source requires fresh exact-byte qualification\."
+            r".{0,240}`esp32-s3-n16r8`.{0,240}Qualified in v0\.6\.0; "
+            r"current v0\.6\.1 source requires independent exact-byte "
+            r"qualification\.",
         )
         self.assertIn(
             "The exact v0.4.2 public-beta bundle covers exactly the two enabled, "

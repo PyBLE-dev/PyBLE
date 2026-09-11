@@ -333,6 +333,63 @@ class FailedSessionTerminationIntegrationTest(unittest.TestCase):
             "pble_ready_refresh",
         )
 
+    def test_terminal_latch_closes_admission_before_bounded_tx_drain(self) -> None:
+        close = _code(_function(self.ble, "pble_ble_terminate_session"))
+        latch_at = close.find("pble_termination_claim_driver_locked")
+        tx_at = close.find("xSemaphoreTakeRecursive(pble_tx_mutex")
+        self.assertTrue(
+            0 <= latch_at < tx_at,
+            "exact-session terminal admission must latch before waiting for "
+            "physical TX ownership",
+        )
+        self.assertNotIn(
+            "portMAX_DELAY",
+            close,
+            "failed-session termination must spend only the residual of its "
+            "one absolute 2500 ms deadline on TX drain",
+        )
+        self.assertIn("PBLE_TERM_WATCHDOG_US", close)
+        self.assertRegex(
+            close,
+            r"xSemaphoreTakeRecursive\s*\(\s*pble_tx_mutex\s*,\s*"
+            r"[A-Za-z_]\w*\s*\)",
+        )
+
+        record = _code(_function(
+            self.ble, "pble_ble_record_protocol_violation"))
+        violation_latch = record.find("pble_termination_latch_locked")
+        unlock = record.find(
+            "taskEXIT_CRITICAL(&pble_session_mux)", violation_latch)
+        terminate = record.find("pble_ble_terminate_session", unlock)
+        self.assertTrue(
+            0 <= violation_latch < unlock < terminate,
+            "the eighth violation must make the session non-live in the same "
+            "counter cut, before the bounded termination driver runs",
+        )
+
+        for name in (
+            "pble_notify_packet",
+            "pble_ble_session_snapshot",
+            "pble_ble_session_snapshot_current",
+            "pble_ble_session_live",
+            "pble_ble_record_protocol_violation",
+            "pble_rx_access",
+        ):
+            with self.subTest(admission_body=name):
+                body = _code(_function(self.ble, name))
+                self.assertIn(
+                    "pble_session_admits_locked",
+                    body,
+                    "{} bypasses the shared terminal-admission latch"
+                    .format(name),
+                )
+        closing = _code(_function(self.ble, "pble_ble_session_closing"))
+        self.assertIn(
+            "pble_termination_pending",
+            closing,
+            "VM reset must treat a latched pre-mutex termination as closing",
+        )
+
     def test_open_to_closing_and_watchdog_arm_are_effect_driven(self) -> None:
         close = _code(_function(self.ble, "pble_ble_terminate_session"))
         _assert_inside_session_critical(self, close, "pble_term_begin")
@@ -386,7 +443,52 @@ class FailedSessionTerminationIntegrationTest(unittest.TestCase):
         self.assertIn("esp_restart", close)
         self.assertIn("ESP_OK", close)
         self.assertEqual(close.count("ble_gap_terminate("), 1)
+
+    def test_preclose_timeout_claims_restarting_before_public_restart(self) -> None:
+        helper = _code(
+            _function(self.ble, "pble_termination_restart_if_current")
+        )
+        self.assertIn("pble_termination_pending_matches_locked", helper)
+        self.assertIn("pble_term_preclose_failed", helper)
+        _assert_inside_session_critical(
+            self, helper, "pble_term_preclose_failed"
+        )
+        self.assertIn("PBLE_TERM_EFFECT_RESTART", helper)
+
+        close = _code(_function(self.ble, "pble_ble_terminate_session"))
+        self.assertGreaterEqual(
+            close.count("pble_termination_restart_if_current"),
+            4,
+            "missing mutex, pre-wait deadline, wait-timeout, or post-wait "
+            "deadline path without an atomic RESTARTING claim",
+        )
+        self.assertNotIn(
+            "pble_termination_request_current",
+            close,
+            "check-then-restart leaves a cleanup race before esp_restart",
+        )
         self.assertNotRegex(close, r"\b(?:for|while)\s*\(")
+
+    def test_absolute_deadline_mutex_waits_never_round_past_deadline(self) -> None:
+        for name in (
+            "pble_ble_terminate_session",
+            "pble_ble_vm_tx_lock",
+        ):
+            with self.subTest(name=name):
+                body = _code(_function(self.ble, name))
+                self.assertIn(
+                    "(uint32_t)(residual_us / INT64_C(1000))",
+                    body,
+                    "a sub-tick residual must become a nonblocking take",
+                )
+                self.assertNotIn("residual_us + INT64_C(999)", body)
+                self.assertNotRegex(
+                    body,
+                    r"if\s*\(\s*residual_ticks\s*==\s*0\s*\)\s*"
+                    r"\{\s*residual_ticks\s*=\s*1\s*;",
+                    "rounding a positive sub-tick residual up to one whole "
+                    "tick can wait beyond the one absolute deadline",
+                )
 
     def test_gap_result_classification_is_exact_and_non_retrying(self) -> None:
         close = _code(_function(self.ble, "pble_ble_terminate_session"))
@@ -585,7 +687,12 @@ class FailedSessionTerminationIntegrationTest(unittest.TestCase):
             "pble_rsp_owner_release_if_idle",
             "pble_reset_reassembly",
             "pble_lock_on_disconnect",
+        )
+        self.assertNotIn(
             "pble_fs_on_disconnect",
+            disconnect,
+            "pble_lock_on_disconnect is the single teardown authority and "
+            "already advances filesystem transfer generation exactly once",
         )
         self.assertIn("ESP_OK", disconnect)
         self.assertIn("PBLE_TERM_EFFECT_RESTART", disconnect)
@@ -619,7 +726,12 @@ class FailedSessionTerminationIntegrationTest(unittest.TestCase):
             "pble_rsp_owner_release_if_idle",
             "pble_reset_reassembly",
             "pble_lock_on_disconnect",
+        )
+        self.assertNotIn(
             "pble_fs_on_disconnect",
+            reset,
+            "reset cleanup must not advance filesystem generation once through "
+            "pble_lock and again through a direct filesystem callback",
         )
         self.assertIn("ESP_OK", reset)
         self.assertIn("PBLE_TERM_EFFECT_RESTART", reset)

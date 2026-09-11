@@ -47,8 +47,23 @@ class FbpBleLink implements BleLink {
 
   @override
   Future<void> disconnect() async {
-    await _device.disconnect();
-    _linkState.value = BleLinkState.disconnected;
-    await _connSub.cancel();
+    Object? firstError;
+    StackTrace? firstStack;
+    try {
+      await _device.disconnect();
+      _linkState.value = BleLinkState.disconnected;
+    } catch (error, stack) {
+      firstError = error;
+      firstStack = stack;
+    }
+    try {
+      await _connSub.cancel();
+    } catch (error, stack) {
+      firstError ??= error;
+      firstStack ??= stack;
+    }
+    if (firstError != null) {
+      Error.throwWithStackTrace(firstError, firstStack!);
+    }
   }
 }

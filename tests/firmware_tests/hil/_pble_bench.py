@@ -1957,7 +1957,7 @@ async def put_file(
             accounting.note_send(next_offset, len(piece))
             await central.send_cmd_no_rsp(
                 wire.OP_FILE_PUT_DATA,
-                0,
+                next_id(),
                 _u32(next_offset) + piece,
             )
             next_offset += len(piece)

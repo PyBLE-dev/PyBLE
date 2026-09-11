@@ -18,13 +18,10 @@
 # and the G1 S3 slice and REFUSES to sign any S4 item if any regressed.
 #
 # A milestone gate is green ONLY on a real-hardware HIL demo. This script verifies
-# the HOST-runnable S4 slice and reports the HIL items as DEFERRED-HIL. RED /
-# DEFERRED is EXPECTED now: the S4 pyble_*/pble_* modules are not yet [green], AND
-# the S4 payload-semantic conformance vectors are DoR-BLOCKED until protocol.md §6
-# (STOP/SOFT_REBOOT/RUN{source}/CONSOLE_DATA/CONSOLE_INPUT) + §4/§7 (OI-6 identify
-# encodings) FREEZE and the specs.md FR mirror + OI-6 close land. Those pending
-# vectors carry NO frame bytes on purpose (host/conformance/s4_pending.json) —
-# fabricating draft wire is forbidden. Do not sign S4 conformance before freeze.
+# the implemented HOST-runnable S4 slice and reports physical items as
+# DEFERRED-HIL. PBLE/1 §6 and the §4/§7 OI-6 identify encodings are frozen;
+# their former pre-freeze planning ledger is retained only in the conformance
+# archive.
 #
 # Exit non-zero if any cumulative earlier slice regressed, OR if a host-runnable
 # S4 criterion FAILs. DEFERRED does not fail.
@@ -54,10 +51,8 @@ printf '# repo: %s\n' "$REPO_ROOT"
 
 # --- Cumulative guard: G0 + G1 S2 slice must still hold -----------------------
 # CUMULATIVE RULE binds SIGNED/green gates: the hard blockers are the genuinely-
-# green earlier slices (G0 + G1 S2). The G1 S3 slice is IN-FLIGHT within the same
-# open G1 gate (its pyble_* modules are not yet [green]) — its own exit code
-# cannot distinguish "regressed" from "not-yet-green", so like g1_s3_check.sh
-# only hard-blocks on g0+g1(S2), the S3 status is reported INFORMATIONALLY here.
+# green earlier slices (G0 + G1 S2–S3). A current S3 host failure is a
+# cumulative regression and hard-blocks this slice.
 hdr "G1.S4.0 CUMULATIVE — G0 and the G1 S2 slice must not regress (signed/green earlier slices)"
 if bash "$FT/gates/g0_check.sh" >/dev/null 2>&1; then
   crow PASS "G0 host slice still green"
@@ -72,7 +67,7 @@ fi
 if bash "$FT/gates/g1_s3_check.sh" >/dev/null 2>&1; then
   note "G1 S3 slice host-runnable checks currently GREEN"
 else
-  note "G1 S3 slice not yet fully green (S3 pyble_* modules in flight) — tracked by gates/g1_s3_check.sh; NOT a signed-gate regression, so it does not block S4 authoring. Re-verify it turns green before G1 sign-off (cumulative rule)."
+  crow FAIL "G1 S3 slice REGRESSED — current host criteria must pass before S4 can be signed"
 fi
 
 # --- Spec-freeze precondition (SDD): §6 S4 semantics + §4/§7 OI-6 must FREEZE -
@@ -80,14 +75,12 @@ hdr "G1.S4.1 SDD precondition — protocol.md S4 payload encodings FROZEN before
 PROTO="$REPO_ROOT/docs/specifications/protocol.md"
 SPECS="$REPO_ROOT/docs/specifications/firmware/specs.md"
 # §4/§8 opcode+status numbers and §6 RUN-FILE lifecycle are already frozen (G1).
-# What S4 needs is the DRAFT REMAINDER: §6 STOP/SOFT_REBOOT/RUN{source}/CONSOLE_*
-# payload+semantics, and the OI-6 identify-LED/blink encodings. Detect freeze by
-# the ABSENCE of the DRAFT marker (avoids false positives from the DRAFT
-# signature prose): while the marker is present the section is DRAFT and the
-# payload-semantic [red] suites remain DoR-BLOCKED.
+# The historical pre-freeze markers must remain absent. Reappearance is a
+# contract regression and therefore fails this current gate rather than
+# deferring an already completed specification decision.
 frozen_when_absent() { # DRAFT_REGEX  FILE  LABEL
   if grep -qiE "$1" "$2" 2>/dev/null; then
-    row DEFERRED-DOCS "$3 (still DRAFT — project-architect [docs] freeze; firmware-architect mirrors)"
+    row FAIL "$3 (obsolete pre-freeze marker reappeared)"
   else
     row PASS "$3"
   fi
@@ -100,25 +93,25 @@ frozen_when_absent 'freeze there|freeze at S4' "$PROTO" "protocol.md §6 STOP/SO
 frozen_when_absent 'frozen at S4 before F-23' "$PROTO" "protocol.md §4/§7 OI-6 identify (SET_IDENTIFY_LED + IDENTIFY + caps) encodings FROZEN — DoR for F-23 [red]"
 # specs.md OI-6 remainder must flip from "Still OPEN" to closed.
 frozen_when_absent 'Still \*\*OPEN|Still OPEN' "$SPECS" "specs.md §5 OI-6 remainder CLOSED (FR-IDENT-2/3/4 mirror) — DoR for F-23 [red]"
-note "while the rows above are DEFERRED-DOCS, the S4 payload-semantic vectors stay in host/conformance/s4_pending.json (no frame bytes) — see the file _blocked_on ledger"
+note "pre-freeze planning vectors are archived byte-for-byte and are not active requirements"
 
-# --- S4 host conformance slice (payload-semantic — DoR-BLOCKED until freeze) --
+# --- S4 host conformance slice ------------------------------------------------
 hdr "G1.S4.2 F-05 RUN{mode:source} same lifecycle as file  [pyble_runner — runtime-engineer]"
-row "DEFERRED-DOCS" "RUN{source} -> RSP{OK} -> RUN_STATE(running) -> done/error; EBADREQ bad mode; ERANGE over-length; EBUSY while running (FR-RUN-2/4/7) — s4_pending.json:run_source_lifecycle"
+row "$(run_test test_pyble_runner.sh)" "RUN{source} -> RSP{OK} -> RUN_STATE(running) -> done/error; EBADREQ bad mode; ERANGE over-length; EBUSY while running (FR-RUN-2/4/7)"
 
 hdr "G1.S4.3 F-06 STOP + SOFT_REBOOT  [pyble_runner — runtime-engineer]"
-row "DEFERRED-DOCS" "STOP RSP{OK} ALWAYS (idle no-op + running interrupt->RUN_STATE(idle)); SOFT_REBOOT RSP{OK}->VM reset->RUN_STATE(idle) (FR-RUN-5/6/8/10) — s4_pending.json:stop_idempotent_ok,soft_reboot_clears_to_idle"
+row "$(run_test test_pyble_agent.sh)" "portable agent integration covers idempotent STOP, active-run interruption ordering, and response-before-SOFT_REBOOT (FR-RUN-5/6/8/10)"
 
 hdr "G1.S4.4 F-07 console tee stdout/stderr + CONSOLE_INPUT stdin  [pyble_console — runtime-engineer]"
-row "DEFERRED-DOCS" "CONSOLE_DATA [stream][bytes] stdout=0/stderr=1 observe-anywhere; CONSOLE_INPUT NO-RSP (PBLE_NO_RSP never on wire); traceback+RUN_STATE(error) on uncaught (FR-CON-1..5, FR-RUN-9) — s4_pending.json:console_*"
+row "$(run_test test_pyble_console.sh)" "portable console oracle covers stream tags, bounded input/output, and preserved traceback bytes (FR-CON-1..3, FR-RUN-9)"
 
 hdr "G1.S4.5 F-23 cap-gated IDENTIFY  [pyble_device_config + pyble_info — identity-engineer]"
-row "DEFERRED-DOCS" "SET_IDENTIFY_LED [gpio][active_level] persist/clear + ERANGE/EBADREQ; IDENTIFY bounded non-blocking blink + EUNSUPPORTED unset; has_identify/identify_led additive caps (FR-IDENT-2/3/4, §7) — s4_pending.json:set_identify_led_body_persists,identify_blink_bounded,caps_has_identify_and_identify_led"
+row "$(run_test test_v061_native_hardening.sh)" "native guards cover the authoritative versioned Identify configuration and exact payload validation; timing/GPIO/caps remain HIL below (FR-IDENT-2/3/4, §7)"
 
 # --- Shared cross-language corpus (firmware <-> Dart pble) --------------------
 hdr "G1.S4.6 Shared PBLE/1 corpus — frozen frame-level S4 vectors still verify"
 row "$(run_test test_pyble_proto.sh)" "corpus.json still byte-verifies incl. run_cmd_source_opaque_250b / run_rsp_* / stop_rsp_ebusy / run_state_evt_running / console_data_evt / identify_rsp_eunsupported (opaque payload, §4/§8 frozen)"
-note "payload-SEMANTIC S4 vectors are held in conformance/s4_pending.json until protocol.md §6/§4/§7 freeze; they carry NO frame_hex (wire is referenced, never redefined)"
+note "the shared corpus retains its frame-level vectors; current payload semantics are exercised by the named host suites without claiming retrospective corpus promotion"
 
 # --- No-leak (cumulative clean-room gate) ------------------------------------
 hdr "G1.S4.7 Clean-room no-leak still clean over the test tree"
@@ -152,5 +145,5 @@ if [ "$S4_FAIL" -ne 0 ]; then
   printf 'G1 S4 slice: %d host criteria FAILING. G1 NOT advanced.\n' "$S4_FAIL"
   exit 1
 fi
-printf 'G1 S4 slice: host-runnable checks PASS; S4 payload-semantic conformance is DoR-BLOCKED (protocol.md §6/§4/§7 + specs.md OI-6 not yet frozen) and the behaviours are DEFERRED-HIL. G1 remains OPEN through S6.\n'
+printf 'G1 S4 slice: host-runnable checks PASS; physical behaviours remain DEFERRED-HIL. G1 remains OPEN through S6.\n'
 exit 0

@@ -3455,5 +3455,93 @@ class ThirdPartyLicenseTests(FixtureCase):
             )
 
 
+@unittest.skipUnless(HAVE_RELEASE, RELEASE_LOAD_ERROR)
+class V061CandidateHardeningRecordRedTests(unittest.TestCase):
+    """Version-route the v0.6.1 record extension without rewriting v0.6.0."""
+
+    V060_GOLDEN_SHA256 = (
+        "5771a10be2f1c3dff05d87e3c6cab73667bdc8ade35cc486434a3e7537891066"
+    )
+
+    def candidate_report(self, firmware_version: str) -> str:
+        profile_records = []
+        for index, profile_id in enumerate(V060_RELEASE_PROFILE_ORDER):
+            spec = RELEASE.PROFILE_SPECS[profile_id]
+            record = {
+                "id": profile_id,
+                "install": {"sha256": str(index + 1) * 64},
+            }
+            if spec["port"] != "rp2":
+                record["manifest"] = {
+                    "sha256": chr(ord("a") + index) * 64,
+                }
+            profile_records.append(record)
+        policy = {
+            "schema_version": 3,
+            "profile_order": list(V060_RELEASE_PROFILE_ORDER),
+            "profiles": [
+                {"profile_id": profile_id, "fixture": index}
+                for index, profile_id in enumerate(V060_RELEASE_PROFILE_ORDER)
+            ],
+        }
+        with mock.patch.object(
+            RELEASE,
+            "_qualification_build_measurement",
+            side_effect=lambda _bundle, profile_id: {
+                "profile_index": list(V060_RELEASE_PROFILE_ORDER).index(profile_id)
+            },
+        ):
+            return RELEASE._candidate_hil_report(
+                firmware_version,
+                {"pyble": {"commit": "1" * 40}},
+                profile_records,
+                policy,
+                "f" * 64,
+                Path("/unused-v061-candidate-fixture"),
+            )
+
+    def test_v061_candidate_adds_exact_pending_hardening_fields(self):
+        rendered = self.candidate_report("0.6.1")
+        marker = RELEASE.HIL_MARKER_RE.search(rendered)
+        self.assertIsNotNone(marker)
+        payload = json.loads(marker.group(2))
+        self.assertEqual(payload["schema_version"], 5)
+        self.assertEqual(
+            [record["profile_id"] for record in payload["records"]],
+            list(V060_RELEASE_PROFILE_ORDER),
+        )
+        for record in payload["records"]:
+            with self.subTest(profile=record["profile_id"]):
+                self.assertIn("v061_hardening", record)
+                self.assertIsNone(record["v061_hardening"])
+                self.assertEqual(record["checks"]["v061_hardening"], "pending")
+                self.assertEqual(
+                    tuple(record["checks"]),
+                    (
+                        "provisioning_install",
+                        "provisioning_recovery",
+                        "advertising_info_hello",
+                        "pble_workflow",
+                        "safe_boot_reconnect",
+                        "filesystem_resume_reliability",
+                        "footprint_reliability",
+                        "v061_hardening",
+                    ),
+                )
+
+    def test_v060_candidate_rendering_remains_byte_identical(self):
+        rendered = self.candidate_report("0.6.0").encode("utf-8")
+        self.assertEqual(
+            hashlib.sha256(rendered).hexdigest(),
+            self.V060_GOLDEN_SHA256,
+        )
+        marker = RELEASE.HIL_MARKER_RE.search(rendered.decode("utf-8"))
+        self.assertIsNotNone(marker)
+        payload = json.loads(marker.group(2))
+        for record in payload["records"]:
+            self.assertNotIn("v061_hardening", record)
+            self.assertNotIn("v061_hardening", record["checks"])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

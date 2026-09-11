@@ -74,7 +74,8 @@ export type HistoricalFirmwareProfileId =
   (typeof historicalFirmwareProfileTable)[number]["id"];
 export type PlannedFirmwareProfileId =
   (typeof plannedFirmwareProfileTable)[number]["id"];
-export type FirmwareDeployment = "public" | "candidate" | "public-beta";
+export type FirmwareDeployment =
+  "public" | "candidate" | "public-beta" | "owner-confirmed";
 export type FirmwareHilStatus = "pending" | "passed";
 export type FirmwareProvisioningKind =
   "esp-web-serial" | "verified-uf2-bootsel";
@@ -148,6 +149,23 @@ export interface FirmwareReleaseDescriptor {
   readonly schemaPath: string;
   readonly recoveryPath: string;
   readonly profiles: readonly FirmwareProfileDescriptor[];
+}
+
+// Explicit owner authorization for these immutable bytes only; automated HIL
+// records stay pending. This does not relax the qualified-public release gate.
+export function isOwnerConfirmedFirmwareRelease(
+  descriptor: FirmwareReleaseDescriptor | null | undefined,
+): boolean {
+  return Boolean(
+    descriptor?.deployment === "owner-confirmed" &&
+    descriptor.accessControlled === false &&
+    descriptor.version === "0.6.1" &&
+    descriptor.hilStatus === "pending" &&
+    descriptor.releaseJson.path === "/firmware/v0.6.1/release.json" &&
+    descriptor.releaseJson.sha256 ===
+      "71f6aca6df07e31a1f54c7f70a48d82c7fe26b1c8ca0626a8ffc57c804fbb1bd" &&
+    hasExactFirmwareProfileDescriptors(descriptor.version, descriptor.profiles),
+  );
 }
 
 export interface VerifiedFirmwareProfile {

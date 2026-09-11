@@ -77,6 +77,7 @@ class RunStateMachine:
     def on_finished(self, ok):
         self.state = DONE if ok else ERROR
         self.events.append(self.state)
+        return self.state
 
     def on_stopped(self):
         # STOP terminal: a stopped run returns to IDLE (§6 STOP -> idle;
@@ -91,16 +92,28 @@ class Runner:
     for every RUN_STATE transition; `exec_fn(mode, data)` executes user code
     in supervisor context (see make_exec_fn)."""
 
-    def __init__(self, emit_state, exec_fn, emit_terminal=None):
+    def __init__(self, emit_state, exec_fn, emit_terminal=None,
+                 end_input=None):
         self.rsm = RunStateMachine()
         self._emit_state = emit_state
         self._emit_terminal = (emit_terminal if emit_terminal is not None
                                else self._default_emit_terminal)
         self._exec_fn = exec_fn
         self._pending = None          # captured (mode, data) awaiting pickup
+        self._reserved_prior_state = None
         self._stop_requested = False
         self._executing = False       # reserved/pending is deliberately distinct
         self._terminal_phase = _TERMINAL_NONE
+        self._terminal_prepared = False
+        self._pending_owner = None
+        self._active_owner = None
+        self._terminal_owner = None
+        self._event_owner = None
+        self._pending_input_generation = None
+        self._active_input_generation = None
+        self._terminal_input_generation = None
+        self._event_input_generation = None
+        self._end_input = end_input
 
     def _default_emit_terminal(self, state, published):
         """Compatibility adapter for host users without a TX receipt seam."""
@@ -113,7 +126,51 @@ class Runner:
         # exception check.
         self._terminal_phase = _TERMINAL_PUBLISHED
 
-    def handle_run(self, payload):
+    def event_owner(self):
+        """Immutable session owner of the event currently being emitted."""
+        return self._event_owner
+
+    def event_input_generation(self):
+        """Console lease belonging to the event currently being emitted."""
+        return self._event_input_generation
+
+    def bind_reserved_input(self, generation):
+        """Bind successful RUN-response stdin admission to its reservation."""
+        if self._pending is None or self._executing:
+            return False
+        self._pending_input_generation = generation
+        return True
+
+    def _emit_owned_state(self, state, owner, input_generation):
+        prior_owner = self._event_owner
+        prior_input = self._event_input_generation
+        self._event_owner = owner
+        self._event_input_generation = input_generation
+        try:
+            return self._emit_state(state)
+        finally:
+            self._event_owner = prior_owner
+            self._event_input_generation = prior_input
+
+    def _emit_owned_terminal(self, state, published):
+        prior_owner = self._event_owner
+        prior_input = self._event_input_generation
+        self._event_owner = self._terminal_owner
+        self._event_input_generation = self._terminal_input_generation
+        try:
+            return self._emit_terminal(state, published)
+        finally:
+            self._event_owner = prior_owner
+            self._event_input_generation = prior_input
+
+    def _end_active_input(self):
+        generation = self._active_input_generation
+        self._active_input_generation = None
+        self._terminal_input_generation = generation
+        if self._end_input is not None and generation is not None:
+            self._end_input(generation)
+
+    def handle_run(self, payload, owner=None):
         # Validate BEFORE reserving (pble_runner_run twin) — the only place the
         # §6 RUN payload is parsed.
         payload = bytes(payload)
@@ -128,12 +185,38 @@ class Runner:
                 return ERANGE
         elif len(data) > RUN_SOURCE_MAX:
             return ERANGE
+        prior_state = self.rsm.state
         status = self.rsm.on_run()
         if status != OK:
             return status             # EBUSY: no capture, no RUN_STATE
         self._stop_requested = False  # fresh reservation owns fresh control
         self._pending = (mode, data)  # reserved -> single writer of the capture
+        self._reserved_prior_state = prior_state
+        self._pending_owner = owner
+        self._pending_input_generation = None
         return OK                     # RSP only; RUN_STATE is supervisor work
+
+    def cancel_reserved_run(self):
+        """Roll back a provisional RUN whose response handoff was rejected.
+
+        This is valid only before supervisor pickup.  Restoring the captured
+        predecessor matters because a new RUN may be reserved from DONE/ERROR,
+        not just IDLE.
+        """
+        if self._pending is None or self._executing:
+            return False
+        prior_state = self._reserved_prior_state
+        if prior_state is None:
+            return False
+        self._pending = None
+        self._reserved_prior_state = None
+        self._pending_owner = None
+        self._pending_input_generation = None
+        self._stop_requested = False
+        self._terminal_phase = _TERMINAL_NONE
+        self._terminal_prepared = False
+        self.rsm.state = prior_state
+        return True
 
     def handle_stop(self):
         # Idempotent while idle/terminal. While RUNNING this intent applies to
@@ -157,24 +240,38 @@ class Runner:
         The RSM transition and wire publication are deliberately restartable:
         a deferred KBI can land immediately before or after `on_stopped()`.
         """
-        self._pending = None
-        self._executing = False
-        self._stop_requested = False
         if self._terminal_phase == _TERMINAL_NONE:
             return False
         if self._terminal_phase == _TERMINAL_PUBLISHED:
             self._terminal_phase = _TERMINAL_NONE
+            self._terminal_prepared = False
+            self._terminal_owner = None
+            self._terminal_input_generation = None
             return False
+        if not self._terminal_prepared:
+            self._executing = False
+            self._stop_requested = False
+            # End the predecessor's stdin lease before its RSM state becomes
+            # IDLE and therefore admits a successor RUN. A publication retry
+            # must not touch a successor reservation or its STOP/input state.
+            self._end_active_input()
+            self._terminal_prepared = True
         if self.rsm.state != IDLE:
             self.rsm.on_stopped()
-        accepted = self._emit_terminal(IDLE, self._terminal_published)
+        accepted = self._emit_owned_terminal(IDLE, self._terminal_published)
         if self._terminal_phase == _TERMINAL_PUBLISHED:
             self._terminal_phase = _TERMINAL_NONE
+            self._terminal_prepared = False
+            self._terminal_owner = None
+            self._terminal_input_generation = None
         elif accepted is False:
             # No live session, or the captured session went stale: omit instead
             # of retaining the terminal for a future connection (protocol.md
             # §6).
             self._terminal_phase = _TERMINAL_NONE
+            self._terminal_prepared = False
+            self._terminal_owner = None
+            self._terminal_input_generation = None
         return True
 
     def service_interrupted(self):
@@ -191,8 +288,18 @@ class Runner:
                 return self._terminalize_stopped()
             return False
         mode, data = self._pending
+        owner = self._pending_owner
+        input_generation = self._pending_input_generation
         self._pending = None
+        self._reserved_prior_state = None
+        self._pending_owner = None
+        self._pending_input_generation = None
+        self._active_owner = owner
+        self._active_input_generation = input_generation
+        self._terminal_owner = owner
+        self._terminal_input_generation = input_generation
         self._terminal_phase = _TERMINAL_UNPUBLISHED
+        self._terminal_prepared = False
 
         # Linearization cut: a control callback before this store leaves the
         # marker false and sets cancellation intent; one after it observes an
@@ -205,7 +312,7 @@ class Runner:
 
         try:
             self.rsm.on_started()
-            self._emit_state(RUNNING)
+            self._emit_owned_state(RUNNING, owner, input_generation)
             self._exec_fn(mode, bytes(data))
             ok = True
         except KeyboardInterrupt:
@@ -221,10 +328,20 @@ class Runner:
         if self._stop_requested:
             self._terminalize_stopped()
         else:
-            self.rsm.on_finished(ok)
+            # The predecessor owns this terminal value and console lease. End
+            # its input before exposing a terminal RSM state that a scheduled
+            # BLE callback may immediately replace with a successor RUN.
+            self._end_active_input()
+            terminal = self.rsm.on_finished(ok)
             self._stop_requested = False
-            self._emit_state(self.rsm.state)
+            self._emit_owned_state(
+                terminal, self._terminal_owner,
+                self._terminal_input_generation)
             self._terminal_phase = _TERMINAL_NONE
+            self._terminal_prepared = False
+            self._terminal_owner = None
+            self._terminal_input_generation = None
+        self._active_owner = None
         return True
 
 

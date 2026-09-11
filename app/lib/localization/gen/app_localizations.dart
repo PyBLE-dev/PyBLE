@@ -253,6 +253,162 @@ abstract class AppLocalizations {
   /// **'PyBLE requires no account and sends no telemetry by default. Your work stays on your tablet and connected board unless you explicitly export it. A user-started public GitHub import is the only optional network workflow.'**
   String get aboutPrivacyBody;
 
+  /// Action opening the complete offline privacy policy.
+  ///
+  /// In en, this message translates to:
+  /// **'Privacy policy'**
+  String get aboutPrivacyPolicyAction;
+
+  /// Title of the bundled offline privacy policy, matching the public policy.
+  ///
+  /// In en, this message translates to:
+  /// **'PyBLE Privacy Policy'**
+  String get privacyPolicyTitle;
+
+  /// Introduction matching the public privacy policy.
+  ///
+  /// In en, this message translates to:
+  /// **'PyBLE is designed to work locally. This policy explains what the app handles on your tablet, what you choose to send to a board, and what happens when you visit this website.'**
+  String get privacyPolicyIntroduction;
+
+  /// Effective date of the bundled policy; update together with pyble.dev/privacy.
+  ///
+  /// In en, this message translates to:
+  /// **'Effective 28 August 2026'**
+  String get privacyPolicyEffectiveDate;
+
+  /// Offline privacy policy section heading: Who maintains PyBLE.
+  ///
+  /// In en, this message translates to:
+  /// **'Who maintains PyBLE'**
+  String get privacyMaintainerTitle;
+
+  /// Bundled disclosure matching the public privacy policy section: Who maintains PyBLE.
+  ///
+  /// In en, this message translates to:
+  /// **'PyBLE is an independent open-source project maintained by Viwat Vchirawongkwin under the SciLabPro project name. It is not an official Chulalongkorn University project or app.'**
+  String get privacyMaintainerBody;
+
+  /// Offline privacy policy section heading: PyBLE app.
+  ///
+  /// In en, this message translates to:
+  /// **'PyBLE app'**
+  String get privacyAppTitle;
+
+  /// Bundled disclosure matching the public privacy policy section: PyBLE app.
+  ///
+  /// In en, this message translates to:
+  /// **'The PyBLE app has no account, advertising, analytics, telemetry, or crash reporting. It also has no payment or cloud service. The user-started public GitHub import is its only optional Internet workflow. Editing, BLE, Files, Blocks, and Run continue to work offline and remain independent of GitHub availability. The app does not send your project content to PyBLE, SciLabPro, or the maintainer.'**
+  String get privacyAppBody;
+
+  /// Offline privacy policy section heading: Public GitHub import.
+  ///
+  /// In en, this message translates to:
+  /// **'Public GitHub import'**
+  String get privacyGithubTitle;
+
+  /// Bundled disclosure matching the public privacy policy section: Public GitHub import.
+  ///
+  /// In en, this message translates to:
+  /// **'When you explicitly open Import examples from GitHub, the app makes unauthenticated HTTPS requests only to api.github.com. Those requests include the public repository owner and name, the requested ref, branch discovery operations, directory paths, paths identifying the selected public source files, and Git object identifiers. GitHub returns the selected file contents in its HTTPS responses. Requests also include a bounded PyBLE version in the User-Agent. The app sends no GitHub account or token, no board identity or board files, and no private project source.\n\nGitHub independently receives ordinary request metadata such as your IP address and user-agent under GitHub\'s own privacy policy. Import only reads the public files you select. It never automatically opens or runs imported code; review the source and choose any later board action yourself.'**
+  String get privacyGithubBody;
+
+  /// Offline privacy policy section heading: Data sent to your board.
+  ///
+  /// In en, this message translates to:
+  /// **'Data sent to your board'**
+  String get privacyBoardTitle;
+
+  /// Bundled disclosure matching the public privacy policy section: Data sent to your board.
+  ///
+  /// In en, this message translates to:
+  /// **'When you choose Save, Run, a Files operation, or send console input, PyBLE sends the relevant source code, path or filename, file content, Blocks companion data, or console input directly over BLE to the board you selected. Board output, files, and device information can return to the app as part of the same requested workflow. This is direct communication with your selected hardware, not an upload to a PyBLE or SciLabPro server. PyBLE does not sell this content or share it with advertisers or data brokers.'**
+  String get privacyBoardBody;
+
+  /// Offline privacy policy section heading: BLE transport security.
+  ///
+  /// In en, this message translates to:
+  /// **'BLE transport security'**
+  String get privacyTransportTitle;
+
+  /// Bundled disclosure matching the public privacy policy section: BLE transport security.
+  ///
+  /// In en, this message translates to:
+  /// **'PBLE/1 does not require Bluetooth pairing or BLE link encryption, so a board connection may operate without an authenticated, encrypted link. Do not send passwords, API keys, tokens, private keys, or other secrets unless you have separately verified your physical environment and transport security.'**
+  String get privacyTransportBody;
+
+  /// Offline privacy policy section heading: Nearby boards and platform permissions.
+  ///
+  /// In en, this message translates to:
+  /// **'Nearby boards and platform permissions'**
+  String get privacyPermissionsTitle;
+
+  /// Bundled disclosure matching the public privacy policy section: Nearby boards and platform permissions.
+  ///
+  /// In en, this message translates to:
+  /// **'To discover and connect, the app processes nearby PyBLE board names or labels, platform device identifiers or suffixes, capabilities, and Bluetooth signal strength locally on your tablet. The app uses this information for the connection interface and does not send it to the developer.\n\nOn Android 11 and earlier, the legacy Android location permission is requested only because those Android versions require it for BLE scanning. PyBLE does not derive, store, or transmit your physical location. Android 12 and later use Nearby devices permissions, and iPadOS uses Bluetooth permission, for the same find-and-connect purpose.\n\nIf a board has a custom label, that board may include it in a nearby Bluetooth advertisement visible to other devices in range. Do not put a person\'s name, email address, or other sensitive information in a board label.'**
+  String get privacyPermissionsBody;
+
+  /// Offline privacy policy section heading: Retention and deletion.
+  ///
+  /// In en, this message translates to:
+  /// **'Retention and deletion'**
+  String get privacyRetentionTitle;
+
+  /// Bundled disclosure matching the public privacy policy section: Retention and deletion.
+  ///
+  /// In en, this message translates to:
+  /// **'App working data stays on your tablet for use by the app. On Android, clear PyBLE\'s app storage or uninstall it; on iPadOS, delete the app. This removes data held only by the installed app but does not delete files on a board or exported copies. Device and operating-system backup behavior depends on your platform settings.\n\nFiles saved to a board remain there until you overwrite or delete them or erase the board. You can delete board files through Files → Delete in PyBLE or manage and erase the board directly. Because the developer receives no app project content, there is no PyBLE server-side copy of your app project content to retain or delete.'**
+  String get privacyRetentionBody;
+
+  /// Offline privacy policy section heading: Third-party components and platform services.
+  ///
+  /// In en, this message translates to:
+  /// **'Third-party components and platform services'**
+  String get privacyComponentsTitle;
+
+  /// Bundled disclosure matching the public privacy policy section: Third-party components and platform services.
+  ///
+  /// In en, this message translates to:
+  /// **'The app contains no advertising, analytics, crash-reporting, or account SDK that receives your app project content. Your operating system and app-distribution service may independently process installation, system, or store information under their own privacy policies.'**
+  String get privacyComponentsBody;
+
+  /// Offline privacy policy section heading: This website.
+  ///
+  /// In en, this message translates to:
+  /// **'This website'**
+  String get privacyWebsiteTitle;
+
+  /// Bundled disclosure matching the public privacy policy section: This website.
+  ///
+  /// In en, this message translates to:
+  /// **'pyble.dev has no account, advertising, analytics, tracking pixel, contact form, or non-essential cookie. The site does not build a visitor profile.\n\nCloudflare and the VPS hosting infrastructure may process ordinary request data—such as your IP address, user-agent, requested URL, timestamp, and security signals—to deliver the pages, prevent abuse, and keep the service reliable.\n\nThe site does not load marketing scripts, remote web fonts, or embedded social media. Following a link to another site makes that site\'s policy apply.\n\nWebsite infrastructure may keep limited operational logs according to provider settings and legal obligations. No separate fixed retention period is promised. We use HTTPS and keep the public site static to reduce the data and attack surface involved.'**
+  String get privacyWebsiteBody;
+
+  /// Offline privacy policy section heading: Changes to this policy.
+  ///
+  /// In en, this message translates to:
+  /// **'Changes to this policy'**
+  String get privacyChangesTitle;
+
+  /// Bundled disclosure matching the public privacy policy section: Changes to this policy.
+  ///
+  /// In en, this message translates to:
+  /// **'If a future app or site feature handles information differently— such as analytics, a form, an account, another network integration, or embedded media—we will update this policy and its effective date before that feature is deployed.'**
+  String get privacyChangesBody;
+
+  /// Offline privacy contact heading.
+  ///
+  /// In en, this message translates to:
+  /// **'Privacy and deletion questions'**
+  String get privacyContactTitle;
+
+  /// Privacy contact scope matching the public policy; verified email is rendered verbatim.
+  ///
+  /// In en, this message translates to:
+  /// **'Contact the project maintainer about this policy, a privacy concern, or deletion of website data under the maintainer’s control.'**
+  String get privacyContactBody;
+
   /// About section heading for project provenance and canonical website.
   ///
   /// In en, this message translates to:

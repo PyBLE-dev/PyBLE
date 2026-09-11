@@ -281,6 +281,65 @@ class ExactResponseCorrelationTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertIs(observed, exact)
 
+    async def test_on_written_runs_after_all_fragments_before_response_wait(self):
+        request_id = 111
+        events = []
+        central = None
+        exact = _rsp(wire.OP_FILE_DELETE, request_id, 0xF1)
+
+        class FragmentedWrite:
+            is_connected = True
+
+            async def write_gatt_char(self, _uuid, _packet, response):
+                self.assert_response = response
+                events.append("write")
+                if events.count("write") == 1:
+                    _deliver(central, exact)
+
+        central = central_module.PbleCentral(FragmentedWrite())
+        original_await_rsp = central._await_rsp
+
+        async def observed_await_rsp(*args, **kwargs):
+            events.append("await-response")
+            return await original_await_rsp(*args, **kwargs)
+
+        central._await_rsp = observed_await_rsp
+        observed = await central.send_cmd(
+            wire.OP_FILE_DELETE,
+            request_id,
+            b"x" * 64,
+            timeout=0.1,
+            on_written=lambda: events.append("written"),
+        )
+
+        self.assertEqual(observed.type, exact.type)
+        self.assertEqual(observed.opcode, exact.opcode)
+        self.assertEqual(observed.id, exact.id)
+        self.assertEqual(observed.payload, exact.payload)
+        self.assertGreater(events.count("write"), 1)
+        self.assertEqual(events[-2:], ["written", "await-response"])
+
+    async def test_on_written_is_not_called_when_the_command_write_fails(self):
+        request_id = 112
+        called = []
+
+        class FailedWrite:
+            is_connected = True
+
+            async def write_gatt_char(self, _uuid, _packet, response):
+                self.assert_response = response
+                raise OSError("write failed")
+
+        central = central_module.PbleCentral(FailedWrite())
+        with self.assertRaisesRegex(OSError, "write failed"):
+            await central.send_cmd(
+                wire.OP_FILE_DELETE,
+                request_id,
+                timeout=0.1,
+                on_written=lambda: called.append(True),
+            )
+        self.assertEqual(called, [])
+
 
 if __name__ == "__main__":
     unittest.main()

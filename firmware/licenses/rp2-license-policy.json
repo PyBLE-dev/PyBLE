@@ -1019,7 +1019,7 @@
       ],
       "notice_files": [],
       "selected_spdx_expression": "MIT",
-      "source_ref": "0.6.0",
+      "source_ref": "0.6.1",
       "source_roots": [
         {
           "namespace": "repo",

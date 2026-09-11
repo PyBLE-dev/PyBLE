@@ -10,6 +10,7 @@ import 'package:pyble/localization/localization.dart';
 import 'package:pyble/theme/theme.dart';
 
 import '../app_build_info.dart';
+import 'privacy_policy_page.dart';
 
 const double _kAboutMaxWidth = 1080;
 const double _kAboutTwoColumnMinWidth = 840;
@@ -360,6 +361,20 @@ class _PrivacyCard extends StatelessWidget {
       title: l10n.aboutPrivacyTitle,
       titleKey: const Key('aboutPrivacyHeading'),
       body: l10n.aboutPrivacyBody,
+      child: Align(
+        alignment: AlignmentDirectional.centerStart,
+        child: OutlinedButton.icon(
+          key: const Key('aboutPrivacyPolicyAction'),
+          onPressed: () => Navigator.of(context).push<void>(
+            MaterialPageRoute<void>(
+              settings: const RouteSettings(name: PrivacyPolicyPage.routeName),
+              builder: (BuildContext context) => const PrivacyPolicyPage(),
+            ),
+          ),
+          icon: const Icon(Icons.policy_outlined),
+          label: Text(l10n.aboutPrivacyPolicyAction),
+        ),
+      ),
     );
   }
 }

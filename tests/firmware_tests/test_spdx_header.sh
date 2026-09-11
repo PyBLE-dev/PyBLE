@@ -47,6 +47,38 @@ run() {
     "$SPDX_LINT" "$tmp"
   rm "$tmp/firmware/ports/.arm-gnu/missing_header.h"
 
+  mkdir -p "$tmp/firmware/.picotool/include"
+  printf '/* pinned third-party picotool header */\n' \
+    > "$tmp/firmware/.picotool/include/picotool.h"
+  check "spdx_lint PRUNES the exact pinned picotool root" \
+    "$SPDX_LINT" "$tmp"
+
+  mkdir -p "$tmp/firmware/ports/.picotool"
+  printf '/* authored source without an SPDX header */\n' \
+    > "$tmp/firmware/ports/.picotool/missing_header.h"
+  check_fail "spdx_lint still SCANS picotool-lookalike authored directories" \
+    "$SPDX_LINT" "$tmp"
+  rm "$tmp/firmware/ports/.picotool/missing_header.h"
+
+  mkdir -p "$tmp/firmware/.picotool-cache"
+  printf '/* authored sibling without an SPDX header */\n' \
+    > "$tmp/firmware/.picotool-cache/missing_header.h"
+  check_fail "spdx_lint does not broadly prune .picotool siblings" \
+    "$SPDX_LINT" "$tmp"
+  rm -r "$tmp/firmware/.picotool-cache"
+
+  mkdir -p "$tmp/firmware/licenses/evidence/rp2/picotool/2.3.0"
+  printf '/* exact unmodified third-party provenance evidence */\n' \
+    > "$tmp/firmware/licenses/evidence/rp2/picotool/2.3.0/libusb-version.h"
+  check "spdx_lint PRUNES only the exact libusb provenance header" \
+    "$SPDX_LINT" "$tmp"
+
+  printf '/* authored evidence lookalike without an SPDX header */\n' \
+    > "$tmp/firmware/licenses/evidence/rp2/picotool/2.3.0/libusb-version-local.h"
+  check_fail "spdx_lint still SCANS a provenance-header lookalike" \
+    "$SPDX_LINT" "$tmp"
+  rm "$tmp/firmware/licenses/evidence/rp2/picotool/2.3.0/libusb-version-local.h"
+
   # A non-compliant source file: no header.
   printf 'print("no header here")\n' \
     > "$tmp/firmware/pyble/missing_header.py"

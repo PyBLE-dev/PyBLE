@@ -21,6 +21,9 @@ extern "C" {
 // call once at boot before advertising (NVS must already be initialised).
 void        pble_dc_init(void);
 
+// Bounded internal persistence-fault bitset; no PBLE/1 field in v0.6.1.
+uint8_t     pble_dc_config_fault(void);
+
 // The stable device_id: the last two BT-MAC bytes as uppercase hex ("XXXX").
 const char *pble_dc_device_id(void);
 
@@ -29,6 +32,7 @@ size_t      pble_dc_label(char *out, size_t cap);
 
 // Persist a label (FR-IDENT-1): len > PBLE_LABEL_MAX → ERANGE (not stored);
 // len == 0 clears to the default. On success re-advertises via pble_ble_set_adv_name.
+uint8_t     pble_dc_label_status(const uint8_t *utf8, size_t len);
 uint8_t     pble_dc_set_label(const uint8_t *utf8, size_t len);
 
 // The advertised name: the label if set, else "PyBLE-" + device_id (FR-BLE-12).

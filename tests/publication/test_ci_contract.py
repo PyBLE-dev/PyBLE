@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import re
 import unittest
 from pathlib import Path
 
@@ -10,6 +11,107 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 class CiContractTest(unittest.TestCase):
+    def test_pico_build_is_a_real_pinned_arm64_ci_job(self) -> None:
+        workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(
+            "  build-rp2:",
+            workflow,
+            "CI must define a distinct real Pico build job",
+        )
+        start = workflow.index("  build-rp2:")
+        following = re.search(
+            r"(?m)^  [a-z0-9_-]+:\s*$",
+            workflow[start + len("  build-rp2:") :],
+        )
+        end = (
+            len(workflow)
+            if following is None
+            else start + len("  build-rp2:") + following.start()
+        )
+        job = workflow[start:end]
+
+        self.assertIn(
+            "needs: [no-leak, spdx, sha-drift, patches, firmware-host]",
+            job,
+        )
+        self.assertIn("runs-on: macos-15", job)
+        self.assertRegex(job, r"timeout-minutes: (?:[3-9][0-9]|[1-9][0-9]{2,})")
+        self.assertRegex(job, r"uses: actions/checkout@[0-9a-f]{40}\b")
+        self.assertIn("fetch-depth: 0", job)
+        self.assertNotIn("submodules: true", job)
+        self.assertIn('test "$(uname -s)" = "Darwin"', job)
+        self.assertIn('test "$(uname -m)" = "arm64"', job)
+
+        logical = re.sub(r"\\\n[ \t]*", " ", job)
+        outer_submodule = (
+            "git submodule update --init --depth 1 -- "
+            "firmware/upstream/micropython"
+        )
+        nested_prefix = (
+            "git -C firmware/upstream/micropython submodule update "
+            "--init --depth 1 --"
+        )
+        self.assertIn(outer_submodule, logical)
+        self.assertIn(nested_prefix, logical)
+        self.assertNotRegex(
+            logical,
+            r"git(?: -C [^ ]+)? submodule update[^\n]* --recursive\b",
+        )
+
+        for submodule in (
+            "lib/btstack",
+            "lib/cyw43-driver",
+            "lib/lwip",
+            "lib/mbedtls",
+            "lib/micropython-lib",
+            "lib/pico-sdk",
+            "lib/tinyusb",
+        ):
+            with self.subTest(submodule=submodule):
+                self.assertIn(submodule, job)
+
+        self.assertIn("firmware/scripts/install_arm_toolchain.sh", job)
+        self.assertIn("firmware/scripts/install_picotool.sh", job)
+        self.assertIn(
+            "firmware/scripts/build_rp2.sh rpi-pico2-w",
+            job,
+        )
+        self.assertNotIn("build_rp2.sh --plan", job)
+        self.assertNotRegex(job, r"\bbrew\s+(?:install\s+)?picotool\b")
+        self.assertNotRegex(job, r"(?s)actions/cache@.*?firmware/\.picotool")
+        self.assertRegex(job, r"uses: actions/upload-artifact@[0-9a-f]{40}\b")
+        self.assertIn("if-no-files-found: error", job)
+        self.assertRegex(job, r"retention-days: [1-9][0-9]*")
+        for artifact in (
+            "firmware.uf2",
+            "firmware.bin",
+            "firmware.elf",
+            "firmware.elf.map",
+            "pyble-build-provenance.json",
+        ):
+            with self.subTest(artifact=artifact):
+                self.assertIn(
+                    f"firmware/build/rpi-pico2-w/{artifact}",
+                    job,
+                )
+
+        ordered_tokens = (
+            'test "$(uname -m)" = "arm64"',
+            outer_submodule,
+            "firmware/scripts/install_arm_toolchain.sh",
+            "firmware/scripts/install_picotool.sh",
+            "firmware/scripts/build_rp2.sh rpi-pico2-w",
+            "uses: actions/upload-artifact@",
+        )
+        positions = [logical.index(token) for token in ordered_tokens]
+        self.assertEqual(
+            positions,
+            sorted(positions),
+            "the isolated RP2 job prerequisite/build/publication order changed",
+        )
+
     def test_firmware_host_checks_out_full_history_and_pinned_submodules(
         self,
     ) -> None:

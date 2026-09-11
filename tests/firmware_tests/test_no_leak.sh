@@ -62,6 +62,23 @@ run() {
     "$NOLEAK" "$clean"
   rm "$clean/firmware/ports/.arm-gnu/leak.h"
 
+  mkdir -p "$clean/firmware/.picotool/include"
+  printf '/* %s third-party build-tool symbol */\n' "$(tok_proto)" \
+    > "$clean/firmware/.picotool/include/picotool.h"
+  check "no_leak PRUNES the exact pinned picotool root" "$NOLEAK" "$clean"
+  mkdir -p "$clean/firmware/ports/.picotool"
+  printf '/* %s authored leak */\n' "$(tok_product)" \
+    > "$clean/firmware/ports/.picotool/leak.h"
+  check_fail "no_leak still SCANS picotool-lookalike authored directories" \
+    "$NOLEAK" "$clean"
+  rm "$clean/firmware/ports/.picotool/leak.h"
+  mkdir -p "$clean/firmware/.picotool-cache"
+  printf '/* %s authored sibling leak */\n' "$(tok_product)" \
+    > "$clean/firmware/.picotool-cache/leak.h"
+  check_fail "no_leak does not broadly prune .picotool siblings" \
+    "$NOLEAK" "$clean"
+  rm -r "$clean/firmware/.picotool-cache"
+
   # ---- Red fixture: a forbidden token in shippable source fails ------------
   # Token assembled at runtime; written only into a temp tree.
   local dirty; dirty="$(mk_tmp)"

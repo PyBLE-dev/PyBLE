@@ -1,0 +1,341 @@
+{
+  "archive": {
+    "asset_created_at": "2026-07-03T17:55:20Z",
+    "asset_id": 465646274,
+    "bytes": 1980457,
+    "filename": "picotool-2.3.0-mac.zip",
+    "sha256": "085ea99ccc2d64309e967a72e307fb113838713a46ba45bf7e156e519cca7d8e",
+    "url": "https://github.com/raspberrypi/pico-sdk-tools/releases/download/v2.3.0-0/picotool-2.3.0-mac.zip"
+  },
+  "archive_members": [
+    {
+      "bytes": 0,
+      "kind": "directory",
+      "mode": "040755",
+      "path": "picotool/",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 767,
+      "kind": "regular",
+      "mode": "100644",
+      "path": "picotool/picotoolTargets-release.cmake",
+      "sha256": "e40085002e565de850554e772c90f1a1c4cffb545f853eaa231b145e498f7c0f"
+    },
+    {
+      "bytes": 2303,
+      "kind": "regular",
+      "mode": "100644",
+      "path": "picotool/picotoolConfigVersion.cmake",
+      "sha256": "61485a18a59a186d7cb82ddf7686c5f1f4def81726568ae49fd0033db368f7e3"
+    },
+    {
+      "bytes": 367931,
+      "kind": "regular",
+      "mode": "100644",
+      "path": "picotool/rp2350_otp_contents.json",
+      "sha256": "1838713d5f94316c4c61558cb82d3346831235dc41f9b0f02151e6eda3f22fc2"
+    },
+    {
+      "bytes": 328336,
+      "kind": "regular",
+      "mode": "100444",
+      "path": "picotool/libusb-1.0.0.dylib",
+      "sha256": "b3d0c88bcb04fe61e4f56bc304a31fef56e19ee5ec2edaebd0fce44afb2b9237"
+    },
+    {
+      "bytes": 29484,
+      "kind": "regular",
+      "mode": "100644",
+      "path": "picotool/enc_bootloader_mbedtls.elf",
+      "sha256": "c5d17fcbb4f1ee41751dc782d86c1fc6629d8da3484e1a1cadc3ba4bec4d6044"
+    },
+    {
+      "bytes": 3856,
+      "kind": "regular",
+      "mode": "100644",
+      "path": "picotool/picotoolTargets.cmake",
+      "sha256": "043655d4bc215fb3a05d4a04f92cabc0be9bbdb0834717b0211e80106b4d1aae"
+    },
+    {
+      "bytes": 96,
+      "kind": "regular",
+      "mode": "100644",
+      "path": "picotool/picotoolConfig.cmake",
+      "sha256": "ca12b6fee18e6583713cfdcb2e81886aaee741d40304ea2cc88c4f5b2df2b6c3"
+    },
+    {
+      "bytes": 34004,
+      "kind": "regular",
+      "mode": "100644",
+      "path": "picotool/xip_ram_perms.elf",
+      "sha256": "afac0e166ee9b632f84717c7db02e7e5e648f03a51cc4795938adcd282c6103b"
+    },
+    {
+      "bytes": 5673800,
+      "kind": "regular",
+      "mode": "100755",
+      "path": "picotool/picotool",
+      "sha256": "a4b3c4e64dea7b99e810c5c777bf13fb2722b8d0355e0b64a28244ddc1b0f8b5"
+    },
+    {
+      "bytes": 20104,
+      "kind": "regular",
+      "mode": "100644",
+      "path": "picotool/enc_bootloader.elf",
+      "sha256": "9ce3c424d61226225d2c1f5b80a8854f15174b09dd447e58e4439240b274fb3d"
+    },
+    {
+      "bytes": 0,
+      "kind": "regular",
+      "mode": "100644",
+      "path": ".keep",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "components": [
+    {
+      "copyright": "Copyright 2020 (c) 2020 Raspberry Pi (Trading) Ltd.",
+      "exact_source_identity": {
+        "commit": "6f6458d792b93685a11423b244a585eaa99eafcf",
+        "path": "",
+        "ref": "2.3.0",
+        "repo": "https://github.com/raspberrypi/picotool.git"
+      },
+      "id": "picotool",
+      "license_files": [
+        {
+          "path": "firmware/licenses/evidence/rp2/picotool/2.3.0/picotool-LICENSE.TXT",
+          "sha256": "483f865953435b66c443dee7558debe3cc3cf8fcbb6a112fd9fc6a795d53f1f6"
+        }
+      ],
+      "review_note": "Authored picotool code; this record does not relabel the composite executable.",
+      "selected_spdx_expression": "BSD-3-Clause",
+      "source_spdx_expression": "BSD-3-Clause"
+    },
+    {
+      "copyright": "Copyright 2020 (c) 2020 Raspberry Pi (Trading) Ltd. and contributors",
+      "exact_source_identity": {
+        "commit": "98a542c1a62fb549ffb5d66a3e5892b06276b670",
+        "path": "",
+        "ref": "2.3.0",
+        "repo": "https://github.com/raspberrypi/pico-sdk.git"
+      },
+      "id": "pico-sdk",
+      "license_files": [
+        {
+          "path": "firmware/licenses/evidence/rp2/picotool/2.3.0/picotool-LICENSE.TXT",
+          "sha256": "483f865953435b66c443dee7558debe3cc3cf8fcbb6a112fd9fc6a795d53f1f6"
+        }
+      ],
+      "review_note": "Pico SDK code and data embedded in picotool and the shipped helper ELF/JSON members.",
+      "selected_spdx_expression": "BSD-3-Clause",
+      "source_spdx_expression": "BSD-3-Clause"
+    },
+    {
+      "copyright": "Copyright The Mbed TLS Contributors",
+      "exact_source_identity": {
+        "commit": "0bebf8b8c7f07abe3571ded48a11aa907a1ffb20",
+        "path": "",
+        "ref": "pico-sdk-2.3.0-gitlink",
+        "repo": "https://github.com/Mbed-TLS/mbedtls.git"
+      },
+      "id": "mbedtls",
+      "license_files": [
+        {
+          "path": "firmware/licenses/evidence/mbedtls-LICENSE.txt",
+          "sha256": "9b405ef4c89342f5eae1dd828882f931747f71001cfba7d114801039b52ad09b"
+        }
+      ],
+      "review_note": "Apache-2.0 is selected from the upstream dual-license choice for the exact Pico SDK gitlink.",
+      "selected_spdx_expression": "Apache-2.0",
+      "source_spdx_expression": "(Apache-2.0 OR GPL-2.0-or-later)"
+    },
+    {
+      "copyright": "Copyright (c) 2017 Andre Mueller",
+      "exact_source_identity": {
+        "commit": "6f6458d792b93685a11423b244a585eaa99eafcf",
+        "path": "clipp",
+        "repo": "https://github.com/raspberrypi/picotool.git",
+        "tree": "042fa829db68727e8ed5c03a1b0aecc51e136236"
+      },
+      "id": "clipp",
+      "license_files": [
+        {
+          "path": "firmware/licenses/evidence/rp2/picotool/2.3.0/clipp-LICENSE",
+          "sha256": "72c5d1a6f8c76c88b4559d26710c3a298a0ba9822ab3d187d0b4a5b2e8e2b219"
+        }
+      ],
+      "review_note": "Exact reduced/modified vendored tree; the declared upstream 1.2.3 version is not asserted as byte-identical source.",
+      "selected_spdx_expression": "MIT",
+      "source_spdx_expression": "MIT"
+    },
+    {
+      "copyright": "Copyright (c) 2013-2022 Niels Lohmann",
+      "exact_source_identity": {
+        "commit": "6f6458d792b93685a11423b244a585eaa99eafcf",
+        "path": "lib/nlohmann_json",
+        "repo": "https://github.com/raspberrypi/picotool.git",
+        "tree": "e9fc73b9e9ed7a95db493725b6687048cbbec5aa"
+      },
+      "id": "nlohmann-json",
+      "license_files": [
+        {
+          "path": "firmware/licenses/evidence/rp2/picotool/2.3.0/nlohmann-json-LICENSE.MIT",
+          "sha256": "86b998c792894ccb911a1cb7994f7a9652894e7a094c0b5e45be2f553f45cf14"
+        }
+      ],
+      "review_note": "Exact modified vendored v3.11.3 tree. The Apache Abseil fallback block is excluded by the reviewed C++14 build.",
+      "selected_spdx_expression": "MIT",
+      "source_spdx_expression": "MIT"
+    },
+    {
+      "copyright": "Copyright (c) 2022, The littlefs authors; Copyright (c) 2017, Arm Limited",
+      "exact_source_identity": {
+        "commit": "6f6458d792b93685a11423b244a585eaa99eafcf",
+        "path": "lib/littlefs",
+        "repo": "https://github.com/raspberrypi/picotool.git",
+        "tree": "6b1d6244884ec1db461b373d59d6c27288a637cc"
+      },
+      "id": "littlefs",
+      "license_files": [
+        {
+          "path": "firmware/licenses/evidence/rp2/picotool/2.3.0/littlefs-LICENSE.md",
+          "sha256": "0cb4ff1daf5fdc1359c6a6ee3116092f08fc100c9d58b1b77ab17bfd801f856d"
+        }
+      ],
+      "review_note": "Vendored source and license match upstream v2.11.1 commit 8e251dd675da00342d45dac78b6f627f119aed03.",
+      "selected_spdx_expression": "BSD-3-Clause",
+      "source_spdx_expression": "BSD-3-Clause"
+    },
+    {
+      "copyright": "Copyright (C) 2016, ChaN and modification authors",
+      "exact_source_identity": {
+        "commit": "6f6458d792b93685a11423b244a585eaa99eafcf",
+        "path": "lib/oofatfs",
+        "repo": "https://github.com/raspberrypi/picotool.git",
+        "tree": "97e9a825d481041708e447adf24b07103e25d384"
+      },
+      "id": "oofatfs",
+      "license_files": [
+        {
+          "path": "firmware/licenses/evidence/rp2/picotool/2.3.0/oofatfs-LICENSE",
+          "sha256": "4449f912502843f47a0a258e740054f916a21586f849a27ce40f936c095e2f6c"
+        }
+      ],
+      "review_note": "The moving work-R0.13c branch is origin metadata only; this exact vendored tree is the source identity.",
+      "selected_spdx_expression": "LicenseRef-PyBLE-ooFatFs-R0.13c",
+      "source_spdx_expression": "LicenseRef-PyBLE-ooFatFs-R0.13c"
+    },
+    {
+      "copyright": "Copyright Gregory Pakosz; Raspberry Pi additions under the picotool grant",
+      "exact_source_identity": {
+        "commit": "6f6458d792b93685a11423b244a585eaa99eafcf",
+        "path": "lib/whereami",
+        "repo": "https://github.com/raspberrypi/picotool.git",
+        "tree": "cf68ed7e2730ecc30d972f12d218319fe63e6de2"
+      },
+      "id": "whereami",
+      "license_files": [
+        {
+          "path": "firmware/licenses/evidence/rp2/picotool/2.3.0/whereami-LICENSE.MIT",
+          "sha256": "3633afb48d2f5fb9a1942eead37adbe0ab6c70a79468c1b69e5a1e771ec4b119"
+        },
+        {
+          "path": "firmware/licenses/evidence/rp2/picotool/2.3.0/whereami-LICENSE.WTFPLv2",
+          "sha256": "8b3d9ef07a62cfaa0194bdd64fa1bb61bbc18e4a156a83f8a52d937bd945239b"
+        }
+      ],
+      "review_note": "Upstream commit f5e3eac441acbb4ec1fe3e2c32646248ae463398 proves the dual license but is not claimed as an exact code ref; MIT is selected.",
+      "selected_spdx_expression": "MIT",
+      "source_spdx_expression": "(MIT OR WTFPL)"
+    },
+    {
+      "copyright": "See the exact CMake package-script grant",
+      "exact_source_identity": {
+        "commit": "6f6458d792b93685a11423b244a585eaa99eafcf",
+        "path": "cmake/copying-cmake-scripts",
+        "repo": "https://github.com/raspberrypi/picotool.git"
+      },
+      "id": "cmake-package-scripts",
+      "license_files": [
+        {
+          "path": "firmware/licenses/evidence/rp2/picotool/2.3.0/cmake-copying-cmake-scripts",
+          "sha256": "8c33ed647ccfaa4e682ffe56b677f4d5d0dc51e2ccc40038015df784c7be51dd"
+        }
+      ],
+      "review_note": "The exact generated package-member hashes are retained; no unrecorded CMake generator patch provenance is invented.",
+      "selected_spdx_expression": "LicenseRef-PyBLE-CMake-Package-Scripts",
+      "source_spdx_expression": "LicenseRef-PyBLE-CMake-Package-Scripts"
+    },
+    {
+      "copyright": "Copyright libusb authors; see AUTHORS",
+      "exact_source_identity": {
+        "commit": "87a55632db62c9bdc58cd31d3ccfa673f1bb017f",
+        "ref": "v1.0.30",
+        "repo": "https://github.com/libusb/libusb.git"
+      },
+      "id": "libusb",
+      "license_files": [
+        {
+          "path": "firmware/licenses/evidence/rp2/picotool/2.3.0/libusb-COPYING",
+          "sha256": "5df07007198989c622f5d41de8d703e7bef3d0e79d62e24332ee739a452af62a"
+        }
+      ],
+      "review_note": "The bundled dylib reports 1.0.30.12037; the exact official source archive and formula evidence are bound below.",
+      "selected_spdx_expression": "LGPL-2.1-or-later",
+      "source_spdx_expression": "LGPL-2.1-or-later"
+    }
+  ],
+  "distribution_provenance": {
+    "commit": "ad9e4a8375253cf4886bf168ea1a8d2746aadf24",
+    "copyright": null,
+    "license": {
+      "identifier": "Apache-2.0",
+      "path": "firmware/licenses/texts/Apache-2.0.txt",
+      "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+    },
+    "notice": null,
+    "ownership": "packaging-provenance-only",
+    "ref": "v2.3.0-0",
+    "repo": "https://github.com/raspberrypi/pico-sdk-tools.git"
+  },
+  "libusb_binary_provenance": {
+    "binary_runtime_version": "1.0.30.12037",
+    "binary_sha256": "b3d0c88bcb04fe61e4f56bc304a31fef56e19ee5ec2edaebd0fce44afb2b9237",
+    "evidence_files": [
+      {
+        "path": "firmware/licenses/evidence/rp2/picotool/2.3.0/libusb-version.h",
+        "sha256": "8ef05de838404213f63f3a27a073aee0e2bc072dc4415734772e756d34def7f8"
+      },
+      {
+        "path": "firmware/licenses/evidence/rp2/picotool/2.3.0/libusb-version_nano.h",
+        "sha256": "243da8ad18f946e4ee896b296ac56834bf6b50c6211af1b62603483b60f58d50"
+      },
+      {
+        "path": "firmware/licenses/evidence/rp2/picotool/2.3.0/libusb-README",
+        "sha256": "1d3dc1c6be134b121b0697ad7190f8c20911d509f2dfef69f72484c95b8a2b87"
+      },
+      {
+        "path": "firmware/licenses/evidence/rp2/picotool/2.3.0/libusb-AUTHORS",
+        "sha256": "27fd82b016838197d5276ba98d2187ed5a1ad0e171767322f356f0a9f6395941"
+      },
+      {
+        "path": "firmware/licenses/evidence/rp2/picotool/2.3.0/homebrew-libusb.rb",
+        "sha256": "5da3b9c199276c00cd14ef7da6a10e4dc7fd8b65eaa638ab356a049597491d74"
+      }
+    ],
+    "formula_commit": "889a613d996eec7ff15837e38ab4b81c47cfe63e",
+    "source_archive": {
+      "bytes": 656112,
+      "sha256": "fea36f34f9156400209595e300840767ab1a385ede1dc7ee893015aea9c6dbaf",
+      "url": "https://github.com/libusb/libusb/releases/download/v1.0.30/libusb-1.0.30.tar.bz2"
+    }
+  },
+  "schema_version": 1,
+  "source": {
+    "commit": "6f6458d792b93685a11423b244a585eaa99eafcf",
+    "ref": "2.3.0",
+    "repo": "https://github.com/raspberrypi/picotool.git"
+  }
+}

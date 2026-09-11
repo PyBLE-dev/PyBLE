@@ -8,6 +8,7 @@ import {
   historicalFirmwareProfileTable,
   firmwareVersionUsesFiveProfiles,
   isExactPublicBetaFirmwareRelease,
+  isOwnerConfirmedFirmwareRelease,
   publicBetaFirmwareVersion,
   type FirmwareProfileDescriptor,
   type FirmwareProfileId,
@@ -378,7 +379,8 @@ function validateDescriptor(
   if (
     descriptor.deployment !== "public" &&
     descriptor.deployment !== "candidate" &&
-    descriptor.deployment !== "public-beta"
+    descriptor.deployment !== "public-beta" &&
+    !isOwnerConfirmedFirmwareRelease(descriptor)
   ) {
     fail("Selected firmware deployment mode is invalid");
   }

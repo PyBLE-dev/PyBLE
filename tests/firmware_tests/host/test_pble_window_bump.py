@@ -20,9 +20,10 @@
 # honest host-observable check is a compile-time (static-source) assertion on
 # the two constants and their W+2 relation — exactly the "compile-time check in
 # the test harness" the task scopes when queue depth is not host-observable.
-# The BYTE-EXACT caps/HELLO wire vector stays gated in conformance/s3_pending
-# until §7 caps serialization is filled into the shared corpus; this file
-# asserts only the FROZEN NUMERIC contract (W=8, queue W+2), never a draft byte.
+# The legacy shared corpus did not retroactively gain a byte-exact caps vector;
+# its pre-freeze planning ledger is archived. This file asserts the frozen
+# numeric contract (W=8, queue W+2), while current caps semantics are covered by
+# the dedicated host/session suites.
 #
 # HAND-OFFs for [green] (I never edit firmware/**):
 #   - pble_info.c caps `window=` 4->8 .......... identity-engineer

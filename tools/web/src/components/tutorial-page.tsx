@@ -9,6 +9,7 @@ import {
   compatibilityLabels,
   firmwareProfiles,
   tutorials,
+  tutorialFirmwareReference,
 } from "@/lib/tutorials";
 
 type TutorialSlug = (typeof tutorials)[number]["slug"];
@@ -19,6 +20,7 @@ export type TutorialStep = {
   title: string;
   body: ReactNode;
   code?: string;
+  visual?: ReactNode;
   expected?: ReactNode;
   stopIf?: ReactNode;
 };
@@ -86,10 +88,18 @@ export function TutorialPage({
                 <dd>{tutorial.minutes} min</dd>
               </div>
               <div>
-                <dt>Review baseline</dt>
-                <dd>App 0.2.0 beta · firmware 0.6.0 · PBLE/1</dd>
+                <dt>Guidance reference</dt>
+                <dd>
+                  App 0.2.0 beta · firmware {tutorialFirmwareReference} · PBLE/1
+                </dd>
               </div>
             </dl>
+
+            <p>
+              Historical screenshots retain the firmware versions and App state
+              captured at the time; they have not been retaken on firmware{" "}
+              {tutorialFirmwareReference}.
+            </p>
 
             <div className="tutorial-goals">
               <section aria-labelledby={`${slug}-prerequisites`}>
@@ -125,7 +135,7 @@ export function TutorialPage({
               <h2 id="compatibility-title">Compatibility</h2>
             </div>
             <p>
-              The review baseline above is not a promise about the installer
+              The guidance reference above is not a promise about the installer
               currently being served. Confirm the active version, exact profile,
               and enabled action on the{" "}
               <Link href="/flash">current firmware and flash page</Link> before
@@ -191,6 +201,7 @@ export function TutorialPage({
                         <code>{step.code}</code>
                       </pre>
                     ) : null}
+                    {step.visual}
                     {step.expected ? (
                       <p className="tutorial-step__result">
                         <strong>Expected:</strong> {step.expected}

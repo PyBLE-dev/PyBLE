@@ -13,6 +13,7 @@
 #include <stdint.h>
 
 #include "pble_termination.h"
+#include "pble_wire.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -20,7 +21,7 @@ extern "C" {
 
 // --- Frozen constants --------------------------------------------------------
 #define PBLE_PROTO_VERSION 0x01   // §9: the single supported wire version (F-16)
-#define PBLE_LABEL_MAX     24     // §7/OI-6: max label bytes (UTF-8), else ERANGE
+#define PBLE_LABEL_MAX     PBLE_WIRE_LABEL_MAX
 
 // Frame TYPE (§3.1)
 #define PBLE_TYPE_CMD 0x01
@@ -145,7 +146,8 @@ void pble_proto_register_deferred(uint8_t opcode, pble_deferred_handler_t h);
 void pble_proto_register_no_response(uint8_t opcode, pble_handler_t h);
 void pble_proto_register_special(uint8_t opcode, pble_handler_t h);
 void pble_proto_init(void);
-// Decode → §9 VER guard → CRC gate → route → RSP (via pble_ble_notify).
+// Shared wire guard (structure → CRC → direction/ID → VER → session/opcode)
+// → route → bounded response/event delivery.
 void pble_proto_dispatch(const uint8_t *msg, size_t len, uint16_t conn);
 // Bounded status-only refusal for an RX run that exceeded reassembly capacity.
 void pble_proto_refuse(uint8_t opcode, uint8_t id_, uint8_t status,

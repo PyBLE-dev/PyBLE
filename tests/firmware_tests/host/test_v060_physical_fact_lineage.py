@@ -248,6 +248,38 @@ class PhysicalFactLineageContractTests(unittest.TestCase):
                     candidate_identity=None,
                 )
 
+    def test_common_validator_keeps_lineage_exactly_v060_only(self) -> None:
+        replay = getattr(
+            RELEASE, "_reconstruct_lineage_automatic_observation", None
+        )
+        self.assertTrue(callable(replay), "strict automatic replay is missing")
+        observation = replay(
+            automatic_raw(),
+            profile_id=PROFILE,
+            expected_build=BUILD,
+            candidate_identity=None,
+        )
+        observation["physical_power_cycle_advertising"] = "passed"
+        observation["physical_fact_lineage"] = lineage_summary()
+        observation["physical_fact_lineage"][
+            "candidate_automatic_raw_log_sha256"
+        ] = observation["raw_log_sha256"]
+
+        validated = RELEASE._validate_qualification_observation(
+            copy.deepcopy(observation),
+            None,
+            PROFILE,
+            firmware_version="0.6.0",
+        )
+        self.assertEqual(validated, observation)
+        with self.assertRaises(RELEASE.ReleaseError):
+            RELEASE._validate_qualification_observation(
+                copy.deepcopy(observation),
+                None,
+                PROFILE,
+                firmware_version="0.6.1",
+            )
+
     def test_summary_reuses_exactly_one_fact_and_rejects_every_binding_mutation(self) -> None:
         validate = getattr(RELEASE, "_validate_physical_fact_lineage_summary", None)
         self.assertTrue(callable(validate), "lineage summary validator is missing")

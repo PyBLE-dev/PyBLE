@@ -1,0 +1,38 @@
+{
+  "_meta": {
+    "description": "Shared PBLE/1 v0.6.1 SET_LABEL byte vectors. Length is checked before strict UTF-8 and control-scalar validation.",
+    "scope": "Portable Python and dependency-free compiled native C consume every case.",
+    "spdx": "MIT",
+    "version": 1
+  },
+  "constants": {
+    "label_max_bytes": 24
+  },
+  "cases": [
+    {"name": "empty_clears", "payload_hex": "", "expected_status": 0},
+    {"name": "plain_ascii", "payload_hex": "5079424c45", "expected_status": 0},
+    {"name": "ascii_at_24_byte_limit", "payload_hex": "414141414141414141414141414141414141414141414141", "expected_status": 0},
+    {"name": "multibyte_at_24_byte_limit", "payload_hex": "e282ace282ace282ace282ace282ace282ace282ace282ac", "expected_status": 0},
+    {"name": "space_boundary_u0020", "payload_hex": "20", "expected_status": 0},
+    {"name": "printable_ascii_boundary_u007e", "payload_hex": "7e", "expected_status": 0},
+    {"name": "non_control_u00a0", "payload_hex": "c2a0", "expected_status": 0},
+    {"name": "valid_max_scalar", "payload_hex": "f48fbfbf", "expected_status": 0},
+    {"name": "ascii_25_bytes", "payload_hex": "41414141414141414141414141414141414141414141414141", "expected_status": 9},
+    {"name": "length_precedes_malformed_utf8", "payload_hex": "41414141414141414141414141414141414141414141414180", "expected_status": 9},
+    {"name": "embedded_nul", "payload_hex": "410042", "expected_status": 1},
+    {"name": "c0_boundary_u001f", "payload_hex": "1f", "expected_status": 1},
+    {"name": "ascii_tab", "payload_hex": "09", "expected_status": 1},
+    {"name": "ascii_lf", "payload_hex": "0a", "expected_status": 1},
+    {"name": "ascii_cr", "payload_hex": "0d", "expected_status": 1},
+    {"name": "del_u007f", "payload_hex": "7f", "expected_status": 1},
+    {"name": "c1_boundary_u0080", "payload_hex": "c280", "expected_status": 1},
+    {"name": "c1_nel_u0085", "payload_hex": "c285", "expected_status": 1},
+    {"name": "c1_boundary_u009f", "payload_hex": "c29f", "expected_status": 1},
+    {"name": "lone_continuation", "payload_hex": "80", "expected_status": 1},
+    {"name": "overlong_two_byte_nul", "payload_hex": "c080", "expected_status": 1},
+    {"name": "overlong_three_byte_nul", "payload_hex": "e08080", "expected_status": 1},
+    {"name": "utf16_surrogate", "payload_hex": "eda080", "expected_status": 1},
+    {"name": "above_unicode_max", "payload_hex": "f4908080", "expected_status": 1},
+    {"name": "truncated_multibyte", "payload_hex": "e282", "expected_status": 1}
+  ]
+}

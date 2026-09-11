@@ -8,3 +8,6 @@ coverage/
 dist/
 public/brand/
 package-lock.json
+# Byte-for-byte source snapshots; their provenance depends on unchanged bytes.
+public/reference/firmware-v0.6.1/protocol.md
+public/AGENTS.md
