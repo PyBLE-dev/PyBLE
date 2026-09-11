@@ -49,3 +49,20 @@ Deployment uses a new complete static site, preserves old assets/downloads,
 and atomically switches the site symlink with the previous release retained.
 Production route and artifact delivery checks are recorded in the local
 deployment workspace; qualification claims remain owner-provided.
+
+## Published result
+
+Activated `/srv/pyble/releases/20260911-v061-complete-site` on 2026-09-11.
+Website source: `14139e945053fabaa783a25233c83035b4aa87f2`.
+The previous `/srv/pyble/releases/20260911-v061-functional-diagram` is retained
+for rollback. All 17 public route responses matched the complete local build
+byte-for-byte. The diagram, new social PNG, and protocol snapshot matched their
+published hashes; all five firmware download endpoints returned HTTP 200.
+
+Public homepage SHA-256:
+`3c0789790a2f9224a92b9e98746686f0707fd69c3531accd79eed51ca690a86f`.
+Firmware release.json remains unchanged at
+`71f6aca6df07e31a1f54c7f70a48d82c7fe26b1c8ca0626a8ffc57c804fbb1bd`.
+The final 342-test website run passed after updating the two no-selection
+fallback-copy assertions. No firmware tests, device actions, source push, or
+App publication occurred.
