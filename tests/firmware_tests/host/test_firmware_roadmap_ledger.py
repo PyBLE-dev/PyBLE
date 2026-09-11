@@ -32,9 +32,14 @@ def _text(relative: str) -> str:
 
 
 class FirmwareRoadmapLedgerTests(unittest.TestCase):
-    def test_public_roadmap_uses_qualified_v060_as_current_baseline(self):
+    def test_public_roadmap_distinguishes_v061_publication_and_v060_history(self):
         roadmap = _text("docs/ROADMAP.md")
-        self.assertIn("qualified firmware v0.6.0", roadmap)
+        normalized = " ".join(roadmap.split())
+        self.assertIn("published firmware v0.6.1", normalized)
+        self.assertIn("owner confirmation", normalized)
+        self.assertIn("Incomplete automated evidence is preserved unchanged", normalized)
+        self.assertIn("qualified v0.6.0 release remains a separate historical baseline", normalized)
+        self.assertNotIn("current qualified firmware v0.6.0", normalized)
         self.assertNotIn("exact v0.4.2 bytes", roadmap)
         self.assertNotIn("before enabling the ESP32-C3 installer", roadmap)
 
