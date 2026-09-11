@@ -7,6 +7,7 @@ import { PageIntro } from "@/components/page-intro";
 import { WaveshareBoardPhoto } from "@/components/waveshare-board-photo";
 import {
   firmwareVersionUsesFiveProfiles,
+  isOwnerConfirmedFirmwareRelease,
   releaseIncludesWaveshareLcd147b,
 } from "@/lib/firmware-release";
 import {
@@ -33,6 +34,7 @@ export default function FlashPage() {
   const release = preview ? null : firmwareReleaseSelectedAtBuild();
   const publicBeta = release?.deployment === "public-beta";
   const candidate = release?.deployment === "candidate";
+  const ownerConfirmed = isOwnerConfirmedFirmwareRelease(release);
   const waveshareLcd147b = releaseIncludesWaveshareLcd147b(release);
   const fiveProfileRelease =
     release !== null && firmwareVersionUsesFiveProfiles(release.version);
@@ -59,7 +61,9 @@ export default function FlashPage() {
         <p>
           One-time wired provisioning installs PyBLE-enabled MicroPython. Then
           develop over Bluetooth Low Energy from the tablet-first PyBLE app.
-          {preview
+          {ownerConfirmed
+            ? " Firmware v0.6.1 is available for all five board profiles following qualification confirmed by the project owner."
+            : preview
             ? ` LOCAL ENGINEERING PREVIEW v${preview.version} — UNQUALIFIED. This is not a public release.`
             : publicBeta
               ? " The current v0.4.2 installer is a hardware-tested firmware beta. Production Chrome erase/install and deliberately interrupted-flash recovery passed on both exact profiles. Complete release qualification is still pending; this is not a qualified release."

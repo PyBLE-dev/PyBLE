@@ -99,6 +99,33 @@ describe("production build contract", () => {
     });
   });
 
+  it("pins the patched Next, Sharp, and Vitest security closure", async () => {
+    const [packageJson, packageLock] = await Promise.all(
+      ["package.json", "package-lock.json"].map(async (file) =>
+        JSON.parse(await readFile(join(process.cwd(), file), "utf8")),
+      ),
+    );
+
+    expect(packageJson.dependencies?.next).toBe("16.3.4");
+    expect(packageJson.devDependencies?.["@next/eslint-plugin-next"]).toBe(
+      "16.3.4",
+    );
+    expect(packageJson.devDependencies?.vitest).toBe("4.1.11");
+    expect(packageJson.overrides?.next?.sharp).toBe("0.35.4");
+    for (const [name, version] of [
+      ["next", "16.3.4"],
+      ["@next/env", "16.3.4"],
+      ["@next/eslint-plugin-next", "16.3.4"],
+      ["sharp", "0.35.4"],
+      ["vitest", "4.1.11"],
+      ["@vitest/mocker", "4.1.11"],
+    ]) {
+      expect(packageLock.packages?.[`node_modules/${name}`]?.version).toBe(
+        version,
+      );
+    }
+  });
+
   it("pins the audited build closure and excludes the vulnerable image parser package", async () => {
     const [packageJson, packageLock, appFiles, sourceFiles] = await Promise.all(
       [

@@ -10,6 +10,7 @@ import { verifyFirmwareProfile } from "@/lib/firmware-integrity";
 import {
   hasExactFirmwareProfileDescriptors,
   isExactPublicBetaFirmwareRelease,
+  isOwnerConfirmedFirmwareRelease,
   releaseIncludesWaveshareLcd147b,
   firmwareVersionUsesFiveProfiles,
   type FirmwareProfileDescriptor,
@@ -159,7 +160,8 @@ function policyFailure(release: FirmwareReleaseDescriptor | null | undefined) {
       body: "Hardware validation is still required on every profile included in a v0.6.0-derived candidate before the public installer can be enabled.",
     };
   }
-  if (release.deployment !== "public" && release.deployment !== "candidate") {
+  if (release.deployment !== "public" && release.deployment !== "candidate" &&
+      !isOwnerConfirmedFirmwareRelease(release)) {
     if (
       release.deployment !== "public-beta" ||
       !isExactPublicBetaFirmwareRelease(release)
@@ -379,6 +381,7 @@ function FlashStatusForRelease({
       : profileConsentItems;
   const everyConsent = requiredConsentItems.every(({ id }) => consents[id]);
   const candidate = activeRelease.deployment === "candidate";
+  const ownerConfirmed = isOwnerConfirmedFirmwareRelease(activeRelease);
   const publicBeta = activeRelease.deployment === "public-beta";
 
   function chooseProfile(profileId: FirmwareProfileId) {
@@ -485,7 +488,9 @@ function FlashStatusForRelease({
         <div>
           <p className="flash-status__eyebrow">Installer status</p>
           <h2 id="installer-status-title">
-            {candidate
+            {ownerConfirmed
+              ? "Owner-qualified release"
+              : candidate
               ? "Protected release candidate"
               : publicBeta
                 ? "Hardware-tested firmware beta"
@@ -498,7 +503,11 @@ function FlashStatusForRelease({
         role={candidate || publicBeta ? "status" : undefined}
         className="flash-status__message"
       >
-        {candidate
+        {ownerConfirmed ? (
+          <>Firmware v0.6.1 qualification was confirmed by the project owner.
+            {" "}<a href="/firmware-v0.6.1-owner-confirmation.md">Publication record</a>.
+            {" "}Select and verify your exact board profile before installation.</>
+        ) : candidate
           ? "Protected release candidate: hardware validation is pending."
           : publicBeta
             ? "Hardware-tested firmware beta: exact PyBLE v0.4.2 browser installation and interrupted-flash recovery passed on real esp32-4mb and esp32-s3-n16r8 hardware. Complete release qualification is still pending; this is not a qualified release."
