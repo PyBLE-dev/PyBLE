@@ -204,19 +204,19 @@ describe("public-site contract", () => {
       "https://pyble.dev/learn/waveshare-lcd-147b",
     ]);
     expect(sitemap).toMatch(
-      /<loc>https:\/\/pyble\.dev\/privacy<\/loc>\s*<lastmod>2026-08-28T00:00:00\.000Z<\/lastmod>/,
+      /<loc>https:\/\/pyble\.dev\/privacy<\/loc>\s*<lastmod>2026-09-11T00:00:00\.000Z<\/lastmod>/,
     );
     expect(sitemap).toMatch(
-      /<loc>https:\/\/pyble\.dev\/<\/loc>\s*<lastmod>2026-08-28T00:00:00\.000Z<\/lastmod>/,
+      /<loc>https:\/\/pyble\.dev\/<\/loc>\s*<lastmod>2026-09-11T00:00:00\.000Z<\/lastmod>/,
     );
     expect(sitemap).toMatch(
-      /<loc>https:\/\/pyble\.dev\/app<\/loc>\s*<lastmod>2026-08-28T00:00:00\.000Z<\/lastmod>/,
+      /<loc>https:\/\/pyble\.dev\/app<\/loc>\s*<lastmod>2026-09-11T00:00:00\.000Z<\/lastmod>/,
     );
     expect(sitemap).toMatch(
-      /<loc>https:\/\/pyble\.dev\/support<\/loc>\s*<lastmod>2026-08-28T00:00:00\.000Z<\/lastmod>/,
+      /<loc>https:\/\/pyble\.dev\/support<\/loc>\s*<lastmod>2026-09-11T00:00:00\.000Z<\/lastmod>/,
     );
     expect(sitemap).toContain(
-      "<loc>https://pyble.dev/features</loc>\n    <lastmod>2026-09-01T00:00:00.000Z</lastmod>",
+      "<loc>https://pyble.dev/features</loc>\n    <lastmod>2026-09-11T00:00:00.000Z</lastmod>",
     );
     for (const path of [
       "/learn",
@@ -232,7 +232,7 @@ describe("public-site contract", () => {
       "/learn/waveshare-lcd-147b",
     ]) {
       expect(sitemap).toContain(
-        `<loc>https://pyble.dev${path}</loc>\n    <lastmod>2026-08-28T00:00:00.000Z</lastmod>`,
+        `<loc>https://pyble.dev${path}</loc>\n    <lastmod>2026-09-11T00:00:00.000Z</lastmod>`,
       );
     }
     expect(robots).toContain("Host: https://pyble.dev");
@@ -247,8 +247,8 @@ describe("public-site contract", () => {
   });
 
   it("publishes a real-app large social card and local TestFlight card", async () => {
-    const socialPngName = "pyble-beta-og-277eee8a-1200x630.png";
-    const socialSvgName = "pyble-beta-og-b47b6d10-1200x630.svg";
+    const socialPngName = "pyble-v061-og-297b270f-1200x630.png";
+    const socialSvgName = "pyble-v061-og-d3bab0c0-1200x630.svg";
     const socialUrl = `https://pyble.dev/social/${socialPngName}`;
     expect(rootMetadata.openGraph?.images).toEqual([
       {
@@ -285,7 +285,7 @@ describe("public-site contract", () => {
     ]);
     expect(socialSvg).toContain("One-time USB setup.");
     expect(socialSvg).toContain("Everyday coding over BLE.");
-    expect(socialSvg).toContain("WEB FLASHING VALIDATED");
+    expect(socialSvg).toContain("FIRMWARE v0.6.1 AVAILABLE");
     expect(socialSvg).not.toContain("FIRMWARE HIL PENDING");
     const socialPngSha256 = createHash("sha256")
       .update(socialPng)
@@ -294,10 +294,10 @@ describe("public-site contract", () => {
       .update(socialSvg)
       .digest("hex");
     expect(socialPngSha256).toBe(
-      "277eee8ae859c3e26444df830cf1b03f624f2be1f1524bc3246ce2d946332023",
+      "297b270fd4ec7637752ff954416cf4ca69570992b28d48b4530982db07c03af9",
     );
     expect(socialSvgSha256).toBe(
-      "b47b6d10d6de3e16a5687680d8f34f115f9a276d0fdbde06051751de2270ddfd",
+      "d3bab0c05e2c07783b6f7006a7cd8152b4b0a8798f4ade55e31d28076cb9bb1f",
     );
     expect(socialPngName).toContain(socialPngSha256.slice(0, 8));
     expect(socialSvgName).toContain(socialSvgSha256.slice(0, 8));
