@@ -524,6 +524,28 @@ user to `/flash` to install an exact selected profile and `/learn` for guided
 use. The route, its full-size diagram asset, and its content MUST render without
 client JavaScript or a third-party runtime request.
 
+### 3.7 Site-wide current-release consistency
+
+All current-release surfaces MUST agree with the same build-selected release:
+home-page introduction and workflow, target cards, support, and Flash.
+The exact owner-confirmed v0.6.1 descriptor MUST be presented as available
+on all five profiles, never as a protected candidate or unavailable installer.
+This does not turn its pending automated records into passed HIL.
+
+Tutorial guidance MUST identify firmware v0.6.1 separately from historical App
+screenshots and the immutable examples snapshot's original v0.6.0 baseline.
+Depicted versions, historical asset hashes and snapshot provenance MUST remain
+unchanged. Shared tutorial context MUST explain that distinction. Current
+guidance MUST cover fresh RUN globals and LFS2 migration/recovery boundaries.
+
+Social metadata MUST select a new content-addressed card with accurate current
+release wording. Do not retouch historical App pixels or claim newly measured
+hardware validation. Preserve older content-addressed assets for existing links.
+
+Publish a coherent full static site from one release selector; partial page
+overlays must not leave other current-release pages on an older version.
+Preserve versioned firmware artifacts, all tutorials and capture assets.
+
 ## 4. Brand and visual contract
 
 The canonical prompt-chip SVG in `app/assets/branding/` is the source asset. A
