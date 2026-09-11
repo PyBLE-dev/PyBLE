@@ -10642,6 +10642,91 @@ def _audit_rp2_reject_driver_overrides(
     )
 
 
+def _audit_rp2_build_environment(
+    builder_text: str,
+    *,
+    firmware_version: str,
+) -> list[str]:
+    """Parse one scrub command and its source-era-specific offline setup."""
+
+    marker = (
+        "# Never allow ambient compiler/make flags to influence the pinned build.\n"
+        "unset \\\n"
+    )
+    end = '\n\nmake -C "$RETAINED_UPSTREAM/mpy-cross"'
+    _require(
+        isinstance(builder_text, str)
+        and builder_text.count(marker) == 1
+        and builder_text.count(end) == 1,
+        "RP2 build driver environment scrub is missing or ambiguous",
+    )
+    before_make = builder_text.split(marker, 1)[1]
+    _require(end in before_make, "RP2 environment scrub does not precede mpy-cross")
+    section = before_make.split(end, 1)[0]
+    scrub, separator, setup = section.partition("\n\n")
+    lines = scrub.splitlines()
+    variables: list[str] = []
+    for index, line in enumerate(lines):
+        continued = line.endswith(" \\")
+        value = line[2:-2] if continued else line[2:]
+        _require(
+            line.startswith("  ")
+            and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", value) is not None
+            and continued == (index < len(lines) - 1),
+            "RP2 build driver environment scrub is malformed",
+        )
+        variables.append(value)
+    _require(
+        len(variables) == len(set(variables))
+        and set(_RP2_GCC_ENVIRONMENT_OVERRIDES) <= set(variables),
+        "RP2 build driver does not scrub every GCC resolution override",
+    )
+    pinned_picotool = _firmware_release_core(
+        firmware_version, "RP2 environment source version"
+    ) >= (0, 6, 1)
+    if pinned_picotool:
+        _require(
+            {
+                "CMAKE_ARGS", "picotool_DIR", "FETCHCONTENT_FULLY_DISCONNECTED",
+                "FETCHCONTENT_SOURCE_DIR_PICOTOOL", "PICOTOOL_FETCH_FROM_GIT_PATH",
+                "PICOTOOL_FORCE_FETCH_FROM_GIT", "CMAKE_FIND_USE_PACKAGE_REGISTRY",
+                "CMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY", "CMAKE_PREFIX_PATH",
+            } <= set(variables),
+            "RP2 build driver does not scrub every pinned package override",
+        )
+        expected_setup = r'''# Bind Pico SDK's CMake configure to the verified package and make every
+# fallback/network or ambient package-registry path unavailable. These values
+# are supplied both in CMAKE_ARGS (the MicroPython rp2 Makefile interface) and
+# the environment so nested configure steps cannot inherit hostile settings.
+CMAKE_ARGS="-Dpicotool_DIR=$PICOTOOL_PACKAGE_DIR \
+-DFETCHCONTENT_FULLY_DISCONNECTED:BOOL=ON \
+-DCMAKE_FIND_USE_PACKAGE_REGISTRY=OFF \
+-DCMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY=OFF \
+-DPICOTOOL_FORCE_FETCH_FROM_GIT=OFF"
+picotool_DIR="$PICOTOOL_PACKAGE_DIR"
+FETCHCONTENT_FULLY_DISCONNECTED=ON
+PICOTOOL_FORCE_FETCH_FROM_GIT=OFF
+CMAKE_FIND_USE_PACKAGE_REGISTRY=OFF
+CMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY=OFF
+export \
+  CMAKE_ARGS \
+  picotool_DIR \
+  FETCHCONTENT_FULLY_DISCONNECTED \
+  PICOTOOL_FORCE_FETCH_FROM_GIT \
+  CMAKE_FIND_USE_PACKAGE_REGISTRY \
+  CMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY'''
+        _require(
+            separator == "\n\n" and setup == expected_setup,
+            "RP2 build driver pinned offline environment setup changed",
+        )
+    else:
+        _require(
+            not separator and not setup,
+            "historical RP2 scrub has unexpected intervening commands",
+        )
+    return variables
+
+
 def _audit_observe_rp2_arm_runtime_closure(
     *,
     repo_root: Path,
@@ -10677,33 +10762,9 @@ def _audit_observe_rp2_arm_runtime_closure(
     builder_text = _read_regular_file_bytes(
         builder_path, "RP2 retained-source build driver"
     ).decode("utf-8", errors="strict")
-    scrub_marker = (
-        "# Never allow ambient compiler/make flags to influence the pinned build.\n"
-        "unset \\\n"
-    )
-    scrub_end = '\n\nmake -C "$RETAINED_UPSTREAM/mpy-cross"'
-    _require(
-        builder_text.count(scrub_marker) == 1
-        and builder_text.count(scrub_end) == 1,
-        "RP2 build driver environment scrub is missing or ambiguous",
-    )
-    scrub_source = builder_text.split(scrub_marker, 1)[1].split(scrub_end, 1)[0]
-    scrub_lines = scrub_source.splitlines()
-    scrubbed_variables: list[str] = []
-    for index, line in enumerate(scrub_lines):
-        continued = line.endswith(" \\")
-        value = line[:-2] if continued else line
-        _require(
-            line.startswith("  ")
-            and re.fullmatch(r"[A-Z][A-Z0-9_]*", value.strip()) is not None
-            and continued == (index < len(scrub_lines) - 1),
-            "RP2 build driver environment scrub is malformed",
-        )
-        scrubbed_variables.append(value.strip())
-    _require(
-        len(scrubbed_variables) == len(set(scrubbed_variables))
-        and set(_RP2_GCC_ENVIRONMENT_OVERRIDES) <= set(scrubbed_variables),
-        "RP2 build driver does not scrub every GCC resolution override",
+    _audit_rp2_build_environment(
+        builder_text,
+        firmware_version=_read_lock(root)["pyble"]["agent_version"],
     )
 
     cache_text = _read_regular_file_bytes(cache, "RP2 CMake cache").decode(
@@ -18533,7 +18594,9 @@ def _audit_frozen_payload_proof(
         if resolved_source.is_relative_to(overlay_root):
             copied_relative = destination
         elif resolved_source.is_relative_to(pyble_root):
-            copied_relative = destination
+            copied_relative = (
+                "pyble/" + resolved_source.relative_to(pyble_root).as_posix()
+            )
         else:
             continue
         copied_bytes = _audit_retained_generated_board_snapshot_file(
@@ -27797,6 +27860,12 @@ def _v061_hardening_qualification_binding(
         == _V061_HARDENING_GATE_SOURCE_SHA256,
         "loaded v0.6.1 hardening validator changed",
     )
+    try:
+        closure_snapshot = gate._qualification_snapshot(root)
+    except gate.QualificationError as exc:
+        raise ReleaseError(
+            "v0.6.1 hardening acquisition source closure changed: %s" % exc
+        ) from exc
     return {
         "source_commit": _git_output(
             root,
@@ -27807,6 +27876,7 @@ def _v061_hardening_qualification_binding(
         "executable_sha256": hashlib.sha256(executable_raw).hexdigest(),
         "gate_snapshot": gate_snapshot,
         "executable_snapshot": executable_snapshot,
+        "closure_snapshot": closure_snapshot,
     }
 
 

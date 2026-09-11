@@ -76,6 +76,11 @@ class V061WorkspaceReceiptWriterSafetyTests(unittest.TestCase):
     def write_valid_raw(self, observation_kind: str, path: Path) -> bytes:
         raw = fixture.workspace_raw_log(observation_kind)
         fixture.private_write(path, raw)
+        receipt_path = path.with_name(path.name.removesuffix("-raw.jsonl") + ".json")
+        template = self.writer["erased" if observation_kind == fixture.WORKSPACE_ORDER[0] else "nonblank"]
+        receipt = json.loads(Path(template).read_text())
+        fixture.write_acquisition_fixture(receipt_path, observation_kind, receipt,
+                                          Path(self.writer["artifact"]).read_bytes())
         return raw
 
     def create(

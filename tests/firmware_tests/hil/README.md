@@ -8,6 +8,14 @@ firmware-test-author**; none of this ships in the firmware image.
 A milestone gate is green **only on a real-hardware HIL demo**, not on merged
 code (PRD §1B.7). These drivers are that demo, made repeatable.
 
+Every valid outbound `CMD`, including no-response `FILE_PUT_DATA`, uses a
+request ID in 1–255. Transfer data and controls share a wrapping allocator;
+each Go-Back-N resend obtains another valid ID without waiting for a data
+`RSP`. ID zero is reserved for `EVT` and intentional malformed-input tests.
+Host regression coverage must exercise more than 255 submissions and feed
+captured frames through the unchanged native wire-admission decision. These
+tool checks do not replace actual candidate/board HIL evidence.
+
 ## Files
 
 | File | Role |
@@ -85,6 +93,57 @@ creation and one for nonblank incompatible-media refusal. Do not erase or
 modify a user's working board to obtain either result. `NOT-RUN`, reused
 v0.6.0 evidence, a receipt from another profile, or a configuration-corruption
 test cannot qualify v0.6.1.
+
+The measured-boot amendment of 2026-09-06 requires the actual retained
+`pyble_workspace.read_boot_observation(challenge)` response, complete private
+pre/post workspace readbacks, and a fresh bounded advertisement watch. The
+four-line canonical summary is derived from that acquisition; it cannot be
+entered by an operator or inferred from expected source behavior. Success can
+be queried through a bounded existing PBLE/1 RUN (including Pico); failure is
+queried through USB REPL with no agent advertisement. Both paths only read the
+sealed original boot observation and must never rerun the mount helper.
+The private receipt and each later hardening/finalization step bind and reopen
+all derived acquisition siblings. Detailed fields and fail-closed predicates
+are frozen in firmware specs §4.7 and §5.3.4. Changes to the observer require
+fresh five-profile build, resource/performance, and physical qualification.
+
+The host-generated native-USB refusal query paces the same one JSON line in
+16-character stdout writes, separated by 50 ms, with a 1,024-byte ASCII ceiling
+and bounded pre/post drain intervals. This avoids one-shot FIFO pressure while
+leaving DTR/RTS and the original VM boot unchanged. It is not a new receipt
+format or a guarantee of delivery: missing bytes, delimiters, nonce, or fields
+still fail the existing parser and acquisition. Keep failed raw captures.
+
+Use `v061_workspace_acquire.py` for the physical acquisition, with a clean
+qualification checkout, protected final candidate, reviewed mode-`0600`
+private binding JSON, and a new receipt filename in a private directory:
+
+```sh
+python tests/firmware_tests/hil/v061_workspace_acquire.py \
+  --candidate-dir /absolute/private/candidate \
+  --profile esp32-4mb --kind erased-media-first-boot \
+  --binding /absolute/private/esp32-4mb-binding.json \
+  --output /absolute/private/esp32-4mb/erased.json \
+  --allow-disposable-erase
+```
+
+This command **erases the selected board**, installs the exact candidate,
+and acquires actual measurements; retain an independently verified owner
+backup and explicit disposable-media authorization first. Repeat separately
+with `--kind nonblank-media-refusal` and a new `nonblank.json` output. The
+binding includes exact application/loader USB endpoints and topology, physical
+UID/MAC, chip/flash geometry, and reviewed transfer settings. Never guess a
+binding from a short advertising suffix. The maintained schema rejects other
+fields; private identities must not enter public documentation or Git.
+
+The macOS adapter uses Bleak `3.0.2`, pyserial `3.5`, esptool `4.12.0` for ESP,
+and the exact repository-pinned picotool for Pico. Use a dedicated local
+environment and retain its dependency versions; do not mutate the compiler
+environment. The collector publishes no passing receipt on interruption or
+partial acquisition and never automatically re-erases after failure. It
+finishes post-readback in loader mode; returning to normal runtime or another
+clean install is a separate, explicitly sequenced qualification operation.
+Keep both receipts and all their siblings beside the later hardening result.
 
 The live runner receives the protected candidate directory, exact profile,
 private BLE address, both receipt paths, and new raw-log/output paths. It emits

@@ -17,6 +17,7 @@ from pathlib import Path
 import re
 import stat
 import subprocess
+import types
 from typing import Any, Callable
 
 
@@ -81,12 +82,49 @@ WORKSPACE_RECEIPT_KEYS = (
     "install_sha256",
     "qualification_source_commit",
     "qualification_executable_sha256",
+    "acquisition_sha256",
     "raw_log_sha256",
     "status",
 )
 
 _RESULT_CONTRACT = "v061-hardening-seven-scenario-v1"
 _RECEIPT_CONTRACT = "v061-workspace-provisioning-receipt-v1"
+WORKSPACE_ACQUISITION_CONTRACT = "v061-workspace-acquisition-v1"
+WORKSPACE_COLLECTOR_RELATIVE = "tests/firmware_tests/hil/v061_workspace_acquire.py"
+WORKSPACE_MEDIA = {
+    "esp32-4mb": {"offset": 0x200000, "size": 0x200000, "block_size": 4096},
+    "esp32-s3-n16r8": {"offset": 0x210000, "size": 0xDF0000, "block_size": 4096},
+    "waveshare-esp32-s3-lcd-147b": {"offset": 0x210000, "size": 0xDF0000, "block_size": 4096},
+    "esp32-c3-4mb": {"offset": 0x200000, "size": 0x200000, "block_size": 4096},
+    "rpi-pico2-w": {"offset": 0x180000, "size": 0x280000, "block_size": 4096},
+}
+WORKSPACE_ACQUISITION_KEYS = (
+    "schema_version", "measurement_contract", "observation_kind",
+    "profile_id", "target", "firmware_version", "source_commit",
+    "candidate_release_json_sha256", "install_sha256",
+    "qualification_source_commit", "qualification_executable_sha256",
+    "collector_sha256", "challenge", "boot_id", "media", "transport",
+    "board_binding", "install_readback_sha256", "pre_media_sha256",
+    "post_media_sha256", "response_sha256", "advertisements_sha256",
+    "measurement_sha256", "status",
+)
+WORKSPACE_RAW_SIBLINGS = (
+    ("install.bin", "install_readback_sha256"),
+    ("pre.bin", "pre_media_sha256"),
+    ("post.bin", "post_media_sha256"),
+    ("response.bin", "response_sha256"),
+    ("advertisements.jsonl", "advertisements_sha256"),
+    ("measurement.jsonl", "measurement_sha256"),
+)
+WORKSPACE_RESPONSE_PREFIX = b"PYBLE_WORKSPACE_OBSERVATION:"
+WORKSPACE_SERVICE_UUID = "7079626c-1ab1-4d50-9e3a-000000000001"
+_BOOT_OBSERVATION_KEYS = (
+    "schema_version", "boot_id", "challenge", "mount_attempts",
+    "format_attempts", "format_completions", "remount_attempts",
+    "remount_completions", "program_calls", "erase_calls",
+    "workspace_attached", "recovery_attempts", "recovery_emissions",
+    "complete", "fault", "overflow", "media_state",
+)
 _VERSION = "0.6.1"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
@@ -95,6 +133,9 @@ _MAX_LOG_BYTES = 64 * 1024
 _MAX_ARTIFACT_BYTES = 64 * 1024 * 1024
 _QUALIFICATION_SOURCE_PATHS = (
     "firmware/qualification/v061_hardening_release_gate.py",
+    WORKSPACE_COLLECTOR_RELATIVE,
+    "tests/firmware_tests/hil/_v061_workspace_hardware.py",
+    "tests/firmware_tests/hil/_v061_workspace_pico.py",
     "tests/firmware_tests/hil/v061_hardening_bench.py",
     "tests/firmware_tests/hil/_pble_bench.py",
     "tests/firmware_tests/hil/_pble_central.py",
@@ -419,6 +460,253 @@ def _expected_workspace_values(observation_kind: str) -> list[dict[str, Any]]:
     raise QualificationError("workspace observation kind is unsupported")
 
 
+def _workspace_sibling(receipt_path: Path, suffix: str) -> Path:
+    _require(receipt_path.suffix == ".json", "workspace receipt must end in .json")
+    return receipt_path.with_name(receipt_path.stem + "-" + suffix)
+
+
+def _workspace_evidence_maximum(path: Path) -> int:
+    if path.name.endswith(("-install.bin", "-pre.bin", "-post.bin")):
+        return _MAX_ARTIFACT_BYTES
+    return _MAX_JSON_BYTES if path.suffix == ".json" else _MAX_LOG_BYTES
+
+
+def _json_line_records(raw: bytes, label: str) -> list[dict[str, Any]]:
+    _require(bool(raw) and raw.endswith(b"\n"), "%s is empty or unterminated" % label)
+    records = []
+    for line in raw.splitlines(keepends=True):
+        value = _decode_json(line, label, canonical=False)
+        _require(line == _canonical_json_line(value), "%s is not canonical JSONL" % label)
+        records.append(value)
+    return records
+
+
+def parse_workspace_response(raw: bytes) -> dict[str, Any]:
+    """Parse exactly one actual firmware reply; never fill missing fields."""
+    _require(type(raw) is bytes and 0 < len(raw) <= _MAX_LOG_BYTES,
+             "workspace response is empty or oversized")
+    matches = [line[len(WORKSPACE_RESPONSE_PREFIX):] for line in raw.splitlines()
+               if line.startswith(WORKSPACE_RESPONSE_PREFIX)]
+    _require(len(matches) == 1, "workspace response requires exactly one observation")
+    reply = _decode_json(matches[0], "workspace response", canonical=False)
+    _require(set(reply) == {"observation", "workspace_probe"}, "workspace response shape changed")
+    return reply
+
+
+def _validate_boot_observation(value, reply, kind):
+    observed = reply["observation"]
+    _require(type(observed) is dict and set(observed) == set(_BOOT_OBSERVATION_KEYS),
+             "boot observation shape changed")
+    _require(type(observed["schema_version"]) is int and observed["schema_version"] == 1,
+             "boot observation schema changed")
+    for field in ("boot_id", "challenge"):
+        _require(observed[field] == value[field], "boot observation %s mismatch" % field)
+    counters = ("mount_attempts", "format_attempts", "format_completions",
+                "remount_attempts", "remount_completions", "program_calls",
+                "erase_calls", "recovery_attempts", "recovery_emissions")
+    for field in counters:
+        _require(type(observed[field]) is int and 0 <= observed[field] <= 65535,
+                 "boot observation %s is not a bounded measured count" % field)
+    for field in ("workspace_attached", "complete", "fault", "overflow"):
+        _require(type(observed[field]) is bool, "boot observation %s is not boolean" % field)
+    _require(observed["complete"] and not observed["fault"] and not observed["overflow"],
+             "boot observation is incomplete, faulted, or overflowed")
+    erased = kind == WORKSPACE_PROVISIONING_ORDER[0]
+    _require(observed["mount_attempts"] == 1, "boot initial mount count changed")
+    _require(observed["media_state"] == ("erased" if erased else "nonblank"),
+             "boot media precondition was not measured")
+    for field in ("format_attempts", "format_completions", "remount_attempts", "remount_completions"):
+        _require(observed[field] == int(erased), "boot measured %s failed" % field)
+    for field in ("recovery_attempts", "recovery_emissions"):
+        _require(observed[field] == int(not erased), "boot measured %s failed" % field)
+    _require(observed["workspace_attached"] is erased, "boot attachment observation failed")
+    writes = observed["program_calls"] + observed["erase_calls"]
+    _require(writes > 0 if erased else writes == 0, "boot measured program/erase requests failed")
+    probe = reply["workspace_probe"]
+    if erased:
+        _require(type(probe) is list and len(probe) == 10
+                 and all(type(item) is int and item >= 0 for item in probe)
+                 and probe[0] > 0 and probe[1] > 0 and probe[2] > 0,
+                 "successful workspace has no actual statvfs probe")
+    else:
+        _require(probe is None, "refused workspace must not run a filesystem probe")
+
+
+def _record_shape(row, fields, label):
+    _require(type(row) is dict and set(row) == set(fields), "%s shape changed" % label)
+    stamp = row.get("monotonic_ns")
+    _require(type(stamp) is int and 0 < stamp < 2**63, "%s timestamp is invalid" % label)
+
+
+def validate_workspace_binding(value):
+    """Use the maintained, stdlib-only physical schema without opening I/O.
+
+    Execute only bytes read from the fixed authored source path. The helper's
+    pure validation imports no serial/BLE tools and opens no hardware. This
+    shares the exact USB/ROM/geometry authority with physical acquisition.
+    """
+    path = Path(__file__).resolve().parents[2] / "tests/firmware_tests/hil/_v061_workspace_hardware.py"
+    prior = _file_snapshot(path, label="workspace physical binding authority",
+                           maximum=_MAX_JSON_BYTES, private=False)
+    module = types.ModuleType("_pyble_v061_workspace_binding_authority")
+    module.__file__ = os.fspath(path)
+    try:
+        exec(compile(prior[0], os.fspath(path), "exec"), module.__dict__)
+        validated = module.validate_binding(value)
+    except Exception as exc:
+        raise QualificationError("workspace physical binding is invalid: %s" % exc) from exc
+    _same_file_snapshot(path, prior, label="workspace physical binding authority",
+                        maximum=_MAX_JSON_BYTES, private=False)
+    _require(type(validated) is dict and validated == value,
+             "workspace physical binding was reinterpreted")
+    return validated
+
+
+def _validate_workspace_measurement(value, measurement, watch):
+    _require(len(measurement) == 8, "workspace measurement sequence is incomplete")
+    events = ("acquisition-start", "install-verified", "media-read", "boot-start",
+              "boot-complete", "observation-read", "media-read", "acquisition-end")
+    shapes = (
+        ("event", "challenge", "monotonic_ns", "binding"),
+        ("event", "device_id", "install_readback_sha256", "monotonic_ns"),
+        ("event", "phase", "offset", "size", "sha256", "monotonic_ns"),
+        ("event", "device_id", "monotonic_ns"),
+        ("event", "monotonic_ns"),
+        ("event", "challenge", "boot_id", "transport", "response_sha256", "monotonic_ns"),
+        ("event", "phase", "offset", "size", "sha256", "monotonic_ns"),
+        ("event", "status", "monotonic_ns"),
+    )
+    stamps = []
+    for row, event, fields in zip(measurement, events, shapes):
+        _record_shape(row, fields, "workspace %s" % event)
+        _require(row["event"] == event, "workspace measurement order changed")
+        stamps.append(row["monotonic_ns"])
+    _require(all(left < right for left, right in zip(stamps, stamps[1:])),
+             "workspace measurement chronology is not strictly increasing")
+    _require(measurement[0]["challenge"] == value["challenge"], "acquisition challenge mismatch")
+    binding = validate_workspace_binding(measurement[0]["binding"])
+    _require(type(binding) is dict and binding.get("schema_version") == 1
+             and type(binding.get("schema_version")) is int
+             and binding.get("profile_id") == value["profile_id"],
+             "acquisition physical binding is missing or cross-profile")
+    for key in ("device_id", "ble_address"):
+        _require(binding.get(key) == value["board_binding"][key], "acquisition physical %s mismatch" % key)
+    for index in (1, 3):
+        _require(measurement[index]["device_id"] == value["board_binding"]["device_id"],
+                 "workspace physical device changed")
+    _require(measurement[1]["install_readback_sha256"] == value["install_readback_sha256"],
+             "workspace install measurement mismatch")
+    for index, phase in ((2, "pre"), (6, "post")):
+        row = measurement[index]
+        _require(row["phase"] == phase and type(row["offset"]) is int
+                 and type(row["size"]) is int and row["offset"] == value["media"]["offset"]
+                 and row["size"] == value["media"]["size"]
+                 and row["sha256"] == value[phase + "_media_sha256"],
+                 "workspace %s readback measurement mismatch" % phase)
+    for field in ("challenge", "boot_id", "transport", "response_sha256"):
+        _require(measurement[5][field] == value[field], "workspace response measurement %s mismatch" % field)
+    _require(measurement[-1]["status"] == "complete", "workspace acquisition did not complete")
+    _require(len(watch) >= 2, "workspace advertisement watch is incomplete")
+    _record_shape(watch[0], ("event", "challenge", "monotonic_ns"), "watch start")
+    _record_shape(watch[-1], ("event", "challenge", "monotonic_ns", "status"), "watch end")
+    _require(watch[0]["event"] == "watch-start" and watch[-1]["event"] == "watch-end"
+             and watch[-1]["status"] == "complete", "workspace advertisement watch was interrupted")
+    _require(watch[0]["challenge"] == watch[-1]["challenge"] == value["challenge"],
+             "workspace advertisement watch challenge mismatch")
+    start, end = watch[0]["monotonic_ns"], watch[-1]["monotonic_ns"]
+    _require(stamps[2] < start < stamps[3] and stamps[5] < end < stamps[6]
+             and end - stamps[3] >= 10_000_000_000,
+             "workspace advertisement watch does not cover ten post-boot seconds")
+    last = start
+    matches = 0
+    for row in watch[1:-1]:
+        _record_shape(row, ("event", "monotonic_ns", "address", "local_name", "service_uuids"), "advertisement")
+        _require(row["event"] == "advertisement" and last <= row["monotonic_ns"] <= end,
+                 "workspace advertisement chronology changed")
+        _require(type(row["address"]) is str and 0 < len(row["address"]) <= 128
+                 and (row["local_name"] is None or (type(row["local_name"]) is str and len(row["local_name"]) <= 128))
+                 and type(row["service_uuids"]) is list and len(row["service_uuids"]) <= 32
+                 and all(type(item) is str and len(item) <= 64 for item in row["service_uuids"]),
+                 "workspace advertisement callback is invalid")
+        last = row["monotonic_ns"]
+        if row["address"] == value["board_binding"]["ble_address"] and WORKSPACE_SERVICE_UUID in row["service_uuids"]:
+            _require(row["monotonic_ns"] >= stamps[3], "selected advertisement predates the measured boot")
+            matches += 1
+    erased = value["observation_kind"] == WORKSPACE_PROVISIONING_ORDER[0]
+    _require(matches > 0 if erased else matches == 0, "selected workspace advertisement observation failed")
+
+
+def _workspace_acquisition_snapshot(receipt_path, observation_kind, validation):
+    """Reopen and independently validate all retained physical measurements."""
+    receipt_path = _absolute_lexical_path(Path(receipt_path), "workspace receipt")
+    path = _workspace_sibling(receipt_path, "acquisition.json")
+    snapshot = _file_snapshot(path, label="workspace acquisition", maximum=_MAX_JSON_BYTES, private=True)
+    value = _decode_json(snapshot[0], "workspace acquisition", canonical=True)
+    _require(tuple(value) == WORKSPACE_ACQUISITION_KEYS, "workspace acquisition shape or key order changed")
+    _require(type(value["schema_version"]) is int and value["schema_version"] == 1
+             and value["measurement_contract"] == WORKSPACE_ACQUISITION_CONTRACT,
+             "workspace acquisition schema or contract changed")
+    _require(observation_kind in WORKSPACE_PROVISIONING_ORDER
+             and value["observation_kind"] == observation_kind, "workspace acquisition kind mismatch")
+    _validate_expected_identity(value, **validation)
+    for field in ("challenge", "boot_id"):
+        _require(type(value[field]) is str and re.fullmatch(r"[0-9a-f]{32}", value[field]) is not None,
+                 "workspace acquisition %s is invalid" % field)
+    _validate_sha(value["collector_sha256"], "workspace collector")
+    collector = Path(__file__).resolve().parents[2] / WORKSPACE_COLLECTOR_RELATIVE
+    collector_raw, _ = _stable_regular_bytes(collector, label="workspace collector", maximum=_MAX_JSON_BYTES, private=False)
+    _require(hashlib.sha256(collector_raw).hexdigest() == value["collector_sha256"], "workspace collector digest mismatch")
+    media = value["media"]
+    _require(type(media) is dict and tuple(media) == ("offset", "size", "block_size")
+             and all(type(number) is int for number in media.values())
+             and media == WORKSPACE_MEDIA[value["profile_id"]], "workspace media geometry changed")
+    _require(value["transport"] in ("usb-repl", "pble-run"), "workspace observation transport changed")
+    if observation_kind == WORKSPACE_PROVISIONING_ORDER[1]:
+        _require(value["transport"] == "usb-repl", "refused workspace cannot use BLE")
+    binding = value["board_binding"]
+    _require(type(binding) is dict and tuple(binding) == ("device_id", "ble_address")
+             and all(type(item) is str and 0 < len(item) <= 128 for item in binding.values()),
+             "workspace selected physical binding is invalid")
+    _require(value["status"] == "passed", "workspace acquisition did not pass")
+    snapshots = [(path, snapshot)]
+    raw = {}
+    for suffix, field in WORKSPACE_RAW_SIBLINGS:
+        _validate_sha(value[field], "workspace " + field)
+        sibling = _workspace_sibling(receipt_path, suffix)
+        captured = _file_snapshot(sibling, label="workspace " + suffix,
+                                  maximum=_workspace_evidence_maximum(sibling), private=True)
+        _require(captured[2] == value[field], "workspace %s digest mismatch" % suffix)
+        raw[suffix] = captured[0]
+        snapshots.append((sibling, captured))
+    _require(value["install_readback_sha256"] == value["install_sha256"], "physical install readback differs from candidate")
+    pre, post = raw["pre.bin"], raw["post.bin"]
+    _require(len(pre) == len(post) == media["size"], "workspace readback is incomplete")
+    if observation_kind == WORKSPACE_PROVISIONING_ORDER[0]:
+        _require(pre == b"\xff" * len(pre), "erased workspace pre-read is not completely blank")
+        _require(pre != post, "erased workspace has no changed post-read")
+    else:
+        first = 2 * media["block_size"]
+        incompatible = pre == b"\0" * len(pre) or (pre[:first] == b"\0" * first and pre[first:] == b"\xff" * (len(pre) - first))
+        _require(incompatible, "nonblank workspace is not a deliberately incompatible precondition")
+        _require(pre == post, "refused workspace media changed")
+    reply = parse_workspace_response(raw["response.bin"])
+    _validate_boot_observation(value, reply, observation_kind)
+    if observation_kind == WORKSPACE_PROVISIONING_ORDER[0]:
+        probe = reply["workspace_probe"]
+        blocks = media["size"] // media["block_size"]
+        _require(probe[0] == probe[1] == media["block_size"] and probe[2] == blocks
+                 and 0 <= probe[3] <= blocks and probe[4] == probe[3]
+                 and probe[5:9] == [0, 0, 0, 0] and probe[9] == 255,
+                 "workspace statvfs geometry differs from measured native media")
+    _validate_workspace_measurement(value,
+        _json_line_records(raw["measurement.jsonl"], "workspace measurement"),
+        _json_line_records(raw["advertisements.jsonl"], "workspace advertisement watch"))
+    for sibling, prior in snapshots:
+        _same_file_snapshot(sibling, prior, label="workspace acquisition evidence",
+                            maximum=_workspace_evidence_maximum(sibling), private=True)
+    return snapshot[2], tuple(snapshots)
+
+
 def _validate_exact_json_lines(
     raw: bytes, expected: list[dict[str, Any]], label: str
 ) -> None:
@@ -520,12 +808,14 @@ def validate_workspace_receipt_payload(
         expected_qualification_source_commit=expected_qualification_source_commit,
         expected_qualification_executable_sha256=expected_qualification_executable_sha256,
     )
+    _validate_sha(value["acquisition_sha256"], "workspace acquisition")
     _validate_sha(value["raw_log_sha256"], "workspace raw log")
     _require(value["status"] == "passed", "workspace receipt did not pass")
     raw = canonical_json_bytes(value)
     return {
         "status": "passed",
         "receipt_sha256": hashlib.sha256(raw).hexdigest(),
+        "acquisition_sha256": value["acquisition_sha256"],
         "raw_log_sha256": value["raw_log_sha256"],
     }
 
@@ -565,10 +855,14 @@ def _workspace_receipt_file_snapshot(
         "workspace raw boot log",
     )
     _require(boot_digest == value["raw_log_sha256"], "workspace receipt does not bind its raw log")
+    acquisition_digest, acquisition_snapshots = _workspace_acquisition_snapshot(
+        receipt_path, observation_kind, validation
+    )
+    _require(acquisition_digest == value["acquisition_sha256"], "workspace receipt does not bind its acquisition")
     return summary, (
         (receipt_path, (receipt_raw, receipt_identity, receipt_digest)),
         (raw_path, (boot_raw, boot_identity, boot_digest)),
-    )
+    ) + acquisition_snapshots
 
 
 def validate_workspace_receipt_file(
@@ -616,15 +910,21 @@ def _validate_workspace_summary(value: Any) -> None:
         row = value[name]
         _require(
             type(row) is dict
-            and tuple(row) == ("status", "receipt_sha256", "raw_log_sha256"),
+            and tuple(row) == ("status", "receipt_file", "receipt_sha256", "acquisition_sha256", "raw_log_sha256"),
             "%s workspace summary shape changed" % name,
         )
         _require(row["status"] == "passed", "%s workspace evidence did not pass" % name)
+        _require(type(row["receipt_file"]) is str
+                 and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}\.json", row["receipt_file"]) is not None,
+                 "%s workspace receipt filename is unsafe" % name)
         _validate_sha(row["receipt_sha256"], "%s receipt" % name)
+        _validate_sha(row["acquisition_sha256"], "%s acquisition" % name)
         _validate_sha(row["raw_log_sha256"], "%s raw log" % name)
     first = value[WORKSPACE_PROVISIONING_ORDER[0]]
     second = value[WORKSPACE_PROVISIONING_ORDER[1]]
     _require(first["receipt_sha256"] != second["receipt_sha256"], "workspace receipts must be distinct")
+    _require(first["receipt_file"] != second["receipt_file"], "workspace receipt filenames must be distinct")
+    _require(first["acquisition_sha256"] != second["acquisition_sha256"], "workspace acquisitions must be distinct")
     _require(first["raw_log_sha256"] != second["raw_log_sha256"], "workspace raw logs must be distinct")
 
 
@@ -684,8 +984,9 @@ def validate_result_file(
     expected_qualification_source_commit,
     expected_qualification_executable_sha256,
 ):
-    result_raw, _identity, _digest = _file_snapshot(
-        Path(path), label="hardening result", maximum=_MAX_JSON_BYTES, private=True
+    result_path = _absolute_lexical_path(Path(path), "hardening result")
+    result_raw, result_identity, result_digest = _file_snapshot(
+        result_path, label="hardening result", maximum=_MAX_JSON_BYTES, private=True
     )
     artifact_raw, _artifact_identity, install_sha256 = _file_snapshot(
         Path(artifact_path),
@@ -695,8 +996,7 @@ def validate_result_file(
     )
     _require(bool(artifact_raw), "candidate install artifact is empty")
     value = _decode_json(result_raw, "hardening result", canonical=True)
-    return validate_result_payload(
-        value,
+    validation = dict(
         expected_profile_id=expected_profile_id,
         expected_target=expected_target,
         expected_version=expected_version,
@@ -706,6 +1006,37 @@ def validate_result_file(
         expected_qualification_source_commit=expected_qualification_source_commit,
         expected_qualification_executable_sha256=expected_qualification_executable_sha256,
     )
+    summary = validate_result_payload(value, **validation)
+    receipt_snapshots = []
+    for kind in WORKSPACE_PROVISIONING_ORDER:
+        row = value["workspace_provisioning"][kind]
+        receipt_path = result_path.parent / row["receipt_file"]
+        observed, snapshots = _workspace_receipt_file_snapshot(receipt_path, kind, validation)
+        _require({key: item for key, item in row.items() if key != "receipt_file"} == observed,
+                 "hardening result differs from reopened workspace receipt")
+        receipt_snapshots.append(snapshots)
+    _validate_workspace_acquisition_pair(*receipt_snapshots)
+    for snapshots in receipt_snapshots:
+        for evidence_path, prior in snapshots:
+            _same_file_snapshot(evidence_path, prior, label="hardening workspace closure",
+                                maximum=_workspace_evidence_maximum(evidence_path), private=True)
+    _same_file_snapshot(result_path, (result_raw, result_identity, result_digest),
+                        label="hardening result", maximum=_MAX_JSON_BYTES, private=True)
+    _same_file_snapshot(Path(artifact_path), (artifact_raw, _artifact_identity, install_sha256),
+                        label="candidate install artifact", maximum=_MAX_ARTIFACT_BYTES, private=False)
+    return summary
+
+
+def _validate_workspace_acquisition_pair(erased_snapshot, nonblank_snapshot):
+    acquisitions = []
+    for snapshots in (erased_snapshot, nonblank_snapshot):
+        matches = [entry for path, entry in snapshots if path.name.endswith("-acquisition.json")]
+        _require(len(matches) == 1, "workspace acquisition closure is incomplete")
+        acquisitions.append(_decode_json(matches[0][0], "workspace acquisition", canonical=True))
+    erased, nonblank = acquisitions
+    _require(erased["board_binding"] == nonblank["board_binding"], "workspace observations used different physical boards")
+    _require(erased["challenge"] != nonblank["challenge"], "workspace observations reused a host challenge")
+    _require(erased["boot_id"] != nonblank["boot_id"], "workspace observations reused a VM boot")
 
 
 def _candidate_snapshot(candidate_dir: Path, profile_id: str):
@@ -1085,6 +1416,9 @@ def create_workspace_receipt(
         "workspace raw boot log",
     )
     validation = _validation_from(candidate, qualification)
+    acquisition_digest, acquisition_snapshots = _workspace_acquisition_snapshot(
+        output, observation_kind, validation
+    )
     value = {
         "schema_version": 1,
         "measurement_contract": _RECEIPT_CONTRACT,
@@ -1097,6 +1431,7 @@ def create_workspace_receipt(
         "install_sha256": candidate["install_sha256"],
         "qualification_source_commit": qualification["commit"],
         "qualification_executable_sha256": qualification["executable_sha256"],
+        "acquisition_sha256": acquisition_digest,
         "raw_log_sha256": raw_snapshot[2],
         "status": "passed",
     }
@@ -1115,6 +1450,9 @@ def create_workspace_receipt(
             maximum=_MAX_LOG_BYTES,
             private=True,
         )
+        for evidence_path, prior in acquisition_snapshots:
+            _same_file_snapshot(evidence_path, prior, label="workspace acquisition evidence",
+                                maximum=_workspace_evidence_maximum(evidence_path), private=True)
 
     _write_exclusive(output, encoded, post_write_check=unchanged)
     return Path(output_path)
@@ -1174,6 +1512,7 @@ def preflight_result_inputs(
     nonblank_summary, nonblank_snapshot = _workspace_receipt_file_snapshot(
         nonblank_path, WORKSPACE_PROVISIONING_ORDER[1], validation
     )
+    _validate_workspace_acquisition_pair(erased_snapshot, nonblank_snapshot)
     return _ResultInputPreflight(
         candidate_dir=candidate_path,
         profile_id=profile_id,
@@ -1225,11 +1564,7 @@ def revalidate_result_inputs(preflight):
                 evidence_path,
                 evidence_snapshot,
                 label="workspace evidence",
-                maximum=(
-                    _MAX_JSON_BYTES
-                    if evidence_path.suffix == ".json"
-                    else _MAX_LOG_BYTES
-                ),
+                maximum=_workspace_evidence_maximum(evidence_path),
                 private=True,
             )
         summary, current = _workspace_receipt_file_snapshot(
@@ -1256,6 +1591,8 @@ def create_result_from_preflight(
     _require(output.suffix == ".json", "hardening result output must end in .json")
     _require(raw_path.suffix == ".jsonl", "hardening raw log must end in .jsonl")
     _require(output != raw_path, "hardening result and raw log must differ")
+    _require(output.parent == preflight.erased_path.parent == preflight.nonblank_path.parent,
+             "hardening result and workspace receipts must share one private directory")
     for path, label in ((output, "hardening result"), (raw_path, "hardening raw log")):
         _require_private_evidence_outside(
             path,
@@ -1288,8 +1625,16 @@ def create_result_from_preflight(
         "scenario_order": list(SCENARIO_ORDER),
         "scenarios": scenario_results,
         "workspace_provisioning": {
-            WORKSPACE_PROVISIONING_ORDER[0]: preflight.erased_summary,
-            WORKSPACE_PROVISIONING_ORDER[1]: preflight.nonblank_summary,
+            kind: {
+                "status": "passed", "receipt_file": path.name,
+                "receipt_sha256": summary["receipt_sha256"],
+                "acquisition_sha256": summary["acquisition_sha256"],
+                "raw_log_sha256": summary["raw_log_sha256"],
+            }
+            for kind, path, summary in (
+                (WORKSPACE_PROVISIONING_ORDER[0], preflight.erased_path, preflight.erased_summary),
+                (WORKSPACE_PROVISIONING_ORDER[1], preflight.nonblank_path, preflight.nonblank_summary),
+            )
         },
         "raw_log_sha256": raw_snapshot[2],
         "status": "passed",

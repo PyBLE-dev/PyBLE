@@ -19,10 +19,11 @@ workspace_ready = False
 try:
     if not bdev:
         raise OSError("workspace block device unavailable")
-    vfs.mount(pyble_workspace.mount_lfs2(bdev, vfs, progsize=256), "/")
+    vfs.mount(pyble_workspace.mount_lfs2(bdev, vfs, progsize=256, observe_boot=True), "/")
+    pyble_workspace.boot_attached()
     workspace_ready = True
 except Exception:
-    print("PyBLE workspace recovery is required; reconnect by USB.")
+    pyble_workspace.boot_recovery()
 
 # PyBLE native agent auto-start (firmware-embedded, un-deletable).
 try:

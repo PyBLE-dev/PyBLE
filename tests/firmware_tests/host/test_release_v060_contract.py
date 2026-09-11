@@ -71,6 +71,9 @@ QUALIFICATION_DERIVATION_V4 = {
 V060_FIRST_REPLACEMENT_SOURCE_BOUNDARY = (
     "7d853289815751c7381c9fd0b9a9a4409bdb6879"
 )
+V060_INITIAL_SECOND_REPLACEMENT_POLICY_SOURCE = (
+    "0c7230d6708797c241160ba71fbd37e6b22f180a"
+)
 QUALIFICATION_DERIVATION_V5 = {
     "application_image": "exact-byte-identical-two-root-v1",
     "application_headroom": "factory-minus-application-v1",
@@ -540,7 +543,7 @@ class V060ReplacementSourceEraContractTests(unittest.TestCase):
                     firmware_version="0.6.0",
                 )
 
-    def test_active_policy_is_exact_fixed_slo_delta_of_superseded_policy(self):
+    def test_retained_replacement_policies_are_exact_fixed_slo_deltas(self):
         historical_raw = subprocess.run(
             [
                 "git",
@@ -562,15 +565,26 @@ class V060ReplacementSourceEraContractTests(unittest.TestCase):
         historical = json.loads(historical_raw.decode("utf-8"))
         self.assertEqual(historical["derivation"], QUALIFICATION_DERIVATION_V3)
 
-        active_path = (
-            REPO_ROOT / "firmware" / "qualification" / "oi1-gates.json"
+        second_replacement_raw = subprocess.run(
+            [
+                "git", "-C", str(REPO_ROOT), "show",
+                "%s:firmware/qualification/oi1-gates.json"
+                % V060_INITIAL_SECOND_REPLACEMENT_POLICY_SOURCE,
+            ],
+            check=True,
+            capture_output=True,
+        ).stdout
+        self.assertEqual(len(second_replacement_raw), 5036)
+        self.assertEqual(
+            hashlib.sha256(second_replacement_raw).hexdigest(),
+            "c3167853df6c31d7364b58616701d45ea62f2374d18cacc89e51292624dca8db",
+            "the initial second-replacement policy identity must stay auditable",
         )
-        active_raw = active_path.read_bytes()
-        active = json.loads(active_raw.decode("utf-8"))
+        second_replacement = json.loads(second_replacement_raw.decode("utf-8"))
         self.assertEqual(
             (
                 json.dumps(
-                    active,
+                    second_replacement,
                     indent=2,
                     sort_keys=True,
                     ensure_ascii=False,
@@ -578,10 +592,10 @@ class V060ReplacementSourceEraContractTests(unittest.TestCase):
                 )
                 + "\n"
             ).encode("utf-8"),
-            active_raw,
-            "the active policy must stay canonical sorted-key JSON",
+            second_replacement_raw,
+            "the retained second-replacement policy must stay canonical sorted-key JSON",
         )
-        self.assertEqual(active["derivation"], QUALIFICATION_DERIVATION_V5)
+        self.assertEqual(second_replacement["derivation"], QUALIFICATION_DERIVATION_V5)
 
         first_replacement_raw = subprocess.run(
             [
@@ -629,12 +643,12 @@ class V060ReplacementSourceEraContractTests(unittest.TestCase):
             "binding must stay byte-identical to the superseded policy",
         )
 
-        expected_active = copy.deepcopy(first_replacement)
-        expected_active["derivation"] = copy.deepcopy(
+        expected_second_replacement = copy.deepcopy(first_replacement)
+        expected_second_replacement["derivation"] = copy.deepcopy(
             QUALIFICATION_DERIVATION_V5
         )
         second_changed_numeric_fields = 0
-        for entry in expected_active["profiles"]:
+        for entry in expected_second_replacement["profiles"]:
             if entry["profile_id"] == "waveshare-esp32-s3-lcd-147b":
                 self.assertEqual(
                     entry["thresholds"][
@@ -653,10 +667,39 @@ class V060ReplacementSourceEraContractTests(unittest.TestCase):
             "the heap-floor identifier is a separate string field",
         )
         self.assertEqual(
-            active,
-            expected_active,
+            second_replacement,
+            expected_second_replacement,
             "every other threshold, schema field, and baseline binding "
             "must stay byte-identical to the first-replacement policy",
+        )
+
+    def test_current_policy_keeps_fixed_slos_with_validated_measured_resources(self):
+        policy, digest = RELEASE._load_qualification_policy(REPO_ROOT)
+        payload = (REPO_ROOT / "firmware/qualification/oi1-gates.json").read_bytes()
+        self.assertEqual(digest, hashlib.sha256(payload).hexdigest())
+        self.assertEqual(
+            payload,
+            (json.dumps(policy, indent=2, sort_keys=True) + "\n").encode("utf-8"),
+        )
+        self.assertEqual(policy["derivation"], QUALIFICATION_DERIVATION_V5)
+        self.assertEqual(policy["profile_order"], list(V060_PROFILE_ORDER))
+        self.assertEqual(
+            {
+                entry["profile_id"]: {
+                    key: entry["thresholds"][key]
+                    for key in FIXED_PERFORMANCE_THRESHOLDS[entry["profile_id"]]
+                }
+                for entry in policy["profiles"]
+            },
+            FIXED_PERFORMANCE_THRESHOLDS,
+        )
+        self.assertEqual(
+            next(
+                entry["thresholds"]["idf_internal_largest_block_min_bytes"]
+                for entry in policy["profiles"]
+                if entry["profile_id"] == "waveshare-esp32-s3-lcd-147b"
+            ),
+            V5_FIXED_WAVESHARE_LARGEST_BLOCK_MIN_BYTES,
         )
 
 

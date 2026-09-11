@@ -15,6 +15,7 @@
 import rp2
 import vfs
 import pyble_boot
+import pyble_workspace
 
 # The flash requires the programming size to be aligned to 256 bytes. A
 # healthy mount remains the stock constructor path; the helper permits one
@@ -22,13 +23,14 @@ import pyble_boot
 bdev = rp2.Flash()
 workspace_ready = False
 try:
-    fs = pyble_boot.mount_lfs2(bdev, vfs, progsize=256)
+    fs = pyble_boot.mount_lfs2(bdev, vfs, progsize=256, observe_boot=True)
     vfs.mount(fs, "/")
+    pyble_workspace.boot_attached()
     workspace_ready = True
 except Exception:
     # Fixed, bounded USB-only guidance: never print storage contents or the
     # variable exception, and never start agent/autorun on uncertain media.
-    print("PyBLE workspace recovery is required; reconnect by USB.")
+    pyble_workspace.boot_recovery()
 
 # PyBLE agent auto-start (firmware-embedded, un-deletable). main() is the
 # supervisor loop and normally never returns; if the agent is not frozen yet

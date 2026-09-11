@@ -113,6 +113,16 @@ that ordering.
 - `LEN` — payload length, little-endian `uint16` (≤ 65535).
 - `CRC32` — IEEE CRC-32 over `VER…PAYLOAD` (the header + payload, excluding the CRC itself), little-endian.
 
+**Host qualification-tool clarification (2026-09-06).** The nonzero `CMD`
+request-ID rule also applies to no-response commands such as `FILE_PUT_DATA`.
+Absence of a `RSP` does not make its ID irrelevant. Valid transfer benches
+MUST allocate every data submission, including a Go-Back-N resend, from the
+same 1–255 wrapping allocator as their transfer-control commands. They MUST
+NOT let an unbounded counter truncate to zero at wire encoding. This changes
+no wire field, response behavior, chunk, window, ACK watermark, retransmit
+policy, or measurement boundary. Raw malformed-ID construction remains
+available solely for explicit negative protocol tests, not valid transfers.
+
 For a response-bearing command, the connection-local correlation key is the
 originating `{OPCODE, ID}` pair and the matching frame's `TYPE` is `RSP`. A
 pending command MUST complete only from a frame with all three exact values.

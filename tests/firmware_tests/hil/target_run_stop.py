@@ -15,6 +15,7 @@ import zlib
 
 import _pble_wire as wire
 from _pble_central import PbleCentral, rsp_status, status_name
+from _pble_bench import CommandIds
 import target_smoke
 
 
@@ -346,12 +347,12 @@ async def run_and_stop(checks, central, log, request_id, source, description):
     )
 
 
-async def put_small_file(central, path, data, first_id):
+async def put_small_file(central, path, data, next_id):
     encoded_path = path.encode("utf-8")
     checksum = zlib.crc32(data) & 0xFFFFFFFF
     response = await central.send_cmd(
         wire.OP_FILE_PUT_BEGIN,
-        first_id,
+        next_id(),
         len(data).to_bytes(4, "little")
         + checksum.to_bytes(4, "little")
         + len(encoded_path).to_bytes(2, "little")
@@ -364,7 +365,7 @@ async def put_small_file(central, path, data, first_id):
         )
     central.last_ack = 0
     await central.send_cmd_no_rsp(
-        wire.OP_FILE_PUT_DATA, 0, (0).to_bytes(4, "little") + data
+        wire.OP_FILE_PUT_DATA, next_id(), (0).to_bytes(4, "little") + data
     )
     deadline = time.monotonic() + DONE_WAIT_S
     while central.last_ack < len(data):
@@ -372,7 +373,7 @@ async def put_small_file(central, path, data, first_id):
             raise ValueError("fixture upload stalled")
         await asyncio.sleep(0.01)
     response = await central.send_cmd(
-        wire.OP_FILE_PUT_END, first_id + 1, checksum.to_bytes(4, "little")
+        wire.OP_FILE_PUT_END, next_id(), checksum.to_bytes(4, "little")
     )
     if rsp_status(response) != wire.ST_OK:
         raise ValueError("fixture PUT_END failed")
@@ -439,10 +440,11 @@ async def run(args):
         ]
         checks.check("idle STOP emits no RUN_STATE", not stray)
 
-        await put_small_file(central, FIXTURE_PATH, FIXTURE_SOURCE, 40)
+        file_ids = CommandIds()
+        await put_small_file(central, FIXTURE_PATH, FIXTURE_SOURCE, file_ids.next)
         cursor = len(log)
         response = await central.send_cmd(
-            wire.OP_RUN, 42, bytes((0,)) + FIXTURE_PATH.encode("utf-8")
+            wire.OP_RUN, file_ids.next(), bytes((0,)) + FIXTURE_PATH.encode("utf-8")
         )
         checks.check(
             "file-mode RUN RSP is OK",
@@ -461,7 +463,7 @@ async def run(args):
         encoded_path = FIXTURE_PATH.encode("utf-8")
         await central.send_cmd(
             wire.OP_FILE_DELETE,
-            43,
+            file_ids.next(),
             len(encoded_path).to_bytes(2, "little") + encoded_path,
         )
 
