@@ -1173,7 +1173,7 @@ for route in / /app /privacy /support /flash /features /learn /learn/setup /lear
         "${normalized_headers}"
 done
 
-feature_diagram_path=features/pyble-firmware-v0.6.0-functional-block-diagram-473a85d475aa.svg
+feature_diagram_path=features/pyble-firmware-v0.6.1-functional-block-diagram-0d2bb826c64f8.svg
 feature_diagram_body="${smoke_root}/feature-diagram.svg"
 feature_diagram_headers="${smoke_root}/feature-diagram.headers"
 curl --fail --silent --show-error --max-time 30 \

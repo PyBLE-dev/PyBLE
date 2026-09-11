@@ -11,9 +11,9 @@ import { describe, expect, it } from "vitest";
 import FeaturesPage, { metadata } from "@/app/features/page";
 
 const diagramPath =
-  "/features/pyble-firmware-v0.6.0-functional-block-diagram-473a85d475aa.svg";
+  "/features/pyble-firmware-v0.6.1-functional-block-diagram-0d2bb826c64f8.svg";
 const diagramSha256 =
-  "473a85d475aa90b1031ba100c0ab05c9227d44462134e92feee8d15b9d15003a";
+  "0d2bb826c64f8ba24f34bc70d2a9ba5750bb77b1a7f6a0998a9baccd0123b768";
 
 const operationGroups = [
   ["HELLO", "DEVICE_INFO"],
@@ -123,10 +123,10 @@ describe("firmware feature reference", () => {
     render(<FeaturesPage />);
 
     const profiles = screen.getByRole("region", {
-      name: "Qualified firmware 0.6.0 profiles",
+      name: "Firmware 0.6.1 profiles",
     });
     const table = within(profiles).getByRole("table", {
-      name: /five qualified release profiles/i,
+      name: /five exact release profiles/i,
     });
     const profileHeadings = within(table)
       .getAllByRole("rowheader")
@@ -137,7 +137,7 @@ describe("firmware feature reference", () => {
     expect(table).toHaveTextContent(/exact.*B-version/i);
     expect(table).toHaveTextContent(/ST7789.*fresh-install splash/i);
     expect(table).toHaveTextContent(/UF2.*BOOTSEL/i);
-    expect(table).toHaveTextContent(/evidence, not visual board detection/i);
+    expect(table).toHaveTextContent(/not visual board detection/i);
   });
 
   it("keeps installation authority on flash and links immutable evidence", async () => {
@@ -155,19 +155,13 @@ describe("firmware feature reference", () => {
     ).toHaveAttribute("href", "/learn");
     expect(
       screen.getByRole("link", { name: /release descriptor/i }),
-    ).toHaveAttribute("href", "/firmware/v0.6.0/release.json");
+    ).toHaveAttribute("href", "/firmware/v0.6.1/release.json");
     expect(
-      screen.getByRole("link", { name: /firmware v0\.6\.0 source tag/i }),
-    ).toHaveAttribute(
-      "href",
-      "https://github.com/PyBLE-dev/PyBLE/releases/tag/firmware-v0.6.0",
-    );
+      screen.getByRole("link", { name: /release notes and source identity/i }),
+    ).toHaveAttribute("href", "/firmware/v0.6.1/RELEASE_NOTES.md");
     expect(
       screen.getByRole("link", { name: /PBLE\/1 specification/i }),
-    ).toHaveAttribute(
-      "href",
-      "https://github.com/PyBLE-dev/PyBLE/blob/firmware-v0.6.0/docs/specifications/protocol.md",
-    );
+    ).toHaveAttribute("href", "/reference/firmware-v0.6.1/protocol.md");
 
     const source = await readFile(
       join(process.cwd(), "src", "app", "features", "page.tsx"),
@@ -181,6 +175,32 @@ describe("firmware feature reference", () => {
     expect(source).not.toMatch(/<esp-web-install-button/i);
   });
 
+  it("explains v0.6.1 hardening without inventing completed automated HIL", () => {
+    const page = render(<FeaturesPage />);
+    const changes = screen.getByRole("region", {
+      name: "What changed in v0.6.1",
+    });
+    for (const text of [
+      /LFS2/,
+      /fresh globals/i,
+      /stdin/i,
+      /CRC/i,
+      /HELLO/,
+      /persistent/i,
+    ]) {
+      expect(changes).toHaveTextContent(text);
+    }
+    expect(page.container).toHaveTextContent(/nonblank or uncertain/i);
+    expect(page.container).toHaveTextContent(/USB recovery/i);
+    expect(page.container).toHaveTextContent(/owner.confirmed/i);
+    expect(page.container).not.toHaveTextContent(
+      /all five exact-byte HIL rows passed|FAT storage|FAT,|5\/5 HIL/i,
+    );
+    expect(
+      screen.getByRole("link", { name: /owner confirmation/i }),
+    ).toHaveAttribute("href", "/firmware-v0.6.1-owner-confirmation.md");
+  });
+
   it("binds the reviewed, self-contained SVG to its clean-room provenance", async () => {
     const [diagram, provenance] = await Promise.all([
       readFile(join(process.cwd(), "public", diagramPath), "utf8"),
@@ -192,13 +212,13 @@ describe("firmware feature reference", () => {
           "docs",
           "testing",
           "website",
-          "firmware-functional-diagram-provenance-2026-09-01.md",
+          "firmware-functional-diagram-provenance-2026-09-11.md",
         ),
         "utf8",
       ),
     ]);
 
-    expect(Buffer.byteLength(diagram)).toBe(21_995);
+    expect(Buffer.byteLength(diagram)).toBe(22_446);
     expect(createHash("sha256").update(diagram).digest("hex")).toBe(
       diagramSha256,
     );

@@ -11,12 +11,12 @@ import { pageMetadata } from "@/lib/site";
 export const metadata = pageMetadata({
   title: "PyBLE Firmware Architecture",
   description:
-    "Explore the PBLE/1 functional architecture, complete operation surface, exact profiles, and operating limits of qualified PyBLE firmware 0.6.0.",
+    "Explore the PBLE/1 functional architecture, complete operation surface, exact profiles, and operating limits of PyBLE firmware 0.6.1.",
   path: "/features",
 });
 
 const diagramPath =
-  "/features/pyble-firmware-v0.6.0-functional-block-diagram-473a85d475aa.svg";
+  "/features/pyble-firmware-v0.6.1-functional-block-diagram-0d2bb826c64f8.svg";
 
 const featureReference = [
   {
@@ -29,7 +29,7 @@ const featureReference = [
   },
   {
     title: "Safe boot and persistence",
-    body: "The embedded agent starts independently of the editable workspace, advertises and waits by default, and runs /main.py only after autorun is enabled. A broken user file cannot prevent the agent from advertising at boot.",
+    body: "The embedded agent starts independently of the editable workspace, advertises and waits by default, and runs /main.py only after autorun is enabled. A broken main.py is separate from workspace mount failure: nonblank or uncertain media that cannot mount is preserved for explicit USB recovery, without agent or autorun startup.",
   },
   {
     title: "Security and privacy",
@@ -57,7 +57,34 @@ const featureReference = [
   },
   {
     title: "MicroPython runtime",
-    body: "Upstream MicroPython 1.28.0 runs with zero PyBLE upstream patches. ESP uses FAT and includes upstream NeoPixel; Pico uses LFS2. Programs keep ordinary filesystem, machine, VFS, and asyncio APIs with explicit pins and buses—there is no automatic board or pin detection.",
+    body: "Upstream MicroPython 1.28.0 runs with zero PyBLE upstream patches. All five profiles use LFS2; ESP includes upstream NeoPixel. Programs keep ordinary filesystem, machine, VFS, and asyncio APIs with explicit pins and buses—there is no automatic board or pin detection.",
+  },
+] as const;
+
+const hardeningChanges = [
+  {
+    title: "Session and message validation",
+    body: "HELLO negotiates PBLE/1 per connection. Commands require nonzero request IDs, valid direction, and exact payloads. Incomplete fragments expire after five seconds; eight protocol violations end the session. This is robustness, not authentication.",
+  },
+  {
+    title: "Fresh program state",
+    body: "File, inline-source, and autorun executions receive fresh globals. Prior variables do not leak into the next run. This is not a full VM reset: imported modules, hardware state, working directory, and sys.path can persist.",
+  },
+  {
+    title: "Run-owned console input",
+    body: "stdin is cleared at run admission, accepted Stop, terminal state, disconnect, and VM reset. Idle input is discarded. The bounded queue can still drop overflow; later runs never inherit those queued bytes.",
+  },
+  {
+    title: "Safer file transfers",
+    body: "Resume uses a completely read, CRC-checked regular-file prefix. PUT admission reserves 64 KiB of storage headroom. DELETE, MKDIR, and RENAME return EBUSY during PUT or GET; LIST and STAT remain available. CRC failure never replaces the destination.",
+  },
+  {
+    title: "Non-destructive storage recovery",
+    body: "All five official profiles mount LFS2. After mount failure, formatting requires a conclusively erased complete workspace device. Nonblank or uncertain media is preserved; agent and autorun startup are skipped for explicit USB recovery. Back up and use the documented installer when migrating an older FAT workspace.",
+  },
+  {
+    title: "Checked persistent settings",
+    body: "Labels, autorun, and ESP Identify configuration are validated before use. Persistence failures leave prior behavior in effect; invalid stored autorun is disabled. Internal configuration fault tracking adds no new PBLE/1 field.",
   },
 ] as const;
 
@@ -101,31 +128,32 @@ const firmwareProfiles = [
   {
     id: "esp32-4mb",
     hardware: "Classic ESP32; exactly 4 MiB flash; no PSRAM required.",
-    runtime: "Native C agent, NimBLE, FAT, upstream NeoPixel, upload window 8.",
-    provisioning:
-      "ESP Web Serial. HIL reference: ESP32 DevKitC / ESP32-WROOM-32.",
+    runtime:
+      "Native C agent, NimBLE, LFS2, upstream NeoPixel, upload window 8.",
+    provisioning: "ESP Web Serial; select the matching 4 MiB ESP32 profile.",
   },
   {
     id: "esp32-s3-n16r8",
     hardware: "ESP32-S3; exactly 16 MiB flash and 8 MiB Octal PSRAM.",
     runtime:
-      "Lean, board-neutral N16R8 image; native C agent, NimBLE, FAT, upload window 8; no TFT or boot splash.",
-    provisioning:
-      "ESP Web Serial. HIL reference: ESP32-S3-DevKitC-1 / WROOM-1 N16R8.",
+      "Lean, board-neutral N16R8 image; native C agent, NimBLE, LFS2, upload window 8; no TFT or boot splash.",
+    provisioning: "ESP Web Serial; select the lean generic N16R8 profile.",
   },
   {
     id: "waveshare-esp32-s3-lcd-147b",
     hardware:
       "Exact ESP32-S3-LCD-1.47B B-version; 16 MiB flash and 8 MiB Octal PSRAM.",
     runtime:
-      "Native C agent, NimBLE, FAT, upload window 8; pyble_st7789 runtime and fresh-install splash.",
-    provisioning: "ESP Web Serial. HIL uses the exact Waveshare B-version.",
+      "Native C agent, NimBLE, LFS2, upload window 8; pyble_st7789 runtime and fresh-install splash.",
+    provisioning:
+      "ESP Web Serial; select only the exact Waveshare B-version profile.",
   },
   {
     id: "esp32-c3-4mb",
     hardware: "ESP32-C3 revision v0.3 or newer; exactly 4 MiB flash; no PSRAM.",
-    runtime: "Native C agent, NimBLE, FAT, upstream NeoPixel, upload window 8.",
-    provisioning: "ESP Web Serial. HIL reference: ESP32-C3-MINI-1-N4.",
+    runtime:
+      "Native C agent, NimBLE, LFS2, upstream NeoPixel, upload window 8.",
+    provisioning: "ESP Web Serial; check revision v0.3+ and 4 MiB flash.",
   },
   {
     id: "rpi-pico2-w",
@@ -140,14 +168,14 @@ export default function FeaturesPage() {
   return (
     <main id="main-content">
       <PageIntro
-        eyebrow="Firmware 0.6.0 · PBLE/1"
+        eyebrow="Firmware 0.6.1 · PBLE/1"
         title="How PyBLE firmware works"
       >
         <p>
-          A functional view of qualified PyBLE firmware 0.6.0—from the tablet
-          app over Bluetooth Low Energy to the embedded agent and MicroPython
-          runtime. This is a versioned reference, not a live installer promise,
-          board drawing, or pinout.
+          A functional view of PyBLE firmware 0.6.1—from the tablet app over
+          Bluetooth Low Energy to the embedded agent and MicroPython runtime.
+          This is a versioned reference, not a live installer promise, board
+          drawing, or pinout.
         </p>
         <p className="page-intro__meta">
           Before provisioning,{" "}
@@ -186,14 +214,14 @@ export default function FeaturesPage() {
                 src={diagramPath}
                 width={1920}
                 height={1470}
-                alt="Functional block diagram of PyBLE firmware 0.6.0, from the tablet app over BLE and PBLE/1 to files, execution, console, boot, and five qualified release profiles; it is not a board drawing, schematic, or pinout"
+                alt="Functional block diagram of PyBLE firmware 0.6.1, from the tablet app over BLE and PBLE/1 to files, execution, console, boot, and five exact release profiles; it is not a board drawing, schematic, or pinout"
                 priority
                 unoptimized
               />
             </div>
             <figcaption id="firmware-diagram-caption">
               <p>
-                Original PyBLE diagram for firmware 0.6.0. This is a protocol
+                Original PyBLE diagram for firmware 0.6.1. This is a protocol
                 and runtime diagram—not a board drawing, automatic board
                 detector, schematic, or pinout.
               </p>
@@ -203,6 +231,30 @@ export default function FeaturesPage() {
               </a>
             </figcaption>
           </figure>
+        </section>
+
+        <section
+          className="section container feature-reference"
+          aria-labelledby="v061-hardening-title"
+        >
+          <div className="section-heading">
+            <p className="eyebrow">
+              Contract hardening · no new wire operations
+            </p>
+            <h2 id="v061-hardening-title">What changed in v0.6.1</h2>
+            <p>
+              The same 24 PBLE/1 operations, 15 capability keys, and five
+              profiles, with stricter implementation boundaries.
+            </p>
+          </div>
+          <div className="feature-reference__grid">
+            {hardeningChanges.map((change) => (
+              <article key={change.title}>
+                <h3>{change.title}</h3>
+                <p>{change.body}</p>
+              </article>
+            ))}
+          </div>
         </section>
 
         <section
@@ -226,7 +278,7 @@ export default function FeaturesPage() {
                 replaces the existing firmware and workspace.
               </p>
               <p>
-                Inside the qualified-device boundary, RX writes, TX
+                Inside the compatible-device boundary, RX writes, TX
                 notifications, and the readable INFO characteristic connect the
                 app to the BLE GATT transport. Transport, identity, boot, and
                 security modules feed the central PBLE/1 protocol engine. PBLE/1
@@ -239,11 +291,13 @@ export default function FeaturesPage() {
                 files, downloads from an offset, resumes windowed uploads,
                 verifies CRC-32, and commits through a temporary{" "}
                 <code>.pbltmp</code> sibling and rename. The run controller
-                executes one file or inline source at a time and supports
-                idempotent Stop and soft reboot. The console carries tagged
-                standard output and error plus bounded standard input.
-                Connection-generation and virtual-machine-epoch controls discard
-                stale work after disconnects or resets.
+                executes one file or inline source at a time with fresh globals
+                and supports idempotent Stop and soft reboot. Imported modules
+                and hardware state are not reset by fresh globals. The console
+                carries tagged standard output and error plus bounded, run-owned
+                stdin; idle input is discarded. Connection-generation and
+                virtual-machine-epoch controls discard stale work after
+                disconnects or resets.
               </p>
               <p>
                 The agent runs beside a normal upstream MicroPython 1.28.0 user
@@ -253,9 +307,9 @@ export default function FeaturesPage() {
                 carrier board or supply a pin map.
               </p>
               <p>
-                The lower strip distinguishes five qualified firmware 0.6.0
-                profiles. Four ESP profiles use the native C agent, NimBLE, FAT
-                storage, upload window eight, and Web Serial. Pico 2 W uses the
+                The lower strip distinguishes five firmware 0.6.1 profiles. Four
+                ESP profiles use the native C agent, NimBLE, LFS2 storage,
+                upload window eight, and Web Serial. Pico 2 W uses the
                 frozen-Python agent, BTstack, LFS2, upload window four, and
                 manual UF2 provisioning. Memory alone does not identify a board,
                 and matching N16R8 hardware does not make an arbitrary ESP32-S3
@@ -325,32 +379,32 @@ export default function FeaturesPage() {
           <div className="container">
             <div className="section-heading">
               <p className="eyebrow">Exact image constraints</p>
-              <h2 id="qualified-profiles">Qualified firmware 0.6.0 profiles</h2>
+              <h2 id="qualified-profiles">Firmware 0.6.1 profiles</h2>
               <p>
-                All five exact-byte HIL rows passed. Profile constraints select
-                firmware bytes; they do not visually identify a carrier board or
-                promise a pin map.
+                Published on the project owner's qualification confirmation.
+                Profile constraints select firmware bytes; they do not visually
+                identify a carrier board or promise a pin map.
               </p>
             </div>
 
             <div
               className="feature-table-scroll"
               role="region"
-              aria-label="Scrollable qualified profile table"
+              aria-label="Scrollable firmware profile table"
               tabIndex={0}
             >
               <table className="feature-profile-table">
                 <caption>
-                  Five qualified release profiles in firmware 0.6.0. Reference
-                  HIL hardware is evidence, not visual board detection or an
-                  exhaustive carrier-board allowlist.
+                  Five exact release profiles in firmware 0.6.1. These are image
+                  constraints, not visual board detection or an exhaustive
+                  carrier-board allowlist.
                 </caption>
                 <thead>
                   <tr>
                     <th scope="col">Profile</th>
                     <th scope="col">Exact hardware constraint</th>
                     <th scope="col">Agent and runtime</th>
-                    <th scope="col">Provisioning and HIL reference</th>
+                    <th scope="col">Provisioning method</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -415,8 +469,10 @@ export default function FeaturesPage() {
                 Inspect the release, then put it to work.
               </h2>
               <p>
-                This reference is bound to firmware 0.6.0. The installer page
-                remains authoritative for what is active now.
+                This reference is bound to firmware 0.6.1 and source c8f549ee.
+                Publication is owner-confirmed; the existing automated HIL
+                records remain incomplete and are not relabeled as passed. The
+                installer page remains authoritative for what is active now.
               </p>
               <div className="button-row">
                 <Link className="button button--primary" href="/flash">
@@ -432,20 +488,23 @@ export default function FeaturesPage() {
               className="feature-evidence__links"
               aria-label="Release evidence"
             >
-              <a href="/firmware/v0.6.0/release.json">
+              <a href="/firmware-v0.6.1-owner-confirmation.md">
+                <span>Publication basis</span>Owner confirmation
+              </a>
+              <a href="/firmware/v0.6.1/release.json">
                 <span>Machine-readable evidence</span>
                 Release descriptor
               </a>
               <a
-                href="https://github.com/PyBLE-dev/PyBLE/releases/tag/firmware-v0.6.0"
+                href="/firmware/v0.6.1/RELEASE_NOTES.md"
                 target="_blank"
                 rel="noopener noreferrer"
               >
                 <span>Immutable source</span>
-                Firmware v0.6.0 source tag
+                Release notes and source identity
               </a>
               <a
-                href="https://github.com/PyBLE-dev/PyBLE/blob/firmware-v0.6.0/docs/specifications/protocol.md"
+                href="/reference/firmware-v0.6.1/protocol.md"
                 target="_blank"
                 rel="noopener noreferrer"
               >

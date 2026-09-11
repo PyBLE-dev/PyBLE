@@ -22,7 +22,7 @@ const execFile = promisify(execFileCallback);
 const acceptSyntheticFixture = async () => undefined;
 const { prepareSitesOutput } = sitesOutput;
 const featureDiagramPath =
-  "/features/pyble-firmware-v0.6.0-functional-block-diagram-473a85d475aa.svg";
+  "/features/pyble-firmware-v0.6.1-functional-block-diagram-0d2bb826c64f8.svg";
 const learnDocumentRoutes = [
   "/learn",
   "/learn/setup",
@@ -53,6 +53,7 @@ const delegatedLearnPaths = learnDocumentRoutes.flatMap((route) => [
 const delegatedFeaturePaths = [
   "/features",
   "/features/",
+  "/features/pyble-firmware-v0.6.0-functional-block-diagram-473a85d475aa.svg",
   featureDiagramPath,
 ] as const;
 

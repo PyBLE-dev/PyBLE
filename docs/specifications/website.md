@@ -463,8 +463,13 @@ The page complements `/flash`: it explains a release, while `/flash` remains
 the sole authority for the version, exact profiles, qualification state, and
 actions currently selected at build time.
 
-The initial reference snapshot is qualified public firmware `v0.6.0` and
-PBLE/1. It MUST visibly call itself a versioned snapshot rather than a live
+The current reference snapshot is owner-confirmed public firmware `v0.6.1`
+and PBLE/1; the historical v0.6.0 SVG MUST remain available unchanged.
+The v0.6.1 reference MUST distinguish owner confirmation from incomplete
+automated HIL records and link the publication confirmation. It MUST NOT
+carry forward v0.6.0's five passed HIL rows, measured throughput, or reference
+board identities as new v0.6.1 measurements.
+It MUST visibly call itself a versioned snapshot rather than a live
 installer promise, link to `/flash` for current availability, and avoid
 describing a later or unselected release as current. Its architecture diagram
 MUST say that it is a functional diagram, not a physical board drawing,
@@ -502,8 +507,18 @@ The HTML reference MUST cover all of these release-bound surfaces:
   claim in this release, runtime-dependent Stop behavior, and possible console
   drops under sustained output.
 
-The reference MUST link to the immutable public `v0.6.0` release descriptor,
-the matching source tag, and the PBLE/1 specification. It MUST not duplicate
+The v0.6.1 diagram and its reflowing description MUST describe unchanged
+24-opcode PBLE/1 compatibility, per-session negotiation and bounded fragments,
+fresh RUN globals and run-owned stdin, CRC-backed upload resume and mutation
+exclusion, checked persistent settings, and LFS2 on all five official profiles.
+Only conclusively erased media may be formatted after mount failure; nonblank
+or uncertain media must be preserved for USB recovery without agent startup.
+Neither the diagram nor its HTML may promise BLE access through that refusal.
+
+The reference MUST link to the immutable public `v0.6.1` release descriptor,
+available version-bound source references, and the PBLE/1 specification.
+An unpublished GitHub tag MUST NOT be presented as a working source link.
+It MUST not duplicate
 firmware binaries or fetch release data at runtime. Calls to action MUST send a
 user to `/flash` to install an exact selected profile and `/learn` for guided
 use. The route, its full-size diagram asset, and its content MUST render without
