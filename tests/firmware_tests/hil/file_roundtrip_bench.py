@@ -31,7 +31,7 @@ import zlib
 
 import _pble_wire as wire
 from _pble_central import PbleCentral, rsp_status, status_name
-from _pble_bench import DownloadVerifier
+from _pble_bench import CommandIds, DownloadVerifier
 
 DEST = "/bench_roundtrip.bin"
 GET_STALL_S = 10.0  # bench-side inactivity ceiling per chunk (diagnostic bound)
@@ -53,7 +53,13 @@ def _path_field(path):
 
 
 async def _hello(c, id_):
-    rsp = await c.send_cmd(wire.OP_HELLO, id_, b"app=bench\nversion=0\n")
+    rsp = await c.send_cmd(
+        wire.OP_HELLO,
+        id_,
+        b"proto_versions=1\n"
+        b"app_name=bench\n"
+        b"app_version=0",
+    )
     if rsp_status(rsp) != wire.ST_OK:
         raise SystemExit("HELLO refused: %s" % status_name(rsp_status(rsp)))
     caps = {}
@@ -64,7 +70,7 @@ async def _hello(c, id_):
     return caps
 
 
-async def _put(c, data, chunk, window):
+async def _put(c, data, chunk, window, next_id):
     """Windowed FILE_PUT sender honoring the ADVERTISED caps window (FR-FS-4).
 
     Keeps up to `window` unacknowledged chunks in flight past the cumulative
@@ -78,7 +84,7 @@ async def _put(c, data, chunk, window):
     reporting ack/want on a true stall (the dropped-chunk diagnostic)."""
     t0 = time.monotonic()
     rsp = await c.send_cmd(
-        wire.OP_FILE_PUT_BEGIN, 2,
+        wire.OP_FILE_PUT_BEGIN, next_id(),
         _u32(len(data)) + _u32(zlib.crc32(data)) + _path_field(DEST))
     if rsp_status(rsp) != wire.ST_OK:
         raise SystemExit("PUT_BEGIN: %s" % status_name(rsp_status(rsp)))
@@ -95,7 +101,7 @@ async def _put(c, data, chunk, window):
         # never more than `window` unacknowledged chunks in flight (AC-1).
         while next_off < total and (next_off - c.last_ack) < win_bytes:
             piece = data[next_off:next_off + chunk]
-            await c.send_cmd_no_rsp(wire.OP_FILE_PUT_DATA, 0, _u32(next_off) + piece)
+            await c.send_cmd_no_rsp(wire.OP_FILE_PUT_DATA, next_id(), _u32(next_off) + piece)
             next_off += len(piece)
         now = time.monotonic()
         if c.last_ack > seen_ack:
@@ -111,20 +117,20 @@ async def _put(c, data, chunk, window):
             next_off = c.last_ack
             last_rewind = now
         await asyncio.sleep(0.002)
-    rsp = await c.send_cmd(wire.OP_FILE_PUT_END, 3, _u32(zlib.crc32(data)))
+    rsp = await c.send_cmd(wire.OP_FILE_PUT_END, next_id(), _u32(zlib.crc32(data)))
     if rsp_status(rsp) != wire.ST_OK:
         raise SystemExit("PUT_END: %s" % status_name(rsp_status(rsp)))
     return time.monotonic() - t0
 
 
-async def _get(c, expected):
+async def _get(c, expected, next_id):
     """GET_BEGIN then drain GET_DATA events until GET_END. Deadline-bounded."""
     expected = bytes(expected)
     expect_len = len(expected)
     verifier = DownloadVerifier(expected)
     c.events.clear()
     t0 = time.monotonic()
-    rsp = await c.send_cmd(wire.OP_FILE_GET_BEGIN, 4, _u32(0) + _path_field(DEST))
+    rsp = await c.send_cmd(wire.OP_FILE_GET_BEGIN, next_id(), _u32(0) + _path_field(DEST))
     if rsp_status(rsp) != wire.ST_OK:
         raise SystemExit("GET_BEGIN: %s" % status_name(rsp_status(rsp)))
     total = int.from_bytes(rsp.payload[1:5], "little")
@@ -172,7 +178,8 @@ async def run(args):
 
     c = await PbleCentral.connect(args.address)
     try:
-        caps = await _hello(c, 1)
+        ids = CommandIds()
+        caps = await _hello(c, ids.next())
         chip = caps.get("chip", "?")
         caps_mtu = int(caps.get("mtu", "0") or 0)
         if caps_mtu:
@@ -189,17 +196,17 @@ async def run(args):
             raise SystemExit("wrong board: chip=%s (expected %s)" % (chip, args.expect_chip))
 
         data = os.urandom(args.size)
-        up_s = await _put(c, data, chunk, window)
+        up_s = await _put(c, data, chunk, window, ids.next)
         print("PUT  %6d B in %5.2f s  (%6.0f B/s)" % (len(data), up_s, len(data) / up_s))
 
-        got, end_crc, dn_s = await _get(c, data)
+        got, end_crc, dn_s = await _get(c, data, ids.next)
         print("GET  %6d B in %5.2f s  (%6.0f B/s)" % (len(got), dn_s, len(got) / dn_s))
 
         ok = got == data and end_crc == zlib.crc32(data)
         print("END crc=0x%08x  match=%s  bytes-equal=%s"
               % (end_crc, end_crc == zlib.crc32(data), got == data))
         # Cleanup: remove the bench artifact from the board.
-        await c.send_cmd(wire.OP_FILE_DELETE, 5, _path_field(DEST))
+        await c.send_cmd(wire.OP_FILE_DELETE, ids.next(), _path_field(DEST))
         # Record the negotiated ATT MTU on the final line: it is the link fact the
         # OI-1 throughput numbers are read against (chunk = mtu - PBLE_CHUNK_OVERHEAD),
         # so the owner's measurement log captures the MTU the run actually saw.

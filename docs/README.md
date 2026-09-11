@@ -13,6 +13,12 @@ maintainer guidance beside the source they govern.
 - [Hardware compatibility](specifications/hardware.md)
 - [Public roadmap](ROADMAP.md)
 
+## Proposed release plans
+
+- [Firmware v0.6.1 and v0.7.0 roadmap](planning/firmware-v0.6.1-v0.7.0-roadmap.md)
+  — v0.6.1 hardening is approved for implementation; the Reliable Projects
+  v0.7.0 scope remains proposed
+
 ## Detailed specifications
 
 - [`specifications/App/`](specifications/App/) — app requirements, test design,
@@ -52,6 +58,8 @@ bundled offline examples required by its own product contracts.
 
 ## Testing and release handoff
 
+- [Google Play open-testing submission packet](publication/google-play-open-testing.md)
+  — app `0.2.0 (8)`, listing fields, graphics, declarations and tester setup
 - [PyBLE 0.2.0 (5) TestFlight description and test
   plan](testing/testflight/0.2.0-build-5.md)
 - [PyBLE 0.1.0 (4) TestFlight description and test

@@ -46,6 +46,12 @@ Review at least:
 - `/support`, including the public contact address;
 - `/flash`, confirming the install button is still disabled unless the
   firmware release gate is fully satisfied;
+- `/features`, confirming its v0.6.0 snapshot label, semantic feature reference,
+  full-size diagram link, and clear boundary back to `/flash`;
+- the reviewed functional diagram at
+  `/features/pyble-firmware-v0.6.0-functional-block-diagram-473a85d475aa.svg`,
+  including selectable text, useful title/description, two-dimensional
+  inspection, and no generated board likeness or external image reference;
 - `/learn` and all ten ordered tutorials: setup, first program, Files, GitHub
   import, Blocks, examples, hardware safety, configured hardware, Pico 2 W,
   and the Waveshare LCD 1.47B;
@@ -345,11 +351,14 @@ curl -fsSI https://pyble.dev/app
 curl -fsSI https://pyble.dev/privacy
 curl -fsSI https://pyble.dev/support
 curl -fsSI https://pyble.dev/flash
+curl -fsSI https://pyble.dev/features
+curl -fsSI https://pyble.dev/features/pyble-firmware-v0.6.0-functional-block-diagram-473a85d475aa.svg
 for route in learn learn/setup learn/first-program learn/files \
   learn/github-import learn/blocks learn/examples learn/hardware \
   learn/configured-hardware learn/pico-2-w learn/waveshare-lcd-147b; do
   curl -fsSI "https://pyble.dev/${route}"
 done
+curl -fsSI 'https://pyble.dev/features/?source=redirect-check'
 curl -fsSI 'https://pyble.dev/learn/setup/?source=redirect-check'
 curl -fsSI 'https://www.pyble.dev/privacy?source=redirect-check'
 curl -fsSI 'https://pyble.org/privacy?source=redirect-check'
@@ -365,6 +374,10 @@ Confirm:
 - HTML returns `Cache-Control: no-cache, no-transform`, remains byte-identical
   to the checked export through Cloudflare, and revalidates while
   `/_next/static/` assets are immutable;
+- `/features` is byte-identical to `out/features.html`; its fingerprinted SVG
+  is byte-identical to the reviewed `out/` asset and returns `image/svg+xml`;
+- `/features/?source=redirect-check` returns `308` to the slashless canonical
+  URL with its query string intact;
 - all eleven Learn documents are byte-identical to their nested `out/` files,
   each slash redirect returns `308` with its query intact, and an unknown Learn
   pathname returns the authored `out/404.html` body with status `404`;

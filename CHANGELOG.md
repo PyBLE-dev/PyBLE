@@ -13,9 +13,15 @@ The current compatible app feature set now targets `0.2.0`; build `5` was
 handed off through Transporter for TestFlight. This candidate identity improves
 test and evidence traceability but does not designate a qualified store release
 or claim App Store Connect processing, beta-review approval, or availability.
+The next prepared Android open-testing candidate is `0.2.0 (8)`; its bundle
+and submission packet do not claim Play submission, approval, or rollout.
 
 ### App source
 
+- Added a full offline Privacy policy route from About, with the published
+  policy, effective date and privacy contact. Reading it preserves the live
+  board session, editor, Blocks and console state, including at large text
+  sizes. Advanced the shared app candidate identity to `0.2.0+8`.
 - Added Python syntax highlighting and synchronized one-based line numbers to
   the editor while retaining the plain-field fallback, offline boundary,
   smart-punctuation protection, and safe external-keyboard Tab behavior.
@@ -71,6 +77,10 @@ or claim App Store Connect processing, beta-review approval, or availability.
 
 ### Website and repository source
 
+- Prepared Google Play open-testing listing text, reviewer hardware setup,
+  tester instructions, data-use assessment, and reproducible store artwork
+  with authentic screenshot provenance. Store availability remains a separate
+  Console handoff.
 - Added a static `/learn` center with ten ordered, accessible tutorials covering
   exact five-profile setup, the first BLE program, Files and multi-delete,
   pinned public GitHub import, Blocks, the complete 32-example development

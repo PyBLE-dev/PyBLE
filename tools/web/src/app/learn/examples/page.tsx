@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Part of PyBLE (https://pyble.dev) — see /LICENSE.
 
+import { TutorialAppCapture } from "@/components/tutorial-app-capture";
 import { TutorialCallout } from "@/components/tutorial-callout";
 import { TutorialPage, type TutorialStep } from "@/components/tutorial-page";
 import {
@@ -93,6 +94,7 @@ const steps: readonly TutorialStep[] = [
         selected source and target. Import does not make the example validated.
       </p>
     ),
+    visual: <TutorialAppCapture capture="examplesImportComplete" />,
     expected:
       "the terminal import result and refreshed Files list agree without any automatic open or Run.",
   },
@@ -172,7 +174,7 @@ export default function ExamplesTutorial() {
             <dd>{examplesSnapshot.examples.length}</dd>
           </div>
           <div>
-            <dt>Firmware baseline</dt>
+            <dt>Snapshot's original firmware baseline (historical)</dt>
             <dd>{examplesSnapshot.firmwareBaseline}</dd>
           </div>
           <div>

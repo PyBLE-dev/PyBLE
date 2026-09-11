@@ -1,6 +1,6 @@
 # PyBLE Agent Firmware — Technical Design Document (TDD)
 
-Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-08-20
+Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-09-02
 
 > **Frozen at G0 (2026-07-01, `[docs]`):** the source-tree layout ([§10.5](#105-source-layout-frozen)), which realizes the frozen NFR-MAINT-2 six-module design and the [specs.md](specs.md) §5.1/§5.6/§6/§8 freeze. Design narrative elsewhere in this doc remains DRAFT and is pinned per-story by its `[red]` tests ([§4](#4-module-design)).
 >
@@ -13,8 +13,14 @@ Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-08-20
 > release schema 4, and HIL V5. Immutable v0.4.2 replay retains its exact
 > two-profile release/HIL V2 contract. ADR-0037 fixes replacement-v0.6.0
 > profile reset and product-wide transfer SLOs; ADR-0038 routes predecessor and
-> replacement v0.6.0 derivations by source ancestry. Every replacement result
-> remains pending.
+> replacement v0.6.0 derivations by source ancestry. The replacement v0.6.0
+> result is the qualified five-profile baseline; every later source-selected
+> candidate, including v0.6.1, begins with fresh pending evidence.
+>
+> **Frozen v0.6.1 hardening design (2026-09-02, `[docs]`):**
+> [§2.11](#211-v061-hardening-architecture) fixes the implementation seams,
+> transaction cuts, and host/HIL proof boundary for the approved v0.6.1
+> roadmap. It adds no PBLE/1 wire surface.
 >
 > **Frozen optional ST7789 user-runtime design (2026-08-01, `[docs]`,
 > [ADR-0023](../../decisions/0023-explicit-st7789-user-runtime.md)):**
@@ -236,6 +242,101 @@ workers are created only after the frozen path is restored. — *(implements
 ADR-0024; satisfies
 FR-SPLASH-1…9 and preserves FR-BOOT-4/6.)*
 
+### 2.11 v0.6.1 hardening architecture
+
+**Decision (D11, 2026-09-02):** v0.6.1 changes existing semantics without
+changing PBLE/1 bytes. Portable Python and native C MUST consume the same HELLO
+and frame-guard vectors. The production native CRC/frame/HELLO decisions live
+in a dependency-free `pble_wire.c/.h` unit compiled both into firmware and by
+the host test harness; a source-text proxy or Python twin is not evidence for
+native behavior. Structural decode is separate from CRC, direction, version,
+and session admission so the protocol §3 precedence is executable rather than
+an accidental call order.
+
+The protocol layer owns one `UNNEGOTIATED`/`NEGOTIATED(v1)` state keyed by the
+full BLE session token and VM epoch. HELLO parsing is bounded and allocation-
+free on native C. A response-pool item records whether successful completion
+commits HELLO; only final-fragment local Notify acceptance may publish that
+state. The portable TX completion callback is the equivalent cut. Disconnect
+and VM reset clear it before new RX admission. Invalid repeated HELLO cannot
+clear a valid state.
+
+The BLE reassembler adds `started_ms`, `active`, `expected_index`, and
+`discard_tail` plus an exact-session `violation_count`. Its clock is injectable
+in portable tests and uses the port monotonic clock in production. Deadline
+checks use wrap-safe elapsed arithmetic and the inclusive 5000 ms boundary.
+All violation sites call one reducer; its eighth result closes admission and
+routes to the existing bounded termination mechanism without sending the
+triggering error. RX storage remains statically/boundedly allocated.
+
+Every runner execution saves the worker's globals/locals, allocates a fresh
+dictionary containing only `__name__ = "__main__"`, installs it as both globals
+and locals, then restores the saved dictionaries in both normal and NLR error
+paths. Console stdin has a separate active predicate under its existing ring
+lock and three operations: `begin` clears+activates, `end` clears+deactivates,
+and `clear` preserves activity. RUN/autorun admission, accepted control,
+terminal, disconnect, and VM reset call only the operation assigned by
+protocol §6; failed response admission calls none.
+
+The filesystem bridge treats `.pbltmp` as invisible control-plane state. One
+resume helper returns explicit `{status, offset, crc}` and never maps malformed
+scratch silently to a fresh upload. Namespace mutations resolve paths before
+the active-PUT gate. Admission reads `statvfs`, uses checked 64-bit block
+arithmetic and a constant 65,536-byte reserve, and occurs before scratch
+creation/growth. The active state records a latched boundary/write status so a
+chunk crossing `total_size` cannot partially write. The native worker retains
+its existing session/VFS bracketing; the portable implementation applies the
+same semantic reducer. Both implementations add a filesystem-local monotonic
+transfer generation. Queue insertion snapshots it; disconnect/VM invalidation
+advances it under the same transfer-state synchronization; and publication of
+BEGIN state, DATA/END ownership checks, successor stale-state reclamation, and
+final state clearing all compare it in the same critical cut. Portable PUT
+BEGIN/DATA/END perform every VFS effect in the supervisor-polled bounded
+mailbox, never in the BTstack RX callback; its depth is at least advertised
+window plus two. Native request storage accepts the full 260-byte legal
+`FILE_RENAME` body. Both reject a VFS read count outside `0..requested` before
+using the buffer; portable binary reads additionally require an exact `bytes`
+result. A short or invalid read before response admission returns `EIO`. After
+a successful `FILE_GET_BEGIN` response, it cancels the stream without a
+completion event, so partial bytes can never be blessed by `FILE_GET_END`.
+Both validate every path as strict scalar UTF-8 at the jail chokepoint and
+recognize a regular scratch only when the complete file-type field equals a
+regular file.
+
+Configuration is candidate-first. ESP label, autorun, and Identify paths check
+every NVS set/erase/commit and change RAM/GPIO/advertising only after commit.
+Identify uses one authoritative raw four-byte `id_cfg` blob
+`[1, enabled, gpio, active_level]`; an absent blob alone permits validated
+legacy-pair loading, while an invalid present blob fails closed. Pico keeps
+`/pyble_conf.json` but v1 is exactly the key set
+`{version,label,autorun,crc32}`, at most 256 encoded bytes. Its IEEE CRC-32 is
+over `b"PBLECFG" + b"\x01" + bytes((autorun, label_len)) + label_utf8`.
+It writes `/.pyble_conf.json.pbltmp`, flushes/closes, calls `os.sync()`, and
+atomically renames; rename success is the only commit cut. A valid primary wins
+and stale temp is removed best-effort. Missing primary means defaults/no fault;
+invalid primary means defaults plus a bounded RAM fault marker and is never
+overwritten or replaced from temp. The exact validated legacy two-key object is
+accepted and migrates only on the next successful setting change. Once a
+corrupt/read/persistence fault is observed, its bounded RAM marker remains
+latched until a successful repair of that same configuration domain; an absent
+first-boot key does not create or clear a fault. Internal read-only getters make
+the marker testable without adding a PBLE/1 field.
+
+The Pico boot overlay isolates mount choice in a host-testable helper. A normal
+mount performs no scan. Only an `OSError` mount-constructor failure enters a
+complete, read-only block scan with one reused buffer; format occurs once only
+when all bytes are conclusively `0xFF`. Any nonblank byte, bad geometry/read,
+allocation failure, unexpected exception, or post-format remount failure makes
+zero further writes, emits one bounded USB recovery message, and skips agent
+and autorun startup. One frozen `pyble_workspace` helper is the shared authority
+for all five overlays. ESP overlays use that helper's explicit LFS2 constructor
+and full-device erased scan rather than upstream `inisetup`'s first-block
+heuristic. Geometry must provide exact positive integer program/block/count
+values, at least two blocks, `block_size >= 128`, and a derived cache size that
+is divisible by both 32 and the program size and itself divides the block size;
+otherwise provisioning fails before the first media read or write. It never
+changes upstream MicroPython.
+
 ## 3. Architecture overview
 
 ### 3.1 The four layers
@@ -335,7 +436,7 @@ class BleLink:
     def on_disconnect(self, cb) -> None
 ```
 
-**Key data structures / state:** the GATT table (Service/RX/TX/INFO UUIDs from the [protocol.md §2](../protocol.md#2-ble-transport-gatt) constants mirror); a single **reassembly buffer** (static, sized `max_message`, see [§7.3](#73-buffer-sizing)); a fragment-index tracker (`FIRST`/`LAST`/`index mod 64`); negotiated MTU; connection handle plus monotonic boot-local connection generation and `CLOSED`/`OPEN`/`CLOSING`/`CLEANING`/`RESTARTING` state; logical TX owner plus mutex-protected stream generation; a pre-created generic-response callout; a pre-created task-dispatched failed-session watchdog; the **advertised name** — the device label when set, else `PyBLE-` + `device_id` (the last two BLE-MAC bytes in uppercase hex), used for the name only, never for access control ([§4.8](#48-device-config-store--label--identify-led-nvs), CON-7/SEC-7/SEC-11).
+**Key data structures / state:** the GATT table (Service/RX/TX/INFO UUIDs from the [protocol.md §2](../protocol.md#2-ble-transport-gatt) constants mirror); a single **reassembly buffer** (static, sized `max_message`, see [§7.3](#73-buffer-sizing)); a fragment-index tracker (`FIRST`/`LAST`/`index mod 64`); negotiated MTU; connection handle plus monotonic boot-local connection generation, an exact-session terminal-admission latch/start time, and `CLOSED`/`OPEN`/`CLOSING`/`CLEANING`/`RESTARTING` state; logical TX owner plus mutex-protected stream generation; a pre-created generic-response callout; a pre-created task-dispatched failed-session watchdog; the **advertised name** — the device label when set, else `PyBLE-` + `device_id` (the last two BLE-MAC bytes in uppercase hex), used for the name only, never for access control ([§4.8](#48-device-config-store--label--identify-led-nvs), CON-7/SEC-7/SEC-11).
 
 **VM-safe RX ownership:** the RX GATT callback calls the same non-blocking
 lifecycle-entry seam used by other host callbacks before it reads the fragment
@@ -367,23 +468,36 @@ ticket before normal re-advertising. A callback already queued after stop still
 revalidates inactive/token state and emits nothing.
 
 **Bounded failed-session teardown:** response-capacity refusal and publication
-expiry enter one shared exact-token state machine. Under the session critical
-section, `OPEN → CLOSING` happens first and repeated requests against the same
-token are no-ops. Public snapshot/live-for-admission checks return false for
-`CLOSING`; GATT dispatch, ticket reserve/validate, all response/event/control
-TX, and specialized `RUN`/`STOP`/`SOFT_REBOOT` paths therefore admit no later
-work or byte. This is a logical non-live gate only: retained tickets, work, and
-the token are physically cancelled/invalidated later, after exact cleanup has
-successfully stopped any required watchdog. Each TX attempt carries the
-originating full token to the sole Notify exit; taking a fresh generation
-snapshot from a reused numeric handle is not an ownership check. The physical
-recursive TX mutex is acquired before the session critical section wherever
-both are needed. The sole Notify exit keeps that mutex across its final exact
-token check and `ble_gatts_notify_custom`; connect/open, `OPEN → CLOSING`, and
-disconnect/reset cleanup claims use the same serialization. Thus a lifecycle
-transition cannot land between the final check and Notify. Lifecycle cleanup
-uses an internal exact-token match that can still recognize `CLOSING`; it does
-not make the token live again.
+expiry enter one shared exact-token state machine. Required termination first
+claims an exact-session terminal-admission latch and records the start of the
+one absolute termination deadline under the session critical section; repeated
+requests against that same token are no-ops. Public snapshot/live-for-admission
+checks treat the latch as non-live immediately, so GATT dispatch, ticket
+reserve/validate, all response/event/control TX, and specialized
+`RUN`/`STOP`/`SOFT_REBOOT` paths admit no later work or byte. The host then
+acquires the physical recursive TX mutex using only the deadline residual. A
+Notify that already passed its final exact-token check may finish during this
+bounded drain, but no new admission may begin. With TX ownership, the host
+revalidates the latch and, under the normal TX-then-session lock order, claims
+`OPEN → CLOSING`; failure to acquire the mutex by the deadline instead
+atomically claims `RESTARTING` and restarts. `CLOSING` remains a logical
+non-live gate only: retained tickets, work, and the token are physically
+cancelled/invalidated later, after exact cleanup has successfully stopped any
+required watchdog. Each TX attempt carries the originating full token to the
+sole Notify exit; taking a fresh generation snapshot from a reused numeric
+handle is not an ownership check. That exit keeps the TX mutex across its final
+exact-token check and `ble_gatts_notify_custom`; connect/open, the latched
+`OPEN → CLOSING` claim, and disconnect/reset cleanup use the same
+serialization. Thus a lifecycle transition cannot land between the final check
+and Notify. Lifecycle cleanup uses an internal exact-token match that can still
+recognize `CLOSING`; it does not make the token live again.
+
+The accepted-soft-reboot global closing gate is evaluated after structural,
+CRC, direction/ID, and version validation but before HELLO grammar, negotiation,
+opcode dispatch, or violation accounting. It maps every response-bearing CMD
+to `EBUSY` and drops no-response CMDs, even if a numeric handle is re-presented
+during the delivery grace. This keeps reconnects and duplicate reboot requests
+from bypassing the global VM boundary.
 
 Cold native initialization calls the reducer initializer exactly once per chip
 boot and pre-creates exactly one `ESP_TIMER_TASK` one-shot before NimBLE can
@@ -397,13 +511,16 @@ attempt while the reducer is not `CLOSED`, including numeric-handle reuse while
 an old token is `CLOSING`, `CLEANING`, or `RESTARTING`, invokes public
 non-returning `esp_restart()` instead of overwriting the retained token.
 
-On `OPEN → CLOSING`, the host reads `esp_timer_get_time()` once and stores one
-absolute deadline 2500 ms ahead. Its initial `esp_timer_start_once` interval is
-the positive residual `deadline - esp_timer_get_time()`, never a new 2500 ms;
-an already-reached deadline claims `RESTARTING` without arming or attempting
-GAP. Reducer begin, residual calculation, physical arm, and reducer arm
-acknowledgement are one uninterrupted session-critical transaction, so the
-task callback cannot consume the one-shot before logical arm acknowledgement.
+The terminal-admission latch reads `esp_timer_get_time()` once and records the
+start of the one absolute termination deadline before the TX drain. The later
+`OPEN → CLOSING` reducer step receives that same start and stores its deadline
+2500 ms ahead. Its initial `esp_timer_start_once` interval is the positive
+residual `deadline - esp_timer_get_time()`, never a new 2500 ms; a deadline
+reached before TX ownership or arm atomically claims `RESTARTING` without
+arming or attempting GAP. Reducer begin, immutable watchdog-ticket capture,
+residual calculation, physical arm, and reducer arm acknowledgement are one
+uninterrupted session-critical transaction under TX ownership, so the task
+callback cannot consume the one-shot before logical arm acknowledgement.
 After that transaction releases, exactly one `ble_gap_terminate` call occurs.
 An arm failure atomically claims `RESTARTING` and calls public non-returning
 `esp_restart()` without a GAP attempt. This order matters: the pinned HCI
@@ -670,7 +787,12 @@ no-op. A separate resolved snapshot followed by a later terminal lock
 acquisition is forbidden because it recreates the race. Reservation-time
 cleanup may clear only an older, resolved idle-STOP flag/pending exception and
 never the unresolved gate. The same rules cover command RUN and the direct
-auto-run reservation.
+auto-run reservation. Terminal classification also deactivates and clears
+stdin before it releases the single-run reservation, under that same runner-
+domain cut. A successor reservation therefore cannot race with delayed
+predecessor cleanup, and the predecessor event uses a terminal-state value
+captured before admission can reopen. The stdin clear path mutates only
+preallocated ring state and remains allocation-free.
 
 Once admitted, the worker authors `RUN_STATE(running)` (FR-RUN-1). Each new
 `RUN_STATE` event atomically snapshots the then-current live full session token
@@ -727,7 +849,14 @@ class FsBridge:
     def _resolve(self, path) -> str               # jail enforcement (FR-FS-10/11)
 ```
 
-**Key data structures / state:** active-upload context (`path`, `tmp_path`, `total_size`, `expected_crc`, `ack_offset`, running CRC accumulator, window bookkeeping); the static file I/O buffer; `fs_root` constant. Only **one** transfer is active at a time (serialized by the single-writer lock).
+**Key data structures / state:** active-upload context (`path`, `tmp_path`,
+`total_size`, `expected_crc`, `ack_offset`, running CRC accumulator, window
+bookkeeping); active-download ownership; the static file I/O buffer; `fs_root`
+constant. Only **one** transfer is active at a time (serialized by the
+single-writer lock). After payload parsing and jail resolution, every
+DELETE/MKDIR/RENAME is rejected with `EBUSY` while either transfer kind is
+active, even for an unrelated valid path; read-only FILE_LIST/FILE_STAT remain
+available.
 
 **Jail design ([§9.3](#93-path-jail-enforcement)):** every path is normalized and verified to resolve inside `fs_root`; `..` traversal or absolute escape → `EACCES` (FR-FS-10). Layer-2/Layer-3 paths are a forbidden set → `EACCES` (FR-FS-11, SEC-4, CON-10). Only `.py`/data artifacts accepted; `.mpy`/`.pyc` rejected (FR-FS-12, CON-3).
 
@@ -772,6 +901,26 @@ events. No VFS operation or bounded chunk starts after token invalidation. An
 indivisible operation validly started before invalidation may finish, but the
 mandatory post-operation check suppresses every later VFS operation, response,
 or dependent event.
+
+The active transfer record includes the filesystem-local generation described
+by D11. The queue item snapshots that generation under the transfer mutex.
+Disconnect only advances the generation and invalidates ownership; it never
+directly clears worker-owned PUT fields. A worker may publish BEGIN state only
+after an exact session/generation post-check in the same critical section as
+all field writes. DATA/END require exact ownership, and a successor may close
+and reclaim only a record whose stored generation is stale. This prevents a
+paused predecessor from clearing or adopting successor state.
+
+The native worker marks an accepted GET active under that same transfer mutex
+before committing its successful response and clears the exact generation on
+every stream exit. Because that worker remains occupied until the stream ends,
+a concurrently admitted namespace mutation snapshots the active-GET bit in its
+mailbox item. Once dequeued it still parses and jail-resolves all paths first,
+then returns `EBUSY` from the immutable snapshot before any namespace stat or
+mutation. A mutation admitted before GET activation is naturally serialized
+after the stream and is not retrospectively rejected. This preserves jail
+status precedence without letting queue serialization erase the fact that the
+command arrived during an active download.
 
 **Frozen-vs-native plan:** frozen for orchestration; the **chunk write + incremental CRC** inner loop is a native candidate on C3 (D1).
 
@@ -820,8 +969,8 @@ class Info:
     def device_info(self) -> bytes        # chip, mpy ver, free_mem, fs_root, MTU,
                                           # device_id, label (FR-INFO-1)
     def hello_reply(self, offered_versions) -> tuple  # (proto_version, caps) | refuse (FR-INFO-5)
-    def caps(self) -> dict                 # chip, mpy_version, fs_root, max_file_size,
-                                           # put_window W, chunk_size, has_sd, free_mem,
+    def caps(self) -> dict                 # frozen short keys: proto/agent/chip/mpy,
+                                           # fs_root/mtu/window/chunk/has_sd/free_mem,
                                            # device_id, label, has_identify, identify_led
     def info_payload(self) -> bytes        # DEVICE_INFO-equivalent for INFO read (FR-INFO-4)
     def set_label(self, payload) -> bytes        # 0x50 -> DeviceConfig.set_label (FR-IDENT-1)
@@ -831,7 +980,13 @@ class Info:
 
 **Key data structures / state:** the `caps` dict (FR-INFO-3); supported `proto_versions`; SD-presence detection result (FR-INFO-6); the auto-run capability flag (opt-in, FR-BOOT-3 — flag name owned by [protocol.md §7](../protocol.md#7-hello--capabilities), OI-5); a handle to the device-config store ([§4.8](#48-device-config-store--label--identify-led-nvs)) supplying `device_id`/`label`/`has_identify`/`identify_led`. All chip-varying values read at runtime (D2) from `os.uname()`, `gc.mem_free()`, `sys.platform`.
 
-**Negotiation:** `HELLO` is the first exchange after connect (FR-INFO-2); a client whose offered versions cannot be satisfied is refused rather than silently mis-spoken (FR-INFO-5). The agent advertises only what it implements (FR-PROTO-10).
+**Negotiation:** TX subscription precedes the first RX frame. The bounded
+protocol §7 parser accepts only the canonical request grammar, and one
+connection/VM session stays unnegotiated until final local acceptance of its
+successful HELLO response. The dispatch gate rejects or drops pre-HELLO work,
+disconnect/reset clears state, and compatible repeat is idempotent. INFO reads
+do not negotiate. The agent advertises only what it implements
+(FR-PROTO-10), and v0.6.1 does not add `max_file_size`.
 
 **Frozen-vs-native plan:** frozen.
 
@@ -852,6 +1007,13 @@ class Agent:
 ```
 
 **Key data structures / state:** the lifecycle FSM state; the single-writer lock (`_thread.allocate_lock` or asyncio lock); references to all module instances; a fail-safe handler that returns the board to advertising on a control-plane fault (FR-BOOT-6, NFR-REL-1).
+
+**Portable event ownership:** one `emit(..., expected_session)` chokepoint sends
+every event against the exact session captured when the logical event was
+created. Runner state, console chunks, upload ACKs, and download data/end never
+take a fresh connection snapshot at final TX. Disconnect or handle reuse makes
+the send fail/silent; it cannot retarget a successor. Deferred filesystem items
+carry that same immutable session through their supervisor mailbox.
 
 **Boot policy:** initialize and request advertising (FR-BOOT-1). The exact-board
 variant then attempts its separately guarded splash; lean generic S3, classic,
@@ -1455,13 +1617,21 @@ Outbound EVTs (`0x13/0x14 FILE_GET_*`, `0x30 CONSOLE_DATA`, `0x40 RUN_STATE`, `0
 
 ### 7.3 Buffer sizing
 
-- **Reassembly buffer:** sized to `max_message` = the largest legal §3.1 message the agent accepts, derived from `max_file_size`/`chunk_size` in `caps`. Single static allocation (D3).
+- **Reassembly buffer:** one static allocation (D3) sized for the largest legal
+  §3.1 command. In v0.6.1 it MUST be at least 2059 bytes so `RUN` containing
+  `[mode=source] + 2048 source bytes` plus the six-byte header and four-byte CRC
+  reaches the runner; 2049 source bytes reaches that handler and returns
+  `ERANGE` rather than being dropped by transport. The reference native buffer
+  is 4096 bytes, and its footprint is measured on ESP32-C3.
 - **Per-fragment payload:** `MTU − 3` (ATT) − 1 (frag header), tracked from the negotiated MTU (FR-BLE-8). At MTU 247 this is 243 bytes.
 - **File I/O buffer:** one MTU-sized chunk (NFR-PERF-2, chunk = one MTU).
 - **TX staging:** bounded console + event queue ([§5.4](#54-console-backpressure)).
 - **Generic responses:** exactly two static 491-byte encoded-frame slots plus
   fixed metadata. At ATT MTU 23, `ceil(491 / 19) = 26` fragments. Neither
   command concurrency nor backpressure can allocate an unbounded buffer.
+- **Filesystem work item:** payload storage is at least 260 bytes for
+  `FILE_RENAME` with two maximum 128-byte paths; PUT mailbox depth is at least
+  advertised window plus two.
 
 ### 7.4 Windowed-upload state machine (resume + CRC)
 
@@ -1499,12 +1669,12 @@ v0.5.1 source-candidate contract measures the three exact profiles `esp32-4mb`,
 `esp32-s3-n16r8`, and `waveshare-esp32-s3-lcd-147b` independently. S3 PSRAM is
 useful Python headroom but
 MUST NOT conceal internal-RAM pressure, so the gate records Python GC memory
-and internal ESP-IDF heap separately. The v0.6.0 five-profile candidate
-includes the **ESP32-C3 floor** (single-core RISC-V, ~400 KB SRAM —
-[hardware.md §1](../hardware.md#1-supported-chip-families-v1)). Its
-candidate-bound measurement is mandatory and remains pending until the C3
-resource and HIL gates pass; source support or attached hardware alone is not
-qualification evidence.
+and internal ESP-IDF heap separately. The qualified v0.6.0 five-profile
+release includes the **ESP32-C3 floor** (single-core RISC-V, ~400 KB SRAM —
+[hardware.md §1](../hardware.md#1-supported-chip-families-v1)) and completed
+its candidate-bound C3 resource and HIL measurements. Every later candidate,
+including source-selected v0.6.1, must repeat that exact-profile measurement;
+source support or attached hardware alone is not qualification evidence.
 
 ### 8.2 Static vs dynamic
 
@@ -1708,6 +1878,13 @@ generated bytes exist.
    exact profiles.
 
 Profiles or successful samples from different baselines MUST NOT be mixed.
+After a controlled refresh, the active-policy readiness test MUST validate the
+currently referenced canonical baseline, its digest and filename/source binding,
+and every baseline-derived threshold through the maintained release validator.
+It MUST retain the source-era fixed performance SLOs and the fixed Waveshare
+largest-block floor, rather than pinning a previous active policy's bytes or
+measurement-derived resource values. Historical baseline immutability is a
+separate assertion and remains unchanged when the active reference advances.
 Historical pre-`0.5.0` and v0.5.x policies retain their exact V1 and V3/V2
 derivation identifiers and arithmetic. The predecessor v0.6.0 contract also
 retains V3/V2 when its bound source is at or before
@@ -1757,9 +1934,9 @@ A schema-3 policy has exactly the five ordered threshold-bearing rows in
 specs.md §5.3.5. Four ESP rows use the existing application/partition,
 five-field heap, and NimBLE link facts. Pico uses raw-image limit/headroom,
 two-field GC snapshots, and BTstack facts. No row may borrow a passing result
-from another target. Fixed reset/goodput values are closed above; replacement
-image/headroom/heap values and every final-candidate observation remain
-pending.
+from another target. Fixed reset/goodput values are closed above. The qualified
+v0.6.0 image/headroom/heap and final-candidate observations are complete; every
+controlled current-source refresh begins with those observations pending.
 
 #### 8.5.3 Release evidence and failure semantics
 
@@ -1769,12 +1946,15 @@ the source-era record selected by browser-flashing.md §9: immutable `v0.4.2`
 replay retains `PYBLE_HIL_RECORDS_V2` schema 2; the rejected pre-split v0.5
 engineering shape is V3 and cannot publish split bytes; v0.5.1 retains
 `PYBLE_HIL_RECORDS_V4` schema 4; v0.6.0 uses
-`PYBLE_HIL_RECORDS_V5` schema 5. Current v0.6.0 observations remain pending.
+`PYBLE_HIL_RECORDS_V5` schema 5. The qualified v0.6.0 observations are
+finalized; every source-selected v0.6.1 observation requires fresh exact-byte
+evidence and remains pending until that candidate is finalized.
 The `719b211…` candidate's V5 bytes, HIL, and physical lineage are predecessor
 history and MUST NOT be replayed into the replacement. Source/docs/RED/GREEN,
-build, reproducibility, license, source, and audit gates precede replacement
-of the local unpublished tag; that annotated tag must then peel to candidate
-HEAD before audited candidate creation. Fresh HIL and finalization follow.
+build, reproducibility, license, source, and audit gates preceded replacement
+of the local unpublished v0.6.0 tag; its annotated release tag then peeled to
+candidate HEAD before audited candidate creation, fresh HIL, and finalization.
+The v0.6.1 candidate must repeat that ordering with its own source and bytes.
 Finalization may fill observations, operator fields, and derived
 checks only; it must prove the policy and build portions remain
 byte/semantically equal to the candidate.
@@ -1782,6 +1962,87 @@ The `assemble-hil-report` helper accepts only bounded per-profile mutable
 evidence, copies candidate-frozen fields from the pending report, derives the
 footprint/reliability pass from validated observations, and emits the completed
 source-era report atomically before finalization.
+
+For exact version `0.6.1`, the protected V5 record also starts with
+`v061_hardening: null` and a pending hardening check. The physical hardening
+runner receives the protected candidate, the exact profile, two separately
+acquired candidate-bound sacrificial workspace receipts, a new raw-log path,
+and a new result path. Before BLE access it validates the complete committed
+qualification dependency closure and retains the candidate/receipt/source
+snapshot that the final writer must consume. After negotiation and before any
+mutation it refuses a board containing either `/v061_hil` or `/main.py`; the
+former protects an existing namespace and the latter prevents the autorun
+durability reboots from executing owner code. The live invocation also carries
+the private reviewed manufacturer, model, and module-marking attestation for
+the selected exact physical profile because PBLE/1 intentionally exposes no
+carrier-board runtime identity. It runs the seven scenarios in the frozen order,
+including exactly 50 sequential RUNs, broad configuration durability, and
+filesystem hardening. The stdin VM-reset subcase uses a non-expiring pre-input
+barrier, bounds both the complete stale-input write and the SOFT_REBOOT response,
+and at the accepted `RSP{OK}` cut requires the predecessor to remain running
+with no terminal/idle state and no stale-input echo. Only after that cut may it
+wait for disconnect, reconnect, negotiate, and prove the successor stays blocked
+until fresh input arrives. This prevents a slow accepted reboot from consuming
+the supposedly stale line before the reset. The runner validates both workspace
+receipts; then publishes one canonical mode-`0600` private result without
+replacement through that same preflight snapshot. The raw/result/receipt outputs
+are outside both candidate and qualification Git trees, and exclusive
+publication performs a final descriptor-relative reopen after all input
+callbacks. Any failed or interrupted operation retains no passing result.
+
+The same reviewed `v061_hardening_bench.py` executable exposes a separate
+workspace-receipt creation mode for each prerequisite boot. It accepts one
+exclusive canonical raw boot log in the exact grammar frozen by
+specs.md §5.3.4 and derives the candidate, install, source, qualification, and
+raw-log identities into a no-replace mode-`0600` receipt. The two receipt
+operations remain separate from the BLE scenario run because the decisive
+mount/format/refusal behavior occurs before the service exists. The later
+scenario run consumes both receipts; it never fabricates or silently skips
+them.
+
+The 2026-09-06 measured-boot amendment adds red-to-green coverage for the
+optional observed mount, actual initial-constructor/mkfs/remount ordering,
+attempt versus completion counts, direct read-method binding, and wrapped
+write/erase attempts including failed and idempotent operations. Each test
+uses a fresh module instance to model a VM. Cover missing/bad entropy,
+inspection/allocation/format/remount/attachment failures, counter saturation,
+one-shot initialization and terminal sealing, immutable detached snapshots,
+strict fresh challenge echo, and zero additional recovery emissions. Normal
+unobserved callers retain their existing behavior and block-device identity.
+All five overlay tests prove observed mounting, attachment sealing only after
+`vfs.mount`, and bounded recovery sealing before any possible agent startup.
+Erased-scan status tests cover both observed and unobserved callers: `None`,
+exact integer zero, and boolean `True` succeed, while `False`, floating zero,
+and custom equality-to-zero objects fail without formatting. Collector tests
+round-trip the actual firmware getter through JSON with reordered mapping
+keys; exact key sets remain required without imposing MicroPython dict order.
+
+The workspace acquisition tests MUST exercise the live collector's event
+sequence and reject an expected four-line summary without measured siblings.
+Fixtures prove exact native-media geometry and pre/post bytes, real response
+parsing with challenge/boot identity, actual counter predicates, scanner
+start/callback/end ordering, missing/incomplete watches, and interrupted
+acquisition. Every retained sibling participates in immutable acquisition and
+receipt bindings. Mutation, link substitution, wrong target/candidate,
+replayed response, false zero-write inference from unchanged bytes alone,
+and any manually supplied operation count cannot produce a passing receipt.
+Private-result and finalization tests reopen this entire closure rather than
+trust its previously copied digest. Host simulations validate the harness;
+only its execution on the exact physical candidate supplies HIL evidence.
+
+`create-hil-completion` opens and validates that profile's private hardening
+result alongside the OI observation and existing target gate result. It
+derives the public hardening summary and check; neither may occur in operator
+input. `assemble-hil-report` accepts exactly five distinct completion
+fragments and preserves each derived private-result digest. The v0.6.1
+finalizer additionally receives exactly five private hardening-result paths,
+reopens each as a stable regular mode-`0600` file, revalidates its canonical
+bytes and candidate/profile/install/qualification identities, and requires its
+digest and derived summary to equal the completed report. It repeats those
+snapshots immediately before atomic publication so a post-validation mutation
+cannot pass. A missing, extra, duplicated, swapped, stale, reordered, or
+mutated file leaves no public output. Version `0.6.0` takes none of these
+inputs and retains its historical V5 record/completion byte shape unchanged.
 
 The validator recomputes image/headroom arithmetic, sample counts, heap
 minima, latency maximum, goodput from recorded durations, threshold
@@ -1800,7 +2061,23 @@ If the frozen-Python agent does not fit C3's flash/heap with usable user-code he
 
 ### 9.1 VFS / LittleFS
 
-The workspace is a MicroPython VFS (LittleFS) rooted at `fs_root` (IF-FS). The agent does not reformat or repartition at runtime; the partition table is part of the per-chip build artifact (BLD-5).
+The workspace is a MicroPython LFS2 VFS rooted at `fs_root` (IF-FS) on every
+official profile. On ESP, the partition-table `data,fat` subtype is historical
+ESP-IDF block-container metadata, not the on-media filesystem: its `vfs` label
+selects MicroPython's LFS2 first-use provisioning. Every overlay calls the same
+frozen `pyble_workspace.mount_lfs2` authority. It constructs `VfsLfs2`
+explicitly and scans the complete device before erased-media provisioning, so
+generic VFS autodetection and ESP upstream `inisetup`'s first-block heuristic
+cannot silently admit FAT or format media with a nonblank later block.
+A nonblank incompatible/corrupt ESP workspace fails closed without formatting
+or starting the agent; recovery/migration is an explicit operator action.
+
+The agent never repartitions at runtime. The shared helper may perform one
+first-use format only after a failed normal mount and a complete block scan
+proves every byte erased (`0xFF`); it never formats nonblank or uncertain media.
+Invalid geometry fails before scanning. This narrow provisioning case is the
+only runtime format path. Partition geometry remains part of the per-profile
+build artifact (BLD-5).
 
 ### 9.2 Workspace layout
 
@@ -1820,11 +2097,29 @@ This is Layer 4 — served, not part of the agent. `.mpy`/`.pyc` are neither req
 
 ### 9.4 Atomicity
 
-Uploads write to a `.tmp` sibling and `os.rename` over the target only after whole-file CRC verification, so a target file is never corrupted mid-transfer or by a dropped link (FR-FS-9, NFR-REL-2/3). FS errors map to PBLE/1 status codes (FR-FS-15).
+Uploads write to the reserved `.pbltmp` sibling and rename over the target only
+after whole-file CRC verification, so a target file is never corrupted
+mid-transfer or by a dropped link (FR-FS-9, NFR-REL-2/3). Listings hide that
+suffix. Resume accepts only a stable, completely CRC-scanned regular-file
+prefix; malformed scratch follows the non-recursive recovery reducer in
+protocol §5. Admission preflights block-rounded remaining bytes plus the
+65,536-byte reserve. Every failed PUT closes, non-recursively removes, and
+absence-verifies its scratch; cleanup failure overrides the originating status
+with `EIO` while preserving the old target. FS errors map to PBLE/1 status
+codes (FR-FS-15).
 
 ### 9.5 Device config persistence (NVS)
 
-The device label and identify-LED config persist in a small **NVS namespace** (`esp32.NVS`) — **not** in the LittleFS workspace and **not** under `fs_root`. This keeps the per-device UX state stable across reboot (FR-IDENT-5) while staying **outside** the path jail ([§9.3](#93-path-jail-enforcement)) and outside anything user code or PBLE/1 file opcodes can reach. It is read at boot to derive the advertised name and the identity caps, and written only by `SET_LABEL`/`SET_IDENTIFY_LED`. It is **not** a routing/pin profile or capability map (D7, CON-13, FR-IDENT-6).
+On ESP, the device label, autorun byte, and authoritative four-byte Identify
+record persist in the NVS namespace `pyble`, outside `fs_root`. Every change is
+candidate-first and visible in RAM/GPIO/advertising only after checked commit.
+On Pico, the protected `/pyble_conf.json` uses D11's version/CRC and atomic
+temp-write/flush/sync/rename transaction. Invalid persisted state selects safe
+defaults plus a bounded internal marker and is never rewritten at boot. Both
+stores remain device UX state, not a routing/pin profile or capability map
+(D7, CON-13, FR-IDENT-5/6). A domain's bounded fault marker latches across
+missing reads and failed writes until a successful durable repair of that
+domain; it is internal-only in v0.6.1.
 
 ## 10. Build system design
 
@@ -1910,6 +2205,13 @@ to `.sources/rpi-pico2-w/micropython/ports/rp2`. A build description that
 names the canonical submodule, another profile's checkout, or an
 escaped/symlinked location is fatal.
 
+The Pico configure boundary passes
+`-DFETCHCONTENT_FULLY_DISCONNECTED:BOOL=ON` and its post-build audit requires
+the exact `FETCHCONTENT_FULLY_DISCONNECTED:BOOL=ON` cache line. Host fixtures
+emit the same type produced by real CMake and independently replace it with
+`UNINITIALIZED=ON`, `BOOL=OFF`, and no entry; every replacement MUST fail
+before provenance admission and fail-clean the new output and retained source.
+
 All profile-scoped mutable preparation, including board-copy, ESP-IDF
 submodule/managed-component materialization, and RP2 frozen-module generation,
 runs inside that profile's checkout and build directory. No profile may share,
@@ -1932,9 +2234,10 @@ HIL report, activation, and rollback are frozen in
 both at the versioned `pyble.dev` path and through the matching GitHub Release,
 with exact source-era profile parity: two hardware-tested beta profiles in v0.4.2,
 retained as immutable history; the unfinished three-profile v0.5.1 source candidate
-retained only as history; and exactly five profiles in the pending v0.6.0
-candidate. No v0.6.0 profile is published until the atomic five-profile gate
-passes (BLD-7/17…22). `DEVICE_INFO`/HELLO,
+retained only as history; exactly five profiles in the qualified v0.6.0
+release; and the same five profiles in the source-selected v0.6.1 increment.
+No v0.6.1 profile is published until its fresh atomic five-profile gate passes
+(BLD-7/17…22). `DEVICE_INFO`/HELLO,
 `manifest.json`/`release.json`, tag, and release notes make agent/protocol/
 upstream/source/artifact versions recoverable (BLD-13); the agent follows
 SemVer (BLD-12).
@@ -1972,6 +2275,7 @@ firmware/
     micropython/                    # Layer 1 — pinned submodule, pristine (CON-1/2)      [build-smith / .gitmodules]
   pyble/                            # Layer 3 — frozen-Python agent package (NFR-MAINT-2)
     __init__.py                     # empty placeholder package at S1 (do NOT populate)   [build-smith scaffold]
+    _version.py                     # selected agent identity                              [build-smith]
     pyble_agent.py                  # boot + dispatch surface + single-writer lock         [runtime-engineer]
     pyble_ble.py                    # NimBLE peripheral, GATT, fragmentation               [ble-transport-engineer]
     pyble_proto.py                  # frame codec, CRC32, dispatch                          [protocol-engineer]
@@ -1979,10 +2283,17 @@ firmware/
     pyble_fs.py                     # filesystem bridge + workspace jail                    [storage-engineer]
     pyble_console.py                # stdout/stderr tee + stdin feed                        [runtime-engineer]
     pyble_info.py                   # DEVICE_INFO/HELLO/caps + device-config store          [identity-engineer]
+    pyble_boot.py                   # autorun and boot helpers                              [runtime-engineer]
+    pyble_device_config.py          # durable portable label/autorun record                 [identity-engineer]
+    pyble_workspace.py              # shared guarded LFS2 mount/recovery authority          [storage-engineer]
   python_modules/                   # optional Layer-4 frozen user runtimes
     pyble_st7789.py                 # explicit ST7789 driver (exact-board variant only)     [runtime-engineer]
   user_c_modules/
-    pyble/                          # Layer 3 native hot paths — LATER, OI-3 (pble_*.c)    [ble-/protocol-engineer]
+    pyble/                          # Layer 3 native ESP agent                              [ble-/protocol-engineer]
+      micropython.cmake             # exact USER_C_MODULES source inventory                [build-smith]
+      pble_{ble,boot,console,device_config,fs,info,lock,proto,runner,termination,vm_lifecycle,wire}.c
+      pble_{ble,boot,console,device_config,fs,info,lock,proto,runner,termination,vm_lifecycle,wire}.h
+      pble_version.h                # selected native agent identity                       [build-smith]
   board_overlays/
     esp32/  esp32-s3/  esp32-c3/     # lean Layer-2 variants, copied at build prep          [build-smith]
     waveshare-esp32-s3-lcd-147b/     # exact-board esp32s3 build variant                    [build-smith]
@@ -2125,6 +2436,26 @@ pico-sdk, BTstack and its actually linked third parties, CYW43, TinyUSB, and
 every contributing ARM GNU/newlib runtime archive. Deleting or substituting
 one class fails even when the remaining evidence is canonically rehashed.
 
+ESP frozen-payload tests MUST reach the production observer with a real
+descriptor-captured retained board layout and literal manifest selections.
+They distinguish a flat workspace destination from its canonical-source-relative
+`pyble/` copy, and preserve already-prefixed and historical package selections.
+Missing nested copies, matching flat decoys, stale bytes, file/directory
+symlinks, and duplicate frozen destinations are rejection cases. The existing
+lock-generated version exception and overlay byte checks remain independently
+covered; tests must not replace the snapshot or byte comparison with a model.
+
+RP2 environment-proof tests MUST run the actual checked-in build driver through
+the production Arm observer's parser boundary. They separately cover the strict
+`unset` command and the exact pinned offline CMake assignment/export block,
+including the case-sensitive `picotool_DIR` name. Missing/duplicate markers or
+variables, malformed names/continuations, lost GCC or package-discovery scrub
+coverage, inserted shell commands, changed offline values and incomplete exports
+are red cases. The historical scrub-only form remains source-version-selected;
+it cannot satisfy the v0.6.1 pinned-picotool contract. Existing cache, compile
+recipe, helper/archive, depfile, runtime notice and source-identity gates remain
+unchanged.
+
 The same fixtures derive every compiler depfile belonging to the linked
 firmware target from its C/C++ DependInfo records; assembly records, for which
 CMake does not emit `.o.d`, bind their source bytes directly. Unlinked host
@@ -2213,9 +2544,36 @@ frozen inputs/output, checkout metadata, policy, license/notice bytes, and
 toolchain inputs before the eight ESP runs and repeats the full semantic
 observation immediately before publication. A byte change with restored
 timestamps is fatal. Tests require schema-v2 receipt coverage of all eight ESP
-identities and exactly the seven RP2 roles, plus the canonical five-profile
-schema-v1 release inventory; missing, extra, reordered, cross-profile, and
-self-consistently rehashed substitutions fail.
+identities and the candidate-version-selected RP2 roles: the historical seven
+for v0.6.0, or those same seven plus `build-tools` for v0.6.1. The eighth role
+must reopen the exact retained picotool archive/tree/lock/version identities,
+the two reviewed build-tool owners, and all component, license, attribution,
+and source/distribution provenance bytes. It never alters the generated
+firmware notice. Tests also require the canonical five-profile schema-v1
+release inventory; missing, extra, reordered, cross-profile, and
+self-consistently rehashed substitutions fail. A v0.6.0 candidate carrying the
+eighth role or a v0.6.1 candidate lacking it fails without publication.
+
+The build-tools seam additionally tests synchronized in-place and atomic
+mutations of the executable, package directory, and retained archive at the
+runtime probe boundary, including byte-identical inode replacement and an
+unsafe retained-root mode. Production must require exact mode `0700` on the
+retained root, run only a write-locked private tree reconstructed from verified
+archive bytes while retaining no-follow root and executable descriptors, and
+resolve the executable relative to the descriptor-anchored child working
+directory. Tests transiently replace and restore the private root and prove
+that substituted code is never executed. Production rechecks both descriptors
+and the complete private tree after execution. It then
+descriptor-reopens the full original archive/tree and compares node identities
+before acceptance. A positive test proves both original-tree observations
+occur and that the retained executable pathname is never launched. Separate
+routing tests prove
+that explicit candidate version selects tool-lock inputs without consulting
+the validator checkout version, and that the compare CLI derives and forwards
+the strict source version from its required repository root. The complete
+checked-in policy test freezes canonical policy/attribution digests, exact
+owner/member coverage, and every recursively referenced evidence asset; a
+four-key compact attribution must fail.
 
 Pinned nested manifests are resolved by their literal package/module
 selections, and the result must equal generated frozen content. Archive member
@@ -2426,21 +2784,23 @@ Chip facts are owned by [hardware.md §1](../hardware.md#1-supported-chip-famili
   ([§5.4](#54-console-backpressure)) must be validated here first. The selected
   ESP32-C3-MINI-1-N4 v0.4/4 MiB/no-PSRAM engineering reference, complete gate
   matrix, and public-admission boundary live in the
-  [derived C3 contract](ports/esp32-c3-4mb.md); every result remains pending. If
-  frozen-Python does not fit, hot paths go native (D1,
+  [derived C3 contract](ports/esp32-c3-4mb.md). Its exact v0.6.0 results passed;
+  every source-selected v0.6.1 result starts pending. If frozen-Python does not
+  fit, hot paths go native (D1,
   [§8.6](#86-esp32-c3-mitigation)). The known `esp32-c3-4mb` provisioning
-  profile is defined only for C3 silicon revision v0.3 or newer but remains
-  unavailable in the current v0.4.2 public beta pending exact-profile HIL. Its
-  exact image revision window appears in pending v0.6.0 schema-4 metadata, but
-  its action remains inactive until C3-G0…C3-G6 and common HIL pass.
+  profile is defined only for C3 silicon revision v0.3 or newer. It was absent
+  from the historical v0.4.2 public beta, then qualified in v0.6.0 after its
+  schema-4 revision-window metadata, C3-G0…C3-G6, and common HIL passed. New
+  v0.6.1 bytes remain inactive until those gates pass again.
 
-- **rpi-pico2-w (selected, qualification pending):** single-core-agent model on RP2350 —
+- **rpi-pico2-w (qualified v0.6.0; v0.6.1 refresh pending):** single-core-agent model on RP2350 —
   BTstack SYNC events on the main thread, supervisor-owned execution, STOP via
   the dupterm interrupt-char channel. Design is owned by the derived port spec
   ([ports/rpi-pico2-w.md](ports/rpi-pico2-w.md)); nothing in §5 (ESP32 task
-  model) applies to it. Its v0.6.0 row uses verified UF2/manual BOOTSEL,
-  RP2-specific resource/BTstack evidence, and remains inactive until GP2 and
-  common V5 HIL pass.
+  model) applies to it. Its v0.6.0 row qualified with verified UF2/manual
+  BOOTSEL, RP2-specific resource/BTstack evidence, GP2, and common V5 HIL. Its
+  source-selected v0.6.1 row remains inactive until fresh instances of those
+  gates pass.
 
 ## 12. Error handling & status mapping
 
@@ -2890,9 +3250,10 @@ Design element → satisfied requirement IDs. Each `FR-*` block has at least one
 
 ## 16. Risks & open questions
 
-- **R1 — Footprint on ESP32-C3 (binding).** C3 real-hardware resource numbers
-  remain pending, so the selected v0.6.0 row cannot pass and the atomic release
-  cannot activate. Mitigation: run the same
+- **R1 — Footprint on ESP32-C3 (binding).** The qualified v0.6.0 C3
+  real-hardware resource numbers are baseline evidence only. Fresh
+  source-selected v0.6.1 numbers remain pending, so that candidate's C3 row and
+  atomic release cannot pass yet. Mitigation: run the same
   frozen method, and use native `USER_C_MODULE` hot paths if needed
   ([§8.6](#86-esp32-c3-mitigation)). Other profile results do not waive or
   predict the C3 result (OI-1, NFR-FP-CLOSE).

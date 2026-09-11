@@ -81,12 +81,36 @@ def _load_v060_profile_gate() -> Any:
     return module
 
 
+def _load_v061_hardening_gate() -> Any:
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "qualification"
+        / "v061_hardening_release_gate.py"
+    ).resolve(strict=True)
+    spec = importlib.util.spec_from_file_location(
+        "_pyble_release_v061_hardening_gate",
+        source,
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError("cannot load the v0.6.1 hardening validator")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 _WAVESHARE_LCD147B_GATE = _load_waveshare_lcd147b_gate()
 _V060_PROFILE_GATE = _load_v060_profile_gate()
 _V060_PROFILE_GATE_SOURCE = Path(_V060_PROFILE_GATE.__file__).resolve(strict=True)
 _V060_PROFILE_GATE_SOURCE_SHA256 = hashlib.sha256(
     _V060_PROFILE_GATE_SOURCE.read_bytes()
 ).hexdigest()
+_V061_HARDENING_GATE: Any | None = None
+_V061_HARDENING_GATE_SOURCE = (
+    Path(__file__).resolve().parents[1]
+    / "qualification"
+    / "v061_hardening_release_gate.py"
+).resolve()
+_V061_HARDENING_GATE_SOURCE_SHA256: str | None = None
 
 
 class ReleaseError(RuntimeError):
@@ -104,8 +128,35 @@ V060_RELEASE_PROFILE_ORDER = (
     "esp32-c3-4mb",
     "rpi-pico2-w",
 )
-# The unqualified source-selected candidate is v0.6.0.  Source-era helpers
-# below retain the immutable v0.4.2 and v0.5.x orders explicitly.
+V5_RELEASE_CORES = ((0, 6, 0), (0, 6, 1))
+V061_HARDENING_VERSION = "0.6.1"
+V061_HARDENING_MEASUREMENT_CONTRACT = "v061-hardening-seven-scenario-v1"
+V061_HARDENING_SCENARIO_ORDER = (
+    "transport-session",
+    "fragment-hardening",
+    "run-isolation",
+    "resource-stability",
+    "stdin-isolation",
+    "configuration-durability",
+    "filesystem-hardening",
+)
+V061_HARDENING_WORKSPACE_ORDER = (
+    "erased-media-first-boot",
+    "nonblank-media-refusal",
+)
+V061_HARDENING_SUMMARY_FIELDS = (
+    "measurement_contract",
+    "scenario_order",
+    "scenarios",
+    "sequential_runs",
+    "workspace_provisioning",
+    "private_result_sha256",
+)
+V061_HARDENING_EXECUTABLE_RELATIVE = (
+    "tests/firmware_tests/hil/v061_hardening_bench.py"
+)
+# The unqualified source-selected candidate is v0.6.1. Source-era helpers below
+# retain the immutable v0.4.2, v0.5.x, and qualified v0.6.0 lineage explicitly.
 RELEASE_PROFILE_ORDER = V060_RELEASE_PROFILE_ORDER
 QUALIFICATION_POLICY_RELATIVE = "firmware/qualification/oi1-gates.json"
 QUALIFICATION_BASELINE_RE = re.compile(
@@ -227,6 +278,90 @@ RP2_LICENSE_AUDIT_ROLES = (
     "cyw43",
     "tinyusb",
     "arm-gnu-runtime",
+)
+RP2_BUILD_TOOLS_LICENSE_AUDIT_ROLE = "build-tools"
+_PICOTOOL_BUILD_TOOLS_POLICY_PATH = (
+    "firmware/licenses/rp2-build-tools-license-policy.json"
+)
+_PICOTOOL_ATTRIBUTION_PATH = (
+    "firmware/licenses/evidence/rp2/picotool/2.3.0/"
+    "distribution-attribution-v1.json"
+)
+_PICOTOOL_V061_ATTRIBUTION_SHA256 = (
+    "9d96bdff715a08582506220d3ba1e332cc3b86dd9eaa13e7d7169856734a6e88"
+)
+_PICOTOOL_V061_POLICY_SHA256 = (
+    "d0b5920297c78280d509b93cc0ab356839e8b2adfacaab42f352150390b645e9"
+)
+_PICOTOOL_LOCK_KEYS = {
+    "version",
+    "version_line",
+    "source_repo",
+    "source_ref",
+    "source_commit",
+    "distribution_repo",
+    "distribution_ref",
+    "distribution_commit",
+    "url",
+    "archive_filename",
+    "archive_bytes",
+    "archive_format",
+    "sha256",
+    "cmake_dir",
+    "executable_path",
+    "executable_sha256",
+    "cmake_config_path",
+    "cmake_config_sha256",
+    "bundled_libusb_path",
+    "bundled_libusb_sha256",
+}
+_PICOTOOL_V061_LOCK = {
+    "version": "2.3.0",
+    "version_line": (
+        "picotool v2.3.0 "
+        "(Darwin, AppleClang-15.0.0.15000309, Release)"
+    ),
+    "source_repo": "https://github.com/raspberrypi/picotool.git",
+    "source_ref": "2.3.0",
+    "source_commit": "6f6458d792b93685a11423b244a585eaa99eafcf",
+    "distribution_repo": "https://github.com/raspberrypi/pico-sdk-tools.git",
+    "distribution_ref": "v2.3.0-0",
+    "distribution_commit": "ad9e4a8375253cf4886bf168ea1a8d2746aadf24",
+    "url": (
+        "https://github.com/raspberrypi/pico-sdk-tools/releases/download/"
+        "v2.3.0-0/picotool-2.3.0-mac.zip"
+    ),
+    "archive_filename": "picotool-2.3.0-mac.zip",
+    "archive_bytes": 1_980_457,
+    "archive_format": "zip",
+    "sha256": "085ea99ccc2d64309e967a72e307fb113838713a46ba45bf7e156e519cca7d8e",
+    "cmake_dir": "picotool",
+    "executable_path": "picotool/picotool",
+    "executable_sha256": (
+        "a4b3c4e64dea7b99e810c5c777bf13fb2722b8d0355e0b64a28244ddc1b0f8b5"
+    ),
+    "cmake_config_path": "picotool/picotoolConfig.cmake",
+    "cmake_config_sha256": (
+        "ca12b6fee18e6583713cfdcb2e81886aaee741d40304ea2cc88c4f5b2df2b6c3"
+    ),
+    "bundled_libusb_path": "picotool/libusb-1.0.0.dylib",
+    "bundled_libusb_sha256": (
+        "b3d0c88bcb04fe61e4f56bc304a31fef56e19ee5ec2edaebd0fce44afb2b9237"
+    ),
+}
+_PICOTOOL_V061_MEMBERS = (
+    ("picotool/", "directory", "040755", 0, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"),
+    ("picotool/picotoolTargets-release.cmake", "regular", "100644", 767, "e40085002e565de850554e772c90f1a1c4cffb545f853eaa231b145e498f7c0f"),
+    ("picotool/picotoolConfigVersion.cmake", "regular", "100644", 2_303, "61485a18a59a186d7cb82ddf7686c5f1f4def81726568ae49fd0033db368f7e3"),
+    ("picotool/rp2350_otp_contents.json", "regular", "100644", 367_931, "1838713d5f94316c4c61558cb82d3346831235dc41f9b0f02151e6eda3f22fc2"),
+    ("picotool/libusb-1.0.0.dylib", "regular", "100444", 328_336, "b3d0c88bcb04fe61e4f56bc304a31fef56e19ee5ec2edaebd0fce44afb2b9237"),
+    ("picotool/enc_bootloader_mbedtls.elf", "regular", "100644", 29_484, "c5d17fcbb4f1ee41751dc782d86c1fc6629d8da3484e1a1cadc3ba4bec4d6044"),
+    ("picotool/picotoolTargets.cmake", "regular", "100644", 3_856, "043655d4bc215fb3a05d4a04f92cabc0be9bbdb0834717b0211e80106b4d1aae"),
+    ("picotool/picotoolConfig.cmake", "regular", "100644", 96, "ca12b6fee18e6583713cfdcb2e81886aaee741d40304ea2cc88c4f5b2df2b6c3"),
+    ("picotool/xip_ram_perms.elf", "regular", "100644", 34_004, "afac0e166ee9b632f84717c7db02e7e5e648f03a51cc4795938adcd282c6103b"),
+    ("picotool/picotool", "regular", "100755", 5_673_800, "a4b3c4e64dea7b99e810c5c777bf13fb2722b8d0355e0b64a28244ddc1b0f8b5"),
+    ("picotool/enc_bootloader.elf", "regular", "100644", 20_104, "9ce3c424d61226225d2c1f5b80a8854f15174b09dd447e58e4439240b274fb3d"),
+    (".keep", "regular", "100644", 0, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"),
 )
 _RP2_LICENSE_POLICY_KEYS = {
     "schema_version",
@@ -618,6 +753,7 @@ _AUDIT_MAIN_METADATA_HEADERS = (
     "root_pointers.h",
 )
 _AUDIT_PYBLE_C_SOURCES = (
+    "pble_wire.c",
     "pble_proto.c",
     "pble_ble.c",
     "pble_info.c",
@@ -861,6 +997,17 @@ def _exact_keys(value: Any, expected: set[str], label: str) -> dict[str, Any]:
         % (label, sorted(expected - actual), sorted(actual - expected)),
     )
     return value
+
+
+def _validate_v061_picotool_lock(value: Any, label: str) -> dict[str, Any]:
+    """Require the exact source- and distribution-pinned v0.6.1 tool record."""
+
+    record = _exact_keys(value, _PICOTOOL_LOCK_KEYS, label)
+    _require(
+        record == _PICOTOOL_V061_LOCK,
+        "%s differs from the frozen v0.6.1 picotool distribution" % label,
+    )
+    return copy.deepcopy(record)
 
 
 def _git_output(checkout: Path, label: str, *args: str) -> str:
@@ -1745,6 +1892,7 @@ def _validate_rp2_build_provenance(
     *,
     firmware_bin_bytes: int,
     repo_root: Path | None = None,
+    firmware_version: str | None = None,
 ) -> dict[str, Any]:
     """Validate the RP2-specific build attestation without inventing IDF facts."""
 
@@ -1817,12 +1965,25 @@ def _validate_rp2_build_provenance(
             and PLACEHOLDER_RE.fullmatch(arm[key].strip()) is None,
             "%s ARM GNU %s identity is missing" % (target, key),
         )
-    _require(
-        isinstance(record["picotool"], str)
-        and re.match(r"^picotool v[0-9]+(?:\.[0-9]+){2}\b", record["picotool"])
-        is not None,
-        "%s picotool version is missing or invalid" % target,
+    strict_picotool = (
+        firmware_version is not None
+        and _firmware_release_core(firmware_version, "firmware source version")
+        == (0, 6, 1)
     )
+    if strict_picotool:
+        _require(
+            record["picotool"] == _PICOTOOL_V061_LOCK["version_line"],
+            "%s picotool version differs from the frozen v0.6.1 line" % target,
+        )
+    else:
+        _require(
+            isinstance(record["picotool"], str)
+            and re.match(
+                r"^picotool v[0-9]+(?:\.[0-9]+){2}\b", record["picotool"]
+            )
+            is not None,
+            "%s picotool version is missing or invalid" % target,
+        )
     _require(
         type(record["firmware_bin_bytes"]) is int
         and record["firmware_bin_bytes"] == firmware_bin_bytes,
@@ -1832,6 +1993,15 @@ def _validate_rp2_build_provenance(
     if repo_root is not None:
         root = Path(repo_root)
         lock = _read_lock(root)
+        if strict_picotool:
+            picotool_lock = lock.get("picotool")
+            _require(
+                isinstance(picotool_lock, dict)
+                and picotool_lock.get("version_line")
+                == _PICOTOOL_V061_LOCK["version_line"]
+                and record["picotool"] == picotool_lock["version_line"],
+                "%s picotool provenance disagrees with versions.lock" % target,
+            )
         _require(
             micropython["commit"] == lock["micropython"]["commit"],
             "%s MicroPython provenance disagrees with versions.lock" % target,
@@ -1948,6 +2118,8 @@ def validate_rp2_build(
     target: str,
     build_dir: Path,
     repo_root: Path | None = None,
+    *,
+    firmware_version: str | None = None,
 ) -> dict[str, Any]:
     """Validate one RP2 build without routing it through ESP-IDF semantics."""
 
@@ -2006,6 +2178,7 @@ def validate_rp2_build(
         target,
         firmware_bin_bytes=len(raw_image),
         repo_root=repo_root,
+        firmware_version=firmware_version,
     )
     return {
         "profile_id": profile_id,
@@ -2017,6 +2190,29 @@ def validate_rp2_build(
         "firmware_image_headroom_bytes": spec["image_limit_bytes"]
         - len(raw_image),
     }
+
+
+def _validate_rp2_build_for_firmware_version(
+    target: str,
+    build_dir: Path,
+    *,
+    repo_root: Path | None,
+    firmware_version: str | None,
+) -> dict[str, Any]:
+    """Route strict v0.6.1 provenance without changing v0.6.0 call shape."""
+
+    if (
+        firmware_version is not None
+        and _firmware_release_core(firmware_version, "firmware source version")
+        == (0, 6, 1)
+    ):
+        return validate_rp2_build(
+            target,
+            build_dir,
+            repo_root=repo_root,
+            firmware_version=firmware_version,
+        )
+    return validate_rp2_build(target, build_dir, repo_root=repo_root)
 
 
 def compare_build_roots(
@@ -2079,10 +2275,11 @@ def compare_build_roots(
     if include_rp2:
         for root in (left_root, right_root):
             validated.append(
-                validate_rp2_build(
+                _validate_rp2_build_for_firmware_version(
                     "rpi-pico2-w",
                     root / "rpi-pico2-w",
                     repo_root=repo_root,
+                    firmware_version=firmware_version,
                 )
             )
     _require_one_build_source_identity(validated)
@@ -3219,7 +3416,11 @@ def _audit_artifact_requirements(artifact: dict[str, Any]) -> list[str]:
     return value
 
 
-def _audit_load_tool_lock(repo_root: Path) -> dict[str, Any]:
+def _audit_load_tool_lock(
+    repo_root: Path,
+    *,
+    firmware_version: str | None = None,
+) -> dict[str, Any]:
     path = repo_root / "firmware" / "release-tools.lock"
     try:
         with path.open("rb") as handle:
@@ -3362,34 +3563,101 @@ def _audit_load_tool_lock(repo_root: Path) -> dict[str, Any]:
         "executed-artifact receipts require one selected artifact per package",
     )
 
-    input_keys = {
+    base_input_keys = {
         "excluded_cves_path",
         "excluded_cves_sha256",
         "license_policy_path",
         "license_policy_sha256",
     }
-    versions_path = Path(repo_root) / "firmware" / "versions.lock"
-    has_rp2_binding = any(
-        key.startswith("rp2_license_policy_")
-        for key in lock["inputs"]
+    rp2_input_keys = {
+        "rp2_license_policy_path",
+        "rp2_license_policy_sha256",
+    }
+    rp2_build_tools_input_keys = {
+        "rp2_build_tools_license_policy_path",
+        "rp2_build_tools_license_policy_sha256",
+    }
+    raw_inputs = lock["inputs"]
+    _require(
+        isinstance(raw_inputs, dict),
+        "release-tools.lock [inputs] must be a table",
     )
-    if versions_path.is_file():
-        source_version = _read_lock(Path(repo_root))["pyble"]["agent_version"]
-        has_rp2_binding = has_rp2_binding or tuple(
-            _release_profile_order_for_version(source_version)
-        ) == V060_RELEASE_PROFILE_ORDER
-    if has_rp2_binding:
-        input_keys.update(
-            {"rp2_license_policy_path", "rp2_license_policy_sha256"}
+    raw_input_keys = set(raw_inputs)
+    all_input_keys = (
+        base_input_keys | rp2_input_keys | rp2_build_tools_input_keys
+    )
+    _require(
+        base_input_keys <= raw_input_keys <= all_input_keys,
+        "release-tools.lock [inputs] contains an unknown or incomplete schema",
+    )
+    for optional_keys, label in (
+        (rp2_input_keys, "RP2 policy"),
+        (rp2_build_tools_input_keys, "RP2 build-tools policy"),
+    ):
+        present = raw_input_keys & optional_keys
+        _require(
+            not present or present == optional_keys,
+            "release-tools.lock [inputs] has an incomplete %s binding" % label,
         )
-    inputs = _exact_keys(
-        lock["inputs"],
-        input_keys,
-        "release-tools.lock [inputs]",
+
+    if firmware_version is None:
+        versions_path = Path(repo_root) / "firmware" / "versions.lock"
+        if versions_path.is_file():
+            selected_version = _read_lock(Path(repo_root))["pyble"][
+                "agent_version"
+            ]
+            has_rp2_binding = tuple(
+                _release_profile_order_for_version(selected_version)
+            ) == V060_RELEASE_PROFILE_ORDER
+            has_rp2_build_tools_binding = (
+                _firmware_release_core(
+                    selected_version,
+                    "firmware source version",
+                )
+                == (0, 6, 1)
+            )
+        else:
+            has_rp2_binding = rp2_input_keys <= raw_input_keys
+            has_rp2_build_tools_binding = (
+                rp2_build_tools_input_keys <= raw_input_keys
+            )
+    else:
+        # Candidate replay must never borrow version authority from the
+        # validator checkout.  A newer checkout may carry additional locked
+        # inputs, but they are neither opened nor returned for an older
+        # candidate.
+        has_rp2_binding = tuple(
+            _release_profile_order_for_version(firmware_version)
+        ) == V060_RELEASE_PROFILE_ORDER
+        has_rp2_build_tools_binding = (
+            _firmware_release_core(
+                firmware_version,
+                "candidate firmware version",
+            )
+            == (0, 6, 1)
+        )
+
+    input_keys = set(base_input_keys)
+    if has_rp2_binding:
+        input_keys.update(rp2_input_keys)
+    if has_rp2_build_tools_binding:
+        input_keys.update(rp2_build_tools_input_keys)
+    _require(
+        input_keys <= raw_input_keys,
+        "release-tools.lock lacks candidate-version policy bindings",
     )
+    if firmware_version is None:
+        _require(
+            raw_input_keys == input_keys,
+            "release-tools.lock [inputs] differs from the source-version schema",
+        )
+    inputs = {key: raw_inputs[key] for key in sorted(input_keys)}
+    lock["inputs"] = inputs
     prefixes = ["excluded_cves", "license_policy"]
     if has_rp2_binding:
         prefixes.append("rp2_license_policy")
+    if has_rp2_build_tools_binding:
+        prefixes.append("rp2_build_tools_license_policy")
     for prefix in prefixes:
         relative = inputs.get("%s_path" % prefix)
         expected_hash = inputs.get("%s_sha256" % prefix)
@@ -8039,6 +8307,1686 @@ def _audit_load_rp2_license_policy(
     )
 
 
+def _picotool_v061_member_inventory() -> list[dict[str, Any]]:
+    return [
+        {
+            "path": path,
+            "kind": kind,
+            "mode": mode,
+            "bytes": byte_count,
+            "sha256": digest,
+        }
+        for path, kind, mode, byte_count, digest in _PICOTOOL_V061_MEMBERS
+    ]
+
+
+def _audit_validate_picotool_attribution(
+    value: Any,
+    *,
+    repo_root: Path,
+    build_root: Path,
+    picotool_lock: dict[str, Any],
+    member_inventory: list[dict[str, Any]],
+) -> set[tuple[str, str]]:
+    """Validate the complete, reviewed picotool attribution manifest."""
+
+    _require(isinstance(value, dict), "picotool attribution must be an object")
+    referenced_assets: set[tuple[str, str]] = set()
+    attribution = _exact_keys(
+        value,
+        {
+            "schema_version",
+            "archive",
+            "archive_members",
+            "components",
+            "distribution_provenance",
+            "libusb_binary_provenance",
+            "source",
+        },
+        "picotool distribution attribution",
+    )
+    _require(
+        type(attribution["schema_version"]) is int
+        and attribution["schema_version"] == 1,
+        "picotool attribution schema_version must be the exact integer 1",
+    )
+    archive = _exact_keys(
+        attribution["archive"],
+        {"asset_created_at", "asset_id", "bytes", "filename", "sha256", "url"},
+        "picotool attribution archive",
+    )
+    _require(
+        type(archive["asset_id"]) is int
+        and archive["asset_id"] == 465_646_274
+        and archive["asset_created_at"] == "2026-07-03T17:55:20Z"
+        and archive["bytes"] == picotool_lock["archive_bytes"]
+        and type(archive["bytes"]) is int
+        and archive["filename"] == picotool_lock["archive_filename"]
+        and archive["sha256"] == picotool_lock["sha256"]
+        and archive["url"] == picotool_lock["url"],
+        "picotool attribution archive identity changed",
+    )
+    _require(
+        attribution["archive_members"] == member_inventory,
+        "picotool attribution member inventory changed",
+    )
+    source = _exact_keys(
+        attribution["source"],
+        {"repo", "ref", "commit"},
+        "picotool attribution source",
+    )
+    _require(
+        source
+        == {
+            "repo": picotool_lock["source_repo"],
+            "ref": picotool_lock["source_ref"],
+            "commit": picotool_lock["source_commit"],
+        },
+        "picotool attribution source identity changed",
+    )
+    distribution = _exact_keys(
+        attribution["distribution_provenance"],
+        {"repo", "ref", "commit", "copyright", "license", "notice", "ownership"},
+        "picotool packaging provenance",
+    )
+    _require(
+        distribution["repo"] == picotool_lock["distribution_repo"]
+        and distribution["ref"] == picotool_lock["distribution_ref"]
+        and distribution["commit"] == picotool_lock["distribution_commit"]
+        and distribution["copyright"] is None
+        and distribution["notice"] is None
+        and distribution["ownership"] == "packaging-provenance-only",
+        "picotool packaging provenance changed",
+    )
+
+    def validate_asset(raw: Any, label: str) -> tuple[str, str]:
+        record = _exact_keys(raw, {"path", "sha256"}, label)
+        logical, path = _audit_rp2_logical_file(
+            record["path"],
+            repo_root=repo_root,
+            build_root=build_root,
+            label=label,
+        )
+        digest = _audit_v060_digest(record["sha256"], "%s digest" % label)
+        _require(_sha256_path(path) == digest, "%s changed" % label)
+        identity = (logical, digest)
+        referenced_assets.add(identity)
+        return identity
+
+    packaging_license = _exact_keys(
+        distribution["license"],
+        {"identifier", "path", "sha256"},
+        "picotool packaging license",
+    )
+    _require(
+        packaging_license["identifier"] == "Apache-2.0",
+        "picotool packaging license selection changed",
+    )
+    validate_asset(
+        {"path": packaging_license["path"], "sha256": packaging_license["sha256"]},
+        "picotool packaging license",
+    )
+
+    expected_components = (
+        ("picotool", "BSD-3-Clause"),
+        ("pico-sdk", "BSD-3-Clause"),
+        ("mbedtls", "Apache-2.0"),
+        ("clipp", "MIT"),
+        ("nlohmann-json", "MIT"),
+        ("littlefs", "BSD-3-Clause"),
+        ("oofatfs", "LicenseRef-PyBLE-ooFatFs-R0.13c"),
+        ("whereami", "MIT"),
+        ("cmake-package-scripts", "LicenseRef-PyBLE-CMake-Package-Scripts"),
+        ("libusb", "LGPL-2.1-or-later"),
+    )
+    components = attribution["components"]
+    _require(
+        isinstance(components, list)
+        and len(components) == len(expected_components),
+        "picotool component attribution coverage changed",
+    )
+    for index, ((expected_id, expected_selected), raw_component) in enumerate(
+        zip(expected_components, components)
+    ):
+        component = _exact_keys(
+            raw_component,
+            {
+                "id",
+                "copyright",
+                "exact_source_identity",
+                "license_files",
+                "review_note",
+                "selected_spdx_expression",
+                "source_spdx_expression",
+            },
+            "picotool component attribution %d" % index,
+        )
+        _require(
+            component["id"] == expected_id
+            and component["selected_spdx_expression"] == expected_selected
+            and isinstance(component["source_spdx_expression"], str)
+            and bool(component["source_spdx_expression"])
+            and isinstance(component["copyright"], str)
+            and bool(component["copyright"])
+            and isinstance(component["review_note"], str)
+            and bool(component["review_note"])
+            and isinstance(component["exact_source_identity"], dict)
+            and bool(component["exact_source_identity"]),
+            "picotool component attribution changed for %s" % expected_id,
+        )
+        license_files = component["license_files"]
+        _require(
+            isinstance(license_files, list) and bool(license_files),
+            "picotool component %s lacks complete license evidence" % expected_id,
+        )
+        for asset_index, asset in enumerate(license_files):
+            validate_asset(
+                asset,
+                "picotool component %s license %d" % (expected_id, asset_index),
+            )
+
+    libusb = _exact_keys(
+        attribution["libusb_binary_provenance"],
+        {
+            "binary_runtime_version",
+            "binary_sha256",
+            "evidence_files",
+            "formula_commit",
+            "source_archive",
+        },
+        "picotool bundled libusb provenance",
+    )
+    _require(
+        libusb["binary_runtime_version"] == "1.0.30.12037"
+        and libusb["binary_sha256"] == picotool_lock["bundled_libusb_sha256"]
+        and libusb["formula_commit"]
+        == "889a613d996eec7ff15837e38ab4b81c47cfe63e",
+        "picotool bundled libusb binary identity changed",
+    )
+    source_archive = _exact_keys(
+        libusb["source_archive"],
+        {"url", "bytes", "sha256"},
+        "picotool bundled libusb source archive",
+    )
+    _require(
+        source_archive
+        == {
+            "url": (
+                "https://github.com/libusb/libusb/releases/download/"
+                "v1.0.30/libusb-1.0.30.tar.bz2"
+            ),
+            "bytes": 656_112,
+            "sha256": (
+                "fea36f34f9156400209595e300840767ab1a385ede1dc7ee893015aea9c6dbaf"
+            ),
+        },
+        "picotool bundled libusb source archive changed",
+    )
+    evidence_files = libusb["evidence_files"]
+    _require(
+        isinstance(evidence_files, list) and len(evidence_files) == 5,
+        "picotool bundled libusb evidence coverage changed",
+    )
+    for index, asset in enumerate(evidence_files):
+        validate_asset(asset, "picotool bundled libusb evidence %d" % index)
+    return referenced_assets
+
+
+def _audit_validate_rp2_build_tools_license_policy(
+    value: Any,
+    *,
+    repo_root: Path,
+    build_root: Path,
+    picotool_lock: dict[str, Any],
+) -> dict[str, Any]:
+    """Validate the independent, nonredistributed v0.6.1 picotool policy."""
+
+    root = Path(repo_root)
+    builds = Path(build_root)
+    lock = _validate_v061_picotool_lock(
+        picotool_lock,
+        "v0.6.1 picotool lock",
+    )
+    policy = _exact_keys(
+        value,
+        {
+            "schema_version",
+            "profile_id",
+            "target",
+            "distribution_provenance",
+            "source_owners",
+            "nonsoftware_members",
+        },
+        "RP2 build-tools license policy",
+    )
+    _require(
+        type(policy["schema_version"]) is int
+        and policy["schema_version"] == 1,
+        "RP2 build-tools policy schema_version must be the exact integer 1",
+    )
+    _require(
+        policy["profile_id"] == "rpi-pico2-w"
+        and policy["target"] == "rpi-pico2-w",
+        "RP2 build-tools policy identity is substituted",
+    )
+    provenance = _exact_keys(
+        policy["distribution_provenance"],
+        {
+            "picotool_lock",
+            "retained_archive",
+            "member_inventory",
+            "runtime_version_line",
+            "source",
+            "distribution",
+            "attribution",
+        },
+        "RP2 build-tools distribution provenance",
+    )
+    _require(
+        provenance["picotool_lock"] == lock,
+        "RP2 build-tools policy lock copy changed",
+    )
+    retained = _exact_keys(
+        provenance["retained_archive"],
+        {"path", "bytes", "sha256"},
+        "RP2 build-tools retained archive",
+    )
+    _require(
+        retained
+        == {
+            "path": (
+                "firmware/.picotool/.pyble-dist/" + lock["archive_filename"]
+            ),
+            "bytes": lock["archive_bytes"],
+            "sha256": lock["sha256"],
+        }
+        and type(retained["bytes"]) is int,
+        "RP2 build-tools retained archive identity changed",
+    )
+    expected_members = _picotool_v061_member_inventory()
+    members = provenance["member_inventory"]
+    _require(
+        isinstance(members, list) and len(members) == len(expected_members),
+        "RP2 build-tools member inventory coverage changed",
+    )
+    normalized_members: list[dict[str, Any]] = []
+    for index, raw_member in enumerate(members):
+        member = _exact_keys(
+            raw_member,
+            {"path", "kind", "mode", "bytes", "sha256"},
+            "RP2 build-tools member %d" % index,
+        )
+        _require(
+            type(member["bytes"]) is int
+            and member["bytes"] >= 0
+            and isinstance(member["sha256"], str)
+            and SHA256_RE.fullmatch(member["sha256"]) is not None,
+            "RP2 build-tools member %d has invalid byte identity" % index,
+        )
+        normalized_members.append(copy.deepcopy(member))
+    _require(
+        normalized_members == expected_members,
+        "RP2 build-tools member inventory differs from the frozen archive",
+    )
+    _require(
+        provenance["runtime_version_line"] == lock["version_line"],
+        "RP2 build-tools runtime version changed",
+    )
+    for key, prefix in (("source", "source"), ("distribution", "distribution")):
+        identity = _exact_keys(
+            provenance[key],
+            {"repo", "ref", "commit"},
+            "RP2 build-tools %s identity" % key,
+        )
+        _require(
+            identity
+            == {
+                "repo": lock["%s_repo" % prefix],
+                "ref": lock["%s_ref" % prefix],
+                "commit": lock["%s_commit" % prefix],
+            },
+            "RP2 build-tools %s identity changed" % key,
+        )
+    attribution_record = _exact_keys(
+        provenance["attribution"],
+        {"path", "sha256"},
+        "RP2 build-tools attribution binding",
+    )
+    _require(
+        attribution_record["path"] == _PICOTOOL_ATTRIBUTION_PATH,
+        "RP2 build-tools attribution path changed",
+    )
+    attribution_logical, attribution_path = _audit_rp2_logical_file(
+        attribution_record["path"],
+        repo_root=root,
+        build_root=builds,
+        label="RP2 build-tools attribution",
+    )
+    attribution_digest = _audit_v060_digest(
+        attribution_record["sha256"],
+        "RP2 build-tools attribution digest",
+    )
+    attribution_raw = _read_regular_file_bytes(
+        attribution_path,
+        "RP2 build-tools attribution",
+    )
+    _require(
+        _sha256_bytes(attribution_raw) == attribution_digest,
+        "RP2 build-tools attribution changed",
+    )
+    try:
+        attribution = json.loads(attribution_raw.decode("utf-8", errors="strict"))
+    except (UnicodeError, TypeError, ValueError) as exc:
+        raise ReleaseError("RP2 build-tools attribution is invalid JSON") from exc
+    _require(
+        attribution_raw == _canonical_json_bytes(attribution),
+        "RP2 build-tools attribution is not canonical JSON",
+    )
+    production_attribution_keys = {
+        "schema_version",
+        "archive",
+        "archive_members",
+        "components",
+        "distribution_provenance",
+        "libusb_binary_provenance",
+        "source",
+    }
+    _require(
+        set(attribution) == production_attribution_keys,
+        "RP2 build-tools attribution is not the complete reviewed schema",
+    )
+    _require(
+        attribution_digest == _PICOTOOL_V061_ATTRIBUTION_SHA256
+        and _sha256_bytes(_canonical_json_bytes(policy))
+        == _PICOTOOL_V061_POLICY_SHA256,
+        "RP2 build-tools reviewed policy/provenance bytes changed",
+    )
+    attribution_assets = _audit_validate_picotool_attribution(
+        attribution,
+        repo_root=root,
+        build_root=builds,
+        picotool_lock=lock,
+        member_inventory=expected_members,
+    )
+
+    raw_owners = policy["source_owners"]
+    _require(
+        isinstance(raw_owners, list) and len(raw_owners) == 2,
+        "RP2 build-tools policy must contain exactly two owners",
+    )
+    owner_contract = {
+        "picotool-composite-build-tool": {
+            "source_ref": "picotool-2.3.0-composite-v1",
+            "source_url": lock["source_repo"],
+            "expression": "LicenseRef-PyBLE-Picotool-2.3.0-Composite",
+            "roots": sorted(
+                item["path"]
+                for item in expected_members
+                if item["kind"] == "regular"
+                and item["path"]
+                not in {".keep", lock["bundled_libusb_path"]}
+            ),
+        },
+        "picotool-libusb-build-tool": {
+            "source_ref": (
+                "v1.0.30@87a55632db62c9bdc58cd31d3ccfa673f1bb017f"
+            ),
+            "source_url": "https://github.com/libusb/libusb.git",
+            "expression": "LGPL-2.1-or-later",
+            "roots": [lock["bundled_libusb_path"]],
+        },
+    }
+    _require(
+        [owner.get("id") for owner in raw_owners]
+        == sorted(owner_contract),
+        "RP2 build-tools owners are missing, substituted, or reordered",
+    )
+    normalized_owners: list[dict[str, Any]] = []
+    owned_members: set[str] = set()
+    policy_assets: set[tuple[str, str]] = {
+        (attribution_logical, attribution_digest)
+    }
+    for index, raw_owner in enumerate(raw_owners):
+        owner = _exact_keys(
+            raw_owner,
+            _RP2_LICENSE_OWNER_V2_KEYS,
+            "RP2 build-tools owner %d" % index,
+        )
+        identifier = owner["id"]
+        contract = owner_contract[identifier]
+        _require(
+            owner["component_kind"] == "build-tool"
+            and owner["disposition"] == "allow"
+            and owner["source_ref"] == contract["source_ref"]
+            and owner["source_url"] == contract["source_url"]
+            and owner["source_spdx_expression"] == contract["expression"]
+            and owner["selected_spdx_expression"] == contract["expression"]
+            and isinstance(owner["copyright"], str)
+            and bool(owner["copyright"])
+            and owner["copyright"] == owner["copyright"].strip(),
+            "RP2 build-tools owner contract changed for %s" % identifier,
+        )
+        roots = owner["source_roots"]
+        _require(
+            isinstance(roots, list) and bool(roots),
+            "RP2 build-tools owner %s lacks source roots" % identifier,
+        )
+        normalized_roots: list[dict[str, str]] = []
+        for root_index, raw_source_root in enumerate(roots):
+            source_root = _exact_keys(
+                raw_source_root,
+                {"namespace", "path"},
+                "RP2 build-tools owner %s root %d" % (identifier, root_index),
+            )
+            path = _safe_relative_path(
+                source_root["path"],
+                "RP2 build-tools owner %s root" % identifier,
+            )
+            _require(
+                source_root["namespace"] == "picotool-distribution"
+                and path not in owned_members,
+                "RP2 build-tools source root is invalid or ambiguous",
+            )
+            owned_members.add(path)
+            normalized_roots.append(
+                {"namespace": "picotool-distribution", "path": path}
+            )
+        _require(
+            [item["path"] for item in normalized_roots] == contract["roots"],
+            "RP2 build-tools source roots changed for %s" % identifier,
+        )
+
+        expected_license_identifier = contract["expression"]
+        license_texts = owner["license_texts"]
+        _require(
+            isinstance(license_texts, list) and len(license_texts) == 1,
+            "RP2 build-tools owner %s must bind one complete license" % identifier,
+        )
+        raw_license = _exact_keys(
+            license_texts[0],
+            {"identifier", "path", "sha256"},
+            "RP2 build-tools owner %s license" % identifier,
+        )
+        _require(
+            raw_license["identifier"] == expected_license_identifier,
+            "RP2 build-tools owner %s license identifier changed" % identifier,
+        )
+        license_logical, license_path = _audit_rp2_logical_file(
+            raw_license["path"],
+            repo_root=root,
+            build_root=builds,
+            label="RP2 build-tools owner %s license" % identifier,
+        )
+        license_digest = _audit_v060_digest(
+            raw_license["sha256"],
+            "RP2 build-tools owner %s license digest" % identifier,
+        )
+        _require(
+            _sha256_path(license_path) == license_digest,
+            "RP2 build-tools owner %s license changed" % identifier,
+        )
+        normalized_licenses = [
+            {
+                "identifier": expected_license_identifier,
+                "path": license_logical,
+                "sha256": license_digest,
+            }
+        ]
+        policy_assets.add((license_logical, license_digest))
+
+        notices = owner["notice_files"]
+        _require(
+            isinstance(notices, list) and bool(notices),
+            "RP2 build-tools owner %s lacks attribution evidence" % identifier,
+        )
+        normalized_notices: list[dict[str, str]] = []
+        seen_notice_paths: set[str] = set()
+        for notice_index, raw_notice in enumerate(notices):
+            notice = _exact_keys(
+                raw_notice,
+                {"path", "sha256"},
+                "RP2 build-tools owner %s notice %d"
+                % (identifier, notice_index),
+            )
+            logical, notice_path = _audit_rp2_logical_file(
+                notice["path"],
+                repo_root=root,
+                build_root=builds,
+                label="RP2 build-tools owner %s notice" % identifier,
+            )
+            digest = _audit_v060_digest(
+                notice["sha256"],
+                "RP2 build-tools owner %s notice digest" % identifier,
+            )
+            _require(
+                logical not in seen_notice_paths
+                and _sha256_path(notice_path) == digest,
+                "RP2 build-tools owner %s notice is duplicated or changed"
+                % identifier,
+            )
+            seen_notice_paths.add(logical)
+            normalized_notices.append({"path": logical, "sha256": digest})
+            policy_assets.add((logical, digest))
+        _require(
+            normalized_notices
+            == sorted(normalized_notices, key=lambda item: item["path"]),
+            "RP2 build-tools owner %s notices are not canonical" % identifier,
+        )
+        normalized_owners.append(
+            {
+                "id": identifier,
+                "source_roots": normalized_roots,
+                "source_ref": owner["source_ref"],
+                "source_url": owner["source_url"],
+                "source_spdx_expression": owner["source_spdx_expression"],
+                "selected_spdx_expression": owner["selected_spdx_expression"],
+                "copyright": owner["copyright"],
+                "license_texts": normalized_licenses,
+                "notice_files": normalized_notices,
+                "disposition": "allow",
+                "component_kind": "build-tool",
+            }
+        )
+    expected_software = {
+        item["path"]
+        for item in expected_members
+        if item["kind"] == "regular" and item["path"] != ".keep"
+    }
+    _require(
+        owned_members == expected_software,
+        "RP2 build-tools policy does not own every software member exactly once",
+    )
+    # Packaging provenance is deliberately not a payload owner.  Its exact
+    # license byte and every component evidence byte are validated above and
+    # are added independently to the private observer receipt.
+    policy_assets.update(attribution_assets)
+
+    raw_nonsoftware = policy["nonsoftware_members"]
+    expected_nonsoftware = [
+        {**item, "classification": "packaging-metadata"}
+        for item in sorted(expected_members, key=lambda item: item["path"])
+        if item["path"] in {".keep", "picotool/"}
+    ]
+    _require(
+        isinstance(raw_nonsoftware, list)
+        and raw_nonsoftware == expected_nonsoftware,
+        "RP2 build-tools nonsoftware member classification changed",
+    )
+    for index, record in enumerate(raw_nonsoftware):
+        _exact_keys(
+            record,
+            {"path", "kind", "mode", "bytes", "sha256", "classification"},
+            "RP2 build-tools nonsoftware member %d" % index,
+        )
+        _require(
+            type(record["bytes"]) is int,
+            "RP2 build-tools nonsoftware byte count must be an exact integer",
+        )
+    return {
+        "schema_version": 1,
+        "profile_id": "rpi-pico2-w",
+        "target": "rpi-pico2-w",
+        "distribution_provenance": {
+            "picotool_lock": copy.deepcopy(lock),
+            "retained_archive": copy.deepcopy(retained),
+            "member_inventory": expected_members,
+            "runtime_version_line": provenance["runtime_version_line"],
+            "source": copy.deepcopy(provenance["source"]),
+            "distribution": copy.deepcopy(provenance["distribution"]),
+            "attribution": {
+                "path": attribution_logical,
+                "sha256": attribution_digest,
+            },
+        },
+        "source_owners": normalized_owners,
+        "nonsoftware_members": copy.deepcopy(expected_nonsoftware),
+    }
+
+
+def _audit_load_rp2_build_tools_license_policy(
+    repo_root: Path,
+    build_root: Path,
+    lock: dict[str, Any],
+) -> dict[str, Any]:
+    """Load the separately locked v0.6.1-only picotool policy."""
+
+    inputs = lock.get("inputs")
+    _require(isinstance(inputs, dict), "release tool lock inputs are missing")
+    relative = inputs.get("rp2_build_tools_license_policy_path")
+    expected_hash = inputs.get("rp2_build_tools_license_policy_sha256")
+    _require(
+        relative == _PICOTOOL_BUILD_TOOLS_POLICY_PATH
+        and isinstance(expected_hash, str)
+        and SHA256_RE.fullmatch(expected_hash) is not None,
+        "release tool lock lacks the RP2 build-tools policy binding",
+    )
+    path = _audit_repo_file(
+        Path(repo_root),
+        relative,
+        "RP2 build-tools license policy",
+    )
+    raw = _read_regular_file_bytes(path, "RP2 build-tools license policy")
+    try:
+        value = json.loads(raw.decode("utf-8", errors="strict"))
+    except (UnicodeError, TypeError, ValueError) as exc:
+        raise ReleaseError("RP2 build-tools policy is invalid JSON") from exc
+    _require(
+        raw == _canonical_json_bytes(value),
+        "RP2 build-tools policy is not canonical JSON",
+    )
+    _require(
+        _sha256_bytes(raw) == expected_hash,
+        "RP2 build-tools policy differs from release-tools.lock",
+    )
+    versions = _read_lock(Path(repo_root))
+    picotool_lock = _validate_v061_picotool_lock(
+        versions.get("picotool"),
+        "versions.lock [picotool]",
+    )
+    return _audit_validate_rp2_build_tools_license_policy(
+        value,
+        repo_root=Path(repo_root),
+        build_root=Path(build_root),
+        picotool_lock=picotool_lock,
+    )
+
+
+def _audit_picotool_policy_input_hashes(
+    *,
+    policy: dict[str, Any],
+    repo_root: Path,
+    build_root: Path,
+) -> dict[str, str]:
+    """Return every reviewed policy/provenance/license byte by logical path."""
+
+    root = Path(repo_root)
+    builds = Path(build_root)
+    result: dict[str, str] = {}
+
+    def add(raw_path: str, raw_digest: str, label: str) -> None:
+        logical, path = _audit_rp2_logical_file(
+            raw_path,
+            repo_root=root,
+            build_root=builds,
+            label=label,
+        )
+        persisted = _audit_rp2_policy_asset_logical(logical)
+        digest = _audit_v060_digest(raw_digest, "%s digest" % label)
+        _require(_sha256_path(path) == digest, "%s changed" % label)
+        previous = result.setdefault(persisted, digest)
+        _require(previous == digest, "%s has inconsistent digests" % label)
+
+    policy_path = _audit_repo_file(
+        root,
+        _PICOTOOL_BUILD_TOOLS_POLICY_PATH,
+        "RP2 build-tools policy input",
+    )
+    result["repo/" + _PICOTOOL_BUILD_TOOLS_POLICY_PATH] = _sha256_path(
+        policy_path
+    )
+    attribution_record = policy["distribution_provenance"]["attribution"]
+    add(
+        attribution_record["path"],
+        attribution_record["sha256"],
+        "RP2 build-tools attribution input",
+    )
+    for owner in policy["source_owners"]:
+        for record in (*owner["license_texts"], *owner["notice_files"]):
+            add(
+                record["path"],
+                record["sha256"],
+                "RP2 build-tools owner asset",
+            )
+
+    attribution_path = _audit_repo_file(
+        root,
+        attribution_record["path"],
+        "RP2 build-tools attribution input",
+    )
+    attribution = _read_json(attribution_path, "RP2 build-tools attribution input")
+
+    def walk(value: Any) -> None:
+        if isinstance(value, dict):
+            if (
+                set(value) >= {"path", "sha256"}
+                and isinstance(value.get("path"), str)
+                and value["path"].startswith(("firmware/", "repo/", "build/"))
+                and isinstance(value.get("sha256"), str)
+            ):
+                add(
+                    value["path"],
+                    value["sha256"],
+                    "RP2 build-tools nested attribution asset",
+                )
+            for nested in value.values():
+                walk(nested)
+        elif isinstance(value, list):
+            for nested in value:
+                walk(nested)
+
+    walk(attribution)
+    return dict(sorted(result.items()))
+
+
+def _audit_picotool_archive_inventory(
+    archive_path: Path,
+    expected_members: list[dict[str, Any]],
+    *,
+    expected_bytes: int,
+    expected_sha256: str,
+) -> dict[str, bytes]:
+    """Reopen the retained ZIP and return exact regular member payloads."""
+
+    try:
+        archive_stat = archive_path.lstat()
+        archive_bytes = _audit_stable_regular_file_bytes(
+            archive_path,
+            "retained picotool archive",
+        )
+    except OSError as exc:
+        raise ReleaseError("cannot read retained picotool archive") from exc
+    _require(
+        stat_module.S_ISREG(archive_stat.st_mode)
+        and not stat_module.S_ISLNK(archive_stat.st_mode)
+        and archive_stat.st_nlink == 1
+        and len(archive_bytes) == expected_bytes
+        and _sha256_bytes(archive_bytes) == expected_sha256,
+        "retained picotool archive identity changed",
+    )
+    try:
+        archive = zipfile.ZipFile(io.BytesIO(archive_bytes), "r")
+    except zipfile.BadZipFile as exc:
+        raise ReleaseError("retained picotool archive is not a valid ZIP") from exc
+    payloads: dict[str, bytes] = {}
+    with archive:
+        infos = archive.infolist()
+        _require(
+            len(infos) == len(expected_members),
+            "retained picotool archive member coverage changed",
+        )
+        for index, (info, expected) in enumerate(zip(infos, expected_members)):
+            raw_mode = info.external_attr >> 16
+            if info.is_dir():
+                kind = "directory"
+                mode = stat_module.S_IFDIR | (stat_module.S_IMODE(raw_mode) or 0o755)
+                payload = b""
+            else:
+                kind = "regular"
+                mode = stat_module.S_IFREG | (stat_module.S_IMODE(raw_mode) or 0o644)
+                try:
+                    payload = archive.read(info)
+                except (OSError, RuntimeError, zipfile.BadZipFile) as exc:
+                    raise ReleaseError(
+                        "cannot read retained picotool ZIP member"
+                    ) from exc
+                payloads[info.filename] = payload
+            actual = {
+                "path": info.filename,
+                "kind": kind,
+                "mode": "%06o" % mode,
+                "bytes": len(payload),
+                "sha256": _sha256_bytes(payload),
+            }
+            _require(
+                not bool(info.flag_bits & 0x1)
+                and actual == expected,
+                "retained picotool ZIP member %d changed" % index,
+            )
+        _require(
+            archive.testzip() is None,
+            "retained picotool archive fails CRC validation",
+        )
+    return payloads
+
+
+def _audit_picotool_stat_identity(value: os.stat_result) -> tuple[int, ...]:
+    """Return the immutable identity fields used by the picotool observer."""
+
+    return (
+        value.st_dev,
+        value.st_ino,
+        value.st_mode,
+        value.st_nlink,
+        value.st_size,
+        value.st_mtime_ns,
+        value.st_ctime_ns,
+    )
+
+
+def _audit_picotool_descriptor_bytes(
+    descriptor: int,
+    label: str,
+) -> bytes:
+    """Read one already-open, unlinked-alias-free regular file."""
+
+    try:
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        before = os.fstat(descriptor)
+        _require(
+            stat_module.S_ISREG(before.st_mode) and before.st_nlink == 1,
+            "%s must be one unlinked-alias-free regular file" % label,
+        )
+        chunks: list[bytes] = []
+        while True:
+            chunk = os.read(descriptor, 1024 * 1024)
+            if not chunk:
+                break
+            chunks.append(chunk)
+        after = os.fstat(descriptor)
+    except OSError as exc:
+        raise ReleaseError("%s changed while read" % label) from exc
+    _require(
+        _audit_picotool_stat_identity(before)
+        == _audit_picotool_stat_identity(after),
+        "%s changed while read" % label,
+    )
+    payload = b"".join(chunks)
+    _require(
+        len(payload) == before.st_size,
+        "%s changed size while read" % label,
+    )
+    return payload
+
+
+def _audit_picotool_regular_path_snapshot(
+    path: Path,
+    label: str,
+    *,
+    expected_mode: int,
+) -> tuple[bytes, tuple[int, ...]]:
+    """Read a regular path and retain its stable no-follow identity."""
+
+    source = Path(path)
+    descriptor: int | None = None
+    try:
+        path_before = source.lstat()
+        descriptor = os.open(
+            source,
+            os.O_RDONLY
+            | getattr(os, "O_CLOEXEC", 0)
+            | getattr(os, "O_NOFOLLOW", 0)
+            | getattr(os, "O_NONBLOCK", 0),
+        )
+        opened = os.fstat(descriptor)
+        payload = _audit_picotool_descriptor_bytes(descriptor, label)
+        closed = os.fstat(descriptor)
+        path_after = source.lstat()
+    except OSError as exc:
+        raise ReleaseError("%s is missing, linked, or changed" % label) from exc
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+    identity = _audit_picotool_stat_identity(path_before)
+    _require(
+        stat_module.S_ISREG(path_before.st_mode)
+        and path_before.st_nlink == 1
+        and stat_module.S_IMODE(path_before.st_mode) == expected_mode
+        and identity
+        == _audit_picotool_stat_identity(opened)
+        == _audit_picotool_stat_identity(closed)
+        == _audit_picotool_stat_identity(path_after),
+        "%s identity or mode changed" % label,
+    )
+    return payload, identity
+
+
+def _audit_picotool_tree_snapshot(
+    *,
+    tree_root: Path,
+    expected: dict[str, tuple[str, int, bytes | None]],
+    root_mode: int,
+    label: str,
+) -> dict[str, Any]:
+    """Observe one exact descriptor-anchored tree including node identities."""
+
+    observed: dict[
+        str,
+        tuple[str, int, bytes | None, tuple[int, ...]],
+    ] = {}
+    root_descriptor: int | None = None
+
+    def walk(descriptor: int, prefix: str) -> None:
+        try:
+            before = os.fstat(descriptor)
+            names_before = sorted(os.listdir(descriptor))
+        except OSError as exc:
+            raise ReleaseError("cannot enumerate %s" % label) from exc
+        _require(
+            stat_module.S_ISDIR(before.st_mode),
+            "%s directory descriptor changed type" % label,
+        )
+        for name in names_before:
+            _require(
+                isinstance(name, str)
+                and name not in {"", ".", ".."}
+                and "/" not in name
+                and "\x00" not in name,
+                "%s contains an unsafe member name" % label,
+            )
+            relative = "%s/%s" % (prefix, name) if prefix else name
+            child_descriptor: int | None = None
+            try:
+                child_descriptor = os.open(
+                    name,
+                    os.O_RDONLY
+                    | getattr(os, "O_CLOEXEC", 0)
+                    | getattr(os, "O_NOFOLLOW", 0)
+                    | getattr(os, "O_NONBLOCK", 0),
+                    dir_fd=descriptor,
+                )
+                child_before = os.fstat(child_descriptor)
+                if stat_module.S_ISDIR(child_before.st_mode):
+                    observed[relative] = (
+                        "directory",
+                        stat_module.S_IMODE(child_before.st_mode),
+                        None,
+                        _audit_picotool_stat_identity(child_before),
+                    )
+                    walk(child_descriptor, relative)
+                elif stat_module.S_ISREG(child_before.st_mode):
+                    payload = _audit_picotool_descriptor_bytes(
+                        child_descriptor,
+                        "pinned picotool member %s" % relative,
+                    )
+                    observed[relative] = (
+                        "regular",
+                        stat_module.S_IMODE(child_before.st_mode),
+                        payload,
+                        _audit_picotool_stat_identity(child_before),
+                    )
+                else:
+                    raise ReleaseError(
+                        "%s contains a special member: %s" % (label, relative)
+                    )
+                child_after = os.fstat(child_descriptor)
+                _require(
+                    _audit_picotool_stat_identity(child_before)
+                    == _audit_picotool_stat_identity(child_after),
+                    "%s member changed while observed: %s" % (label, relative),
+                )
+            except OSError as exc:
+                raise ReleaseError(
+                    "%s member is missing, linked, or changed: %s"
+                    % (label, relative)
+                ) from exc
+            finally:
+                if child_descriptor is not None:
+                    os.close(child_descriptor)
+        try:
+            names_after = sorted(os.listdir(descriptor))
+            after = os.fstat(descriptor)
+        except OSError as exc:
+            raise ReleaseError("%s changed while observed" % label) from exc
+        _require(
+            names_after == names_before
+            and _audit_picotool_stat_identity(before)
+            == _audit_picotool_stat_identity(after),
+            "%s directory changed while observed" % label,
+        )
+
+    try:
+        path_before = tree_root.lstat()
+        root_descriptor = os.open(
+            tree_root,
+            os.O_RDONLY
+            | getattr(os, "O_CLOEXEC", 0)
+            | getattr(os, "O_DIRECTORY", 0)
+            | getattr(os, "O_NOFOLLOW", 0),
+        )
+        root_opened = os.fstat(root_descriptor)
+        path_opened = tree_root.lstat()
+        _require(
+            stat_module.S_ISDIR(root_opened.st_mode)
+            and stat_module.S_IMODE(root_opened.st_mode) == root_mode
+            and _audit_picotool_stat_identity(path_before)
+            == _audit_picotool_stat_identity(root_opened)
+            == _audit_picotool_stat_identity(path_opened),
+            "%s root is unsafe or has the wrong mode" % label,
+        )
+        walk(root_descriptor, "")
+        root_closed = os.fstat(root_descriptor)
+        path_closed = tree_root.lstat()
+        _require(
+            _audit_picotool_stat_identity(root_opened)
+            == _audit_picotool_stat_identity(root_closed)
+            == _audit_picotool_stat_identity(path_closed),
+            "%s root changed while observed" % label,
+        )
+    except OSError as exc:
+        raise ReleaseError(
+            "%s root is missing, linked, or changed" % label
+        ) from exc
+    finally:
+        if root_descriptor is not None:
+            os.close(root_descriptor)
+
+    _require(
+        set(observed) == set(expected),
+        "%s is incomplete or has unexpected members" % label,
+    )
+    normalized: dict[
+        str,
+        tuple[str, int, bytes | None, tuple[int, ...]],
+    ] = {}
+    for relative, (expected_kind, expected_mode, expected_payload) in expected.items():
+        actual_kind, actual_mode, actual_payload, actual_identity = observed[relative]
+        _require(
+            (
+                (expected_kind == "directory" and actual_kind == "directory")
+                or (expected_kind != "directory" and actual_kind == "regular")
+            )
+            and actual_mode == expected_mode
+            and actual_payload == expected_payload,
+            "%s member differs from expected bytes: %s" % (label, relative),
+        )
+        normalized[relative] = (
+            expected_kind,
+            expected_mode,
+            actual_payload,
+            actual_identity,
+        )
+    return {
+        "root_identity": _audit_picotool_stat_identity(root_opened),
+        "members": dict(sorted(normalized.items())),
+    }
+
+
+def _audit_picotool_installed_tree(
+    *,
+    install_root: Path,
+    archive_payloads: dict[str, bytes],
+    member_inventory: list[dict[str, Any]],
+    archive_filename: str,
+    archive_bytes: bytes,
+) -> dict[str, Any]:
+    """Read and validate the exact private install and its node identities."""
+
+    expected: dict[str, tuple[str, int, bytes | None]] = {
+        ".pyble-dist": ("directory", 0o755, None),
+        ".pyble-dist/" + archive_filename: (
+            "archive",
+            0o644,
+            archive_bytes,
+        ),
+    }
+    for member in member_inventory:
+        relative = member["path"].rstrip("/")
+        expected[relative] = (
+            member["kind"],
+            int(member["mode"][-3:], 8),
+            archive_payloads.get(member["path"]),
+        )
+    return _audit_picotool_tree_snapshot(
+        tree_root=install_root,
+        expected=expected,
+        root_mode=0o700,
+        label="pinned picotool install",
+    )
+
+
+def _audit_expected_rp2_build_tools_role(
+    *,
+    build_root: Path,
+    repo_root: Path,
+    provenance: dict[str, Any],
+    policy: dict[str, Any],
+) -> tuple[dict[str, str], dict[str, Any]]:
+    """Construct the exact private role receipt from validated inputs."""
+
+    root = Path(repo_root)
+    builds = Path(build_root)
+    provenance_path = builds / "rpi-pico2-w" / "pyble-build-provenance.json"
+    provenance_bytes = _read_regular_file_bytes(
+        provenance_path,
+        "RP2 build provenance",
+    )
+    try:
+        persisted_provenance = json.loads(
+            provenance_bytes.decode("utf-8", errors="strict")
+        )
+    except (UnicodeError, TypeError, ValueError) as exc:
+        raise ReleaseError("RP2 build provenance is invalid JSON") from exc
+    _require(
+        persisted_provenance == provenance
+        and provenance.get("target") == "rpi-pico2-w"
+        and provenance.get("port") == "rp2"
+        and provenance.get("picotool")
+        == policy["distribution_provenance"]["runtime_version_line"],
+        "RP2 build provenance does not bind the pinned picotool runtime",
+    )
+    input_hashes = {
+        "repo/firmware/versions.lock": _sha256_path(
+            root / "firmware" / "versions.lock"
+        ),
+        **_audit_picotool_policy_input_hashes(
+            policy=policy,
+            repo_root=root,
+            build_root=builds,
+        ),
+    }
+    distribution = policy["distribution_provenance"]
+    picotool_lock = distribution["picotool_lock"]
+    input_hashes[
+        "picotool-archive/" + picotool_lock["archive_filename"]
+    ] = picotool_lock["sha256"]
+    input_hashes.update(
+        {
+            "picotool-member/" + member["path"]: member["sha256"]
+            for member in distribution["member_inventory"]
+        }
+    )
+    input_hashes = dict(sorted(input_hashes.items()))
+    license_inputs = {
+        _audit_rp2_policy_asset_logical(record["path"]): {
+            "logical_path": _audit_rp2_policy_asset_logical(record["path"]),
+            "sha256": record["sha256"],
+        }
+        for owner in policy["source_owners"]
+        for record in (*owner["license_texts"], *owner["notice_files"])
+    }
+    role_document = {
+        "schema_version": 1,
+        "profile_id": "rpi-pico2-w",
+        "target": "rpi-pico2-w",
+        "resource_kind": "rp2",
+        "role": RP2_BUILD_TOOLS_LICENSE_AUDIT_ROLE,
+        "build_provenance_sha256": _sha256_bytes(provenance_bytes),
+        "distribution_provenance": copy.deepcopy(distribution),
+        "owners": copy.deepcopy(policy["source_owners"]),
+        "nonsoftware_members": copy.deepcopy(policy["nonsoftware_members"]),
+        "inputs": [
+            {"logical_path": logical, "sha256": digest}
+            for logical, digest in input_hashes.items()
+        ],
+        "license_inputs": sorted(
+            license_inputs.values(),
+            key=lambda item: item["logical_path"],
+        ),
+    }
+    return input_hashes, role_document
+
+
+def _audit_run_picotool_snapshot(
+    *,
+    archive_payloads: dict[str, bytes],
+    member_inventory: list[dict[str, Any]],
+    executable_path: str,
+) -> subprocess.CompletedProcess[str]:
+    """Execute a write-locked private tree while anchoring its executable."""
+
+    expected_regular = {
+        member["path"]
+        for member in member_inventory
+        if member["kind"] == "regular"
+    }
+    _require(
+        set(archive_payloads) == expected_regular,
+        "picotool snapshot payload coverage changed",
+    )
+    with tempfile.TemporaryDirectory(
+        prefix="pyble-picotool-version-probe-"
+    ) as temporary:
+        probe_root = Path(temporary)
+        member_directories: list[Path] = []
+        executable_descriptor: int | None = None
+        root_descriptor: int | None = None
+        try:
+            probe_root.chmod(0o700)
+            exact_expected: dict[str, tuple[str, int, bytes | None]] = {}
+            for member in sorted(
+                (
+                    item
+                    for item in member_inventory
+                    if item["kind"] == "directory"
+                ),
+                key=lambda item: len(PurePosixPath(item["path"]).parts),
+            ):
+                relative = _safe_relative_path(
+                    member["path"].rstrip("/"),
+                    "picotool snapshot directory",
+                )
+                directory = probe_root / relative
+                directory.mkdir(mode=0o700)
+                directory.chmod(int(member["mode"][-3:], 8))
+                member_directories.append(directory)
+                exact_expected[relative] = (
+                    "directory",
+                    int(member["mode"][-3:], 8),
+                    None,
+                )
+
+            for member in (
+                item
+                for item in member_inventory
+                if item["kind"] == "regular"
+            ):
+                relative = _safe_relative_path(
+                    member["path"],
+                    "picotool snapshot member",
+                )
+                target = probe_root / relative
+                _require(
+                    target.parent.is_dir()
+                    and not target.parent.is_symlink(),
+                    "picotool snapshot member parent is missing",
+                )
+                descriptor: int | None = None
+                try:
+                    descriptor = os.open(
+                        target,
+                        os.O_WRONLY
+                        | os.O_CREAT
+                        | os.O_EXCL
+                        | getattr(os, "O_CLOEXEC", 0)
+                        | getattr(os, "O_NOFOLLOW", 0),
+                        0o600,
+                    )
+                    payload = archive_payloads[member["path"]]
+                    view = memoryview(payload)
+                    while view:
+                        written = os.write(descriptor, view)
+                        _require(
+                            written > 0,
+                            "picotool snapshot member write made no progress",
+                        )
+                        view = view[written:]
+                    os.fchmod(descriptor, int(member["mode"][-3:], 8))
+                    os.fsync(descriptor)
+                finally:
+                    if descriptor is not None:
+                        os.close(descriptor)
+                exact_expected[relative] = (
+                    "regular",
+                    int(member["mode"][-3:], 8),
+                    archive_payloads[member["path"]],
+                )
+
+            _audit_picotool_tree_snapshot(
+                tree_root=probe_root,
+                expected=exact_expected,
+                root_mode=0o700,
+                label="private picotool snapshot",
+            )
+
+            # Remove every write bit before opening the executable.  Darwin
+            # cannot execute a Mach-O image through /dev/fd, and picotool's
+            # @loader_path dependency also requires its real private path.
+            # A write-locked directory chain plus a retained no-follow file
+            # descriptor therefore forms the portable execution anchor.
+            locked_expected: dict[str, tuple[str, int, bytes | None]] = {}
+            for relative, (kind, mode, payload) in exact_expected.items():
+                locked_mode = mode & ~0o222
+                (probe_root / relative).chmod(locked_mode)
+                locked_expected[relative] = (kind, locked_mode, payload)
+            probe_root.chmod(0o500)
+            locked_snapshot = _audit_picotool_tree_snapshot(
+                tree_root=probe_root,
+                expected=locked_expected,
+                root_mode=0o500,
+                label="locked private picotool snapshot",
+            )
+            _require(
+                os.name == "posix" and hasattr(os, "fchdir"),
+                "private picotool probe requires descriptor-anchored POSIX cwd",
+            )
+            root_descriptor = os.open(
+                probe_root,
+                os.O_RDONLY
+                | getattr(os, "O_CLOEXEC", 0)
+                | getattr(os, "O_DIRECTORY", 0)
+                | getattr(os, "O_NOFOLLOW", 0),
+            )
+            root_before = os.fstat(root_descriptor)
+            _require(
+                _audit_picotool_stat_identity(root_before)
+                == locked_snapshot["root_identity"],
+                "private picotool snapshot root is not anchored",
+            )
+
+            executable_relative = _safe_relative_path(
+                executable_path,
+                "picotool snapshot executable",
+            )
+            executable = probe_root / executable_relative
+            executable_descriptor = os.open(
+                executable,
+                os.O_RDONLY
+                | getattr(os, "O_CLOEXEC", 0)
+                | getattr(os, "O_NOFOLLOW", 0)
+                | getattr(os, "O_NONBLOCK", 0),
+            )
+            executable_before = os.fstat(executable_descriptor)
+            executable_bytes = _audit_picotool_descriptor_bytes(
+                executable_descriptor,
+                "private picotool snapshot executable",
+            )
+            executable_record = locked_snapshot["members"].get(
+                executable_relative
+            )
+            _require(
+                executable_record is not None
+                and executable_record[0] == "regular"
+                and executable_record[2] == executable_bytes
+                and executable_record[3]
+                == _audit_picotool_stat_identity(executable_before),
+                "private picotool snapshot executable is not anchored",
+            )
+            command = ("./" + executable_relative, "version")
+
+            def enter_anchored_probe_root() -> None:
+                os.fchdir(root_descriptor)
+
+            completed = subprocess.run(
+                command,
+                cwd=probe_root,
+                env={
+                    "HOME": os.devnull,
+                    "LANG": "C",
+                    "LC_ALL": "C",
+                    "PATH": "/usr/bin:/bin",
+                },
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=False,
+                timeout=30,
+                pass_fds=(root_descriptor,),
+                preexec_fn=enter_anchored_probe_root,
+            )
+            root_after = os.fstat(root_descriptor)
+            executable_after = os.fstat(executable_descriptor)
+            final_executable_bytes = _audit_picotool_descriptor_bytes(
+                executable_descriptor,
+                "private picotool snapshot executable after probe",
+            )
+            final_locked_snapshot = _audit_picotool_tree_snapshot(
+                tree_root=probe_root,
+                expected=locked_expected,
+                root_mode=0o500,
+                label="locked private picotool snapshot after probe",
+            )
+            _require(
+                isinstance(completed, subprocess.CompletedProcess)
+                and completed.args == command
+                and _audit_picotool_stat_identity(root_before)
+                == _audit_picotool_stat_identity(root_after)
+                and _audit_picotool_stat_identity(executable_before)
+                == _audit_picotool_stat_identity(executable_after)
+                and final_executable_bytes == executable_bytes
+                and final_locked_snapshot == locked_snapshot,
+                "private picotool snapshot changed during version probe",
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise ReleaseError("cannot execute private picotool snapshot") from exc
+        finally:
+            if executable_descriptor is not None:
+                os.close(executable_descriptor)
+            if root_descriptor is not None:
+                os.close(root_descriptor)
+            # Restore only directory write/search permission so the private
+            # temporary tree can be removed; none of these bytes are reused.
+            try:
+                probe_root.chmod(0o700)
+                for directory in member_directories:
+                    directory.chmod(0o700)
+            except OSError:
+                pass
+    return completed
+
+
+def _audit_observe_rp2_build_tools_license_inputs(
+    *,
+    build_root: Path,
+    repo_root: Path,
+    provenance: dict[str, Any],
+    policy: dict[str, Any],
+) -> dict[str, Any]:
+    """Reopen the exact host picotool distribution used by the RP2 build."""
+
+    root = Path(repo_root).absolute()
+    builds = Path(build_root).absolute()
+    lock = _validate_v061_picotool_lock(
+        _read_lock(root).get("picotool"),
+        "versions.lock [picotool]",
+    )
+    validated = _audit_validate_rp2_build_tools_license_policy(
+        policy,
+        repo_root=root,
+        build_root=builds,
+        picotool_lock=lock,
+    )
+    distribution = validated["distribution_provenance"]
+    retained_logical, archive_path = _audit_rp2_logical_file(
+        distribution["retained_archive"]["path"],
+        repo_root=root,
+        build_root=builds,
+        label="retained picotool archive",
+    )
+    _require(
+        retained_logical == distribution["retained_archive"]["path"],
+        "retained picotool archive namespace changed",
+    )
+    archive_bytes, archive_identity = _audit_picotool_regular_path_snapshot(
+        archive_path,
+        "retained picotool archive",
+        expected_mode=0o644,
+    )
+    archive_payloads = _audit_picotool_archive_inventory(
+        archive_path,
+        distribution["member_inventory"],
+        expected_bytes=lock["archive_bytes"],
+        expected_sha256=lock["sha256"],
+    )
+    install_root = root / "firmware" / ".picotool"
+    installed_snapshot = _audit_picotool_installed_tree(
+        install_root=install_root,
+        archive_payloads=archive_payloads,
+        member_inventory=distribution["member_inventory"],
+        archive_filename=lock["archive_filename"],
+        archive_bytes=archive_bytes,
+    )
+    completed = _audit_run_picotool_snapshot(
+        archive_payloads=archive_payloads,
+        member_inventory=distribution["member_inventory"],
+        executable_path=lock["executable_path"],
+    )
+    _require(
+        completed.returncode == 0
+        and completed.stdout == lock["version_line"] + "\n",
+        "retained picotool runtime version changed",
+    )
+    input_hashes, role_document = _audit_expected_rp2_build_tools_role(
+        build_root=builds,
+        repo_root=root,
+        provenance=provenance,
+        policy=validated,
+    )
+    final_archive_bytes, final_archive_identity = (
+        _audit_picotool_regular_path_snapshot(
+            archive_path,
+            "retained picotool archive after version probe",
+            expected_mode=0o644,
+        )
+    )
+    final_archive_payloads = _audit_picotool_archive_inventory(
+        archive_path,
+        distribution["member_inventory"],
+        expected_bytes=lock["archive_bytes"],
+        expected_sha256=lock["sha256"],
+    )
+    final_installed_snapshot = _audit_picotool_installed_tree(
+        install_root=install_root,
+        archive_payloads=final_archive_payloads,
+        member_inventory=distribution["member_inventory"],
+        archive_filename=lock["archive_filename"],
+        archive_bytes=final_archive_bytes,
+    )
+    _require(
+        final_archive_bytes == archive_bytes
+        and final_archive_identity == archive_identity
+        and final_archive_payloads == archive_payloads
+        and final_installed_snapshot == installed_snapshot,
+        "retained picotool distribution changed during version probe",
+    )
+    payload = {
+        "input_sha256": input_hashes,
+        "owners": copy.deepcopy(validated["source_owners"]),
+        "notice_records": [],
+        "role_document": role_document,
+    }
+    return {
+        "semantic_sha256": _sha256_bytes(_canonical_json_bytes(payload)),
+        **payload,
+    }
+
+
+def _audit_merge_rp2_build_tools_observation(
+    base: dict[str, Any],
+    build_tools: dict[str, Any],
+) -> dict[str, Any]:
+    """Append private build-tool semantics without altering public notices."""
+
+    required = {
+        "semantic_sha256",
+        "input_sha256",
+        "owners",
+        "notice_records",
+        "role_document",
+    }
+    _require(
+        isinstance(build_tools, dict)
+        and set(build_tools) == required,
+        "RP2 build-tools observation shape changed",
+    )
+    build_payload = {
+        key: copy.deepcopy(value)
+        for key, value in build_tools.items()
+        if key != "semantic_sha256"
+    }
+    _require(
+        build_tools["semantic_sha256"]
+        == _sha256_bytes(_canonical_json_bytes(build_payload))
+        and build_tools["notice_records"] == [],
+        "RP2 build-tools semantic observation changed",
+    )
+    combined = copy.deepcopy(base)
+    _require(
+        isinstance(combined.get("input_sha256"), dict)
+        and isinstance(combined.get("owners"), list)
+        and isinstance(combined.get("role_documents"), dict)
+        and RP2_BUILD_TOOLS_LICENSE_AUDIT_ROLE
+        not in combined["role_documents"],
+        "RP2 base observation cannot accept the build-tools role",
+    )
+    for logical, digest in build_tools["input_sha256"].items():
+        previous = combined["input_sha256"].get(logical)
+        _require(
+            previous is None or previous == digest,
+            "RP2 observations disagree on a shared input",
+        )
+        combined["input_sha256"][logical] = digest
+    combined["owners"].extend(copy.deepcopy(build_tools["owners"]))
+    combined["role_documents"][RP2_BUILD_TOOLS_LICENSE_AUDIT_ROLE] = copy.deepcopy(
+        build_tools["role_document"]
+    )
+    payload = {
+        key: copy.deepcopy(value)
+        for key, value in combined.items()
+        if key != "semantic_sha256"
+    }
+    combined["semantic_sha256"] = _sha256_bytes(_canonical_json_bytes(payload))
+    return combined
+
+
+def _audit_validate_persisted_rp2_build_tools_role(
+    *,
+    observation: dict[str, Any],
+    build_root: Path,
+    repo_root: Path,
+) -> dict[str, Any]:
+    """Reject a self-consistently rehashed private role before publication."""
+
+    root = Path(repo_root)
+    builds = Path(build_root)
+    lock = _validate_v061_picotool_lock(
+        _read_lock(root).get("picotool"),
+        "versions.lock [picotool]",
+    )
+    policy_path = _audit_repo_file(
+        root,
+        _PICOTOOL_BUILD_TOOLS_POLICY_PATH,
+        "RP2 build-tools license policy",
+    )
+    policy_raw = _read_regular_file_bytes(
+        policy_path,
+        "RP2 build-tools license policy",
+    )
+    try:
+        policy_value = json.loads(policy_raw.decode("utf-8", errors="strict"))
+    except (UnicodeError, TypeError, ValueError) as exc:
+        raise ReleaseError("RP2 build-tools policy is invalid JSON") from exc
+    _require(
+        policy_raw == _canonical_json_bytes(policy_value),
+        "RP2 build-tools policy is not canonical JSON",
+    )
+    policy = _audit_validate_rp2_build_tools_license_policy(
+        policy_value,
+        repo_root=root,
+        build_root=builds,
+        picotool_lock=lock,
+    )
+    provenance = _read_json(
+        builds / "rpi-pico2-w" / "pyble-build-provenance.json",
+        "RP2 build provenance",
+    )
+    expected_inputs, expected_document = _audit_expected_rp2_build_tools_role(
+        build_root=builds,
+        repo_root=root,
+        provenance=provenance,
+        policy=policy,
+    )
+    role_documents = observation.get("role_documents")
+    _require(
+        isinstance(role_documents, dict)
+        and role_documents.get(RP2_BUILD_TOOLS_LICENSE_AUDIT_ROLE)
+        == expected_document,
+        "RP2 build-tools evidence differs from reviewed inputs",
+    )
+    input_hashes = observation.get("input_sha256")
+    _require(
+        isinstance(input_hashes, dict)
+        and all(
+            input_hashes.get(key) == digest
+            for key, digest in expected_inputs.items()
+        ),
+        "RP2 build-tools receipt input hashes changed",
+    )
+    owners = observation.get("owners")
+    build_owner_ids = {owner["id"] for owner in policy["source_owners"]}
+    _require(
+        isinstance(owners, list)
+        and [owner for owner in owners if owner.get("id") in build_owner_ids]
+        == policy["source_owners"]
+        and all(
+            record.get("id") not in build_owner_ids
+            for record in observation.get("notice_records", [])
+        ),
+        "RP2 build-tool owners leaked into or changed outside private evidence",
+    )
+    semantic_payload = {
+        key: copy.deepcopy(value)
+        for key, value in observation.items()
+        if key != "semantic_sha256"
+    }
+    _require(
+        observation.get("semantic_sha256")
+        == _sha256_bytes(_canonical_json_bytes(semantic_payload)),
+        "RP2 combined semantic observation changed",
+    )
+    return expected_document
+
+
 def _audit_validate_rp2_arm_runtime_closure(
     attribution: Any,
     observed: Any,
@@ -8694,6 +10642,91 @@ def _audit_rp2_reject_driver_overrides(
     )
 
 
+def _audit_rp2_build_environment(
+    builder_text: str,
+    *,
+    firmware_version: str,
+) -> list[str]:
+    """Parse one scrub command and its source-era-specific offline setup."""
+
+    marker = (
+        "# Never allow ambient compiler/make flags to influence the pinned build.\n"
+        "unset \\\n"
+    )
+    end = '\n\nmake -C "$RETAINED_UPSTREAM/mpy-cross"'
+    _require(
+        isinstance(builder_text, str)
+        and builder_text.count(marker) == 1
+        and builder_text.count(end) == 1,
+        "RP2 build driver environment scrub is missing or ambiguous",
+    )
+    before_make = builder_text.split(marker, 1)[1]
+    _require(end in before_make, "RP2 environment scrub does not precede mpy-cross")
+    section = before_make.split(end, 1)[0]
+    scrub, separator, setup = section.partition("\n\n")
+    lines = scrub.splitlines()
+    variables: list[str] = []
+    for index, line in enumerate(lines):
+        continued = line.endswith(" \\")
+        value = line[2:-2] if continued else line[2:]
+        _require(
+            line.startswith("  ")
+            and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", value) is not None
+            and continued == (index < len(lines) - 1),
+            "RP2 build driver environment scrub is malformed",
+        )
+        variables.append(value)
+    _require(
+        len(variables) == len(set(variables))
+        and set(_RP2_GCC_ENVIRONMENT_OVERRIDES) <= set(variables),
+        "RP2 build driver does not scrub every GCC resolution override",
+    )
+    pinned_picotool = _firmware_release_core(
+        firmware_version, "RP2 environment source version"
+    ) >= (0, 6, 1)
+    if pinned_picotool:
+        _require(
+            {
+                "CMAKE_ARGS", "picotool_DIR", "FETCHCONTENT_FULLY_DISCONNECTED",
+                "FETCHCONTENT_SOURCE_DIR_PICOTOOL", "PICOTOOL_FETCH_FROM_GIT_PATH",
+                "PICOTOOL_FORCE_FETCH_FROM_GIT", "CMAKE_FIND_USE_PACKAGE_REGISTRY",
+                "CMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY", "CMAKE_PREFIX_PATH",
+            } <= set(variables),
+            "RP2 build driver does not scrub every pinned package override",
+        )
+        expected_setup = r'''# Bind Pico SDK's CMake configure to the verified package and make every
+# fallback/network or ambient package-registry path unavailable. These values
+# are supplied both in CMAKE_ARGS (the MicroPython rp2 Makefile interface) and
+# the environment so nested configure steps cannot inherit hostile settings.
+CMAKE_ARGS="-Dpicotool_DIR=$PICOTOOL_PACKAGE_DIR \
+-DFETCHCONTENT_FULLY_DISCONNECTED:BOOL=ON \
+-DCMAKE_FIND_USE_PACKAGE_REGISTRY=OFF \
+-DCMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY=OFF \
+-DPICOTOOL_FORCE_FETCH_FROM_GIT=OFF"
+picotool_DIR="$PICOTOOL_PACKAGE_DIR"
+FETCHCONTENT_FULLY_DISCONNECTED=ON
+PICOTOOL_FORCE_FETCH_FROM_GIT=OFF
+CMAKE_FIND_USE_PACKAGE_REGISTRY=OFF
+CMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY=OFF
+export \
+  CMAKE_ARGS \
+  picotool_DIR \
+  FETCHCONTENT_FULLY_DISCONNECTED \
+  PICOTOOL_FORCE_FETCH_FROM_GIT \
+  CMAKE_FIND_USE_PACKAGE_REGISTRY \
+  CMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY'''
+        _require(
+            separator == "\n\n" and setup == expected_setup,
+            "RP2 build driver pinned offline environment setup changed",
+        )
+    else:
+        _require(
+            not separator and not setup,
+            "historical RP2 scrub has unexpected intervening commands",
+        )
+    return variables
+
+
 def _audit_observe_rp2_arm_runtime_closure(
     *,
     repo_root: Path,
@@ -8729,33 +10762,9 @@ def _audit_observe_rp2_arm_runtime_closure(
     builder_text = _read_regular_file_bytes(
         builder_path, "RP2 retained-source build driver"
     ).decode("utf-8", errors="strict")
-    scrub_marker = (
-        "# Never allow ambient compiler/make flags to influence the pinned build.\n"
-        "unset \\\n"
-    )
-    scrub_end = '\n\nmake -C "$RETAINED_UPSTREAM/mpy-cross"'
-    _require(
-        builder_text.count(scrub_marker) == 1
-        and builder_text.count(scrub_end) == 1,
-        "RP2 build driver environment scrub is missing or ambiguous",
-    )
-    scrub_source = builder_text.split(scrub_marker, 1)[1].split(scrub_end, 1)[0]
-    scrub_lines = scrub_source.splitlines()
-    scrubbed_variables: list[str] = []
-    for index, line in enumerate(scrub_lines):
-        continued = line.endswith(" \\")
-        value = line[:-2] if continued else line
-        _require(
-            line.startswith("  ")
-            and re.fullmatch(r"[A-Z][A-Z0-9_]*", value.strip()) is not None
-            and continued == (index < len(scrub_lines) - 1),
-            "RP2 build driver environment scrub is malformed",
-        )
-        scrubbed_variables.append(value.strip())
-    _require(
-        len(scrubbed_variables) == len(set(scrubbed_variables))
-        and set(_RP2_GCC_ENVIRONMENT_OVERRIDES) <= set(scrubbed_variables),
-        "RP2 build driver does not scrub every GCC resolution override",
+    _audit_rp2_build_environment(
+        builder_text,
+        firmware_version=_read_lock(root)["pyble"]["agent_version"],
     )
 
     cache_text = _read_regular_file_bytes(cache, "RP2 CMake cache").decode(
@@ -10263,6 +12272,7 @@ def _audit_rp2_retained_board_inputs(
         overlay.is_dir() and pyble.is_dir(),
         "RP2 retained board copy lacks canonical source directories",
     )
+    source_lock = _read_lock(Path(repo_root))
 
     overlay_names = (
         "_boot.py",
@@ -10283,6 +12293,11 @@ def _audit_rp2_retained_board_inputs(
         "pyble_proto.py",
         "pyble_runner.py",
     )
+    if _firmware_release_core(
+        source_lock["pyble"]["agent_version"],
+        "firmware source version",
+    ) >= (0, 6, 1):
+        pyble_names += ("pyble_workspace.py",)
     expected_copies = {
         **{name: overlay / name for name in overlay_names},
         **{"pyble/%s" % name: pyble / name for name in pyble_names},
@@ -10344,7 +12359,6 @@ def _audit_rp2_retained_board_inputs(
                 }
             )
 
-    source_lock = _read_lock(Path(repo_root))
     expected_version = (
         "# SPDX-License-Identifier: MIT\n"
         "# GENERATED by firmware/scripts/build_rp2.sh from "
@@ -12024,9 +14038,12 @@ def _audit_compose_v060_license_evidence(
     repo_root: Path,
     esp_notice: str,
     rp2_observation: dict[str, Any],
+    firmware_version: str,
 ) -> dict[str, Any]:
     """Compose canonical heterogeneous evidence from two independently replayed audits."""
 
+    _require_v5_release_version(firmware_version, "heterogeneous license composition")
+    profile_order = _release_profile_order_for_version(firmware_version)
     _require(not destination.exists(), "v0.6 composition destination exists")
     esp_receipt = _read_json(
         esp_evidence / "audit-receipt.json", "ESP license audit receipt"
@@ -12049,11 +14066,18 @@ def _audit_compose_v060_license_evidence(
         "v0.6 composition requires schema-1 ESP evidence",
     )
     role_documents = rp2_observation["role_documents"]
+    selected_rp2_roles = _rp2_license_audit_roles_for_version(firmware_version)
     _require(
         isinstance(role_documents, dict)
-        and list(role_documents) == list(RP2_LICENSE_AUDIT_ROLES),
+        and list(role_documents) == list(selected_rp2_roles),
         "RP2 role documents are missing or reordered",
     )
+    if RP2_BUILD_TOOLS_LICENSE_AUDIT_ROLE in selected_rp2_roles:
+        _audit_validate_persisted_rp2_build_tools_role(
+            observation=rp2_observation,
+            build_root=Path(build_root),
+            repo_root=Path(repo_root),
+        )
     notice = _audit_merge_release_notices(
         esp_notice=esp_notice,
         rp2_notice_records=rp2_observation["notice_records"],
@@ -12061,7 +14085,7 @@ def _audit_compose_v060_license_evidence(
     destination.mkdir()
     (destination / "raw").mkdir()
     (destination / "spdx").mkdir()
-    for profile_id in V060_RELEASE_PROFILE_ORDER[:-1]:
+    for profile_id in profile_order[:-1]:
         for role in ("application", "bootloader"):
             candidates = [
                 esp_evidence / "raw" / ("%s--%s.%s" % (profile_id, role, extension))
@@ -12080,14 +14104,14 @@ def _audit_compose_v060_license_evidence(
             )
     rp2_dir = destination / "rp2"
     rp2_dir.mkdir()
-    for role in RP2_LICENSE_AUDIT_ROLES:
+    for role in selected_rp2_roles:
         (rp2_dir / ("rpi-pico2-w--%s.json" % role)).write_bytes(
             _canonical_json_bytes(role_documents[role])
         )
 
     profiles: list[dict[str, Any]] = []
     identities: list[dict[str, str]] = []
-    for contract in _release_license_inventory_for_version("0.6.0"):
+    for contract in _release_license_inventory_for_version(firmware_version):
         profile_id = contract["profile_id"]
         target = contract["target"]
         provenance = Path(build_root) / target / "pyble-build-provenance.json"
@@ -12136,8 +14160,8 @@ def _audit_compose_v060_license_evidence(
     notice_digest = _sha256_bytes(notice.encode("utf-8"))
     inventory = {
         "schema_version": 1,
-        "firmware_version": "0.6.0",
-        "profile_order": list(V060_RELEASE_PROFILE_ORDER),
+        "firmware_version": firmware_version,
+        "profile_order": list(profile_order),
         "notice_sha256": notice_digest,
         "profiles": profiles,
     }
@@ -14547,13 +16571,13 @@ def _audit_resolve_manifest_context(
                         source = repo_root / "firmware" / destination
                     elif (
                         base_value == "$(BOARD_DIR)/pyble"
-                        and destination == "_version.py"
+                        and destination in {"_version.py", "pyble_workspace.py"}
                         and not source.exists()
                     ):
-                        # The reviewed source is a dev-only template. ESP
-                        # builds overwrite the copied board-tree module from
-                        # versions.lock before freezing it; payload proof
-                        # below validates those exact generated bytes.
+                        # prepare.sh materializes both canonical modules in the
+                        # generated ESP board tree. _version.py is overwritten
+                        # from versions.lock; payload proof below validates its
+                        # exact generated bytes.
                         source = repo_root / "firmware" / "pyble" / destination
                     elif (
                         base_value == "$(BOARD_DIR)"
@@ -14848,6 +16872,92 @@ def _firmware_release_core(
     return int(major), int(minor), int(patch)
 
 
+def _require_v5_release_version(firmware_version: str, label: str) -> str:
+    """Admit canonical SemVer whose release core is approved for V5."""
+
+    release_core = _firmware_release_core(firmware_version, label)
+    _require(
+        release_core in V5_RELEASE_CORES,
+        "%s requires firmware release core 0.6.0 or 0.6.1" % label,
+    )
+    return firmware_version
+
+
+def _is_v061_hardening_version(firmware_version: str) -> bool:
+    """Return whether an exact source identity admits v0.6.1 hardening."""
+
+    return firmware_version == V061_HARDENING_VERSION
+
+
+def _v061_hardening_gate() -> Any:
+    """Load the repository-owned v0.6.1 gate without extending sys.path."""
+
+    global _V061_HARDENING_GATE
+    global _V061_HARDENING_GATE_SOURCE_SHA256
+    if _V061_HARDENING_GATE is not None:
+        return _V061_HARDENING_GATE
+    try:
+        module = _load_v061_hardening_gate()
+        source = Path(module.__file__).resolve(strict=True)
+        source_raw = source.read_bytes()
+    except Exception as exc:
+        raise ReleaseError(
+            "cannot load the v0.6.1 hardening qualification validator"
+        ) from exc
+    expected_targets = {
+        profile_id: PROFILE_SPECS[profile_id]["target"]
+        for profile_id in V060_RELEASE_PROFILE_ORDER
+    }
+    _require(
+        source == _V061_HARDENING_GATE_SOURCE
+        and module.PROFILE_TARGETS == expected_targets
+        and tuple(module.SCENARIO_ORDER) == V061_HARDENING_SCENARIO_ORDER
+        and tuple(module.WORKSPACE_PROVISIONING_ORDER)
+        == V061_HARDENING_WORKSPACE_ORDER,
+        "v0.6.1 hardening validator authority differs from the release contract",
+    )
+    _V061_HARDENING_GATE_SOURCE_SHA256 = hashlib.sha256(source_raw).hexdigest()
+    _V061_HARDENING_GATE = module
+    return module
+
+
+def _validate_v061_hardening_summary(
+    value: Any,
+    label: str,
+) -> dict[str, Any]:
+    """Validate the exact privacy-safe summary derived by the private gate."""
+
+    summary = _exact_keys(
+        value,
+        set(V061_HARDENING_SUMMARY_FIELDS),
+        label,
+    )
+    scenarios = _exact_keys(
+        summary["scenarios"],
+        set(V061_HARDENING_SCENARIO_ORDER),
+        "%s scenarios" % label,
+    )
+    workspace = _exact_keys(
+        summary["workspace_provisioning"],
+        set(V061_HARDENING_WORKSPACE_ORDER),
+        "%s workspace provisioning" % label,
+    )
+    _require(
+        summary["measurement_contract"]
+        == V061_HARDENING_MEASUREMENT_CONTRACT
+        and summary["scenario_order"]
+        == list(V061_HARDENING_SCENARIO_ORDER)
+        and all(scenarios[name] == "passed" for name in scenarios)
+        and type(summary["sequential_runs"]) is int
+        and summary["sequential_runs"] == 50
+        and all(workspace[name] == "passed" for name in workspace)
+        and type(summary["private_result_sha256"]) is str
+        and SHA256_RE.fullmatch(summary["private_result_sha256"]) is not None,
+        "%s is incomplete, reordered, or not passing" % label,
+    )
+    return summary
+
+
 def _release_profile_order_for_version(
     firmware_version: str,
 ) -> tuple[str, ...]:
@@ -14906,6 +17016,17 @@ def _require_source_era_evidence_count(
     return evidence
 
 
+def _rp2_license_audit_roles_for_version(
+    firmware_version: str,
+) -> tuple[str, ...]:
+    """Select the immutable RP2 evidence roles from the candidate version."""
+
+    core = _firmware_release_core(firmware_version, "firmware source version")
+    if core == (0, 6, 1):
+        return (*RP2_LICENSE_AUDIT_ROLES, RP2_BUILD_TOOLS_LICENSE_AUDIT_ROLE)
+    return RP2_LICENSE_AUDIT_ROLES
+
+
 def _release_license_inventory_for_version(
     firmware_version: str,
 ) -> list[dict[str, Any]]:
@@ -14921,7 +17042,7 @@ def _release_license_inventory_for_version(
                 "target": spec["target"],
                 "resource_kind": "rp2" if is_rp2 else "esp-idf",
                 "roles": (
-                    list(RP2_LICENSE_AUDIT_ROLES)
+                    list(_rp2_license_audit_roles_for_version(firmware_version))
                     if is_rp2
                     else ["application", "bootloader"]
                 ),
@@ -15122,12 +17243,16 @@ def _audit_verify_rp2_semantic_replay(
     build_root: Path,
     repo_root: Path,
     provenance: dict[str, Any],
+    firmware_version: str = "0.6.0",
 ) -> dict[str, Any]:
     """Repeat the private RP2 closure observation at public validation time."""
 
     root = Path(repo_root)
     builds = Path(build_root)
-    tool_lock = _audit_load_tool_lock(root)
+    tool_lock = _audit_load_tool_lock(
+        root,
+        firmware_version=firmware_version,
+    )
     policy = _audit_load_rp2_license_policy(root, builds, tool_lock)
     replay = _audit_observe_rp2_license_inputs(
         build_root=builds,
@@ -15135,6 +17260,24 @@ def _audit_verify_rp2_semantic_replay(
         provenance=provenance,
         policy=policy,
     )
+    if (
+        RP2_BUILD_TOOLS_LICENSE_AUDIT_ROLE
+        in _rp2_license_audit_roles_for_version(firmware_version)
+    ):
+        build_tools_policy = _audit_load_rp2_build_tools_license_policy(
+            root,
+            builds,
+            tool_lock,
+        )
+        replay = _audit_merge_rp2_build_tools_observation(
+            replay,
+            _audit_observe_rp2_build_tools_license_inputs(
+                build_root=builds,
+                repo_root=root,
+                provenance=provenance,
+                policy=build_tools_policy,
+            ),
+        )
     if policy["schema_version"] == 2:
         _require(
             replay.get("arm_runtime_closure", {}).get("eligible_compilation")
@@ -15181,17 +17324,17 @@ def _audit_verify_release_inventory_evidence(
     notice: str,
     firmware_version: str,
 ) -> dict[str, Any]:
-    """Recompute the persisted heterogeneous v0.6 license inventory.
+    """Recompute the persisted heterogeneous V5 license inventory.
 
     The eight ESP raw/reviewed documents remain the outputs of the pinned
     ESP-IDF audit.  RP2 evidence is deliberately port-discriminated and binds
     real build/source/license bytes; it is never synthesized from ESP SBOM
-    records.  This verifier only admits the exact schema frozen for v0.6.0.
+    records.  This verifier admits only the exact approved V5 release identity.
     """
 
-    _require(
-        firmware_version == "0.6.0",
-        "heterogeneous release-license evidence is exact to v0.6.0",
+    _require_v5_release_version(
+        firmware_version,
+        "heterogeneous release-license evidence",
     )
     evidence = Path(evidence_dir)
     builds = Path(build_root)
@@ -15475,11 +17618,62 @@ def _audit_verify_release_inventory_evidence(
                 and _sha256_path(actual_evidence[expected_path]) == evidence_digest,
                 "RP2 %s evidence is missing or changed" % role,
             )
+            raw_document = _audit_v060_canonical_json(
+                actual_evidence[expected_path],
+                "RP2 %s evidence" % role,
+            )
+            if role == RP2_BUILD_TOOLS_LICENSE_AUDIT_ROLE:
+                document = _exact_keys(
+                    raw_document,
+                    {
+                        "schema_version",
+                        "profile_id",
+                        "target",
+                        "resource_kind",
+                        "role",
+                        "build_provenance_sha256",
+                        "distribution_provenance",
+                        "owners",
+                        "nonsoftware_members",
+                        "inputs",
+                        "license_inputs",
+                    },
+                    "RP2 build-tools evidence",
+                )
+                picotool_lock = _validate_v061_picotool_lock(
+                    lock.get("picotool"),
+                    "versions.lock [picotool]",
+                )
+                policy_value = _read_json(
+                    root / _PICOTOOL_BUILD_TOOLS_POLICY_PATH,
+                    "RP2 build-tools license policy",
+                )
+                build_tools_policy = (
+                    _audit_validate_rp2_build_tools_license_policy(
+                        policy_value,
+                        repo_root=root,
+                        build_root=builds,
+                        picotool_lock=picotool_lock,
+                    )
+                )
+                _inputs, expected_document = _audit_expected_rp2_build_tools_role(
+                    build_root=builds,
+                    repo_root=root,
+                    provenance=provenance,
+                    policy=build_tools_policy,
+                )
+                _require(
+                    document == expected_document
+                    and document["build_provenance_sha256"] == provenance_digest,
+                    "RP2 build-tools evidence differs from reviewed inputs",
+                )
+                rp2_documents[role] = copy.deepcopy(document)
+                expected_identities.append(
+                    {"profile_id": profile_id, "role": role}
+                )
+                continue
             document = _exact_keys(
-                _audit_v060_canonical_json(
-                    actual_evidence[expected_path],
-                    "RP2 %s evidence" % role,
-                ),
+                raw_document,
                 {
                     "schema_version",
                     "profile_id",
@@ -15644,6 +17838,7 @@ def _audit_verify_release_inventory_evidence(
         build_root=builds,
         repo_root=root,
         provenance=rp2_provenance,
+        firmware_version=firmware_version,
     )
     return inventory
 
@@ -16399,7 +18594,9 @@ def _audit_frozen_payload_proof(
         if resolved_source.is_relative_to(overlay_root):
             copied_relative = destination
         elif resolved_source.is_relative_to(pyble_root):
-            copied_relative = destination
+            copied_relative = (
+                "pyble/" + resolved_source.relative_to(pyble_root).as_posix()
+            )
         else:
             continue
         copied_bytes = _audit_retained_generated_board_snapshot_file(
@@ -19498,7 +21695,11 @@ def audit_release_licenses(
         "license evidence must be outside source and build roots",
     )
 
-    lock = _audit_load_tool_lock(root)
+    firmware_version = _read_lock(root)["pyble"]["agent_version"]
+    lock = _audit_load_tool_lock(
+        root,
+        firmware_version=firmware_version,
+    )
     excluded = _audit_repo_file(
         root,
         lock["inputs"]["excluded_cves_path"],
@@ -19514,15 +21715,27 @@ def audit_release_licenses(
         "excluded CVE input must remain semantically empty",
     )
     policy = _audit_load_policy(root, lock)
-    firmware_version = _read_lock(root)["pyble"]["agent_version"]
     if tuple(_release_profile_order_for_version(firmware_version)) == (
         V060_RELEASE_PROFILE_ORDER
     ):
+        _require_v5_release_version(
+            firmware_version,
+            "heterogeneous release-license audit",
+        )
         _require(
             not evidence.exists() and evidence.parent.is_dir(),
             "v0.6 license evidence destination must not exist",
         )
         rp2_policy = _audit_load_rp2_license_policy(root, builds, lock)
+        include_rp2_build_tools = (
+            RP2_BUILD_TOOLS_LICENSE_AUDIT_ROLE
+            in _rp2_license_audit_roles_for_version(firmware_version)
+        )
+        rp2_build_tools_policy = (
+            _audit_load_rp2_build_tools_license_policy(root, builds, lock)
+            if include_rp2_build_tools
+            else None
+        )
         rp2_provenance = _read_json(
             builds / "rpi-pico2-w" / "pyble-build-provenance.json",
             "RP2 build provenance",
@@ -19533,6 +21746,16 @@ def audit_release_licenses(
             provenance=rp2_provenance,
             policy=rp2_policy,
         )
+        if rp2_build_tools_policy is not None:
+            initial_rp2 = _audit_merge_rp2_build_tools_observation(
+                initial_rp2,
+                _audit_observe_rp2_build_tools_license_inputs(
+                    build_root=builds,
+                    repo_root=root,
+                    provenance=rp2_provenance,
+                    policy=rp2_build_tools_policy,
+                ),
+            )
         _require(
             all(
                 owner.get("disposition") != "review-required"
@@ -19563,6 +21786,16 @@ def audit_release_licenses(
                 provenance=rp2_provenance,
                 policy=rp2_policy,
             )
+            if rp2_build_tools_policy is not None:
+                final_rp2 = _audit_merge_rp2_build_tools_observation(
+                    final_rp2,
+                    _audit_observe_rp2_build_tools_license_inputs(
+                        build_root=builds,
+                        repo_root=root,
+                        provenance=rp2_provenance,
+                        policy=rp2_build_tools_policy,
+                    ),
+                )
             required_semantics = {
                 "semantic_sha256",
                 "input_sha256",
@@ -19596,13 +21829,14 @@ def audit_release_licenses(
                 repo_root=root,
                 esp_notice=esp_result["third_party_licenses"],
                 rp2_observation=initial_rp2,
+                firmware_version=firmware_version,
             )
             _audit_verify_release_inventory_evidence(
                 evidence_dir=composed,
                 build_root=builds,
                 repo_root=root,
                 notice=result["third_party_licenses"],
-                firmware_version="0.6.0",
+                firmware_version=firmware_version,
             )
             _atomic_publish_no_replace(
                 composed,
@@ -19734,7 +21968,12 @@ def _audit_verify_packaged_build(
         target = spec["target"]
         target_build = build_root / target
         validated = (
-            validate_rp2_build(target, target_build)
+            _validate_rp2_build_for_firmware_version(
+                target,
+                target_build,
+                repo_root=None,
+                firmware_version=version,
+            )
             if spec["port"] == "rp2"
             else validate_build(target, target_build)
         )
@@ -19819,6 +22058,7 @@ def _audit_verify_esp_release_evidence(
     repo_root: Path | None,
     bundle: Path | None = None,
     release: dict[str, Any] | None = None,
+    firmware_version: str | None = None,
 ) -> None:
     _require(
         evidence_dir is not None and build_root is not None and repo_root is not None,
@@ -19828,11 +22068,15 @@ def _audit_verify_esp_release_evidence(
     evidence = Path(evidence_dir)
     builds = Path(build_root)
     root = Path(repo_root)
-    firmware_version = (
-        release["identity"]["version"]
-        if release is not None
-        else _read_lock(root)["pyble"]["agent_version"]
-    )
+    if release is not None:
+        release_version = release["identity"]["version"]
+        _require(
+            firmware_version is None or firmware_version == release_version,
+            "explicit firmware version differs from packaged release",
+        )
+        firmware_version = release_version
+    elif firmware_version is None:
+        firmware_version = _read_lock(root)["pyble"]["agent_version"]
     source_profile_order = _release_profile_order_for_version(firmware_version)
     release_profile_order = (
         V060_RELEASE_PROFILE_ORDER[:-1]
@@ -19954,7 +22198,10 @@ def _audit_verify_esp_release_evidence(
         "license evidence profile/role identities are incomplete",
     )
 
-    lock = _audit_load_tool_lock(root)
+    lock = _audit_load_tool_lock(
+        root,
+        firmware_version=firmware_version,
+    )
     policy = _audit_load_policy(root, lock)
     _require(
         receipt["executed_artifacts"] == dict(sorted(lock["_artifact_hashes"].items())),
@@ -20191,6 +22438,7 @@ def _audit_verify_release_evidence(
             evidence_dir=Path(evidence_dir),
             build_root=Path(build_root),
             repo_root=root,
+            firmware_version=firmware_version,
         )
         return
     _audit_verify_esp_release_evidence(
@@ -20209,6 +22457,7 @@ def _audit_verify_v060_esp_semantic_replay(
     evidence_dir: Path,
     build_root: Path,
     repo_root: Path,
+    firmware_version: str,
 ) -> None:
     """Replay the complete ESP verifier against the ESP half of v0.6 evidence."""
 
@@ -20295,6 +22544,7 @@ def _audit_verify_v060_esp_semantic_replay(
             evidence_dir=replay_evidence,
             build_root=Path(build_root),
             repo_root=Path(repo_root),
+            firmware_version=firmware_version,
         )
 
 
@@ -22066,6 +24316,10 @@ def _validate_qualification_observation(
         "OI-1 raw log digest must be lowercase 64-hex",
     )
     if has_physical_fact_lineage:
+        _require(
+            firmware_version == "0.6.0",
+            "physical-fact lineage is exact to firmware version 0.6.0",
+        )
         lineage = _validate_physical_fact_lineage_summary(
             observation["physical_fact_lineage"]
         )
@@ -22532,6 +24786,8 @@ def _validate_hil_source_era(
     }
     expected_keys = set(base_keys)
     schema_version = _hil_schema_version_for_version(firmware_version)
+    if schema_version == 5:
+        _require_v5_release_version(firmware_version, "V5 HIL validation")
     if schema_version == 4:
         expected_keys.add("waveshare_lcd147b_qualification")
     elif schema_version == 5:
@@ -22582,10 +24838,13 @@ def _bind_v060_hil_qualification_summaries(
     """Perform V5's sole atomic null-to-three-summary transition."""
 
     _validate_hil_source_era(payload, firmware_version)
+    _require_v5_release_version(
+        firmware_version,
+        "V5 qualification summary binding",
+    )
     _require(
-        firmware_version == "0.6.0"
-        and payload["schema_version"] == 5,
-        "V5 qualification summaries require exact firmware version 0.6.0",
+        payload["schema_version"] == 5,
+        "V5 qualification summaries require an approved exact release version",
     )
     summary_inputs = {
         "waveshare_lcd147b_qualification": waveshare_lcd147b_summary,
@@ -22606,6 +24865,37 @@ def _bind_v060_hil_qualification_summaries(
         == list(V060_RELEASE_PROFILE_ORDER),
         "V5 qualification summary record parity changed",
     )
+    if _is_v061_hardening_version(firmware_version):
+        hardening_digests: list[str] = []
+        for record in records:
+            checks = record.get("checks")
+            _require(
+                type(checks) is dict
+                and checks.get("v061_hardening") == "passed"
+                and "v061_hardening" in record,
+                "v0.6.1 qualification binding requires completed hardening evidence",
+            )
+            hardening = _validate_v061_hardening_summary(
+                record["v061_hardening"],
+                "V5 %s v0.6.1 hardening summary" % record["profile_id"],
+            )
+            hardening_digests.append(hardening["private_result_sha256"])
+        _require(
+            len(set(hardening_digests)) == len(V060_RELEASE_PROFILE_ORDER),
+            "v0.6.1 qualification binding requires five distinct hardening results",
+        )
+    else:
+        _require(
+            all(
+                "v061_hardening" not in record
+                and (
+                    type(record.get("checks")) is not dict
+                    or "v061_hardening" not in record["checks"]
+                )
+                for record in records
+            ),
+            "historical V5 qualification binding rejects v0.6.1 hardening evidence",
+        )
     by_id = {record["profile_id"]: record for record in records}
     _require(
         all(
@@ -22730,6 +25020,8 @@ def _validate_hil(
     policy_by_id = {
         entry["profile_id"]: entry for entry in policy["profiles"]
     }
+    v061_hardening = _is_v061_hardening_version(identity["version"])
+    v061_hardening_digests: list[str] = []
     required = {
         "profile_id",
         "status",
@@ -22803,6 +25095,8 @@ def _validate_hil(
                 "oi1_observation",
                 "redacted_console_log",
             }
+            if v061_hardening:
+                v5_required.add("v061_hardening")
             if not is_rp2:
                 v5_required.add("manifest_sha256")
             _exact_keys(record, v5_required, "HIL %s" % profile_id)
@@ -22849,6 +25143,8 @@ def _validate_hil(
                 "filesystem_resume_reliability",
                 "footprint_reliability",
             }
+            if v061_hardening:
+                v5_checks.add("v061_hardening")
             checks = _exact_keys(
                 record["checks"], v5_checks, "HIL %s checks" % profile_id
             )
@@ -22914,6 +25210,14 @@ def _validate_hil(
                     profile_id,
                     firmware_version=identity["version"],
                 )
+                if v061_hardening:
+                    hardening_summary = _validate_v061_hardening_summary(
+                        record["v061_hardening"],
+                        "HIL %s v0.6.1 hardening summary" % profile_id,
+                    )
+                    v061_hardening_digests.append(
+                        hardening_summary["private_result_sha256"]
+                    )
                 expected_gates = (
                     tuple("C3-G%d" % index for index in range(7))
                     if profile_id == "esp32-c3-4mb"
@@ -22949,7 +25253,11 @@ def _validate_hil(
                     and all(value == "pending" for value in checks.values())
                     and app_hil == {"ipad": None, "android": None}
                     and record["profile_gate_summary"] is None
-                    and record["oi1_observation"] is None,
+                    and record["oi1_observation"] is None
+                    and (
+                        not v061_hardening
+                        or record["v061_hardening"] is None
+                    ),
                     "candidate HIL fields must remain pending for %s" % profile_id,
                 )
             continue
@@ -23071,6 +25379,13 @@ def _validate_hil(
                 record["oi1_observation"] is None,
                 "candidate HIL OI-1 observation must remain null",
             )
+    if v061_hardening and public:
+        _require(
+            len(v061_hardening_digests) == len(V060_RELEASE_PROFILE_ORDER)
+            and len(set(v061_hardening_digests))
+            == len(V060_RELEASE_PROFILE_ORDER),
+            "public HIL requires five distinct v0.6.1 hardening results",
+        )
     if payload["schema_version"] == 5:
         summaries = (
             payload["waveshare_lcd147b_qualification"],
@@ -23286,6 +25601,8 @@ def validate_bundle(
     metadata_schema_version = (
         _release_metadata_schema_version_for_version(source_version)
     )
+    if metadata_schema_version == 4:
+        _require_v5_release_version(source_version, "V5 release validation")
     _require(
         actual_files == _expected_bundle_files(profile_order),
         "release bundle layout is not exact",
@@ -23634,6 +25951,8 @@ def _candidate_hil_report(
     bundle: Path,
 ) -> str:
     hil_schema_version = _hil_schema_version_for_version(version)
+    if hil_schema_version == 5:
+        _require_v5_release_version(version, "V5 candidate HIL generation")
     policy_by_id = {
         entry["profile_id"]: entry
         for entry in qualification_policy["profiles"]
@@ -23687,6 +26006,9 @@ def _candidate_hil_report(
                 "oi1_observation": None,
                 "redacted_console_log": "",
             }
+            if _is_v061_hardening_version(version):
+                record["checks"]["v061_hardening"] = "pending"
+                record["v061_hardening"] = None
             if not is_rp2:
                 record["manifest_sha256"] = profile["manifest"]["sha256"]
             records.append(record)
@@ -24314,7 +26636,12 @@ def create_baseline_inputs(
         spec = PROFILE_SPECS[profile_id]
         target = spec["target"]
         validated[target] = (
-            validate_rp2_build(target, builds_root / target, repo_root=root)
+            _validate_rp2_build_for_firmware_version(
+                target,
+                builds_root / target,
+                repo_root=root,
+                firmware_version=version,
+            )
             if spec["port"] == "rp2"
             else validate_build(target, builds_root / target, repo_root=root)
         )
@@ -24355,7 +26682,12 @@ def create_baseline_inputs(
             spec = PROFILE_SPECS[profile_id]
             target = spec["target"]
             revalidated[target] = (
-                validate_rp2_build(target, builds_root / target, repo_root=root)
+                _validate_rp2_build_for_firmware_version(
+                    target,
+                    builds_root / target,
+                    repo_root=root,
+                    firmware_version=version,
+                )
                 if spec["port"] == "rp2"
                 else validate_build(target, builds_root / target, repo_root=root)
             )
@@ -24792,6 +27124,8 @@ def create_bundle(
     lock = _read_lock(root)
     version = lock["pyble"]["agent_version"]
     profile_order = _release_profile_order_for_version(version)
+    if tuple(profile_order) == V060_RELEASE_PROFILE_ORDER:
+        _require_v5_release_version(version, "V5 candidate creation")
     compare_build_roots(
         builds_root,
         reproducibility_root,
@@ -24815,10 +27149,11 @@ def create_bundle(
         spec = PROFILE_SPECS[profile_id]
         target = spec["target"]
         validated[target] = (
-            validate_rp2_build(
+            _validate_rp2_build_for_firmware_version(
                 target,
                 builds_root / target,
                 repo_root=validation_root,
+                firmware_version=version,
             )
             if spec["port"] == "rp2"
             else validate_build(
@@ -25161,6 +27496,7 @@ def _validate_hil_promotion_envelope(
             "oi1_build",
         )
     )
+    hardening_digests: list[str] = []
     for candidate_record, completed_record in zip(
         candidate_records,
         completed_records,
@@ -25218,6 +27554,53 @@ def _validate_hil_promotion_envelope(
                     "completed HIL has unexpected profile gates for %s"
                     % profile_id,
                 )
+            record_is_v061 = _is_v061_hardening_version(
+                candidate_record["firmware_version"]
+            )
+            candidate_checks = candidate_record.get("checks")
+            completed_checks = completed_record.get("checks")
+            _require(
+                type(candidate_checks) is dict
+                and type(completed_checks) is dict,
+                "completed HIL check maps are invalid for %s" % profile_id,
+            )
+            if record_is_v061:
+                _require(
+                    candidate_record.get("v061_hardening", object()) is None
+                    and candidate_checks.get("v061_hardening") == "pending"
+                    and "v061_hardening" in completed_record
+                    and completed_checks.get("v061_hardening") == "passed",
+                    "v0.6.1 hardening evidence is not in its required phase for %s"
+                    % profile_id,
+                )
+                summary = _validate_v061_hardening_summary(
+                    completed_record["v061_hardening"],
+                    "completed HIL %s v0.6.1 hardening summary" % profile_id,
+                )
+                hardening_digests.append(summary["private_result_sha256"])
+            else:
+                _require(
+                    "v061_hardening" not in candidate_record
+                    and "v061_hardening" not in completed_record
+                    and "v061_hardening" not in candidate_checks
+                    and "v061_hardening" not in completed_checks,
+                    "historical V5 HIL rejects the v0.6.1 hardening extension",
+                )
+    if candidate_payload["schema_version"] == 5:
+        record_versions = [
+            record.get("firmware_version") for record in candidate_records
+        ]
+        if any(_is_v061_hardening_version(value) for value in record_versions):
+            _require(
+                all(
+                    _is_v061_hardening_version(value)
+                    for value in record_versions
+                )
+                and len(hardening_digests) == len(V060_RELEASE_PROFILE_ORDER)
+                and len(set(hardening_digests))
+                == len(V060_RELEASE_PROFILE_ORDER),
+                "completed HIL requires five distinct v0.6.1 hardening summaries",
+            )
 
 
 def _completed_hil_report(payload: dict[str, Any]) -> bytes:
@@ -25429,6 +27812,209 @@ def _read_canonical_json_object(
         "%s must use canonical JSON bytes" % label,
     )
     return value, snapshot
+
+
+def _v061_hardening_qualification_binding(
+    qualification_repo_root: Path,
+    *,
+    require_clean: bool,
+) -> dict[str, Any]:
+    """Freeze the reviewed checkout and loaded v0.6.1 qualification bytes."""
+
+    root = Path(qualification_repo_root)
+    if require_clean:
+        _require_checkout_clean(root, "v0.6.1 hardening qualification")
+    gate = _v061_hardening_gate()
+    try:
+        expected_gate_source = (
+            root
+            / "firmware"
+            / "qualification"
+            / "v061_hardening_release_gate.py"
+        ).resolve(strict=True)
+        executable = (root / V061_HARDENING_EXECUTABLE_RELATIVE).resolve(
+            strict=True
+        )
+    except OSError as exc:
+        raise ReleaseError(
+            "v0.6.1 hardening qualification sources are unavailable"
+        ) from exc
+    _require(
+        expected_gate_source == _V061_HARDENING_GATE_SOURCE
+        and Path(gate.__file__).resolve(strict=True) == expected_gate_source,
+        "loaded v0.6.1 hardening validator is outside the qualification checkout",
+    )
+    gate_raw, gate_snapshot = _stable_completion_bytes(
+        expected_gate_source,
+        "loaded v0.6.1 hardening validator",
+        maximum=2 * 1024 * 1024,
+    )
+    executable_raw, executable_snapshot = _stable_completion_bytes(
+        executable,
+        "v0.6.1 hardening qualification executable",
+        maximum=2 * 1024 * 1024,
+    )
+    _require(
+        _V061_HARDENING_GATE_SOURCE_SHA256 is not None
+        and hashlib.sha256(gate_raw).hexdigest()
+        == _V061_HARDENING_GATE_SOURCE_SHA256,
+        "loaded v0.6.1 hardening validator changed",
+    )
+    try:
+        closure_snapshot = gate._qualification_snapshot(root)
+    except gate.QualificationError as exc:
+        raise ReleaseError(
+            "v0.6.1 hardening acquisition source closure changed: %s" % exc
+        ) from exc
+    return {
+        "source_commit": _git_output(
+            root,
+            "v0.6.1 hardening qualification",
+            "rev-parse",
+            "HEAD",
+        ),
+        "executable_sha256": hashlib.sha256(executable_raw).hexdigest(),
+        "gate_snapshot": gate_snapshot,
+        "executable_snapshot": executable_snapshot,
+        "closure_snapshot": closure_snapshot,
+    }
+
+
+def _validate_v061_hardening_result(
+    path: Path,
+    *,
+    artifact_path: Path,
+    expected_profile_id: str,
+    expected_target: str,
+    expected_version: str,
+    expected_source_commit: str,
+    candidate_release_json_sha256: str,
+    expected_qualification_source_commit: str,
+    expected_qualification_executable_sha256: str,
+    label: str,
+) -> tuple[dict[str, Any], tuple[Any, ...]]:
+    """Reopen one private result and return only its derived public summary."""
+
+    gate = _v061_hardening_gate()
+    try:
+        stable_path = gate._absolute_lexical_path(Path(path), label)
+    except gate.QualificationError as exc:
+        raise ReleaseError("%s path is unsafe: %s" % (label, exc)) from exc
+    _private_raw, private_snapshot = _stable_completion_bytes(
+        stable_path,
+        label,
+        maximum=getattr(gate, "MAX_RESULT_BYTES", _V5_COMPLETION_INPUT_MAX_BYTES),
+        exclusive=True,
+    )
+    try:
+        summary = gate.validate_result_file(
+            stable_path,
+            artifact_path=Path(artifact_path),
+            expected_profile_id=expected_profile_id,
+            expected_target=expected_target,
+            expected_version=expected_version,
+            expected_source_commit=expected_source_commit,
+            candidate_release_json_sha256=candidate_release_json_sha256,
+            expected_qualification_source_commit=(
+                expected_qualification_source_commit
+            ),
+            expected_qualification_executable_sha256=(
+                expected_qualification_executable_sha256
+            ),
+        )
+    except gate.QualificationError as exc:
+        raise ReleaseError("%s is invalid: %s" % (label, exc)) from exc
+    summary = _validate_v061_hardening_summary(
+        summary,
+        "%s public summary" % label,
+    )
+    _require(
+        summary["private_result_sha256"] == private_snapshot[3],
+        "%s digest differs from its stable private bytes" % label,
+    )
+    return copy.deepcopy(summary), private_snapshot
+
+
+def _validate_v061_hardening_result_set(
+    *,
+    result_paths: list[Path],
+    candidate_dir: Path,
+    completed_hil: dict[str, Any],
+    firmware_version: str,
+    source_commit: str,
+    candidate_release_json_sha256: str,
+    qualification_source_commit: str,
+    qualification_executable_sha256: str,
+) -> tuple[tuple[str, tuple[Any, ...], dict[str, Any]], ...]:
+    """Validate the exact ordered five-result authority used by finalization."""
+
+    _require(
+        _is_v061_hardening_version(firmware_version),
+        "private v0.6.1 hardening results require exact firmware version 0.6.1",
+    )
+    _require(
+        type(result_paths) is list
+        and len(result_paths) == len(V060_RELEASE_PROFILE_ORDER),
+        "v0.6.1 finalization requires exactly five hardening results",
+    )
+    records = completed_hil.get("records")
+    _require(
+        type(records) is list
+        and len(records) == len(V060_RELEASE_PROFILE_ORDER)
+        and all(type(record) is dict for record in records)
+        and [record.get("profile_id") for record in records]
+        == list(V060_RELEASE_PROFILE_ORDER),
+        "completed HIL hardening record order/parity changed",
+    )
+    validated: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = []
+    lexical_paths: list[str] = []
+    result_digests: list[str] = []
+    candidate = Path(candidate_dir)
+    for profile_id, path, record in zip(
+        V060_RELEASE_PROFILE_ORDER,
+        result_paths,
+        records,
+    ):
+        _require(
+            isinstance(path, Path),
+            "v0.6.1 hardening result paths must be pathlib Paths",
+        )
+        summary, snapshot = _validate_v061_hardening_result(
+            path,
+            artifact_path=(
+                candidate
+                / profile_id
+                / PROFILE_SPECS[profile_id]["primary_artifact"]
+            ),
+            expected_profile_id=profile_id,
+            expected_target=PROFILE_SPECS[profile_id]["target"],
+            expected_version=firmware_version,
+            expected_source_commit=source_commit,
+            candidate_release_json_sha256=candidate_release_json_sha256,
+            expected_qualification_source_commit=qualification_source_commit,
+            expected_qualification_executable_sha256=(
+                qualification_executable_sha256
+            ),
+            label="private v0.6.1 hardening result for %s" % profile_id,
+        )
+        reported = _validate_v061_hardening_summary(
+            record.get("v061_hardening"),
+            "completed HIL %s v0.6.1 hardening summary" % profile_id,
+        )
+        _require(
+            summary == reported,
+            "private v0.6.1 hardening result differs from completed HIL for %s"
+            % profile_id,
+        )
+        lexical_paths.append(snapshot[0])
+        result_digests.append(summary["private_result_sha256"])
+        validated.append((profile_id, snapshot, summary))
+    _require(
+        len(set(lexical_paths)) == len(V060_RELEASE_PROFILE_ORDER)
+        and len(set(result_digests)) == len(V060_RELEASE_PROFILE_ORDER),
+        "v0.6.1 finalization requires five distinct hardening result files",
+    )
+    return tuple(validated)
 
 
 def _lineage_raw_records(raw: bytes) -> list[dict[str, Any]]:
@@ -26313,6 +28899,7 @@ def _load_v5_completion_observation(
     *,
     candidate_dir: Path,
     profile_id: str,
+    firmware_version: str,
     qualification_repo_root: Path,
     policy: dict[str, Any],
     derivation: dict[str, str],
@@ -26329,7 +28916,12 @@ def _load_v5_completion_observation(
     value, snapshot = _read_canonical_json_object(
         Path(path), "V5 OI-1 verify observation"
     )
+    _require_v5_release_version(firmware_version, "V5 completion observation")
     if value.get("kind") == _PHYSICAL_FACT_LINEAGE_KIND:
+        _require(
+            firmware_version == "0.6.0",
+            "physical-fact lineage cannot qualify v0.6.1 candidate bytes",
+        )
         return _consume_physical_fact_lineage(
             Path(path),
             candidate_dir=Path(candidate_dir),
@@ -26360,7 +28952,7 @@ def _load_v5_completion_observation(
         value,
         policy["thresholds"],
         profile_id,
-        firmware_version="0.6.0",
+        firmware_version=firmware_version,
     )
     return value, snapshot
 
@@ -26452,12 +29044,22 @@ def _validate_v5_completion_fragment(
     value: Any,
     *,
     profile_id: str,
+    firmware_version: str,
     observation: dict[str, Any],
     gate_summary: dict[str, str] | None,
+    v061_hardening_summary: dict[str, Any] | None,
 ) -> dict[str, Any]:
+    _require_v5_release_version(
+        firmware_version,
+        "V5 HIL completion fragment validation",
+    )
+    v061_hardening = _is_v061_hardening_version(firmware_version)
+    fragment_fields = set(_V5_COMPLETION_FRAGMENT_FIELDS)
+    if v061_hardening:
+        fragment_fields.add("v061_hardening")
     fragment = _exact_keys(
         value,
-        _V5_COMPLETION_FRAGMENT_FIELDS,
+        fragment_fields,
         "V5 HIL completion fragment for %s" % profile_id,
     )
     _require(
@@ -26466,16 +29068,52 @@ def _validate_v5_completion_fragment(
     )
     _validate_v5_operator_input(
         {
-            field: copy.deepcopy(fragment[field])
-            for field in (*_V5_OPERATOR_FIELDS, "checks", "app_hil")
+            **{
+                field: copy.deepcopy(fragment[field])
+                for field in _V5_OPERATOR_FIELDS
+            },
+            "checks": {
+                name: copy.deepcopy(fragment["checks"][name])
+                for name in _V5_OPERATOR_CHECKS
+                if name in fragment["checks"]
+            },
+            "app_hil": copy.deepcopy(fragment["app_hil"]),
         },
         profile_id,
+    )
+    expected_checks = set(_V5_OPERATOR_CHECKS)
+    if v061_hardening:
+        expected_checks.add("v061_hardening")
+    checks = _exact_keys(
+        fragment["checks"],
+        expected_checks,
+        "V5 HIL completion checks for %s" % profile_id,
     )
     _require(
         fragment["oi1_observation"] == observation
         and fragment["profile_gate_summary"] == gate_summary,
         "V5 HIL completion derived fields changed",
     )
+    if v061_hardening:
+        derived = _validate_v061_hardening_summary(
+            v061_hardening_summary,
+            "derived V5 %s v0.6.1 hardening summary" % profile_id,
+        )
+        supplied = _validate_v061_hardening_summary(
+            fragment["v061_hardening"],
+            "V5 %s completion hardening summary" % profile_id,
+        )
+        _require(
+            checks["v061_hardening"] == "passed" and supplied == derived,
+            "V5 HIL completion hardening evidence changed",
+        )
+    else:
+        _require(
+            v061_hardening_summary is None
+            and "v061_hardening" not in fragment
+            and "v061_hardening" not in checks,
+            "historical V5 completion rejects v0.6.1 hardening evidence",
+        )
     return fragment
 
 
@@ -26633,8 +29271,9 @@ def create_hil_completion_fragment(
     output_path: Path,
     qualification_repo_root: Path,
     profile_qualification_result: Path | None,
+    v061_hardening_result: Path | None = None,
 ) -> Path:
-    """Derive one candidate-bound V5 completion fragment without gate input."""
+    """Derive one candidate-bound V5 completion fragment from private gates."""
 
     try:
         candidate = _V060_PROFILE_GATE._absolute_lexical_path(
@@ -26669,12 +29308,13 @@ def create_hil_completion_fragment(
         public=False,
         qualification_repo_root=qualification_root,
     )
+    firmware_version = release["identity"]["version"]
+    _require_v5_release_version(firmware_version, "V5 HIL completion")
     _require(
-        release["identity"]["version"] == "0.6.0"
-        and [profile["id"] for profile in release["profiles"]]
+        [profile["id"] for profile in release["profiles"]]
         == list(V060_RELEASE_PROFILE_ORDER)
         and all(profile["hil_status"] == "pending" for profile in release["profiles"]),
-        "HIL completion requires the exact fully pending v0.6.0 candidate",
+        "HIL completion requires an approved fully pending V5 candidate",
     )
     _require(
         _release_tree_snapshot(candidate, "candidate release")
@@ -26694,14 +29334,14 @@ def create_hil_completion_fragment(
     completion_derivation = _qualification_derivation_for_source(
         qualification_root,
         candidate_source_commit,
-        firmware_version="0.6.0",
+        firmware_version=firmware_version,
     )
     try:
         pending_report_text = pending_report_raw.decode("utf-8", errors="strict")
     except UnicodeDecodeError as exc:
         raise ReleaseError("candidate HIL report is not strict UTF-8") from exc
     pending_payload = _parse_hil_report(pending_report_text)
-    _validate_hil_source_era(pending_payload, "0.6.0")
+    _validate_hil_source_era(pending_payload, firmware_version)
     _require(
         pending_payload["schema_version"] == 5
         and pending_payload["qualification_policy"]["schema_version"] == 3
@@ -26759,12 +29399,57 @@ def create_hil_completion_fragment(
         Path(oi1_observation_path),
         candidate_dir=candidate,
         profile_id=profile_id,
+        firmware_version=firmware_version,
         qualification_repo_root=qualification_root,
         policy=policy_by_id[profile_id],
         derivation=completion_derivation,
     )
 
     candidate_release_digest = hashlib.sha256(release_raw).hexdigest()
+    hardening_result_path = (
+        Path(v061_hardening_result)
+        if v061_hardening_result is not None
+        else None
+    )
+    v061_hardening = _is_v061_hardening_version(firmware_version)
+    _require(
+        v061_hardening == (hardening_result_path is not None),
+        (
+            "v0.6.1 HIL completion requires its profile hardening result"
+            if v061_hardening
+            else "historical V5 HIL completion rejects a v0.6.1 hardening result"
+        ),
+    )
+    hardening_binding: dict[str, Any] | None = None
+    hardening_snapshot: tuple[Any, ...] | None = None
+    hardening_summary: dict[str, Any] | None = None
+    if hardening_result_path is not None:
+        hardening_binding = _v061_hardening_qualification_binding(
+            qualification_root,
+            require_clean=False,
+        )
+        hardening_summary, hardening_snapshot = (
+            _validate_v061_hardening_result(
+                hardening_result_path,
+                artifact_path=(
+                    candidate
+                    / profile_id
+                    / PROFILE_SPECS[profile_id]["primary_artifact"]
+                ),
+                expected_profile_id=profile_id,
+                expected_target=PROFILE_SPECS[profile_id]["target"],
+                expected_version=firmware_version,
+                expected_source_commit=candidate_source_commit,
+                candidate_release_json_sha256=candidate_release_digest,
+                expected_qualification_source_commit=hardening_binding[
+                    "source_commit"
+                ],
+                expected_qualification_executable_sha256=hardening_binding[
+                    "executable_sha256"
+                ],
+                label="private v0.6.1 hardening result",
+            )
+        )
     result_path = (
         Path(profile_qualification_result)
         if profile_qualification_result is not None
@@ -26810,7 +29495,7 @@ def create_hil_completion_fragment(
                     candidate / profile_id / PROFILE_SPECS[profile_id]["primary_artifact"]
                 ),
                 expected_profile_id=profile_id,
-                expected_version="0.6.0",
+                expected_version=firmware_version,
                 candidate_release_json_sha256=candidate_release_digest,
             )
             if profile_id == "esp32-c3-4mb":
@@ -26830,7 +29515,7 @@ def create_hil_completion_fragment(
                             / profile_id
                             / PROFILE_SPECS[profile_id]["primary_artifact"]
                         ),
-                        expected_version="0.6.0",
+                        expected_version=firmware_version,
                         candidate_release_json_sha256=candidate_release_digest,
                         observation=observation,
                         post_oi_nvs_receipt_path=c3_evidence_paths[
@@ -26865,11 +29550,16 @@ def create_hil_completion_fragment(
         "profile_gate_summary": gate_summary,
         "oi1_observation": copy.deepcopy(observation),
     }
+    if v061_hardening:
+        fragment["checks"]["v061_hardening"] = "passed"
+        fragment["v061_hardening"] = copy.deepcopy(hardening_summary)
     _validate_v5_completion_fragment(
         fragment,
         profile_id=profile_id,
+        firmware_version=firmware_version,
         observation=observation,
         gate_summary=gate_summary,
+        v061_hardening_summary=hardening_summary,
     )
     raw = _canonical_json_bytes(fragment)
 
@@ -26909,6 +29599,7 @@ def create_hil_completion_fragment(
                 Path(oi1_observation_path),
                 candidate_dir=candidate,
                 profile_id=profile_id,
+                firmware_version=firmware_version,
                 qualification_repo_root=qualification_root,
                 policy=policy_by_id[profile_id],
                 derivation=completion_derivation,
@@ -26920,6 +29611,47 @@ def create_hil_completion_fragment(
             and _current_observation == observation,
             "HIL completion input changed while it was used",
         )
+        if hardening_result_path is not None:
+            _require(
+                hardening_binding is not None
+                and hardening_snapshot is not None
+                and hardening_summary is not None,
+                "v0.6.1 hardening completion authority disappeared",
+            )
+            current_hardening_binding = (
+                _v061_hardening_qualification_binding(
+                    qualification_root,
+                    require_clean=False,
+                )
+            )
+            current_hardening_summary, current_hardening_snapshot = (
+                _validate_v061_hardening_result(
+                    hardening_result_path,
+                    artifact_path=(
+                        candidate
+                        / profile_id
+                        / PROFILE_SPECS[profile_id]["primary_artifact"]
+                    ),
+                    expected_profile_id=profile_id,
+                    expected_target=PROFILE_SPECS[profile_id]["target"],
+                    expected_version=firmware_version,
+                    expected_source_commit=candidate_source_commit,
+                    candidate_release_json_sha256=candidate_release_digest,
+                    expected_qualification_source_commit=hardening_binding[
+                        "source_commit"
+                    ],
+                    expected_qualification_executable_sha256=hardening_binding[
+                        "executable_sha256"
+                    ],
+                    label="private v0.6.1 hardening result",
+                )
+            )
+            _require(
+                current_hardening_binding == hardening_binding
+                and current_hardening_snapshot == hardening_snapshot
+                and current_hardening_summary == hardening_summary,
+                "v0.6.1 hardening result or qualification source changed while used",
+            )
         if result_path is not None:
             try:
                 current_gate_raw, current_gate_source_snapshot = (
@@ -26946,7 +29678,7 @@ def create_hil_completion_fragment(
                         / PROFILE_SPECS[profile_id]["primary_artifact"]
                     ),
                     expected_profile_id=profile_id,
-                    expected_version="0.6.0",
+                    expected_version=firmware_version,
                     candidate_release_json_sha256=candidate_release_digest,
                 )
                 if profile_id == "esp32-c3-4mb":
@@ -26958,7 +29690,7 @@ def create_hil_completion_fragment(
                                 / profile_id
                                 / PROFILE_SPECS[profile_id]["primary_artifact"]
                             ),
-                            expected_version="0.6.0",
+                            expected_version=firmware_version,
                             candidate_release_json_sha256=(
                                 candidate_release_digest
                             ),
@@ -27000,8 +29732,10 @@ def create_hil_completion_fragment(
         _validate_v5_completion_fragment(
             written,
             profile_id=profile_id,
+            firmware_version=firmware_version,
             observation=observation,
             gate_summary=gate_summary,
+            v061_hardening_summary=hardening_summary,
         )
         unchanged()
 
@@ -27092,12 +29826,26 @@ def assemble_completed_hil_report(
     firmware_version = release["identity"]["version"]
     profile_order = _release_profile_order_for_version(firmware_version)
     hil_schema_version = _hil_schema_version_for_version(firmware_version)
+    v061_hardening = _is_v061_hardening_version(firmware_version)
     if hil_schema_version == 5:
+        _require_v5_release_version(firmware_version, "V5 HIL report assembly")
         operator_checks = v5_operator_checks
-        all_checks = (*v5_operator_checks, "footprint_reliability")
+        completion_checks = (
+            (*v5_operator_checks, "v061_hardening")
+            if v061_hardening
+            else v5_operator_checks
+        )
+        all_checks = (
+            (*v5_operator_checks, "footprint_reliability", "v061_hardening")
+            if v061_hardening
+            else (*v5_operator_checks, "footprint_reliability")
+        )
         completion_fields.update({"app_hil", "profile_gate_summary"})
+        if v061_hardening:
+            completion_fields.add("v061_hardening")
     else:
         operator_checks = legacy_operator_checks
+        completion_checks = operator_checks
         all_checks = (
             *legacy_operator_checks[:-1],
             "footprint_reliability",
@@ -27123,6 +29871,7 @@ def assemble_completed_hil_report(
     except (OSError, UnicodeError) as exc:
         raise ReleaseError("candidate HIL report is not UTF-8") from exc
     pending_payload = _parse_hil_report(pending_report_text)
+    _validate_hil_source_era(pending_payload, firmware_version)
 
     evidence_by_id: dict[str, dict[str, Any]] = {}
     for index, evidence_path in enumerate(evidence_paths):
@@ -27158,16 +29907,17 @@ def assemble_completed_hil_report(
         item["profile_id"]: item
         for item in completed_payload["qualification_policy"]["profiles"]
     }
+    hardening_digests: list[str] = []
     for record in completed_payload["records"]:
         profile_id = record["profile_id"]
         completion = evidence_by_id[profile_id]
         checks = _exact_keys(
             completion["checks"],
-            set(operator_checks),
+            set(completion_checks),
             "HIL completion checks for %s" % profile_id,
         )
         _require(
-            all(checks[name] == "passed" for name in operator_checks),
+            all(checks[name] == "passed" for name in completion_checks),
             "HIL operator checks are incomplete for %s" % profile_id,
         )
         _validate_qualification_observation(
@@ -27185,6 +29935,22 @@ def assemble_completed_hil_report(
             completion["oi1_observation"]
         )
         if hil_schema_version == 5:
+            hardening_summary = (
+                _validate_v061_hardening_summary(
+                    completion["v061_hardening"],
+                    "HIL completion %s v0.6.1 hardening summary" % profile_id,
+                )
+                if v061_hardening
+                else None
+            )
+            _validate_v5_completion_fragment(
+                completion,
+                profile_id=profile_id,
+                firmware_version=firmware_version,
+                observation=completion["oi1_observation"],
+                gate_summary=completion["profile_gate_summary"],
+                v061_hardening_summary=hardening_summary,
+            )
             app_results = _exact_keys(
                 completion["app_hil"],
                 {"ipad", "android"},
@@ -27211,6 +29977,23 @@ def assemble_completed_hil_report(
             record["profile_gate_summary"] = copy.deepcopy(
                 completion["profile_gate_summary"]
             )
+            if v061_hardening:
+                _require(
+                    hardening_summary is not None,
+                    "v0.6.1 hardening summary disappeared during assembly",
+                )
+                record["v061_hardening"] = copy.deepcopy(hardening_summary)
+                hardening_digests.append(
+                    hardening_summary["private_result_sha256"]
+                )
+
+    if v061_hardening:
+        _require(
+            len(hardening_digests) == len(V060_RELEASE_PROFILE_ORDER)
+            and len(set(hardening_digests))
+            == len(V060_RELEASE_PROFILE_ORDER),
+            "completed HIL requires five distinct v0.6.1 hardening summaries",
+        )
 
     _validate_hil_promotion_envelope(pending_payload, completed_payload)
     report_bytes = _completed_hil_report(completed_payload)
@@ -27268,6 +30051,7 @@ def finalize_public_bundle(
     waveshare_lcd147b_qualification_result: Path | None = None,
     esp32_c3_qualification_result: Path | None = None,
     rpi_pico2_w_qualification_result: Path | None = None,
+    v061_hardening_result_paths: list[Path] | None = None,
 ) -> Path:
     """Promote one audited, HIL-qualified candidate without mutating it."""
 
@@ -27290,6 +30074,11 @@ def finalize_public_bundle(
     pico_qualification_result = (
         Path(rpi_pico2_w_qualification_result)
         if rpi_pico2_w_qualification_result is not None
+        else None
+    )
+    hardening_result_paths = (
+        [Path(path) for path in v061_hardening_result_paths]
+        if v061_hardening_result_paths is not None
         else None
     )
 
@@ -27380,18 +30169,52 @@ def finalize_public_bundle(
     _validate_hil_source_era(completed_hil, firmware_version)
     _validate_hil_promotion_envelope(candidate_hil, completed_hil)
 
-    v060 = tuple(profile_order) == V060_RELEASE_PROFILE_ORDER
-    if v060:
+    v061_hardening = _is_v061_hardening_version(firmware_version)
+    _require(
+        v061_hardening == (hardening_result_paths is not None),
+        (
+            "v0.6.1 finalization requires its exact five hardening results"
+            if v061_hardening
+            else "historical finalization rejects v0.6.1 hardening results"
+        ),
+    )
+    hardening_qualification: dict[str, Any] | None = None
+    hardening_validation: tuple[
+        tuple[str, tuple[Any, ...], dict[str, Any]], ...
+    ] | None = None
+    if hardening_result_paths is not None:
+        hardening_qualification = _v061_hardening_qualification_binding(
+            root,
+            require_clean=True,
+        )
+        hardening_validation = _validate_v061_hardening_result_set(
+            result_paths=hardening_result_paths,
+            candidate_dir=candidate,
+            completed_hil=completed_hil,
+            firmware_version=firmware_version,
+            source_commit=candidate_release["provenance"]["pyble"]["commit"],
+            candidate_release_json_sha256=candidate_release_json_sha256,
+            qualification_source_commit=hardening_qualification[
+                "source_commit"
+            ],
+            qualification_executable_sha256=hardening_qualification[
+                "executable_sha256"
+            ],
+        )
+
+    v5 = tuple(profile_order) == V060_RELEASE_PROFILE_ORDER
+    if v5:
+        _require_v5_release_version(firmware_version, "V5 release finalization")
         _require(
             c3_qualification_result is not None
             and pico_qualification_result is not None,
-            "v0.6.0 finalization requires both C3 and Pico private "
+            "V5 finalization requires both C3 and Pico private "
             "qualification results",
         )
     else:
         _require(
             c3_qualification_result is None and pico_qualification_result is None,
-            "pre-v0.6.0 finalization rejects C3/Pico qualification results",
+            "pre-V5 finalization rejects C3/Pico qualification results",
         )
 
     lcd_capable = _waveshare_lcd147b_capable_version(firmware_version)
@@ -27431,11 +30254,11 @@ def finalize_public_bundle(
             completed_report_bytes,
             qualification_result,
         )
-        if v060:
+        if v5:
             _require(
                 c3_qualification_result is not None
                 and pico_qualification_result is not None,
-                "v0.6.0 private qualification inputs disappeared",
+                "V5 private qualification inputs disappeared",
             )
             completed_c3_record = next(
                 (
@@ -27505,7 +30328,7 @@ def finalize_public_bundle(
                 )
             except _V060_PROFILE_GATE.QualificationError as exc:
                 raise ReleaseError(
-                    "private v0.6.0 profile qualification result is invalid: %s"
+                    "private V5 profile qualification result is invalid: %s"
                     % exc
                 ) from exc
             promoted_hil = _bind_v060_hil_qualification_summaries(
@@ -27625,9 +30448,12 @@ def finalize_public_bundle(
             validated_public == promoted_release,
             "late public validation returned different release metadata",
         )
+        staged_notice = staging / "THIRD_PARTY_LICENSES.txt"
         _audit_verify_release_evidence(
-            notice=(staging / "THIRD_PARTY_LICENSES.txt").read_text(
-                encoding="utf-8", errors="strict"
+            notice=(
+                staged_notice.read_text(encoding="utf-8", errors="strict")
+                if staged_notice.is_file()
+                else ""
             ),
             evidence_dir=evidence,
             build_root=builds,
@@ -27661,11 +30487,11 @@ def finalize_public_bundle(
                 == qualification_snapshot,
                 "private LCD qualification result changed during finalization",
             )
-        if v060:
+        if v5:
             _require(
                 c3_qualification_result is not None
                 and pico_qualification_result is not None,
-                "v0.6.0 private qualification inputs disappeared",
+                "V5 private qualification inputs disappeared",
             )
             try:
                 current_c3_snapshot = (
@@ -27702,7 +30528,7 @@ def finalize_public_bundle(
                 )
             except _V060_PROFILE_GATE.QualificationError as exc:
                 raise ReleaseError(
-                    "private v0.6.0 qualification result changed or became unsafe: %s"
+                    "private V5 qualification result changed or became unsafe: %s"
                     % exc
                 ) from exc
             _require(
@@ -27710,6 +30536,43 @@ def finalize_public_bundle(
                 and current_pico_snapshot == pico_qualification_snapshot
                 and current_c3_summary == c3_qualification_summary,
                 "private C3/Pico qualification result changed during finalization",
+            )
+        if hardening_result_paths is not None:
+            _require(
+                hardening_qualification is not None
+                and hardening_validation is not None,
+                "v0.6.1 hardening finalization authority disappeared",
+            )
+            current_hardening_qualification = (
+                _v061_hardening_qualification_binding(
+                    root,
+                    require_clean=True,
+                )
+            )
+            current_hardening_validation = (
+                _validate_v061_hardening_result_set(
+                    result_paths=hardening_result_paths,
+                    candidate_dir=candidate,
+                    completed_hil=completed_hil,
+                    firmware_version=firmware_version,
+                    source_commit=candidate_release["provenance"]["pyble"][
+                        "commit"
+                    ],
+                    candidate_release_json_sha256=(
+                        candidate_release_json_sha256
+                    ),
+                    qualification_source_commit=hardening_qualification[
+                        "source_commit"
+                    ],
+                    qualification_executable_sha256=hardening_qualification[
+                        "executable_sha256"
+                    ],
+                )
+            )
+            _require(
+                current_hardening_qualification == hardening_qualification
+                and current_hardening_validation == hardening_validation,
+                "private v0.6.1 hardening results or qualification source changed",
             )
         _atomic_publish_no_replace(staging, output, "public release")
         staging = None
@@ -27767,6 +30630,7 @@ def _main(argv: list[str] | None = None) -> int:
     compare_parser = subparsers.add_parser("compare")
     compare_parser.add_argument("left", type=Path)
     compare_parser.add_argument("right", type=Path)
+    compare_parser.add_argument("--repo-root", required=True, type=Path)
 
     validate_parser = subparsers.add_parser("validate")
     validate_parser.add_argument("bundle", type=Path)
@@ -27880,6 +30744,11 @@ def _main(argv: list[str] | None = None) -> int:
         "--rpi-pico2-w-qualification-result",
         type=Path,
     )
+    finalize_parser.add_argument(
+        "--v061-hardening-result",
+        action="append",
+        type=Path,
+    )
 
     hil_assembly_parser = subparsers.add_parser("assemble-hil-report")
     hil_assembly_parser.add_argument("candidate_dir", type=Path)
@@ -27913,6 +30782,10 @@ def _main(argv: list[str] | None = None) -> int:
         "--profile-qualification-result",
         type=Path,
     )
+    hil_completion_parser.add_argument(
+        "--v061-hardening-result",
+        type=Path,
+    )
 
     lineage_parser = subparsers.add_parser("create-physical-fact-lineage")
     lineage_parser.add_argument("candidate_dir", type=Path)
@@ -27931,7 +30804,15 @@ def _main(argv: list[str] | None = None) -> int:
     if args.command == "validate-build":
         validate_build(args.target, args.build_dir)
     elif args.command == "compare":
-        compare_build_roots(args.left, args.right)
+        firmware_version = _read_lock(args.repo_root)["pyble"][
+            "agent_version"
+        ]
+        compare_build_roots(
+            args.left,
+            args.right,
+            repo_root=args.repo_root,
+            firmware_version=firmware_version,
+        )
     elif args.command == "validate":
         evidence_arguments = (
             args.license_evidence_dir,
@@ -28053,6 +30934,7 @@ def _main(argv: list[str] | None = None) -> int:
             rpi_pico2_w_qualification_result=(
                 args.rpi_pico2_w_qualification_result
             ),
+            v061_hardening_result_paths=args.v061_hardening_result,
         )
         print(output)
     elif args.command == "assemble-hil-report":
@@ -28072,6 +30954,7 @@ def _main(argv: list[str] | None = None) -> int:
             output_path=args.output_path,
             qualification_repo_root=args.qualification_repo_root,
             profile_qualification_result=args.profile_qualification_result,
+            v061_hardening_result=args.v061_hardening_result,
         )
         print(output)
     elif args.command == "create-physical-fact-lineage":

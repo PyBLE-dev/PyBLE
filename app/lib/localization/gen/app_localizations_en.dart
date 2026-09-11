@@ -99,6 +99,98 @@ class AppLocalizationsEn extends AppLocalizations {
       'PyBLE requires no account and sends no telemetry by default. Your work stays on your tablet and connected board unless you explicitly export it. A user-started public GitHub import is the only optional network workflow.';
 
   @override
+  String get aboutPrivacyPolicyAction => 'Privacy policy';
+
+  @override
+  String get privacyPolicyTitle => 'PyBLE Privacy Policy';
+
+  @override
+  String get privacyPolicyIntroduction =>
+      'PyBLE is designed to work locally. This policy explains what the app handles on your tablet, what you choose to send to a board, and what happens when you visit this website.';
+
+  @override
+  String get privacyPolicyEffectiveDate => 'Effective 28 August 2026';
+
+  @override
+  String get privacyMaintainerTitle => 'Who maintains PyBLE';
+
+  @override
+  String get privacyMaintainerBody =>
+      'PyBLE is an independent open-source project maintained by Viwat Vchirawongkwin under the SciLabPro project name. It is not an official Chulalongkorn University project or app.';
+
+  @override
+  String get privacyAppTitle => 'PyBLE app';
+
+  @override
+  String get privacyAppBody =>
+      'The PyBLE app has no account, advertising, analytics, telemetry, or crash reporting. It also has no payment or cloud service. The user-started public GitHub import is its only optional Internet workflow. Editing, BLE, Files, Blocks, and Run continue to work offline and remain independent of GitHub availability. The app does not send your project content to PyBLE, SciLabPro, or the maintainer.';
+
+  @override
+  String get privacyGithubTitle => 'Public GitHub import';
+
+  @override
+  String get privacyGithubBody =>
+      'When you explicitly open Import examples from GitHub, the app makes unauthenticated HTTPS requests only to api.github.com. Those requests include the public repository owner and name, the requested ref, branch discovery operations, directory paths, paths identifying the selected public source files, and Git object identifiers. GitHub returns the selected file contents in its HTTPS responses. Requests also include a bounded PyBLE version in the User-Agent. The app sends no GitHub account or token, no board identity or board files, and no private project source.\n\nGitHub independently receives ordinary request metadata such as your IP address and user-agent under GitHub\'s own privacy policy. Import only reads the public files you select. It never automatically opens or runs imported code; review the source and choose any later board action yourself.';
+
+  @override
+  String get privacyBoardTitle => 'Data sent to your board';
+
+  @override
+  String get privacyBoardBody =>
+      'When you choose Save, Run, a Files operation, or send console input, PyBLE sends the relevant source code, path or filename, file content, Blocks companion data, or console input directly over BLE to the board you selected. Board output, files, and device information can return to the app as part of the same requested workflow. This is direct communication with your selected hardware, not an upload to a PyBLE or SciLabPro server. PyBLE does not sell this content or share it with advertisers or data brokers.';
+
+  @override
+  String get privacyTransportTitle => 'BLE transport security';
+
+  @override
+  String get privacyTransportBody =>
+      'PBLE/1 does not require Bluetooth pairing or BLE link encryption, so a board connection may operate without an authenticated, encrypted link. Do not send passwords, API keys, tokens, private keys, or other secrets unless you have separately verified your physical environment and transport security.';
+
+  @override
+  String get privacyPermissionsTitle =>
+      'Nearby boards and platform permissions';
+
+  @override
+  String get privacyPermissionsBody =>
+      'To discover and connect, the app processes nearby PyBLE board names or labels, platform device identifiers or suffixes, capabilities, and Bluetooth signal strength locally on your tablet. The app uses this information for the connection interface and does not send it to the developer.\n\nOn Android 11 and earlier, the legacy Android location permission is requested only because those Android versions require it for BLE scanning. PyBLE does not derive, store, or transmit your physical location. Android 12 and later use Nearby devices permissions, and iPadOS uses Bluetooth permission, for the same find-and-connect purpose.\n\nIf a board has a custom label, that board may include it in a nearby Bluetooth advertisement visible to other devices in range. Do not put a person\'s name, email address, or other sensitive information in a board label.';
+
+  @override
+  String get privacyRetentionTitle => 'Retention and deletion';
+
+  @override
+  String get privacyRetentionBody =>
+      'App working data stays on your tablet for use by the app. On Android, clear PyBLE\'s app storage or uninstall it; on iPadOS, delete the app. This removes data held only by the installed app but does not delete files on a board or exported copies. Device and operating-system backup behavior depends on your platform settings.\n\nFiles saved to a board remain there until you overwrite or delete them or erase the board. You can delete board files through Files → Delete in PyBLE or manage and erase the board directly. Because the developer receives no app project content, there is no PyBLE server-side copy of your app project content to retain or delete.';
+
+  @override
+  String get privacyComponentsTitle =>
+      'Third-party components and platform services';
+
+  @override
+  String get privacyComponentsBody =>
+      'The app contains no advertising, analytics, crash-reporting, or account SDK that receives your app project content. Your operating system and app-distribution service may independently process installation, system, or store information under their own privacy policies.';
+
+  @override
+  String get privacyWebsiteTitle => 'This website';
+
+  @override
+  String get privacyWebsiteBody =>
+      'pyble.dev has no account, advertising, analytics, tracking pixel, contact form, or non-essential cookie. The site does not build a visitor profile.\n\nCloudflare and the VPS hosting infrastructure may process ordinary request data—such as your IP address, user-agent, requested URL, timestamp, and security signals—to deliver the pages, prevent abuse, and keep the service reliable.\n\nThe site does not load marketing scripts, remote web fonts, or embedded social media. Following a link to another site makes that site\'s policy apply.\n\nWebsite infrastructure may keep limited operational logs according to provider settings and legal obligations. No separate fixed retention period is promised. We use HTTPS and keep the public site static to reduce the data and attack surface involved.';
+
+  @override
+  String get privacyChangesTitle => 'Changes to this policy';
+
+  @override
+  String get privacyChangesBody =>
+      'If a future app or site feature handles information differently— such as analytics, a form, an account, another network integration, or embedded media—we will update this policy and its effective date before that feature is deployed.';
+
+  @override
+  String get privacyContactTitle => 'Privacy and deletion questions';
+
+  @override
+  String get privacyContactBody =>
+      'Contact the project maintainer about this policy, a privacy concern, or deletion of website data under the maintainer’s control.';
+
+  @override
   String get aboutProjectTitle => 'Project';
 
   @override

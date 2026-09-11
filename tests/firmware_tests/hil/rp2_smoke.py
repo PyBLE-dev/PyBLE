@@ -83,7 +83,13 @@ async def run(args):
     central = await PbleCentral.connect(args.address)
     try:
         # HELLO is the first exchange (§7). RSP = [status:u8] + caps text.
-        rsp = await central.send_cmd(wire.OP_HELLO, 1, b"app=rp2-smoke\nversion=0\n")
+        rsp = await central.send_cmd(
+            wire.OP_HELLO,
+            1,
+            b"proto_versions=1\n"
+            b"app_name=rp2-smoke\n"
+            b"app_version=0",
+        )
         c.check("HELLO RSP status is OK ([status]-prefixed)",
                 rsp_status(rsp) == wire.ST_OK, status_name(rsp_status(rsp)))
         caps = parse_caps(rsp.payload[1:].decode(errors="replace"))

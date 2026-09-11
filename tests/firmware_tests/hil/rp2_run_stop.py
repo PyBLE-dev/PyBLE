@@ -30,6 +30,7 @@ import zlib
 
 import _pble_wire as wire
 from _pble_central import PbleCentral, rsp_status, status_name
+from _pble_bench import CommandIds
 
 STOP_DEADLINE_S = 0.5     # H6: STOP must land inside this bound
 STATE_WAIT_S = 5.0        # bench-side ceiling for an expected RUN_STATE
@@ -140,23 +141,23 @@ async def run_and_stop(c, central, log, id_, source, hold_s, desc):
             late_done is None and late_err is None)
 
 
-async def put_small_file(central, path, data, first_id):
+async def put_small_file(central, path, data, next_id):
     """Minimal single-chunk windowed PUT for a bench fixture file."""
     rsp = await central.send_cmd(
-        wire.OP_FILE_PUT_BEGIN, first_id,
+        wire.OP_FILE_PUT_BEGIN, next_id(),
         len(data).to_bytes(4, "little") + (zlib.crc32(data) & 0xFFFFFFFF).to_bytes(4, "little")
         + len(path.encode()).to_bytes(2, "little") + path.encode())
     if rsp_status(rsp) != wire.ST_OK:
         raise SystemExit("PUT_BEGIN %s: %s" % (path, status_name(rsp_status(rsp))))
     central.last_ack = 0
-    await central.send_cmd_no_rsp(wire.OP_FILE_PUT_DATA, 0, (0).to_bytes(4, "little") + data)
+    await central.send_cmd_no_rsp(wire.OP_FILE_PUT_DATA, next_id(), (0).to_bytes(4, "little") + data)
     deadline = time.monotonic() + DONE_WAIT_S
     while central.last_ack < len(data):
         if time.monotonic() > deadline:
             raise SystemExit("PUT %s stalled: ack=%d want=%d"
                              % (path, central.last_ack, len(data)))
         await asyncio.sleep(0.01)
-    rsp = await central.send_cmd(wire.OP_FILE_PUT_END, first_id + 1,
+    rsp = await central.send_cmd(wire.OP_FILE_PUT_END, next_id(),
                                  (zlib.crc32(data) & 0xFFFFFFFF).to_bytes(4, "little"))
     if rsp_status(rsp) != wire.ST_OK:
         raise SystemExit("PUT_END %s: %s" % (path, status_name(rsp_status(rsp))))
@@ -173,7 +174,13 @@ async def run(args):
     log = install_tap(central)
     try:
         # HELLO first (§7); adopt the negotiated MTU for fragmentation.
-        rsp = await central.send_cmd(wire.OP_HELLO, 1, b"app=rp2-run-stop\nversion=0\n")
+        rsp = await central.send_cmd(
+            wire.OP_HELLO,
+            1,
+            b"proto_versions=1\n"
+            b"app_name=rp2-run-stop\n"
+            b"app_version=0",
+        )
         if rsp_status(rsp) != wire.ST_OK:
             raise SystemExit("HELLO refused: %s" % status_name(rsp_status(rsp)))
         caps = {}
@@ -210,14 +217,16 @@ async def run(args):
                 "got %d RUN_STATE event(s)" % len(stray))
 
         # D) file-mode RUN of /main.py: same lifecycle, finite script -> done.
-        await put_small_file(central, MAIN_PATH, MAIN_SOURCE, 40)
+        file_ids = CommandIds()
+        await put_small_file(central, MAIN_PATH, MAIN_SOURCE, file_ids.next)
         cursor = len(log)
-        rsp = await central.send_cmd(wire.OP_RUN, 42, bytes((0,)) + MAIN_PATH.encode())
+        file_run_id = file_ids.next()
+        rsp = await central.send_cmd(wire.OP_RUN, file_run_id, bytes((0,)) + MAIN_PATH.encode())
         c.check("file-mode: RUN %s RSP status is OK" % MAIN_PATH,
                 rsp_status(rsp) == wire.ST_OK, status_name(rsp_status(rsp)))
         run_i = await wait_run_state(log, cursor, ST_RUNNING, STATE_WAIT_S)
         if c.check("file-mode: RUN_STATE(running) arrives", run_i is not None):
-            rsp_i = find_rsp(log, cursor, wire.OP_RUN, 42)
+            rsp_i = find_rsp(log, cursor, wire.OP_RUN, file_run_id)
             c.check("file-mode: RSP precedes RUN_STATE(running) on the wire",
                     rsp_i is not None and rsp_i < run_i,
                     "rsp_index=%s running_index=%s" % (rsp_i, run_i))
@@ -225,7 +234,7 @@ async def run(args):
             c.check("file-mode: finite %s terminates as done" % MAIN_PATH,
                     done_i is not None)
         # Cleanup the bench fixture so autorun cannot pick it up later.
-        await central.send_cmd(wire.OP_FILE_DELETE, 43,
+        await central.send_cmd(wire.OP_FILE_DELETE, file_ids.next(),
                                len(MAIN_PATH.encode()).to_bytes(2, "little")
                                + MAIN_PATH.encode())
 

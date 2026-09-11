@@ -717,3 +717,47 @@ jobs:
             firmware/build/${{ matrix.target }}/bootloader/bootloader.bin
             firmware/build/${{ matrix.target }}/partition_table/partition-table.bin
           if-no-files-found: error
+
+  build-rp2:
+    # Real, isolated RP2350 Arm build. Both host tools and every selected
+    # nested source are pinned; no ambient/Homebrew picotool is admitted.
+    needs: [no-leak, spdx, sha-drift, patches, firmware-host]
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+      - name: Require the reviewed Apple Silicon host
+        run: |
+          test "$(uname -s)" = "Darwin"
+          test "$(uname -m)" = "arm64"
+      - name: Initialize only the pinned RP2 source graph
+        run: |
+          git submodule update --init --depth 1 -- firmware/upstream/micropython
+          git -C firmware/upstream/micropython submodule update --init --depth 1 -- \
+            lib/btstack \
+            lib/cyw43-driver \
+            lib/lwip \
+            lib/mbedtls \
+            lib/micropython-lib \
+            lib/pico-sdk \
+            lib/tinyusb
+      - name: Install pinned ARM GNU toolchain
+        run: firmware/scripts/install_arm_toolchain.sh
+      - name: Install pinned official picotool distribution
+        run: firmware/scripts/install_picotool.sh
+      - name: Build rpi-pico2-w from retained inputs
+        run: firmware/scripts/build_rp2.sh rpi-pico2-w
+      - name: Retain RP2 build and provenance
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: pyble-rpi-pico2-w
+          path: |
+            firmware/build/rpi-pico2-w/firmware.uf2
+            firmware/build/rpi-pico2-w/firmware.bin
+            firmware/build/rpi-pico2-w/firmware.elf
+            firmware/build/rpi-pico2-w/firmware.elf.map
+            firmware/build/rpi-pico2-w/pyble-build-provenance.json
+          if-no-files-found: error
+          retention-days: 14

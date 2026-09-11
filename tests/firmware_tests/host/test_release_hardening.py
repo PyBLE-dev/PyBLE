@@ -532,7 +532,13 @@ class PrepareFixture:
         )
         pyble = self.firmware / "pyble"
         pyble.mkdir()
-        for name in ("__init__.py", "_version.py", "pyble_ble.py", "pyble_proto.py"):
+        for name in (
+            "__init__.py",
+            "_version.py",
+            "pyble_ble.py",
+            "pyble_proto.py",
+            "pyble_workspace.py",
+        ):
             (pyble / name).write_text(
                 "# synthetic reviewed ESP input\n", encoding="utf-8"
             )

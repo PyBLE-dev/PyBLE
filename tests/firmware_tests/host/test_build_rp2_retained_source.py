@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import io
 import json
 import os
 from pathlib import Path
@@ -16,6 +18,7 @@ import subprocess
 import tempfile
 import textwrap
 import unittest
+import zipfile
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -32,6 +35,72 @@ NESTED_SUBMODULES = (
     "lib/pico-sdk",
     "lib/tinyusb",
 )
+PICOTOOL_VERSION_LINE = (
+    "picotool v2.3.0 (Darwin, AppleClang-15.0.0.15000309, Release)"
+)
+PICOTOOL_EXECUTABLE = (
+    b"#!/bin/sh\n"
+    b"[ \"${1:-}\" = version ] || exit 64\n"
+    + f"printf '%s\\n' '{PICOTOOL_VERSION_LINE}'\n".encode("utf-8")
+)
+PICOTOOL_CONFIG = b'include("${CMAKE_CURRENT_LIST_DIR}/picotoolTargets.cmake")\n'
+PICOTOOL_CONFIG_VERSION = b'set(PACKAGE_VERSION "2.3.0")\n'
+PICOTOOL_TARGETS = b'include("${CMAKE_CURRENT_LIST_DIR}/picotoolTargets-release.cmake")\n'
+PICOTOOL_TARGETS_RELEASE = (
+    b'set_target_properties(picotool PROPERTIES IMPORTED_LOCATION_RELEASE '
+    b'"${_IMPORT_PREFIX}/picotool/picotool")\n'
+)
+PICOTOOL_LIBUSB = b"synthetic pinned libusb bytes\n"
+
+
+def _picotool_archive(
+    executable: bytes = PICOTOOL_EXECUTABLE,
+) -> bytes:
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w") as archive:
+        for name, value, mode in (
+            (".keep", b"", stat.S_IFREG | 0o644),
+            ("picotool/", b"", stat.S_IFDIR | 0o755),
+            ("picotool/picotool", executable, stat.S_IFREG | 0o755),
+            (
+                "picotool/picotoolConfig.cmake",
+                PICOTOOL_CONFIG,
+                stat.S_IFREG | 0o644,
+            ),
+            (
+                "picotool/picotoolConfigVersion.cmake",
+                PICOTOOL_CONFIG_VERSION,
+                stat.S_IFREG | 0o644,
+            ),
+            (
+                "picotool/picotoolTargets.cmake",
+                PICOTOOL_TARGETS,
+                stat.S_IFREG | 0o644,
+            ),
+            (
+                "picotool/picotoolTargets-release.cmake",
+                PICOTOOL_TARGETS_RELEASE,
+                stat.S_IFREG | 0o644,
+            ),
+            (
+                "picotool/libusb-1.0.0.dylib",
+                PICOTOOL_LIBUSB,
+                stat.S_IFREG | 0o444,
+            ),
+        ):
+            info = zipfile.ZipInfo(name)
+            info.create_system = 3
+            info.date_time = (2020, 1, 1, 0, 0, 0)
+            info.external_attr = mode << 16
+            archive.writestr(info, value)
+    return output.getvalue()
+
+
+PICOTOOL_ARCHIVE = _picotool_archive()
+
+
+def _sha256(value: bytes) -> str:
+    return hashlib.sha256(value).hexdigest()
 
 
 def _run(
@@ -77,7 +146,7 @@ def _git(path: Path, *arguments: str) -> str:
 def _write_executable(path: Path, source: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(textwrap.dedent(source).lstrip(), encoding="utf-8")
-    path.chmod(path.stat().st_mode | stat.S_IXUSR)
+    path.chmod(0o755)
 
 
 def _commit_all(path: Path, message: str) -> str:
@@ -166,8 +235,12 @@ class RP2BuildFixture:
         self.make_log = self.base / "make.jsonl"
         self.prepare_log = self.base / "prepare.log"
         self.toolchain = self.base / "arm-gnu"
+        self.picotool = self.base / "pinned-picotool"
+        self.picotool_executable = self.picotool / "picotool" / "picotool"
+        self.ambient_picotool_marker = self.base / "ambient-picotool-ran"
 
         self._make_canonical_checkout()
+        self._make_pinned_picotool()
         self._make_pyble_checkout()
         self._make_fake_tools()
         self._make_fake_artifacts()
@@ -289,7 +362,7 @@ class RP2BuildFixture:
                 commit = "{commit}"
 
                 [pyble]
-                agent_version = "0.6.0"
+                agent_version = "0.6.1"
                 protocol_version = "PBLE/1"
 
                 [targets_rp2]
@@ -298,10 +371,38 @@ class RP2BuildFixture:
                 [arm_gnu_toolchain]
                 release = "14.2.Rel1"
                 gcc_version = "14.2.1 20241119"
+
+                [picotool]
+                version = "2.3.0"
+                version_line = "{picotool_version_line}"
+                source_repo = "https://github.com/raspberrypi/picotool.git"
+                source_ref = "2.3.0"
+                source_commit = "6f6458d792b93685a11423b244a585eaa99eafcf"
+                distribution_repo = "https://github.com/raspberrypi/pico-sdk-tools.git"
+                distribution_ref = "v2.3.0-0"
+                distribution_commit = "ad9e4a8375253cf4886bf168ea1a8d2746aadf24"
+                url = "https://example.invalid/picotool-2.3.0-test-mac.zip"
+                archive_filename = "picotool-2.3.0-test-mac.zip"
+                archive_bytes = {picotool_archive_bytes}
+                archive_format = "zip"
+                sha256 = "{picotool_archive_sha256}"
+                cmake_dir = "picotool"
+                executable_path = "picotool/picotool"
+                executable_sha256 = "{picotool_executable_sha256}"
+                cmake_config_path = "picotool/picotoolConfig.cmake"
+                cmake_config_sha256 = "{picotool_config_sha256}"
+                bundled_libusb_path = "picotool/libusb-1.0.0.dylib"
+                bundled_libusb_sha256 = "{picotool_libusb_sha256}"
                 """
             ).format(
                 origin=MICROPYTHON_ORIGIN,
                 commit=self.micropython_commit,
+                picotool_version_line=PICOTOOL_VERSION_LINE,
+                picotool_archive_bytes=len(PICOTOOL_ARCHIVE),
+                picotool_archive_sha256=_sha256(PICOTOOL_ARCHIVE),
+                picotool_executable_sha256=_sha256(PICOTOOL_EXECUTABLE),
+                picotool_config_sha256=_sha256(PICOTOOL_CONFIG),
+                picotool_libusb_sha256=_sha256(PICOTOOL_LIBUSB),
             ).lstrip(),
             encoding="utf-8",
         )
@@ -312,6 +413,34 @@ class RP2BuildFixture:
         _git(self.repo, "init", "-q")
         self._configure_git(self.repo)
         self.pyble_commit = _commit_all(self.repo, "PyBLE fixture")
+
+    def _make_pinned_picotool(self) -> None:
+        _write_executable(
+            self.picotool_executable,
+            PICOTOOL_EXECUTABLE.decode("utf-8"),
+        )
+        (self.picotool / "picotool" / "picotoolConfig.cmake").write_bytes(
+            PICOTOOL_CONFIG
+        )
+        (
+            self.picotool / "picotool" / "picotoolConfigVersion.cmake"
+        ).write_bytes(PICOTOOL_CONFIG_VERSION)
+        (self.picotool / "picotool" / "picotoolTargets.cmake").write_bytes(
+            PICOTOOL_TARGETS
+        )
+        (
+            self.picotool / "picotool" / "picotoolTargets-release.cmake"
+        ).write_bytes(PICOTOOL_TARGETS_RELEASE)
+        (self.picotool / "picotool" / "libusb-1.0.0.dylib").write_bytes(
+            PICOTOOL_LIBUSB
+        )
+        (self.picotool / "picotool" / "libusb-1.0.0.dylib").chmod(0o444)
+        (self.picotool / ".keep").write_bytes(b"")
+        retained = self.picotool / ".pyble-dist"
+        retained.mkdir()
+        (retained / "picotool-2.3.0-test-mac.zip").write_bytes(
+            PICOTOOL_ARCHIVE
+        )
 
     def _make_fake_tools(self) -> None:
         _write_executable(
@@ -331,10 +460,11 @@ class RP2BuildFixture:
         )
         _write_executable(
             self.fake_bin / "picotool",
-            """
+            r"""
             #!/usr/bin/env bash
             [ "${1:-}" = version ]
-            echo 'picotool v2.3.0 (PyBLE fixture)'
+            : > "${PYBLE_AMBIENT_PICOTOOL_MARKER:?}"
+            echo 'picotool v9.9.9 (ambient PATH fixture)'
             """,
         )
         _write_executable(
@@ -368,6 +498,14 @@ class RP2BuildFixture:
                 "CXXFLAGS", "ASMFLAGS", "CPPFLAGS", "EXTRA_CPPFLAGS",
                 "EXTRA_CFLAGS", "EXTRA_CXXFLAGS", "MAKEFLAGS", "MFLAGS",
                 "GNUMAKEFLAGS", "MAKEOVERRIDES", "PYTHONDONTWRITEBYTECODE",
+                "CMAKE_ARGS", "picotool_DIR",
+                "FETCHCONTENT_FULLY_DISCONNECTED",
+                "FETCHCONTENT_SOURCE_DIR_PICOTOOL",
+                "PICOTOOL_FETCH_FROM_GIT_PATH",
+                "PICOTOOL_FORCE_FETCH_FROM_GIT",
+                "CMAKE_FIND_USE_PACKAGE_REGISTRY",
+                "CMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY",
+                "CMAKE_PREFIX_PATH",
             )
             record = {
                 "cwd": os.getcwd(),
@@ -443,6 +581,24 @@ class RP2BuildFixture:
                 "$PYBLE_ARM_TOOLCHAIN_DIR"
               printf 'CMAKE_ASM_COMPILER:FILEPATH=%s/bin/arm-none-eabi-gcc\n' \
                 "$PYBLE_ARM_TOOLCHAIN_DIR"
+              printf 'picotool_DIR:UNINITIALIZED=%s/picotool\n' \
+                "$PYBLE_PICOTOOL_DIR"
+              case "${PYBLE_TEST_MUTATION:-}" in
+                fetchcontent-cache-uninitialized)
+                  printf 'FETCHCONTENT_FULLY_DISCONNECTED:UNINITIALIZED=ON\n'
+                  ;;
+                fetchcontent-cache-off)
+                  printf 'FETCHCONTENT_FULLY_DISCONNECTED:BOOL=OFF\n'
+                  ;;
+                fetchcontent-cache-missing)
+                  ;;
+                *)
+                  printf 'FETCHCONTENT_FULLY_DISCONNECTED:BOOL=ON\n'
+                  ;;
+              esac
+              printf 'PICOTOOL_FORCE_FETCH_FROM_GIT:UNINITIALIZED=OFF\n'
+              printf 'CMAKE_FIND_USE_PACKAGE_REGISTRY:UNINITIALIZED=OFF\n'
+              printf 'CMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY:UNINITIALIZED=OFF\n'
             } > "$output/CMakeCache.txt"
 
             if [ "${PYBLE_TEST_MUTATION:-}" = "provenance-temp-write-fail" ]; then
@@ -476,6 +632,10 @@ class RP2BuildFixture:
             "PATH": "{}:{}".format(self.fake_bin, os.environ.get("PATH", "")),
             "PYBLE_BUILD_ROOT": str(self.build_root),
             "PYBLE_ARM_TOOLCHAIN_DIR": str(self.toolchain),
+            "PYBLE_PICOTOOL_DIR": str(self.picotool),
+            "PYBLE_AMBIENT_PICOTOOL_MARKER": str(
+                self.ambient_picotool_marker
+            ),
             "PYBLE_LOCK_FILE": str(self.firmware / "versions.lock"),
             "PYBLE_FAKE_ARTIFACTS": str(self.fake_artifacts),
             "PYBLE_MAKE_LOG": str(self.make_log),
@@ -503,6 +663,14 @@ class RP2BuildFixture:
             "MFLAGS": "-DHOSTILE_MFLAGS=1",
             "GNUMAKEFLAGS": "CFLAGS=-DHOSTILE_GNUMAKEFLAGS=1",
             "MAKEOVERRIDES": "CFLAGS CFLAGS_EXTRA",
+            "picotool_DIR": hostile + "/ambient-picotool-package",
+            "FETCHCONTENT_FULLY_DISCONNECTED": "OFF",
+            "FETCHCONTENT_SOURCE_DIR_PICOTOOL": hostile + "/fetched-picotool",
+            "PICOTOOL_FETCH_FROM_GIT_PATH": hostile + "/git-picotool",
+            "PICOTOOL_FORCE_FETCH_FROM_GIT": "ON",
+            "CMAKE_FIND_USE_PACKAGE_REGISTRY": "ON",
+            "CMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY": "ON",
+            "CMAKE_PREFIX_PATH": hostile + "/homebrew-prefix",
         }
         return _run(
             [str(self.firmware / "scripts" / "build_rp2.sh"), TARGET],
@@ -660,6 +828,10 @@ class RP2RetainedSourceBehaviorTests(unittest.TestCase):
             for record in port_records:
                 self.assertIn(str(fixture.retained.resolve()), " ".join(record["args"]))
             self.assertEqual(fixture.canonical_snapshot(), before)
+            self.assertFalse(
+                fixture.ambient_picotool_marker.exists(),
+                "the RP2 build invoked the ambient PATH picotool",
+            )
             records = fixture.make_records()
             mpy_records = [
                 record
@@ -690,6 +862,40 @@ class RP2RetainedSourceBehaviorTests(unittest.TestCase):
             serialized = json.dumps(records, sort_keys=True)
             self.assertNotIn("HOSTILE", serialized)
             final = final_records[0]
+            self.assertFalse(
+                any(
+                    str(argument).startswith("CMAKE_ARGS=")
+                    for argument in final["args"]
+                ),
+                "a command-line CMAKE_ARGS assignment prevents the upstream "
+                "RP2 Makefile from appending its board and manifest settings",
+            )
+            self.assertIn("CMAKE_ARGS", final["env"])
+            build_configuration = " ".join(
+                [*final["args"], *final["env"].values()]
+            )
+            self.assertIn(
+                "-Dpicotool_DIR={}".format(
+                    fixture.picotool.resolve() / "picotool"
+                ),
+                build_configuration,
+            )
+            self.assertIn(
+                "-DFETCHCONTENT_FULLY_DISCONNECTED:BOOL=ON",
+                build_configuration,
+            )
+            self.assertIn(
+                "-DPICOTOOL_FORCE_FETCH_FROM_GIT=OFF",
+                build_configuration,
+            )
+            self.assertIn(
+                "-DCMAKE_FIND_USE_PACKAGE_REGISTRY=OFF",
+                build_configuration,
+            )
+            self.assertIn(
+                "-DCMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY=OFF",
+                build_configuration,
+            )
             compile_configuration = " ".join(
                 [*final["args"], *final["env"].values()]
             )
@@ -716,8 +922,119 @@ class RP2RetainedSourceBehaviorTests(unittest.TestCase):
                 )
                 with self.subTest(language=language):
                     self.assertIn("-ffile-prefix-map=", language_configuration)
+
+            provenance = json.loads(
+                (fixture.output / "pyble-build-provenance.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(provenance["picotool"], PICOTOOL_VERSION_LINE)
         finally:
             fixture.cleanup()
+
+    def test_mismatched_pinned_picotool_fails_without_ambient_fallback(self) -> None:
+        fixture = RP2BuildFixture()
+        try:
+            fixture.picotool_executable.write_bytes(
+                fixture.picotool_executable.read_bytes() + b"# changed\n"
+            )
+            fixture.picotool_executable.chmod(0o755)
+
+            completed = fixture.execute()
+
+            self.assertNotEqual(completed.returncode, 0, completed.stdout)
+            self.assertFalse(fixture.ambient_picotool_marker.exists())
+            self.assertEqual([], fixture.make_records())
+            self.assertFalse(fixture.output.exists())
+            self.assertFalse(fixture.retained.exists())
+        finally:
+            fixture.cleanup()
+
+    def test_every_retained_picotool_identity_is_checked_before_make(self) -> None:
+        def nonzero_version(fixture: RP2BuildFixture) -> None:
+            changed = PICOTOOL_EXECUTABLE + b"exit 1\n"
+            archive = _picotool_archive(changed)
+            fixture.picotool_executable.write_bytes(changed)
+            fixture.picotool_executable.chmod(0o755)
+            (
+                fixture.picotool
+                / ".pyble-dist"
+                / "picotool-2.3.0-test-mac.zip"
+            ).write_bytes(archive)
+            lock = fixture.firmware / "versions.lock"
+            text = lock.read_text(encoding="utf-8")
+            text = text.replace(
+                "archive_bytes = %d" % len(PICOTOOL_ARCHIVE),
+                "archive_bytes = %d" % len(archive),
+            )
+            text = text.replace(
+                _sha256(PICOTOOL_ARCHIVE),
+                _sha256(archive),
+            )
+            text = text.replace(
+                _sha256(PICOTOOL_EXECUTABLE),
+                _sha256(changed),
+            )
+            lock.write_text(text, encoding="utf-8")
+            _commit_all(fixture.repo, "nonzero picotool version fixture")
+
+        def wrong_version(fixture: RP2BuildFixture) -> None:
+            changed = PICOTOOL_EXECUTABLE.replace(b"v2.3.0", b"v2.3.1")
+            fixture.picotool_executable.write_bytes(changed)
+            fixture.picotool_executable.chmod(0o755)
+            lock = fixture.firmware / "versions.lock"
+            lock.write_text(
+                lock.read_text(encoding="utf-8").replace(
+                    _sha256(PICOTOOL_EXECUTABLE),
+                    _sha256(changed),
+                ),
+                encoding="utf-8",
+            )
+            _commit_all(fixture.repo, "wrong runtime version fixture")
+
+        cases = {
+            "cmake-config": lambda fixture: (
+                fixture.picotool / "picotool" / "picotoolConfig.cmake"
+            ).write_bytes(b"changed package config\n"),
+            "cmake-config-mode": lambda fixture: (
+                fixture.picotool / "picotool" / "picotoolConfig.cmake"
+            ).chmod(0o666),
+            "bundled-libusb": lambda fixture: (
+                (
+                    fixture.picotool
+                    / "picotool"
+                    / "libusb-1.0.0.dylib"
+                ).chmod(0o644),
+                (
+                    fixture.picotool
+                    / "picotool"
+                    / "libusb-1.0.0.dylib"
+                ).write_bytes(b"changed bundled libusb\n"),
+            ),
+            "retained-archive": lambda fixture: (
+                fixture.picotool
+                / ".pyble-dist"
+                / "picotool-2.3.0-test-mac.zip"
+            ).write_bytes(b"changed retained archive\n"),
+            "missing-package-target": lambda fixture: (
+                fixture.picotool / "picotool" / "picotoolTargets.cmake"
+            ).unlink(),
+            "runtime-version-line": wrong_version,
+            "runtime-version-nonzero": nonzero_version,
+        }
+        for label, mutate in cases.items():
+            with self.subTest(identity=label):
+                fixture = RP2BuildFixture()
+                try:
+                    mutate(fixture)
+                    completed = fixture.execute()
+                    self.assertNotEqual(completed.returncode, 0, completed.stdout)
+                    self.assertFalse(fixture.ambient_picotool_marker.exists())
+                    self.assertEqual([], fixture.make_records())
+                    self.assertFalse(fixture.output.exists())
+                    self.assertFalse(fixture.retained.exists())
+                finally:
+                    fixture.cleanup()
 
     def test_failed_build_atomically_removes_new_source_and_output(self) -> None:
         fixture = RP2BuildFixture()
@@ -733,6 +1050,25 @@ class RP2RetainedSourceBehaviorTests(unittest.TestCase):
             self.assertEqual(fixture.canonical_snapshot(), before)
         finally:
             fixture.cleanup()
+
+    def test_cache_requires_exact_boolean_fetchcontent_disconnect_binding(self) -> None:
+        for mutation in (
+            "fetchcontent-cache-uninitialized",
+            "fetchcontent-cache-off",
+            "fetchcontent-cache-missing",
+        ):
+            with self.subTest(mutation=mutation):
+                fixture = RP2BuildFixture()
+                try:
+                    completed = fixture.execute(mutation=mutation)
+                    self.assertNotEqual(completed.returncode, 0, completed.stdout)
+                    self.assertFalse(
+                        (fixture.output / "pyble-build-provenance.json").exists()
+                    )
+                    self.assertFalse(fixture.output.exists())
+                    self.assertFalse(fixture.retained.exists())
+                finally:
+                    fixture.cleanup()
 
     def test_unsafe_audit_inputs_are_rejected_before_provenance(self) -> None:
         for mutation in ("symlink-link", "host-path-elf"):

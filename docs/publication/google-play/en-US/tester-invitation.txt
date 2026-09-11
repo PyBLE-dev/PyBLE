@@ -1,0 +1,16 @@
+Subject: Join the PyBLE Android open test
+
+PyBLE 0.2.0 is ready for Android open testing. PyBLE lets you edit and run MicroPython programs on a compatible board over Bluetooth Low Energy.
+
+Join using this verified Google Play opt-in link:
+[PASTE THE LIVE OPEN-TEST OPT-IN LINK FROM PLAY CONSOLE]
+
+Use the same Google account on the opt-in page and your Android device's Play Store. Install or update PyBLE, then check that About shows 0.2.0 (8). If you are already an internal tester, leave the internal test before joining this open test.
+
+You need an Android device with Bluetooth Low Energy and a compatible board running the PyBLE agent. Stock MicroPython alone is insufficient. Initial board setup needs a computer and data cable; back up board files first. Setup: https://pyble.dev/learn/setup
+
+Please test Connect, Save, Run, Stop, Console, Files, offline Blocks and optional public GitHub example import. Start with the wiring-free first program: https://pyble.dev/learn/first-program
+
+Use disposable files for deletion tests. Send the app version/build, Android device and OS, board/firmware profile, steps to reproduce and expected versus actual result to viwat.v@chula.ac.th. Remove private code and secrets from screenshots. Support: https://pyble.dev/support
+
+PyBLE is free and requires no account. This is a pre-release test; keep backups of work you care about.

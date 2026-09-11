@@ -59,6 +59,15 @@ class PbleEngine {
     }
     final _PendingRequest pending = _PendingRequest(cmd.opcode, timeout);
     _pending[cmd.id] = pending;
+    // Disposal can reject this completion while an acknowledged write is
+    // still pending. Observe errors now without replacing the original future
+    // that the request later awaits (including its exact response/error).
+    unawaited(
+      pending.completer.future.then<void>(
+        (_) {},
+        onError: (Object _, StackTrace _) {},
+      ),
+    );
     try {
       final List<Uint8List> packets = PbleFragmenter(
         mtu: _transport.mtu,
@@ -71,6 +80,12 @@ class PbleEngine {
               remaining,
               onTimeout: () => throw const _RequestDeadlineExpired(),
             );
+        if (_disposed) {
+          if (pending.completer.isCompleted) {
+            return await pending.completer.future;
+          }
+          throw const PbleTimeoutException('engine disposed');
+        }
       }
       if (pending.completer.isCompleted) {
         return await pending.completer.future;
@@ -109,6 +124,7 @@ class PbleEngine {
     ).fragment(encodeFrame(cmd));
     for (final Uint8List packet in packets) {
       await _transport.send(packet, acknowledged: false);
+      if (_disposed) throw const PbleTimeoutException('engine disposed');
     }
   }
 
@@ -147,7 +163,14 @@ class PbleEngine {
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;
-    await _inboundSub.cancel();
+    Object? cancelError;
+    StackTrace? cancelStack;
+    try {
+      await _inboundSub.cancel();
+    } catch (error, stack) {
+      cancelError = error;
+      cancelStack = stack;
+    }
     for (final _PendingRequest pending in _pending.values) {
       if (!pending.completer.isCompleted) {
         pending.completer.completeError(
@@ -157,6 +180,9 @@ class PbleEngine {
     }
     _pending.clear();
     await _events.close();
+    if (cancelError != null) {
+      Error.throwWithStackTrace(cancelError, cancelStack!);
+    }
   }
 }
 

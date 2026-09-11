@@ -1,0 +1,125 @@
+{
+  "schema": 1,
+  "description": "PBLE/1 v0.6.1 exact opcode-payload grammar shared by portable and native host tests.",
+  "structured": [
+    {
+      "name": "HELLO",
+      "opcode": 1,
+      "valid_payloads_hex": [
+        "70726f746f5f76657273696f6e733d310a6170705f6e616d653d5079424c450a6170705f76657273696f6e3d302e322e30"
+      ],
+      "invalid_payload_hex": "70726f746f5f76657273696f6e733d310a6170705f6e616d653d5079424c450a6170705f76657273696f6e3d302e322e3000"
+    },
+    {
+      "name": "DEVICE_INFO",
+      "opcode": 2,
+      "valid_payloads_hex": [""],
+      "invalid_payload_hex": "ff"
+    },
+    {
+      "name": "FILE_LIST",
+      "opcode": 16,
+      "valid_payloads_hex": ["01002f"],
+      "invalid_payload_hex": "01002fff"
+    },
+    {
+      "name": "FILE_STAT",
+      "opcode": 17,
+      "valid_payloads_hex": ["01002f"],
+      "invalid_payload_hex": "01002fff"
+    },
+    {
+      "name": "FILE_GET_BEGIN",
+      "opcode": 18,
+      "valid_payloads_hex": ["0000000001002f"],
+      "invalid_payload_hex": "0000000001002fff"
+    },
+    {
+      "name": "FILE_PUT_BEGIN",
+      "opcode": 21,
+      "valid_payloads_hex": ["000000000000000001002f"],
+      "invalid_payload_hex": "000000000000000001002fff"
+    },
+    {
+      "name": "FILE_PUT_END",
+      "opcode": 23,
+      "valid_payloads_hex": ["00000000"],
+      "invalid_payload_hex": "00000000ff"
+    },
+    {
+      "name": "FILE_DELETE",
+      "opcode": 24,
+      "valid_payloads_hex": ["01002f"],
+      "invalid_payload_hex": "01002fff"
+    },
+    {
+      "name": "MKDIR",
+      "opcode": 25,
+      "valid_payloads_hex": ["01002f"],
+      "invalid_payload_hex": "01002fff"
+    },
+    {
+      "name": "FILE_RENAME",
+      "opcode": 26,
+      "valid_payloads_hex": ["01002f02002f78"],
+      "invalid_payload_hex": "01002f02002f78ff"
+    },
+    {
+      "name": "STOP",
+      "opcode": 33,
+      "valid_payloads_hex": [""],
+      "invalid_payload_hex": "ff"
+    },
+    {
+      "name": "SOFT_REBOOT",
+      "opcode": 34,
+      "valid_payloads_hex": [""],
+      "invalid_payload_hex": "ff"
+    },
+    {
+      "name": "SET_AUTORUN",
+      "opcode": 35,
+      "valid_payloads_hex": ["01"],
+      "invalid_payload_hex": "0100"
+    },
+    {
+      "name": "SET_IDENTIFY_LED",
+      "opcode": 81,
+      "valid_payloads_hex": ["", "0001"],
+      "invalid_payload_hex": "0001ff"
+    },
+    {
+      "name": "IDENTIFY",
+      "opcode": 82,
+      "valid_payloads_hex": ["", "14"],
+      "invalid_payload_hex": "14ff"
+    }
+  ],
+  "terminal_bytes": [
+    {
+      "name": "RUN file data",
+      "opcode": 32,
+      "payload_hex": "006d61696e2e70792b7461696c"
+    },
+    {
+      "name": "RUN source data",
+      "opcode": 32,
+      "payload_hex": "017072696e74283129237461696c"
+    },
+    {
+      "name": "FILE_PUT_DATA bytes",
+      "opcode": 22,
+      "payload_hex": "00000000aabbcc"
+    },
+    {
+      "name": "CONSOLE_INPUT bytes",
+      "opcode": 49,
+      "payload_hex": "6162630078797a"
+    },
+    {
+      "name": "SET_LABEL bytes",
+      "opcode": 80,
+      "payload_hex": "4c616220ceb121"
+    }
+  ]
+}

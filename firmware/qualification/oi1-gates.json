@@ -1,7 +1,7 @@
 {
   "baseline_evidence": {
-    "path": "docs/validation/firmware/oi1/a8be631df46590166307aa41afaea30b39e29230.json",
-    "sha256": "8a7dbf328ba8d70f5161582b56d1566821f20b7a259ff29dc7d6fe6bb75a6044"
+    "path": "docs/validation/firmware/oi1/96497b9cf642ab2078842ce8a321c3c84b6714b2.json",
+    "sha256": "007e19f0c0281801a3c065f01742ba9606e340bce07b5e67920f036cea375c76"
   },
   "derivation": {
     "application_headroom": "factory-minus-application-v1",
@@ -23,13 +23,13 @@
       "resource_kind": "esp-idf",
       "target": "esp32",
       "thresholds": {
-        "application_headroom_min_bytes": 315360,
-        "application_image_max_bytes": 1716256,
-        "gc_free_min_bytes": 108544,
+        "application_headroom_min_bytes": 299712,
+        "application_image_max_bytes": 1731904,
+        "gc_free_min_bytes": 106496,
         "get_verified_goodput_min_bytes_per_second": 6600,
-        "idf_internal_free_min_bytes": 81920,
+        "idf_internal_free_min_bytes": 79872,
         "idf_internal_largest_block_min_bytes": 55296,
-        "idf_internal_minimum_free_min_bytes": 81920,
+        "idf_internal_minimum_free_min_bytes": 79872,
         "put_committed_goodput_min_bytes_per_second": 6600,
         "reset_to_service_advertisement_max_ms": 3000
       },
@@ -45,13 +45,13 @@
       "resource_kind": "esp-idf",
       "target": "esp32-s3",
       "thresholds": {
-        "application_headroom_min_bytes": 384064,
-        "application_image_max_bytes": 1713088,
-        "gc_free_min_bytes": 8317952,
+        "application_headroom_min_bytes": 368240,
+        "application_image_max_bytes": 1728912,
+        "gc_free_min_bytes": 8315904,
         "get_verified_goodput_min_bytes_per_second": 6600,
-        "idf_internal_free_min_bytes": 177152,
+        "idf_internal_free_min_bytes": 175104,
         "idf_internal_largest_block_min_bytes": 102400,
-        "idf_internal_minimum_free_min_bytes": 177152,
+        "idf_internal_minimum_free_min_bytes": 174080,
         "put_committed_goodput_min_bytes_per_second": 6600,
         "reset_to_service_advertisement_max_ms": 3000
       },
@@ -67,13 +67,13 @@
       "resource_kind": "esp-idf",
       "target": "waveshare-esp32-s3-lcd-147b",
       "thresholds": {
-        "application_headroom_min_bytes": 377024,
-        "application_image_max_bytes": 1720128,
-        "gc_free_min_bytes": 8316928,
+        "application_headroom_min_bytes": 361232,
+        "application_image_max_bytes": 1735920,
+        "gc_free_min_bytes": 8314880,
         "get_verified_goodput_min_bytes_per_second": 6600,
-        "idf_internal_free_min_bytes": 177152,
+        "idf_internal_free_min_bytes": 174080,
         "idf_internal_largest_block_min_bytes": 98304,
-        "idf_internal_minimum_free_min_bytes": 177152,
+        "idf_internal_minimum_free_min_bytes": 173056,
         "put_committed_goodput_min_bytes_per_second": 6600,
         "reset_to_service_advertisement_max_ms": 3000
       },
@@ -89,13 +89,13 @@
       "resource_kind": "esp-idf",
       "target": "esp32-c3",
       "thresholds": {
-        "application_headroom_min_bytes": 352880,
-        "application_image_max_bytes": 1678736,
-        "gc_free_min_bytes": 117760,
+        "application_headroom_min_bytes": 339536,
+        "application_image_max_bytes": 1692080,
+        "gc_free_min_bytes": 112640,
         "get_verified_goodput_min_bytes_per_second": 6600,
-        "idf_internal_free_min_bytes": 66560,
-        "idf_internal_largest_block_min_bytes": 57344,
-        "idf_internal_minimum_free_min_bytes": 63488,
+        "idf_internal_free_min_bytes": 64512,
+        "idf_internal_largest_block_min_bytes": 55296,
+        "idf_internal_minimum_free_min_bytes": 60416,
         "put_committed_goodput_min_bytes_per_second": 6600,
         "reset_to_service_advertisement_max_ms": 3000
       },
@@ -111,9 +111,9 @@
       "resource_kind": "rp2",
       "target": "rpi-pico2-w",
       "thresholds": {
-        "firmware_bin_max_bytes": 848216,
-        "firmware_image_headroom_min_bytes": 724648,
-        "gc_free_min_bytes": 433152,
+        "firmware_bin_max_bytes": 862492,
+        "firmware_image_headroom_min_bytes": 710372,
+        "gc_free_min_bytes": 429056,
         "get_verified_goodput_min_bytes_per_second": 6600,
         "put_committed_goodput_min_bytes_per_second": 6600,
         "reset_to_service_advertisement_max_ms": 7000

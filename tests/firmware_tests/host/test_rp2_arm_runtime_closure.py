@@ -789,5 +789,144 @@ class RP2ArmRuntimeClosureTests(unittest.TestCase):
         )
 
 
+class Rp2BuildEnvironmentParserTests(unittest.TestCase):
+    """Parse real driver bytes; never execute the shell or a compiler."""
+
+    MARKER = (
+        "# Never allow ambient compiler/make flags to influence the pinned build.\n"
+        "unset \\\n"
+    )
+    END = '\n\nmake -C "$RETAINED_UPSTREAM/mpy-cross"'
+    SETUP = "# Bind Pico SDK's CMake configure to the verified package"
+    PACKAGE_VARIABLES = (
+        "CMAKE_ARGS", "picotool_DIR", "FETCHCONTENT_FULLY_DISCONNECTED",
+        "FETCHCONTENT_SOURCE_DIR_PICOTOOL", "PICOTOOL_FETCH_FROM_GIT_PATH",
+        "PICOTOOL_FORCE_FETCH_FROM_GIT", "CMAKE_FIND_USE_PACKAGE_REGISTRY",
+        "CMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY", "CMAKE_PREFIX_PATH",
+    )
+
+    def setUp(self) -> None:
+        self.driver = BUILD_RP2.read_text(encoding="utf-8")
+
+    def parse(self, source: str, version: str = "0.6.1") -> list[str]:
+        parser = getattr(RELEASE, "_audit_rp2_build_environment", None)
+        self.assertTrue(callable(parser), "missing real RP2 environment parser")
+        return parser(source, firmware_version=version)
+
+    def test_checked_in_driver_accepts_one_unset_and_exact_offline_setup(self) -> None:
+        variables = self.parse(self.driver)
+        self.assertIn("picotool_DIR", variables)
+        self.assertEqual(len(variables), len(set(variables)))
+        for variable in (*RELEASE._RP2_GCC_ENVIRONMENT_OVERRIDES, *self.PACKAGE_VARIABLES):
+            with self.subTest(variable=variable):
+                self.assertIn(variable, variables)
+
+    def test_actual_observer_reaches_cache_after_current_driver_parse(self) -> None:
+        class CacheReached(Exception):
+            pass
+
+        original_read = RELEASE._read_regular_file_bytes
+
+        def read(path, label):
+            if label == "RP2 CMake cache":
+                raise CacheReached
+            return original_read(path, label)
+
+        with tempfile.TemporaryDirectory() as temporary, mock.patch.object(
+            RELEASE, "_read_regular_file_bytes", side_effect=read
+        ), self.assertRaises(CacheReached):
+            target = Path(temporary) / "unopened-target"
+            RELEASE._audit_observe_rp2_arm_runtime_closure(
+                repo_root=ROOT, target_root=target, cache=target / "CMakeCache.txt",
+                mappings={}, link_path=target / "link.txt", map_loads=[],
+                direct_contributors=set(), archive_members=[], compiler_dependency_closure=[],
+            )
+
+    def test_missing_or_duplicate_boundaries_are_rejected(self) -> None:
+        for marker in (self.MARKER, self.END):
+            for changed in (self.driver.replace(marker, "", 1),
+                            self.driver.replace(marker, marker + marker, 1)):
+                with self.subTest(marker=marker, changed=changed), self.assertRaises(RELEASE.ReleaseError):
+                    self.parse(changed)
+
+    def test_every_gcc_and_package_override_must_be_scrubbed(self) -> None:
+        for variable in (*RELEASE._RP2_GCC_ENVIRONMENT_OVERRIDES, *self.PACKAGE_VARIABLES):
+            line = "  " + variable + ("\n" if variable == "CMAKE_PREFIX_PATH" else " \\\n")
+            self.assertEqual(self.driver.count(line), 1 if variable not in {
+                "CMAKE_ARGS", "picotool_DIR", "FETCHCONTENT_FULLY_DISCONNECTED",
+                "PICOTOOL_FORCE_FETCH_FROM_GIT", "CMAKE_FIND_USE_PACKAGE_REGISTRY"
+            } else 2)
+            with self.subTest(variable=variable), self.assertRaises(RELEASE.ReleaseError):
+                self.parse(self.driver.replace(line, "", 1))
+
+    def test_duplicate_scrub_name_is_rejected_even_if_coverage_is_complete(self) -> None:
+        line = "  GCC_EXEC_PREFIX \\\n"
+        with self.assertRaises(RELEASE.ReleaseError):
+            self.parse(self.driver.replace(line, line + line, 1))
+
+    def test_shell_identifier_case_is_preserved_without_shell_syntax(self) -> None:
+        safe = self.driver.replace(self.MARKER, self.MARKER + "  _safe_Mixed9 \\\n", 1)
+        self.assertIn("_safe_Mixed9", self.parse(safe))
+        for variable in ("9BAD", "BAD-NAME", "A=1", "$PATH", "A;echo", "$(id)", ""):
+            with self.subTest(variable=variable), self.assertRaises(RELEASE.ReleaseError):
+                self.parse(self.driver.replace("  CFLAGS_EXTRA \\\n", "  " + variable + " \\\n", 1))
+
+    def test_continuations_indentation_and_terminal_line_are_exact(self) -> None:
+        cases = (
+            self.driver.replace("  CFLAGS_EXTRA \\\n", "  CFLAGS_EXTRA\n", 1),
+            self.driver.replace("  CFLAGS_EXTRA \\\n", "   CFLAGS_EXTRA \\\n", 1),
+            self.driver.replace("  CFLAGS_EXTRA \\\n", "\tCFLAGS_EXTRA \\\n", 1),
+            self.driver.replace("  CMAKE_PREFIX_PATH\n", "  CMAKE_PREFIX_PATH \\\n", 1),
+            self.driver.replace("  CFLAGS_EXTRA \\\n", "  CFLAGS_EXTRA \\ \n", 1),
+        )
+        for changed in cases:
+            with self.subTest(changed=changed), self.assertRaises(RELEASE.ReleaseError):
+                self.parse(changed)
+
+    def test_unknown_intervening_commands_and_reassignments_are_rejected(self) -> None:
+        for command in ('GCC_EXEC_PREFIX=/tmp/other', 'export CFLAGS=-fplugin=bad',
+                        'echo injected', 'unset CMAKE_ARGS', ': "$(id)"'):
+            for changed in (
+                self.driver.replace(self.SETUP, command + "\n" + self.SETUP, 1),
+                self.driver.replace(self.END, "\n" + command + self.END, 1),
+            ):
+                with self.subTest(command=command), self.assertRaises(RELEASE.ReleaseError):
+                    self.parse(changed)
+
+    def test_offline_values_and_package_binding_are_exact(self) -> None:
+        for old, new in (
+            ('-Dpicotool_DIR=$PICOTOOL_PACKAGE_DIR', '-Dpicotool_DIR=/tmp/other'),
+            ('-DFETCHCONTENT_FULLY_DISCONNECTED:BOOL=ON', '-DFETCHCONTENT_FULLY_DISCONNECTED=ON'),
+            ('-DFETCHCONTENT_FULLY_DISCONNECTED:BOOL=ON', '-DFETCHCONTENT_FULLY_DISCONNECTED:BOOL=OFF'),
+            ('-DCMAKE_FIND_USE_PACKAGE_REGISTRY=OFF', '-DCMAKE_FIND_USE_PACKAGE_REGISTRY=ON'),
+            ('-DCMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY=OFF', '-DCMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY=ON'),
+            ('-DPICOTOOL_FORCE_FETCH_FROM_GIT=OFF', '-DPICOTOOL_FORCE_FETCH_FROM_GIT=ON'),
+            ('picotool_DIR="$PICOTOOL_PACKAGE_DIR"', 'picotool_DIR="$(echo bad)"'),
+            ('FETCHCONTENT_FULLY_DISCONNECTED=ON', 'FETCHCONTENT_FULLY_DISCONNECTED=OFF'),
+        ):
+            self.assertIn(old, self.driver)
+            with self.subTest(old=old), self.assertRaises(RELEASE.ReleaseError):
+                self.parse(self.driver.replace(old, new, 1))
+
+    def test_offline_export_is_not_optional_or_extensible(self) -> None:
+        start = self.driver.index("\nexport \\\n", self.driver.index(self.SETUP))
+        end = self.driver.index(self.END, start)
+        export = self.driver[start:end]
+        for changed_export in ("", export.replace("  picotool_DIR \\\n", "", 1),
+                               export.replace("export \\\n", "export \\\n  GCC_EXEC_PREFIX \\\n", 1)):
+            with self.subTest(export=changed_export), self.assertRaises(RELEASE.ReleaseError):
+                self.parse(self.driver[:start] + changed_export + self.driver[end:])
+
+    def test_historical_scrub_only_form_is_version_selected(self) -> None:
+        start = self.driver.index("\n\n" + self.SETUP)
+        end = self.driver.index(self.END, start)
+        historical = self.driver[:start] + self.driver[end:]
+        self.assertIn("GCC_EXEC_PREFIX", self.parse(historical, "0.6.0"))
+        with self.assertRaises(RELEASE.ReleaseError):
+            self.parse(historical, "0.6.1")
+        with self.assertRaises(RELEASE.ReleaseError):
+            self.parse(self.driver, "0.6.0")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

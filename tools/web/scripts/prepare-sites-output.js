@@ -44,6 +44,7 @@ async function requireFile(path, missingMessage) {
 const requiredPrerenderedRoutes = [
   "/",
   "/app",
+  "/features",
   "/flash",
   "/learn",
   "/learn/setup",
@@ -90,6 +91,10 @@ const delegatedPaths = new Set([
   "/",
   "/app",
   "/app/",
+  "/features",
+  "/features/",
+  "/features/pyble-firmware-v0.6.0-functional-block-diagram-473a85d475aa.svg",
+  "/features/pyble-firmware-v0.6.1-functional-block-diagram-0d2bb826c64f8.svg",
   "/privacy",
   "/privacy/",
   "/support",

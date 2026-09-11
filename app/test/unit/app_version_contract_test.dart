@@ -13,7 +13,7 @@ import 'package:pyble/app/app_info.dart';
 import '../support/repo_paths.dart';
 
 void main() {
-  test('app 0.2.0 beta starts at globally monotonic build 5', () {
+  test('app 0.2.0 open-testing candidate uses monotonic build 8', () {
     final String pubspec = File(
       '${appPackageRoot().path}/pubspec.yaml',
     ).readAsStringSync();
@@ -30,7 +30,7 @@ void main() {
     final RegExpMatch declaration = declarations.single;
 
     expect(declaration.group(1), '0.2.0');
-    expect(declaration.group(2), '5');
+    expect(declaration.group(2), '8');
     expect(
       kAppVersion,
       declaration.group(1),

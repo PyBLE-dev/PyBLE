@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Part of PyBLE (https://pyble.dev) — see /LICENSE.
 
+import { TutorialAppCapture } from "@/components/tutorial-app-capture";
 import { TutorialCallout } from "@/components/tutorial-callout";
 import { TutorialPage, type TutorialStep } from "@/components/tutorial-page";
 import { examplesSnapshot } from "@/lib/tutorials";
@@ -14,16 +15,16 @@ export const metadata = pageMetadata({
 });
 
 const exampleFolder = "examples/portable/basics/hello_console";
-const boardFolder = "/examples/portable/basics";
+const boardFolder = "/examples";
 
 const steps: readonly TutorialStep[] = [
   {
     title: "Create the destination before opening import",
     body: (
       <p>
-        In Files, create and enter <code>{boardFolder}</code>, one child folder
-        at a time if necessary. GitHub import does not create board directories.
-        Keep this current destination visible before opening Import examples.
+        In Files, create and enter <code>{boardFolder}</code> before opening the
+        importer. GitHub import does not create board directories. Keep this
+        dedicated destination visible rather than writing at the board root.
       </p>
     ),
     expected: (
@@ -52,11 +53,12 @@ const steps: readonly TutorialStep[] = [
         In Branch mode, load the chooser and observe that it lists only
         branches. Select <code>main</code> to understand branch discovery, but
         do not use that moving name as this lesson&apos;s reproducibility
-        identity. Open Advanced, choose tag or commit, and enter the full
-        40-character commit below.
+        identity. Choose Use a tag or commit, then enter the full 40-character
+        commit below.
       </p>
     ),
     code: examplesSnapshot.commit,
+    visual: <TutorialAppCapture capture="githubBranchChooser" />,
     expected:
       "the importer resolves and displays the same full immutable commit before browsing files.",
   },
@@ -72,6 +74,7 @@ const steps: readonly TutorialStep[] = [
     ),
     expected:
       "the review contains one pinned source path and one derived board target, with no hidden descendants.",
+    visual: <TutorialAppCapture capture="githubPinnedSource" />,
   },
   {
     title: "Verify exact source, target, and overwrite state",
@@ -84,6 +87,7 @@ const steps: readonly TutorialStep[] = [
         it is intentional.
       </p>
     ),
+    visual: <TutorialAppCapture capture="githubTargetReview" />,
     stopIf:
       "the source commit, source folder, current directory, filename, or overwrite state differs from your review.",
   },

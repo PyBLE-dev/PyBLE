@@ -640,6 +640,30 @@ static void test_open_generation_rotation(void) {
     assert(state.generation == UINT64_C(111));
 }
 
+static void test_preclose_failure_claims_terminal_restart(void) {
+    pble_term_state_t state;
+    pble_term_init(&state);
+    assert(pble_term_open(&state, UINT16_C(50), UINT64_C(120)));
+
+    assert_effects(
+        pble_term_preclose_failed(&state, UINT16_C(51), UINT64_C(120)),
+        PBLE_TERM_EFFECT_NONE);
+    assert_effects(
+        pble_term_preclose_failed(&state, UINT16_C(50), UINT64_C(119)),
+        PBLE_TERM_EFFECT_NONE);
+    assert(state.phase == PBLE_TERM_PHASE_OPEN);
+
+    assert_effects(
+        pble_term_preclose_failed(&state, UINT16_C(50), UINT64_C(120)),
+        PBLE_TERM_EFFECT_RESTART);
+    assert(state.phase == PBLE_TERM_PHASE_RESTARTING);
+    assert_effects(
+        pble_term_disconnect(&state, UINT16_C(50), UINT64_C(120)),
+        PBLE_TERM_EFFECT_NONE);
+    assert_effects(pble_term_reset(&state), PBLE_TERM_EFFECT_NONE);
+    assert(!pble_term_open(&state, UINT16_C(50), UINT64_C(121)));
+}
+
 int main(void) {
     test_begin_and_terminal_deadline();
     test_exact_cleanup_and_timer_stop();
@@ -648,6 +672,7 @@ int main(void) {
     test_mock_adapter_cleanup_matrix();
     test_mock_adapter_callback_and_stale_matrix();
     test_open_generation_rotation();
+    test_preclose_failure_claims_terminal_restart();
     puts("failed-session termination reducer: all scenarios passed");
     return 0;
 }

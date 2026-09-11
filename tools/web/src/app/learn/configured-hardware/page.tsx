@@ -2,6 +2,8 @@
 // Part of PyBLE (https://pyble.dev) — see /LICENSE.
 
 import { TutorialCallout } from "@/components/tutorial-callout";
+import { TutorialBoardIdentityGallery } from "@/components/tutorial-board-identity-gallery";
+import { TutorialConceptFigure } from "@/components/tutorial-concept-figure";
 import { TutorialPage, type TutorialStep } from "@/components/tutorial-page";
 import { pageMetadata } from "@/lib/site";
 
@@ -146,6 +148,34 @@ export default function ConfiguredHardwareTutorial() {
             components, or circuit.
           </p>
         </TutorialCallout>
+        <TutorialBoardIdentityGallery
+          boards={["esp32C3"]}
+          title="One observed ESP32-C3 configuration context"
+          introduction="Board C81A reported the esp32-c3 runtime token in this maintained physical session. That observation helps confirm the connected runtime, but exact carrier documentation must still supply every pin and electrical choice."
+          caption="C81A session · connection and runtime evidence before explicit pin review"
+        />
+        <TutorialConceptFigure
+          eyebrow="One bounded experiment"
+          title="Review, observe, restore"
+          items={[
+            {
+              label: "Review",
+              detail:
+                "Confirm pin roles, voltage, current, boot conflicts, protection, and shared ground.",
+            },
+            {
+              label: "Observe",
+              detail:
+                "Run one finite effect with Console visible and Stop immediately available.",
+            },
+            {
+              label: "Restore",
+              detail:
+                "Leave outputs safe, deinitialize buses, power down, and remove temporary wiring.",
+            },
+          ]}
+          caption="A configured-hardware lesson is complete only after the circuit returns to a documented safe state."
+        />
       </section>
 
       <section aria-labelledby="configured-progression">

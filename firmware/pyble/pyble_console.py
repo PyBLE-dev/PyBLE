@@ -87,13 +87,23 @@ class Console(_IOBase):
         self._tokens = self._cap              # bucket starts at capacity
         self._last_ms = self._clock()
         self._run_active = False              # gate starts INACTIVE
+        self._input_active = False            # stdin belongs to no run at boot
         self._stop_armed = False
         self._stop_inflight = False
-        self._ring = bytearray()              # logical stdin ring (bounded)
+        # One permanently allocated circular buffer.  Terminal/reset paths run
+        # at control-plane cuts where allocating a replacement bytearray could
+        # fail and accidentally leave predecessor input live.
+        self._ring = bytearray(STDIN_RING)
         self._head = 0
+        self._tail = 0
+        self._count = 0
+        self._input_generation = 0
 
     # -- run gate --------------------------------------------------------------
-    def set_run_active(self, flag):
+    def set_run_active(self, flag, expected_generation=None):
+        if (expected_generation is not None and
+                expected_generation != self._input_generation):
+            return False
         self._run_active = bool(flag)
         if not self._run_active:
             # A terminal transition invalidates queued dupterm notifications
@@ -101,6 +111,7 @@ class Console(_IOBase):
             # no byte to turn into a late KeyboardInterrupt.
             self._stop_armed = False
             self._stop_inflight = False
+        return True
 
     def set_stop_retry(self, retry):
         """Install the device-only two-checkpoint dupterm retry seam (P3)."""
@@ -112,6 +123,41 @@ class Console(_IOBase):
         self._stop_inflight = False
         if self._stop_fail is not None:
             self._stop_fail()
+
+    # -- run-scoped stdin admission --------------------------------------------
+    def _clear_ring(self):
+        self._head = 0
+        self._tail = 0
+        self._count = 0
+
+    def begin_input(self):
+        """Start one run's stdin lifetime, discarding every older byte."""
+        self._input_generation += 1
+        self._clear_ring()
+        self._stop_armed = False
+        self._stop_inflight = False
+        self._input_active = True
+        return self._input_generation
+
+    def end_input(self, expected_generation=None):
+        """End one run's stdin lifetime and reject input until the next RUN.
+
+        A terminal callback may resume after a successor RUN has already been
+        admitted.  Its lease then no longer matches and it must not clear the
+        successor's input.
+        """
+        if (expected_generation is not None and
+                expected_generation != self._input_generation):
+            return False
+        self._input_active = False
+        self._clear_ring()
+        self._stop_armed = False
+        self._stop_inflight = False
+        return True
+
+    def clear_input(self):
+        """Drop queued bytes without ending a run (the disconnect boundary)."""
+        self._clear_ring()
 
     # -- stdout/stderr tee -> CONSOLE_DATA (the single emit chokepoint) --------
     def write(self, b):
@@ -185,16 +231,17 @@ class Console(_IOBase):
     # -- stdin ring + STOP channel --------------------------------------------
     def feed_input(self, b):
         # CONSOLE_INPUT is fire-and-forget: no RSP frame (§6) -> returns None.
-        if b:
+        if self._input_active and b:
             if isinstance(b, str):
                 b = b.encode("utf-8")
-            if self._head:
-                # Compact so the bound below counts only undrained bytes.
-                self._ring = self._ring[self._head:]
-                self._head = 0
-            room = STDIN_RING - len(self._ring)
-            if room > 0:
-                self._ring.extend(b[:room])   # append until full, drop the tail
+            # Append until full and drop the excess tail.  No slicing,
+            # compaction, growth, or replacement allocation occurs here.
+            for value in b:
+                if self._count >= STDIN_RING:
+                    break
+                self._ring[self._tail] = value
+                self._tail = (self._tail + 1) % STDIN_RING
+                self._count += 1
         return None
 
     def readinto(self, buf):
@@ -205,12 +252,13 @@ class Console(_IOBase):
                 self._stop_armed = False      # delivered once
                 self._stop_inflight = True    # identifies write-swallowed KBI
                 return 1
-            if self._head < len(self._ring):
+            if self._input_active and self._count:
                 buf[0] = self._ring[self._head]
-                self._head += 1
-                if self._head == len(self._ring):
-                    self._ring = bytearray()
+                self._head = (self._head + 1) % STDIN_RING
+                self._count -= 1
+                if self._count == 0:
                     self._head = 0
+                    self._tail = 0
                 return 1
         except Exception:
             pass

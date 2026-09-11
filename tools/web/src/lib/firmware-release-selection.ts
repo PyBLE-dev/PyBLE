@@ -8,6 +8,7 @@ import {
   hasExactFirmwareProfileDescriptors,
   hasExactHistoricalFirmwareProfileDescriptors,
   isExactPublicBetaFirmwareRelease,
+  isOwnerConfirmedFirmwareRelease,
   releaseIncludesWaveshareLcd147b,
   type FirmwareReleaseDescriptor,
 } from "@/lib/firmware-release";
@@ -89,7 +90,8 @@ export function firmwareReleaseSelectedAtBuild(): FirmwareReleaseDescriptor | nu
   if (
     descriptor.deployment !== "public" &&
     descriptor.deployment !== "candidate" &&
-    descriptor.deployment !== "public-beta"
+    descriptor.deployment !== "public-beta" &&
+    !isOwnerConfirmedFirmwareRelease(descriptor)
   ) {
     throw new Error(
       "Build-selected firmware descriptor has an invalid deployment mode",

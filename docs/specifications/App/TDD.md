@@ -180,7 +180,7 @@ abstract interface class BleSession {
 
 **Public interface (sketch):** internal codec types (`Frame`, `Fragmenter`, `Reassembler`, `Crc32`, `Correlator`, `FileTransfer`, `HelloNegotiator`) plus the public `PbleConnection implements Connection` ([§5.1](#51-the-connection-interface)).
 
-**Key data structures / state:** the protocol constants mirror (D7); the pending-request table keyed by `ID` (1–255) with completers and timeouts; the inbound reassembly accumulator (FIRST/LAST/index-mod-64); negotiated `caps` from HELLO (chip, mpy_version, fs_root, max_file_size, put_window `W`, chunk_size, has_sd, free_mem); the active upload/download context ([§8.4](#84-file-transfer-state-machine)); the console `StreamController<ConsoleEvent>` and run-state `ValueNotifier<ConnState>`.
+**Key data structures / state:** the protocol constants mirror (D7); the pending-request table keyed by `ID` (1–255) with completers and timeouts; the inbound reassembly accumulator (FIRST/LAST/index-mod-64); the exact negotiated `caps` from HELLO (`proto`, `agent`, `chip`, `mpy`, `fs_root`, `mtu`, `window`, `chunk`, `free_mem`, `has_sd`, `has_identify`, `identify_led`, `auto_run`, `device_id`, `label`); the active upload/download context with dynamic `FILE_PUT_BEGIN` capacity admission ([§8.4](#84-file-transfer-state-machine)); the console `StreamController<ConsoleEvent>` and run-state `ValueNotifier<ConnState>`.
 
 **Dependencies:** `lib/ble/` (byte transport) below; presents `Connection` (neutral types) above. Authored fresh, clean-room (FR-PBLE-15).
 
@@ -505,6 +505,51 @@ UI reads down (watch providers) and writes up (call `Connection` methods / DAO m
 - **`connectionProvider` is preserved, now derived:** `Provider<Connection>((ref) => ref.watch(connectionManagerProvider).connection)`. `ConnectionManager.connection` is a **stable facade** whose identity never changes: its `state` reflects the whole session (`disconnected` while idle/scanning/failed, `connecting` during GATT+HELLO, then the live board's `ready`/`running`), and its verbs delegate to the live board when connected and throw a **typed not-connected error** otherwise (never a silent success). `connStateProvider` is **unchanged** (`connectionProvider.state`). Every S1–S3 widget (`ConnectionStatusPill`, `PinReferencePage` `FutureBuilder`, `FilesPage`) keeps compiling and now shows real state.
 - **Test compatibility:** a test overriding `connectionProvider` directly with a `FakeConnection` still **wins** (the override replaces the derived body), so the existing widget/golden suite (`shell_harness.pumpShell`) is untouched. New connect-flow tests inject `FakeScanner` + a `ConnectionFactory` returning `FakeConnection` + a fake `BleReadinessSource` through a `PbleConnectionManager`, or override `connectionManagerProvider` with a fake manager — no fake radio / fake `BleLink` needed (FR-CONN-7, D5).
 - The `ConnectController` (`Notifier`) projecting the manager into `ConnectState` for the connect surface lives in `lib/connect` ([§4.8](#48-libconnect--scanconnect-flow-ui)); it is the one place with the connect-flow intents.
+
+**Owned-link teardown clarification (2026-09-06, FR-CONNECT-7).**
+
+The same physical device may be represented by more than one asynchronous
+factory result. A replacement for the same device ID must wait until an older
+pending acquisition and its stale-result teardown have finished before invoking
+another factory for that ID. Wrapper identity alone is not physical ownership.
+Manager disposal must also stop its owned scanner, including a scan still waiting
+for adapter readiness. A native link's connection-state subscription must be
+released even when physical disconnect fails; the physical error remains visible.
+
+An already-submitted byte write may finish after retirement, but its continuation
+must not submit another fragment. Pending request rejection must already have an
+error observer while a write is awaiting completion. A complete on-time response
+recorded before retirement remains authoritative; normal deadlines are unchanged.
+
+`PbleConnection.fromLink` owns the exact supplied `BleLink` and the
+`BleByteTransport` it constructs. Its first `dispose()` retires the connection,
+removes link/event listeners, aborts in-flight work, calls that link's
+`disconnect()` exactly once, and releases the owned byte adapter and protocol
+resources. Concurrent/repeated disposals await the same completion, including
+the same failure. Cleanup must still attempt the remaining resources if one
+step fails; preserve the first failure and its stack. A terminal HELLO failure
+on this owned-link path must close it, and a late HELLO/event must never publish
+`ready` or touch disposed notifiers. The direct `PbleConnection(engine: ...)`
+constructor retains its existing protocol-engine lifetime semantics but does
+not disconnect or dispose a caller-owned byte transport.
+
+The manager retires its old facade binding before awaiting teardown, and waits
+for the old owned connection's close before opening a replacement. Every
+connect/disconnect/dispose intent invalidates earlier pending connect results.
+If an uncancellable factory returns a board after supersession, close that
+exact stale board once without attaching it or changing the current selected
+board, phase, or error. Failures from stale work remain with that operation;
+they must not overwrite a newer session. Manager disposal prevents new work,
+releases its streams/notifiers even on board-close failure, and is idempotent.
+No new wire command, permission flow, board identity gate, reset, version bump,
+or automatic connection retry is introduced by this clarification.
+
+Host regressions must exercise the real HELLO-ready `PbleConnection` over a
+recording fake `BleLink`, including physical-disconnect call/state, shared
+dispose completion, late HELLO, cleanup failure, external transport ownership,
+replacement and late factory results after disconnect/disposal. Existing
+connection/facade and wire-conformance tests remain required. Host tests alone
+do not fill the physical ordinary-disconnect/reconnect rows on either tablet.
 
 ### 6.3 Single active writer / serialization
 

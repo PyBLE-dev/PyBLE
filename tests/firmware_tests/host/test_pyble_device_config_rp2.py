@@ -9,21 +9,21 @@
 # pure scaffold; native twins pble_device_config.c + pble_boot.c).
 #
 # FROZEN references:
-#   ports/rpi-pico2-w.md P5 — /pyble_conf.json on the LFS2 vfs:
-#     {"label": str <=24 UTF-8 bytes, "autorun": 0|1}; survives reset.
+#   ports/rpi-pico2-w.md P5 — versioned, integrity-checked /pyble_conf.json on
+#     the LFS2 vfs; it carries label + autorun and survives reset.
 #   ports/rpi-pico2-w.md P1 — auto_run served from the persisted flag;
 #     advertised name label-else-default (FR-BLE-5 twin).
-#   protocol.md §4 — 0x23 SET_AUTORUN [enable:u8] (0=off default, 1=on,
-#     persisted); 0x50 SET_LABEL (empty clears; becomes the advertised name
+#   protocol.md §4 — 0x23 SET_AUTORUN is exactly one `[enable:u8]` byte whose
+#     value is exactly 0 (off/default) or 1 (on), persisted; 0x50 SET_LABEL
+#     (empty clears; becomes the advertised name
 #     and DEVICE_INFO.label). §7 — label max 24 UTF-8 bytes else ERANGE;
 #     caps carry `label` + `auto_run`. §8 — status codes.
 #   C reference invariants transliterated:
 #     pble_device_config.c pble_dc_set_label: over-length -> ERANGE, NOT
 #       stored; empty clears to default; on OK (and only on OK) the advertised
 #       name is re-derived and pushed (pble_ble_set_adv_name).
-#     pble_boot.c pble_boot_set_autorun_cmd: payload shorter than 1 byte ->
-#       EBADREQ; enable = payload[0] != 0; persisted as a 0/1 flag, default
-#       off when the key is absent.
+#     pble_boot.c pble_boot_set_autorun_cmd: payload length other than 1 or a
+#       value outside {0,1} -> EBADREQ; default off when the key is absent.
 #
 # The PURE scaffold surface (PBLE_LABEL_MAX / label_status / adv_name) stays
 # covered by the existing host/test_pyble_device_config.py — this suite does
@@ -52,10 +52,10 @@
 #         # >24 encoded bytes -> ERANGE, nothing persisted, no adv push.
 #         # OK: persists, updates .label, pushes adv_name(device_id, label).
 #     .set_autorun(enable: int) -> int §8 status
-#         # persists 0/1 (any nonzero input normalizes to 1).
+#         # persists exact 0/1; every other value is EBADREQ and unchanged.
 #     .handle_set_label(frame) -> bytes      # Dispatcher handler contract:
 #     .handle_set_autorun(frame) -> bytes    # payload[0] = §8 status.
-#         # handle_set_autorun: len(payload) < 1 -> EBADREQ (pble_boot.c twin).
+#         # handle_set_autorun: len(payload) != 1 or value >1 -> EBADREQ.
 # ---------------------------------------------------------------------------
 
 import json
@@ -102,10 +102,14 @@ class _ConfCase(unittest.TestCase):
         with open(self.conf_path(), "r", encoding="utf-8") as fh:
             return json.load(fh)
 
+    def read_conf_bytes(self):
+        with open(self.conf_path(), "rb") as fh:
+            return fh.read()
+
 
 class ConfFileContractTest(_ConfCase):
-    """P5: the persisted store is <root>/pyble_conf.json with the frozen
-    {"label": str, "autorun": 0|1} shape."""
+    """P5: the persisted store is <root>/pyble_conf.json and carries the
+    label and normalized autorun fields within its versioned record."""
 
     def test_conf_name_constant_is_frozen(self):
         self.assertEqual(
@@ -134,8 +138,8 @@ class ConfFileContractTest(_ConfCase):
         self.assertEqual(cfg.label, "")
         self.assertEqual(cfg.auto_run, 0)
 
-    def test_persisted_json_shape_is_frozen(self):
-        cfg = self.make("P5 on-disk shape {label, autorun}")
+    def test_persisted_record_carries_label_and_autorun(self):
+        cfg = self.make("P5 on-disk record carries label + autorun")
         self.assertEqual(cfg.set_label(b"Bench 2"), OK)
         self.assertEqual(cfg.set_autorun(1), OK)
         data = self.read_conf()
@@ -226,7 +230,7 @@ class SetLabelAdvNameTest(_ConfCase):
 
 class SetAutorunTest(_ConfCase):
     """F-25/P5 + §4 0x23: single flag, default OFF, persists; the C twin's
-    payload semantics (pble_boot.c) carried over exactly."""
+    exact payload semantics (pble_boot.c) carried over."""
 
     def test_autorun_defaults_off(self):
         cfg = self.make("§4 SET_AUTORUN default is OFF (0)")
@@ -246,14 +250,14 @@ class SetAutorunTest(_ConfCase):
         self.assertEqual(cfg.auto_run, 0)
         self.assertEqual(self.make("P5 autorun=0 survives reset").auto_run, 0)
 
-    def test_nonzero_enable_normalizes_to_one(self):
-        # pble_boot.c twin: enable = payload[0] != 0; the STORED value is the
-        # frozen P5 0|1 domain, never the raw byte.
-        cfg = self.make("P5 nonzero enable normalizes to 1 in the store")
-        self.assertEqual(cfg.set_autorun(5), OK)
+    def test_out_of_domain_enable_is_ebadreq_and_unchanged(self):
+        cfg = self.make("v0.6.1 SET_AUTORUN accepts exactly 0 or 1")
+        self.assertEqual(cfg.set_autorun(1), OK)
+        before = self.read_conf_bytes()
+        self.assertEqual(cfg.set_autorun(5), EBADREQ)
         self.assertEqual(cfg.auto_run, 1)
-        self.assertEqual(self.read_conf().get("autorun"), 1,
-                         'the persisted "autorun" domain is 0|1 (P5), not raw bytes')
+        self.assertEqual(self.read_conf_bytes(), before,
+                         "an invalid autorun value must not rewrite persistence")
 
     def test_autorun_and_label_do_not_clobber_each_other(self):
         cfg = self.make("P5 one conf file, two keys, no clobber")
@@ -293,13 +297,41 @@ class HandlerContractTest(_ConfCase):
         self.assertEqual(bytes(rsp)[0], OK)
         self.assertEqual(cfg.auto_run, 1)
 
+    def test_set_autorun_handler_accepts_exact_zero(self):
+        cfg = self.make("§4 0x23 handler exact zero disables")
+        self.assertEqual(cfg.set_autorun(1), OK)
+        rsp = cfg.handle_set_autorun(cmd_frame(OP_SET_AUTORUN, b"\x00"))
+        self.assertEqual(bytes(rsp), bytes((OK,)))
+        self.assertEqual(cfg.auto_run, 0)
+
     def test_set_autorun_handler_empty_payload_ebadreq(self):
-        # pble_boot.c: "§4 SET_AUTORUN payload = [enable:u8]; anything shorter
-        # is malformed."
+        # Exactly one enable byte is required.
         cfg = self.make("§4 0x23 empty payload -> [EBADREQ], flag untouched")
         rsp = cfg.handle_set_autorun(cmd_frame(OP_SET_AUTORUN, b""))
         self.assertEqual(bytes(rsp)[0], EBADREQ)
         self.assertEqual(cfg.auto_run, 0, "a malformed CMD MUST NOT flip the flag")
+
+    def test_set_autorun_handler_rejects_trailing_bytes(self):
+        cfg = self.make("§4 0x23 payload length must be exactly one")
+        self.assertEqual(cfg.set_autorun(1), OK)
+        before = self.read_conf_bytes()
+        rsp = cfg.handle_set_autorun(
+            cmd_frame(OP_SET_AUTORUN, b"\x00\x01"))
+        self.assertEqual(bytes(rsp), bytes((EBADREQ,)))
+        self.assertEqual(cfg.auto_run, 1)
+        self.assertEqual(self.read_conf_bytes(), before)
+
+    def test_set_autorun_handler_rejects_values_outside_boolean_domain(self):
+        cfg = self.make("§4 0x23 enable value must be exactly 0 or 1")
+        self.assertEqual(cfg.set_autorun(1), OK)
+        before = self.read_conf_bytes()
+        for value in (2, 0xFF):
+            with self.subTest(value=value):
+                rsp = cfg.handle_set_autorun(
+                    cmd_frame(OP_SET_AUTORUN, bytes((value,))))
+                self.assertEqual(bytes(rsp), bytes((EBADREQ,)))
+                self.assertEqual(cfg.auto_run, 1)
+                self.assertEqual(self.read_conf_bytes(), before)
 
 
 class DeviceInfoPlumbingTest(_ConfCase):

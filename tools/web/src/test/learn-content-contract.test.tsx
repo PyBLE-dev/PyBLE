@@ -3,7 +3,7 @@
 
 import type { ComponentType } from "react";
 
-import { render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import BlocksTutorial from "@/app/learn/blocks/page";
@@ -16,6 +16,7 @@ import HardwareTutorial from "@/app/learn/hardware/page";
 import Pico2WTutorial from "@/app/learn/pico-2-w/page";
 import SetupTutorial from "@/app/learn/setup/page";
 import WaveshareTutorial from "@/app/learn/waveshare-lcd-147b/page";
+import { tutorialBoardIdentities } from "@/components/tutorial-board-identity-gallery";
 import {
   compatibilityLabels,
   examplesSnapshot,
@@ -144,7 +145,10 @@ const lessonPages: Array<{
   },
 ];
 
+const physicalTabletLessonPages = lessonPages;
+
 function mainText(Page: ComponentType): string {
+  cleanup();
   render(<Page />);
   return screen.getByRole("main").textContent ?? "";
 }
@@ -305,6 +309,105 @@ describe("shared tutorial structure", () => {
   );
 });
 
+describe("instructional visual contract", () => {
+  it.each(lessonPages)(
+    "$href includes a purposeful, accessible visual",
+    ({ Page }) => {
+      render(<Page />);
+      const main = screen.getByRole("main");
+      const figures = [...main.querySelectorAll("figure")];
+
+      expect(figures.length).toBeGreaterThan(0);
+      for (const figure of figures) {
+        expect(figure.querySelector("figcaption")).not.toBeNull();
+        const images = [...figure.querySelectorAll("img")];
+        for (const image of images) {
+          expect(image).toHaveAttribute("alt");
+          expect(image.getAttribute("alt")?.trim().length).toBeGreaterThan(20);
+          expect(Number(image.getAttribute("width"))).toBeGreaterThan(0);
+          expect(Number(image.getAttribute("height"))).toBeGreaterThan(0);
+          expect(image).toHaveAttribute("loading", "lazy");
+        }
+      }
+    },
+  );
+
+  it.each(physicalTabletLessonPages)(
+    "$href includes truthful physical Lenovo app evidence",
+    ({ Page }) => {
+      render(<Page />);
+      const main = screen.getByRole("main");
+      const physicalFigures = [...main.querySelectorAll("figure")].filter(
+        (figure) =>
+          figure
+            .querySelector("figcaption")
+            ?.textContent?.includes("Actual Android tablet · Lenovo TB-J616X"),
+      );
+
+      expect(physicalFigures.length).toBeGreaterThan(0);
+      for (const figure of physicalFigures) {
+        const images = within(figure).getAllByRole("img");
+        expect(images.length).toBeGreaterThan(0);
+        for (const image of images) {
+          expect(image.getAttribute("src")).toMatch(
+            /^\/learn\/app\/[a-z0-9.-]+\.png$/,
+          );
+          expect(image.getAttribute("alt")).toMatch(/PyBLE 0\.2\.0 beta/i);
+        }
+        expect(figure).not.toHaveTextContent(/integration test|debug|golden/i);
+      }
+      expect(main).not.toHaveTextContent(/PyBLE Integration Test/i);
+    },
+  );
+
+  it.each([SetupTutorial, HardwareTutorial])(
+    "renders the complete five-board observed identity set",
+    (Page) => {
+      render(<Page />);
+      const main = screen.getByRole("main");
+      const text = main.textContent ?? "";
+
+      for (const [boardId, runtimeChip] of [
+        ["5646", "esp32-s3"],
+        ["8C9E", "esp32"],
+        ["C81A", "esp32-c3"],
+        ["DA86", "esp32-s3"],
+        ["3DCB", "rpi-pico2-w"],
+      ] as const) {
+        expect(text).toContain(boardId);
+        expect(text).toContain(runtimeChip);
+      }
+    },
+  );
+
+  it("keeps 5646 associated with the generic ESP32-S3 session", () => {
+    expect(tutorialBoardIdentities.genericS3).toMatchObject({
+      boardId: "5646",
+      context: "Generic ESP32-S3 · N16R8",
+      runtimeChip: "esp32-s3",
+    });
+    expect(tutorialBoardIdentities.waveshareLcd147b).toMatchObject({
+      boardId: "DA86",
+      context: "Waveshare ESP32-S3-LCD-1.47B",
+      runtimeChip: "esp32-s3",
+    });
+  });
+
+  it("uses identity subsets as hardware boundaries, not profile proof", () => {
+    const configuredText = mainText(ConfiguredHardwareTutorial);
+    expect(configuredText).toMatch(/C81A.*esp32-c3/is);
+
+    const picoText = mainText(Pico2WTutorial);
+    expect(picoText).toMatch(/3DCB.*rpi-pico2-w/is);
+
+    const waveshareText = mainText(WaveshareTutorial);
+    expect(waveshareText).toMatch(/5646.*DA86/is);
+    expect(waveshareText).toMatch(
+      /esp32-s3.*(?:cannot|does not).*distinguish.*profile/is,
+    );
+  });
+});
+
 describe("tutorial truth and safety content", () => {
   it("teaches exact provisioning boundaries before BLE use", () => {
     const text = mainText(SetupTutorial);
@@ -325,6 +428,8 @@ describe("tutorial truth and safety content", () => {
 
     expect(text).toContain('print("Hello from PyBLE!")');
     expect(text).toMatch(/hardware-free/i);
+    expect(text).toMatch(/In Files.*New file.*hello\.py.*open.*Editor/is);
+    expect(text).not.toMatch(/New file in the Editor.*name.*hello\.py/is);
     expect(text).toMatch(/hello\.py.*Save.*Run.*Console/is);
     expect(text).toMatch(/Stop.*soft reboot.*reconnect/is);
   });
@@ -348,11 +453,12 @@ describe("tutorial truth and safety content", () => {
     expect(text).toContain("https://github.com/PyBLE-dev/examples");
     expect(text).toContain(examplesCommit);
     expect(text).toContain("examples/portable/basics/hello_console");
-    expect(text).toContain("/examples/portable/basics");
+    expect(text).toContain("/examples/pyble_hello_console.py");
     expect(text).toMatch(/editable.*repository URL/is);
     expect(text).toMatch(/branch.*only branches/is);
     expect(text).toMatch(/main.*branch discovery/is);
-    expect(text).toMatch(/advanced.*tag or commit.*full.*commit/is);
+    expect(text).toMatch(/Use a tag or commit.*40-character commit/is);
+    expect(text).not.toMatch(/Open Advanced/i);
     expect(text).toMatch(/public.*no.*account.*token/is);
     expect(text).toMatch(/rate limit/is);
     expect(text).toMatch(/lowercase \.py.*direct.*one folder/is);

@@ -58,6 +58,19 @@ FRAG_INDEX_MOD = 64
 # <= 2048 plus headers with margin. An oversize message is dropped and reported
 # via `on_oversize` so the agent can answer RSP ERANGE with an opcode/id echo.
 RX_MAX = 4096
+RX_REASSEMBLY_DEADLINE_MS = 5000
+SESSION_VIOLATION_LIMIT = 8
+
+try:
+    from time import ticks_ms as _ticks_ms, ticks_diff as _ticks_diff
+except ImportError:                            # CPython host suite
+    from time import monotonic as _monotonic
+
+    def _ticks_ms():
+        return int(_monotonic() * 1000)
+
+    def _ticks_diff(end, start):
+        return end - start
 
 
 def _noop_published():
@@ -126,7 +139,7 @@ class BleLink:
     the Layer-2 board overlay's; this class reads the BLE MAC at runtime and is
     otherwise identical across esp32 / esp32-s3 / esp32-c3 (sets up M3)."""
 
-    def __init__(self):
+    def __init__(self, clock=None, ticks_diff=None):
         self._ble = None            # bluetooth.BLE(), bound in start()
         self._conn_handle = None
         self._session_generation = 0
@@ -143,6 +156,16 @@ class BleLink:
         self._rx_buf = bytearray()
         self._rx_active = False
         self._rx_next_index = 0
+        self._rx_started_ms = 0
+        self._rx_discard_tail = False
+        self._clock = _ticks_ms if clock is None else clock
+        self._ticks_diff = _ticks_diff if ticks_diff is None else ticks_diff
+        # One exact-connection malformed-input budget. The counter is reset
+        # only when a new connection/VM-owned BleLink begins.
+        self._violation_count = 0
+        self._session_closed = False
+        self._termination_requested = False
+        self._command_closing = False
         # up-calls into pyble_proto / pyble_agent (registered before start()):
         self._on_message = None
         self._on_connect = None
@@ -187,6 +210,48 @@ class BleLink:
             return None
         return (self._conn_handle, self._session_generation)
 
+    def terminate_session(self, expected_session=None):
+        """Close one exact connection once and make later RX/TX silent."""
+        current = self.session_token()
+        if (current is None or self._termination_requested or
+                (expected_session is not None and expected_session != current)):
+            return False
+        self._session_closed = True
+        self._termination_requested = True
+        self._reset_reassembly()
+        self._ble.gap_disconnect(current[0])
+        return True
+
+    def record_protocol_violation(self, expected_session=None):
+        """Debit the shared session budget before an error response/up-call.
+
+        True admits the caller's response or oversize callback (violations
+        one through seven). False means stale/offline/closed, or that this was
+        the eighth violation which atomically requested termination.
+        """
+        current = self.session_token()
+        if (current is None or self._session_closed or
+                (expected_session is not None and expected_session != current)):
+            return False
+        if self._command_closing:
+            # An accepted SOFT_REBOOT keeps normal fragment/frame
+            # classification but has precedence over budget accounting.
+            return True
+        self._violation_count += 1
+        if self._violation_count >= SESSION_VIOLATION_LIMIT:
+            self.terminate_session(current)
+            return False
+        return True
+
+    def begin_command_closing(self, expected_session=None):
+        """Freeze violation accounting for one exact accepted-SOFT session."""
+        current = self.session_token()
+        if (current is None or self._session_closed or
+                (expected_session is not None and expected_session != current)):
+            return False
+        self._command_closing = True
+        return True
+
     def set_info_payload(self, payload):
         """FR-BLE-4: update the INFO characteristic's served bytes (authored by
         pyble_info). Served verbatim; not decoded here."""
@@ -224,7 +289,8 @@ class BleLink:
         from pyble_proto — never inspected/decoded here. An optional receipt is
         called immediately after local acceptance of the final fragment."""
         current_session = self.session_token()
-        if self._ble is None or current_session is None:
+        if (self._ble is None or current_session is None or
+                self._session_closed):
             return False
         if expected_session is None:
             expected_session = current_session
@@ -302,12 +368,20 @@ class BleLink:
             if event == _IRQ_CENTRAL_CONNECT:
                 self._session_generation += 1
                 self._conn_handle = data[0]
+                self._violation_count = 0
+                self._session_closed = False
+                self._termination_requested = False
+                self._command_closing = False
                 self._reset_reassembly()
                 if self._on_connect is not None:
                     self._on_connect()
             elif event == _IRQ_CENTRAL_DISCONNECT:
                 self._conn_handle = None
                 self._mtu = DEFAULT_MTU
+                self._violation_count = 0
+                self._session_closed = False
+                self._termination_requested = False
+                self._command_closing = False
                 self._reset_reassembly()
                 if self._on_disconnect is not None:
                     try:
@@ -330,12 +404,35 @@ class BleLink:
         self._rx_buf = bytearray()
         self._rx_active = False
         self._rx_next_index = 0
+        self._rx_started_ms = 0
+        self._rx_discard_tail = False
+
+    def _discard_reassembly_tail(self):
+        self._reset_reassembly()
+        self._rx_discard_tail = True
+
+    def _reject_fragment_run(self, session):
+        self._discard_reassembly_tail()
+        if session is not None:
+            self.record_protocol_violation(session)
 
     def _on_rx(self, packet):
         """Reassemble §3.2: strip the 1-byte FRAG_HDR, concatenate FRAGMENT DATA
         from FIRST through LAST (index increasing mod 64), then hand the complete
         §3.1 message up via on_message. CRC/structure validation is pyble_proto's."""
+        session = self.session_token()
+        # Direct host-unit reassembly remains a session-less low-level seam;
+        # device IRQ delivery always has a live connection token.
+        if self._session_closed:
+            return
         if not packet:
+            # An empty GATT value has no fragment header and therefore cuts
+            # ownership of an incomplete run. With no active run it is one
+            # standalone violation and must not absorb a later orphan run.
+            if self._rx_active:
+                self._discard_reassembly_tail()
+            if session is not None:
+                self.record_protocol_violation(session)
             return
         hdr = packet[0]
         first = bool(hdr & FRAG_FIRST)
@@ -346,24 +443,33 @@ class BleLink:
             self._rx_buf = bytearray()
             self._rx_active = True
             self._rx_next_index = index
+            self._rx_started_ms = self._clock()
+            self._rx_discard_tail = False
+        elif self._rx_discard_tail:
+            return
         elif not self._rx_active or index != self._rx_next_index:
-            self._reset_reassembly()  # gap/out-of-order: drop; app retransmits
+            self._reject_fragment_run(session)
+            return
+        elif self._ticks_diff(self._clock(), self._rx_started_ms) >= \
+                RX_REASSEMBLY_DEADLINE_MS:
+            self._reject_fragment_run(session)
             return
 
-        self._rx_buf += packet[1:]
-        self._rx_next_index = (index + 1) % FRAG_INDEX_MOD
-
-        if len(self._rx_buf) > RX_MAX:
-            # P6: oversize — report ONCE (head carries the §3.1 header bytes so
-            # the agent can echo opcode/id in RSP ERANGE), drop the message,
-            # and recover on the next FIRST fragment. Trailing fragments of the
-            # same message fall into the inactive/gap branch above and stay
-            # silent (no further report).
-            head = bytes(self._rx_buf[:8])
-            self._reset_reassembly()
-            if self._on_oversize is not None:
+        data = packet[1:]
+        if len(self._rx_buf) + len(data) > RX_MAX:
+            needed = 8 - len(self._rx_buf)
+            if needed > 0:
+                head = bytes(self._rx_buf + data[:needed])
+            else:
+                head = bytes(self._rx_buf[:8])
+            self._discard_reassembly_tail()
+            if ((session is None or self.record_protocol_violation(session)) and
+                    self._on_oversize is not None):
                 self._on_oversize(head)
             return
+
+        self._rx_buf += data
+        self._rx_next_index = (index + 1) % FRAG_INDEX_MOD
 
         if last:
             msg = bytes(self._rx_buf)

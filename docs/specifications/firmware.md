@@ -1,6 +1,6 @@
 # PyBLE — Agent Firmware
 
-Status: **DRAFT** · Last updated: 2026-08-20
+Status: **DRAFT** · Last updated: 2026-09-02
 
 The PyBLE agent is small board-side firmware that turns a compatible
 MicroPython target into a PyBLE-speaking board: it advertises the BLE service,
@@ -97,41 +97,44 @@ exactly `esp32-4mb`,
 `esp32-s3-n16r8`, and `waveshare-esp32-s3-lcd-147b`; its source identity and
 retained evidence remain immutable history.
 
-The v0.6.0 qualified-release contract now freezes one atomic five-profile
-order: `esp32-4mb`, `esp32-s3-n16r8`,
+The qualified public v0.6.0 release contains one atomic five-profile order:
+`esp32-4mb`, `esp32-s3-n16r8`,
 `waveshare-esp32-s3-lcd-147b`, `esp32-c3-4mb`, and `rpi-pico2-w`
 ([ADR-0033](../decisions/0033-qualify-v060-as-five-profile-heterogeneous-release.md)).
 The first four use profile-scoped ESP Web Serial merged images; Pico uses a
-browser-verified UF2 download followed by manual BOOTSEL copy. This is a
-qualification target, not a claim that any v0.6.0 gate has passed. Fresh
-two-clean-build reproducibility, license audit, resource policy, exact-byte
-HIL, both-platform app HIL, install/recovery, and copy-on-write finalization
-remain required for all five profiles before activation.
+browser-verified UF2 download followed by manual BOOTSEL copy. All five exact
+v0.6.0 rows completed their two-clean-build reproducibility, license, resource,
+exact-byte HIL, both-platform app-HIL, install/recovery, and copy-on-write
+finalization gates. The source-selected v0.6.1 tree retains the same profile
+order but is a new exact-byte candidate: every one of those gates requires
+fresh v0.6.1 evidence before its bytes can be qualified or activated.
 
-ADR-0038 replaces the unpublished local candidate tagged at `719b211…` in
-place: no origin tag, GitHub Release, or canonical v0.6.0 website release ever
-existed, so the first public version remains `0.6.0`. The predecessor source
-era ends at inclusive commit `5620f2f…`; strict descendants use the
+ADR-0038 governed replacement of the unpublished local candidate tagged at
+`719b211…`: at that decision point no origin tag, GitHub Release, or canonical
+v0.6.0 website release existed, so the first public version remained `0.6.0`.
+The predecessor source era ends at inclusive commit `5620f2f…`; strict
+descendants use the
 ADR-0037 fixed-SLO contract, and strict descendants of the second boundary
 `7d85328…` use the ADR-0039 second-replacement contract, which additionally
 fixes the Waveshare largest-block heap floor at `98304` under
 `floor-min-1024-waveshare-block-98304-v2` and permits byte-identity-conditioned
-carry-forward of already-passed physical evidence (ADR-0039 item 6). All old candidate bytes and HIL are invalid for
-the replacement, while superseded metadata and immutable baseline evidence
-remain retained. After source/docs/RED/GREEN, build, reproducibility, license,
-source, and audit gates pass, the local tag may be replaced so it peels to
-candidate `HEAD`; audited candidate creation then precedes fresh HIL and
-finalization. Push, publication, and activation remain forbidden until those
-later gates pass.
+carry-forward of already-passed physical evidence (ADR-0039 item 6). All old
+candidate bytes and HIL were invalid for that replacement, while superseded
+metadata and immutable baseline evidence remain retained. The replacement
+completed its source/docs/RED/GREEN, build, reproducibility, license, source,
+audit, fresh-HIL, and finalization gates and became the qualified public v0.6.0
+release. That completed evidence remains historical and cannot qualify the
+source-selected v0.6.1 tree.
 
-The ESP32-C3-MINI-1-N4 v0.4/4 MiB/no-PSRAM reference and its still-pending
-C3-G0…C3-G6 gates remain frozen in
-[firmware/ports/esp32-c3-4mb.md](firmware/ports/esp32-c3-4mb.md). C3 enters
-release metadata and selection only after those gates and the common v0.6.0
-matrix pass. ESP Web Tools detects the chip family but cannot by that fact
-alone prove the required flash/PSRAM topology or distinguish the two S3
-images. The full compatibility, heterogeneous-artifact, historical
-public-beta, and candidate-gate contracts are frozen in
+The ESP32-C3-MINI-1-N4 v0.4/4 MiB/no-PSRAM reference and its C3-G0…C3-G6 gate
+definitions remain frozen in
+[firmware/ports/esp32-c3-4mb.md](firmware/ports/esp32-c3-4mb.md). Those gates
+passed for the exact qualified v0.6.0 bytes; the source-selected v0.6.1 bytes
+must pass fresh C3-G0…C3-G6 and common five-profile gates. ESP Web Tools detects
+the chip family but cannot by that fact alone prove the required flash/PSRAM
+topology or distinguish the two S3 images. The full compatibility,
+heterogeneous-artifact, historical public-beta, and candidate-gate contracts
+are frozen in
 [firmware/browser-flashing.md](firmware/browser-flashing.md).
 
 The Waveshare ESP32-S3-LCD-1.47B uses its own
@@ -226,14 +229,21 @@ contract, and HIL matrix live in
   matrix remains `esp32`, lean `esp32-s3`, exact-board
   `waveshare-esp32-s3-lcd-147b`, and `esp32-c3`). `versions.lock` gains
   `[targets_rp2]` (PyBLE
-  target → upstream rp2 board) and `[arm_gnu_toolchain]` (pinned ARM GNU
+  target → upstream rp2 board), `[arm_gnu_toolchain]` (pinned ARM GNU
   release + SHA-256; the build verifies the compiler version and fails cleanly
-  on mismatch — never a silent substitution, BLD-4 equivalent). pico-sdk,
+  on mismatch — never a silent substitution, BLD-4 equivalent), and
+  `[picotool]` (official macOS package, archive/extracted-file identities,
+  exact version line, source/distribution commits, and package-config path).
+  The RP2 build supplies the verified package through explicit
+  `picotool_DIR`, disables FetchContent fallback, and rejects an ambient PATH,
+  Homebrew, CMake-registry, or SDK-downloaded picotool. pico-sdk,
   BTstack, cyw43-driver etc. are pinned transitively as `lib/` submodules of
   the one `[micropython]` commit — no new external pin. Artifacts:
   `firmware.uf2` (primary, BOOTSEL/picotool-flashable), `firmware.elf`,
-  `firmware.bin`, provenance JSON (`port: "rp2"`), with a hard image-size gate
-  of 1,572,864 bytes.
+  `firmware.bin`, `firmware.elf.map`, provenance JSON (`port: "rp2"`), with a
+  hard image-size gate of 1,572,864 bytes. Pull requests run this as a real
+  isolated `macos-15` arm64 build and retain all five outputs; a plan-only or
+  host-model check cannot satisfy the fifth-profile build gate.
 - The first source identity that combines this RP2 port with the four existing
   ESP build variants is agent version **0.6.0**. Version `0.5.1` remains the
   earlier Waveshare/ESP source candidate and MUST NOT be retagged with different
@@ -253,6 +263,14 @@ contract, and HIL matrix live in
 The `rpi-pico2-w` release audit MUST distinguish a tool or file being used by
 the build from bytes being incorporated into the installable firmware. These
 terms are normative:
+
+Firmware v0.6.1 applies that same distinction to its pinned picotool package.
+Its additional private `build-tools` evidence role recursively accounts for
+the official archive and its composite executable plus bundled libusb, while
+excluding both host tools from the firmware's redistributed notice. The
+version-routed schema, exact owners, and provenance rules are frozen in
+[browser-flashing.md §6](firmware/browser-flashing.md#6-licensing-and-release-notes).
+Firmware v0.6.0 retains its exact seven-role audit and bytes.
 
 - A **build tool** is an executable which transforms or links inputs, including
   the GCC drivers and their resolved GCC/binutils helpers. It is part of the
@@ -426,14 +444,31 @@ BIN, and UF2 digests. An absent recipe, extra Target Code object, changed tool
 or helper, unknown flag path, unmapped member/header, or source/archive mismatch
 MUST fail closed before a public candidate can be assembled.
 
+The RP2 build-driver environment proof MUST parse the one marked `unset`
+command independently of later CMake setup. Its one-name-per-line grammar
+accepts case-sensitive shell identifiers, including `picotool_DIR`, requires
+the exact continuation/terminal structure, rejects duplicate names, and still
+requires every GCC resolution and launcher override to be scrubbed. For
+v0.6.1 and later, all pinned-picotool discovery controls MUST also be scrubbed;
+the complete intervening assignment/export block before the first retained
+`mpy-cross` build MUST equal the reviewed offline package configuration. It
+sets the verified `PICOTOOL_PACKAGE_DIR`, typed
+`FETCHCONTENT_FULLY_DISCONNECTED:BOOL=ON`, disabled package registries and
+disabled forced fetching. Missing or additional commands, changed values,
+substitutions, or incomplete exports MUST fail; the auditor MUST NOT execute
+the shell or ignore an unknown intervening block. Earlier source versions
+retain the scrub-only form without this later package setup. This parser
+correction does not change build provenance, candidate-source identity,
+Eligible Compilation evidence, or qualification-root requirements.
+
 ## 7. Footprint budget (provisional, per target)
 
 The measurement method is frozen in
 [firmware/specs.md §5.3](firmware/specs.md#53-footprint-gates-nfr-fp);
 the v0.4.2 two-profile policy and evidence remain immutable history. The
 exact-board split invalidates any pre-split v0.5 baseline for current-source
-qualification. The unfinished v0.5.1 candidate evidence cannot qualify the
-source-selected v0.6.0 tree, which requires a fresh controlled five-profile
+qualification. The qualified v0.6.0 evidence cannot qualify the
+source-selected v0.6.1 tree, which requires a fresh controlled five-profile
 refresh defined there. No current-source numeric qualification is claimed
 until the retained baseline, schema-3 policy, and final-candidate records
 exist.
@@ -441,11 +476,11 @@ The scope is profile-specific:
 
 | Profile | Current numeric status | Release effect |
 |---|---|---|
-| `esp32-4mb` | v0.4.2 browser install/recovery passed; refresh the current-source baseline and verify the final candidate | Required before any v0.6.0-derived candidate qualification and installer activation |
-| `esp32-s3-n16r8` | v0.4.2 browser install/recovery passed; measure the lean N16R8 bytes/runtime independently, derive thresholds, then verify the final candidate | Required before any v0.6.0-derived candidate qualification and installer activation |
-| `waveshare-esp32-s3-lcd-147b` | No public exact-byte qualification; measure the exact-board bytes/runtime independently, derive thresholds, then verify the final candidate and display gate | Required before any v0.6.0-derived candidate qualification and installer activation |
-| `esp32-c3-4mb` | Engineering contract frozen; all observations, threshold, and HIL rows pending ([derived contract](firmware/ports/esp32-c3-4mb.md)) | Blocks the atomic v0.6.0 qualified release until C3-G0…C3-G6 and the common final-candidate row pass |
-| `rpi-pico2-w` | GP2, the RP2 resource row, both-platform app HIL, verified-UF2 install, and BOOTSEL recovery all pending ([derived contract](firmware/ports/rpi-pico2-w.md)) | Blocks the atomic v0.6.0 qualified release until GP2 and the common final-candidate row pass |
+| `esp32-4mb` | Qualified for v0.6.0; refresh the current-source baseline and verify the v0.6.1 final candidate | Required before any v0.6.1 candidate qualification and installer activation |
+| `esp32-s3-n16r8` | Qualified for v0.6.0; measure the current lean N16R8 bytes/runtime independently, derive thresholds, then verify the v0.6.1 final candidate | Required before any v0.6.1 candidate qualification and installer activation |
+| `waveshare-esp32-s3-lcd-147b` | Qualified for v0.6.0; measure the exact-board bytes/runtime independently, then verify the v0.6.1 final candidate and display gate | Required before any v0.6.1 candidate qualification and installer activation |
+| `esp32-c3-4mb` | Qualified for v0.6.0; refresh C3-G0…C3-G6 and the common final-candidate row against the v0.6.1 source identity ([derived contract](firmware/ports/esp32-c3-4mb.md)) | Blocks atomic v0.6.1 qualification until the fresh exact-profile evidence passes |
+| `rpi-pico2-w` | Qualified for v0.6.0; refresh GP2, resource, app-HIL, verified-UF2, and BOOTSEL evidence for v0.6.1 ([derived contract](firmware/ports/rpi-pico2-w.md)) | Blocks atomic v0.6.1 qualification until the fresh exact-profile evidence passes |
 
 The enforced metrics are:
 

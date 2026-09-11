@@ -5,7 +5,10 @@ import Link from "next/link";
 
 import { ExternalIcon, MailIcon } from "@/components/icons";
 import { PageIntro } from "@/components/page-intro";
-import { releaseIncludesWaveshareLcd147b } from "@/lib/firmware-release";
+import {
+  isOwnerConfirmedFirmwareRelease,
+  releaseIncludesWaveshareLcd147b,
+} from "@/lib/firmware-release";
 import { firmwareReleaseSelectedAtBuild } from "@/lib/firmware-release-selection";
 import { pageMetadata, siteConfig } from "@/lib/site";
 
@@ -51,6 +54,7 @@ function qualifiedProfileList(profileIds: readonly string[]) {
 export default function SupportPage() {
   const firmwareRelease = firmwareReleaseSelectedAtBuild();
   const publicBeta = firmwareRelease?.deployment === "public-beta";
+  const ownerConfirmed = isOwnerConfirmedFirmwareRelease(firmwareRelease);
   const candidate = firmwareRelease?.deployment === "candidate";
   const qualifiedPublic =
     firmwareRelease !== null &&
@@ -83,7 +87,16 @@ export default function SupportPage() {
                 <div>
                   <h3>Check firmware status before installing</h3>
                   <p>
-                    {publicBeta ? (
+                    {ownerConfirmed ? (
+                      <>
+                        Public v{firmwareRelease?.version} firmware is available
+                        for all five exact profiles, following owner
+                        qualification confirmation. Select your exact board on
+                        the firmware page and back up its files before
+                        installation. Only the Waveshare B-version image
+                        includes the TFT runtime and fresh-install splash.
+                      </>
+                    ) : publicBeta ? (
                       <>
                         The v{firmwareRelease.version} hardware-tested beta is
                         available for the exact esp32-4mb and esp32-s3-n16r8

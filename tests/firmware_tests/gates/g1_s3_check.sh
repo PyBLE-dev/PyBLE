@@ -13,11 +13,10 @@
 # S2-slice host checks and REFUSES to sign any S3 item if either regressed.
 #
 # A milestone gate is green ONLY on a real-hardware HIL demo. This script
-# verifies the HOST-runnable S3 conformance slice and reports the HIL items as
-# DEFERRED-HIL. RED is EXPECTED now: the S3 pyble_* modules are not yet [green],
-# AND the [red] S3 conformance suites are DoR-BLOCKED until protocol.md §6/§7/§9
-# freeze + the specs.md FR mirror lands (see host/test_pyble_*.py banners and
-# host/conformance/s3_pending.json). Do not sign S3 conformance before that.
+# verifies the implemented HOST-runnable S3 conformance slice and reports the
+# physical items as DEFERRED-HIL. PBLE/1 §6/§7/§9 and their firmware mirrors
+# are frozen; their former pre-freeze planning ledger is retained only in the
+# conformance archive.
 #
 # Exit non-zero if any cumulative earlier slice regressed, OR if a host-runnable
 # S3 criterion FAILs. DEFERRED does not fail.
@@ -62,7 +61,7 @@ fi
 hdr "G1.S3.1 SDD precondition — protocol.md §6/§7/§9 FROZEN before S3 conformance"
 PROTO="$REPO_ROOT/docs/specifications/protocol.md"
 chk_frozen() { # SECTION_REGEX  LABEL
-  if grep -qiE "$1.*FROZEN" "$PROTO" 2>/dev/null; then row PASS "$2"; else row DEFERRED-DOCS "$2 (still DRAFT — architect/project-architect [docs] freeze)"; fi
+  if grep -qiE "$1.*FROZEN" "$PROTO" 2>/dev/null; then row PASS "$2"; else row FAIL "$2 (frozen-contract marker missing)"; fi
 }
 chk_frozen '§6 Run'        "protocol.md §6 (Run/Console) FROZEN — DoR for F-04 [red]"
 chk_frozen '§7 HELLO'      "protocol.md §7 (HELLO/caps) FROZEN — DoR for F-03/F-16/F-22 [red]"
@@ -81,12 +80,12 @@ row "$(run_test test_pyble_device_config.sh)" "default PyBLE-XXXX; label replace
 hdr "G1.S3.5 F-04 RUN file + RUN_STATE + EBUSY conformance  [pyble_runner — runtime-engineer]"
 row "$(run_test test_pyble_runner.sh)" "run->running->done/error state machine; RUN_STATE per transition; single-program EBUSY (FR-RUN-1/4/7/9)"
 
-note "the four rows above are RED until [green]; they are also DoR-BLOCKED until §6/§7/§9 freeze — see the file banners"
+note "the four rows above exercise the implemented host surfaces; physical behavior remains separately deferred below"
 
 # --- Shared cross-language corpus (firmware <-> Dart pble) --------------------
 hdr "G1.S3.6 Shared PBLE/1 corpus advanced for S3 (frozen frame-level only)"
 row "$(run_test test_pyble_proto.sh)" "corpus.json still byte-verifies incl. run_rsp_*/set_label_rsp_* frozen frame vectors"
-note "payload-semantic S3 vectors (caps/RUN/SET_LABEL body) held in conformance/s3_pending.json until §6/§7/§9 freeze"
+note "pre-freeze planning vectors are archived; current semantics are owned by the named host suites and frozen specifications"
 
 # --- No-leak (cumulative clean-room gate) ------------------------------------
 hdr "G1.S3.7 Clean-room no-leak still clean over the test tree  [F-22 gate carries no-leak]"
@@ -111,7 +110,7 @@ if [ "$CUM_FAIL" -ne 0 ]; then
   exit 1
 fi
 if [ "$S3_FAIL" -ne 0 ]; then
-  printf 'G1 S3 slice: %d host criteria FAILING — EXPECTED RED until the S3 pyble_* modules land [green] (and only after §6/§7/§9 freeze). Plus DEFERRED-HIL items. G1 NOT advanced.\n' "$S3_FAIL"
+  printf 'G1 S3 slice: %d host criteria FAILING. Plus DEFERRED-HIL items. G1 NOT advanced.\n' "$S3_FAIL"
   exit 1
 fi
 printf 'G1 S3 slice: host-runnable S3 criteria PASS. G1 still requires the DEFERRED-HIL demo before sign-off, and remains open through S6.\n'

@@ -84,6 +84,12 @@ bool pble_ble_session_snapshot(uint16_t expected_conn,
 bool pble_ble_session_snapshot_current(pble_session_token_t *session);
 bool pble_ble_session_live(const pble_session_token_t *session);
 bool pble_ble_session_closing(void);
+// Debit one violation against the exact live session. Violations 1..7 return
+// true so a safely-correlatable refusal may be published. Violation 8 begins
+// exact-session teardown and returns false; stale/closed tokens also return
+// false without affecting a newer session.
+bool pble_ble_record_protocol_violation(
+    const pble_session_token_t *session);
 void pble_ble_terminate_session(const pble_session_token_t *session);
 
 // Schedule the pre-created response callout after a slot enters the ready FIFO.

@@ -13,9 +13,9 @@
 # jailed <dest>.pbltmp persists), §6 (STOP -> RSP{OK}, active STOP's response
 # precedes interrupt delivery, idle STOP emits no RUN_STATE);
 # ports/rpi-pico2-w.md P1 (has_identify=0 -> IDENTIFY EUNSUPPORTED), P2
-# (transfers during an active RUN -> EBUSY; *_BEGIN validation/reservation is
-# answered inline at dispatch, only streaming/window pumping is supervisor
-# work), P4 (SOFT_REBOOT: RSP{OK} first, then the injected reset callable from
+# (transfers during an active RUN -> EBUSY; PUT validation and VFS work are
+# drained from a bounded supervisor mailbox, never the BTstack callback), P4
+# (SOFT_REBOOT: RSP{OK} first, then the injected reset callable from
 # the supervisor after a bounded TX-flush delay).
 #
 # Env-reality: the BLE link is the FakeLink below, which mimics ONLY the frozen
@@ -84,6 +84,11 @@ CMD_OPCODES = {
 NO_RSP_OPCODES = {0x16, 0x31}   # CMD-only: the handler suppresses the RSP (§4)
 
 UNIQUE_ID = b"\x12\x34\x56\x78\x9a\xbc\x9f\x3a"   # -> device_id "9F3A"
+HELLO_PAYLOAD = (
+    b"proto_versions=1\n"
+    b"app_name=PyBLE\n"
+    b"app_version=0.2.0"
+)
 
 
 class FakeLink:
@@ -102,6 +107,7 @@ class FakeLink:
         self.omit_terminal = False
         self.session = 1
         self.replace_session_before_terminal_retry = False
+        self.terminated_sessions = []
 
     def on_message(self, cb):
         self.message_cb = cb
@@ -114,6 +120,13 @@ class FakeLink:
 
     def session_token(self):
         return self.session
+
+    def terminate_session(self, expected_session=None):
+        current = self.session_token()
+        if expected_session is not None and expected_session != current:
+            return False
+        self.terminated_sessions.append(current)
+        return True
 
     def send_message(self, msg, on_published=None, expected_session=None):
         msg = bytes(msg)
@@ -234,6 +247,21 @@ class AgentTestBase(unittest.TestCase):
         if arm_reset is not None:
             kwargs["arm_reset"] = arm_reset
         agent = cls(link, self.root, **kwargs)
+
+        # Legacy behavior tests below exercise already-negotiated commands. A
+        # strict v0.6.1 agent begins UNNEGOTIATED, so establish the real session
+        # precondition once and discard only this setup traffic. Tests dedicated
+        # to pre-HELLO/repeat/reset behavior use their own fresh harness.
+        self.assertIsNotNone(link.connect_cb, "Agent must bind on_connect")
+        link.connect_cb()
+        send(self, link, CMD_OPCODES["HELLO"], HELLO_PAYLOAD, id_=255)
+        hello = rsps(link, opcode=CMD_OPCODES["HELLO"], id_=255)
+        self.assertEqual(len(hello), 1, "legacy fixture HELLO must receive one RSP")
+        self.assertEqual(hello[0].payload[0], OK,
+                         "legacy fixture canonical HELLO must negotiate v1")
+        link.sent[:] = []
+        if order is not None:
+            order[:] = []
         return agent, link
 
 
@@ -270,7 +298,8 @@ class AllOpcodesRegisteredTest(AgentTestBase):
             with self.subTest(opcode=name):
                 agent, link = self.new_agent(
                     "F-25/§4 handler registered: {}".format(name))
-                send(self, link, op, id_=7)
+                payload = HELLO_PAYLOAD if op == CMD_OPCODES["HELLO"] else b""
+                send(self, link, op, payload, id_=7)
                 pump(agent, 2, self.now)
                 answers = rsps(link, opcode=op, id_=7)
                 if op == CMD_OPCODES["IDENTIFY"]:
@@ -294,6 +323,21 @@ class AllOpcodesRegisteredTest(AgentTestBase):
                         answers[0].payload[0], EUNSUPPORTED,
                         "{} answered EUNSUPPORTED — no handler is registered "
                         "for it".format(name))
+
+    def test_set_identify_led_rejects_every_trailing_payload_byte(self):
+        agent, link = self.new_agent(
+            "P1 SET_IDENTIFY_LED exact portable payload grammar")
+
+        send(self, link, CMD_OPCODES["SET_IDENTIFY_LED"], b"\x00\x01\xff",
+             id_=8)
+
+        answers = rsps(link, CMD_OPCODES["SET_IDENTIFY_LED"], 8)
+        self.assertEqual(len(answers), 1)
+        self.assertEqual(
+            answers[0].payload[0], EBADREQ,
+            "SET_IDENTIFY_LED is exactly empty or two bytes; a valid prefix "
+            "cannot make trailing bytes disappear",
+        )
 
 
 class EmitTest(AgentTestBase):
@@ -348,6 +392,10 @@ class DisconnectResetsPutStateTest(AgentTestBase):
         with open(os.path.join(self.root, "g.txt"), "wb") as fh:
             fh.write(b"hello world")           # 11 bytes, for the later GET
         agent, link = self.new_agent(crit)
+        # F-10 intentionally retains the orphan file object for a future PUT
+        # resume; close that test-owned object after assertions so CPython's
+        # ResourceWarning does not obscure RED/green protocol results.
+        self.addCleanup(agent._fs._close_put_file)
 
         # Open an upload and land one in-order window chunk.
         body = b"ABCDEFGH"
@@ -375,6 +423,13 @@ class DisconnectResetsPutStateTest(AgentTestBase):
                         "the jailed <dest>.pbltmp MUST survive the disconnect "
                         "(it seeds the §5 resume_offset)")
 
+        # A reconnect is a fresh PBLE session and must re-negotiate before the
+        # single-transfer slot can be observed as free.
+        link.session += 1
+        link.connect_cb()
+        send(self, link, CMD_OPCODES["HELLO"], HELLO_PAYLOAD, id_=4)
+        self.assertEqual(rsps(link, CMD_OPCODES["HELLO"], 4)[0].payload[0], OK)
+
         # The single-transfer slot MUST be free again: a GET now succeeds.
         send(self, link, 0x12, p_get_begin(0, "/g.txt"), id_=5)
         pump(agent, 2, self.now)
@@ -385,6 +440,145 @@ class DisconnectResetsPutStateTest(AgentTestBase):
                          "— a new *_BEGIN is not EBUSY")
         self.assertEqual(get[0].payload[1:5], struct.pack("<I", 11),
                          "GET_BEGIN OK carries [total_size:u32] (§5)")
+
+
+class PutMailboxContextTest(AgentTestBase):
+    """P2: PUT VFS work runs only when the supervisor drains its mailbox."""
+
+    def test_put_begin_does_no_vfs_work_or_response_inside_ble_callback(self):
+        agent, link = self.new_agent("P2 FILE_PUT_BEGIN supervisor mailbox")
+        calls = []
+
+        def handle(payload):
+            calls.append(bytes(payload))
+            return bytes((OK,)) + struct.pack("<I", 0)
+
+        agent._fs.handle_put_begin = handle
+        send(self, link, 0x15, p_put_begin(4, 0, "/mailbox.bin"), id_=170)
+
+        self.assertEqual(calls, [], "BTstack callback must return before VFS work")
+        self.assertEqual(rsps(link, 0x15, 170), [])
+        agent.poll()
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(rsps(link, 0x15, 170)[0].payload[0], OK)
+
+    def test_full_put_window_is_deferred_and_drained_in_wire_order(self):
+        agent, link = self.new_agent("P2 bounded FILE_PUT window mailbox")
+        depth = AGENT.attr(
+            self, "FS_MAILBOX_DEPTH", "P2 PUT mailbox depth = window + 2")
+        self.assertEqual(depth, 6)
+        data = b"ABCD"
+        send(self, link, 0x15,
+             p_put_begin(len(data), pyble_proto.crc32(data), "/window.bin"),
+             id_=171)
+        agent.poll()
+        self.assertEqual(rsps(link, 0x15, 171)[0].payload[0], OK)
+        link.sent[:] = []
+
+        for offset, value in enumerate(data):
+            send(self, link, 0x16,
+                 struct.pack("<I", offset) + bytes((value,)),
+                 id_=172 + offset)
+        self.assertEqual(evts(link, 0x41), [],
+                         "PUT_DATA cannot ACK from synchronous BLE context")
+        pump(agent, 6, self.now)
+        self.assertEqual(
+            [frame.payload for frame in evts(link, 0x41)],
+            [struct.pack("<I", offset) for offset in (1, 2, 3, 4)],
+        )
+
+        send(self, link, 0x17, struct.pack("<I", pyble_proto.crc32(data)),
+             id_=176)
+        self.assertEqual(rsps(link, 0x17, 176), [])
+        agent.poll()
+        self.assertEqual(rsps(link, 0x17, 176)[0].payload[0], OK)
+        with open(os.path.join(self.root, "window.bin"), "rb") as stream:
+            self.assertEqual(stream.read(), data)
+
+    def test_disconnect_cancels_queued_put_before_any_vfs_effect(self):
+        agent, link = self.new_agent("P2 disconnect cancels queued PUT")
+        dest = os.path.join(self.root, "cancelled.bin")
+        send(self, link, 0x15, p_put_begin(1, 0, "/cancelled.bin"), id_=177)
+        link.disconnect_cb()
+        agent.poll()
+        self.assertFalse(os.path.exists(dest))
+        self.assertFalse(os.path.exists(dest + ".pbltmp"))
+
+    def test_second_response_overflow_terminates_and_cancels_queued_work(self):
+        agent, link = self.new_agent(
+            "P2 response-bearing PUT overflow is never silently dropped")
+        calls = []
+
+        def handle(payload):
+            calls.append(bytes(payload))
+            return bytes((OK,)) + struct.pack("<I", 0)
+
+        agent._fs.handle_put_begin = handle
+        session = link.session_token()
+        payload = p_put_begin(1, pyble_proto.crc32(b"A"), "/overflow.bin")
+
+        # Six commands fill the bounded worker mailbox. The seventh consumes
+        # its sole deferred EBUSY response slot; the eighth cannot receive a
+        # response while the connection remains live and therefore must close
+        # that exact session before any queued VFS work can execute.
+        for request_id in range(190, 198):
+            send(self, link, CMD_OPCODES["FILE_PUT_BEGIN"], payload,
+                 id_=request_id)
+
+        self.assertEqual(link.terminated_sessions, [session])
+        pump(agent, 10, self.now)
+        self.assertEqual(calls, [])
+        self.assertEqual(
+            [frame for frame in decoded(link) if 190 <= frame.id < 198],
+            [],
+            "a terminal overflow cannot later publish from cancelled work",
+        )
+
+    def test_paused_stale_begin_cannot_republish_over_successor_session(self):
+        agent, link = self.new_agent(
+            "P2 PUT mailbox exact-session stale commit rejection")
+        self.addCleanup(agent._fs._close_put_file)
+        original_open = agent._fs._open
+        injected = [False]
+        opened_files = []
+        self.addCleanup(
+            lambda: [stream.close() for stream in opened_files
+                     if not stream.closed])
+
+        def reconnecting_open(path, mode):
+            opened = original_open(path, mode)
+            opened_files.append(opened)
+            if not injected[0] and path.endswith("predecessor.bin.pbltmp"):
+                injected[0] = True
+                link.disconnect_cb()
+                link.session += 1
+                link.connect_cb()
+                send(self, link, CMD_OPCODES["HELLO"], HELLO_PAYLOAD, id_=181)
+                send(self, link, CMD_OPCODES["FILE_PUT_BEGIN"],
+                     p_put_begin(1, pyble_proto.crc32(b"B"),
+                                 "/successor.bin"),
+                     id_=182)
+            return opened
+
+        agent._fs._open = reconnecting_open
+        send(self, link, CMD_OPCODES["FILE_PUT_BEGIN"],
+             p_put_begin(1, pyble_proto.crc32(b"A"), "/predecessor.bin"),
+             id_=180)
+        pump(agent, 3, self.now)
+
+        self.assertTrue(injected[0])
+        self.assertEqual(
+            rsps(link, CMD_OPCODES["FILE_PUT_BEGIN"], 180), [],
+            "session A cannot publish a response after its disconnect cut",
+        )
+        successor = rsps(link, CMD_OPCODES["FILE_PUT_BEGIN"], 182)
+        self.assertEqual(len(successor), 1)
+        self.assertEqual(successor[0].payload[0], OK)
+        self.assertTrue(
+            agent._fs._put_dest.endswith("successor.bin"),
+            "a paused session-A BEGIN must not overwrite session B's active "
+            "transfer state after disconnect invalidation",
+        )
 
 
 class TransfersDuringRunEbusyTest(AgentTestBase):
@@ -681,11 +875,11 @@ class InterruptIntentExceptionSafetyTest(AgentTestBase):
         agent._dispatcher.on_message = fail_dispatch
         try:
             with self.assertRaisesRegex(RuntimeError, "dispatch failure"):
-                send(self, link, 0x01, id_=70)
+                send(self, link, 0x01, HELLO_PAYLOAD, id_=70)
         finally:
             agent._dispatcher.on_message = real_dispatch
 
-        send(self, link, 0x01, id_=71)
+        send(self, link, 0x01, HELLO_PAYLOAD, id_=71)
         self.assertEqual(notifies, [],
                          "a later HELLO MUST NOT inherit stale interrupt intent")
 
@@ -711,7 +905,7 @@ class InterruptIntentExceptionSafetyTest(AgentTestBase):
             pyble_proto.encode = real_encode
         agent._runner._executing = False
 
-        send(self, link, 0x01, id_=74)
+        send(self, link, 0x01, HELLO_PAYLOAD, id_=74)
         self.assertEqual(notifies, [],
                          "encode failure MUST clear the STOP post-RSP intent")
 
@@ -724,11 +918,11 @@ class InterruptIntentExceptionSafetyTest(AgentTestBase):
         agent._runner._executing = True
         real_send = link.send_message
 
-        def fail_stop_send(msg):
+        def fail_stop_send(msg, *args, **kwargs):
             frame = pyble_proto.decode(msg)
             if frame.type == RSP and frame.opcode == 0x21 and frame.id == 76:
                 raise RuntimeError("deterministic send failure")
-            real_send(msg)
+            return real_send(msg, *args, **kwargs)
 
         link.send_message = fail_stop_send
         try:
@@ -738,7 +932,7 @@ class InterruptIntentExceptionSafetyTest(AgentTestBase):
             link.send_message = real_send
         agent._runner._executing = False
 
-        send(self, link, 0x01, id_=77)
+        send(self, link, 0x01, HELLO_PAYLOAD, id_=77)
         self.assertEqual(notifies, [],
                          "send failure MUST clear the STOP post-RSP intent")
 
@@ -784,11 +978,11 @@ class ControlCommitTransactionTest(AgentTestBase):
         send(self, link, 0x20, bytes((1,)) + b"x = 2", id_=92)
         real_send = link.send_message
 
-        def fail_soft_rsp(msg):
+        def fail_soft_rsp(msg, *args, **kwargs):
             frame = pyble_proto.decode(msg)
             if frame.type == RSP and frame.opcode == 0x22 and frame.id == 93:
                 raise RuntimeError("deterministic SOFT send failure")
-            real_send(msg)
+            return real_send(msg, *args, **kwargs)
 
         link.send_message = fail_soft_rsp
         try:
@@ -938,6 +1132,26 @@ class SoftRebootClosingTest(AgentTestBase):
         self.assertEqual(self.resets, [1],
                          "the original t=250 deadline remains authoritative")
 
+    def test_duplicate_after_reconnect_is_ebusy_without_renegotiation(self):
+        agent, link = self.new_agent(
+            "F-27/P4 closing survives disconnect and successor connect")
+        send(self, link, 0x22, id_=160)
+        self.assertEqual(rsps(link, 0x22, 160)[0].payload[0], OK)
+        original_deadline = agent._reboot_at
+
+        link.disconnect_cb()
+        link.session += 1
+        link.connect_cb()
+        send(self, link, 0x22, id_=161)
+
+        self.assertEqual(
+            rsps(link, 0x22, 161)[0].payload[0], EBUSY,
+            "the global closing gate precedes the successor session's "
+            "HELLO-first dispatch gate",
+        )
+        self.assertEqual(agent._reboot_at, original_deadline,
+                         "a successor duplicate cannot move the first deadline")
+
     def test_pending_reboot_rejects_run_and_skips_filesystem_pump(self):
         agent, link = self.new_agent(
             "F-27/P4 closing state rejects work")
@@ -980,6 +1194,21 @@ class SoftRebootClosingTest(AgentTestBase):
         send(self, link, 0x7F, id_=150)
         self.assertEqual(rsps(link, 0x7F, 150)[0].payload[0], EBUSY,
                          "unknown valid commands are gated while closing too")
+
+    def test_closing_gate_keeps_zero_id_requests_silent(self):
+        agent, link = self.new_agent(
+            "F-27/P4 closing preserves protocol direction/id precedence")
+        send(self, link, 0x22, id_=157)
+        before = len(link.sent)
+
+        link.message_cb(pyble_proto.encode(CMD, 0x20, 0, b"\x01x = 1"))
+
+        self.assertEqual(
+            len(link.sent), before,
+            "a valid-CRC CMD with ID=0 stays silent while closing",
+        )
+        self.assertIsNone(agent._runner._pending,
+                          "the zero-ID RUN must never reach its handler")
 
     def test_closing_gate_prevents_inline_persistent_and_console_mutation(self):
         keep = os.path.join(self.root, "keep.txt")

@@ -1,6 +1,6 @@
 # PyBLE — Hardware Support & Pin Guidance
 
-Status: **DRAFT** · Last updated: 2026-08-12
+Status: **DRAFT** · Last updated: 2026-09-02
 
 PyBLE's platform scope is any microcontroller board that can run MicroPython
 and provide a Bluetooth Low Energy peripheral stack capable of hosting a
@@ -43,11 +43,11 @@ under the same PBLE/1 protocol.
 
 | Image profile | Required memory configuration | Provisioning check/action | Release status | Public compatibility claim |
 |---|---|---|---|---|
-| `esp32-4mb` | Classic ESP32; 4 MiB external SPI flash; no PSRAM assumed | `ESP32` | v0.4.2 hardware-tested beta; browser install/recovery passed; qualification pending. Current v0.6.0 source requires fresh exact-byte qualification. | Only boards whose module documentation confirms this flash layout |
-| `esp32-s3-n16r8` | ESP32-S3; 16 MiB flash; 8 MiB Octal PSRAM; lean board-neutral payload | `ESP32-S3` | v0.4.2 hardware-tested beta; browser install/recovery passed; qualification pending. Current v0.6.0 source requires independent exact-byte qualification. | N16R8-class modules only; no bundled TFT driver or splash |
-| `waveshare-esp32-s3-lcd-147b` | Exact Waveshare ESP32-S3-LCD-1.47B; 16 MiB flash; 8 MiB Octal PSRAM | ESP Web Serial · `ESP32-S3` | Selected for v0.6.0; exact-board qualification pending | B-version board only after the full candidate passes; exact image bundles the ST7789 runtime and fresh-install QR splash |
-| `esp32-c3-4mb` | ESP32-C3 revision v0.3 or newer; 4 MiB addressable flash; no PSRAM assumed | ESP Web Serial · `ESP32-C3` | Selected for v0.6.0; C3-G0…C3-G6 and common qualification pending | Exact generic profile after the full candidate passes |
-| `rpi-pico2-w` | Raspberry Pi Pico 2 W; RP2350 + CYW43439 | Browser-verified `firmware.uf2`; manual BOOTSEL copy | Selected for v0.6.0; GP2 and common qualification pending | Exact Pico 2 W profile after the full candidate passes |
+| `esp32-4mb` | Classic ESP32; 4 MiB external SPI flash; no PSRAM assumed | `ESP32` | Qualified in v0.6.0; current v0.6.1 source requires fresh exact-byte qualification. | Only boards whose module documentation confirms this flash layout |
+| `esp32-s3-n16r8` | ESP32-S3; 16 MiB flash; 8 MiB Octal PSRAM; lean board-neutral payload | `ESP32-S3` | Qualified in v0.6.0; current v0.6.1 source requires independent exact-byte qualification. | N16R8-class modules only; no bundled TFT driver or splash |
+| `waveshare-esp32-s3-lcd-147b` | Exact Waveshare ESP32-S3-LCD-1.47B; 16 MiB flash; 8 MiB Octal PSRAM | ESP Web Serial · `ESP32-S3` | Qualified in v0.6.0; fresh exact-board v0.6.1 qualification pending | Exact B-version board in v0.6.0; the image bundles the ST7789 runtime and fresh-install QR splash |
+| `esp32-c3-4mb` | ESP32-C3 revision v0.3 or newer; 4 MiB addressable flash; no PSRAM assumed | ESP Web Serial · `ESP32-C3` | Qualified in v0.6.0; fresh v0.6.1 C3-G0…C3-G6 and common qualification pending | Exact generic profile in v0.6.0; new v0.6.1 bytes require the fresh full-candidate pass |
+| `rpi-pico2-w` | Raspberry Pi Pico 2 W; RP2350 + CYW43439 | Browser-verified `firmware.uf2`; manual BOOTSEL copy | Qualified in v0.6.0; fresh v0.6.1 GP2 and common qualification pending | Exact Pico 2 W profile in v0.6.0; new v0.6.1 bytes require the fresh full-candidate pass |
 
 The installer family check cannot establish flash capacity, PSRAM type, USB
 wiring, or power integrity. The user therefore selects and confirms the exact
@@ -58,23 +58,25 @@ different flash size or Quad/no PSRAM, are not covered by
 Matching the N16R8 memory tuple also does not imply that an onboard display or
 other peripheral exists. The Waveshare row is separate even though ESP Web
 Tools reports the same family for both S3 images and cannot distinguish them.
-The C3 and Pico profiles remain inactive while their status is pending; owning
-or building either target is not a substitute for HIL. The
-ESP32-C3-MINI-1-N4 v0.4/4 MiB/no-PSRAM module is the selected physical
-engineering reference for that generic profile, with all gates still pending
-under [its derived qualification contract](firmware/ports/esp32-c3-4mb.md).
+All five qualified v0.6.0 profiles are active. Their source-selected v0.6.1
+successors remain unavailable while fresh exact-byte qualification is pending;
+owning or building a target is not a substitute for candidate-bound HIL. The
+ESP32-C3-MINI-1-N4 v0.4/4 MiB/no-PSRAM module remains the selected physical
+engineering reference for that generic profile. Its gates passed for v0.6.0
+and must be rerun for v0.6.1 under
+[its derived qualification contract](firmware/ports/esp32-c3-4mb.md).
 The carrier's reported GPIO8 NeoPixel is an operator-supplied test input only,
 not a generic pin promise or board-routing profile. The
 immutable v0.4.2 machine-readable resource policy and HIL ledger contain
 exactly the first two profile IDs and no C3 thresholds or record. The
 [supplemental production-browser attestation](../validation/browser-flashing/v0.4.2-production.md)
 records the two completed browser rows; the ledger's other formal rows remain
-pending. The unfinished v0.5.1 candidate policy/HIL work is historical and
-cannot qualify the source-selected v0.6.0 tree. ADR-0033 selects one atomic
-five-profile v0.6.0 candidate; it MUST generate fresh schema-3 resource policy
-and V5 HIL evidence for every row. Pre-split or earlier-candidate evidence
-cannot qualify it. C3-G0…C3-G6 and Pico GP2 remain mandatory, and either
-pending/failed profile blocks the whole qualified release.
+pending. The unfinished v0.5.1 candidate policy/HIL work is historical and did
+not qualify v0.6.0. The atomic five-profile v0.6.0 release selected by ADR-0033
+generated and passed its schema-3 resource policy and V5 HIL evidence for every
+row. Pre-split or earlier-candidate evidence did not qualify it and cannot
+qualify v0.6.1. C3-G0…C3-G6 and Pico GP2 remain mandatory for the fresh v0.6.1
+candidate; either pending or failed profile blocks that entire increment.
 
 These are **provisioning image profiles**, not board-routing profiles. They
 exist solely to keep destructive flash layouts honest. They do not define GPIO
@@ -120,15 +122,15 @@ the documented pins. Constructing `machine.SPI(2)` reset the pinned ESP32-S3
 runtime, so the named-board Blocky example and TFT HIL workload MUST use bus 1.
 Other boards still supply their own explicit bus identifier.
 
-### 1.3 Selected ports pending qualification
+### 1.3 Current-source requalification status
 
 | Board / family | Upstream port · board | BLE stack | Status |
 |---|---|---|---|
-| Raspberry Pi **Pico 2 W** (RP2350 + CYW43439 radio) | `rp2` · `RPI_PICO2_W` | BTstack via MicroPython `bluetooth` | Selected for the v0.6.0 candidate by ADR-0033; GP2, schema-3 resource evidence, verified-UF2/BOOTSEL recovery, and V5 HIL all remain pending ([firmware/ports/rpi-pico2-w.md](firmware/ports/rpi-pico2-w.md)). It is not an active qualified target until all pass. |
+| Raspberry Pi **Pico 2 W** (RP2350 + CYW43439 radio) | `rp2` · `RPI_PICO2_W` | BTstack via MicroPython `bluetooth` | Qualified and active in v0.6.0 after GP2, schema-3 resource, verified-UF2/BOOTSEL recovery, and V5 HIL passed. The same gates require fresh v0.6.1 evidence ([firmware/ports/rpi-pico2-w.md](firmware/ports/rpi-pico2-w.md)). |
 
-A selected-pending row may appear in candidate metadata and a visibly
-unqualified loopback preview, but never widens an active qualified selector or
-support claim before its gates pass. The port's PBLE/1 `chip` token is
+A current-source-pending row may appear in candidate metadata and a visibly
+unqualified loopback preview, but it never replaces or widens the qualified
+v0.6.0 selector before its fresh gates pass. The port's PBLE/1 `chip` token is
 `rpi-pico2-w`; per §3, absent pin guidance MUST NOT block connection.
 
 ## 2. Requirements for a board to work with PyBLE

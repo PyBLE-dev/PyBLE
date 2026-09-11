@@ -1,7 +1,7 @@
 # PyBLE — Public Website Specification
 
 Status: **FROZEN (pre-v1 and v1 launch surface)** · Owner: project maintainer · Last updated:
-2026-08-28
+2026-09-01
 
 This document is the source of truth for the first public website at
 `pyble.dev`. It specifies only the public site; the Flutter app, PBLE/1, and
@@ -11,9 +11,9 @@ firmware remain governed by their own specifications.
 
 The website MUST explain PyBLE accurately, help a beta user get started or ask
 for support, publish the app's privacy posture, and provide a gated browser
-firmware installer for the exact initial ESP32-family image profiles. The
-installer MUST distinguish a hardware-tested public beta from a fully
-qualified public release.
+firmware installer for exact validated release profiles. The installer MUST
+distinguish a hardware-tested public beta from a fully qualified public
+release.
 
 It MUST NOT imply that:
 
@@ -42,6 +42,7 @@ The launch surface is:
 | `/privacy` | Separate, plain-language disclosures for the Flutter app and public website |
 | `/support` | Concise troubleshooting, diagnostics checklist, and a direct support contact |
 | `/flash` | Versioned browser provisioning, compatibility/erase consent, integrity status, recovery, and install action gated by §7 |
+| `/features` | Release-bound PBLE/1 firmware architecture, complete operation surface, five exact profiles, limits, and evidence |
 | `/learn` | Ordered tutorial hub, learning tracks, compatibility/validation legend, and start/continue actions |
 | `/learn/setup` | Exact-profile selection, provisioning boundary, BLE connection, and identity check |
 | `/learn/first-program` | Hardware-free editor, Save, Run, Stop, reconnect, and Console workflow |
@@ -69,12 +70,12 @@ The home page MAY make these verified claims:
 - It is a free, MIT-licensed, tablet-first MicroPython IDE designed for
   microcontroller boards that can run MicroPython and host a compatible
   Bluetooth Low Energy PyBLE agent.
-- The selected, still-pending `v0.6.0` qualified-release candidate has five
-  exact profiles in release order:
+- The active qualified public `v0.6.0` release has five exact profiles in
+  release order:
   `esp32-4mb`, `esp32-s3-n16r8`, `waveshare-esp32-s3-lcd-147b`,
-  `esp32-c3-4mb`, and `rpi-pico2-w`. This source/build posture is not five
-  public support claims: every row remains behind exact-byte qualification and
-  activation, including C3-G0…C3-G6 and Pico GP2.
+  `esp32-c3-4mb`, and `rpi-pico2-w`. All five exact-byte HIL rows passed. This
+  is still exact-profile support, not a chip-family or carrier-board allowlist;
+  the page may make the claim only while that descriptor is selected.
 - After one-time wired firmware provisioning, its normal workflow is BLE-first.
 - The app can scan/connect, edit, save, run, stop, soft reboot, exchange board
   files, and provide a live console over PBLE/1.
@@ -96,16 +97,18 @@ Compatibility copy MUST distinguish platform scope from current support:
 - actual support requires a published firmware image for the exact target and a
   truthful release state; browser-installation validation for a beta is
   narrower than complete release qualification;
-- the current public-beta list remains the exact `v0.4.2` `esp32-4mb` and
-  `esp32-s3-n16r8` profiles; that frozen two-profile exception MUST NOT be
-  interpreted as the unqualified `v0.5.1` or selected `v0.6.0` shape;
-- the selected `v0.6.0` qualified-release contract requires the exact five
-  ordered profiles in §7; this is an activation contract, not a claim that
-  those release bytes are qualified or public, and every gate remains pending;
+- the exact `v0.4.2` `esp32-4mb` and `esp32-s3-n16r8` public-beta exception is
+  retained only for authenticated carry-forward validation; it is not the
+  current public release and MUST NOT be interpreted as the `v0.5.1` or
+  `v0.6.0` shape;
+- the selected qualified public `v0.6.0` release contains all five ordered
+  profiles in §7 after their common and target-specific gates passed; a future
+  candidate MUST remain inactive until the same applicable gates pass;
 - the earlier local `firmware-v0.6.0` tag/candidate at `719b211…` was never
   present at origin, in GitHub Releases, or at the canonical same-origin
-  release path and is abandoned. Only ADR-0038's source-era-routed replacement
-  may become the first public v0.6.0, after fresh candidate HIL/finalization;
+  release path and is abandoned. ADR-0038's source-era-routed replacement is
+  the qualified public release bound to annotated tag `firmware-v0.6.0` and
+  source `0c7230d6708797c241160ba71fbd37e6b22f180a`;
 - the generic `esp32-s3-n16r8` image MUST NOT bundle `pyble_st7789`,
   `pyble_waveshare_lcd147b`, exact-board pin data, or the boot splash; the
   Waveshare profile MUST use its own manifest and different immutable firmware
@@ -342,6 +345,80 @@ render without client JavaScript and provide:
   and
 - previous/next navigation plus a return to `/learn`.
 
+Every tutorial route MUST also contain at least one purposeful instructional
+visual. A visual may be a privacy-reviewed app capture, an exact-board
+photograph, or an authored diagram when that form best explains the lesson; a
+decorative repetition of the same workspace does not satisfy this requirement.
+The initial app-workflow lessons (`setup`, `first-program`, `files`,
+`github-import`, `blocks`, and `examples`) MUST use physical-tablet captures of
+the reviewed app surface. Hardware lessons MUST prefer actual board imagery for
+physical identity and wiring, and MAY pair it with a physical-tablet capture
+only when the app state adds distinct instructional evidence.
+
+Each published app capture MUST:
+
+- be a static, same-origin, content-versioned asset with explicit pixel
+  dimensions and a recorded SHA-256 digest;
+- retain a local provenance record naming the physical device model, operating
+  system, app version and build, capture date, depicted state, and source raw
+  capture without publishing the raw workspace;
+- use a semantic figure, a useful alternative description, and a visible
+  caption that accurately identifies the physical device and depicted state;
+- be privacy-reviewed for board identifiers, custom labels, notifications,
+  accounts, private repositories, tokens, unpublished code, and unrelated
+  system chrome;
+- remove only unrelated system bars or empty framing through deterministic
+  crop, resize, orientation, and metadata-stripping operations; and
+- leave every app pixel truthful: no retouching, generative fill, fabricated
+  state, or removal of an in-app warning, error, or identity.
+
+The reviewed five-board Android capture set MUST use only the physical Lenovo
+TB-J616X and MUST keep the following evidence boundaries explicit:
+
+- discovery uses a stopped, stable scan with exactly five distinct
+  `PyBLE-XXXX` advertisements and `Scan: Idle`; an advertisement proves only a
+  nearby PBLE agent, not its provisioning profile;
+- each connected identity is represented by two deterministic crops from the
+  same raw frame: the Ready status containing board ID and agent version, and
+  the read-only runtime-chip panel. The crops MAY be paired only through
+  semantic HTML/CSS; they MUST NOT be baked into an annotated or retouched
+  raster composite;
+- the connected set records the observed pairs `5646` / `esp32-s3`, `8C9E` /
+  `esp32`, `C81A` / `esp32-c3`, `DA86` / `esp32-s3`, and `3DCB` /
+  `rpi-pico2-w`. These are documentation-session observations, not release
+  qualification or proof of installed profile bytes;
+- the two ESP32-S3 observations MUST remain visibly indistinguishable at the
+  runtime-token layer. A maintainer's physical-board or installer record MAY
+  identify one of those sessions separately, but the app image MUST NOT be
+  cited as proof of either `esp32-s3-n16r8` or
+  `waveshare-esp32-s3-lcd-147b`; and
+- full-frame workflow captures MUST show only the intentional disposable
+  tutorial state. Connected-identity derivatives MUST crop out unrelated board
+  file lists rather than publish or retouch them.
+
+The Setup tutorial MUST use the stable five-board discovery frame and all five
+paired identity observations. The Hardware safety tutorial MUST use the same
+identity set specifically to teach the difference between a runtime token and
+an exact profile. Configured hardware, Pico 2 W, and Waveshare tutorials MAY
+reuse only the identity observations that add that same boundary evidence;
+their existing physical or authored visuals remain necessary for exact-board,
+pin, and wiring instruction. The six app-workflow tutorials MUST otherwise use
+their clean, task-specific Lenovo captures; repeating an identity crop as
+decoration does not satisfy their visual requirement.
+
+Debug, integration-test, simulator, emulator, and golden-renderer frames MUST
+NOT be presented as physical-device captures. A debug or integration-test
+label disqualifies the frame from public tutorial use even when the underlying
+UI otherwise matches production. Simulator, emulator, or golden images MAY be
+used only when their caption names that provenance and the lesson does not
+claim physical-device evidence. Tutorial instructions and stop conditions MUST
+remain complete when images are unavailable or cannot be seen.
+
+Raw capture workspaces remain ignored and outside the website package. Only a
+separately reviewed derivative and its non-sensitive provenance record MAY be
+committed below `tools/web/public/`; publication MUST NOT add a runtime
+third-party image request.
+
 Firmware claims MUST derive from the same build-selected release descriptor as
 the home and `/flash` routes. Stable profile explanations MUST keep the exact
 release order `esp32-4mb`, `esp32-s3-n16r8`,
@@ -376,6 +453,108 @@ examples, compatibility evidence, and releases stay in the examples repository.
 Each linked example state MUST distinguish designed profiles from validated
 profiles, and no future copy may promote an example until its immutable tag and
 HIL/live-import evidence exist.
+
+### 3.6 Release-bound firmware feature reference
+
+`/features` is the canonical human-readable overview of what the qualified
+PyBLE firmware provides. **Features** MUST be a primary-navigation item, and
+the home-page feature summary MUST provide a contextual path to this reference.
+The page complements `/flash`: it explains a release, while `/flash` remains
+the sole authority for the version, exact profiles, qualification state, and
+actions currently selected at build time.
+
+The current reference snapshot is owner-confirmed public firmware `v0.6.1`
+and PBLE/1; the historical v0.6.0 SVG MUST remain available unchanged.
+The v0.6.1 reference MUST distinguish owner confirmation from incomplete
+automated HIL records and link the publication confirmation. It MUST NOT
+carry forward v0.6.0's five passed HIL rows, measured throughput, or reference
+board identities as new v0.6.1 measurements.
+It MUST visibly call itself a versioned snapshot rather than a live
+installer promise, link to `/flash` for current availability, and avoid
+describing a later or unselected release as current. Its architecture diagram
+MUST say that it is a functional diagram, not a physical board drawing,
+schematic, pinout, or automatic board detector.
+
+The diagram MUST be an original, deterministic, same-origin SVG with selectable
+text, an intrinsic `1920 × 1470` view box, an accessible title and long
+description, and a provenance record binding the reviewed SHA-256. It MUST NOT
+contain a rasterized or generated board likeness, vendor artwork, external
+image reference, or inferred carrier-board appearance. The page MUST place it
+in a semantic figure with useful alternative text and a visible caption, offer
+an operable same-origin full-size link, and allow deliberate two-dimensional
+inspection without forcing the whole diagram into unreadable mobile text.
+Material information in the diagram MUST also appear in reflowing semantic HTML
+so the rasterized visual representation is never the only source.
+
+The HTML reference MUST cover all of these release-bound surfaces:
+
+- the BLE discovery and GATT transport boundary, PBLE/1 framing and dispatch,
+  identity/capability negotiation, filesystem service, program runner, live
+  console, boot/lifecycle behavior, and user MicroPython runtime;
+- all 24 PBLE/1 operation identities, grouped without changing their names:
+  `HELLO`, `DEVICE_INFO`; `FILE_LIST`, `FILE_STAT`, `FILE_GET_BEGIN`,
+  `FILE_GET_DATA`, `FILE_GET_END`, `FILE_PUT_BEGIN`, `FILE_PUT_DATA`,
+  `FILE_PUT_END`, `FILE_DELETE`, `MKDIR`, `FILE_RENAME`, `FILE_PUT_ACK`;
+  `RUN`, `STOP`, `SOFT_REBOOT`, `SET_AUTORUN`, `RUN_STATE`; `CONSOLE_DATA`,
+  `CONSOLE_INPUT`; and `SET_LABEL`, `SET_IDENTIFY_LED`, `IDENTIFY`;
+- the exact release profile order `esp32-4mb`, `esp32-s3-n16r8`,
+  `waveshare-esp32-s3-lcd-147b`, `esp32-c3-4mb`, and `rpi-pico2-w`, including
+  the lean-generic versus exact-board S3 distinction and Pico's distinct
+  UF2/BOOTSEL and portable-agent path; and
+- operational boundaries that affect correct use: exact-profile installation,
+  one connected trusted client, one active program/transfer class, no recursive
+  delete, source `.py` rather than compiled `.mpy`/`.pyc` transfer, no SD-card
+  claim in this release, runtime-dependent Stop behavior, and possible console
+  drops under sustained output.
+
+The v0.6.1 diagram and its reflowing description MUST describe unchanged
+24-opcode PBLE/1 compatibility, per-session negotiation and bounded fragments,
+fresh RUN globals and run-owned stdin, CRC-backed upload resume and mutation
+exclusion, checked persistent settings, and LFS2 on all five official profiles.
+Only conclusively erased media may be formatted after mount failure; nonblank
+or uncertain media must be preserved for USB recovery without agent startup.
+Neither the diagram nor its HTML may promise BLE access through that refusal.
+
+The reference MUST link to the immutable public `v0.6.1` release descriptor,
+available version-bound source references, and the PBLE/1 specification.
+An unpublished GitHub tag MUST NOT be presented as a working source link.
+It MUST not duplicate
+firmware binaries or fetch release data at runtime. Calls to action MUST send a
+user to `/flash` to install an exact selected profile and `/learn` for guided
+use. The route, its full-size diagram asset, and its content MUST render without
+client JavaScript or a third-party runtime request.
+
+### 3.7 Site-wide current-release consistency
+
+All current-release surfaces MUST agree with the same build-selected release:
+home-page introduction and workflow, target cards, support, and Flash.
+The exact owner-confirmed v0.6.1 descriptor MUST be presented as available
+on all five profiles, never as a protected candidate or unavailable installer.
+This does not turn its pending automated records into passed HIL.
+
+Tutorial guidance MUST identify firmware v0.6.1 separately from historical App
+screenshots and the immutable examples snapshot's original v0.6.0 baseline.
+Depicted versions, historical asset hashes and snapshot provenance MUST remain
+unchanged. Shared tutorial context MUST explain that distinction. Current
+guidance MUST cover fresh RUN globals and LFS2 migration/recovery boundaries.
+
+Social metadata MUST select a new content-addressed card with accurate current
+release wording. Do not retouch historical App pixels or claim newly measured
+hardware validation. Preserve older content-addressed assets for existing links.
+
+Publish a coherent full static site from one release selector; partial page
+overlays must not leave other current-release pages on an older version.
+Preserve versioned firmware artifacts, all tutorials and capture assets.
+
+The repository README and public roadmap MUST identify the current published
+v0.6.1 firmware separately from historical v0.6.0 qualification and citation
+snapshots. The README MUST link the exact v0.6.1 source, descriptor digest,
+release/recovery material and owner confirmation without claiming completed
+automated HIL. Getting-started guidance MUST use the editable official examples
+URL and branch chooser, describe a writable board subfolder and review before
+import, and retain explicit destructive-provisioning warnings. The App source
+version and prepared store handoffs MUST NOT be presented as proof of a live
+store release. Link the tutorial center and firmware functional reference.
 
 ## 4. Brand and visual contract
 
@@ -553,7 +732,7 @@ VPS origin. The origin MUST:
   release and confirm it only after the public smoke suite succeeds; transient
   service-manager jobs MUST receive their embedded shell programs verbatim,
   with manager-side environment expansion disabled;
-- map `/app`, `/privacy`, `/support`, `/flash`, `/learn`, and every tutorial
+- map `/app`, `/privacy`, `/support`, `/flash`, `/features`, `/learn`, and every tutorial
   route in §3.5 to their exported HTML without changing the canonical slashless
   URL;
 - normalize the corresponding trailing-slash URLs permanently, preserve query
@@ -622,7 +801,7 @@ retrieval check. The exception bypasses only structured parsing of that one
 legacy report. It MUST NOT admit the same bytes through fresh-public,
 candidate, audited-candidate, protected-preview, or local-preview validation;
 MUST NOT accept another version or a one-byte change to any file; and MUST NOT
-qualify or promote any pending `v0.6.0` candidate. It is continuity for the
+qualify or promote any unselected candidate. It is continuity for the
 already-active immutable selection, not authority to create or reclassify a
 release.
 
@@ -677,8 +856,8 @@ the exact `firmware.uf2` size/SHA-256, downloads those already verified bytes,
 and presents manual BOOTSEL-copy instructions. ESP Web Tools' family detection
 is necessary but not sufficient to establish memory topology, silicon
 revision, or board peripherals; in particular, it cannot distinguish the two
-S3 profiles. C3 and Pico remain pending/inactive until their target gates and
-the complete five-profile candidate pass.
+S3 profiles. A future candidate keeps C3 and Pico pending/inactive until their
+target gates and the complete five-profile candidate pass.
 
 The `/flash` page MUST make the exact Waveshare ESP32-S3-LCD-1.47B discoverable
 without weakening that profile boundary. When—and only when—the build-selected
@@ -918,11 +1097,11 @@ or omit that staging directory; preview bytes MUST never enter `out/`, `dist/`,
 the canonical `/firmware/v<version>/` tree, a candidate/public selector, or a
 deployment carry-forward marker.
 
-The production `/flash` contract now selects the same five ordered v0.6.0
-profiles under release schema 4, policy schema 3, and HIL V5. C3 and Pico may
-appear only as pending/inactive candidate rows until C3-G0…C3-G6, Pico GP2,
-and the complete common exact-byte matrix pass; no install/download action or
-support claim is active for either before then. When no audited beta or fully
+The production `/flash` contract selects the five ordered qualified public
+v0.6.0 profiles under release schema 4, policy schema 3, and HIL V5. Their
+complete common exact-byte matrix, C3-G0…C3-G6, and Pico GP2 gates passed. A
+candidate presents any not-yet-qualified C3 or Pico row as pending/inactive
+with no install/download action or support claim. When no audited beta or fully
 qualified release is selected, production continues to fail closed with no
 public action. Local preview success is engineering evidence only and MUST NOT
 alter any of those states.
@@ -968,6 +1147,10 @@ The v1 site is releasable when:
 - `/learn` and all ten ordered tutorials satisfy §3.5, expose truthful
   release/validation state, cover every qualified firmware profile without
   inventing a generic carrier pinout, and retain immutable examples provenance;
+- `/features` satisfies §3.6, renders its reviewed functional SVG and equivalent
+  semantic HTML without client JavaScript, contains the complete 24-operation
+  and five-profile `v0.6.0` reference, links current actions back to `/flash`,
+  and never presents a generated board likeness, schematic, or pinout;
 - each learning route is canonical and present in the sitemap, static export,
   Sites delegation/prerender allowlists, Nginx exact mapping and normalization,
   deployment inventory, and byte-for-byte public smoke suite;
@@ -994,8 +1177,8 @@ The v1 site is releasable when:
   exposes no firmware action or artifact metadata; and contains neither stale
   release copy nor the historical Waveshare photograph;
 - production builds reject or exclude every preview descriptor and staged
-  artifact, keep pending C3 and Pico 2 W rows inactive, and retain the
-  fail-closed no-release state until all five v0.6.0 rows pass;
+  artifact, keep any pending C3 and Pico 2 W candidate rows inactive, and
+  retain the fail-closed no-release state until all five v0.6.0 rows pass;
 - a qualified `v0.6.0` active selector names
   `waveshare-esp32-s3-lcd-147b` separately from the lean
   `esp32-s3-n16r8`, gives each its own manifest and firmware bytes, and requires

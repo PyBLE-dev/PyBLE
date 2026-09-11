@@ -235,4 +235,87 @@ void main() {
       semantics.dispose();
     });
   });
+
+  group('X-11 offline privacy policy', () {
+    testWidgets('About opens the complete policy without a board or browser', (
+      WidgetTester tester,
+    ) async {
+      await _pumpAbout(tester);
+      await tester.pumpAndSettle();
+      final Finder policy = find.byKey(const Key('aboutPrivacyPolicyAction'));
+      expect(policy, findsOneWidget);
+      expect(tester.getSize(policy).height, greaterThanOrEqualTo(48));
+      await tester.ensureVisible(policy);
+      await tester.tap(policy);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('privacyPolicyPage')), findsOneWidget);
+      expect(find.text('PyBLE Privacy Policy'), findsOneWidget);
+      expect(find.text('Effective 28 August 2026'), findsOneWidget);
+      expect(find.text('https://pyble.dev/privacy'), findsOneWidget);
+      for (final String heading in <String>[
+        'Who maintains PyBLE',
+        'PyBLE app',
+        'Public GitHub import',
+        'Data sent to your board',
+        'BLE transport security',
+        'Nearby boards and platform permissions',
+        'Retention and deletion',
+        'Third-party components and platform services',
+        'This website',
+        'Changes to this policy',
+        'Privacy and deletion questions',
+      ]) {
+        expect(find.text(heading), findsOneWidget);
+      }
+      expect(find.textContaining('api.github.com'), findsOneWidget);
+      expect(find.textContaining('IP address and user-agent'), findsOneWidget);
+      expect(
+        find.textContaining(
+          'does not require Bluetooth pairing or BLE link encryption',
+        ),
+        findsOneWidget,
+      );
+      expect(find.textContaining('backup behavior depends'), findsOneWidget);
+      expect(find.text('viwat.v@chula.ac.th'), findsOneWidget);
+
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('aboutPage')), findsOneWidget);
+      expect(find.text('Version 1.2.3 (45)'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    for (final Size size in <Size>[
+      const Size(320, 480),
+      const Size(1280, 800),
+    ]) {
+      testWidgets('policy remains readable at $size with large text', (
+        WidgetTester tester,
+      ) async {
+        final SemanticsHandle semantics = tester.ensureSemantics();
+        await _pumpAbout(tester, size: size, textScale: 2, highContrast: true);
+        await tester.pumpAndSettle();
+        final Finder policy = find.byKey(const Key('aboutPrivacyPolicyAction'));
+        expect(policy, findsOneWidget);
+        await tester.ensureVisible(policy);
+        await tester.tap(policy);
+        await tester.pumpAndSettle();
+
+        expect(
+          tester
+              .getSemantics(find.text('Who maintains PyBLE'))
+              .getSemanticsData()
+              .flagsCollection
+              .isHeader,
+          isTrue,
+        );
+        await tester.ensureVisible(find.text('viwat.v@chula.ac.th'));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        expect(find.text('viwat.v@chula.ac.th').hitTestable(), findsOneWidget);
+        semantics.dispose();
+      });
+    }
+  });
 }

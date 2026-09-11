@@ -749,6 +749,50 @@ class PutFailureTest(FsTestBase):
 # Resume on reconnect (F-10) — temp kept, prefix re-CRC'd, watermark re-seeded
 # ============================================================================
 class PutResumeTest(FsTestBase):
+    def test_disconnect_defers_file_close_out_of_synchronous_ble_context(self):
+        data = b"D" * 64
+        opened = []
+
+        class TrackedFile:
+            def __init__(self, wrapped):
+                self.wrapped = wrapped
+                self.close_calls = 0
+
+            def close(self):
+                self.close_calls += 1
+                return self.wrapped.close()
+
+            def __getattr__(self, name):
+                return getattr(self.wrapped, name)
+
+        def open_fn(path, mode):
+            wrapped = open(path, mode)
+            if path.endswith(".pbltmp") and ("w" in mode or "a" in mode):
+                tracked = TrackedFile(wrapped)
+                opened.append(tracked)
+                return tracked
+            return wrapped
+
+        s, _rec = self.svc(
+            "F-10 portable disconnect is RAM-only in BLE callback context",
+            open_fn=open_fn,
+        )
+        self.begin_put(s, b"/deferred.bin", data)
+        s.handle_put_data(put_data_pl(0, data))
+        self.assertEqual(len(opened), 1)
+
+        s.on_disconnect()
+        self.assertEqual(
+            opened[0].close_calls, 0,
+            "the synchronous BLE disconnect callback must not enter VFS close",
+        )
+
+        rsp = self.begin_put(s, b"/deferred.bin", data)
+        self.assertEqual(opened[0].close_calls, 1,
+                         "the next worker-context PUT_BEGIN owns deferred close")
+        self.assertEqual(rsp[0], OK)
+        self.assertEqual(u32(rsp, 1), len(data))
+
     def test_disconnect_keeps_temp_and_resets_ram_state(self):
         data = b"R" * 300
         s, _rec = self.svc("F-25/F-10 disconnect keeps .pbltmp, resets RAM state")

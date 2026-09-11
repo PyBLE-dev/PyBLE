@@ -16,7 +16,9 @@ excluded_cves_sha256 = "77c02542775c018c5f32c0dcb6e88050adb0e69dbcd95e84ad7be128
 license_policy_path = "firmware/licenses/license-policy.json"
 license_policy_sha256 = "8ca42bd5e0f79b8204961dab2d737b8eb8ba1eea4e14c9420df74ccd0c0a9d78"
 rp2_license_policy_path = "firmware/licenses/rp2-license-policy.json"
-rp2_license_policy_sha256 = "83f1b1ffbcb7f21c9d98b3529f79ad5497355ab675b37adad37f62a82e6a0e38"
+rp2_license_policy_sha256 = "8578456d8684e210f5db94c8152e42d7de4fab6c43b75a0f82ca390de2d1d718"
+rp2_build_tools_license_policy_path = "firmware/licenses/rp2-build-tools-license-policy.json"
+rp2_build_tools_license_policy_sha256 = "d0b5920297c78280d509b93cc0ab356839e8b2adfacaab42f352150390b645e9"
 
 [[artifacts]]
 name = "esp-idf-sbom"

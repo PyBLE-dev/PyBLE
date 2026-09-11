@@ -135,11 +135,11 @@ function jpegDimensions(bytes: Buffer): { width: number; height: number } {
 }
 
 describe("public-site contract", () => {
-  it("keeps pyble.dev canonical and presents Learn in the primary routes", () => {
+  it("keeps pyble.dev canonical and presents Features and Learn in the primary routes", () => {
     expect(siteConfig.origin).toBe("https://pyble.dev");
     expect(siteConfig.alternateOrigin).toBe("https://pyble.org");
     expect(navigation.map((item) => item.href)).toEqual([
-      "/#features",
+      "/features",
       "/learn",
       "/flash",
       "/support",
@@ -190,6 +190,7 @@ describe("public-site contract", () => {
       "https://pyble.dev/privacy",
       "https://pyble.dev/support",
       "https://pyble.dev/flash",
+      "https://pyble.dev/features",
       "https://pyble.dev/learn",
       "https://pyble.dev/learn/setup",
       "https://pyble.dev/learn/first-program",
@@ -203,16 +204,19 @@ describe("public-site contract", () => {
       "https://pyble.dev/learn/waveshare-lcd-147b",
     ]);
     expect(sitemap).toMatch(
-      /<loc>https:\/\/pyble\.dev\/privacy<\/loc>\s*<lastmod>2026-08-28T00:00:00\.000Z<\/lastmod>/,
+      /<loc>https:\/\/pyble\.dev\/privacy<\/loc>\s*<lastmod>2026-09-11T00:00:00\.000Z<\/lastmod>/,
     );
     expect(sitemap).toMatch(
-      /<loc>https:\/\/pyble\.dev\/<\/loc>\s*<lastmod>2026-08-28T00:00:00\.000Z<\/lastmod>/,
+      /<loc>https:\/\/pyble\.dev\/<\/loc>\s*<lastmod>2026-09-11T00:00:00\.000Z<\/lastmod>/,
     );
     expect(sitemap).toMatch(
-      /<loc>https:\/\/pyble\.dev\/app<\/loc>\s*<lastmod>2026-08-28T00:00:00\.000Z<\/lastmod>/,
+      /<loc>https:\/\/pyble\.dev\/app<\/loc>\s*<lastmod>2026-09-11T00:00:00\.000Z<\/lastmod>/,
     );
     expect(sitemap).toMatch(
-      /<loc>https:\/\/pyble\.dev\/support<\/loc>\s*<lastmod>2026-08-28T00:00:00\.000Z<\/lastmod>/,
+      /<loc>https:\/\/pyble\.dev\/support<\/loc>\s*<lastmod>2026-09-11T00:00:00\.000Z<\/lastmod>/,
+    );
+    expect(sitemap).toContain(
+      "<loc>https://pyble.dev/features</loc>\n    <lastmod>2026-09-11T00:00:00.000Z</lastmod>",
     );
     for (const path of [
       "/learn",
@@ -228,7 +232,7 @@ describe("public-site contract", () => {
       "/learn/waveshare-lcd-147b",
     ]) {
       expect(sitemap).toContain(
-        `<loc>https://pyble.dev${path}</loc>\n    <lastmod>2026-08-28T00:00:00.000Z</lastmod>`,
+        `<loc>https://pyble.dev${path}</loc>\n    <lastmod>2026-09-11T00:00:00.000Z</lastmod>`,
       );
     }
     expect(robots).toContain("Host: https://pyble.dev");
@@ -243,8 +247,8 @@ describe("public-site contract", () => {
   });
 
   it("publishes a real-app large social card and local TestFlight card", async () => {
-    const socialPngName = "pyble-beta-og-277eee8a-1200x630.png";
-    const socialSvgName = "pyble-beta-og-b47b6d10-1200x630.svg";
+    const socialPngName = "pyble-v061-og-297b270f-1200x630.png";
+    const socialSvgName = "pyble-v061-og-d3bab0c0-1200x630.svg";
     const socialUrl = `https://pyble.dev/social/${socialPngName}`;
     expect(rootMetadata.openGraph?.images).toEqual([
       {
@@ -281,7 +285,7 @@ describe("public-site contract", () => {
     ]);
     expect(socialSvg).toContain("One-time USB setup.");
     expect(socialSvg).toContain("Everyday coding over BLE.");
-    expect(socialSvg).toContain("WEB FLASHING VALIDATED");
+    expect(socialSvg).toContain("FIRMWARE v0.6.1 AVAILABLE");
     expect(socialSvg).not.toContain("FIRMWARE HIL PENDING");
     const socialPngSha256 = createHash("sha256")
       .update(socialPng)
@@ -290,10 +294,10 @@ describe("public-site contract", () => {
       .update(socialSvg)
       .digest("hex");
     expect(socialPngSha256).toBe(
-      "277eee8ae859c3e26444df830cf1b03f624f2be1f1524bc3246ce2d946332023",
+      "297b270fd4ec7637752ff954416cf4ca69570992b28d48b4530982db07c03af9",
     );
     expect(socialSvgSha256).toBe(
-      "b47b6d10d6de3e16a5687680d8f34f115f9a276d0fdbde06051751de2270ddfd",
+      "d3bab0c05e2c07783b6f7006a7cd8152b4b0a8798f4ade55e31d28076cb9bb1f",
     );
     expect(socialPngName).toContain(socialPngSha256.slice(0, 8));
     expect(socialSvgName).toContain(socialSvgSha256.slice(0, 8));
@@ -308,9 +312,10 @@ describe("public-site contract", () => {
     render(<SiteHeader />);
 
     const nav = screen.getByRole("navigation", { name: "Primary" });
-    expect(
-      within(nav).getByRole("link", { name: "What it does" }),
-    ).toHaveAttribute("href", "/#features");
+    expect(within(nav).getByRole("link", { name: "Features" })).toHaveAttribute(
+      "href",
+      "/features",
+    );
     expect(within(nav).getByRole("link", { name: "Learn" })).toHaveAttribute(
       "href",
       "/learn",
@@ -348,6 +353,14 @@ describe("public-site contract", () => {
       expect(contextualLink?.textContent?.trim()).not.toBe("");
       page.unmount();
     }
+  });
+
+  it("links the home feature summary to the complete firmware reference", () => {
+    render(<HomePage />);
+
+    expect(
+      screen.getByRole("link", { name: /explore all firmware features/i }),
+    ).toHaveAttribute("href", "/features");
   });
 
   it("states the vendor-neutral vision without claiming unavailable firmware is active", () => {
@@ -503,6 +516,9 @@ describe("public-site contract", () => {
     expect(sourceLink).toHaveAttribute("rel", "noopener noreferrer");
 
     const footer = screen.getByRole("navigation", { name: "Footer" });
+    expect(
+      within(footer).getByRole("link", { name: "Features" }),
+    ).toHaveAttribute("href", "/features");
     expect(within(footer).getByRole("link", { name: "Learn" })).toHaveAttribute(
       "href",
       "/learn",
@@ -1211,7 +1227,7 @@ describe("public-site contract", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        /public install action remains unavailable until the final v0\.6\.0-derived bytes pass hardware validation on every included profile/i,
+        /no firmware release is selected for this build; installation remains unavailable/i,
       ),
     ).toBeInTheDocument();
     expect(screen.getByText(/esp32-s3-n16r8/i)).toBeInTheDocument();
