@@ -174,7 +174,7 @@ export default function ExamplesTutorial() {
             <dd>{examplesSnapshot.examples.length}</dd>
           </div>
           <div>
-            <dt>Firmware baseline</dt>
+            <dt>Snapshot's original firmware baseline (historical)</dt>
             <dd>{examplesSnapshot.firmwareBaseline}</dd>
           </div>
           <div>

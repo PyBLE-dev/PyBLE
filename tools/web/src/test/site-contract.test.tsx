@@ -1227,7 +1227,7 @@ describe("public-site contract", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        /public install action remains unavailable until the final v0\.6\.0-derived bytes pass hardware validation on every included profile/i,
+        /no firmware release is selected for this build; installation remains unavailable/i,
       ),
     ).toBeInTheDocument();
     expect(screen.getByText(/esp32-s3-n16r8/i)).toBeInTheDocument();

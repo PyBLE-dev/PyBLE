@@ -6,6 +6,7 @@ import type { Metadata } from "next";
 import {
   type FirmwareReleaseDescriptor,
   hasExactFirmwareProfileDescriptors,
+  isOwnerConfirmedFirmwareRelease,
   releaseIncludesWaveshareLcd147b,
 } from "@/lib/firmware-release";
 import {
@@ -104,6 +105,8 @@ export function firmwareTargetsForRelease(
       let status = "Installer unavailable";
       if (planned) {
         status = "Planned · installer unavailable pending exact-profile HIL";
+      } else if (included && isOwnerConfirmedFirmwareRelease(release)) {
+        status = "v0.6.1 public release · owner-confirmed";
       } else if (included && release?.deployment === "public-beta") {
         status = `v${release.version} hardware-tested beta · browser install/recovery passed · release qualification pending`;
       } else if (included && release && includesWaveshareLcd147b) {
@@ -148,7 +151,7 @@ export function absoluteUrl(path: string): string {
 }
 
 export const socialImage = {
-  url: absoluteUrl("/social/pyble-beta-og-277eee8a-1200x630.png"),
+  url: absoluteUrl("/social/pyble-v061-og-297b270f-1200x630.png"),
   width: 1200,
   height: 630,
   alt: "Actual PyBLE iPad app showing GPIO 48 NeoPixel Blocks and generated MicroPython code",

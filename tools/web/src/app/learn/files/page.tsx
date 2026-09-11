@@ -122,6 +122,20 @@ export default function FilesTutorial() {
             deleted and later targets are unattempted.
           </p>
         </TutorialCallout>
+        <TutorialCallout title="Firmware v0.6.1 storage" tone="note">
+          <p>
+            All five official profiles use LFS2. Back up files before migrating
+            an older FAT workspace and use the documented installer. If storage
+            cannot mount, nonblank or uncertain media is preserved without
+            starting the agent; explicit USB recovery is required. It is not
+            silently reformatted.
+          </p>
+          <p>
+            Finish or cancel an active PUT or GET before deleting, renaming, or
+            creating a directory. Those mutations return EBUSY during a
+            transfer; listing and inspecting files remain available.
+          </p>
+        </TutorialCallout>
       </section>
 
       <section aria-labelledby="files-selection-boundary">

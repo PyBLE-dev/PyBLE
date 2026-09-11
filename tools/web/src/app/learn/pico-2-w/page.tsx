@@ -117,7 +117,7 @@ export default function Pico2WTutorial() {
       compatibilityNote={
         <p>
           This exact-board lesson is only for Raspberry Pi Pico 2 W. Firmware
-          0.6.0 exposes its named onboard LED surface; it does not claim
+          0.6.1 exposes its named onboard LED surface; it does not claim
           NeoPixel support for this profile.
         </p>
       }

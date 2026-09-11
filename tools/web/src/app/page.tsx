@@ -21,6 +21,7 @@ import {
 import { WaveshareBoardPhoto } from "@/components/waveshare-board-photo";
 import {
   firmwareVersionUsesFiveProfiles,
+  isOwnerConfirmedFirmwareRelease,
   releaseIncludesWaveshareLcd147b,
 } from "@/lib/firmware-release";
 import {
@@ -83,6 +84,7 @@ export default function HomePage() {
   const preview = localFirmwarePreviewSelectedAtBuild();
   const firmwareRelease = preview ? null : firmwareReleaseSelectedAtBuild();
   const publicBeta = firmwareRelease?.deployment === "public-beta";
+  const ownerConfirmed = isOwnerConfirmedFirmwareRelease(firmwareRelease);
   const waveshareLcd147b = releaseIncludesWaveshareLcd147b(firmwareRelease);
   const qualifiedPublic = firmwareRelease !== null && waveshareLcd147b;
   const fiveProfileRelease =
@@ -95,9 +97,11 @@ export default function HomePage() {
   );
   const firmwareTargetGroupLabel = preview
     ? `Five exact v${preview.version} engineering targets`
-    : qualifiedPublic
-      ? "Qualified public firmware targets"
-      : "Public firmware availability";
+    : ownerConfirmed
+      ? "Public firmware targets · v0.6.1"
+      : qualifiedPublic
+        ? "Qualified public firmware targets"
+        : "Public firmware availability";
   const firmwareTargets = preview
     ? firmwareTargetsForLocalPreview(preview)
     : firmwareTargetsForRelease(firmwareRelease);
@@ -107,13 +111,15 @@ export default function HomePage() {
       title: "Provision once",
       body: preview
         ? `Use USB once with the exact v${preview.version} engineering image for your target. The four ESP targets use Web Serial; Pico 2 W uses a verified UF2 download and BOOTSEL copy. Local preview bytes are unqualified.`
-        : publicBeta
-          ? `Use USB once to install the exact matching v${firmwareRelease.version} hardware-tested beta. Production Chrome install and interrupted-flash recovery passed on both exact profiles; complete release qualification continues.`
-          : qualifiedPublic
-            ? `Use USB once to install the exact matching qualified v${firmwareRelease.version} firmware.`
-            : firmwareRelease
-              ? `Check the protected candidate instructions before provisioning v${firmwareRelease.version}.`
-              : "Check firmware status before provisioning; the installer is currently unavailable.",
+        : ownerConfirmed
+          ? "Use USB once to install the exact matching v0.6.1 firmware. Four ESP profiles use Web Serial; Pico 2 W uses a verified UF2 download and BOOTSEL copy."
+          : publicBeta
+            ? `Use USB once to install the exact matching v${firmwareRelease.version} hardware-tested beta. Production Chrome install and interrupted-flash recovery passed on both exact profiles; complete release qualification continues.`
+            : qualifiedPublic
+              ? `Use USB once to install the exact matching qualified v${firmwareRelease.version} firmware.`
+              : firmwareRelease
+                ? `Check the protected candidate instructions before provisioning v${firmwareRelease.version}.`
+                : "Check firmware status before provisioning; the installer is currently unavailable.",
     },
     ...workflowStepsAfterProvision,
   ];
@@ -140,6 +146,14 @@ export default function HomePage() {
                   This loopback build exposes exact local artifacts for five
                   firmware targets. These bytes are not a public release or
                   support claim.
+                </>
+              ) : ownerConfirmed ? (
+                <>
+                  Public v{firmwareRelease?.version} firmware is available for
+                  all five exact profiles: classic ESP32, generic ESP32-S3,
+                  Waveshare ESP32-S3-LCD-1.47B, ESP32-C3, and Raspberry Pi Pico
+                  2 W. Publication follows the project owner's qualification
+                  confirmation.
                 </>
               ) : publicBeta ? (
                 <>

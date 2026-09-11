@@ -11,6 +11,7 @@ import {
   examplesSnapshot,
   firmwareProfiles,
   tutorials,
+  tutorialFirmwareReference,
 } from "@/lib/tutorials";
 import { pageMetadata } from "@/lib/site";
 
@@ -49,10 +50,11 @@ export default function LearnPage() {
             tone="note"
           >
             <p>
-              Tutorial review baseline: PyBLE app 0.2.0 beta, PBLE/1, and
-              firmware 0.6.0. That baseline is not a live installer promise.
-              Always check the active version, exact profile, and enabled action
-              on the <Link href="/flash">current firmware page</Link>.
+              Current tutorial guidance: PyBLE app 0.2.0 beta, PBLE/1, and
+              firmware {tutorialFirmwareReference}. Historical screenshots and
+              the examples snapshot retain their original version labels. Always
+              check the active version, exact profile, and enabled action on the{" "}
+              <Link href="/flash">current firmware page</Link>.
             </p>
           </TutorialCallout>
         </section>
@@ -76,8 +78,9 @@ export default function LearnPage() {
             <div>
               <dt>{compatibilityLabels.qualifiedFirmware}</dt>
               <dd>
-                A firmware-release state backed by the project&apos;s release
-                and hardware gates. Confirm it on the current installer.
+                A firmware-release qualification claim. Confirm its basis on the
+                current installer: v0.6.1 is published on owner confirmation,
+                distinct from the retained automated HIL records.
               </dd>
             </div>
             <div>

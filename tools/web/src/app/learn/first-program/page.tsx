@@ -65,7 +65,9 @@ const steps: readonly TutorialStep[] = [
     body: (
       <p>
         Change the message, Save the new snapshot, and Run it again. Confirm
-        that Console shows the changed text, not the earlier copy.
+        that Console shows the changed text, not the earlier copy. Firmware
+        0.6.1 gives each Run fresh globals, so recreate variables in your
+        program. Imported modules and hardware state are not necessarily reset.
       </p>
     ),
     expected:

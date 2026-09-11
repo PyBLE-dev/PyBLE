@@ -71,7 +71,7 @@ export default function FlashPage() {
                 ? ` Qualified v${release.version} firmware is available for all ${exactProfileCountLabel(release.profiles.length)} exact release profiles.`
                 : candidate
                   ? ` This protected, access-controlled v${release.version} release candidate is staged for hardware qualification. Hardware validation is pending on every included profile; the public install action stays unavailable until it passes.`
-                  : " The public install action remains unavailable until the final v0.6.0-derived bytes pass hardware validation on every included profile."}
+                  : " No firmware release is selected for this build; installation remains unavailable."}
         </p>
       </PageIntro>
 

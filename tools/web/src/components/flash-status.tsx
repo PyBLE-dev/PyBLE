@@ -157,7 +157,7 @@ function policyFailure(release: FirmwareReleaseDescriptor | null | undefined) {
   if (!release) {
     return {
       heading: "Installer unavailable",
-      body: "Hardware validation is still required on every profile included in a v0.6.0-derived candidate before the public installer can be enabled.",
+      body: "No firmware release is selected for this build. Check the current public installer before provisioning.",
     };
   }
   if (release.deployment !== "public" && release.deployment !== "candidate" &&
