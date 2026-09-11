@@ -1636,6 +1636,12 @@ outputs MUST be outside both the candidate and the qualification Git checkout.
 After its input callback, every exclusive evidence writer MUST reopen the
 visible output through its retained parent descriptor and recheck the exact
 inode, one-link mode-`0600` state, size, and bytes before reporting success.
+The writer MUST retain an open descriptor for its originally created inode
+through final validation and any failure cleanup. Closing its last descriptor
+earlier permits inode-number reuse after an unlink, so a device/inode comparison
+alone can mistake a replacement for the writer's file. Failure cleanup MUST
+leave replacement files untouched and release the original descriptor only
+after its ownership check and any unlink have completed.
 
 For result admission the raw log contains exactly one line for each scenario
 in `scenario_order`, with no start/end or free-text record. Every ordinary
