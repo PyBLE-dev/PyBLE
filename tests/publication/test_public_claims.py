@@ -182,7 +182,8 @@ class PublicClaimsTest(unittest.TestCase):
             "v0.7.0",
             near_term,
         )
-        self.assertIn("automated qualification", near_term)
+        self.assertIn("closed as superseded on 2026-09-13", available)
+        self.assertIn("incomplete checklist is not marked completed", available)
 
     def test_readme_distinguishes_app_source_from_store_availability(self) -> None:
         firmware = markdown_section(self.readme, "What works")

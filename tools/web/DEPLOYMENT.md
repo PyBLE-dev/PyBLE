@@ -39,9 +39,11 @@ Review at least:
 - home at phone, portrait-tablet, landscape-tablet, and desktop widths;
 - home and metadata clearly separate the capability-defined MicroPython + BLE
   platform vision from the targets validated by the current release;
-- `/app`, including the current iPad external-beta and Android internal-test
-  destinations, scannable local QR images, visible fallback addresses,
-  invited-account restriction, and links to firmware and support;
+- home, `/app`, and setup guidance identify the iPad external beta and published
+  Android PyBLE 0.2.0 Google Play open test consistently, including page and
+  social descriptions; verify the official `dev.pyble.pyble` listing link,
+  scannable local QR images, visible fallback addresses, Play availability
+  guidance, and links to firmware and support;
 - `/privacy`, including the effective date and public contact address;
 - `/support`, including the public contact address;
 - `/flash`, confirming the install button is still disabled unless the

@@ -93,9 +93,9 @@ export default function SetupTutorial() {
         <h2 id="setup-equipment">Before you begin</h2>
         <p>
           Have the exact board, a reliable data-capable USB cable, a desktop or
-          laptop that can perform the wired install, stable power, and an iPad
-          or invited Android test device with PyBLE installed. Stock MicroPython
-          alone does not provide PBLE/1.
+          laptop that can perform the wired install, stable power, and PyBLE
+          installed on your tablet. Use TestFlight for iPad or Google Play open
+          testing for Android. Stock MicroPython alone does not provide PBLE/1.
         </p>
         <TutorialCallout title="Flashing is destructive" tone="warning">
           <p>

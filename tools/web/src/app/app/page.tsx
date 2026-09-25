@@ -12,7 +12,7 @@ import { pageMetadata, siteConfig } from "@/lib/site";
 export const metadata: Metadata = pageMetadata({
   title: "PyBLE for iPad and Android",
   description:
-    "Join the PyBLE iPad external beta on Apple TestFlight or the invited Android internal test on Google Play, then code compatible MicroPython boards over Bluetooth Low Energy.",
+    "Get PyBLE 0.2.0 for Android on Google Play open testing, or join the iPad external beta on TestFlight. Code MicroPython boards over Bluetooth Low Energy.",
   path: "/app",
 });
 
@@ -20,7 +20,7 @@ const gettingStartedSteps = [
   {
     number: "01",
     title: "Install a beta",
-    body: "Use Apple TestFlight on iPad, or the invited-only Google Play internal test on Android.",
+    body: "Use Apple TestFlight on iPad, or Google Play open testing on Android.",
   },
   {
     number: "02",
@@ -42,9 +42,10 @@ export default function AppPage() {
         title="Install PyBLE on iPad or Android."
       >
         <p>
-          Choose the public iPad external beta or the invited Android internal
-          test. PyBLE is an open-source, tablet-first MicroPython IDE that
-          connects to compatible boards over Bluetooth Low Energy.
+          Get PyBLE 0.2.0 for Android on Google Play open testing, or join the
+          iPad external beta on TestFlight. PyBLE is an open-source,
+          tablet-first MicroPython IDE that connects to compatible boards over
+          Bluetooth Low Energy.
         </p>
       </PageIntro>
 
@@ -54,8 +55,8 @@ export default function AppPage() {
             <p className="eyebrow">Current app testing</p>
             <h2 id="install-title">Choose your testing channel.</h2>
             <p>
-              These are beta channels, not production App Store or public Google
-              Play releases.
+              PyBLE for Android is published on Google Play through open
+              testing. The iPad beta is available through Apple TestFlight.
             </p>
           </div>
 
@@ -123,50 +124,48 @@ export default function AppPage() {
               <div className="app-install__copy">
                 <div className="status-badge status-badge--light">
                   <span className="status-dot" aria-hidden="true" />
-                  Internal testing is open to invited accounts
+                  Available on Google Play open testing
                 </div>
                 <p className="eyebrow">Android · Google Play</p>
-                <h3 id="android-install-title">
-                  Join the Android internal test.
-                </h3>
+                <h3 id="android-install-title">Get PyBLE on Google Play.</h3>
                 <p className="app-install__lede">
-                  Only approved internal testers signed in with an invited
-                  Google account can access this listing. An unapproved or
-                  signed-out visitor may find it unavailable. This is not a
-                  public Google Play release.
+                  PyBLE 0.2.0 is available on Google Play open testing. Open the
+                  listing on your Android device and follow Google Play’s
+                  instructions to join the beta and install the app. Google Play
+                  determines availability for your account, country, and device.
                 </p>
                 <a
                   className="button button--primary app-install__primary"
-                  href={siteConfig.googlePlayInternalTestUrl}
+                  href={siteConfig.googlePlayUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  Open Android internal test
+                  Get PyBLE on Google Play
                   <ArrowIcon />
                 </a>
                 <p className="app-install__direct">
-                  Open this address on the invited Android device:
-                  <span>{siteConfig.googlePlayInternalTestUrl}</span>
+                  Open this address on your Android device:
+                  <span>{siteConfig.googlePlayUrl}</span>
                 </p>
               </div>
 
               <figure className="app-install__qr">
                 <a
                   className="app-install__qr-link"
-                  href={siteConfig.googlePlayInternalTestUrl}
+                  href={siteConfig.googlePlayUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                 >
                   <Image
-                    src="/google-play/pyble-google-play-internal-test-qr.svg"
+                    src="/google-play/pyble-google-play-qr.svg"
                     width={360}
                     height={360}
-                    alt="QR code for the PyBLE Android internal test on Google Play"
+                    alt="QR code for PyBLE on Google Play open testing"
                   />
                 </a>
                 <figcaption>
                   <strong>Scan with your Android camera</strong>
-                  <span>Sign in with the Google account that was invited.</span>
+                  <span>The code opens the same Google Play listing.</span>
                 </figcaption>
               </figure>
             </article>
