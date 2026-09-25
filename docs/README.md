@@ -24,7 +24,8 @@ maintainer guidance beside the source they govern.
   — roadmap, milestones, stories and capacity forecasts
 - [C1-S1 execution record](developments/2026-q4-reliable-workflow/c1-s1/00_Execution_Record.md)
   — channel evidence, pilot kit, recovery contract/sizing and validation recipe;
-  physical installation and participant work remain blocked
+  existing Play/TestFlight installations verified; pilot setup and participant
+  evidence remain pending
 
 ## Detailed specifications
 

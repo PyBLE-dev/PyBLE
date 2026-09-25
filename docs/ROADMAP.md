@@ -32,9 +32,11 @@ v0.7.0 remains non-normative and requires separate maintainer approval.
 ## Near term
 
 - Complete the [C1-S1 remaining evidence](developments/2026-q4-reliable-workflow/c1-s1/00_Execution_Record.md):
-  physical store installations, confirmed pilot ownership/setup and five real
-  baseline observations. The channel ledger, pilot kit, recovery design and
-  validation inventory are prepared; this does not complete the Sprint.
+  confirmed pilot ownership/setup, actual capacity and five real baseline
+  observations. Existing Play 0.2.0 (8) and TestFlight 0.2.0 (6) installations
+  and launches are verified on connected tablets; fresh enrollment/reinstallation
+  was not exercised. The pilot kit, recovery design and validation inventory
+  are prepared; this does not complete the Sprint or board qualification.
 - Implement the [bounded current-text recovery contract](specifications/App/current-draft-recovery.md)
   after replanning against its 45–72 hour working estimate for engineering,
   recipe, representative platform checks and follow-up. Current drafts remain
@@ -45,8 +47,13 @@ v0.7.0 remains non-normative and requires separate maintainer approval.
   [Android publication review](testing/website/android-open-testing-2026-09-25.md)
   records live open-testing availability. The
   [prepared build-8 handoff](testing/google-play/0.2.0-build-8.md) remains a
-  source-specific historical record, not validation of subsequent source
-  changes in the installed store app.
+  source-specific historical record. The [current Android installation check](developments/2026-q4-reliable-workflow/c1-s1/06_Android_Channel_Verification.md)
+  matches 38 retained code/asset entries to that AAB; this supports its historical
+  source mapping, not complete binary equivalence or validation of subsequent
+  source changes. The [iPad check](developments/2026-q4-reliable-workflow/c1-s1/07_iPad_Channel_Verification.md)
+  records TestFlight build 6 with source mapping unresolved; distribution-owner
+  review is needed for conflicting minimum-OS metadata before making a support
+  claim.
 - Review the proposed v0.7.0 Reliable Projects scope before implementation.
 - Expand user-facing setup, recovery, and board-specific wiring guidance
 - Gather Android open-testing feedback and improve installation and recovery

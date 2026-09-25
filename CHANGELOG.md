@@ -84,15 +84,19 @@ and submission packet do not claim Play submission, approval, or rollout.
   regression assertions while retaining the high/critical audit gate.
 - Added the reviewed Cycle 1 roadmap, milestones, Scrum working agreement,
   stories and Sprint Backlogs, plus C1-S1 execution evidence and operational
-  pilot/validation procedures. Physical installation and participant work
-  remain blocked; no pilot results or new release are claimed.
+  pilot/validation procedures. Verified existing Play 0.2.0 (8) and TestFlight
+  0.2.0 (6) installations and launches on connected tablets; pilot setup and
+  participant evidence remain pending. No fresh enrollment, reinstall, pilot
+  results or new release are claimed.
 - Specified bounded Drift current-text recovery, local restore/discard,
   failure handling and document/session guards in ADR-0048 and the App
   contracts. Implementation remains pending; sizing requires revising the
   original S2 forecast.
 - Verified live Android open-testing wording and prepared correction of the
-  older public TestFlight description. Store-installed build identities remain
-  unverified and the TestFlight metadata change remains pending.
+  older public TestFlight description. Installed identities are now recorded;
+  Android code/assets match the retained build-8 AAB, while iPad build-6 source
+  mapping and a minimum-OS metadata discrepancy need distribution-owner
+  follow-up. The TestFlight metadata change remains pending.
 - Prepared Google Play open-testing listing text, reviewer hardware setup,
   tester instructions, data-use assessment, and reproducible store artwork
   with authentic screenshot provenance. Store availability remains a separate

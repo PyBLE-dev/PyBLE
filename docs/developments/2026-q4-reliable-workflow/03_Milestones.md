@@ -5,9 +5,9 @@
 
 | Control | Value |
 |---|---|
-| Status | M-01/SG0 assessed Blocked on 25 September; other milestones remain Proposed and forecast windows need replanning |
+| Status | M-01/SG0 remains Blocked on 25 September by pilot ownership/cohort/setup and capacity decisions; existing channel installations verified on retry. Other milestones remain Proposed and forecast windows need replanning |
 | Planning date | 25 September 2026; dates use Asia/Bangkok |
-| Source | [Implementation strategy revision 1.3](../../planning/PyBLE_Implementation_Plan_and_Strategy_v1.0.md), especially §§4, 8–10, 14, and 19 |
+| Source | [Implementation strategy revision 1.4](../../planning/PyBLE_Implementation_Plan_and_Strategy_v1.0.md), especially §§4, 8–10, 14, and 19 |
 | Inspected baseline | `main` at `23ed764b0ef88dce9720c66fbd1c0655268860cf` |
 | Related documents | [Framework](01_Overview_and_Scrum_Framework.md), [roadmap](02_Product_Roadmap.md), [Sprint Plan](04_Sprint_Plan.md), [stories](05_Product_Backlog_and_Stories.md), [Sprint Backlogs](06_Sprint_Backlogs.md) |
 | Meaning | Milestones describe inspectable outcomes and decision evidence; they are not additional Scrum events or promised releases |
@@ -51,7 +51,7 @@ no role in this table implies committed staffing or independent review.
 | M-05 — Proposed | Users can obtain the selected qualified app build through a verified existing channel | C1-S5–C1-S6, 23 Nov–20 Dec; PYB-014 and residual 002 | M-04; distribution-owner access; separate submission, availability, installed build/provenance, and installation outcome records; current user-facing claims | Verified-channel milestone passes only for the stated evidence; store delays are recorded as blockers; release owner |
 | M-06 — Proposed | Useful-repeat and support evidence drives one explicit next-stage investment | C1-S6, 7–20 Dec; PYB-011 follow-up, cycle review; Ready inputs only if selected | Mature consented cohort accounting, useful Task C/return outcomes, task opportunity, prompting, missing responses, support burden, and status of candidate/channel evidence; retain blocked outcomes | SG3 assessment plus dated continue/narrow/pause-expansion decision; Product Owner with pilot and Developers |
 
-[C1-S1 evidence](c1-s1/00_Execution_Record.md) prepares the ledger, pilot protocol, recovery contract and cost model, but does not satisfy missing human ownership, confirmed capacity, device installations or participant observations. M-01/SG0 remains blocked. M-02's S2–S3 window is the original baseline; a sized S2–S4 option now requires explicit replanning, with downstream matrix/recruitment dates reviewed together.
+[C1-S1 evidence](c1-s1/00_Execution_Record.md) includes the ledger, pilot protocol, recovery contract, cost model and verified existing Play/TestFlight installations. Six tasks are Done, two are Prepared awaiting pilot setup and four await participant/observation evidence. Human ownership, cohort/setup and actual capacity remain unconfirmed, so M-01/SG0 remains blocked. Missing participants are recorded as a recruitment gap, not completed observations. Current-build verification does not pass M-05 for a future qualified update. M-02's S2–S3 window is the original baseline; a sized S2–S4 option now requires explicit replanning, with downstream matrix/recruitment dates reviewed together.
 
 M-04 may occur in any Sprint once a maintenance candidate qualifies. M-03 and
 M-06 do not block it. M-06 can assess learning and choose a narrower next step
