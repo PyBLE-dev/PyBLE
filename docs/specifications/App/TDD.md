@@ -1,6 +1,6 @@
 # PyBLE App — Technical Design Document (TDD)
 
-Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-08-27
+Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-09-25
 
 ## 0. Naming note (acronym clash)
 
@@ -684,7 +684,7 @@ The label is UTF-8 and **bounded** — the client enforces a length cap before s
 
 ## 9. Persistence design (`lib/data/`)
 
-The Drift schema models exactly the six content tables of [specs.md §8](specs.md) / [PRD §12.1](../prd.md), plus a lightweight settings store. No managed-fleet/lab/calibration tables (DAT-8, CON-7). — *(satisfies DAT-1..8, FR-PROJ-1..7, IF-3.)*
+The full target Drift schema models exactly the six content tables of [specs.md §8](specs.md) / [PRD §12.1](../prd.md), plus a lightweight settings store. This is target architecture, not a claim that the current `lib/data/` placeholder implements it; the bounded first subset is specified in [§9.3](#93-bounded-current-text-recovery-specified). No managed-fleet/lab/calibration tables (DAT-8, CON-7). — *(satisfies DAT-1..8, FR-PROJ-1..7, IF-3.)*
 
 ### 9.1 Schema
 
@@ -702,6 +702,36 @@ Saved-board reconnect is a lightweight `board_ref` app setting, **not** a relati
 ### 9.2 Migrations & hydration
 
 Drift schema versions with explicit `MigrationStrategy` step migrations (forward-only); a schema-version test guards every bump. On launch the app hydrates the last-opened project and `board_ref` from Drift before any network/board activity (offline-first, NFR-OFF-1). Project export/import is a local archive (zip of files + metadata), no cloud (FR-PROJ-5, NFR-OFF-3). On disconnect, open buffers / files / run-and-console state are already in Drift, so nothing is lost across a dropped link (FR-PROJ-6, NFR-REL-3).
+
+### 9.3 Bounded current-text recovery (specified)
+
+**C1-S1 / PYB-006.1, 2026-09-25 — implementation pending.**
+[ADR-0048](../../decisions/0048-bounded-current-text-draft-recovery.md) and
+[current-draft-recovery.md](current-draft-recovery.md) own the bounded successor
+to ADR-0010. Start with the necessary `projects`/`project_files` subset and the
+single SettingsStore; one current draft is not a completed project system.
+The contract fixes atomic content/metadata commits, persisted generations,
+explicit startup choices, nondestructive storage/version failures, and a local
+recovery panel reachable before connection. An accepted revision is protected
+only after its transaction commits; the existing board-dirty flag remains
+separate from local checkpoint status.
+
+The coordinator must observe all document mutations, including `setContent`,
+`newDocument` and `openGenerated`, rather than treating `openFromBoard` and
+`markSaved` as sufficient hooks. A recovered path is context, never current
+board-write authority. Affected Editor/Files/Blocks-handoff actions need the
+existing editor mutation epoch and neutral connection-session stamp to reject
+stale adoption/completion, including edit-away/back and a stable facade changing
+attachments. The text PUT-to-Run sequence must pin and recheck its session.
+
+[Required scenarios](current-draft-recovery.md#7-required-evidence-before-acceptance)
+include real file-backed restart/failure tests and actual iPad/Android evidence.
+[The S1 estimate](../../developments/2026-q4-reliable-workflow/c1-s1/03_Recovery_Design_and_Sizing.md)
+exceeds the original one-Sprint recovery allowance and proposes reforecasting;
+safety cases remain required. Blocks graph recovery, full projects/history,
+console state, saved boards, durable settings and import provenance remain
+carried to their existing A-24/related stories. No runtime behavior or new
+protocol operation is implemented by this specification change.
 
 ## 10. GitHub import design (`lib/github_import/`)
 
@@ -1825,6 +1855,13 @@ board display. Two UX surfaces:
 ### 11.6 Working-loop provider contract (frozen)
 
 **FROZEN (working-loop increment · `[docs]` 2026-07-02, [ADR-0010](../../decisions/0010-working-loop-in-memory-document.md)).** This is the shared Riverpod contract the edit→run→watch→manage loop implements to, across A-20 (editor), A-21 (console), A-16 (run-control toolbar) and A-30 (files). Ownership is **disjoint** so the feature engineers work in parallel. Every provider binds only to the neutral `Connection` seam + neutral types ([§5](#5-the-connection-api-design)) — **no UI package imports `lib/ble`** (CON-8, FR-UI-7); app-layer packages MAY cross-import each other's **public** providers (`files → editor`, shell → run-control). API sketches are illustrative; the frozen interface is whatever the `[red]` tests pin ([§15](#15-test-design)).
+
+**Specified successor (2026-09-25).** The volatile behavior below remains the
+current implemented baseline. [§9.3](#93-bounded-current-text-recovery-specified)
+and [the current-draft contract](current-draft-recovery.md) define its bounded
+persistence replacement, including stronger epoch/session checks for affected
+asynchronous actions. Do not read either the older illustrative API or the
+successor design as evidence that persistence has shipped.
 
 **(a) Current document — `lib/editor` (owner: app-editor-console-engineer).** A single volatile in-memory document; survives navigation, not restart (persistence deferred to A-24, [§11.1](#111-editor)):
 

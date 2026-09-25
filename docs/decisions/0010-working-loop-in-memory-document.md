@@ -57,3 +57,15 @@ Unchanged: the `Connection` seam (D1), neutral types (D2), Riverpod as the one s
 - Extends [ADR-0007](0007-riverpod-state-management.md) (Riverpod / D3) and [ADR-0009](0009-runtime-connection-manager.md) (runtime session facade); honors [ADR-0008](0008-signal-design-system.md) (`SignalCodeColors` for the editor/console surfaces).
 - Ratifies App [TDD.md §11.6](../specifications/App/TDD.md#116-working-loop-provider-contract-frozen) and the scoping freeze notes in [TDD.md §11.1](../specifications/App/TDD.md#111-editor)/[§11.4](../specifications/App/TDD.md#114-console--error-explanation) and [specs.md §4.5](../specifications/App/specs.md)/§4.6/§4.7/§4.8.
 - Scopes App stories **A-20 / A-21 / A-16 / A-30** (working-loop subset); defers FR-EDIT-7, NFR-REL-3/FR-PROJ-6, and the rich-editor part of FR-EDIT-1 to **A-24** ([OI-1](../specifications/App/specs.md)).
+
+## 2026-09-25 follow-up — bounded current-text recovery specified
+
+The historical decision and its original context above remain unchanged.
+[ADR-0012](0012-flutter-code-editor-behind-editorsurface.md) already superseded
+the rich-editor deferral. [ADR-0048](0048-bounded-current-text-draft-recovery.md)
+now specifies the bounded current-text recovery successor, with its
+[write/failure/board-authority contract](../specifications/App/current-draft-recovery.md)
+and [C1-S1 review and sizing](../developments/2026-q4-reliable-workflow/c1-s1/03_Recovery_Design_and_Sizing.md).
+The inspected source is still volatile; implementation and acceptance evidence
+are pending. The remaining A-24 project, settings, console, import and Blocks
+obligations are carried, not satisfied by the successor design.

@@ -1,6 +1,6 @@
 # PyBLE App — Requirements Specification
 
-Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-08-27
+Status: **DRAFT** · Owner: project maintainer · Last updated: 2026-09-25
 
 ## 1. Purpose, Scope & Document Role
 
@@ -166,6 +166,20 @@ The client implements the PBLE/1 wire contract; it references [protocol.md](../p
 - **FR-EDIT-7** — Save MUST persist the edited file to the local project (offline-first); Run MUST upload then run through `Connection` per the §8.2 loop. MUST (*source: PRD §8.2, §9.1, §9.3; verify: integration; story: A-20/A-11*)
 
 **Working-loop increment — FROZEN (A-20 subset · `[docs]` 2026-07-02, amended 2026-08-22 by [ADR-0012](../../decisions/0012-flutter-code-editor-behind-editorsurface.md), [ADR-0010](../../decisions/0010-working-loop-in-memory-document.md), [TDD §11.1](TDD.md#111-editor)/[§11.6](TDD.md#116-working-loop-provider-contract-frozen); run path superseded 2026-07-27 by [ADR-0013](../../decisions/0013-clean-room-blockly-one-way-file-backed.md)).** In scope: the ADR-0012 `EditorSurface` seam with `flutter_code_editor` 0.3.5 as the default rich adapter and the existing plain `TextField` as a live fallback; Python highlighting, always-visible one-based line numbers, safe auto-indent/Tab handling, and an editor-only 10–24 sp font adjustment in one-point steps (default 14 sp). Code and gutter resize together, platform text scaling still applies, and resizing MUST NOT modify the document, selection, dirty state, or board path. The size is app-session state, independent of file and board, until A-24's single Drift `SettingsStore` makes it durable; a second preferences store MUST NOT be introduced. The single volatile in-memory current document (name/content/dirty/boardPath), **New**, and board-backed Save/Run behavior remain as frozen by ADR-0010/0013. Save and Run capture one normalized document snapshot; transfer completion marks it saved/bound only when the live document still equals that snapshot, so mid-transfer edits or a replacement document remain dirty. The editor binds to `Connection` only (FR-EDIT-6, CON-8), and editor source MUST NOT reach a network analyzer. **Still deferred to A-24 or later:** multi-file tabs, app-owned localized find/replace, the remaining external-keyboard shortcuts, durable display settings, Save-to-project, and buffers-survive-restart. The document provider's `openFromBoard`/`markSaved` and the session display provider are the A-24 persistence hooks (RECORDED deviations, ADR-0010/0012).
+
+**Current-text recovery successor — SPECIFIED, implementation pending
+(`[docs]` 2026-09-25, C1-S1/PYB-006.1,
+[ADR-0048](../../decisions/0048-bounded-current-text-draft-recovery.md)).**
+The [bounded recovery contract](current-draft-recovery.md) defines DR-01–07:
+one atomic Drift current-text checkpoint, explicit offline Restore/Discard,
+separate local/board save status, nondestructive interrupted/corrupt/full-storage
+handling and current-session target consent. It strengthens affected asynchronous
+Editor/Files actions from document-value equality to epoch and session guards.
+A local recovery panel extends the connection-gated shell without claiming a
+complete offline IDE. Blocks JSON and the remaining A-24 project/settings/history
+requirements stay carried. The working-loop text above remains the implemented
+baseline until this successor's automated and applicable physical evidence passes;
+writing the contract does not satisfy FR-EDIT-7, FR-PROJ-2/6 or NFR-REL-3 in full.
 
 ### 4.7 Console Panel (`lib/console/`) — FR-CONSOLE
 
