@@ -1,6 +1,15 @@
 # PyBLE — `esp32-c3-4mb` engineering qualification
 
 Status: **C3-G0–C3-G7 FROZEN (`[docs]` 2026-08-12); all results PENDING**.
+
+**Status clarification — 25 September 2026:** the line above records the
+original engineering freeze. v0.6.0 subsequently became the qualified
+five-profile baseline. v0.6.1 is publicly distributed under the dated
+[owner-confirmed publication](../../../testing/firmware-v0.6.1-publication-2026-09-11.md),
+whose incomplete automated HIL records remain unchanged. These normative gates
+still govern a fresh automated-qualified C3/candidate claim; this note adds no
+new passing result and does not rewrite the historical freeze.
+
 This is the derived engineering contract for the existing ESP32-family native
 agent on one matching physical reference. It implements
 [ADR-0032](../../../decisions/0032-qualify-generic-esp32-c3-4mb-on-reference-hardware.md)
