@@ -150,7 +150,7 @@ This boundary is what makes PyBLE safe to open-source. It is also why the protoc
 | Firmware architecture | upstream MicroPython + protected PyBLE agent + target adapter | Vendor-neutral contract, no MicroPython fork |
 | Firmware (v1 reference) | MicroPython ESP32 port + ESP-IDF | Initial `esp32` / `esp32-s3` / `esp32-c3` implementation |
 | BLE stack (v1 reference) | NimBLE | ESP32-family implementation; future ports may use another conforming BLE peripheral stack |
-| Persistence | local (sqlite/Drift or files) | Offline-first; project files & settings |
+| Persistence | Planned local SQLite/Drift; current document still volatile | Offline-first target; [ADR-0010](../decisions/0010-working-loop-in-memory-document.md) rejects an ad-hoc scratch-file substitute, and [ADR-0048](../decisions/0048-bounded-current-text-draft-recovery.md) specifies the first bounded recovery slice; implementation pending |
 
 All third-party components are MIT/Apache/BSD-compatible; notices ship in `THIRD_PARTY_LICENSES`.
 

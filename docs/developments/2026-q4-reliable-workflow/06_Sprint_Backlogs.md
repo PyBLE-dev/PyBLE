@@ -1,11 +1,11 @@
 <!-- SPDX-License-Identifier: MIT -->
 <!-- Part of PyBLE (https://pyble.dev) — see /LICENSE. -->
 
-# Cycle 1 — candidate Sprint Backlog and later forecasts
+# Cycle 1 — Sprint Backlog execution and later forecasts
 
 | Field | Rule |
 |---|---|
-| Status | C1-S1 is a candidate; C1-S2–C1-S6 are forecasts. Every task below is Proposed, with no named assignee or actual effort recorded |
+| Status | C1-S1 execution initiated 25 September: four repository tasks Done, eight device/pilot tasks Blocked. C1-S2–C1-S6 retain original Proposed allowances and require replanning before selection |
 | Product/Sprint Goals | [Framework](01_Overview_and_Scrum_Framework.md) and [Sprint plan](04_Sprint_Plan.md) |
 | Acceptance authority | [Product backlog and stories](05_Product_Backlog_and_Stories.md); task completion never overrides a parent story's acceptance criteria |
 | Selection | Developers confirm scope, ownership, estimates and task plan at each Sprint Planning |
@@ -13,6 +13,8 @@
 | Dependencies | Same-Sprint `Txx` references refer to that Sprint's task. Cross-Sprint dependencies name their full item/task ID |
 | Evidence | Record artifact identity and actual results; unavailable access/recruitment leaves the affected task Blocked, not Done |
 | Privacy | Keep private consent/contact/device records outside Git; link only reviewed public aggregates and redacted evidence |
+
+Actual task evidence and blocker owners are maintained in the [C1-S1 execution record](c1-s1/00_Execution_Record.md). The original future task tables below are retained as the baseline; the new 45–72h recovery estimate and matrix cost model invalidate their assumed fit. Use the [reforecast requirements](04_Sprint_Plan.md#c1-s1-findings-and-required-reforecast) before selection. Prepared TestFlight correction copy records residual PYB-002.1; its external application is not an extra committed task.
 
 The initial tasks are small planning units, generally 1–4 hours. If a task or safe story is larger after inspection, split/reforecast before selection. A time allowance does not limit a required test's counts or justify declaring partial qualification complete. The actual Sprint Backlog includes its confirmed Goal, selected items, and the Developers' current plan; update this document as that plan changes.
 
@@ -30,18 +32,18 @@ Record optional follow-up consent and the prospective day-7–14 window at each 
 
 | Task ID | Parent child item | Proposed task and expected output | Dependency | Contribution role | h | Status |
 |---|---|---|---|---|---:|---|
-| C1-S1-T01 | PYB-001.1 | Assemble the dated channel/install/provenance/qualification ledger from existing records; assign unresolved fields | Current source/publication records | Release | 1 | Proposed |
-| C1-S1-T02 | PYB-001.2 | Verify eligible Android enrollment/install and record build/version, restrictions and available source mapping | T01; Play/device access | Release + QA | 2 | Proposed |
-| C1-S1-T03 | PYB-001.2 | Verify current TestFlight installation and record its actual build and provenance limitations | T01; TestFlight/device access | Release + QA | 2 | Proposed |
-| C1-S1-T04 | PYB-003.1 | Review harmless hardware/pilot boundaries, consent/retention rules, and manual support template | Recorded pilot setup; named pilot owner | Pilot + QA | 2 | Proposed |
-| C1-S1-T05 | PYB-004.1 | Confirm primary cohort and Tasks A/B/C, assistance/timeout rules, previous workflow and prospective follow-up | T04; recorded app/setup | Pilot | 2 | Proposed |
-| C1-S1-T06 | PYB-004.2 / PYB-011.2 | Observe the first baseline batch; record every eligible start, assistance, consent/window and any due follow-up | T05; consenting participants | Pilot | 2 | Proposed |
-| C1-S1-T07 | PYB-004.2 / PYB-011.2 | Observe the next baseline batch under the same task/build rules; record windows and collect due follow-up | T05; consenting participants | Pilot | 2 | Proposed |
-| C1-S1-T08 | PYB-004.2 / PYB-011.2 | Complete planned observation/follow-up slots toward five baseline starts; retain failures, missing responses and recruitment gaps | T05; participant access | Pilot | 2 | Proposed |
-| C1-S1-T09 | PYB-004.2 | Summarize baseline outcomes and actual observation cost; identify an observed obstacle without inventing one | T06–T08 actual records | Pilot + Product Owner | 1 | Proposed |
-| C1-S1-T10 | PYB-006.1 | Draft the bounded Drift recovery contract: write boundary, restore/discard, board association, failure handling and carried Blocks/A-24 scope | ADR-0010 and App contracts; no recruitment dependency | App | 3 | Proposed |
-| C1-S1-T11 | PYB-006.1 | Review acceptance scenarios and size the safe increment including required tests; record approval or unresolved design questions | T10; review path | App + reviewer | 1 | Proposed |
-| C1-S1-T12 | PYB-009.1 | Inventory existing suites, hardware/operators, applicable gates and matrix cost; draft the next operator recipe | T01 and current tools/specs | QA + firmware | 2 | Proposed |
+| C1-S1-T01 | PYB-001.1 | Assemble the dated channel/install/provenance/qualification ledger from existing records; assign unresolved fields | Current source/publication records | Release | 1 | Done |
+| C1-S1-T02 | PYB-001.2 | Verify eligible Android enrollment/install and record build/version, restrictions and available source mapping | T01; Play/device access | Release + QA | 2 | Blocked |
+| C1-S1-T03 | PYB-001.2 | Verify current TestFlight installation and record its actual build and provenance limitations | T01; TestFlight/device access | Release + QA | 2 | Blocked |
+| C1-S1-T04 | PYB-003.1 | Review harmless hardware/pilot boundaries, consent/retention rules, and manual support template | Recorded pilot setup; named pilot owner | Pilot + QA | 2 | Blocked |
+| C1-S1-T05 | PYB-004.1 | Confirm primary cohort and Tasks A/B/C, assistance/timeout rules, previous workflow and prospective follow-up | T04; recorded app/setup | Pilot | 2 | Blocked |
+| C1-S1-T06 | PYB-004.2 / PYB-011.2 | Observe the first baseline batch; record every eligible start, assistance, consent/window and any due follow-up | T05; consenting participants | Pilot | 2 | Blocked |
+| C1-S1-T07 | PYB-004.2 / PYB-011.2 | Observe the next baseline batch under the same task/build rules; record windows and collect due follow-up | T05; consenting participants | Pilot | 2 | Blocked |
+| C1-S1-T08 | PYB-004.2 / PYB-011.2 | Complete planned observation/follow-up slots toward five baseline starts; retain failures, missing responses and recruitment gaps | T05; participant access | Pilot | 2 | Blocked |
+| C1-S1-T09 | PYB-004.2 | Summarize baseline outcomes and actual observation cost; identify an observed obstacle without inventing one | T06–T08 actual records | Pilot + Product Owner | 1 | Blocked |
+| C1-S1-T10 | PYB-006.1 | Draft the bounded Drift recovery contract: write boundary, restore/discard, board association, failure handling and carried Blocks/A-24 scope | ADR-0010 and App contracts; no recruitment dependency | App | 3 | Done |
+| C1-S1-T11 | PYB-006.1 | Review acceptance scenarios and size the safe increment including required tests; record approval or unresolved design questions | T10; review path | App + reviewer | 1 | Done |
+| C1-S1-T12 | PYB-009.1 | Inventory existing suites, hardware/operators, applicable gates and matrix cost; draft the next operator recipe | T01 and current tools/specs | QA + firmware | 2 | Done |
 | **C1-S1 total** | | | | | **22** | |
 
 Five baseline starts is a target, not the implied result of reserving six hours. If access or session duration prevents it, report the actual sample and replan. A completed findings record does not mark an unperformed installation or observation task Done. Missing store source mapping remains an owned limitation under the applicable gate.

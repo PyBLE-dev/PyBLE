@@ -2,11 +2,17 @@
 
 # Firmware v0.6.1 and v0.7.0 roadmap
 
-Status: **v0.6.1 APPROVED for implementation; v0.7.0 remains PROPOSED**
+Status: **v0.6.1 published on owner confirmation; v0.7.0 remains PROPOSED**
 
 Baseline: **qualified firmware v0.6.0**
 
-Last updated: **2026-09-03**
+Last reviewed: **2026-09-25**; the original implementation decision is dated 2026-09-03.
+
+Current publication is recorded in the [11 September evidence](../testing/firmware-v0.6.1-publication-2026-09-11.md).
+Issue #24 was closed as superseded on 13 September; its incomplete checklist
+was not marked passed. Publication on owner confirmation does not complete
+missing automated qualification. The [C1-S1 validation inventory](../developments/2026-q4-reliable-workflow/c1-s1/04_Validation_Inventory_and_Operator_Recipe.md)
+maps applicable gates for future work without waiving them.
 
 ## 1. Purpose and status
 
@@ -517,11 +523,12 @@ and focused issues [#24](https://github.com/PyBLE-dev/PyBLE/issues/24),
 retrospectively on 2026-09-03. This restores explicit ownership, acceptance
 criteria, and remaining-work tracking, but it does not retroactively satisfy
 the required ordering and must not be represented as doing so. Issues #25–#28
-record source/host completion; #24 remains open and exclusively owns fresh
-candidate-bound five-profile physical qualification and release admission.
-Firmware v0.6.1 therefore remains source-selected, unqualified, unpublished,
-and unavailable to installers until #24 closes. This deviation approves no
-v0.7.0 scope and creates no precedent for a future release.
+recorded source/host completion. At that 3 September decision, #24 remained
+open and owned fresh candidate-bound five-profile qualification; v0.6.1 was
+source-selected and unpublished. The subsequent owner-confirmed publication
+and superseded issue closure are recorded above, without converting missing
+automated results into passes. This deviation approves no v0.7.0 scope and
+creates no precedent for a future release.
 
 ## 10. Maintainer review checklist
 

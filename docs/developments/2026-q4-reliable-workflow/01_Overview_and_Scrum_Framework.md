@@ -9,14 +9,14 @@
 |---|---|
 | Package | PyBLE 2026 Q4 reliable workflow, Cycle 1 (`C1`) |
 | Prepared | 25 September 2026; Asia/Bangkok |
-| Strategy | [Implementation Plan, revision 1.2](../../planning/PyBLE_Implementation_Plan_and_Strategy_v1.0.md) |
+| Strategy | [Implementation Plan, revision 1.3](../../planning/PyBLE_Implementation_Plan_and_Strategy_v1.0.md) |
 | Repository baseline | `23ed764b0ef88dce9720c66fbd1c0655268860cf` |
 | Proposed cycle | 28 September–20 December 2026; six two-week Sprints |
-| Status | Proposed delivery package; no Sprint Planning, estimates, named assignments, implementation approval, or new physical results are implied |
+| Status | C1-S1 execution initiated on 25 September; repository deliverables prepared and physical/pilot work blocked. Later Sprints require replanning against new sizing; no staffed-team ceremony is inferred |
 | Primary audience | Tablet-owning makers, provisionally; confirm one reachable cohort before observation |
 | Authoritative contracts | [Contributor rules](../../../AGENTS.md), [App specification](../../specifications/App/specs.md), [App TDD](../../specifications/App/TDD.md), [PBLE/1](../../specifications/protocol.md), and applicable firmware/release specifications |
 
-This package derives execution views from the strategy. It does not replace normative specifications, expand hardware claims, create GitHub issues, or authorize store/website publication. The strategy file is currently a local document; include it with this package when proposing the documentation for version control.
+This package derives execution views from the strategy. It does not replace normative specifications, expand hardware claims, create GitHub issues, or authorize store/website publication. The strategy and original package were recorded together in planning baseline `d039db0`. The [C1-S1 execution record](c1-s1/00_Execution_Record.md) owns actual results and blockers.
 
 ## Navigation and ownership of information
 
@@ -27,11 +27,12 @@ This package derives execution views from the strategy. It does not replace norm
 | [03 — Milestones](03_Milestones.md) | Evidence-based decisions and admission criteria | New evidence or a milestone decision |
 | [04 — Sprint plan](04_Sprint_Plan.md) | Sprint Goal forecasts, calendar, and capacity | Sprint Planning or Sprint Review |
 | [05 — Product backlog and stories](05_Product_Backlog_and_Stories.md) | Ordered work, parent/child identities, acceptance criteria, and source traceability | Refinement or changed user evidence |
-| [06 — Sprint backlogs](06_Sprint_Backlogs.md) | Candidate tasks, local effort allowances, dependencies, and execution status | Developers select/adapt work during a Sprint |
+| [06 — Sprint backlogs](06_Sprint_Backlogs.md) | Task allowances, dependencies, C1-S1 execution status and later forecasts requiring replanning | Developers select/adapt work during a Sprint |
+| [C1-S1 — Execution and evidence](c1-s1/00_Execution_Record.md) | Actual channel checks, pilot kit, recovery design/sizing and validation inventory | New evidence, source review or a resolved blocker |
 
 ```mermaid
 flowchart LR
-    Strategy["Strategy revision 1.2"] --> Goal["One Product Goal"]
+    Strategy["Strategy revision 1.3"] --> Goal["One Product Goal"]
     Goal --> Roadmap["Outcome roadmap and milestones"]
     Roadmap --> Product["Ordered Product Backlog"]
     Product --> Planning["Sprint Planning"]
@@ -122,10 +123,10 @@ Unfinished items return to the Product Backlog for reordering and replanning. Do
 | Convention | Rule |
 |---|---|
 | `PYB-001` … `PYB-032` | Existing strategy planning parents; not GitHub issue numbers |
-| `PYB-006.1`, `PYB-006.2`, etc. | Derived child items in this package; acceptance is maintained in file 05 |
+| `PYB-006.1`, `PYB-006.2`, etc. | Derived child items in this package; acceptance is maintained in file 05; new residual `PYB-002.1` records the TestFlight metadata discrepancy |
 | `A-24` | Existing broader persistence story; a bounded child does not complete all of it |
 | `C1-S1` … `C1-S6` | This cycle's Sprints; distinct from historical App TDD Sprint labels |
-| `C1-S1-T01`, etc. | Proposed task rows; not new public contracts |
+| `C1-S1-T01`, etc. | Task identities with recorded early C1-S1 outcomes; later task rows remain forecasts, not new public contracts |
 | `M-01`, etc.; `SG0` … `SG6` | Delivery milestones versus strategy gates; neither replaces CI G0/G1 or C3 firmware gates |
 | Item/task status | Proposed → Selected at Planning → In progress → Review → Done; Blocked records a reason/owner; later forecasts remain Proposed |
 | Private versus public records | Contact/consent, device identifiers and raw logs remain private/ignored; publish only reviewed aggregate findings and redacted evidence |
@@ -136,7 +137,7 @@ When facts or priority change, update the canonical file above and its dependent
 
 | Source | Use and precedence |
 |---|---|
-| [Strategy revision 1.2](../../planning/PyBLE_Implementation_Plan_and_Strategy_v1.0.md) | Scope, targets, six-Sprint capacity, three outcomes, Ready program and conditional horizons |
+| [Strategy revision 1.3](../../planning/PyBLE_Implementation_Plan_and_Strategy_v1.0.md) | Scope, targets, six-Sprint capacity, three outcomes, Ready program and conditional horizons |
 | [Public roadmap](../../ROADMAP.md), [README](../../../README.md) | Current capability and distribution baseline |
 | [App specification](../../specifications/App/specs.md), [App TDD](../../specifications/App/TDD.md), [ADR-0010](../../decisions/0010-working-loop-in-memory-document.md) | Persistence contract and recorded implementation deviation; consult frozen working-loop scope |
 | [Firmware roadmap](../../planning/firmware-v0.6.1-v0.7.0-roadmap.md), [PBLE/1](../../specifications/protocol.md) | v0.7 proposals versus frozen wire behavior; old v0.6.1 publication/#24 wording is historical |

@@ -5,9 +5,9 @@
 
 | Control | Value |
 |---|---|
-| Status | All milestones Proposed; no milestone is completed by this document |
+| Status | M-01/SG0 assessed Blocked on 25 September; other milestones remain Proposed and forecast windows need replanning |
 | Planning date | 25 September 2026; dates use Asia/Bangkok |
-| Source | [Implementation strategy revision 1.2](../../planning/PyBLE_Implementation_Plan_and_Strategy_v1.0.md), especially §§4, 8–10, 14, and 19 |
+| Source | [Implementation strategy revision 1.3](../../planning/PyBLE_Implementation_Plan_and_Strategy_v1.0.md), especially §§4, 8–10, 14, and 19 |
 | Inspected baseline | `main` at `23ed764b0ef88dce9720c66fbd1c0655268860cf` |
 | Related documents | [Framework](01_Overview_and_Scrum_Framework.md), [roadmap](02_Product_Roadmap.md), [Sprint Plan](04_Sprint_Plan.md), [stories](05_Product_Backlog_and_Stories.md), [Sprint Backlogs](06_Sprint_Backlogs.md) |
 | Meaning | Milestones describe inspectable outcomes and decision evidence; they are not additional Scrum events or promised releases |
@@ -44,12 +44,14 @@ no role in this table implies committed staffing or independent review.
 
 | ID / status | Outcome and value | Forecast window / stories | Dependencies and evidence | Assessment / accountable contribution |
 |---|---|---|---|---|
-| M-01 — Proposed | Accepted baseline and bounded cycle scope make installation, pilot, and engineering decisions reproducible | C1-S1, 28 Sep–11 Oct; PYB-001/003/004, residual 002, sizing 006/009 | Dated channel/install/source mapping or explicit owned unknowns; one primary cohort/job; safe task/consent rules; initial observations or recruitment blocker; actual capacity; persistence and physical-matrix estimates | SG0: accept a bounded scope or record gaps; Product Owner with release, pilot, and Developers |
+| M-01 — Blocked (25 Sep) | Accepted baseline and bounded cycle scope make installation, pilot, and engineering decisions reproducible | C1-S1, 28 Sep–11 Oct; PYB-001/003/004, residual 002, sizing 006/009 | Dated channel/install/source mapping or explicit owned unknowns; one primary cohort/job; safe task/consent rules; initial observations or recruitment blocker; actual capacity; persistence and physical-matrix estimates | SG0: accept a bounded scope or record gaps; Product Owner with release, pilot, and Developers |
 | M-02 — Proposed | A usable, bounded local-draft recovery increment protects accepted user work after interruption | C1-S2–C1-S3, 12 Oct–8 Nov; selected PYB-006 scope, supporting 009/008, observed 005 only if selected | Accepted App specification/TDD and ADR-0010 change; text/Blocks scope; persistence boundary; relaunch, interrupted-write, and corrupt-state scenarios; no implicit board overwrite/run; relevant regression and physical evidence | Review against the selected story acceptance criteria and Definition of Done; Developers with a named review path |
 | M-03 — Proposed | Observed first-use and meaningful second-task evidence explains activation and its largest obstacle | C1-S4, 9–22 Nov; PYB-004/011 and justified 005/012 | Safe recorded pilot setup; at least 12 eligible primary-cohort task starts, all outcomes retained; successful unassisted timing; Task C attempts, prior workflow, assistance and reasons | SG2: assess provisional completion/timing targets and severe failures; pilot lead supplies evidence, Product Owner records next investment |
 | M-04 — Proposed | A frozen maintenance candidate is qualified for its declared release scope | Normally C1-S5, 23 Nov–6 Dec; PYB-008/009/013 and included fixes | Applicable exact-artifact matrix and normative gates pass; provenance/recovery/instructions; no unresolved release-blocking data-loss, unintended/cross-session write, or critical workflow regression within the accepted threat model | SG1: release or submission decision with required sign-off; release owner and QA/review path |
 | M-05 — Proposed | Users can obtain the selected qualified app build through a verified existing channel | C1-S5–C1-S6, 23 Nov–20 Dec; PYB-014 and residual 002 | M-04; distribution-owner access; separate submission, availability, installed build/provenance, and installation outcome records; current user-facing claims | Verified-channel milestone passes only for the stated evidence; store delays are recorded as blockers; release owner |
 | M-06 — Proposed | Useful-repeat and support evidence drives one explicit next-stage investment | C1-S6, 7–20 Dec; PYB-011 follow-up, cycle review; Ready inputs only if selected | Mature consented cohort accounting, useful Task C/return outcomes, task opportunity, prompting, missing responses, support burden, and status of candidate/channel evidence; retain blocked outcomes | SG3 assessment plus dated continue/narrow/pause-expansion decision; Product Owner with pilot and Developers |
+
+[C1-S1 evidence](c1-s1/00_Execution_Record.md) prepares the ledger, pilot protocol, recovery contract and cost model, but does not satisfy missing human ownership, confirmed capacity, device installations or participant observations. M-01/SG0 remains blocked. M-02's S2–S3 window is the original baseline; a sized S2–S4 option now requires explicit replanning, with downstream matrix/recruitment dates reviewed together.
 
 M-04 may occur in any Sprint once a maintenance candidate qualifies. M-03 and
 M-06 do not block it. M-06 can assess learning and choose a narrower next step

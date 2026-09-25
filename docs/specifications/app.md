@@ -1,6 +1,6 @@
 # PyBLE — App Architecture
 
-Status: **DRAFT** · Last updated: 2026-08-15
+Status: **DRAFT** · Last reviewed: 2026-09-25
 
 The PyBLE app is a Flutter, tablet-first IDE for iPad and Android. It connects
 to a compatible MicroPython board over BLE, speaks PBLE/1, and presents an
@@ -10,6 +10,14 @@ vendor or a fixed chip allowlist. ESP32, ESP32-S3, and ESP32-C3 are the initial
 firmware targets.
 
 > **Detailed app docs:** this page is the overview. The full requirements live in [`App/specs.md`](App/specs.md) and the technical design in [`App/TDD.md`](App/TDD.md) (Technical Design Document), both derived from [PRD §9](prd.md).
+
+**C1-S1 persistence status:** the current editor document remains volatile and
+`lib/data/` remains a placeholder. The specified
+[bounded current-text recovery contract](App/current-draft-recovery.md) and
+[ADR-0048](../decisions/0048-bounded-current-text-draft-recovery.md) define the
+next Drift increment, including a local recovery panel before connection.
+Implementation and physical acceptance remain pending; this does not complete
+full project management, saved boards, settings or Blocks recovery.
 
 ## 1. Layering
 
@@ -42,7 +50,7 @@ Strict rule: **UI widgets never import `lib/ble/`**, and only the `lib/pble/` cl
 | `lib/connect/` | Scan/connect UI, saved boards. |
 | `lib/github_import/` | Pull a folder of `.py` from a public GitHub repo → `Connection.putFile`. |
 | `lib/localization/` | `intl`/ARB strings (`en` first; parity enforced for added languages). |
-| `lib/data/` | Local persistence: projects, settings, saved boards (offline-first). |
+| `lib/data/` | Planned Drift persistence for projects, settings and saved boards; currently a placeholder. The bounded recovery contract is the first specified slice. |
 
 ## 3. The `Connection` API (the seam every widget binds to)
 
@@ -76,7 +84,7 @@ Widgets receive a `Connection` (or narrow callbacks derived from it). Tests inje
 1. **Scan** — `flutter_blue_plus` scan filtered to the PyBLE service UUID; show advertised `PyBLE-XXXX` names + RSSI.
 2. **Connect** — open GATT, subscribe to TX notify, request MTU 247, read INFO / send HELLO, show `DeviceInfo`, including its display-only board ID and PyBLE agent firmware version.
 3. **Use** — editor/console/files bind to the `Connection`.
-4. **Reconnect** — on link loss, auto-reattempt; in-flight file transfers resume via PBLE/1 §5. Saved boards reconnect by remembered identifier.
+4. **Reconnect — target architecture** — automatic reattempt and saved-board reconnection remain design targets. Current PBLE/1 transfer resumability does not prove automatic app reconnect or continuation; a later explicit PUT may use a firmware-provided resume offset. The [frozen working-loop record](App/TDD.md#116-working-loop-provider-contract-frozen) and current implementation govern what is actually available.
 
 The `DeviceInfo.chip` value is a port-defined technical identifier. The app
 renders unknown future values verbatim and continues from advertised PBLE/1

@@ -31,6 +31,16 @@ v0.7.0 remains non-normative and requires separate maintainer approval.
 
 ## Near term
 
+- Complete the [C1-S1 remaining evidence](developments/2026-q4-reliable-workflow/c1-s1/00_Execution_Record.md):
+  physical store installations, confirmed pilot ownership/setup and five real
+  baseline observations. The channel ledger, pilot kit, recovery design and
+  validation inventory are prepared; this does not complete the Sprint.
+- Implement the [bounded current-text recovery contract](specifications/App/current-draft-recovery.md)
+  after replanning against its 45–72 hour working estimate for engineering,
+  recipe, representative platform checks and follow-up. Current drafts remain
+  volatile; full A-24 and Blocks persistence remain separate scope.
+- Correct the [stale public TestFlight description](developments/2026-q4-reliable-workflow/c1-s1/05_TestFlight_Metadata_Correction.md)
+  through the distribution owner; replacement copy is prepared, not published.
 - Continue the app 0.2.0 beta train; source is currently `0.2.0+8`. The
   [Android publication review](testing/website/android-open-testing-2026-09-25.md)
   records live open-testing availability. The

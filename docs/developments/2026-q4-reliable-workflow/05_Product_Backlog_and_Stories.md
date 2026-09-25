@@ -6,10 +6,10 @@
 | Control | Value |
 |---|---|
 | Product Goal | Make the existing tablet workflow trustworthy enough for useful repeat tasks by the selected primary audience |
-| Source | [Implementation strategy revision 1.2](../../planning/PyBLE_Implementation_Plan_and_Strategy_v1.0.md), reviewed 25 September 2026 |
+| Source | [Implementation strategy revision 1.3](../../planning/PyBLE_Implementation_Plan_and_Strategy_v1.0.md), reviewed 25 September 2026 |
 | Cycle | Proposed 28 September–20 December 2026; Asia/Bangkok |
 | Baseline | `23ed764b0ef88dce9720c66fbd1c0655268860cf`; completed publication work is evidence, not a new commitment |
-| Status | Proposed ordered Product Backlog and refinement candidates; no new story is selected, approved, implemented, or Done by this document |
+| Status | C1-S1 execution recorded: PYB-001.1 and PYB-006.1 documentation scope Done; pilot/install stories blocked, PYB-009.1 partial; other work remains forecast |
 | Accountabilities | Product Owner orders the backlog; Developers size and select work in Sprint Planning; named people and capacity remain to be assigned |
 | Navigation | [Overview and Scrum](01_Overview_and_Scrum_Framework.md) · [Roadmap](02_Product_Roadmap.md) · [Milestones](03_Milestones.md) · [Sprint plan](04_Sprint_Plan.md) · [Sprint Backlogs](06_Sprint_Backlogs.md) |
 
@@ -23,7 +23,7 @@
 | Sprint identity | `C1-S1` through `C1-S6` name this cycle; App TDD references to historical S1–S7 remain unchanged |
 | Backlog order | The first-cycle order below is provisional; dependencies, evidence and the Product Goal guide refinement, rather than treating every P0 as simultaneous work |
 | Type | User stories express an end-user outcome; engineering, research, governance and release enablers identify the actual work without an artificial persona |
-| State and sizing | Every new leaf is `proposed`; named owner/reviewer and estimates are TBD. Forecast sprints are planning candidates. No story points or velocity are asserted |
+| State and sizing | Use the dated execution table for current states; future leaves remain proposed and named capacity is unconfirmed. The recovery/matrix estimates now require replanning. No story points or velocity are asserted |
 | Acceptance and Done | Story acceptance criteria supplement the shared Definition of Done; apply the source contract, repository gates and required physical evidence to the selected change |
 | Research outcome | A completed, reviewed observation can find that a target failed. That does not pass the corresponding milestone or turn missing participants into completed observations |
 | Scope change | Split an oversized item into a coherent, safe increment and replan before implementation; preserve carried requirements and record any approved deviation |
@@ -32,12 +32,12 @@
 
 | Order | Parent / source priority | Intended outcome | Proposed slices | Forecast / dependency | Current state |
 |---|---|---|---|---|---|
-| 1 | PYB-001 / P0 | Know what users can install and which artifacts they receive | 001.1, 001.2 | C1-S1; existing publication review | Proposed; physical installation and provenance remain unverified |
-| — | PYB-002 / P0 accuracy | Keep maintained availability claims correct | Residual discrepancy task only if discovered | PR #33 already corrected Android copy; new discrepancies follow 001 | Original correction complete; no new residual task asserted |
-| 2 | PYB-003 / P0 | Conduct a safe, consented pilot with bounded data collection | 003.1 | C1-S1; 001 informs setup | Proposed |
-| 3 | PYB-004 / P0 | Observe one reachable audience completing reproducible, useful tasks | 004.1, 004.2 | C1-S1; 001, 003 | Proposed |
-| 4 | PYB-006 / P0 | Recover the current text draft after process restart | 006.1, 006.2 | Size in C1-S1; bounded delivery C1-S2–S3; known defect does not wait for recruitment | Proposed; contract and sizing required |
-| 5 | PYB-009 / P0 | Make existing validation reproducible by an operator | 009.1; optional 009.2 | Inventory C1-S1, recipe C1-S2; reproduction only with assigned capacity | Proposed |
+| 1 | PYB-001 / P0 | Know what users can install and which artifacts they receive | 001.1, 001.2 | C1-S1; existing publication review | 001.1 Done; 001.2 Blocked; physical installation/provenance unverified |
+| — | PYB-002 / P0 accuracy | Keep maintained availability claims correct | 002.1: public TestFlight description | PR #33 Android correction complete; residual found during 001 | Correction packet prepared; actual store update/public verification pending |
+| 2 | PYB-003 / P0 | Conduct a safe, consented pilot with bounded data collection | 003.1 | C1-S1; 001 informs setup | Protocol prepared; human collection decision blocked |
+| 3 | PYB-004 / P0 | Observe one reachable audience completing reproducible, useful tasks | 004.1, 004.2 | C1-S1; 001, 003 | Task kit prepared; cohort/setup and observations blocked |
+| 4 | PYB-006 / P0 | Recover the current text draft after process restart | 006.1, 006.2 | Sized in C1-S1; S2–S4 working option requires replanning; known defect does not wait for recruitment | 006.1 Done; 006.2 implementation pending |
+| 5 | PYB-009 / P0 | Make existing validation reproducible by an operator | 009.1; optional 009.2 | Inventory C1-S1, scoped recipe C1-S2; reproduction only with assigned capacity | T12 Done; 009.1 remains partial |
 | 6 | PYB-005 / P0 if observed | Remove a demonstrated first-use blocker | 005.1 | C1-S2 candidate; actual 004 findings | Conditional; no defect invented |
 | 7 | PYB-008 / P0 for claims | Establish the exact candidate's applicable compatibility evidence | 008.1, 008.2 | Representative checks C1-S2; staged matrix C1-S3–S5; 001, 009.1, artifacts | Proposed; hardware and mandatory workload must be costed |
 | 8 | PYB-011 / P0 usability | Understand useful first and repeat tasks in the primary cohort | 011.1, 011.2 | Main activation collection C1-S3–S4; rolling follow-up from the first consented activation through C1-S6; 003, 004, recorded tested setup | Proposed; recruitment and follow-up are not assumed |
@@ -51,15 +51,30 @@
 
 The completed portion of PYB-002 is [PR #33](https://github.com/PyBLE-dev/PyBLE/pull/33). A fresh mismatch needs its own accepted scope and evidence; do not restart the original correction or count it as this cycle's delivery.
 
+## C1-S1 execution status — 25 September
+
+| Item | Actual state | Evidence / next action |
+|---|---|---|
+| PYB-001.1 | Done for the ledger scope | [Ledger](c1-s1/01_Channel_and_Artifact_Ledger.md); unknown fields have responsible owners/actions |
+| PYB-001.2 | Blocked | No Android device; iPad app query locked; enrollment/install/build mapping remain unverified |
+| PYB-002.1 | Prepared; store correction pending | New TestFlight description discrepancy; no claim of external mutation |
+| PYB-003.1 / PYB-004.1 | Blocked; protocol/task cards prepared | [Pilot kit](c1-s1/02_Pilot_Protocol_and_Observation_Kit.md); human owner, cohort/setup and collection decision missing |
+| PYB-004.2 / PYB-011.2 | No observations collected | Five baseline starts and all later follow-up remain outstanding |
+| PYB-006.1 | Done for design/review/sizing | [Contract and review](c1-s1/03_Recovery_Design_and_Sizing.md); PYB-006.2 implementation remains pending; revised allocation needed |
+| PYB-009.1 | Partial | T12 [inventory/cost model](c1-s1/04_Validation_Inventory_and_Operator_Recipe.md) complete; S2 scoped procedure and subsequent operator results still pending |
+
+The ordered table above retains original priorities and forecast labels. It is not evidence that all proposed dates remain feasible after the recovery estimate; use the [reforecast requirements](04_Sprint_Plan.md#c1-s1-findings-and-required-reforecast) before selecting future work.
+
 ## 3. Detailed first-cycle stories and enablers
 
-All acceptance criteria below describe future verification. They do not report tests, recruitment, approvals or releases already performed. Role names identify needed skills; assignment and sizing remain TBD.
+Acceptance criteria below remain the completion authority. The [C1-S1 execution record](c1-s1/00_Execution_Record.md) reports actual outcomes; its evidence does not turn pending installation, recruitment or runtime work into Done. Role names identify needed skills; actual future assignments remain to be confirmed.
 
 ### 3.1 Distribution and pilot preparation
 
 | ID / type / role | Outcome | Testable acceptance criteria | Dependencies and verification |
 |---|---|---|---|
 | PYB-001.1 / Release enabler / Release | Establish a reviewed channel and artifact ledger | Separate publication, installation, provenance and qualification fields; record evidence/date/platform/channel/build; each unknown has an owner and next action; distinguish uploaded AAB/IPA identity from installed or re-signed artifacts | Existing dated publication review; reviewer checks ledger against first-party evidence. A completed ledger does not make an unknown installation pass |
+| PYB-002.1 / Publication enabler / Distribution owner | Correct the stale app-level public TestFlight description | Verify the actually offered build supports the claims; apply accurate capability-defined copy through the owner-controlled channel; retain actual metadata update and dated public verification; do not relabel historical build notes or imply untested compatibility | Discovered in 001.1; [prepared correction](c1-s1/05_TestFlight_Metadata_Correction.md). Packet prepared only; store operation needs access and explicit capacity selection |
 | PYB-001.2 / User story / Release + QA | As a tablet-owning maker, I can follow the existing channel's installation path so I can start using PyBLE | Perform enrollment/install on eligible physical Android and iPad devices for the declared scope; record served version/build, observed restrictions and installation outcome; source mapping is evidenced or explicitly unresolved; instructions reproduce observed steps | 001.1 and channel/device access; dated physical installation records. Missing access or a failed install remains blocked/failed, not a completed successful installation |
 | PYB-003.1 / Governance enabler / Lead + QA | Approve a bounded pilot that protects participants and their data | Identify trusted setting, harmless loads and wrong-board containment; explain STOP limitations and lack of authenticated ownership; approve consent, assistance/safety rules, contact separation and deletion policy; review a manual support template excluding sensitive content by default | Recorded 001 setup; named pilot decision-maker signs the scoped decision before collection. No background analytics or automatic source/console upload |
 | PYB-004.1 / Research enabler / Pilot lead | Define one reachable cohort and tasks that reveal product value | Name primary audience, recruitment owner, reference setup and previous-workflow questions; separate Tasks A/B/C; fix eligibility, written guidance, assistance, timeout and exclusions prospectively; define follow-up linkage, prompting and opportunity-to-use questions | 001 and 003.1; reviewed task/observation protocol. Instructor cohort may replace the maker default by a recorded prospective choice |

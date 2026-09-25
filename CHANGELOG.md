@@ -6,8 +6,9 @@ are released independently from this monorepo.
 ## Unreleased
 
 These app, website, and repository-source changes do not designate a new app
-or firmware release. The qualified firmware release remains v0.6.0, built from
-its annotated tag rather than from the newer branch tip.
+or firmware release. Firmware v0.6.1 is published on the owner's confirmation;
+incomplete automated evidence remains pending. The qualified v0.6.0 release
+remains a separate historical baseline built from its annotated tag.
 
 The current compatible app feature set now targets `0.2.0`; build `5` was
 handed off through Transporter for TestFlight. This candidate identity improves
@@ -81,6 +82,17 @@ and submission packet do not claim Play submission, approval, or rollout.
   Vitest 4.1.12, with patched Sharp, Undici, source-map-js and supporting
   dependencies. Refreshed the reviewed license notices and dependency
   regression assertions while retaining the high/critical audit gate.
+- Added the reviewed Cycle 1 roadmap, milestones, Scrum working agreement,
+  stories and Sprint Backlogs, plus C1-S1 execution evidence and operational
+  pilot/validation procedures. Physical installation and participant work
+  remain blocked; no pilot results or new release are claimed.
+- Specified bounded Drift current-text recovery, local restore/discard,
+  failure handling and document/session guards in ADR-0048 and the App
+  contracts. Implementation remains pending; sizing requires revising the
+  original S2 forecast.
+- Verified live Android open-testing wording and prepared correction of the
+  older public TestFlight description. Store-installed build identities remain
+  unverified and the TestFlight metadata change remains pending.
 - Prepared Google Play open-testing listing text, reviewer hardware setup,
   tester instructions, data-use assessment, and reproducible store artwork
   with authentic screenshot provenance. Store availability remains a separate

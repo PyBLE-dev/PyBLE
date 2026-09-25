@@ -28,3 +28,13 @@ The Signal landscape shell renders a fixed three-pane IDE frame — **Files side
 - The change is confined to the shell + providers; the `Connection` seam (D1/D2), the import boundary (no UI package imports `lib/ble`, CON-8), Riverpod (ADR-0007), and every §1A.3 rejection are unchanged.
 
 Unchanged rejection list, seam, and layering as in [ADR-0009](0009-runtime-connection-manager.md)/[ADR-0010](0010-working-loop-in-memory-document.md).
+
+## Follow-up — 25 September 2026
+
+[ADR-0048](0048-bounded-current-text-draft-recovery.md) and the
+[bounded recovery contract](../specifications/App/current-draft-recovery.md)
+specify a narrow successor exception: a local recovery preview/Restore/Discard
+panel must be reachable without a board, permission prompt or network access.
+The normal IDE remains connection-gated; this is not a full offline IDE or an
+authorization to restore board-write authority. Implementation is pending, so
+the current shell behavior above remains the recorded runtime baseline.
