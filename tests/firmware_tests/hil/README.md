@@ -8,6 +8,13 @@ firmware-test-author**; none of this ships in the firmware image.
 A milestone gate is green **only on a real-hardware HIL demo**, not on merged
 code (PRD §1B.7). These drivers are that demo, made repeatable.
 
+The [C1-S1 operator inventory](../../../docs/developments/2026-q4-reliable-workflow/c1-s1/04_Validation_Inventory_and_Operator_Recipe.md)
+maps these tools to current app/profile rows, initial cost and missing access.
+The [v0.6.1 owner-confirmed publication](../../../docs/testing/firmware-v0.6.1-publication-2026-09-11.md)
+is a separate dated distribution outcome; its incomplete automated HIL remains
+unchanged. Release qualification requirements below still govern a fresh
+automated-qualified claim.
+
 Every valid outbound `CMD`, including no-response `FILE_PUT_DATA`, uses a
 request ID in 1–255. Transfer data and controls share a wrapping allocator;
 each Go-Back-N resend obtains another valid ID without waiting for a data

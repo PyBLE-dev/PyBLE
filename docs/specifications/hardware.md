@@ -58,9 +58,13 @@ different flash size or Quad/no PSRAM, are not covered by
 Matching the N16R8 memory tuple also does not imply that an onboard display or
 other peripheral exists. The Waveshare row is separate even though ESP Web
 Tools reports the same family for both S3 images and cannot distinguish them.
-All five qualified v0.6.0 profiles are active. Their source-selected v0.6.1
-successors remain unavailable while fresh exact-byte qualification is pending;
-owning or building a target is not a substitute for candidate-bound HIL. The
+All five qualified v0.6.0 profiles remain the historical automated-qualified
+baseline. As recorded in the
+[11 September 2026 publication report](../testing/firmware-v0.6.1-publication-2026-09-11.md),
+all five v0.6.1 profiles are publicly available through the explicitly
+owner-confirmed release mode. Their incomplete automated HIL evidence remains
+unchanged; availability does not establish a fresh automated-qualified pass.
+Owning or building a target is not a substitute for candidate-bound HIL. The
 ESP32-C3-MINI-1-N4 v0.4/4 MiB/no-PSRAM module remains the selected physical
 engineering reference for that generic profile. Its gates passed for v0.6.0
 and must be rerun for v0.6.1 under
@@ -76,7 +80,9 @@ not qualify v0.6.0. The atomic five-profile v0.6.0 release selected by ADR-0033
 generated and passed its schema-3 resource policy and V5 HIL evidence for every
 row. Pre-split or earlier-candidate evidence did not qualify it and cannot
 qualify v0.6.1. C3-G0…C3-G6 and Pico GP2 remain mandatory for the fresh v0.6.1
-candidate; either pending or failed profile blocks that entire increment.
+candidate; either pending or failed profile blocks standard automated-qualified
+admission of that entire increment. The dated owner-confirmed publication is
+not a waiver for a future candidate or a PyBLE Ready qualification claim.
 
 These are **provisioning image profiles**, not board-routing profiles. They
 exist solely to keep destructive flash layouts honest. They do not define GPIO

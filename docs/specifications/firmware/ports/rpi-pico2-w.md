@@ -2,6 +2,14 @@
 
 Status: **P1–P9 FROZEN (v0.6.1 hardening amended 2026-09-02)**; P10 gates and P11 open items are living, and every new v0.6.1 result remains **PENDING**. Derived per [firmware/specs.md §1.1](../specs.md); [ADR-0030](../../../decisions/0030-pico2w-portable-python-agent-first.md) records the portable-Python-first deviation, while [ADR-0033](../../../decisions/0033-qualify-v060-as-five-profile-heterogeneous-release.md) defines only the historical heterogeneous v0.6.0 release admission. Cited upstream facts refer to the pinned MicroPython v1.28.0 submodule.
 
+**Publication clarification — 25 September 2026:** v0.6.1 is publicly available
+under the dated [owner-confirmed publication](../../../testing/firmware-v0.6.1-publication-2026-09-11.md).
+Its incomplete automated qualification records remain unchanged. References
+below to pending qualification or a qualified selector concern standard
+automated-qualified admission, not the existence of that owner-confirmed
+distribution. v0.6.0 remains the historical qualified baseline; this note
+supplies no new GP2 or physical result and changes no gate.
+
 ## P1. Identity & caps (FROZEN)
 
 - `chip` token: **`rpi-pico2-w`** (protocol.md §7 open identifier; ADR-0021 — no protocol amendment needed, additive under §9).

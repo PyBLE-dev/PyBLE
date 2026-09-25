@@ -22,6 +22,10 @@ made that every old idea was copied into `corpus.json`.
 
 Host success is not physical qualification. v0.6.1 still requires fresh
 exact-byte HIL on all five profiles, including the iPadOS and Android rows,
-before release admission or publication.
+before standard automated-qualified release admission or publication. Its
+separate [owner-confirmed publication](../../../../docs/testing/firmware-v0.6.1-publication-2026-09-11.md)
+preserves incomplete automated records and supplies no substitute pass.
+The [C1-S1 operator inventory](../../../../docs/developments/2026-q4-reliable-workflow/c1-s1/04_Validation_Inventory_and_Operator_Recipe.md)
+maps host evidence to the physical work and access still required.
 
 <!-- SPDX-License-Identifier: MIT -->
