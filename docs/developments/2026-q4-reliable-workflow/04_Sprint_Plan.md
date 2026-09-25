@@ -5,9 +5,9 @@
 
 | Field | Value |
 |---|---|
-| Status | Proposed; goals and selection are confirmed at each Sprint Planning |
+| Status | C1-S1 early execution recorded; original S2–S6 forecasts are not ready for selection after the new recovery/matrix estimates |
 | Cycle | `C1`, 28 September–20 December 2026, Asia/Bangkok |
-| Basis | [Strategy revision 1.2, §8](../../planning/PyBLE_Implementation_Plan_and_Strategy_v1.0.md#8-twelve-week-implementation-schedule) |
+| Basis | [Strategy revision 1.3, §8](../../planning/PyBLE_Implementation_Plan_and_Strategy_v1.0.md#8-twelve-week-implementation-schedule) |
 | Product Goal and quality rules | [Working agreement](01_Overview_and_Scrum_Framework.md) |
 | Acceptance criteria | [Product backlog and stories](05_Product_Backlog_and_Stories.md) |
 | Task-level proposal | [Sprint backlogs](06_Sprint_Backlogs.md) |
@@ -16,13 +16,26 @@
 
 | Planning element | Treatment |
 |---|---|
-| `C1-S1` | Candidate selection for the next Sprint; not a committed Sprint Backlog before Planning |
+| `C1-S1` | Early repository execution recorded; remaining device/pilot tasks blocked. Actual staffing and the original formal timebox still require confirmation |
 | `C1-S2` … `C1-S6` | Forecasts revised using preceding results, capacity and learning |
 | Sprint Goal | One coherent outcome confirmed by the Scrum Team at Planning |
 | Scope and task details | Developers select feasible items and adapt their plan with the Product Owner as learning changes scope |
 | Milestones | Inspectable evidence/decision points; not mandatory release ceremonies or waterfall phases |
 | Estimates | Task hours are initial capacity allowances, not measured velocity, story points, or promises |
 | Missing people/devices/access | Explicit blockers; do not invent availability or lower the Definition of Done |
+
+## C1-S1 findings and required reforecast
+
+[Execution evidence](c1-s1/00_Execution_Record.md) records four completed repository tasks and eight blocked installation/pilot tasks. The original calendar is retained; no completed Sprint or SG0 approval is claimed.
+
+| New sizing input | Planning consequence |
+|---|---|
+| Recovery engineering 38–63h; recipe, representative physical work and one follow-up allowance bring the original two-week scope to 45–72h | Original S2 allowance is insufficient; contract and all required failure/session protections remain intact |
+| [Working allocation option](c1-s1/03_Recovery_Design_and_Sizing.md): S2 26h, S3 22h, S4 12h, totaling 60h | Fits within the three 26h ceilings only by replacing original selections; includes 50h engineering, 2h recipe, 5h physical and 3h rolling follow-up |
+| [App matrix](c1-s1/04_Validation_Inventory_and_Operator_Recipe.md): 13.5–26 operator h; fresh firmware qualification 30–59h excluding builds/access/repair | Select the applicable scope; do not treat app-only work as a new firmware release or count representative recovery runs twice |
+| Missing human capacity, pilot owner and physical access | Confirm before selecting the revised scope; maintain rolling follow-up only for actual consenting activations |
+
+The remaining 18h under S2–S4's combined 78h ceiling cannot silently absorb all displaced matrix, activation and repair tasks. Reorder those tasks, review the November recruitment window, and reforecast S5/S6 if required. The tables below preserve the original allowance/calendar for comparison; they are **not** an adopted revised forecast. A tested foundation is not the completed recovery user story. All selected increments still need their applicable Definition of Done.
 
 ## Capacity model
 
@@ -53,7 +66,7 @@ The reserve covers events/refinement, support, additional qualification and unce
 
 These are whole-product goals, not separate analysis, coding, testing and release departments. Every delivered increment includes its applicable design, implementation, verification and documentation. S3/S5 qualification work does not postpone tests needed to make earlier increments Done.
 
-The full safe recovery slice may exceed the initial S2 allowance. PYB-006.1 must expose that before selection. Replan a smaller independently safe increment or later delivery; never label happy-path-only persistence Done or count the whole A-24 umbrella as complete.
+The inspected safe recovery slice exceeds the original S2 allowance. PYB-006.1 now supplies the contract and estimate for replanning before selection. Replan a smaller independently safe increment or later delivery; never label happy-path-only persistence Done or count the whole A-24 umbrella as complete.
 
 ## Calendar
 

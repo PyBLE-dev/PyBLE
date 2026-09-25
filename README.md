@@ -311,6 +311,8 @@ publish new firmware or replace the live site.
 - [App contract](docs/specifications/app.md)
 - [Hardware and compatibility](docs/specifications/hardware.md)
 - [Public roadmap](docs/ROADMAP.md)
+- [Cycle 1 delivery plan](docs/developments/2026-q4-reliable-workflow/01_Overview_and_Scrum_Framework.md)
+- [C1-S1 execution and remaining evidence](docs/developments/2026-q4-reliable-workflow/c1-s1/00_Execution_Record.md)
 - [Architecture decisions](docs/decisions/README.md)
 - [Validation evidence index](docs/validation/README.md)
 - [Security policy](SECURITY.md)
