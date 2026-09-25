@@ -9,9 +9,11 @@
 | Backlog | PYB-002.1, newly identified residual copy discrepancy; the earlier Android correction remains complete |
 | State | Replacement copy prepared; App Store Connect change and public verification pending |
 | Action owner | Project maintainer / App Store Connect owner; store access not used in this execution |
-| Evidence | [Channel ledger](01_Channel_and_Artifact_Ledger.md), public TestFlight response and retained body hash |
+| Evidence | [Channel ledger](01_Channel_and_Artifact_Ledger.md), public TestFlight response and retained body hash; [physical iPad verification](07_iPad_Channel_Verification.md) |
 
 The live public invitation's description still presents the older ESP-family/agent-0.4.0 scope. A capability-defined app description should explain how to select the correct tested setup without implying that every current board/profile works with an unidentified TestFlight build. The historical [build-5 handoff](../../../testing/testflight/0.2.0-build-5.md) remains unchanged.
+
+The later device retry establishes that the observed native TestFlight offer and installed beta are `0.2.0 (6)`, with a successful launch and TestFlight signing origin. Its source/archive mapping remains unknown. Installed metadata reports `MinimumOSVersion = 18.0` while the build notes describe an iOS/iPadOS 15 rebuild; reconcile that difference with archive and store eligibility before publishing an older-OS support claim. This discovery does not change the public description or the historical build-5 handoff.
 
 ## Prepared Beta App Description
 
@@ -31,7 +33,8 @@ PyBLE is MIT-licensed and developed in public at https://github.com/PyBLE-dev/Py
 
 | Action | Required evidence / boundary |
 |---|---|
-| Identify the offered TestFlight build | Record actual version/build and source mapping or unknowns before changing build-specific compatibility or test instructions |
+| Identify the offered TestFlight build | Observed build is `0.2.0 (6)` on 25 September; retain unknown archive/source mapping and recheck the offer before changing build-specific compatibility or test instructions |
+| Reconcile minimum OS | Check installed variant metadata (18), build notes (15), archive and actual store eligibility; avoid promising support on an untested older OS |
 | Check the app-level description | Confirm the offered build supports the described core features; adjust a claim if its actual artifact differs |
 | Apply the metadata through App Store Connect | Record the actual field, locale, saved/submitted state and date; avoid touching unrelated listing fields or version history |
 | Keep build-specific notes separate | Use notes tied to the selected artifact; do not paste the old build-5 notes into a different build or assert untested five-profile compatibility |

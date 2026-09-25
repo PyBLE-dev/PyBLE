@@ -9,7 +9,7 @@
 | Inspection date / source | 25 September 2026; `d039db09779ed45124874721f88b2e0931664743` before this documentation change |
 | Worktree | Branch `work/c1-s1-qualification`; isolated from the app/research worktrees |
 | Result | Existing tools, normative counts, missing access, operator procedure and initial cost range inventoried; 110 focused host tests passed |
-| Physical result | No board, app installation, BLE session, flash operation or physical qualification performed for this task |
+| Physical result | No board, BLE session, flash operation or physical qualification performed; separate device retry verifies existing channel installations and launch without reinstalling |
 | Review boundary | Documentary source/command checks are complete; named physical operator, reviewed candidate and actual timed rehearsal remain required before execution |
 | Related evidence | [Execution record](00_Execution_Record.md), [channel/artifact ledger](01_Channel_and_Artifact_Ledger.md), [pilot procedure](02_Pilot_Protocol_and_Observation_Kit.md), [recovery design](03_Recovery_Design_and_Sizing.md) |
 
@@ -74,13 +74,13 @@ Unless a row names another directory, commands run from the repository root in a
 
 ## 3. Physical inventory and ten app rows
 
-Historical release evidence establishes which exact profiles exist, not whether the required bench hardware is presently available. No physical board inventory was performed in this task. The root session's read-only device discovery on 25 September found no ADB device; a paired iPad16,10 reported iPadOS 26.6.2/build 23G90, but app inspection was blocked because the device had not been unlocked recently. Host discovery found no `/dev/cu.usbmodem*`, `/dev/cu.usbserial*`, `/dev/cu.SLAB*` or `/dev/cu.wch*` endpoint; that does not exclude separately powered BLE boards. Pairing is not an app-install or HIL pass.
+Historical release evidence establishes which exact profiles exist, not whether the required bench hardware is presently available. No physical board inventory was performed in this task. The initial 25 September discovery found no ADB device and the paired iPad's app query was denied while locked. The later user-supplied device retry supersedes those access gaps: [Lenovo TB-J616X / Android 12](06_Android_Channel_Verification.md) has verified Play `0.2.0 (8)` and [iPad16,10 / iPadOS 26.6.2](07_iPad_Channel_Verification.md) has verified TestFlight `0.2.0 (6)`; both launch. These checks do not select a firmware candidate or execute BLE scenarios. Host discovery found no `/dev/cu.usbmodem*`, `/dev/cu.usbserial*`, `/dev/cu.SLAB*` or `/dev/cu.wch*` endpoint; that does not exclude separately powered BLE boards. Pairing is not an app-install or HIL pass.
 
 | Resource | Current execution state | Required owner action before a physical batch |
 |---|---|---|
 | Five exact boards, revisions/memory/module markings | Historical profiles recorded; current possession, condition and firmware identity unverified | Physical operator assigned at Planning checks and privately records each exact unit |
-| Android tablet / Play access | No device in current ADB discovery; eligible account/enrollment and installed build unverified | Device/channel owner supplies an eligible unlocked tablet and records installation evidence; no enrollment or account access assumed |
-| iPad / TestFlight access | Paired device found; locked app query blocked | Device/channel owner unlocks and confirms actual TestFlight install/build; pairing alone is insufficient |
+| Android tablet / Play access | Available during retry; existing beta membership, Play installation `0.2.0 (8)` and launch verified | Reconfirm availability for the selected candidate; retain Android payload mapping and delivered minimum-SDK limitations |
+| iPad / TestFlight access | Available during retry; TestFlight-origin `0.2.0 (6)` and launch verified | Reconfirm availability for the selected candidate; retain unknown source mapping and delivered minimum-OS discrepancy |
 | USB data cables, reset adapters, power isolation, known backups | Not inventoried; serial endpoint discovery alone would not prove exact-board identity | Physical operator checks wiring, reliable power/data path and recoverability before operations |
 | Disposable workspace media / spare boards | Availability and erase authority unconfirmed | Owner supplies an independently verified backup and explicitly disposable target for each required acquisition |
 | Physical operator / independent reviewer | No named assignment or confirmed availability | Assign actual people/time; an assistant-authored recipe does not supply physical sign-off |
@@ -90,16 +90,16 @@ All ten rows below are **not run for C1-S1**. An unchanged historical pass must 
 
 | Row | Exact provisioning profile | Platform | Required profile distinction | Current blocker |
 |---|---|---|---|---|
-| Q01 | `esp32-4mb` | iPadOS | Classic ESP32, 4 MiB flash; PBLE chip `esp32` | Exact board/candidate/operator unassigned; app query locked |
-| Q02 | `esp32-4mb` | Android | Same declared firmware bytes as Q01 | Exact board/candidate/operator and tablet/install evidence unavailable |
-| Q03 | `esp32-s3-n16r8` | iPadOS | Lean S3, 16 MiB flash / 8 MiB Octal PSRAM; PBLE chip `esp32-s3` | Exact board/candidate/operator unassigned; app query locked |
-| Q04 | `esp32-s3-n16r8` | Android | Same declared firmware bytes as Q03; no bundled TFT-runtime claim | Exact board/candidate/operator and tablet/install evidence unavailable |
-| Q05 | `waveshare-esp32-s3-lcd-147b` | iPadOS | Exact B board, 16 MiB / 8 MiB; distinct image despite PBLE chip `esp32-s3` | Exact board/candidate/operator unassigned; app query locked |
-| Q06 | `waveshare-esp32-s3-lcd-147b` | Android | Same declared firmware bytes as Q05; exact-board display/splash gates separate | Exact board/candidate/operator and tablet/install evidence unavailable |
-| Q07 | `esp32-c3-4mb` | iPadOS | C3 revision v0.3 or newer, 4 MiB flash; C3-G0…C3-G6 required for fresh firmware qualification | Exact board/candidate/operator unassigned; app query locked |
-| Q08 | `esp32-c3-4mb` | Android | Same declared firmware bytes as Q07; separate C3-G5 real app run | Exact board/candidate/operator and tablet/install evidence unavailable |
-| Q09 | `rpi-pico2-w` | iPadOS | Exact Pico 2 W; bound UF2/raw BIN; RP2 resource facts and GP2 | Exact board/candidate/operator unassigned; app query locked |
-| Q10 | `rpi-pico2-w` | Android | Same declared firmware bytes as Q09; separate physical Android workflow | Exact board/candidate/operator and tablet/install evidence unavailable |
+| Q01 | `esp32-4mb` | iPadOS | Classic ESP32, 4 MiB flash; PBLE chip `esp32` | Exact board/candidate/operator unassigned; channel installation now verified |
+| Q02 | `esp32-4mb` | Android | Same declared firmware bytes as Q01 | Exact board/candidate/operator unassigned; channel installation now verified |
+| Q03 | `esp32-s3-n16r8` | iPadOS | Lean S3, 16 MiB flash / 8 MiB Octal PSRAM; PBLE chip `esp32-s3` | Exact board/candidate/operator unassigned; channel installation now verified |
+| Q04 | `esp32-s3-n16r8` | Android | Same declared firmware bytes as Q03; no bundled TFT-runtime claim | Exact board/candidate/operator unassigned; channel installation now verified |
+| Q05 | `waveshare-esp32-s3-lcd-147b` | iPadOS | Exact B board, 16 MiB / 8 MiB; distinct image despite PBLE chip `esp32-s3` | Exact board/candidate/operator unassigned; channel installation now verified |
+| Q06 | `waveshare-esp32-s3-lcd-147b` | Android | Same declared firmware bytes as Q05; exact-board display/splash gates separate | Exact board/candidate/operator unassigned; channel installation now verified |
+| Q07 | `esp32-c3-4mb` | iPadOS | C3 revision v0.3 or newer, 4 MiB flash; C3-G0…C3-G6 required for fresh firmware qualification | Exact board/candidate/operator unassigned; channel installation now verified |
+| Q08 | `esp32-c3-4mb` | Android | Same declared firmware bytes as Q07; separate C3-G5 real app run | Exact board/candidate/operator unassigned; channel installation now verified |
+| Q09 | `rpi-pico2-w` | iPadOS | Exact Pico 2 W; bound UF2/raw BIN; RP2 resource facts and GP2 | Exact board/candidate/operator unassigned; channel installation now verified |
+| Q10 | `rpi-pico2-w` | Android | Same declared firmware bytes as Q09; separate physical Android workflow | Exact board/candidate/operator unassigned; channel installation now verified |
 
 Every selected row covers the applicable edit/save/run/stdout/STOP/file-readback/disconnect/reconnect workflow plus the increment's affected scenarios. C3-G5 expressly requires both tight-loop and print-flood STOP through the real UI, and GP2 includes both physical platforms. Use [C3 gates](../../../specifications/firmware/ports/esp32-c3-4mb.md), [Pico gates](../../../specifications/firmware/ports/rpi-pico2-w.md), and [Waveshare exact-board requirements](../../../specifications/hardware.md#12-waveshare-esp32-s3-lcd-147b-qualification-contract) without replacing them with this summary.
 
@@ -210,7 +210,7 @@ The full firmware suite, app suite, cross-builds and hardware tests were not run
 | Remaining action | Owner assignment / next checkpoint |
 |---|---|
 | Confirm exact boards, safe fixtures, backups, candidate and physical operator | Product Owner/Developers name the actual operator at Planning; until then Q01–Q10 remain not run |
-| Unlock iPad; provide eligible Android tablet and current install evidence | Device/channel owner; reconcile with the channel ledger before any physical app batch |
+| Reconfirm tablet availability and candidate identity for the selected physical batch | Device access and current channel installation checks are complete for this retry; device/channel owner rechecks when the candidate or session changes |
 | Bind executable recovery cases and revise estimate from the accepted contract | App + QA during C1-S2-T01; proposed current-draft behavior has no physical result yet |
 | Time the first representative pair; allocate remaining rows and reruns | QA/Developers before C1-S3 scope selection |
 | Independently review and reproduce the recipe if PYB-009.2 is selected | Named second operator with separately allocated time; assistance remains visible and triggers an affected-step rerun |
