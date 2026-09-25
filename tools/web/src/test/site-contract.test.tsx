@@ -10,6 +10,7 @@ import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import AppPage, { metadata as appMetadata } from "@/app/app/page";
+import SetupPage from "@/app/learn/setup/page";
 import FlashPage, { metadata as flashMetadata } from "@/app/flash/page";
 import { metadata as rootMetadata } from "@/app/layout";
 import HomePage, { metadata as homeMetadata } from "@/app/page";
@@ -135,6 +136,32 @@ function jpegDimensions(bytes: Buffer): { width: number; height: number } {
 }
 
 describe("public-site contract", () => {
+  it.each([
+    ["home", HomePage],
+    ["app", AppPage],
+    ["setup", SetupPage],
+  ])(
+    "keeps %s installation copy consistent with public Android open testing",
+    (_name, Page) => {
+      const { container } = render(<Page />);
+      expect(container).toHaveTextContent(/Google Play open testing/i);
+      expect(container).not.toHaveTextContent(
+        /invited|invitation.only|internal test|approved testers|unapproved|not (?:a )?public Google Play release/i,
+      );
+    },
+  );
+
+  it("describes Android open testing in search and social metadata", () => {
+    for (const metadata of [rootMetadata, homeMetadata, appMetadata]) {
+      expect(metadata.description).toMatch(/Google Play open testing/i);
+      expect(JSON.stringify(metadata)).not.toMatch(/invited|internal test/i);
+    }
+    for (const metadata of [rootMetadata, appMetadata]) {
+      expect(metadata.openGraph?.description).toBe(metadata.description);
+      expect(metadata.twitter?.description).toBe(metadata.description);
+    }
+  });
+
   it("keeps pyble.dev canonical and presents Features and Learn in the primary routes", () => {
     expect(siteConfig.origin).toBe("https://pyble.dev");
     expect(siteConfig.alternateOrigin).toBe("https://pyble.org");
@@ -148,7 +175,7 @@ describe("public-site contract", () => {
 
   it("publishes canonical metadata and static discovery files", async () => {
     expect(siteConfig.description).toBe(
-      "A free, open-source, tablet-first IDE for MicroPython boards with compatible Bluetooth Low Energy agent firmware.",
+      "PyBLE is a free, open-source MicroPython IDE over Bluetooth Low Energy. Available on Google Play open testing for Android and TestFlight for iPad.",
     );
     expect(homeMetadata.title).toEqual({
       absolute: "PyBLE — Python over Bluetooth Low Energy",
@@ -159,7 +186,7 @@ describe("public-site contract", () => {
     });
     expect(appMetadata.title).toBe("PyBLE for iPad and Android");
     expect(appMetadata.description).toMatch(
-      /ipad external beta.*android internal test/i,
+      /google play open testing.*ipad external beta/i,
     );
     expect(privacyMetadata.alternates).toEqual({
       canonical: "https://pyble.dev/privacy",
@@ -240,7 +267,7 @@ describe("public-site contract", () => {
     expect(manifest).toMatchObject({
       short_name: "PyBLE",
       description:
-        "A free, open-source, tablet-first IDE for MicroPython boards with compatible Bluetooth Low Energy agent firmware.",
+        "PyBLE is a free, open-source MicroPython IDE over Bluetooth Low Energy. Available on Google Play open testing for Android and TestFlight for iPad.",
       start_url: "/",
       theme_color: "#081B35",
     });
@@ -404,7 +431,7 @@ describe("public-site contract", () => {
       screen.getByText("Python over Bluetooth Low Energy"),
     ).toBeInTheDocument();
     expect(
-      screen.getByText("iPad external beta + Android internal test"),
+      screen.getByText("iPad external beta + Android open testing"),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("link", {
@@ -556,22 +583,19 @@ describe("public-site contract", () => {
     );
 
     const androidSection = screen.getByRole("region", {
-      name: "Join the PyBLE Android internal test.",
+      name: "Get PyBLE on Google Play.",
     });
     expect(channelGroup).toContainElement(testFlightSection);
     expect(channelGroup).toContainElement(androidSection);
     expect(testFlightSection.parentElement).toBe(androidSection.parentElement);
     expect(testFlightSection.parentElement).toHaveClass("beta-channel-grid");
     expect(testFlightSection.nextElementSibling).toBe(androidSection);
-    expect(
-      within(androidSection).getByText(/approved internal testers/i),
-    ).toBeInTheDocument();
-    expect(
-      within(androidSection).getByText(/not a public Google Play release/i),
-    ).toBeInTheDocument();
-    expect(
-      within(androidSection).getByText(/unapproved.*may.*unavailable/i),
-    ).toBeInTheDocument();
+    expect(androidSection).toHaveTextContent(
+      /PyBLE 0\.2\.0 is available on Google Play open testing/i,
+    );
+    expect(androidSection).not.toHaveTextContent(
+      /internal test|invited|approved testers|not a public Google Play release/i,
+    );
 
     const testFlightLink = within(testFlightSection).getByRole("link", {
       name: "Open in TestFlight",
@@ -581,7 +605,7 @@ describe("public-site contract", () => {
     expect(testFlightLink).toHaveAttribute("rel", "noopener noreferrer");
 
     const googlePlayLink = within(androidSection).getByRole("link", {
-      name: "Open Android internal test",
+      name: "Get PyBLE on Google Play",
     });
     expect(googlePlayLink).toHaveAttribute("href", googlePlayUrl);
     expect(googlePlayLink).toHaveAttribute("target", "_blank");
@@ -602,7 +626,7 @@ describe("public-site contract", () => {
     ).toHaveAttribute("src", "/testflight/pyble-testflight-qr.svg");
 
     const googlePlayQrDescription =
-      "QR code for the PyBLE Android internal test on Google Play";
+      "QR code for PyBLE on Google Play open testing";
     const googlePlayQrLink = within(androidSection).getByRole("link", {
       name: googlePlayQrDescription,
     });
@@ -613,10 +637,7 @@ describe("public-site contract", () => {
       within(androidSection).getByRole("img", {
         name: googlePlayQrDescription,
       }),
-    ).toHaveAttribute(
-      "src",
-      "/google-play/pyble-google-play-internal-test-qr.svg",
-    );
+    ).toHaveAttribute("src", "/google-play/pyble-google-play-qr.svg");
 
     expect(
       within(testFlightSection).getByText("testflight.apple.com/join/yU4e8s6d"),
@@ -654,7 +675,7 @@ describe("public-site contract", () => {
           process.cwd(),
           "public",
           "google-play",
-          "pyble-google-play-internal-test-qr.svg",
+          "pyble-google-play-qr.svg",
         ),
         sha256:
           "fbd84d11d773346d0a2cd23f0e3193d02ff02e6c9780298294431d95dd07f32d",
@@ -684,7 +705,7 @@ describe("public-site contract", () => {
     expect(siteConfig.testFlightUrl).toBe(
       "https://testflight.apple.com/join/yU4e8s6d",
     );
-    expect(siteConfig.googlePlayInternalTestUrl).toBe(
+    expect(siteConfig.googlePlayUrl).toBe(
       "https://play.google.com/store/apps/details?id=dev.pyble.pyble",
     );
 
@@ -696,12 +717,9 @@ describe("public-site contract", () => {
     expect(testFlightLink).toHaveAttribute("rel", "noopener noreferrer");
 
     const googlePlayLink = screen.getByRole("link", {
-      name: "Open Android internal test",
+      name: "Get PyBLE on Google Play",
     });
-    expect(googlePlayLink).toHaveAttribute(
-      "href",
-      siteConfig.googlePlayInternalTestUrl,
-    );
+    expect(googlePlayLink).toHaveAttribute("href", siteConfig.googlePlayUrl);
     expect(googlePlayLink).toHaveAttribute("target", "_blank");
     expect(googlePlayLink).toHaveAttribute("rel", "noopener noreferrer");
 
@@ -717,23 +735,18 @@ describe("public-site contract", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByRole("img", {
-        name: "QR code for the PyBLE Android internal test on Google Play",
+        name: "QR code for PyBLE on Google Play open testing",
       }),
-    ).toHaveAttribute(
-      "src",
-      "/google-play/pyble-google-play-internal-test-qr.svg",
-    );
+    ).toHaveAttribute("src", "/google-play/pyble-google-play-qr.svg");
     expect(
-      screen.getByText(siteConfig.googlePlayInternalTestUrl, {
+      screen.getByText(siteConfig.googlePlayUrl, {
         selector: ".app-install__direct span",
       }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/approved internal testers/i)).toBeInTheDocument();
     expect(
-      screen.getByText(/not a public Google Play release/i),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(/unapproved.*may.*unavailable/i),
+      screen.getByText(
+        /PyBLE 0\.2\.0 is available on Google Play open testing/i,
+      ),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("link", { name: /open firmware installer/i }),
