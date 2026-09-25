@@ -188,7 +188,15 @@ class PublicClaimsTest(unittest.TestCase):
         firmware = markdown_section(self.readme, "What works")
         normalized = " ".join(firmware.split())
         self.assertIn("0.2.0+8", firmware)
-        self.assertIn("does not establish a live store release", normalized)
+        self.assertIn("Google Play open testing", normalized)
+        self.assertIn("published Android version is `0.2.0`", normalized)
+        self.assertIn("exact source", normalized)
+        self.assertIn("later connection-lifecycle fixes", normalized)
+        self.assertIn(
+            "https://play.google.com/store/apps/details?id=dev.pyble.pyble",
+            self.readme,
+        )
+        self.assertNotRegex(self.readme, r"(?i)Android (?:invited|internal) test")
         self.assertIn("offline privacy policy", normalized)
         self.assertIn("multi-file deletion", normalized)
 

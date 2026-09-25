@@ -266,7 +266,7 @@ describe("Sites vinext-output adapter", () => {
       );
       const googlePlayQr = await worker.fetch(
         new Request(
-          "https://pyble.dev/google-play/pyble-google-play-internal-test-qr.svg",
+          "https://pyble.dev/google-play/pyble-google-play-qr.svg",
         ),
         {},
         context,
@@ -384,7 +384,7 @@ describe("Sites vinext-output adapter", () => {
       },
       googlePlayQr: {
         status: 200,
-        body: "vinext:/google-play/pyble-google-play-internal-test-qr.svg:execution-context",
+        body: "vinext:/google-play/pyble-google-play-qr.svg:execution-context",
       },
       firmwareManifest: {
         status: 200,
