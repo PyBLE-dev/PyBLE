@@ -11,10 +11,10 @@
 
 | Field | Value |
 |---|---|
-| Document version | 1.3 — C1-S1 execution, evidence and sizing update; original filename retained |
+| Document version | 1.4 — C1-S1 device retry and precise remaining states; original filename retained |
 | Prepared | 25 September 2026 |
-| Last reviewed | 25 September 2026; C1-S1 worktree deliverables, real access blockers and revised sizing incorporated |
-| Status | C1-S1 repository work executed under the user request; device/pilot tasks remain blocked. Future capacity and scope need replanning; no new protocol behavior approved |
+| Last reviewed | 25 September 2026; connected Lenovo/iPad channel verification and remaining pilot dependencies incorporated |
+| Status | C1-S1 has six tasks Done, two Prepared awaiting pilot setup and four Awaiting evidence; Sprint and SG0 remain unfinished. Future capacity and scope need replanning; no new protocol behavior approved |
 | Product | PyBLE — Python over Bluetooth Low Energy |
 | Organization | SciLabPro |
 | Planning horizon | Immediate 12-week delivery cycle, followed by conditional expansion through September 2028 |
@@ -26,7 +26,7 @@
 
 **Scope of this document.** This plan converts the preceding PyBLE strategy discussion into executable workstreams, priorities, acceptance criteria, and decision gates. Existing repository specifications and contributor rules remain authoritative. Proposed features, names, metrics, staffing, and dates below are planning choices—not claims that those features exist or that resources and approvals are secured.
 
-**Evidence boundary.** The baseline review inspected repository source, specifications, test entry points, publication records, and the GitHub state of PR #33 and issue #24 on 25 September. Revision 1.2 incorporates the subsequent strategy and PyBLE Ready feedback. The dated Android review establishes the official listing's open-testing status; it does not identify the installed store binary or prove a signed-in installation. Revision 1.3 adds direct live-channel/website checks and a blocked physical iPad app query in the [C1-S1 ledger](../developments/2026-q4-reliable-workflow/c1-s1/01_Channel_and_Artifact_Ledger.md). No successful store installation, participant outcome or new physical-board result has been measured. Previously reported publicity and GitHub counts are not proof of product-market fit.[^android-review]
+**Evidence boundary.** The baseline review inspected repository source, specifications, test entry points, publication records, and the GitHub state of PR #33 and issue #24 on 25 September. Revision 1.2 incorporates the subsequent strategy and PyBLE Ready feedback. The dated Android publication review establishes listing status only. Revision 1.3 records direct live-channel/website checks and the original unavailable/locked device attempts. Revision 1.4 adds the connected-device retry in the [C1-S1 ledger](../developments/2026-q4-reliable-workflow/c1-s1/01_Channel_and_Artifact_Ledger.md): existing Play `0.2.0 (8)` and TestFlight `0.2.0 (6)` installations and launches verified. Fresh enrollment/reinstallation was not performed. Android's code/asset comparison supports historical source mapping; iPad source mapping remains unknown. No participant outcome or new physical-board result has been measured. Previously reported publicity and GitHub counts are not proof of product-market fit.[^android-review]
 
 **Continuation decision.** Carry forward the completed Android publication/copy correction. Concentrate weekly execution on three outcomes: verify what users install, preserve their work through interruptions, and observe useful repeat tasks in one primary audience. Reuse existing lifecycle handling, tutorials, conformance fixtures, and release tooling. A bounded PyBLE Ready rehearsal can reuse one existing profile's evidence work; new ports, broad badge promotion, classroom bundles, and new protocol behavior remain conditional.
 
@@ -36,6 +36,7 @@
 | 1.1 | Updated baseline after PR #33; separated publication from installed-build evidence; mapped remaining work to current code; bounded the schedule and corrected release/pilot dependencies |
 | 1.2 | Focused pilot selection and useful second tasks; contextualized retention; defined one version-bound PyBLE Ready badge, installation labels, maintenance rules, and a staged existing-profile/partner pilot |
 | 1.3 | Executed C1-S1 repository deliverables in parallel worktrees; recorded device/pilot blockers, stale TestFlight metadata, a bounded recovery contract and larger engineering/matrix estimates; future allocations require replanning |
+| 1.4 | Verified existing Play/TestFlight installations on connected tablets; recorded artifact evidence and remaining provenance/metadata limits; replaced blanket pilot blockers with Prepared/Awaiting evidence states without waiving acceptance criteria |
 
 ## Contents
 
@@ -137,9 +138,9 @@ Use the following dated baseline instead of restarting the publication correctio
 
 | Item | Status as reviewed on 25 September 2026 | Remaining work |
 |---|---|---|
-| Android listing | Official Google Play listing for `dev.pyble.pyble` identifies 0.2.0 and open testing | Verify eligible-device enrollment/install and record version code, source mapping, and restrictions actually observed |
+| Android listing / installation | Official Play listing identifies 0.2.0 open testing; retry verifies an enrolled Lenovo device's existing `0.2.0 (8)` installation and launch | Record existing-install scope; retain code/asset comparison and its provenance limits; no fresh enrollment/reinstall or universal availability claim |
 | Maintained public copy | PR #33 merged at `23ed764`; README, roadmap, website copy/metadata, setup guidance, and distribution contract now agree | Maintain those checks; search-engine recrawl timing remains outside project control |
-| iPad channel | Maintained first-party guidance identifies the external TestFlight beta | Record the currently installable version/build and a fresh eligible-device installation; do not infer it from source |
+| iPad channel / installation | Retry verifies the external TestFlight beta's offered/installed `0.2.0 (6)` and launch on iPad | Source mapping remains unresolved; review conflicting minimum-OS metadata. Existing-install verification does not claim a fresh enrollment/reinstall |
 | Firmware v0.6.1 | Published on owner confirmation; five exact profiles; original artifact/evidence records preserved | New qualification must cite exact tested bytes; pending automated rows remain pending |
 | Issue #24 | Closed on 13 September 2026 as superseded (`NOT_PLANNED`) | Create a focused successor only for selected new work; do not reopen the obsolete release umbrella or mark its checklist complete |
 | Product usage | No measured activation or retention baseline in this revision | Collect the bounded, consented evidence defined in §§4 and 12 |
@@ -152,17 +153,19 @@ Historical release-roadmap statements about an unpublished v0.6.1 or an open #24
 
 ### 2.3 C1-S1 execution evidence — 25 September 2026
 
-The [execution record](../developments/2026-q4-reliable-workflow/c1-s1/00_Execution_Record.md) separates four completed repository tasks from eight blocked installation/pilot tasks. Early execution does not retrospectively change the proposed 28 September Sprint start or claim a staffed-team ceremony.
+The [execution record](../developments/2026-q4-reliable-workflow/c1-s1/00_Execution_Record.md) now records **six Done tasks**, **two Prepared awaiting pilot setup** and **four Awaiting evidence** after the connected-device retry. T02/T03 verify existing channel installations; T04/T05 need the named owner, cohort and tested board setup, T06–T08 need participant sessions, and T09 needs their observation records. Early execution does not retrospectively change the proposed 28 September Sprint start or claim a staffed-team ceremony.
 
-| Workstream | Completed repository output | Remaining requirement |
+| Workstream | Completed output / evidence | Remaining requirement |
 |---|---|---|
-| PYB-001 | Reviewed channel/artifact ledger; direct Play/TestFlight/site HTTP checks; responsible owners for unknowns | Android device unavailable; paired iPad app query blocked while locked; store-installed builds and source mapping unverified |
-| Residual PYB-002.1 | Accurate replacement TestFlight app-level description prepared after the public page exposed its older ESP/agent-0.4.0 baseline | Distribution owner must apply it and verify the public result; Android's earlier correction remains complete |
+| PYB-001 | Reviewed ledger; [Lenovo Play `0.2.0 (8)`](../developments/2026-q4-reliable-workflow/c1-s1/06_Android_Channel_Verification.md) and [iPad TestFlight `0.2.0 (6)`](../developments/2026-q4-reliable-workflow/c1-s1/07_iPad_Channel_Verification.md) existing installations, channel/Open and launch verified | iPad build-to-source mapping remains unknown; Android code/asset correspondence does not establish complete binary equivalence or store-console provenance. Fresh enrollment/reinstallation was not performed |
+| Residual PYB-002.1 | Accurate replacement TestFlight app-level description prepared after the public page exposed its older ESP/agent-0.4.0 baseline | Distribution owner must apply it and verify the public result; also reconcile build-6 installed `MinimumOSVersion` 18 with TestFlight notes stating 15 before asserting support. No store mutation performed; Android's earlier correction remains complete |
 | PYB-003/004 | Operational pilot protocol, safe Tasks A/B/C, consent/retention rules and empty observation/support templates | Human owner, reachable cohort, tested setup and collection decision unconfirmed; no participants or observed outcomes |
 | PYB-006.1 | [Recovery contract](../specifications/App/current-draft-recovery.md), ADR-0048, source/peer review, scenario matrix and estimate | Runtime implementation pending; broader A-24/Blocks scope remains carried |
 | PYB-009.1 | Existing tool/gate inventory, ten platform/profile rows, cost model and initial operator recipe; 110 focused host harness tests pass | S2 scoped procedure, hardware/operator access, actual physical runs and independent reproduction remain pending |
 
 The recovery estimate is **38–63 engineering hours**, or **45–72 hours** with the original recipe, representative-platform and follow-up allowances. The [design review](../developments/2026-q4-reliable-workflow/c1-s1/03_Recovery_Design_and_Sizing.md) offers a conditional 60-hour S2–S4 allocation, displacing earlier matrix and activation forecasts. The [validation inventory](../developments/2026-q4-reliable-workflow/c1-s1/04_Validation_Inventory_and_Operator_Recipe.md) estimates 13.5–26 operator hours for the app matrix and 30–59 for fresh full firmware qualification, excluding builds, unavailable access and defect repair. These are working estimates, not actual effort or promises. **SG0 remains blocked.**
+
+The Android check used a Lenovo `TB-J616X` on Android 12; all 38 selected code/asset entries matched the retained build-8 AAB, supporting its historical source `768fafe45beee7731d1a38480cc0463a2f5680cd`. This comparison is narrower than complete installed-binary or Play Console provenance. The iPad was `iPad16,10` on iPadOS `26.6.2`; native TestFlight offered build 6, Open launched it, and the installed signer identity was `TestFlight Beta Distribution`. The historical build-5 handoff does not map build 6 to source. Neither check executes BLE/board qualification or establishes minimum-OS support.
 
 ### 2.4 Baseline metrics to collect
 
@@ -316,7 +319,7 @@ Map these ownership areas to the three active outcomes in §1.5. W1–W3 contain
 
 Extend the existing publication review into one reviewed channel/artifact record. Distinguish prepared, submitted, processing, testing, production, paused, and unavailable states. Record the source of each state and its last verification date. Document country, account, and device restrictions when known; do not imply universal availability from a single successful store-page fetch. Keep existing website copy/link checks; introduce a generated shared data source only if repeated drift warrants that extra machinery.
 
-Deliverables: channel/build matrix, verified installation instructions, maintained README/store/site consistency, store-artifact provenance, and an update/rollback procedure. Accept the listing-status row from dated first-party publication evidence. Accept the installation row only after installation through that channel on an eligible physical device. Record uploaded AAB/IPA identity separately from store-delivered/re-signed or split binaries; equal version names or unequal upload/install hashes alone do not resolve provenance.
+Deliverables: channel/build matrix, verified installation instructions, maintained README/store/site consistency, store-artifact provenance, and an update/rollback procedure. Accept the listing-status row from dated first-party publication evidence. Accept an installation row from an actual channel installation on an eligible physical device, either performed during the check or verified as an existing installation through channel provenance, observed version/build and successful launch. State which path was exercised; do not erase user data merely to repeat installation or infer fresh enrollment from an existing account. Record uploaded AAB/IPA identity separately from store-delivered/re-signed or split binaries; equal version names or unequal upload/install hashes alone do not resolve provenance.
 
 ### W2 — First use and mobile resilience
 
@@ -467,7 +470,7 @@ Current execution states and the newly identified residual `PYB-002.1` are maint
 
 Split any issue that combines several independently releasable behaviors or cannot fit into one sprint. Do not assign opcode numbers, capabilities, schemas, or release numbers in issue text without linking their approved specification.
 
-Before scheduling each selected item, add its named owner/reviewer, estimate including validation, normative references, evidence location, release lane, and current state (`completed`, `ready`, `in_progress`, `blocked`, or `proposed`). Status belongs to a specific deliverable: PR #33 completion does not complete installed-build verification, and an approved design does not complete its implementation.
+Before scheduling each selected item, add its named owner/reviewer, estimate including validation, normative references, evidence location, release lane, and current state (`completed`, `ready`, `in_progress`, `blocked`, or `proposed`). Prepared and Awaiting evidence may explain unfinished task states more precisely; neither means Done or waives acceptance criteria. Status belongs to a specific deliverable: PR #33 completion does not complete installed-build verification, and an approved design does not complete its implementation.
 
 ## 10. Quality, compatibility, and release gates
 
@@ -855,7 +858,7 @@ At cycle end, choose one principal next investment: Reliable Projects, partner p
 - [x] Identify A-24/ADR-0010 durable drafts as a concrete remaining engineering gap.
 - [ ] Confirm one reachable primary audience, recruitment owner, previous workflow and meaningful Task C; keep other audiences exploratory.
 - [ ] Assign actual capacity and accept a bounded first sprint; size persistence and mandatory physical work before promising the full cycle.
-- [x] Record PYB-001's installation/provenance blockers and responsible maintainer/operator actions in the channel ledger; actual installations remain blocked.
+- [x] Verify existing Play/TestFlight installations and launches on the connected tablets; record actual builds, provenance limits and responsible owner follow-up. Fresh enrollment/reinstallation was not exercised.
 - [x] Link PYB-001/003/004/006/009 execution tasks and evidence in the local Scrum package; record the real residual TestFlight discrepancy as PYB-002.1. Preserve A-24/ADR identities; no GitHub issues were fabricated or created.
 - [ ] Assign one owner and one review path for each initial issue.
 - [ ] Inventory exact test boards, tablets, cables, and available recovery equipment.
@@ -929,11 +932,11 @@ Work on one accepted PyBLE issue only.
 
 ### 20.4 Decision record for every sprint
 
-[C1-S1 execution and decision record](../developments/2026-q4-reliable-workflow/c1-s1/00_Execution_Record.md) is the first dated instance. Its blockers remain open and it is not a completed Sprint Review.
+[C1-S1 execution and decision record](../developments/2026-q4-reliable-workflow/c1-s1/00_Execution_Record.md) is the first dated instance. Device installation checks are complete; pilot setup, participant evidence and capacity decisions remain pending. It is not a completed Sprint Review.
 
 Record shipped versus proposed work; exact tested artifacts; pass/fail/not-run results; the selected audience and useful-task outcomes; reasons to choose PyBLE; opportunity-to-use and prompting context; maintenance/support burden; and one explicit next-sprint priority. Include Ready rehearsal/record status only when that work is selected. Store identities and participant data separately from public aggregate reports.
 
-**Next action:** confirm one primary audience and useful task, finish the installed-build record, and replan/select implementation against the specified bounded A-24 recovery contract and its recorded estimate. Observe useful work and follow-up alongside delivery of the smallest qualified maintenance change. Reuse operator work for a bounded existing-profile Ready rehearsal if capacity is assigned. Let task failures, repeat value, and support effort determine subsequent protocol, partner, or classroom investment.
+**Next action:** confirm one primary audience, pilot owner, tested board setup and useful task; pursue recorded provenance/metadata follow-up; and replan/select implementation against the specified bounded A-24 recovery contract and its estimate. Observe useful work and follow-up alongside delivery of the smallest qualified maintenance change. Reuse operator work for a bounded existing-profile Ready rehearsal if capacity is assigned. Let task failures, repeat value, and support effort determine subsequent protocol, partner, or classroom investment.
 
 ## 21. Source references
 
@@ -968,4 +971,4 @@ The strategy supplies the proposed direction. The sources below ground the exist
 
 ---
 
-**End of document — PyBLE Implementation Plan and Development Strategy, revision 1.3**
+**End of document — PyBLE Implementation Plan and Development Strategy, revision 1.4**

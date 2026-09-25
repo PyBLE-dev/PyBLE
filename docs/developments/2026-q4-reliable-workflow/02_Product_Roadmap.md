@@ -5,9 +5,9 @@
 
 | Control | Value |
 |---|---|
-| Status | C1-S1 repository work recorded; physical/pilot tasks blocked. Future direction remains conditional and forecasts need revision after sizing |
+| Status | C1-S1 has six tasks Done, two Prepared awaiting pilot setup and four Awaiting evidence; existing channel installations verified. Future direction remains conditional and forecasts need revision after sizing |
 | Planning date | 25 September 2026; dates use Asia/Bangkok |
-| Source | [Implementation strategy revision 1.3](../../planning/PyBLE_Implementation_Plan_and_Strategy_v1.0.md), particularly §§1, 6–9, 12, 14, and 19 |
+| Source | [Implementation strategy revision 1.4](../../planning/PyBLE_Implementation_Plan_and_Strategy_v1.0.md), particularly §§1, 6–9, 12, 14, and 19 |
 | Inspected baseline | `main` at `23ed764b0ef88dce9720c66fbd1c0655268860cf` |
 | First cycle | C1: 28 September–20 December 2026; later horizons conditional through September 2028 |
 | Planning authority | Product Owner orders the Product Backlog; Developers forecast feasible work during Sprint Planning; names and capacity remain unassigned |
@@ -32,14 +32,17 @@ continues to communicate direction without promising release dates.
 
 ## Completed baseline and remaining uncertainty
 
-These records are inputs to planning, not new achievements of this development
-cycle. The [C1-S1 record](c1-s1/00_Execution_Record.md) distinguishes completed design/evidence preparation from blocked installations and observations. Future work remains **Proposed** until explicitly selected.
+These records distinguish the historical baseline from the dated device retry.
+The [C1-S1 record](c1-s1/00_Execution_Record.md) records completed design/evidence
+preparation and existing channel installations separately from prepared pilot
+work and missing observations. Future work remains **Proposed** until explicitly
+selected.
 
 | Baseline item | Recorded state at the planning date | Consequence for this roadmap |
 |---|---|---|
 | Android distribution and public copy | Google Play 0.2.0 open testing; direct live-site checks on 25 September confirm the PR #33 correction | Preserve accurate copy; newly found TestFlight description discrepancy is PYB-002.1 |
-| App source and installed identity | Source `0.2.0+8`; source version alone does not identify an installed Play/TestFlight binary | PYB-001 records actual installed versions/builds and source mapping or explicit unknowns |
-| iPad distribution | External TestFlight beta is the recorded channel | Verify the selected installation path and artifact evidence; do not infer production App Store availability |
+| App source and installed identity | [Lenovo Android](c1-s1/06_Android_Channel_Verification.md): Play `0.2.0 (8)` with beta enrollment, Open and launch verified; 38/38 code/asset entries match the retained AAB | Evidence supports historical source `768fafe`; it is not complete binary equivalence, a Play Console record or validation of later source changes |
+| iPad distribution | [iPad](c1-s1/07_iPad_Channel_Verification.md): existing TestFlight `0.2.0 (6)` with offered build, Open, launch and beta signing verified | Source mapping remains unknown; minimum-OS metadata conflict needs owner review. Fresh enrollment/reinstallation and production App Store availability are not claimed |
 | Existing workflow | PBLE/1 editing, files, run/stop, console, Blocks, tutorials, and reviewed import already exist | Reuse implementation and tests; improve measured failures rather than rebuild the workflow |
 | Firmware v0.6.1 | Owner-confirmed publication for five exact profiles; incomplete automated evidence remains visible | New qualification and compatibility claims require their own applicable evidence |
 | Historical issue #24 | Closed as superseded; incomplete checklist was not declared passed | Do not recreate closure as a new dependency or treat historical closure as qualification |
@@ -81,7 +84,7 @@ for one maintainer. All rows in this table have status **Proposed**.
 **Sizing update:** recovery now has a 45–72 hour working estimate including supporting tasks. Its 60-hour S2–S4 allocation option would displace original matrix/activation work. The table above is the original sequencing baseline, not a validated selection; replan before using its delivery dates. The full matrix has its own [costed inventory](c1-s1/04_Validation_Inventory_and_Operator_Recipe.md).
 
 The [Sprint Plan](04_Sprint_Plan.md) owns detailed dates and capacity. The first
-Sprint Backlog now records early C1-S1 execution and its remaining blockers;
+Sprint Backlog now records early C1-S1 execution and pending pilot evidence;
 later allocations are forecasts requiring replanning. A milestone review neither replaces a Sprint Review nor supplies
 missing Definition of Done evidence.
 
