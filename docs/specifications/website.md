@@ -1,7 +1,7 @@
 # PyBLE — Public Website Specification
 
 Status: **FROZEN (pre-v1 and v1 launch surface)** · Owner: project maintainer · Last updated:
-2026-09-01
+2026-09-25
 
 This document is the source of truth for the first public website at
 `pyble.dev`. It specifies only the public site; the Flutter app, PBLE/1, and
@@ -125,25 +125,33 @@ Compatibility copy MUST distinguish platform scope from current support:
 It MUST NOT imply that Bluetooth hardware or stock MicroPython alone is enough,
 or promise that every eligible board has a firmware image today.
 
-### 3.1 App beta distribution
+### 3.1 App distribution
 
-The currently approved app-testing channels are:
+The current app channels, verified on 2026-09-25, are:
 
 - the public Apple external-testing invitation at
   `https://testflight.apple.com/join/yU4e8s6d`; and
-- the restricted Android internal-testing listing at
-  `https://play.google.com/store/apps/details?id=dev.pyble.pyble`, available
-  only to approved testers signed in with the Google account that was invited.
+- PyBLE **0.2.0** published on Google Play for Android **open testing**, at
+  `https://play.google.com/store/apps/details?id=dev.pyble.pyble`.
+
+The project owner confirms the Android publication. The official Google Play
+listing identifies SciLabPro and describes open testing for PyBLE 0.2.0. This
+supersedes the former invited internal-testing status. It does not establish a
+production-track release, worldwide availability, a verified opt-in URL, or
+the exact source/build identity of the installed store artifact.
 
 While either channel is active, the home page and `/app` MUST:
 
-- distinguish the iPad external beta from the Android internal test, without
-  implying a production App Store or public Google Play release;
+- distinguish the iPad external beta from the published Android Google Play
+  open test, without implying a production-track release on either store;
 - summarize both channels in the home-page hero and link its primary app action
   to `/app`; the hero MUST NOT present the iPad channel as the only available
   app test;
-- explain that an unapproved or signed-out visitor may be unable to open the
-  restricted Google Play listing;
+- describe Android as Google Play open testing, with no invited-account or
+  approved-internal-tester requirement; installation remains subject to Google
+  Play's account, country, device compatibility, and testing availability;
+- keep visible copy, page descriptions, Open Graph/Twitter descriptions, and
+  setup guidance consistent with these channel states;
 - provide a normal HTTPS link that works on the device displaying the page;
 - provide a high-contrast QR code encoding each channel's exact HTTPS
   destination for a user viewing the site on another screen; and
@@ -160,7 +168,7 @@ normal navigation.
 
 The two home-page invitations MUST appear in one labelled **Choose your tablet
 beta** comparison group. Within that group the iPad external-beta and Android
-invited-internal-test cards MUST be peer siblings, render side by side when the
+open-testing cards MUST be peer siblings, render side by side when the
 viewport permits, and stack without changing order on narrower screens. Each
 card retains its own accessible heading, exact link, local QR, direct-device
 instructions, and channel-specific availability warning.
@@ -173,13 +181,22 @@ contract, and corresponding QR asset to change together before deployment.
 `https://pyble.dev/app` is the stable first-party app-discovery destination
 encoded by exact-board firmware. It MUST be a complete statically rendered
 document, not an external redirect. It MUST have its own canonical metadata,
-identify the iPad external beta and restricted Android internal test (not
-production store releases), reuse `siteConfig.testFlightUrl` and
-`siteConfig.googlePlayInternalTestUrl` as the approved destination sources,
+identify the iPad external beta and published Android Google Play open test,
+reuse `siteConfig.testFlightUrl` and `siteConfig.googlePlayUrl` as the approved
+destination sources,
 present both local authored QR codes plus visible direct-URL fallbacks, and link
 to `/flash` and `/support`. Its firmware wording MUST remain release-state-neutral
 or derive from the same build-selected state as the home page; it MUST NOT copy
 a version/profile claim that can become stale.
+
+The Android QR asset is `/google-play/pyble-google-play-qr.svg` and MUST encode
+the exact listing URL above. Its name and accessible description MUST NOT
+retain the superseded internal-testing restriction. The existing listing URL
+remains the direct installation destination; an inferred or unverified opt-in
+URL MUST NOT replace it. Repository documentation MUST distinguish app source
+version `0.2.0+8`, published app version `0.2.0`, and independent firmware
+versions. A public listing does not prove that later source fixes are included
+in the store artifact.
 
 `/app/` MUST permanently normalize to `/app` while preserving the query. Exact
 document routing MUST coexist with the existing `/app/*` real-app screenshot
@@ -1126,9 +1143,10 @@ The v1 site is releasable when:
 - the hero uses a reviewed real-app capture with meaningful alternative text,
   a visible actual-app caption, and a responsive crop that never obscures the
   pictured Blocks workspace or generated Python;
-- the current external iPad beta and restricted Android internal test are each
-  exposed as an operable link and locally served, exact-URL QR code without
-  claiming production availability;
+- the current external iPad beta and published Android Google Play open test
+  are each exposed as an operable link and locally served, exact-URL QR code,
+  with matching page/social descriptions and setup guidance; no current copy
+  requires an Android invitation or claims production-track availability;
 - `/app` is canonical, statically rendered, uses both approved testing-channel
   destination/link/QR contracts, links setup and support, and its slash
   normalization does not break an existing nested `/app/*` screenshot asset;
