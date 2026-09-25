@@ -11,6 +11,9 @@ v0.7.0 remains non-normative and requires separate maintainer approval.
 ## Available now
 
 - iPad external beta through TestFlight
+- Android PyBLE 0.2.0 published for
+  [Google Play open testing](https://play.google.com/store/apps/details?id=dev.pyble.pyble),
+  subject to Play's account, country, device, and testing availability
 - PBLE/1 editing, run/stop, console, and file workflows over BLE
 - Offline Blockly with beginner GPIO and NeoPixel examples
 - The published firmware v0.6.1 covers five exact profiles: four ESP
@@ -18,7 +21,9 @@ v0.7.0 remains non-normative and requires separate maintainer approval.
   Publication follows the owner's qualification confirmation, recorded in the
   [owner confirmation](https://pyble.dev/firmware-v0.6.1-owner-confirmation.md).
   Incomplete automated evidence is preserved unchanged; the qualified v0.6.0
-  release remains a separate historical baseline.
+  release remains a separate historical baseline. The original qualification
+  tracker [#24](https://github.com/PyBLE-dev/PyBLE/issues/24) was closed as
+  superseded on 2026-09-13; its incomplete checklist is not marked completed.
 - Guided [tutorials](https://pyble.dev/learn) with reviewed Lenovo captures,
   the [firmware functional reference](https://pyble.dev/features), and the
   separate [official example collection](https://github.com/PyBLE-dev/examples)
@@ -27,14 +32,15 @@ v0.7.0 remains non-normative and requires separate maintainer approval.
 ## Near term
 
 - Continue the app 0.2.0 beta train; source is currently `0.2.0+8`. The
-  [prepared build-8 handoff](testing/google-play/0.2.0-build-8.md) is not proof
-  of store publication or validation of subsequent source changes.
-- Reconcile the original automated qualification tracker
-  [#24](https://github.com/PyBLE-dev/PyBLE/issues/24) with the recorded
-  owner-confirmed v0.6.1 publication without inventing missing measurements.
+  [Android publication review](testing/website/android-open-testing-2026-09-25.md)
+  records live open-testing availability. The
+  [prepared build-8 handoff](testing/google-play/0.2.0-build-8.md) remains a
+  source-specific historical record, not validation of subsequent source
+  changes in the installed store app.
 - Review the proposed v0.7.0 Reliable Projects scope before implementation.
 - Expand user-facing setup, recovery, and board-specific wiring guidance
-- Open and document the Android beta distribution path
+- Gather Android open-testing feedback and improve installation and recovery
+  guidance
 - Convert remaining pre-public planning references into focused GitHub issues
 - Improve automated app-to-board integration coverage
 

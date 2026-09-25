@@ -1,7 +1,7 @@
 {
   "name": "PyBLE — Python over Bluetooth Low Energy",
   "short_name": "PyBLE",
-  "description": "A free, open-source, tablet-first IDE for MicroPython boards with compatible Bluetooth Low Energy agent firmware.",
+  "description": "PyBLE is a free, open-source MicroPython IDE over Bluetooth Low Energy. Available on Google Play open testing for Android and TestFlight for iPad.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#F4F7FF",

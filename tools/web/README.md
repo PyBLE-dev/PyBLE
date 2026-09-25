@@ -34,12 +34,19 @@ introduce a second page source or an application backend.
 | Route       | Purpose                                                                     |
 | ----------- | --------------------------------------------------------------------------- |
 | `/`         | Product story, verified capabilities, platform vision, and current targets  |
-| `/app`      | Stable app landing page for iPad and Android testing channels               |
+| `/app`      | iPad TestFlight beta and published Android Google Play open-testing links   |
 | `/privacy`  | Separate app and website privacy disclosures                                |
 | `/support`  | Beta quick start, troubleshooting, and report checklist                     |
 | `/flash`    | Fail-closed Web Serial installer, exact profiles, and recovery              |
 | `/features` | Release-bound firmware architecture, operations, profiles, limits, evidence |
 | `/learn`    | Ordered tutorial hub, compatibility legend, and learning tracks             |
+
+Android PyBLE 0.2.0 is published for Google Play open testing. Home, `/app`,
+their metadata, and setup guidance share this status; iPad remains an external
+TestFlight beta. The official Android listing uses package `dev.pyble.pyble`.
+Both the direct link and local `/google-play/pyble-google-play-qr.svg` QR code
+use `https://play.google.com/store/apps/details?id=dev.pyble.pyble`. Play
+determines account, country, device, and testing availability.
 
 The ten statically authored tutorials are `/learn/setup`,
 `/learn/first-program`, `/learn/files`, `/learn/github-import`,

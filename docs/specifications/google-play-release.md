@@ -2,18 +2,40 @@
 
 # Google Play open-testing preparation
 
-Status: candidate preparation, 10 September 2026. This contract supplements
+Status: historical candidate preparation, 10 September 2026; publication status
+updated 25 September 2026. This contract supplements
 the [app distribution requirements](App/specs.md#9-build-versioning--distribution--bld)
 and [ADR-0044](../decisions/0044-start-app-v020-beta-train-at-build-5.md).
 
-The owner has reported that open testing is available for the existing Play
-application. Preparation does not imply a submitted or approved release.
+At preparation time, the owner reported that the open-testing track was
+available for the existing Play application. That preparation alone did not
+establish a submitted or approved release.
+
+## Published status — 25 September 2026
+
+The owner confirms that PyBLE **0.2.0** is now published on Google Play for
+Android **open testing**. The official
+[listing](https://play.google.com/store/apps/details?id=dev.pyble.pyble)
+identifies SciLabPro and describes open testing for this version. The
+[publication review](../testing/website/android-open-testing-2026-09-25.md)
+records the primary-source check.
+
+Current README and website copy MUST reflect this live open-testing status,
+as specified by [website §3.1](website.md#31-app-beta-distribution). Google Play
+determines account, country, device, and testing availability. Do not infer a
+production-track release, worldwide availability, or the installed artifact's
+exact version code/source from the public version alone. Keep the official
+listing as the public link; no signed-in opt-in workflow is asserted verified.
+
+The preparation, artifact identities, and remaining historical checklists
+below retain their original scope. Publication does not retroactively certify
+unrecorded Console decisions, hardware evidence, or later source changes.
 
 ## Candidate identity
 
-The next candidate is **0.2.0 (8)**, owned by `app/pubspec.yaml`, for production
-package `dev.pyble.pyble`. Build 5 remains a historical handoff; retained local
-builds 6 and 7 must not be relabelled or replaced. The automated app-version
+The 10 September candidate is **0.2.0 (8)**, owned by `app/pubspec.yaml`, for
+production package `dev.pyble.pyble`. Build 5 remains a historical handoff;
+retained local builds 6 and 7 must not be relabelled or replaced. The automated app-version
 contract must bind build 8 to base version 0.2.0, PBLE/1 HELLO, and the existing
 GitHub User-Agent. If Play Console has already consumed code 8 or higher,
 increase this declaration and the version contract before rebuilding.
@@ -58,10 +80,12 @@ any stale golden requiring a reviewed update. Physical release-candidate BLE
 checks and iOS distribution parity remain separate release gates; an emulator
 or historical engineering report does not close them.
 
-Keep the public website's existing testing status until open testing is
-actually available. Console declarations, reviewer arrangements, upload,
-review submission and rollout remain explicit handoff steps. This preparation
-does not authorize sending tester messages or publishing a production release.
+At the preparation handoff, the public website's testing status was to remain
+unchanged until open testing became available. The dated publication status
+above now governs current public copy. Console declarations, reviewer
+arrangements, upload, review submission and rollout remain explicit handoff
+steps. This preparation does not authorize sending tester messages or
+publishing a production release.
 
 ## Official references
 

@@ -234,10 +234,10 @@ describe("public-site contract", () => {
       /<loc>https:\/\/pyble\.dev\/privacy<\/loc>\s*<lastmod>2026-09-11T00:00:00\.000Z<\/lastmod>/,
     );
     expect(sitemap).toMatch(
-      /<loc>https:\/\/pyble\.dev\/<\/loc>\s*<lastmod>2026-09-11T00:00:00\.000Z<\/lastmod>/,
+      /<loc>https:\/\/pyble\.dev\/<\/loc>\s*<lastmod>2026-09-25T00:00:00\.000Z<\/lastmod>/,
     );
     expect(sitemap).toMatch(
-      /<loc>https:\/\/pyble\.dev\/app<\/loc>\s*<lastmod>2026-09-11T00:00:00\.000Z<\/lastmod>/,
+      /<loc>https:\/\/pyble\.dev\/app<\/loc>\s*<lastmod>2026-09-25T00:00:00\.000Z<\/lastmod>/,
     );
     expect(sitemap).toMatch(
       /<loc>https:\/\/pyble\.dev\/support<\/loc>\s*<lastmod>2026-09-11T00:00:00\.000Z<\/lastmod>/,
@@ -245,9 +245,11 @@ describe("public-site contract", () => {
     expect(sitemap).toContain(
       "<loc>https://pyble.dev/features</loc>\n    <lastmod>2026-09-11T00:00:00.000Z</lastmod>",
     );
+    expect(sitemap).toContain(
+      "<loc>https://pyble.dev/learn/setup</loc>\n    <lastmod>2026-09-25T00:00:00.000Z</lastmod>",
+    );
     for (const path of [
       "/learn",
-      "/learn/setup",
       "/learn/first-program",
       "/learn/files",
       "/learn/github-import",

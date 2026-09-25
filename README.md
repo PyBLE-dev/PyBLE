@@ -21,7 +21,8 @@ telemetry.
 - Official example collection: [PyBLE-dev/examples](https://github.com/PyBLE-dev/examples)
 - iPad external beta:
   [join with TestFlight](https://testflight.apple.com/join/yU4e8s6d)
-- Android invited testing: [see the app page](https://pyble.dev/app)
+- Android 0.2.0 published for open testing:
+  [get PyBLE on Google Play](https://play.google.com/store/apps/details?id=dev.pyble.pyble)
 - License: [MIT](LICENSE)
 
 <p align="center">
@@ -75,13 +76,20 @@ and asks separately before overwriting existing files. Import never creates a
 remote folder hierarchy, opens an editor document, or runs downloaded code.
 
 The current App source version is `0.2.0+8`; App and firmware versions are
-independent. iPad testing uses TestFlight, and Android distribution follows
-the testing access shown on the [App page](https://pyble.dev/app). The
+independent. The published Android version is `0.2.0`, available through
+[Google Play open testing](https://play.google.com/store/apps/details?id=dev.pyble.pyble).
+iPad testing continues through TestFlight. The
+[App page](https://pyble.dev/app) provides both installation links and QR codes.
+Google Play determines account, country, device, and testing availability;
+open testing is a beta channel, not a production-track release.
+
+The [publication review](docs/testing/website/android-open-testing-2026-09-25.md)
+records the current Android availability. The earlier
 [Google Play build-8 handoff](docs/testing/google-play/0.2.0-build-8.md)
-records prepared artifacts and their exact source; preparation does not
-establish a live store release or mean those earlier artifacts contain later
-connection-lifecycle fixes. Both platforms share the same Flutter source and
-app test gates. The iOS/iPadOS project minimum is 15.
+records prepared artifacts and their exact source. The store's public version
+does not establish its installed build/source identity or mean those earlier
+artifacts contain later connection-lifecycle fixes. Both platforms share the
+same Flutter source and app test gates. The iOS/iPadOS project minimum is 15.
 
 ### Firmware
 
@@ -168,9 +176,12 @@ shared conformance corpus, documentation, and CI atomically.
 
 ## Try PyBLE
 
-1. Install the iPad beta from
-   [TestFlight](https://testflight.apple.com/join/yU4e8s6d), or build the
-   Flutter app locally.
+1. Install PyBLE 0.2.0 for Android open testing from
+   [Google Play](https://play.google.com/store/apps/details?id=dev.pyble.pyble),
+   or install the iPad external beta from
+   [TestFlight](https://testflight.apple.com/join/yU4e8s6d). The
+   [App page](https://pyble.dev/app) has links and QR codes for both platforms.
+   You can also build the Flutter app locally.
 2. Open [pyble.dev/flash](https://pyble.dev/flash) in a supported desktop
    Chromium browser. Confirm that the published v0.6.1 release is selected,
    then choose only the exact profile matching the board and memory topology.

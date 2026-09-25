@@ -131,7 +131,7 @@ export default function HomePage() {
           <div className="hero__copy">
             <div className="status-badge">
               <span className="status-dot" aria-hidden="true" />
-              iPad external beta + Android internal test
+              iPad external beta + Android open testing
             </div>
             <p className="eyebrow eyebrow--light">
               Python over Bluetooth Low Energy
@@ -482,8 +482,8 @@ export default function HomePage() {
             <h2 id="beta-channels-title">Choose your tablet beta.</h2>
             <p>
               Both builds come from the same open-source Flutter app. Choose the
-              testing channel for your tablet; neither is a production app store
-              release.
+              iPad external beta on TestFlight or Android open testing on Google
+              Play.
             </p>
           </div>
           <div className="beta-channel-grid">
@@ -545,28 +545,29 @@ export default function HomePage() {
 
             <section
               className="beta-invite__card beta-invite__card--channel beta-invite__card--android"
-              id="android-internal-test"
-              aria-labelledby="android-internal-test-title"
+              id="android-open-testing"
+              aria-labelledby="android-open-testing-title"
             >
               <div className="beta-invite__copy">
-                <p className="eyebrow">Android internal testing</p>
-                <h3 id="android-internal-test-title">
-                  Join the PyBLE Android internal test.
+                <p className="eyebrow">Android · Google Play open testing</p>
+                <h3 id="android-open-testing-title">
+                  Get PyBLE on Google Play.
                 </h3>
                 <p className="beta-invite__lede">
-                  The Android build is available only to approved internal
-                  testers signed in with an invited Google account. An
-                  unapproved or signed-out visitor may find the listing
-                  unavailable. This is not a public Google Play release.
+                  PyBLE 0.2.0 is available on Google Play open testing. Install
+                  the Android beta from Google Play and follow any enrollment
+                  prompts. Google Play determines availability for your account,
+                  country, and device. Firmware availability depends on your
+                  exact board; check the firmware installer before provisioning.
                 </p>
                 <div className="button-row beta-invite__actions">
                   <a
                     className="button button--primary"
-                    href={siteConfig.googlePlayInternalTestUrl}
+                    href={siteConfig.googlePlayUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                   >
-                    Open Android internal test
+                    Get PyBLE on Google Play
                     <ArrowIcon />
                   </a>
                   <Link className="button button--secondary" href="/support">
@@ -577,22 +578,22 @@ export default function HomePage() {
               <figure className="beta-invite__qr">
                 <a
                   className="beta-invite__qr-link"
-                  href={siteConfig.googlePlayInternalTestUrl}
+                  href={siteConfig.googlePlayUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                 >
                   <Image
-                    src="/google-play/pyble-google-play-internal-test-qr.svg"
+                    src="/google-play/pyble-google-play-qr.svg"
                     width={360}
                     height={360}
-                    alt="QR code for the PyBLE Android internal test on Google Play"
+                    alt="QR code for PyBLE on Google Play open testing"
                   />
                 </a>
                 <figcaption>
                   <strong>Scan with your Android camera</strong>
-                  <span>Sign in with the Google account that was invited:</span>
+                  <span>Or open Google Play on your Android device:</span>
                   <span className="beta-invite__url">
-                    {siteConfig.googlePlayInternalTestUrl}
+                    {siteConfig.googlePlayUrl}
                   </span>
                 </figcaption>
               </figure>

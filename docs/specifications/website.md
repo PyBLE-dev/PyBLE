@@ -125,7 +125,7 @@ Compatibility copy MUST distinguish platform scope from current support:
 It MUST NOT imply that Bluetooth hardware or stock MicroPython alone is enough,
 or promise that every eligible board has a firmware image today.
 
-### 3.1 App distribution
+### 3.1 App beta distribution
 
 The current app channels, verified on 2026-09-25, are:
 

@@ -20,10 +20,10 @@ export const siteConfig = {
   origin: "https://pyble.dev",
   alternateOrigin: "https://pyble.org",
   description:
-    "A free, open-source, tablet-first IDE for MicroPython boards with compatible Bluetooth Low Energy agent firmware.",
+    "PyBLE is a free, open-source MicroPython IDE over Bluetooth Low Energy. Available on Google Play open testing for Android and TestFlight for iPad.",
   supportEmail: "viwat.v@chula.ac.th",
   testFlightUrl: "https://testflight.apple.com/join/yU4e8s6d",
-  googlePlayInternalTestUrl:
+  googlePlayUrl:
     "https://play.google.com/store/apps/details?id=dev.pyble.pyble",
   repositoryUrl: "https://github.com/PyBLE-dev/PyBLE",
   bugReportUrl:
