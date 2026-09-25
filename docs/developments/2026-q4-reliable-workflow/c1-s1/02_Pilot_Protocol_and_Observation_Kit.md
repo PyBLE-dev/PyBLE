@@ -13,12 +13,14 @@
 | Inspected source | `d039db09779ed45124874721f88b2e0931664743`; source inspection does not identify the installed app |
 | Primary cohort | Provisionally adult tablet-owning makers; human owner must confirm a reachable cohort before collection |
 | Pilot decision-maker / recruitment owner / data custodian | TBD; no assignment, participant contact, consent, or approval inferred |
-| Reference app and hardware | Must be bound to a dated installation record and the exact setup table below; no setup has been physically verified for this pilot |
-| T04 / PYB-003.1 | Protocol/support template prepared for review; scoped human collection decision pending |
-| T05 / PYB-004.1 | Tasks and measurement rules prepared for review; cohort, owner and reference setup confirmation pending |
-| T06–T08 / PYB-004.2 | Blocked: collection decision, tested setup and consenting participants absent |
-| T09 | Synthesis template prepared; actual baseline analysis blocked without observations |
+| Reference app and hardware | Play build 8 and TestFlight build 6 verified in the [channel ledger](01_Channel_and_Artifact_Ledger.md); exact board/reference setup and operator BLE smoke remain unperformed for this pilot |
+| T04 / PYB-003.1 | Prepared — technical review complete; scoped human collection decision pending |
+| T05 / PYB-004.1 | Prepared — technical review complete; cohort, owner and reference setup confirmation pending |
+| T06–T08 / PYB-004.2 | Awaiting participant sessions: collection decision, tested setup and consenting participants still required |
+| T09 | Awaiting observation records; synthesis template prepared, actual baseline analysis not yet performed |
 | Results | Not collected. Success rate, timing, support cost and retention are unavailable; no trial, consent or physical result is claimed |
+
+**Device-retry review, 25 September 2026:** a separate source review checked the task cards against current localized UI, the first-program tutorial and PBLE/1 behavior. Save and Run remain separate explicit actions; the programs are bounded and console-only; STOP limits, assistance, missing data and consent/follow-up separation are consistent. This completes technical QA of the prepared kit, not the named human collection decision or an observed participant session. The [Android](06_Android_Channel_Verification.md) and [iPad](07_iPad_Channel_Verification.md) checks also establish current channel installations and launch. They do not provide a cohort, consent or exact-board smoke result.
 
 This kit is a manual, explicitly consented pilot procedure. It changes neither
 the app's data handling nor the [public privacy policy source](../../../../tools/web/src/app/privacy/page.tsx)
@@ -49,7 +51,7 @@ do not change eligibility, tasks or thresholds retrospectively to improve result
 flowchart TD
     Kit["Prepared protocol and empty templates"] --> Decision["Named owner reviews cohort, setup and data rules"]
     Decision --> Gate{"Collection approved and setup verified?"}
-    Gate -- No --> Hold["Keep observation tasks blocked"]
+    Gate -- No --> Hold["Await pilot setup and participant evidence"]
     Gate -- Yes --> Consent["Voluntary consent and eligibility"]
     Consent --> A["Task A: retain every eligible start"]
     A --> C["Optional meaningful Task C and prior workflow"]
@@ -281,7 +283,7 @@ Task C demonstrates adaptation only; it is never counted as a later-day return.
 | After A | Ask Task C purpose/attempt/outcome and reason to choose or leave PyBLE. Offer follow-up separately; record activation/window immediately if consented |
 | End of session | Stop bounded work if active; disconnect, verify harmless state and clear only owner-approved disposable files. Do not erase private app/board work. Record support and cleanup effort |
 | T06 / T07 / T08 batches | Schedule within actual capacity toward five baseline starts; reconcile every start, due follow-up, unfilled slot and blocker after each batch |
-| T09 analysis | Reconcile records, calculate descriptive outcomes below, report true observation/support cost and observed friction or “no blocker observed.” Without records, leave analysis blocked rather than invent a finding |
+| T09 analysis | Reconcile records, calculate descriptive outcomes below, report true observation/support cost and observed friction or “no blocker observed.” Without records, leave analysis Awaiting observation records rather than invent a finding |
 
 | Metric | Manual calculation and required context |
 |---|---|

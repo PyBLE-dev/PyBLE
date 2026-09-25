@@ -19,9 +19,10 @@
 This retry supersedes the earlier locked-device result for current iPad access
 and installed identity. T03 asks to verify the current TestFlight installation;
 the installed beta and its functioning launch satisfy that bounded task without
-reinstalling an already working app. The combined PYB-001.2 story still needs its
-Android evidence and explicitly retains any unperformed enrollment/install
-criteria. Neither this check nor a completed task qualifies BLE, draft recovery,
+reinstalling an already working app. The combined PYB-001.2 current-installation verification is complete with the
+separate [Android evidence](06_Android_Channel_Verification.md). Fresh enrollment
+and install/upgrade behavior remain explicitly unperformed, outside this
+existing-installation path. Neither this check nor a completed task qualifies BLE, draft recovery,
 the firmware matrix, or the five-participant pilot.
 
 ## Observations and acceptance assessment

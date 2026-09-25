@@ -19,7 +19,8 @@ existing, working Play installation was present. There was no Update or Install
 action offered, so no fresh enrollment, fresh installation or upgrade event was
 performed. The ledger's existing-app/update branch permits this nondestructive
 verification; it does not require uninstalling a user's app to manufacture a
-fresh-install result. PYB-001.2 still needs the separate iPad result.
+fresh-install result. The separate [iPad result](07_iPad_Channel_Verification.md) completes the other
+platform portion of PYB-001.2; both reports retain their evidence limits.
 
 ## Actual channel and launch observations
 
