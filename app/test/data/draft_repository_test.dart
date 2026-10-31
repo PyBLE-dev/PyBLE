@@ -453,6 +453,42 @@ void main() {
   );
 
   test(
+    'oversized internal project metadata is refused before hydration',
+    () async {
+      await repository.write(snapshot('safe'), expectedGeneration: 0);
+      await repository.close();
+      final sqlite.Database db = sqlite.sqlite3.open(file.path);
+      db.execute('UPDATE projects SET name = ?', <Object>['x' * 8192]);
+      db.close();
+      final List<int> before = await file.readAsBytes();
+      await expectLater(
+        DriftDraftRepository.open(file),
+        failure(DraftStorageFailure.corrupt),
+      );
+      expect(await file.readAsBytes(), before);
+    },
+  );
+
+  test(
+    'corrupt text in numeric metadata is refused before row mapping',
+    () async {
+      await repository.write(snapshot('safe'), expectedGeneration: 0);
+      await repository.close();
+      final sqlite.Database db = sqlite.sqlite3.open(file.path);
+      db.execute('UPDATE project_files SET updated_at = ?', <Object>[
+        'x' * 8192,
+      ]);
+      db.close();
+      final List<int> before = await file.readAsBytes();
+      await expectLater(
+        DriftDraftRepository.open(file),
+        failure(DraftStorageFailure.corrupt),
+      );
+      expect(await file.readAsBytes(), before);
+    },
+  );
+
+  test(
     'process kill before, during and after commit yields only whole checkpoints',
     () async {
       for (final String point in <String>['before', 'during', 'after']) {

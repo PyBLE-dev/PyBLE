@@ -108,6 +108,19 @@ class DriftDraftRepository implements DraftRepository {
   Future<DraftRead> load() => _serialized(() => _database.transaction(_read));
 
   Future<DraftRead> _read() async {
+    // Bound untrusted SQLite values on the database isolate before sending
+    // strings to the UI isolate or decoding their JSON. This also keeps a
+    // corrupt-but-readable database from monopolizing startup's timer.
+    final QueryRow settingsBound = await _database
+        .customSelect(
+          'SELECT COUNT(*) AS row_count, COALESCE(MAX(LENGTH(CAST(value AS BLOB))), 0) AS max_bytes FROM settings WHERE key = ?',
+          variables: <Variable<Object>>[const Variable<String>(_slotKey)],
+        )
+        .getSingle();
+    if (settingsBound.read<int>('row_count') != 1 ||
+        settingsBound.read<int>('max_bytes') > 4096) {
+      throw const DraftStorageException(DraftStorageFailure.corrupt);
+    }
     final List<Setting> settings = await (_database.select(
       _database.settings,
     )..where((Settings t) => t.key.equals(_slotKey))).get();
@@ -136,11 +149,28 @@ class DriftDraftRepository implements DraftRepository {
     }
     final QueryRow bound = await _database
         .customSelect(
-          'SELECT COUNT(*) AS row_count, COALESCE(MAX(LENGTH(content)), 0) AS max_bytes FROM project_files',
+          'SELECT COUNT(*) AS row_count, COALESCE(MAX(LENGTH(CAST(content AS BLOB))), 0) AS max_bytes, '
+          'COALESCE(MAX(MAX(LENGTH(CAST(id AS BLOB)), LENGTH(CAST(project_id AS BLOB)), '
+          'LENGTH(CAST(path AS BLOB)), LENGTH(CAST(content_hash AS BLOB)))), 0) AS metadata_bytes, '
+          "COALESCE(MIN(TYPEOF(size) = 'integer' AND TYPEOF(updated_at) = 'integer'), 1) AS valid_numbers FROM project_files",
         )
         .getSingle();
     if (bound.read<int>('row_count') > 1 ||
-        bound.read<int>('max_bytes') > maxDraftBytes) {
+        bound.read<int>('max_bytes') > maxDraftBytes ||
+        bound.read<int>('metadata_bytes') > 128 ||
+        bound.read<int>('valid_numbers') != 1) {
+      throw const DraftStorageException(DraftStorageFailure.corrupt);
+    }
+    final QueryRow projectsBound = await _database
+        .customSelect(
+          'SELECT COUNT(*) AS row_count, COALESCE(MAX(MAX(LENGTH(CAST(id AS BLOB)), '
+          'LENGTH(CAST(name AS BLOB)))), 0) AS max_bytes, '
+          "COALESCE(MIN(TYPEOF(created_at) = 'integer' AND TYPEOF(updated_at) = 'integer'), 1) AS valid_numbers FROM projects",
+        )
+        .getSingle();
+    if (projectsBound.read<int>('row_count') > 1 ||
+        projectsBound.read<int>('max_bytes') > 128 ||
+        projectsBound.read<int>('valid_numbers') != 1) {
       throw const DraftStorageException(DraftStorageFailure.corrupt);
     }
     final List<ProjectFile> files = await _database
