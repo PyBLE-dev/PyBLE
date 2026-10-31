@@ -337,7 +337,7 @@ in Xcode and cached provisioning metadata for the candidate signing team.
 Those local records did not establish a live session, role or unused build
 number. The later successful upload below verifies that this existing account
 could upload the unchanged `0.3.0 (9)` archive without a build-number conflict.
-Read-only browser discovery did not establish an authenticated console session;
+Initial read-only browser discovery did not establish an authenticated console session;
 that observation does not imply that the owner lacks web-console access.
 
 A read-only GitHub audit found zero repository Actions secrets and zero
@@ -355,8 +355,15 @@ account reached the device's “Verify it’s you” prompt. Owner verification 
 selection of the actual PyBLE publishing account remain the next steps. No
 Play upload or rollout occurred; build-9 account history remains unverified.
 Account names, email addresses and unrelated account details remain private.
-Use the qualified AAB recorded above after verifying the selected upload bytes
-and the account's available build number.
+The qualified AAB is staged on Lenovo at
+`/sdcard/Download/PyBLE-0.3.0-build-9-bb041a9a-20261031.aab`.
+Device-side verification confirms 64,439,893 bytes and SHA-256
+`bb041a9adcba7e84ece9800c418e69d7fa62274c2a170a929a37797a02784429`,
+matching the admitted artifact above. The private receipt is
+`local/recovery-completion/android/play-console/aab-device-preparation.json`,
+SHA-256 `f23f53d2e3e1a1ef808dfc8c0124b2489325e9158819cb6948b40ef913751405`.
+This transfer is not a Play upload. After owner verification, confirm the
+publishing account and available build number before selecting this AAB.
 
 Engineering admission and PR #41 integration are complete. Apple accepted the
 archive upload below, and later internal-account TestFlight delivery was
@@ -449,8 +456,8 @@ Builds page displayed **Waiting for Review**. This is a successful external
 submission, not Apple approval or verified external-tester availability.
 
 Automatically notify testers was unchecked and asserted off immediately before
-submission. No new tester invitations or email notifications were sent by this
-action. Existing review contacts and the sign-in requirement were retained.
+submission. No new testers were invited, and no explicit Notify Testers action
+was issued. Existing review contacts and the sign-in requirement were retained.
 Review Notes were saved and exactly reloaded: 987 characters, SHA-256
 `140d744c27e3930b253cc43a1355a49311ba3b32db9f6626347132f52e532ca3`;
 the [release packet](../../../publication/app-0.3.0-build-9-release-packet.md#app-store-connect-review-notes)

@@ -57,7 +57,8 @@ Saved and exactly verified after reload on 31 October: 987 characters,
 SHA-256 `140d744c27e3930b253cc43a1355a49311ba3b32db9f6626347132f52e532ca3`.
 Existing review contacts and the sign-in requirement were retained. External
 submission used the existing PyBLE external group with automatic tester
-notification off; no invitations or emails were sent by that action.
+notification unchecked; no new testers were invited and no explicit Notify
+Testers action was issued.
 
 ```text
 PyBLE needs no sign-in or demo account. Startup, BLE scanning and About can be inspected without a board. File transfer, Run/Stop and board file management require a nearby compatible MicroPython board running the PBLE/1 PyBLE agent; stock MicroPython alone is not sufficient. Exact board profiles, firmware installation and first-program guidance are at https://pyble.dev/flash and https://pyble.dev/learn. After provisioning, select a board in the app and wait for Ready.
