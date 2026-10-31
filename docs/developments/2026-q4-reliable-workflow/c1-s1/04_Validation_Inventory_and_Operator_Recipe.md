@@ -3,7 +3,7 @@
 
 # C1-S1 — validation inventory and operator recipe
 
-| Field | Recorded state |
+| Field | Recorded S1 state (25 September 2026) |
 |---|---|
 | Task / story | C1-S1-T12 / PYB-009.1; initial inventory and recipe, with scoped recovery completion planned in C1-S2-T01 |
 | Inspection date / source | 25 September 2026; `d039db09779ed45124874721f88b2e0931664743` before this documentation change |
@@ -15,17 +15,23 @@
 
 This is an operator entry point to maintained suites, not a new harness or release schema. Follow the selected candidate's versioned contracts and the current [HIL guide](../../../../tests/firmware_tests/hil/README.md). A host test proves the tested software contract; a physical run proves only its recorded artifact, device and scenario. Neither supplies participant-observation evidence or a PyBLE Ready award.
 
-**31 October handoff:** this is the S1 design/inventory baseline. The
-[C1-S2 implementation record](../c1-s2/00_Execution_Record.md) and
-[scoped operator recipe](../c1-s2/01_Operator_Recipe.md) now track candidate source
-and actual acceptance states. Original estimates are not measured effort or
-confirmed future capacity; historical device access is not a new candidate run.
+**31 October acceptance update:** this document preserves the 25 September S1
+design/inventory baseline. The [C1-S2 execution record](../c1-s2/00_Execution_Record.md)
+now records accepted bounded recovery and all ten app-only Q01–Q10 rows, with
+exact candidate/firmware identities, earlier-row impact assessments and physical
+conditions in the [iPad](../c1-s2/04_iPad_Acceptance.md) and
+[Android](../c1-s2/05_Android_Acceptance.md) reports. PYB-009.1's scoped
+[operator recipe](../c1-s2/01_Operator_Recipe.md) was executed and reviewed.
+The S1 “unassigned” and “not run” entries below are historical findings, not the
+current app-only acceptance state. Fresh firmware qualification, PYB-009.2
+second-operator reproduction, Ready and pilot claims remain separate. Original
+estimates are not measured effort or confirmed future capacity.
 
 ## 1. Evidence and gate selection
 
 | Proposed claim | Required evidence and authority | What remains separate |
 |---|---|---|
-| Documentation task complete | Source/link/command review and applicable contributor gates | PYB-009.1 also needs the scoped recovery procedure completed/reviewed in S2; second-operator reproduction is PYB-009.2 |
+| Documentation task complete | Source/link/command review and applicable contributor gates | PYB-009.1 includes the scoped recovery procedure, completed and reviewed in the [S2 recipe](../c1-s2/01_Operator_Recipe.md); second-operator reproduction is PYB-009.2 |
 | App source change works | Specification-first change, meaningful red/green tests, locked app CI, affected physical app scenarios and the accepted Definition of Done | Fake BLE, emulators and source version strings do not establish store installation or firmware qualification |
 | Candidate app supports the five existing profiles | At least the ten platform/profile rows below, affected lifecycle/recovery cases and declared exact firmware baselines; qualify the claimed capability on both platforms | An unchanged released firmware is a named compatibility input; an app-only increment does not automatically require rebuilding/requalifying all firmware bytes |
 | New automated-qualified v0.6.1 firmware release | Fresh atomic five-profile build/provenance/license/OI-1/hardening/provisioning/recovery matrix; both physical app rows in every V5 record; all applicable C3, Pico and Waveshare gates | A representative pair of app runs, a completed build or one Ready rehearsal cannot admit the release |
@@ -78,11 +84,11 @@ Unless a row names another directory, commands run from the repository root in a
 | Private evidence | New access-controlled paths outside candidate/qualification checkouts for addresses, serial/UID bindings, raw capture and generated receipts; do not paste identifiers, user files or console content into Git |
 | Public evidence | Reviewed redacted output, hashes, timestamps, exact scope and failed/not-run rows; link existing release formats rather than creating competing result files |
 
-## 3. Physical inventory and ten app rows
+## 3. Physical inventory and ten app rows — 25 September S1 baseline
 
 Historical release evidence establishes which exact profiles exist, not whether the required bench hardware is presently available. No physical board inventory was performed in this task. The initial 25 September discovery found no ADB device and the paired iPad's app query was denied while locked. The later user-supplied device retry supersedes those access gaps: [Lenovo TB-J616X / Android 12](06_Android_Channel_Verification.md) has verified Play `0.2.0 (8)` and [iPad16,10 / iPadOS 26.6.2](07_iPad_Channel_Verification.md) has verified TestFlight `0.2.0 (6)`; both launch. These checks do not select a firmware candidate or execute BLE scenarios. Host discovery found no `/dev/cu.usbmodem*`, `/dev/cu.usbserial*`, `/dev/cu.SLAB*` or `/dev/cu.wch*` endpoint; that does not exclude separately powered BLE boards. Pairing is not an app-install or HIL pass.
 
-| Resource | Current execution state | Required owner action before a physical batch |
+| Resource | 25 September S1 execution state, including device retry | Action identified by S1 before a physical batch |
 |---|---|---|
 | Five exact boards, revisions/memory/module markings | Historical profiles recorded; current possession, condition and firmware identity unverified | Physical operator assigned at Planning checks and privately records each exact unit |
 | Android tablet / Play access | Available during retry; existing beta membership, Play installation `0.2.0 (8)` and launch verified | Reconfirm availability for the selected candidate; retain Android payload mapping and delivered minimum-SDK limitations |
@@ -94,7 +100,7 @@ Historical release evidence establishes which exact profiles exist, not whether 
 
 All ten rows below are **not run for C1-S1**. An unchanged historical pass must retain its date/artifact instead of becoming a current pass. Platform rows reference one exact firmware digest per selected profile; they do not require duplicating the host OI-1 workload as though it were a tablet test.
 
-| Row | Exact provisioning profile | Platform | Required profile distinction | Current blocker |
+| Row | Exact provisioning profile | Platform | Required profile distinction | Blocker recorded in the 25 September S1 inventory |
 |---|---|---|---|---|
 | Q01 | `esp32-4mb` | iPadOS | Classic ESP32, 4 MiB flash; PBLE chip `esp32` | Exact board/candidate/operator unassigned; channel installation now verified |
 | Q02 | `esp32-4mb` | Android | Same declared firmware bytes as Q01 | Exact board/candidate/operator unassigned; channel installation now verified |
@@ -125,7 +131,7 @@ Every selected row covers the applicable edit/save/run/stdout/STOP/file-readback
 
 Across five fresh firmware profiles the fixed minimum OI-1 work therefore includes 50 reset samples, 25 PUT/GET pairs, 100 reliability files and 5 physical power cycles; v0.6.1 adds 250 sequential RUNs and 10 workspace acquisitions. Those totals exclude setup, retries as new retained attempts, manual provisioning/recovery, profile-specific observations and ten tablet rows. No additional 100-operation or 30-recovery floor is introduced.
 
-## 5. Operator procedure for the next authorized run
+## 5. Operator procedure proposed in the 25 September S1 inventory
 
 | Step | Action | Expected output / stop condition |
 |---|---|---|
@@ -134,7 +140,7 @@ Across five fresh firmware profiles the fixed minimum OI-1 work therefore includ
 | 3 — Check host prerequisites | Use the pinned app/build tools where applicable; run focused harness/conformance checks; inspect full CI requirements for the selected change | Exit-zero host logs permit proceeding to physical execution only; failures stay visible |
 | 4 — Identify over BLE | Use service-filtered discovery, select the physically verified exact unit, run identity smoke with explicit chip and agent version | HELLO/DEVICE_INFO/INFO agree; no chip-family inference of board profile or flash size. Keep scan identities private |
 | 5 — Core physical app run | On each platform separately, record actual install/build; connect and inspect identity; create/edit/save a harmless named test file; run and verify output; STOP tight-loop/print-flood cases under the applicable gate; upload/read back exact bytes; disconnect/reconnect and verify workspace | Retain actual outcomes and timing evidence. Permission denial, wrong selection, timeout and stale session behavior are findings, not success |
-| 6 — Recovery regression | For the current app, distinguish navigation/disconnect from OS process termination. Preserve user content before termination. For the later recovery candidate, execute the accepted write-boundary/restore/discard/failure/board-isolation scenarios from the [recovery design](03_Recovery_Design_and_Sizing.md) | Current source does not yet guarantee durable draft recovery. S2 supplies the executable recovery suite; this recipe does not mark proposed behavior passed |
+| 6 — Recovery regression | For the app inspected in S1, distinguish navigation/disconnect from OS process termination. Preserve user content before termination. For the later recovery candidate, execute the accepted write-boundary/restore/discard/failure/board-isolation scenarios from the [recovery design](03_Recovery_Design_and_Sizing.md) | The 25 September inspected source did not guarantee durable draft recovery. The later executable suite and accepted physical results are recorded in [C1-S2](../c1-s2/00_Execution_Record.md); this S1 recipe itself supplies no physical pass |
 | 7 — Firmware-specific qualification if selected | Follow the maintained OI-1 verify command, profile overrides, private workspace acquisitions, seven-scenario bench and profile-specific gates against one protected candidate | Fresh, immutable, exclusive-created results. Destructive acquisition requires a separately authorized disposable target, not routine app qualification |
 | 8 — Recover a failed attempt | Stop running code where the link remains serviceable; disconnect/reconnect explicitly. If needed use documented safe boot/power reset, then the exact board's ESP bootloader or Pico BOOTSEL recovery procedure with a verified image | Preserve the first failed log. Reset is not evidence of recovery unless observed. Never erase/reflash user storage as an automatic troubleshooting step |
 | 9 — Close the record | Confirm only test-owned files are cleaned up and original reviewed configuration restored; retain every attempt with result and duration; redact logs before public use | Failed/unrun rows remain explicit; no handwritten passing HIL map. Re-run affected steps after a recipe correction before an independent reproduction claim |
@@ -199,7 +205,7 @@ The app subtotal includes ten total rows: the S2 representative iPad/Android run
 
 Before S3/S5 selection, Developers must replace these ranges with the first measured batch and named access, choose app-only versus fresh-firmware claim, assign exact Q rows to batches, and reforecast anything exceeding capacity. A failed required row blocks the relevant claim; the Sprint calendar never changes its pass threshold.
 
-## 7. Checks actually performed and remaining work
+## 7. Checks performed and actions identified in the 25 September S1 inventory
 
 The following focused suites ran on macOS 26.6.2 arm64, Python 3.13.5, at source `d039db09779ed45124874721f88b2e0931664743`. All use host fixtures/fakes; they open no physical BLE or serial connection.
 
@@ -213,10 +219,10 @@ The following focused suites ran on macOS 26.6.2 arm64, Python 3.13.5, at source
 
 The full firmware suite, app suite, cross-builds and hardware tests were not run by this task. A separate `test_v061_hardening_release_gate.py` invocation was stopped during this bounded inspection before a result was collected; it supplies no pass. The [execution record](00_Execution_Record.md) records integrated document/source checks separately.
 
-| Remaining action | Owner assignment / next checkpoint |
+| Action remaining at the 25 September S1 inventory | Owner assignment / next checkpoint proposed at S1 |
 |---|---|
-| Confirm exact boards, safe fixtures, backups, candidate and physical operator | Product Owner/Developers name the actual operator at Planning; until then Q01–Q10 remain not run |
+| Confirm exact boards, safe fixtures, backups, candidate and physical operator | Product Owner/Developers were to name the actual operator at Planning; Q01–Q10 were not run in S1 |
 | Reconfirm tablet availability and candidate identity for the selected physical batch | Device access and current channel installation checks are complete for this retry; device/channel owner rechecks when the candidate or session changes |
-| Bind executable recovery cases and revise estimate from the accepted contract | App + QA during C1-S2-T01; proposed current-draft behavior has no physical result yet |
+| Bind executable recovery cases and revise estimate from the accepted contract | App + QA during C1-S2-T01; the then-proposed current-draft behavior had no physical result in S1 |
 | Time the first representative pair; allocate remaining rows and reruns | QA/Developers before C1-S3 scope selection |
 | Independently review and reproduce the recipe if PYB-009.2 is selected | Named second operator with separately allocated time; assistance remains visible and triggers an affected-step rerun |
