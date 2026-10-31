@@ -13,6 +13,8 @@
 | Planning authority | Product Owner orders the Product Backlog; Developers forecast feasible work during Sprint Planning; names and capacity remain unassigned |
 | Related documents | [Framework](01_Overview_and_Scrum_Framework.md), [milestones](03_Milestones.md), [Sprint Plan](04_Sprint_Plan.md), [stories](05_Product_Backlog_and_Stories.md), [Sprint Backlogs](06_Sprint_Backlogs.md) |
 
+**31 October implementation update:** bounded recovery work is underway for candidate `0.3.0+9`, following the user’s next-release request. [C1-S2 implementation record](c1-s2/00_Execution_Record.md) records source, automated and physical states separately. S1 remains six Done / two Prepared / four Awaiting evidence. Original dates/hours below remain the planning baseline; no completed Sprint, adopted 60-hour capacity forecast or release admission is inferred.
+
 ## Product Goal and decision principle
 
 **Proposed Product Goal:** tablet-owning makers can complete useful BLE board work,
@@ -35,8 +37,9 @@ continues to communicate direction without promising release dates.
 These records distinguish the historical baseline from the dated device retry.
 The [C1-S1 record](c1-s1/00_Execution_Record.md) records completed design/evidence
 preparation and existing channel installations separately from prepared pilot
-work and missing observations. Future work remains **Proposed** until explicitly
-selected.
+work and missing observations. The user selected bounded recovery implementation on 31 October. Later work
+remains **Proposed** until selected; that instruction does not establish actual
+team capacity or a completed formal Sprint.
 
 | Baseline item | Recorded state at the planning date | Consequence for this roadmap |
 |---|---|---|
@@ -46,7 +49,7 @@ selected.
 | Existing workflow | PBLE/1 editing, files, run/stop, console, Blocks, tutorials, and reviewed import already exist | Reuse implementation and tests; improve measured failures rather than rebuild the workflow |
 | Firmware v0.6.1 | Owner-confirmed publication for five exact profiles; incomplete automated evidence remains visible | New qualification and compatibility claims require their own applicable evidence |
 | Historical issue #24 | Closed as superseded; incomplete checklist was not declared passed | Do not recreate closure as a new dependency or treat historical closure as qualification |
-| Durable drafts | A-24/ADR-0010 current-document persistence remains a recorded implementation gap | Select a bounded local recovery increment with explicit text/Blocks scope |
+| Durable drafts | Bounded current-text recovery now has candidate source under ADR-0048; required acceptance remains unfinished | Complete integrated/physical evidence for PYB-006.2; retain broader A-24/Blocks scope |
 | Adoption and Ready | No measured cohort results or awarded PyBLE Ready badge established by the strategy | Treat outcome targets and badge eligibility as proposals requiring evidence |
 
 The [Android publication review](../../testing/website/android-open-testing-2026-09-25.md)

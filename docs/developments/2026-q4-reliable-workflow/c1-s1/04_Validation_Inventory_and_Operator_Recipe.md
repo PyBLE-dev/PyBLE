@@ -15,6 +15,12 @@
 
 This is an operator entry point to maintained suites, not a new harness or release schema. Follow the selected candidate's versioned contracts and the current [HIL guide](../../../../tests/firmware_tests/hil/README.md). A host test proves the tested software contract; a physical run proves only its recorded artifact, device and scenario. Neither supplies participant-observation evidence or a PyBLE Ready award.
 
+**31 October handoff:** this is the S1 design/inventory baseline. The
+[C1-S2 implementation record](../c1-s2/00_Execution_Record.md) and
+[scoped operator recipe](../c1-s2/01_Operator_Recipe.md) now track candidate source
+and actual acceptance states. Original estimates are not measured effort or
+confirmed future capacity; historical device access is not a new candidate run.
+
 ## 1. Evidence and gate selection
 
 | Proposed claim | Required evidence and authority | What remains separate |

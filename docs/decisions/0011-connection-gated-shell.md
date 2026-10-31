@@ -36,5 +36,11 @@ Unchanged rejection list, seam, and layering as in [ADR-0009](0009-runtime-conne
 specify a narrow successor exception: a local recovery preview/Restore/Discard
 panel must be reachable without a board, permission prompt or network access.
 The normal IDE remains connection-gated; this is not a full offline IDE or an
-authorization to restore board-write authority. Implementation is pending, so
-the current shell behavior above remains the recorded runtime baseline.
+authorization to restore board-write authority. The 31 October candidate now
+implements this narrow exception: local storage is resolved before the Connect
+workflow mounts, and a local preview/copy surface remains reachable while
+disconnected. The ordinary IDE remains connection-gated. See the
+[C1-S2 record](../developments/2026-q4-reliable-workflow/c1-s2/00_Execution_Record.md)
+for pending integration, physical evidence and release admission. The earlier
+shell behavior above remains the historical baseline, not a description of the
+candidate recovery gate.

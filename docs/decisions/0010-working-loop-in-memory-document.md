@@ -1,6 +1,6 @@
 # ADR 0010 — The working-loop current document is a volatile in-memory provider; feature packages cross-import public providers
 
-**Status:** Accepted (2026-07-02). Extends [ADR-0007](0007-riverpod-state-management.md) (Riverpod / D3) and [ADR-0009](0009-runtime-connection-manager.md) (runtime session behind the seam). Enables the **working feature loop** increment across stories **A-20** (editor), **A-21** (console), **A-16** (run-control toolbar; wire lands on the A-11 client) and **A-30** (files). Does **not** supersede the `Connection` seam (D1) or the offline-first mandate — it scopes a temporary, recorded deviation with a hard re-freeze at **A-24**.
+**Status:** Accepted (2026-07-02); volatile-only current-text limitation partially superseded by [ADR-0048](0048-bounded-current-text-draft-recovery.md) in the 2026-10-31 candidate. The historical decision below remains the original working-loop record. Extends [ADR-0007](0007-riverpod-state-management.md) (Riverpod / D3) and [ADR-0009](0009-runtime-connection-manager.md) (runtime session behind the seam). Enables the **working feature loop** increment across stories **A-20** (editor), **A-21** (console), **A-16** (run-control toolbar; wire lands on the A-11 client) and **A-30** (files). Does **not** supersede the `Connection` seam (D1) or the offline-first mandate — it scopes a temporary, recorded deviation with a hard re-freeze at **A-24**.
 
 ## Context
 
@@ -66,6 +66,9 @@ the rich-editor deferral. [ADR-0048](0048-bounded-current-text-draft-recovery.md
 now specifies the bounded current-text recovery successor, with its
 [write/failure/board-authority contract](../specifications/App/current-draft-recovery.md)
 and [C1-S1 review and sizing](../developments/2026-q4-reliable-workflow/c1-s1/03_Recovery_Design_and_Sizing.md).
-The inspected source is still volatile; implementation and acceptance evidence
-are pending. The remaining A-24 project, settings, console, import and Blocks
-obligations are carried, not satisfied by the successor design.
+That 25 September inspection was design-only. The 31 October candidate now
+implements the bounded current-text successor; its
+[C1-S2 execution record](../developments/2026-q4-reliable-workflow/c1-s2/00_Execution_Record.md)
+separates source implementation from pending integrated/physical acceptance and
+release admission. The remaining A-24 project, settings, console, import and
+Blocks obligations remain carried.

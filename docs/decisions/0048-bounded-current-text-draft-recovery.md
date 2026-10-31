@@ -3,21 +3,23 @@
 
 # ADR 0048 — Recover one current text draft through the planned Drift store
 
-**Status:** Specified for implementation (2026-09-25) under the user's request
-to execute C1-S1. Source implementation and physical acceptance remain pending; no named human
-sign-off is claimed and this is not release admission.
+**Status:** Accepted for the bounded implementation; candidate source implemented
+2026-10-31 under the user's next-release request. The contract was specified
+2026-09-25 during C1-S1. Final integrated checks, required physical evidence and
+release admission remain pending; no named human sign-off is claimed.
 
 ## Context
 
 [ADR-0010](0010-working-loop-in-memory-document.md) recorded an intentionally
 volatile current document and deferred Drift persistence to A-24. That
-limitation remains in the inspected source. Its old rich-editor deferral has
+limitation was present in the C1-S1 inspected source. The 31 October candidate
+implements the bounded successor described below. Its old rich-editor deferral has
 already been superseded by [ADR-0012](0012-flutter-code-editor-behind-editorsurface.md),
 so the persistence problem must be scoped against the current rich Editor,
 Blocks handoff and file-backed Run implementation.
 
-The current provider has a mutation epoch, but Save/Run/Files completion guards
-still compare document values. A stable Connection facade also makes object
+The C1-S1 provider had a mutation epoch, but Save/Run/Files completion guards
+still compared document values. A stable Connection facade also makes object
 identity insufficient to bind a multi-step text action to one attached board.
 Recovery must not amplify either gap by restoring a historical target as
 current write authority.
@@ -29,7 +31,7 @@ records this distinction and the proposed reforecast.
 ## Decision
 
 Adopt [the bounded current-draft contract](../specifications/App/current-draft-recovery.md)
-for the next implementation slice:
+for the bounded implementation slice:
 
 1. Use one current-text slot in the planned Drift `projects`/`project_files`
    subset and single SettingsStore. Commit its content and recovery metadata
@@ -49,7 +51,7 @@ for the next implementation slice:
    Keep Blocks graph recovery and the rest of A-24 explicitly carried.
 
 This decision supersedes only ADR-0010's volatile-only current-text design for
-the future accepted slice. It does not retroactively claim that released builds
+the bounded candidate slice, subject to its acceptance evidence. It does not retroactively claim that released builds
 persist drafts, change PBLE/1 or remove the existing provider/Connection seams.
 
 ## Alternatives considered
@@ -64,9 +66,11 @@ persist drafts, change PBLE/1 or remove the existing provider/Connection seams.
 
 ## Consequences
 
-The implementation needs the actual Drift/native database dependencies,
-versioned schemas, local recovery UI and stronger completion guards. None of
-these exist merely because this ADR is written. The estimate exceeds the
-original C1-S2 recovery allowance; future Sprint selection must be reforecast
-without weakening the failure cases. The narrower feature can eventually
-protect useful current text, while full project persistence remains unfinished.
+The candidate adds Drift/native database dependencies, a versioned schema,
+local recovery UI and epoch/session completion guards. The
+[implementation record](../developments/2026-q4-reliable-workflow/c1-s2/00_Execution_Record.md)
+and [operator recipe](../developments/2026-q4-reliable-workflow/c1-s2/01_Operator_Recipe.md)
+record their evidence and remaining admission work. The estimate exceeds the
+original C1-S2 allowance; the 60-hour S2–S4 option remains a planning proposal,
+not measured effort or confirmed staffing. Physical evidence is still required.
+Full project persistence and Blocks graph recovery remain unfinished.

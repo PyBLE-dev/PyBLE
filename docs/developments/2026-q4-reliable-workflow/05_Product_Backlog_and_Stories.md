@@ -9,9 +9,11 @@
 | Source | [Implementation strategy revision 1.4](../../planning/PyBLE_Implementation_Plan_and_Strategy_v1.0.md), reviewed 25 September 2026 |
 | Cycle | Proposed 28 September–20 December 2026; Asia/Bangkok |
 | Baseline | `23ed764b0ef88dce9720c66fbd1c0655268860cf`; completed publication work is evidence, not a new commitment |
-| Status | C1-S1: PYB-001.1/.2 and PYB-006.1 scoped work Done; pilot preparation awaits setup, observation work awaits evidence, PYB-009.1 partial; other work remains forecast |
+| Status | C1-S1: PYB-001.1/.2 and PYB-006.1 scoped work Done; pilot preparation awaits setup, observation work awaits evidence, PYB-009.1 partial; PYB-006.2 candidate source implemented with integrated/physical acceptance pending; later work remains forecast |
 | Accountabilities | Product Owner orders the backlog; Developers size and select work in Sprint Planning; named people and capacity remain to be assigned |
 | Navigation | [Overview and Scrum](01_Overview_and_Scrum_Framework.md) · [Roadmap](02_Product_Roadmap.md) · [Milestones](03_Milestones.md) · [Sprint plan](04_Sprint_Plan.md) · [Sprint Backlogs](06_Sprint_Backlogs.md) |
+
+**31 October implementation update:** bounded recovery work is underway for candidate `0.3.0+9`, following the user’s next-release request. [C1-S2 implementation record](c1-s2/00_Execution_Record.md) records source, automated and physical states separately. S1 remains six Done / two Prepared / four Awaiting evidence. Original dates/hours below remain the planning baseline; no completed Sprint, adopted 60-hour capacity forecast or release admission is inferred.
 
 ## 1. How to use this backlog
 
@@ -36,7 +38,7 @@
 | — | PYB-002 / P0 accuracy | Keep maintained availability claims correct | 002.1: public TestFlight description | PR #33 Android correction complete; residual found during 001 | Correction packet prepared; actual store update/public verification pending |
 | 2 | PYB-003 / P0 | Conduct a safe, consented pilot with bounded data collection | 003.1 | C1-S1; 001 informs setup | Prepared — awaiting pilot setup and named collection decision |
 | 3 | PYB-004 / P0 | Observe one reachable audience completing reproducible, useful tasks | 004.1, 004.2 | C1-S1; 001, 003 | 004.1 Prepared — awaiting cohort/setup; 004.2 Awaiting participant evidence |
-| 4 | PYB-006 / P0 | Recover the current text draft after process restart | 006.1, 006.2 | Sized in C1-S1; S2–S4 working option requires replanning; known defect does not wait for recruitment | 006.1 Done; 006.2 implementation pending |
+| 4 | PYB-006 / P0 | Recover the current text draft after process restart | 006.1, 006.2 | Sized in C1-S1; S2–S4 working option requires replanning; known defect does not wait for recruitment | 006.1 Done; 006.2 candidate source implemented, integrated/physical acceptance pending |
 | 5 | PYB-009 / P0 | Make existing validation reproducible by an operator | 009.1; optional 009.2 | Inventory C1-S1, scoped recipe C1-S2; reproduction only with assigned capacity | T12 Done; 009.1 remains partial |
 | 6 | PYB-005 / P0 if observed | Remove a demonstrated first-use blocker | 005.1 | C1-S2 candidate; actual 004 findings | Conditional; no defect invented |
 | 7 | PYB-008 / P0 for claims | Establish the exact candidate's applicable compatibility evidence | 008.1, 008.2 | Representative checks C1-S2; staged matrix C1-S3–S5; 001, 009.1, artifacts | Proposed; hardware and mandatory workload must be costed |
@@ -99,7 +101,7 @@ Acceptance criteria below remain the completion authority. The [C1-S1 execution 
 
 | A-24 scope guard | Required treatment |
 |---|---|
-| Existing implementation | [EditorDocument](../../../app/lib/editor/editor_document.dart) is volatile; [data barrel](../../../app/lib/data/data.dart) remains a placeholder. Navigation survival is not restart survival |
+| Existing implementation | Candidate [EditorDocument](../../../app/lib/editor/editor_document.dart) retains the shared in-memory seam; the recovery coordinator checkpoints a bounded current-text slot through `lib/data/`. Final integrated/physical acceptance is tracked in the C1-S2 record; full A-24 remains unfinished |
 | Persistence design | [App TDD](../../specifications/App/TDD.md) §9 describes the broader Drift model; its frozen working-loop contract records the current deviation. Do not interpret the target architecture as shipped code |
 | Backend | Preserve Drift and the single settings-store direction; ADR-0010 rejects an ad-hoc scratch-file substitute. A different design requires an explicit superseding decision |
 | Completion boundary | A bounded current-text recovery story does not complete full project management, all six content tables, saved boards, console history, import provenance, durable settings or Blocks recovery |

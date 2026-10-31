@@ -69,6 +69,15 @@ The original 136-hour task allocation, 20-hour planned headroom and 84-hour rese
 | Worktree method | Recovery design, pilot preparation and qualification inventory used separate worktrees; the retry also isolates Android, iPad, planning updates and integration before review |
 | Required next human actions | Name the pilot owner and consenting cohort, confirm exact reference board/setup and perform its smoke check; collect five actual baseline starts and analyze records; confirm actual capacity before selecting the revised next Sprint |
 
+## 31 October handoff to bounded implementation
+
+The user requested the next-release implementation after the C1-S1 integration
+and cleanup. The [C1-S2 record](../c1-s2/00_Execution_Record.md) now tracks candidate
+source implementation and its outstanding integrated/physical acceptance. The
+25 September findings above remain historical evidence. This handoff does not
+complete the two Prepared or four Awaiting-evidence S1 tasks, M-01/SG0, full A-24,
+participant observations, a Ready badge or store delivery.
+
 ## Initial integrated verification — before the device retry
 
 | Check | Actual result / scope |
