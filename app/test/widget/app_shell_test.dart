@@ -21,8 +21,6 @@
 // toolbar action slots) without weakening any of it.
 // HAND-OFF provenance: lib/app → app-architect; lib/pble → app-protocol-engineer.
 
-import 'dart:typed_data';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -95,15 +93,9 @@ Future<void> _focusLandscapeBlocks(WidgetTester tester) async {
 
 void main() {
   group('landscape software keyboard', () {
-    for (final TargetPlatform platform in <TargetPlatform>[
-      TargetPlatform.android,
-      TargetPlatform.iOS,
-    ]) {
-      testWidgets('Expand dismisses a native Blocks keyboard on $platform', (
-        WidgetTester tester,
-      ) async {
-        debugDefaultTargetPlatformOverride = platform;
-        addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    testWidgets(
+      'Expand requests native Blocks keyboard dismissal',
+      (WidgetTester tester) async {
         const MethodChannel keyboard = MethodChannel('dev.pyble/keyboard');
         final List<MethodCall> requests = <MethodCall>[];
         tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
@@ -154,8 +146,12 @@ void main() {
         );
         expect(tester.element(find.byKey(_blocksWorkspaceHostKey)), same(host));
         expect(tester.takeException(), isNull);
-      });
-    }
+      },
+      variant: TargetPlatformVariant(<TargetPlatform>{
+        TargetPlatform.android,
+        TargetPlatform.iOS,
+      }),
+    );
 
     testWidgets('Expand preserves a Flutter editor draft and selection', (
       WidgetTester tester,
