@@ -117,10 +117,15 @@ class RunController {
     }
     final EditorDocument uploadedDocument = _ref.read(editorDocumentProvider);
     final String path = boardPathForDocument(uploadedDocument);
+    final int epoch = _ref.read(editorDocumentEpochProvider);
+    final Connection connection = _connection;
+    final Object stamp = connectionSessionStampOf(connection);
     await _ref
         .read(programActionsProvider)
         .runSourceFile(path: path, source: cleaned);
-    if (_ref.read(editorDocumentProvider) == uploadedDocument) {
+    if (_ref.read(editorDocumentEpochProvider) == epoch &&
+        identical(_connection, connection) &&
+        identical(connectionSessionStampOf(connection), stamp)) {
       _ref.read(editorDocumentProvider.notifier).markSaved(boardPath: path);
     }
   }

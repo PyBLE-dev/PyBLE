@@ -493,15 +493,20 @@ class FileExplorerController extends Notifier<FileExplorerState> {
   Future<void> openInEditor(String fileName) async {
     final String path = _join(state.cwd, fileName);
     final int epoch = ++_openEpoch;
-    final EditorDocument before = ref.read(editorDocumentProvider);
+    final int documentEpoch = ref.read(editorDocumentEpochProvider);
+    final Connection connection = _conn;
+    final Object stamp = connectionSessionStampOf(connection);
     try {
-      final Uint8List bytes = await _conn.getFile(
+      final Uint8List bytes = await connection.getFile(
         path,
         onProgress: (TransferProgress progress) {
           if (epoch == _openEpoch) _onProgress(progress);
         },
       );
-      if (epoch != _openEpoch || ref.read(editorDocumentProvider) != before) {
+      if (_disposed ||
+          epoch != _openEpoch ||
+          ref.read(editorDocumentEpochProvider) != documentEpoch ||
+          !_isCapturedSessionCurrent(connection: connection, stamp: stamp)) {
         return;
       }
       state = state.copyWith(clearProgress: true);
@@ -562,14 +567,18 @@ class FileExplorerController extends Notifier<FileExplorerState> {
   Future<void> uploadCurrentBuffer() async {
     final EditorDocument doc = ref.read(editorDocumentProvider);
     final String path = _join(state.cwd, doc.name);
+    final int epoch = ref.read(editorDocumentEpochProvider);
+    final Connection connection = _conn;
+    final Object stamp = connectionSessionStampOf(connection);
     try {
-      await _conn.putFile(
+      await connection.putFile(
         path,
         Uint8List.fromList(utf8.encode(doc.content)),
         onProgress: _onProgress,
       );
       state = state.copyWith(clearProgress: true);
-      if (ref.read(editorDocumentProvider) == doc) {
+      if (ref.read(editorDocumentEpochProvider) == epoch &&
+          _isCapturedSessionCurrent(connection: connection, stamp: stamp)) {
         ref.read(editorDocumentProvider.notifier).markSaved(boardPath: path);
       }
       await refresh();

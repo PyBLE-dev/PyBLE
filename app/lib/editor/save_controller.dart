@@ -25,6 +25,7 @@ library;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:pyble/pble/pble.dart';
+import 'package:pyble/app/providers.dart';
 
 import 'editor_document.dart';
 import 'program_actions.dart';
@@ -73,6 +74,9 @@ class SaveController {
       doc = _ref.read(editorDocumentProvider);
     }
 
+    final int epoch = _ref.read(editorDocumentEpochProvider);
+    final Connection connection = _ref.read(connectionProvider);
+    final Object stamp = connectionSessionStampOf(connection);
     await _ref
         .read(programActionsProvider)
         .saveSource(path: path, source: cleaned, onProgress: onProgress);
@@ -80,7 +84,9 @@ class SaveController {
     // Only after CRC-verified success, and only if this is still the document
     // whose bytes were uploaded: clear dirty and adopt the path. A user may edit
     // or open another document while a BLE transfer is in flight.
-    if (_ref.read(editorDocumentProvider) == doc) {
+    if (_ref.read(editorDocumentEpochProvider) == epoch &&
+        identical(_ref.read(connectionProvider), connection) &&
+        identical(connectionSessionStampOf(connection), stamp)) {
       _ref.read(editorDocumentProvider.notifier).markSaved(boardPath: path);
     }
     return path;
