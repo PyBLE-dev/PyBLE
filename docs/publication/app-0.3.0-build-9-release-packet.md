@@ -40,6 +40,17 @@ instructions in the account. Verify them against the current form rather than
 inventing reviewer access, audience declarations, privacy attestation or a
 store review result. No tester invitation is sent by preparing this packet.
 
+## Installed store baseline before delivery
+
+| Platform | Existing production/store identity | Release implication |
+|---|---|---|
+| iPad | PyBLE `0.2.0 (6)` | Preserve this installed-store baseline for the eventual TestFlight upgrade receipt; the local Preview `0.3.0 (9)` is separate evidence |
+| Lenovo Android | `dev.pyble.pyble` `0.2.0`, versionCode `8`; installing and initiating package `com.android.vending`, with the Play certificate recorded in readiness | Preserve this Play-signed app and its data; the isolated qualifier `0.3.0 (9)` is separate evidence and the upload-key APK is not a compatible replacement for the Play-signed install |
+
+These installed baselines do not reveal whether a newer build number has
+already been uploaded to either account. Confirm account history before
+submission and record store-delivered About identity after actual delivery.
+
 ## Artifact and channel handoff
 
 | Step | Required result |
