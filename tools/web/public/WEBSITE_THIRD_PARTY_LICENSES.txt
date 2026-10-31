@@ -3937,10 +3937,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
 ================================================================================
-nanoid 3.3.18
+nanoid 3.3.20
 Installed path: node_modules/nanoid
 SPDX license: MIT
-Source: https://registry.npmjs.org/nanoid/-/nanoid-3.3.18.tgz
+Source: https://registry.npmjs.org/nanoid/-/nanoid-3.3.20.tgz
 License file: LICENSE
 
 The MIT License (MIT)
@@ -4865,10 +4865,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ================================================================================
-source-map-js 1.2.1
+source-map-js 1.2.2
 Installed path: node_modules/source-map-js
 SPDX license: BSD-3-Clause
-Source: https://registry.npmjs.org/source-map-js/-/source-map-js-1.2.1.tgz
+Source: https://registry.npmjs.org/source-map-js/-/source-map-js-1.2.2.tgz
 License file: LICENSE
 
 
