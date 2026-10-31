@@ -3,13 +3,17 @@
 
 # PyBLE 0.3.0 (9) — prepared app release packet
 
-Prepared 31 October 2026. This is candidate copy for the existing Google Play
-open-testing and TestFlight channels. It does not announce availability, a
-submission, or store delivery. Engineering admission is accepted for the frozen
-artifacts; final PR checks and merge precede publishing. The [readiness record](../developments/2026-q4-reliable-workflow/c1-s2/06_Release_Readiness.md)
-owns the artifact and gate states. Confirm that build 9 is unused in each
-account before uploading; a consumed number requires a new source version
-contract and rebuilt artifacts, not a renamed file.
+Prepared 31 October 2026 for the existing Google Play open-testing and
+TestFlight channels. Engineering admission and [PR #41 integration](../developments/2026-q4-reliable-workflow/c1-s2/00_Execution_Record.md#pr-41-final-integration-receipt)
+are complete. Apple accepted the unchanged `0.3.0 (9)` upload at `14:03:25 UTC`
+and started processing; the [channel receipt](../developments/2026-q4-reliable-workflow/c1-s2/06_Release_Readiness.md#31-october-app-store-connect-upload-receipt)
+does not yet establish processing completion, new TestFlight availability or
+an installed-channel upgrade. Apple build 9 is consumed: do not repeat that
+upload; a replacement Apple binary requires an explicit next-build contract
+and rebuilt artifacts. Google Play submission remains unverified; check its
+account history before uploading build 9. A consumed number requires a new
+source version contract and rebuilt artifacts, not a renamed file. This packet
+does not announce new channel availability.
 
 ## Google Play release notes
 
@@ -44,12 +48,12 @@ store review result. No tester invitation is sent by preparing this packet.
 
 | Platform | Existing production/store identity | Release implication |
 |---|---|---|
-| iPad | PyBLE `0.2.0 (6)` | Preserve this installed-store baseline for the eventual TestFlight upgrade receipt; the local Preview `0.3.0 (9)` is separate evidence |
+| iPad | Actual TestFlight detail offered PyBLE `0.2.0 (6)` with Open at approximately `14:04–14:05 UTC` on 31 October; the separate device query found the same bundle/build but marked it developer-accessible | Preserve the existing installation and record the eventual actual TestFlight upgrade. The current channel view is not an installation-origin receipt; local Preview `0.3.0 (9)` remains separate evidence |
 | Lenovo Android | `dev.pyble.pyble` `0.2.0`, versionCode `8`; installing and initiating package `com.android.vending`, with the Play certificate recorded in readiness | Preserve this Play-signed app and its data; the isolated qualifier `0.3.0 (9)` is separate evidence and the upload-key APK is not a compatible replacement for the Play-signed install |
 
-These installed baselines do not reveal whether a newer build number has
-already been uploaded to either account. Confirm account history before
-submission and record store-delivered About identity after actual delivery.
+These baseline observations do not reveal full account upload history. Apple
+has accepted the recorded build-9 upload; confirm Google Play history
+before submission. Record store-delivered About identity after actual delivery.
 
 ## Artifact and channel handoff
 
@@ -59,8 +63,8 @@ submission and record store-delivered About identity after actual delivery.
 | Android package | `dev.pyble.pyble`, production flavor, normal `lib/main.dart`; existing owner upload signer, AAB validation and native alignment checks |
 | iOS package | `dev.pyble.pyble`, normal `lib/main.dart`, distribution export and successful `tools/validate_ios_ipa.sh` |
 | Admission | Accepted recovery evidence, required app/profile matrix, packaging/provenance review and no unresolved release-blocking defect |
-| Account checks | Unused build numbers; current upload/signing identity, account role, declarations, review contact and hardware instructions |
-| Submit | Upload only admitted artifacts; record processing and review outcomes independently on Play and App Store Connect |
+| Account checks | Apple accepted build 9; do not repeat it. Verify Google Play build-9 availability, upload/signing identity, account role, declarations, review contact and hardware instructions |
+| Submit | Follow the accepted Apple upload through processing/review. Upload the admitted Android artifact only after its independent account checks; retain each platform outcome |
 | Verify delivery | Record actual track/group availability, then store-delivered installation/upgrade, About identity and a scoped launch/workflow check |
 | Public copy | Update release availability only after observing it; preserve each platform's actual status |
 
