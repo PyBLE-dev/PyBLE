@@ -5,7 +5,7 @@
 
 | Field | Record |
 |---|---|
-| Status | Prepared 31 October 2026; candidate execution/reproduction and final results remain pending |
+| Status | Executed, corrected and reviewed 31 October 2026 for accepted bounded recovery; optional independent reproduction remains separate |
 | Applies to | Bounded current-text candidate `0.3.0+9`, PYB-006.2; no full project/Blocks recovery claim |
 | Source | [Normative contract](../../../specifications/App/current-draft-recovery.md), [S1 inventory/cost model](../c1-s1/04_Validation_Inventory_and_Operator_Recipe.md) |
 | Result owner | Actual operator records name, date, immutable candidate/artifacts and raw-evidence location; no absent owner is invented |
@@ -28,6 +28,30 @@ emulator, recording connection or unit fake cannot replace required physical
 observations. Do not flash a different firmware merely to exercise this
 app-only storage feature; use a recorded applicable baseline and the selected
 affected matrix.
+
+### Recorded Android qualifier setup
+
+The [final Lenovo run](05_Android_Acceptance.md#final-candidate-recheck) used the
+normal `bef67bd` profile APK under its isolated qualification identity. Its
+actual package-verified launcher icon and temporary **Unrestricted** battery
+mode are part of the accepted setup. Earlier shell-launched attempts genuinely
+hit the startup watchdog while the OEM suppressed the renderer service. No
+product startup fix or general production-package workaround is implied.
+
+For a comparable rerun, record the original qualifier battery mode, device-idle
+exemption and OEM configuration before changing any setup. Apply a temporary
+qualifier-only change only for the scoped comparison; preserve global settings
+and the production package. Bind the installed artifact again after diagnostic
+or older-candidate substitutions. Restore the original policy and verify it
+after the run; the accepted session restored **Optimized**, removed the qualifier
+exemption and retained byte-identical global DuraSpeed settings.
+
+An initialized empty Blocks workspace exposes **Browse examples** while Preview
+code is disabled with **Add blocks to generate Python**. Verify that state,
+select the Hello example, then check generated text and keyboard behavior.
+Do not classify an empty workspace as a startup failure merely because Preview
+is disabled. Retain genuine watchdog, connection and selector failures with
+their separate outcomes.
 
 ## Automated checks
 
