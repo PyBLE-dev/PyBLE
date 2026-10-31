@@ -4,7 +4,7 @@
 /// PyBLE `lib/editor/` — the working-loop editor + run-control (A-20 / A-16,
 /// ADR-0010, TDD §11.6a/b, specs.md FR-EDIT §4.6 / FR-RUN §4.8).
 ///
-/// Exposes the volatile in-memory current document ([editorDocumentProvider]),
+/// Exposes the current document ([editorDocumentProvider]),
 /// the derived run-action availability ([runAvailabilityProvider]) and imperative
 /// run controller ([runControllerProvider]), and the live editable surface
 /// ([EditorView]). Every board action crosses the abstract `Connection` seam
@@ -13,10 +13,11 @@
 /// ADR-0012 puts the rich and plain editing implementations behind the exported
 /// EditorSurface seam. The rich default supplies Python highlighting and line
 /// numbers; session display settings resize code and gutter together. Deferred
-/// (recorded, not dropped): Drift persistence (A-24), multi-file tabs,
+/// (recorded, not dropped): full project persistence (A-24), multi-file tabs,
 /// app-owned find/replace, and the remaining external-keyboard shortcuts.
 library;
 
+export 'draft_recovery.dart';
 export 'editor_display_settings.dart';
 export 'editor_document.dart';
 export 'editor_surface.dart';

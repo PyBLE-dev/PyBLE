@@ -7,7 +7,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pyble/app/providers.dart';
 import 'package:pyble/editor/editor.dart';
 import 'package:pyble/editor/board_target_guard.dart';
-import 'package:pyble/editor/draft_recovery.dart';
 import 'package:pyble/files/files.dart';
 import 'package:pyble/pble/pble.dart';
 import '../support/recording_connection.dart';
@@ -117,6 +116,27 @@ void main() {
       await files.uploadCurrentBuffer();
       expect(requests.single.path, '/lib/restored.py');
       expect(requests.single.run, isFalse);
+      expect(connection.putFileCalls, isEmpty);
+    },
+  );
+  test(
+    'changing Files destination while consent is pending cancels the upload',
+    () async {
+      final choice = Completer<bool>();
+      final asked = Completer<void>();
+      final connection = SessionConnection();
+      final c = setup(connection, (_) {
+        asked.complete();
+        return choice.future;
+      });
+      final files = c.read(fileExplorerProvider.notifier);
+      await pumpEventQueue();
+      await connection.mkdir('/other');
+      final upload = files.uploadCurrentBuffer();
+      await asked.future;
+      await files.into('other');
+      choice.complete(true);
+      await upload;
       expect(connection.putFileCalls, isEmpty);
     },
   );

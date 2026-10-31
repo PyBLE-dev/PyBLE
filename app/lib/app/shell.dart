@@ -20,7 +20,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pyble/console/console.dart';
 import 'package:pyble/editor/editor.dart';
 import 'package:pyble/editor/board_target_guard.dart';
-import 'package:pyble/editor/draft_recovery.dart';
 import 'package:pyble/editor/recovery_gate.dart';
 import 'package:pyble/localization/localization.dart';
 import 'package:pyble/pble/pble.dart';
