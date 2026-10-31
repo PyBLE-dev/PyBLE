@@ -34,6 +34,7 @@ class _Store implements DraftRepository {
   );
   Completer<DraftRead>? delayed;
   bool failClear = false;
+  DraftStorageFailure? failWrite;
   @override
   Future<DraftRead> load() async => delayed == null ? slot : delayed!.future;
   @override
@@ -50,6 +51,7 @@ class _Store implements DraftRepository {
     DraftSnapshot snapshot, {
     required int expectedGeneration,
   }) async {
+    if (failWrite != null) throw DraftStorageException(failWrite!);
     slot = DraftRead(generation: snapshot.generation, snapshot: snapshot);
   }
 
@@ -307,6 +309,137 @@ void main() {
       expect(find.byType(ConnectScreen), findsNothing);
       expect(scanner.scanStartCount, 0);
       expect(tester.takeException(), isNull);
+    },
+  );
+  testWidgets(
+    'runtime unsafe storage failure offers Retry and volatile continuation',
+    (WidgetTester tester) async {
+      final _Store store = _Store();
+      final FakeConnection connection = FakeConnection();
+      addTearDown(connection.dispose);
+      await pumpSurface(
+        tester,
+        const RecoveryGate(child: EditorView()),
+        connection: connection,
+        extra: <Override>[draftRepositoryProvider.overrideWithValue(store)],
+      );
+      await tester.pump();
+      await tester.tap(find.byKey(kRecoveryRestoreKey));
+      await tester.pump();
+      store.failWrite = DraftStorageFailure.conflict;
+      containerOf(
+        tester,
+      ).read(editorDocumentProvider.notifier).setContent('live newer text');
+      await tester.pump();
+      await tester.tap(find.byKey(kRecoverySaveKey));
+      await tester.pumpAndSettle();
+      expect(find.byKey(kRecoveryRetryKey), findsOneWidget);
+      expect(find.byKey(kRecoveryContinueKey), findsOneWidget);
+      expect(
+        containerOf(tester).read(editorDocumentProvider).content,
+        'live newer text',
+      );
+      await tester.tap(find.byKey(kRecoveryRetryKey));
+      await tester.pumpAndSettle();
+      expect(find.text('prior text'), findsOneWidget);
+      expect(find.text('live newer text'), findsOneWidget);
+      expect(find.byKey(kRecoveryRestoreKey), findsOneWidget);
+      expect(store.slot.snapshot!.content, 'prior text');
+    },
+  );
+
+  testWidgets(
+    'New in an explicitly volatile session needs no second storage-failure choice',
+    (WidgetTester tester) async {
+      final _Store store = _Store();
+      final FakeConnection connection = FakeConnection();
+      addTearDown(connection.dispose);
+      await pumpSurface(
+        tester,
+        const RecoveryGate(child: EditorView()),
+        connection: connection,
+        extra: <Override>[draftRepositoryProvider.overrideWithValue(store)],
+      );
+      await tester.pump();
+      await tester.tap(find.byKey(kRecoveryRestoreKey));
+      await tester.pump();
+      containerOf(
+        tester,
+      ).read(draftRecoveryProvider.notifier).continueWithoutRecovery();
+      await tester.pump();
+      await tester.tap(find.byKey(kEditorNewButtonKey));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Replace draft'));
+      await tester.pumpAndSettle();
+      expect(containerOf(tester).read(editorDocumentProvider).content, isEmpty);
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(store.slot.snapshot!.content, 'prior text');
+    },
+  );
+
+  testWidgets(
+    'disconnected shell retains a deliberately empty named file preview',
+    (WidgetTester tester) async {
+      final _Store store = _Store()..slot = const DraftRead(generation: 0);
+      final FakeConnection connection = FakeConnection();
+      final FakeScanner scanner = FakeScanner();
+      final FakeSeamReadiness readiness = FakeSeamReadiness();
+      final PbleConnectionManager manager = PbleConnectionManager(
+        scanner: scanner,
+        readiness: readiness,
+        connectionFactory: (String _) async => connection,
+      );
+      addTearDown(manager.dispose);
+      addTearDown(scanner.dispose);
+      addTearDown(readiness.dispose);
+      addTearDown(connection.dispose);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: <Override>[
+            draftRepositoryProvider.overrideWithValue(store),
+            connectionManagerProvider.overrideWithValue(manager),
+          ],
+          child: const PybleApp(),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      containerOf(tester)
+          .read(editorDocumentProvider.notifier)
+          .openFromBoard(path: '/empty.py', content: '');
+      await tester.pump();
+      expect(find.text('Your current text draft'), findsOneWidget);
+      expect(find.text('empty.py'), findsOneWidget);
+      expect(find.byType(ConnectScreen), findsNothing);
+    },
+  );
+  testWidgets(
+    'volatile editor remains usable at 2x text with the keyboard present',
+    (WidgetTester tester) async {
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      tester.view.viewInsets = const FakeViewPadding(bottom: 350);
+      addTearDown(tester.view.resetViewInsets);
+      final _Store store = _Store()..slot = const DraftRead(generation: 0);
+      final FakeConnection connection = FakeConnection();
+      addTearDown(connection.dispose);
+      await pumpSurface(
+        tester,
+        const RecoveryGate(child: EditorView()),
+        connection: connection,
+        size: const Size(400, 800),
+        extra: <Override>[draftRepositoryProvider.overrideWithValue(store)],
+      );
+      await tester.pump();
+      containerOf(
+        tester,
+      ).read(editorDocumentProvider.notifier).setContent('live text');
+      containerOf(
+        tester,
+      ).read(draftRecoveryProvider.notifier).continueWithoutRecovery();
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+      expect(tester.getSize(find.byType(EditableText)).height, greaterThan(80));
     },
   );
 }
