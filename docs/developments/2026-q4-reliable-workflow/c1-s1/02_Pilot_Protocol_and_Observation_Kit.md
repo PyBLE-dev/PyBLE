@@ -22,6 +22,18 @@
 
 **Device-retry review, 25 September 2026:** a separate source review checked the task cards against current localized UI, the first-program tutorial and PBLE/1 behavior. Save and Run remain separate explicit actions; the programs are bounded and console-only; STOP limits, assistance, missing data and consent/follow-up separation are consistent. This completes technical QA of the prepared kit, not the named human collection decision or an observed participant session. The [Android](06_Android_Channel_Verification.md) and [iPad](07_iPad_Channel_Verification.md) checks also establish current channel installations and launch. They do not provide a cohort, consent or exact-board smoke result.
 
+**31 October continuation:** the engineering candidate `0.3.0 (9)` is now
+installed separately on both tablets, with its engineering evidence recorded in
+[the S2 record](../c1-s2/00_Execution_Record.md). The owner/cohort/reference-setup
+and capacity inputs remain unconfirmed; no participant records have been
+supplied. This prepared kit already provides the task cards, consent choices,
+observation rows and follow-up accounting needed for the first sessions.
+Before collecting on a new candidate, name that exact app/firmware/setup in the
+pilot decision record and record a prospective cohort/version decision. Do not
+pool different build/task cohorts silently or count engineering qualification
+runs as participant starts. The original 25 September preparation above remains
+historical.
+
 This kit is a manual, explicitly consented pilot procedure. It changes neither
 the app's data handling nor the [public privacy policy source](../../../../tools/web/src/app/privacy/page.tsx)
 and its [offline counterpart](../../../../app/lib/app/pages/privacy_policy_page.dart).

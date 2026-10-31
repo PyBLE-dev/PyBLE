@@ -75,7 +75,7 @@ fetches and validates the complete batch, shows the exact destination paths,
 and asks separately before overwriting existing files. Import never creates a
 remote folder hierarchy, opens an editor document, or runs downloaded code.
 
-The next App source candidate is `0.3.0+9`; App and firmware versions are
+The merged App source candidate is `0.3.0+9`; App and firmware versions are
 independent. The published Android version is `0.2.0`, available through
 [Google Play open testing](https://play.google.com/store/apps/details?id=dev.pyble.pyble).
 iPad testing continues through TestFlight. The
@@ -93,7 +93,7 @@ same Flutter source and app test gates. The iOS/iPadOS project minimum is 15.
 
 ### Next app candidate: local draft recovery
 
-The `0.3.0+9` source candidate adds one on-device current-text recovery copy.
+The merged `0.3.0+9` candidate adds one on-device current-text recovery copy.
 After restart, preview and explicitly Restore or Discard the last committed
 copy before connecting. “Saved locally” means the matching transaction finished;
 pending edits may not survive immediate termination. The separate **Save
@@ -104,8 +104,9 @@ This bounded feature covers text up to 1 MiB, including Python explicitly copied
 from Blocks. Blocks workspace graphs, projects/history and exported backups
 remain outside this increment. Uninstalling or clearing app data removes local
 copies. See the [candidate execution record](docs/developments/2026-q4-reliable-workflow/c1-s2/00_Execution_Record.md)
-for automated and device evidence; source implementation does not establish
-store availability or release qualification.
+for passing automated checks and candidate-specific device evidence. Local
+Android and iPad Preview installations are engineering candidates; their
+installation does not establish store availability or release qualification.
 
 ### Firmware
 

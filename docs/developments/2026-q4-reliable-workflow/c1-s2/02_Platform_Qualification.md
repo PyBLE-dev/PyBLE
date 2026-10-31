@@ -10,7 +10,7 @@
 | Scope | Local storage, explicit offline recovery and platform builds; partial evidence toward DR-T02/03/07/13/14 |
 | Acceptance | Engineering observations only; full physical board consent, interruption/interaction matrix and release qualification remain pending |
 | Raw evidence | Ignored `local/recovery-implementation/`: commands/results, source manifests, screenshots/UI dumps, retained checkpoint and APK; raw captures are not committed |
-| Review | [Execution record](00_Execution_Record.md), [operator recipe](01_Operator_Recipe.md), [draft PR #40](https://github.com/PyBLE-dev/PyBLE/pull/40) |
+| Review | [Execution record](00_Execution_Record.md), [operator recipe](01_Operator_Recipe.md), [merged PR #40](https://github.com/PyBLE-dev/PyBLE/pull/40) |
 
 ## Isolation and artifact identity
 
@@ -170,3 +170,25 @@ checkpoint files and signed archives were retained. The original TestFlight
 application remained installed and was brought forward without terminating it.
 The separate Lenovo production-entry candidate remains available for review;
 its test draft and board test file were cleared as described above.
+
+## Post-merge iPad normal-app deployment — 31 October
+
+After PR #40 merged at `6f5b3ea`, the normal `lib/main.dart` entry point was built
+in signed profile mode and installed under the isolated
+`dev.pyble.recoveryqualification` identity with the display name **PyBLE Preview**.
+This replaces the earlier test-only harness route with the normal candidate UI;
+the existing TestFlight installation remains a separate app.
+
+| Evidence | Observation |
+|---|---|
+| Source | All 100 copied `lib/` files, pubspec and lockfile match merged source; only the isolated native application identity and display name differ |
+| Artifact | Retained `ipad-preview-0309/PyBLE-Preview-0.3.0-9-profile.app.zip` beneath ignored `local/recovery-implementation/`; SHA-256 `c91bc6f7e14f421a528668bd3723e3f965d55f79f11ea90fec707a8fb15a4d1a` |
+| Build and signature | Normal `lib/main.dart`, `0.3.0 (9)`, profile mode; no qualification-phase Dart define; strict code-signature verification passes |
+| Installed apps | PyBLE Preview `0.3.0 (9)` and original PyBLE TestFlight `0.2.0 (6)` both present |
+| Launch and discovery | Normal disconnected scan UI launches and displays `5646`, `C81A`, `DA86`, `8C9E` and `3DCB` |
+| Evidence scope at deployment | Installation/launch/discovery only; no board connection or write performed during this deployment checkpoint |
+| Raw receipt | `ipad-preview-0309/deployment-observation.json`, source manifest, installed-app metadata and captures retained privately |
+
+This observation explains the two iPad icons and versions. It supplies no new
+TestFlight availability claim and does not by itself satisfy the normal-app
+recovery/board-consent scenarios in DR-T14.

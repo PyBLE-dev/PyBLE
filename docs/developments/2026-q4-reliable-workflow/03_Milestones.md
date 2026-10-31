@@ -7,12 +7,12 @@
 |---|---|
 | Status | M-01/SG0 remains Blocked on 25 September by pilot ownership/cohort/setup and capacity decisions; existing channel installations verified on retry. M-02 is in progress in the 31 October candidate with acceptance pending; other milestones remain Proposed and forecast windows need replanning |
 | Planning date | 25 September 2026; dates use Asia/Bangkok |
-| Source | [Implementation strategy revision 1.4](../../planning/PyBLE_Implementation_Plan_and_Strategy_v1.0.md), especially §§4, 8–10, 14, and 19 |
+| Source | [Implementation strategy revision 1.6](../../planning/PyBLE_Implementation_Plan_and_Strategy_v1.0.md), especially §§4, 8–10, 14, and 19 |
 | Inspected baseline | `main` at `23ed764b0ef88dce9720c66fbd1c0655268860cf` |
 | Related documents | [Framework](01_Overview_and_Scrum_Framework.md), [roadmap](02_Product_Roadmap.md), [Sprint Plan](04_Sprint_Plan.md), [stories](05_Product_Backlog_and_Stories.md), [Sprint Backlogs](06_Sprint_Backlogs.md) |
 | Meaning | Milestones describe inspectable outcomes and decision evidence; they are not additional Scrum events or promised releases |
 
-**31 October implementation update:** bounded recovery work is underway for candidate `0.3.0+9`, following the user’s next-release request. [C1-S2 implementation record](c1-s2/00_Execution_Record.md) records source, automated and physical states separately. S1 remains six Done / two Prepared / four Awaiting evidence. Original dates/hours below remain the planning baseline; no completed Sprint, adopted 60-hour capacity forecast or release admission is inferred.
+**31 October continuation update:** bounded recovery candidate `0.3.0+9` is merged in [PR #40](https://github.com/PyBLE-dev/PyBLE/pull/40) at `6f5b3ea`; the integrated suite and post-merge CI pass. Both tablets have local candidate installations and native storage restart evidence. [C1-S2 implementation record](c1-s2/00_Execution_Record.md) tracks the remaining physical acceptance separately from release qualification. S1 remains six Done / two Prepared / four Awaiting evidence. Original dates/hours remain the planning baseline; the current continuation order and unresolved capacity inputs are recorded in the [Sprint plan](04_Sprint_Plan.md#31-october-continuation-order-and-reforecast).
 
 ## Assessment and evidence states
 

@@ -17,7 +17,7 @@
 |---|---|
 | Source and app | Exact source SHA, clean/dirty state, `pubspec` version/build, platform build command, retained artifact SHA-256 and installed identity; do not identify a candidate solely by a branch name |
 | Devices | Actual Android model/API and iPad model/iPadOS; available application installation/signing route; accessible persistent storage |
-| Current access | Android Lenovo is absent from current ADB discovery; an emulator is supplemental only. iPad is visible wirelessly but Developer Mode currently blocks development execution |
+| Current access | Both Lenovo and iPad are connected. The Android normal-entry candidate runs locally; signed iPad profile builds install and launch through `devicectl`. The Flutter debug/JIT route remains a separate limitation, not a blocker for profile-mode physical execution |
 | User data | Preserve existing store installations and their data. Use a separate qualification identity/container when running test applications; never uninstall or clear app data to manufacture a passing recovery result |
 | Board-backed steps | Exact supported board profile, firmware identity, harmless setup and explicit destination; reserve a disposable user file that cannot affect startup or the PyBLE agent |
 | Evidence | Ignored local folder with commands, timestamps, outcome logs and artifact hashes; publish only reviewed redacted results, not device identifiers or user source |

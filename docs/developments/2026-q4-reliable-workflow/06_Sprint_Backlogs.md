@@ -5,7 +5,7 @@
 
 | Field | Rule |
 |---|---|
-| Status | C1-S1: six Done, two Prepared, four Awaiting evidence. C1-S2 bounded candidate implementation is underway on 31 October; integrated/physical acceptance remains pending. Original allowances/calendar remain baseline; later work requires replanning |
+| Status | C1-S1: six Done, two Prepared, four Awaiting evidence. C1-S2 candidate source is merged and automated checks pass; required physical acceptance remains pending on 31 October. Original allowances/calendar remain baseline; later work requires replanning |
 | Product/Sprint Goals | [Framework](01_Overview_and_Scrum_Framework.md) and [Sprint plan](04_Sprint_Plan.md) |
 | Acceptance authority | [Product backlog and stories](05_Product_Backlog_and_Stories.md); task completion never overrides a parent story's acceptance criteria |
 | Selection | Developers confirm scope, ownership, estimates and task plan at each Sprint Planning |
@@ -20,7 +20,7 @@ The initial tasks are small planning units, generally 1–4 hours. If a task or 
 
 Record optional follow-up consent and the prospective day-7–14 window at each activation. Collect follow-up as windows arrive, starting with the first cohort; do not postpone early cohorts until S5. S1 observation allowances include any follow-up due within S1; S2-T11, S3-T10 and later follow-up rows continue it. Developers must reallocate headroom or other selected work if actual pilot effort exceeds these allowances, preserving required recovery review and tests. Record missed windows as missing/late evidence rather than reconstructing an on-time response.
 
-**31 October implementation update:** bounded recovery work is underway for candidate `0.3.0+9`, following the user’s next-release request. [C1-S2 implementation record](c1-s2/00_Execution_Record.md) records source, automated and physical states separately. S1 remains six Done / two Prepared / four Awaiting evidence. Original dates/hours below remain the planning baseline; no completed Sprint, adopted 60-hour capacity forecast or release admission is inferred.
+**31 October continuation update:** bounded recovery candidate `0.3.0+9` is merged in [PR #40](https://github.com/PyBLE-dev/PyBLE/pull/40) at `6f5b3ea`; the integrated suite and post-merge CI pass. Both tablets have local candidate installations and native storage restart evidence. [C1-S2 implementation record](c1-s2/00_Execution_Record.md) tracks the remaining physical acceptance separately from release qualification. S1 remains six Done / two Prepared / four Awaiting evidence. Original dates/hours remain the planning baseline; the current continuation order and unresolved capacity inputs are recorded in the [Sprint plan](04_Sprint_Plan.md#31-october-continuation-order-and-reforecast).
 
 ## C1-S1 — reproduce the current workflow and size recovery
 
@@ -65,14 +65,14 @@ Five baseline starts is a target, not the implied result of reserving six hours.
 | Task ID | Parent child item | Proposed task and expected output | Dependency | Contribution role | h | Status |
 |---|---|---|---|---|---:|---|
 | C1-S2-T01 | PYB-009.1 | Complete the scoped restart/setup/operator recipe and expected evidence for this increment | 006.1 scope; initial 009.1 inventory | QA + App | 2 | Prepared — scoped recipe; execution/reproduction pending |
-| C1-S2-T02 | PYB-006.2 | Add meaningful failing tests for the accepted write boundary, relaunch recovery and absence of implicit board/network actions | Approved 006.1; specification-first sequence | App | 2 | Implemented — component tests; final integration pending |
-| C1-S2-T03 | PYB-006.2 | Add failing tests for interrupted/corrupt/full local storage and stale completions against newer edits | Approved 006.1 | App | 2 | Implemented — failure/race tests; final integration pending |
+| C1-S2-T02 | PYB-006.2 | Add meaningful failing tests for the accepted write boundary, relaunch recovery and absence of implicit board/network actions | Approved 006.1; specification-first sequence | App | 2 | Implemented and checked — integrated suite and CI pass |
+| C1-S2-T03 | PYB-006.2 | Add failing tests for interrupted/corrupt/full local storage and stale completions against newer edits | Approved 006.1 | App | 2 | Implemented and checked — integrated failure/race suite and CI pass |
 | C1-S2-T04 | PYB-006.2 | Implement the minimal accepted durable storage/migration behavior until relevant tests pass | T02/T03 red evidence | App | 4 | Implemented — candidate storage; acceptance pending |
 | C1-S2-T05 | PYB-006.2 | Implement hydration and specified recovery/discard behavior through existing providers | T04 and accepted UI contract | App | 4 | Implemented — candidate coordinator/UI; acceptance pending |
 | C1-S2-T06 | PYB-006.2 | Complete non-destructive error handling, truthful scope and localized recovery guidance | T04/T05 | App | 2 | Implemented — candidate guidance/errors; acceptance pending |
-| C1-S2-T07 | PYB-006.2 | Run affected controller/widget/lifecycle regressions and repository gates; resolve scoped failures | T04–T06 | App + QA | 2 | In progress — integrated regression and gates |
-| C1-S2-T08 | PYB-008.1 | Run representative Android restart/interruption scenarios on the recorded candidate; retain actual results | T01/T07; device/candidate | QA | 2 | Awaiting physical candidate evidence — Android |
-| C1-S2-T09 | PYB-008.1 | Run representative iPad restart/interruption scenarios on the recorded candidate; retain actual results | T01/T07; device/candidate | QA | 2 | Awaiting physical candidate evidence — iPad |
+| C1-S2-T07 | PYB-006.2 | Run affected controller/widget/lifecycle regressions and repository gates; resolve scoped failures | T04–T06 | App + QA | 2 | Implemented and checked — 972 tests and pinned CI gates pass |
+| C1-S2-T08 | PYB-008.1 | Run representative Android restart/interruption scenarios on the recorded candidate; retain actual results | T01/T07; device/candidate | QA | 2 | In progress — native restart and normal recovery/board consent observed; remaining applicable scenarios pending |
+| C1-S2-T09 | PYB-008.1 | Run representative iPad restart/interruption scenarios on the recorded candidate; retain actual results | T01/T07; device/candidate | QA | 2 | In progress — native restart and normal-app launch observed; remaining applicable scenarios pending |
 | C1-S2-T10 | PYB-006.2 | Review integration/evidence and update user guidance plus carried A-24/Blocks limitations | T07–T09 and all applicable acceptance | App + reviewer | 1 | In progress — integration review and evidence reconciliation |
 | C1-S2-T11 | PYB-011.2 | Collect due consented follow-up and account for early windows, missing responses and task opportunity | 004 prospective method; actual activation dates | Pilot | 1 | Awaiting participant evidence — no activation dates supplied |
 | **C1-S2 total** | | | | | **24** | |

@@ -5,14 +5,14 @@
 
 | Field | Value |
 |---|---|
-| Status | C1-S1 remains partial; bounded S2 candidate implementation selected 31 October with acceptance pending. Original S2–S6 dates/hours remain baseline forecasts requiring capacity reconciliation |
+| Status | C1-S1 remains partial; bounded S2 candidate merged 31 October with physical acceptance pending. Original S2–S6 dates/hours remain baseline forecasts requiring capacity reconciliation |
 | Cycle | `C1`, 28 September–20 December 2026, Asia/Bangkok |
-| Basis | [Strategy revision 1.4, §8](../../planning/PyBLE_Implementation_Plan_and_Strategy_v1.0.md#8-twelve-week-implementation-schedule) |
+| Basis | [Strategy revision 1.6, §8](../../planning/PyBLE_Implementation_Plan_and_Strategy_v1.0.md#8-twelve-week-implementation-schedule) |
 | Product Goal and quality rules | [Working agreement](01_Overview_and_Scrum_Framework.md) |
 | Acceptance criteria | [Product backlog and stories](05_Product_Backlog_and_Stories.md) |
 | Task-level proposal | [Sprint backlogs](06_Sprint_Backlogs.md) |
 
-**31 October implementation update:** bounded recovery work is underway for candidate `0.3.0+9`, following the user’s next-release request. [C1-S2 implementation record](c1-s2/00_Execution_Record.md) records source, automated and physical states separately. S1 remains six Done / two Prepared / four Awaiting evidence. Original dates/hours below remain the planning baseline; no completed Sprint, adopted 60-hour capacity forecast or release admission is inferred.
+**31 October continuation update:** bounded recovery candidate `0.3.0+9` is merged in [PR #40](https://github.com/PyBLE-dev/PyBLE/pull/40) at `6f5b3ea`; the integrated suite and post-merge CI pass. Both tablets have local candidate installations and native storage restart evidence. [C1-S2 implementation record](c1-s2/00_Execution_Record.md) tracks the remaining physical acceptance separately from release qualification. S1 remains six Done / two Prepared / four Awaiting evidence. Original dates/hours remain the planning baseline; the current continuation order and unresolved capacity inputs are recorded in the [Sprint plan](04_Sprint_Plan.md#31-october-continuation-order-and-reforecast).
 
 ## Forecast and commitment boundary
 
@@ -44,7 +44,7 @@ The remaining 18h under S2–S4's combined 78h ceiling cannot silently absorb al
 The next-release instruction selects PYB-006.2 engineering and its required
 verification, supporting PYB-009.1 recipe work and applicable PYB-008.1 evidence.
 The [execution record](c1-s2/00_Execution_Record.md) owns actual results. Source
-storage/coordinator/UI/guard work is implemented; the usable story remains in
+storage/coordinator/UI/guard work is merged and automated checks pass; the usable story remains in
 progress until all applicable acceptance passes. The original 12–25 October S2
 window is historical; calendar position does not mark S2 or S3 complete.
 
@@ -53,6 +53,32 @@ They are not confirmed staffing, measured effort or an adopted replacement for
 the tables below. Reorder displaced matrix/activation work with actual capacity;
 keep pilot evidence and the M-01/SG0 gap visible while known engineering work
 continues. No automatic completion of S1, SG0, broader A-24 or PyBLE Ready follows.
+
+## 31 October continuation order and reforecast
+
+The user requested completion of the remaining work after reviewing the stage
+assessment. The selected engineering order is below. This records actual work
+selection; it does not invent a completed Sprint Planning event, human staffing,
+measured velocity or a new delivery deadline. The original C1-S3 window is
+26 October–8 November; unfinished S2 acceptance carries into that window.
+
+| Order / stream | Current work and completion evidence | Forecast treatment |
+|---|---|---|
+| 1 — M-02 recovery acceptance | Complete remaining representative iPad/Android recovery, current-board consent and Blocks-to-Editor checks; reconcile DR-T01–14 against exact artifacts and review the result | Selected now; record actual duration and residual scenarios before forecasting completion |
+| 2 — M-04 release qualification | Freeze the selected app artifacts and complete the applicable five-profile × two-platform affected app matrix, provenance and release review | Follows accepted recovery behavior; unchanged firmware does not automatically require fresh firmware-release qualification |
+| 3 — M-05 distribution | Prepare the existing Play/TestFlight handoffs; submit only an admitted candidate; record processing/availability and installed-channel evidence separately | Preparation can overlap qualification; external access/review duration is unresolved |
+| Parallel — M-01 pilot baseline | Confirm pilot owner, primary cohort, exact reference setup and actual weekly capacity; collect real consented baseline sessions using the prepared kit | Awaiting human inputs; engineering observations are not participant starts |
+| Later — M-03/M-06 learning | Collect useful-task and prospective day-7–14 follow-up observations from actual consenting activations | Preserve original recruitment targets; reforecast dates after real recruitment and capacity are known |
+| Conditional — Ready rehearsal | Use an assigned second operator for one exact profile only after capacity is selected | Remains optional; it is not a prerequisite for unrelated maintenance delivery |
+
+Required planning inputs are the named pilot/recruitment owner, selected cohort
+and reference setup, actual engineering/pilot hours per week, and any existing
+consented session records. Until supplied, the 20h/week assumption, 45–72h
+recovery estimate and 60h allocation option remain historical planning inputs.
+Do not subtract agent wall-clock time from human capacity or relabel elapsed
+calendar time as measured engineering effort. Maintain the original 22 November
+activation target alongside any later approved forecast; missed windows remain
+missing or late evidence.
 
 ## Capacity model
 
