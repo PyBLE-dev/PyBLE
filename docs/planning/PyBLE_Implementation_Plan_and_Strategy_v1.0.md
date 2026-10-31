@@ -11,10 +11,10 @@
 
 | Field | Value |
 |---|---|
-| Document version | 1.7 — physical acceptance, declared firmware baselines and release preparation; original filename retained |
+| Document version | 1.8 — accepted bounded recovery and app-only qualification; channel/pilot continuation; original filename retained |
 | Prepared | 25 September 2026 |
-| Last reviewed | 31 October 2026; merged recovery baseline, physical acceptance continuation, firmware identity checks and release preparation reviewed; final candidate admission remains separate |
-| Status | C1-S1 has six tasks Done, two Prepared awaiting pilot setup and four Awaiting evidence; Sprint and SG0 remain unfinished. Bounded recovery source is merged, with physical acceptance and release qualification underway. Human capacity and recruitment dates need replanning; no new protocol behavior approved |
+| Last reviewed | 31 October 2026; bounded M-02 and app-only M-04 engineering acceptance recorded with exact candidate, firmware and OEM test conditions; device closeout complete; final integration and channel delivery separate |
+| Status | C1-S1 has six tasks Done, two Prepared awaiting pilot setup and four Awaiting evidence; Sprint and SG0 remain unfinished. Bounded recovery and app-only qualification pass scoped engineering review; device closeout is complete; final integration and actual channel delivery remain separate. Human capacity and recruitment dates need replanning; no new protocol behavior approved |
 | Product | PyBLE — Python over Bluetooth Low Energy |
 | Organization | SciLabPro |
 | Planning horizon | Immediate 12-week delivery cycle, followed by conditional expansion through September 2028 |
@@ -40,6 +40,7 @@
 | 1.5 | Implemented bounded current-text recovery for source candidate 0.3.0+9; added candidate execution/operator records; preserved remaining pilot, platform and release gates |
 | 1.6 | Reconciled PR #40 merge, passing integrated CI and both local tablet candidates; selected acceptance → qualification → distribution continuation, with human capacity and participant evidence still explicit |
 | 1.7 | Recorded normal-app acceptance progress and exact current firmware inputs for app-only compatibility; tracked prepared signed artifacts and remaining candidate, release and channel evidence without inventing pilot results |
+| 1.8 | Accepted bounded recovery and the declared ten-row app-only matrix after actual platform checks and scoped engineering review; moved remaining release work to final integration and M-05, preserving pilot gaps and original forecasts |
 
 ## Contents
 
@@ -163,8 +164,8 @@ The [execution record](../developments/2026-q4-reliable-workflow/c1-s1/00_Execut
 | PYB-001 | Reviewed ledger; [Lenovo Play `0.2.0 (8)`](../developments/2026-q4-reliable-workflow/c1-s1/06_Android_Channel_Verification.md) and [iPad TestFlight `0.2.0 (6)`](../developments/2026-q4-reliable-workflow/c1-s1/07_iPad_Channel_Verification.md) existing installations, channel/Open and launch verified | iPad build-to-source mapping remains unknown; Android code/asset correspondence does not establish complete binary equivalence or store-console provenance. Fresh enrollment/reinstallation was not performed |
 | Residual PYB-002.1 | Accurate replacement TestFlight app-level description prepared after the public page exposed its older ESP/agent-0.4.0 baseline | Distribution owner must apply it and verify the public result; also reconcile build-6 installed `MinimumOSVersion` 18 with TestFlight notes stating 15 before asserting support. No store mutation performed; Android's earlier correction remains complete |
 | PYB-003/004 | Operational pilot protocol, safe Tasks A/B/C, consent/retention rules and empty observation/support templates | Human owner, reachable cohort, tested setup and collection decision unconfirmed; no participants or observed outcomes |
-| PYB-006.1 | [Recovery contract](../specifications/App/current-draft-recovery.md), ADR-0048, source/peer review, scenario matrix and estimate | Bounded implementation now tracked in the [C1-S2 record](../developments/2026-q4-reliable-workflow/c1-s2/00_Execution_Record.md); platform/release acceptance and broader A-24/Blocks scope remain carried |
-| PYB-009.1 | Existing tool/gate inventory, ten platform/profile rows, cost model and initial operator recipe; 110 focused host harness tests pass | S2 now supplies the scoped procedure and actual connected-device observations; final candidate acceptance and independent reproduction remain separate |
+| PYB-006.1 | [Recovery contract](../specifications/App/current-draft-recovery.md), ADR-0048, source/peer review, scenario matrix and estimate | Bounded implementation now tracked in the [C1-S2 record](../developments/2026-q4-reliable-workflow/c1-s2/00_Execution_Record.md); scoped engineering acceptance is recorded; broader A-24/Blocks scope and actual channel delivery remain carried |
+| PYB-009.1 | Existing tool/gate inventory, ten platform/profile rows, cost model and initial operator recipe; 110 focused host harness tests pass | S2 now supplies the scoped procedure and actual connected-device observations; scoped candidate acceptance is recorded; optional independent reproduction remains separate |
 
 The recovery estimate is **38–63 engineering hours**, or **45–72 hours** with the original recipe, representative-platform and follow-up allowances. The [design review](../developments/2026-q4-reliable-workflow/c1-s1/03_Recovery_Design_and_Sizing.md) offers a conditional 60-hour S2–S4 allocation, displacing earlier matrix and activation forecasts. The [validation inventory](../developments/2026-q4-reliable-workflow/c1-s1/04_Validation_Inventory_and_Operator_Recipe.md) estimates 13.5–26 operator hours for the app matrix and 30–59 for fresh full firmware qualification, excluding builds, unavailable access and defect repair. These are working estimates, not actual effort or promises. **SG0 remains blocked.**
 
@@ -187,7 +188,7 @@ Do not spend the first sprint rebuilding a large analytics dashboard. A small pr
 | [Device information types](../../app/lib/pble/types.dart) | Negotiated chip, agent version, and capabilities | A support export must distinguish observed data from operator-supplied profile/provenance; current HELLO does not prove an artifact hash |
 | [Host conformance fixtures](../../tests/firmware_tests/host/conformance/README.md), [HIL guide](../../tests/firmware_tests/hil/README.md) | Shared vectors, compiled-native/portable tests, physical benches and release evidence tools | Add a coverage map and operator recipe before creating another harness or schema |
 
-**Selected next-release engineering candidate:** PYB-006.2, the bounded part of the carried A-24 persistence gap. Implementation and evidence are tracked in the [C1-S2 record](../developments/2026-q4-reliable-workflow/c1-s2/00_Execution_Record.md). Its bounded specification and sizing are now recorded in C1-S1; select implementation against that estimate while collecting first-use observations; an already documented loss condition does not need rediscovery by participants. Start with durable recovery of the current text document and explicitly scope Blocks recovery. The existing ADR selects Drift and rejects an ad-hoc scratch-file workaround; any different design needs an explicit superseding decision. This does not approve a full project manager, automatic board writes, or new protocol operations.[^app-contract]
+**Accepted next-release engineering increment:** PYB-006.2 closes the bounded current-text part of the carried A-24 persistence gap. The [C1-S2 record](../developments/2026-q4-reliable-workflow/c1-s2/00_Execution_Record.md) binds its 31 October engineering acceptance, exact artifacts, physical conditions and carried limits. One acknowledged Drift checkpoint can be restored offline; generated Blocks text is covered only after explicit adoption into Editor. Full projects, Blocks graphs and new protocol operations remain outside this increment. Complete final integration and M-05 distribution next, while arranging real pilot observations and confirmed human capacity. The original design/sizing estimates remain historical forecasts, not measured effort.[^app-contract]
 
 ## 3. Target users and positioning
 
@@ -386,9 +387,12 @@ The cycle intentionally excludes a complete new protocol version, full classroom
 
 ### 8.2 Sprint plan
 
-**31 October continuation:** PR #40 has merged and integrated CI passes. Complete
-remaining M-02 physical acceptance, then the applicable M-04 app-release matrix
-and M-05 channel delivery; prepare distribution in parallel where independent.
+**31 October continuation:** bounded recovery M-02 and app-only M-04 pass
+engineering review at frozen `bef67bd`, with required automated/platform
+evidence, exact firmware inputs and the documented Lenovo qualifier condition.
+Device closeout is complete. Finish final branch integration, then M-05 account,
+submission and installed-channel verification. Do not schedule the same accepted
+matrix again without changed scope or invalidated evidence.
 The [dated continuation order](../developments/2026-q4-reliable-workflow/04_Sprint_Plan.md#31-october-continuation-order-and-reforecast)
 records this selection and the human capacity/pilot inputs still needed. Source
 progress does not reconstruct the original Sprint schedule or participant
@@ -446,7 +450,7 @@ Current execution states and the newly identified residual `PYB-002.1` are maint
 | PYB-003 | P0 / Lead + QA | Threat model, pilot boundaries, safe hardware scope, consent/data-handling procedure, and signed-off pilot decision | 001 |
 | PYB-004 | P0 / QA | One primary cohort/job; repeatable activation task and useful Task C; previous workflow, baseline timing, assistance, failure categories and prospective follow-up rules | 001, 003 |
 | PYB-005 | P0 if observed blocker / App | Improve the existing tutorial/readiness flow at the measured failure; novice distinguishes provisioning, permissions, discovery, and ready state | 004 |
-| PYB-006 | P0 / App | A-24/ADR-0010 durable current-document recovery: accepted persistence boundary, relaunch recovery, interrupted-write/corrupt-state behavior, no implicit board overwrite/run; explicit Blocks scope; preserve session/lifecycle regression coverage | Current recorded gap; App specification/TDD and ADR review; 004 informs priority but is not a prerequisite |
+| PYB-006 | P0 / App | A-24/ADR-0010 durable current-document recovery: accepted persistence boundary, relaunch recovery, interrupted-write/corrupt-state behavior, no implicit board overwrite/run; explicit Blocks scope; preserve session/lifecycle regression coverage | Bounded 006.2 accepted 31 October; broader A-24 remains carried. App specification/TDD and ADR govern any next slice; 004 informs priority |
 | PYB-007 | P1 / App + QA | Optional user-initiated diagnostic export with preview/redaction and observed/supplied/unknown identity fields; manual template is the first-cycle fallback | 003; export contract approved; no dependency on completing 006 |
 | PYB-008 | P0 for selected release claims / QA + Firmware | Staged exact-artifact five-profile × two-platform workflow matrix; pass/fail/not-run/blocked per row; map applicable normative gates before running | 001, initial 009 recipe, recorded candidate artifacts; rerun affected rows after relevant changes |
 | PYB-009 | P0 / Protocol + QA | Inventory existing suites; add operator recipe and coverage map; within assigned capacity, a second operator rehearses one existing exact profile and supplies a draft Ready record with assistance/gaps | 001 and source inventory; starts before 008; reproduction stays pending without an operator; no new port or badge award required |
@@ -874,7 +878,7 @@ At cycle end, choose one principal next investment: Reliable Projects, partner p
 - [ ] Assign one owner and one review path for each initial issue.
 - [ ] Inventory exact test boards, tablets, cables, and available recovery equipment.
 - [ ] Freeze Task A/B/C definitions, assistance/timeout rules, prospective follow-up windows and task-opportunity questions, consent procedure, and manual support template; observe initial eligible participants.
-- [x] Specify and peer-review the bounded current-text contract and its acceptance scenarios; size the safe increment. Runtime implementation is merged; final physical acceptance remains in progress in the C1-S2 record. The dated continuation order preserves and replans the original S2 forecast.
+- [x] Specify and peer-review the bounded current-text contract and its acceptance scenarios; size the safe increment. Runtime implementation and bounded engineering acceptance are recorded in C1-S2. The dated continuation order preserves original forecasts and moves remaining release work to final integration and channel delivery.
 - [ ] If operator/capacity is available, include one existing-profile Ready rehearsal and draft record in PYB-009; show installation status and pending evidence explicitly.
 
 ### 20.2 Issue template

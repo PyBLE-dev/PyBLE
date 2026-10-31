@@ -9,16 +9,16 @@
 |---|---|
 | Package | PyBLE 2026 Q4 reliable workflow, Cycle 1 (`C1`) |
 | Prepared | 25 September 2026; Asia/Bangkok |
-| Strategy | [Implementation Plan, revision 1.7](../../planning/PyBLE_Implementation_Plan_and_Strategy_v1.0.md) |
+| Strategy | [Implementation Plan, revision 1.8](../../planning/PyBLE_Implementation_Plan_and_Strategy_v1.0.md) |
 | Repository baseline | `23ed764b0ef88dce9720c66fbd1c0655268860cf` |
 | Proposed cycle | 28 September–20 December 2026; six two-week Sprints |
-| Status | C1-S1 device retry on 25 September: six tasks Done, two Prepared and four Awaiting evidence; both current channel installations verified, pilot work unfinished. Later Sprints require replanning against new sizing; no staffed-team ceremony is inferred |
+| Status | C1-S1: six Done, two Prepared and four Awaiting evidence. The 31 October continuation accepts M-02 and app-only M-04; S2 has ten Done tasks and T11 awaiting participants. Channel delivery and human capacity remain unresolved; no staffed-team ceremony is inferred |
 | Primary audience | Tablet-owning makers, provisionally; confirm one reachable cohort before observation |
 | Authoritative contracts | [Contributor rules](../../../AGENTS.md), [App specification](../../specifications/App/specs.md), [App TDD](../../specifications/App/TDD.md), [PBLE/1](../../specifications/protocol.md), and applicable firmware/release specifications |
 
 This package derives execution views from the strategy. It does not replace normative specifications, expand hardware claims, create GitHub issues, or authorize store/website publication. The strategy and original package were recorded together in planning baseline `d039db0`. The [C1-S1 execution record](c1-s1/00_Execution_Record.md) owns actual results and blockers.
 
-**31 October continuation update:** the `0.3.0+9` recovery baseline merged in [PR #40](https://github.com/PyBLE-dev/PyBLE/pull/40). Physical qualification exposed three keyboard defects; their repairs at `bef67bd` pass 984 ordinary tests and all 36 PR #41 checks. iPad recovery, final keyboard regressions and all five iPad app-only board rows pass with declared source/firmware scope. Earlier Android recovery and board rows pass, but a later final-candidate Blocks startup observation remains under investigation. Signed packages and a channel packet are prepared; admission and actual store delivery remain separate. The [C1-S2 record](c1-s2/00_Execution_Record.md) binds the evidence. S1 remains six Done / two Prepared / four Awaiting evidence. Original dates/hours remain the baseline; the [continuation plan](04_Sprint_Plan.md#31-october-continuation-order-and-reforecast) records unresolved capacity inputs.
+**31 October acceptance update:** scoped current-text recovery (PYB-006.2 / M-02) and the app-only M-04 candidate pass engineering review at `bef67bd`: 984 ordinary tests, 36 frozen-runtime CI checks, both-platform recovery/keyboard evidence and all ten declared app/profile rows. The [C1-S2 record](c1-s2/00_Execution_Record.md) preserves exact artifacts, firmware baselines, earlier-row impact assessments and the temporary Android qualifier battery-policy condition. Signed packages and the release packet are prepared; original device policy and normal board advertising are restored, and owned fixtures are cleaned. Final branch integration and actual M-05 store delivery remain separate. S1 remains six Done / two Prepared / four Awaiting evidence; S2 has ten engineering tasks Done and participant follow-up unfinished. Original dates/hours remain the baseline; the [continuation plan](04_Sprint_Plan.md#31-october-continuation-order-and-reforecast) records the next work and unresolved human capacity.
 
 ## Navigation and ownership of information
 
@@ -31,11 +31,11 @@ This package derives execution views from the strategy. It does not replace norm
 | [05 — Product backlog and stories](05_Product_Backlog_and_Stories.md) | Ordered work, parent/child identities, acceptance criteria, and source traceability | Refinement or changed user evidence |
 | [06 — Sprint backlogs](06_Sprint_Backlogs.md) | Task allowances, dependencies, C1-S1 execution status and later forecasts requiring replanning | Developers select/adapt work during a Sprint |
 | [C1-S1 — Execution and evidence](c1-s1/00_Execution_Record.md) | Actual channel checks, pilot kit, recovery design/sizing and validation inventory | New evidence, source review or a resolved blocker |
-| [C1-S2 — Implementation and evidence](c1-s2/00_Execution_Record.md) | Bounded recovery candidate, actual test states, remaining physical/release work and scoped operator recipe | Source integration, actual platform runs or admission decision |
+| [C1-S2 — Implementation and evidence](c1-s2/00_Execution_Record.md) | Accepted bounded recovery and app-only qualification, retained evidence/limits, release continuation and scoped operator recipe | Source integration, actual platform runs or admission decision |
 
 ```mermaid
 flowchart LR
-    Strategy["Strategy revision 1.7"] --> Goal["One Product Goal"]
+    Strategy["Strategy revision 1.8"] --> Goal["One Product Goal"]
     Goal --> Roadmap["Outcome roadmap and milestones"]
     Roadmap --> Product["Ordered Product Backlog"]
     Product --> Planning["Sprint Planning"]
@@ -64,7 +64,7 @@ flowchart LR
 | App source is `0.2.0+8`; physical retry verifies Play `0.2.0 (8)` and TestFlight `0.2.0 (6)` | Android payloads map to the historical build-8 bundle; iPad source mapping remains unknown. Neither channel check proves BLE or older-OS compatibility |
 | Firmware v0.6.1 is published on owner confirmation across five exact profiles | Pending automated results stay pending; no automatic PyBLE Ready badge |
 | Issue #24 is closed/superseded | Do not resurrect its old release umbrella as a dependency |
-| S1 baseline draft was volatile; [ADR-0048](../../decisions/0048-bounded-current-text-draft-recovery.md) now has a bounded candidate implementation | Complete applicable recovery acceptance; full project persistence and Blocks graph recovery remain carried |
+| S1 baseline draft was volatile; [ADR-0048](../../decisions/0048-bounded-current-text-draft-recovery.md) now has an accepted bounded recovery increment | M-02 acceptance is recorded on 31 October; full project persistence and Blocks graph recovery remain carried |
 | Lifecycle protections, tutorials, imports, and test tools already exist | Reuse them; refine only observed gaps and the documented persistence gap |
 
 ## Applying Scrum to PyBLE
@@ -140,7 +140,7 @@ When facts or priority change, update the canonical file above and its dependent
 
 | Source | Use and precedence |
 |---|---|
-| [Strategy revision 1.7](../../planning/PyBLE_Implementation_Plan_and_Strategy_v1.0.md) | Scope, targets, six-Sprint capacity, three outcomes, Ready program and conditional horizons |
+| [Strategy revision 1.8](../../planning/PyBLE_Implementation_Plan_and_Strategy_v1.0.md) | Scope, targets, six-Sprint capacity, three outcomes, Ready program and conditional horizons |
 | [Public roadmap](../../ROADMAP.md), [README](../../../README.md) | Current capability and distribution baseline |
 | [App specification](../../specifications/App/specs.md), [App TDD](../../specifications/App/TDD.md), [ADR-0010](../../decisions/0010-working-loop-in-memory-document.md) | Persistence contract and recorded implementation deviation; consult frozen working-loop scope |
 | [Firmware roadmap](../../planning/firmware-v0.6.1-v0.7.0-roadmap.md), [PBLE/1](../../specifications/protocol.md) | v0.7 proposals versus frozen wire behavior; old v0.6.1 publication/#24 wording is historical |

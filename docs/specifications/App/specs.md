@@ -167,8 +167,8 @@ The client implements the PBLE/1 wire contract; it references [protocol.md](../p
 
 **Working-loop increment — FROZEN (A-20 subset · `[docs]` 2026-07-02, amended 2026-08-22 by [ADR-0012](../../decisions/0012-flutter-code-editor-behind-editorsurface.md), [ADR-0010](../../decisions/0010-working-loop-in-memory-document.md), [TDD §11.1](TDD.md#111-editor)/[§11.6](TDD.md#116-working-loop-provider-contract-frozen); run path superseded 2026-07-27 by [ADR-0013](../../decisions/0013-clean-room-blockly-one-way-file-backed.md)).** In scope: the ADR-0012 `EditorSurface` seam with `flutter_code_editor` 0.3.5 as the default rich adapter and the existing plain `TextField` as a live fallback; Python highlighting, always-visible one-based line numbers, safe auto-indent/Tab handling, and an editor-only 10–24 sp font adjustment in one-point steps (default 14 sp). Code and gutter resize together, platform text scaling still applies, and resizing MUST NOT modify the document, selection, dirty state, or board path. The size is app-session state, independent of file and board, until A-24's single Drift `SettingsStore` makes it durable; a second preferences store MUST NOT be introduced. The single volatile in-memory current document (name/content/dirty/boardPath), **New**, and board-backed Save/Run behavior remain as frozen by ADR-0010/0013. Save and Run capture one normalized document snapshot; transfer completion marks it saved/bound only when the live document still equals that snapshot, so mid-transfer edits or a replacement document remain dirty. The editor binds to `Connection` only (FR-EDIT-6, CON-8), and editor source MUST NOT reach a network analyzer. **Still deferred to A-24 or later:** multi-file tabs, app-owned localized find/replace, the remaining external-keyboard shortcuts, durable display settings, Save-to-project, and buffers-survive-restart. The document provider's `openFromBoard`/`markSaved` and the session display provider are the A-24 persistence hooks (RECORDED deviations, ADR-0010/0012).
 
-**Current-text recovery successor — MERGED CANDIDATE SOURCE,
-automated checks passing; physical acceptance pending (31 October 2026, C1-S2/PYB-006.2; contract
+**Current-text recovery successor — BOUNDED INCREMENT ACCEPTED,
+required automated and physical evidence passing (31 October 2026, C1-S2/PYB-006.2; contract
 `[docs]` 2026-09-25, C1-S1/PYB-006.1,
 [ADR-0048](../../decisions/0048-bounded-current-text-draft-recovery.md)).**
 The [bounded recovery contract](current-draft-recovery.md) defines DR-01–07:
@@ -182,7 +182,8 @@ requirements stay carried. The candidate uses durable local checkpoints and
 epoch/session guards; the older frozen working-loop paragraph above records the
 historical volatile release, not the candidate's persistence behavior. The
 [C1-S2 implementation record](../../developments/2026-q4-reliable-workflow/c1-s2/00_Execution_Record.md)
-owns final integrated and physical acceptance. No store publication is implied,
+records the 31 October engineering acceptance and its exact candidate/platform
+limits. No store publication is implied,
 and FR-EDIT-7, FR-PROJ-2/6 and NFR-REL-3 are not satisfied in full.
 
 ### 4.7 Console Panel (`lib/console/`) — FR-CONSOLE

@@ -5,15 +5,15 @@
 
 | Control | Value |
 |---|---|
-| Status | C1-S1 has six tasks Done, two Prepared awaiting pilot setup and four Awaiting evidence; existing channel installations verified. Future direction remains conditional and forecasts need revision after sizing |
+| Status | C1-S1 remains partial; bounded recovery and app-only qualification pass 31 October engineering review. Next release work is final integration and M-05 delivery; pilot/capacity inputs remain outstanding |
 | Planning date | 25 September 2026; dates use Asia/Bangkok |
-| Source | [Implementation strategy revision 1.7](../../planning/PyBLE_Implementation_Plan_and_Strategy_v1.0.md), particularly §§1, 6–9, 12, 14, and 19 |
+| Source | [Implementation strategy revision 1.8](../../planning/PyBLE_Implementation_Plan_and_Strategy_v1.0.md), particularly §§1, 6–9, 12, 14, and 19 |
 | Inspected baseline | `main` at `23ed764b0ef88dce9720c66fbd1c0655268860cf` |
 | First cycle | C1: 28 September–20 December 2026; later horizons conditional through September 2028 |
 | Planning authority | Product Owner orders the Product Backlog; Developers forecast feasible work during Sprint Planning; names and capacity remain unassigned |
 | Related documents | [Framework](01_Overview_and_Scrum_Framework.md), [milestones](03_Milestones.md), [Sprint Plan](04_Sprint_Plan.md), [stories](05_Product_Backlog_and_Stories.md), [Sprint Backlogs](06_Sprint_Backlogs.md) |
 
-**31 October continuation update:** the `0.3.0+9` recovery baseline merged in [PR #40](https://github.com/PyBLE-dev/PyBLE/pull/40). Physical qualification exposed three keyboard defects; their repairs at `bef67bd` pass 984 ordinary tests and all 36 PR #41 checks. iPad recovery, final keyboard regressions and all five iPad app-only board rows pass with declared source/firmware scope. Earlier Android recovery and board rows pass, but a later final-candidate Blocks startup observation remains under investigation. Signed packages and a channel packet are prepared; admission and actual store delivery remain separate. The [C1-S2 record](c1-s2/00_Execution_Record.md) binds the evidence. S1 remains six Done / two Prepared / four Awaiting evidence. Original dates/hours remain the baseline; the [continuation plan](04_Sprint_Plan.md#31-october-continuation-order-and-reforecast) records unresolved capacity inputs.
+**31 October acceptance update:** scoped current-text recovery (PYB-006.2 / M-02) and the app-only M-04 candidate pass engineering review at `bef67bd`: 984 ordinary tests, 36 frozen-runtime CI checks, both-platform recovery/keyboard evidence and all ten declared app/profile rows. The [C1-S2 record](c1-s2/00_Execution_Record.md) preserves exact artifacts, firmware baselines, earlier-row impact assessments and the temporary Android qualifier battery-policy condition. Signed packages and the release packet are prepared; original device policy and normal board advertising are restored, and owned fixtures are cleaned. Final branch integration and actual M-05 store delivery remain separate. S1 remains six Done / two Prepared / four Awaiting evidence; S2 has ten engineering tasks Done and participant follow-up unfinished. Original dates/hours remain the baseline; the [continuation plan](04_Sprint_Plan.md#31-october-continuation-order-and-reforecast) records the next work and unresolved human capacity.
 
 ## Product Goal and decision principle
 
@@ -49,7 +49,7 @@ team capacity or a completed formal Sprint.
 | Existing workflow | PBLE/1 editing, files, run/stop, console, Blocks, tutorials, and reviewed import already exist | Reuse implementation and tests; improve measured failures rather than rebuild the workflow |
 | Firmware v0.6.1 | Owner-confirmed publication for five exact profiles; incomplete automated evidence remains visible | New qualification and compatibility claims require their own applicable evidence |
 | Historical issue #24 | Closed as superseded; incomplete checklist was not declared passed | Do not recreate closure as a new dependency or treat historical closure as qualification |
-| Durable drafts | Bounded current-text recovery now has candidate source under ADR-0048; required acceptance remains unfinished | Complete integrated/physical evidence for PYB-006.2; retain broader A-24/Blocks scope |
+| Durable drafts | Bounded current-text recovery under ADR-0048 passes scoped engineering acceptance on 31 October | Deliver the qualified candidate through the selected channels; retain broader A-24/Blocks scope |
 | Adoption and Ready | No measured cohort results or awarded PyBLE Ready badge established by the strategy | Treat outcome targets and badge eligibility as proposals requiring evidence |
 
 The [Android publication review](../../testing/website/android-open-testing-2026-09-25.md)
@@ -61,7 +61,8 @@ That proposal still informs conditional Reliable Projects scope and compatibilit
 
 The windows are sequencing forecasts measured from the proposed cycle start.
 Overlapping windows permit options; they do not create simultaneous commitments
-for one maintainer. All rows in this table have status **Proposed**.
+for one maintainer. The horizons remain proposals; the dated acceptance above records completed
+bounded work inside H1 without declaring that whole horizon complete.
 
 | Horizon / indicative window | Outcome and user value | Planning items / milestone | Admission and dependency | Evidence for continuation |
 |---|---|---|---|---|

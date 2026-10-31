@@ -104,11 +104,12 @@ This bounded feature covers text up to 1 MiB, including Python explicitly copied
 from Blocks. Blocks workspace graphs, projects/history and exported backups
 remain outside this increment. Uninstalling or clearing app data removes local
 copies. See the [candidate execution record](docs/developments/2026-q4-reliable-workflow/c1-s2/00_Execution_Record.md)
-for passing automated checks and candidate-specific device evidence. Local
-Android and iPad Preview installations are engineering candidates; their
-installation does not establish store availability or release qualification.
+for accepted automated and candidate-specific device evidence, including the
+declared five-profile × two-platform app matrix and test conditions. Local
+Android and iPad Preview installations remain separate from store delivery.
 The [release readiness record](docs/developments/2026-q4-reliable-workflow/c1-s2/06_Release_Readiness.md)
-tracks signed-artifact preparation, qualification and the channel handoff.
+tracks the engineering-qualified artifacts, completed device closeout and channel handoff;
+`0.3.0 (9)` is not yet established as a store-delivered update.
 
 ### Firmware
 
