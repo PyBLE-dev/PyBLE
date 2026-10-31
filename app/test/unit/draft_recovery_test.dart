@@ -36,8 +36,9 @@ class Store implements DraftRepository {
       if (failure != null) {
         throw DraftStorageException(failure!);
       }
-      if (generation != expectedGeneration || value.generation <= generation)
+      if (generation != expectedGeneration || value.generation <= generation) {
         throw const DraftStorageException(DraftStorageFailure.conflict);
+      }
       writes.add(value);
       snapshot = value;
       generation = value.generation;
