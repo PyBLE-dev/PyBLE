@@ -2387,7 +2387,7 @@
   "@recoveryTitle": {
     "description": "Bounded current-text recovery: recoveryTitle."
   },
-  "recoveryRestoredTitle": "Your restored text draft",
+  "recoveryRestoredTitle": "Your current text draft",
   "@recoveryRestoredTitle": {
     "description": "Bounded current-text recovery: recoveryRestoredTitle."
   },
@@ -2564,5 +2564,18 @@
   "recoveryChanged": "The current draft changed. Review it and confirm again.",
   "@recoveryChanged": {
     "description": "Bounded current-text recovery: recoveryChanged."
+  },
+  "recoveryCurrentText": "Current session text — copy it before replacing",
+  "@recoveryCurrentText": {"description": "Current volatile text heading during recovery retry."},
+  "recoveryCopyCurrent": "Copy current text",
+  "@recoveryCopyCurrent": {"description": "Explicit copy of live text before a recovery choice."},
+  "recoveryStoredText": "Stored recovery copy",
+  "@recoveryStoredText": {"description": "Stored candidate heading beside volatile text."},
+  "recoveryVolatileReplaceDetail": "The current draft and previous recovery storage have been kept. Cancel to keep working on the current text, or explicitly replace it in a temporary session without recovery. Copy any text you need first.",
+  "@recoveryVolatileReplaceDetail": {"description": "Separate choice after durable replacement fails."},
+  "runSourceSessionChanged": "The upload to {path} may have completed on the previous board. Run was not sent because the connection changed.",
+  "@runSourceSessionChanged": {
+    "description": "Truthful partial result when a board attachment changes after PUT but before Run.",
+    "placeholders": {"path": {"type": "String", "example": "/main.py"}}
   }
 }

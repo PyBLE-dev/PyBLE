@@ -24,6 +24,10 @@ import 'package:pyble/app/app_info.dart';
 import 'package:pyble/app/licenses.dart';
 import 'package:pyble/app/providers.dart';
 import 'package:pyble/pble/pble.dart';
+import 'package:pyble/data/draft_repository_factory.dart';
+import 'package:pyble/editor/draft_recovery.dart';
+import 'package:pyble/editor/board_target_guard.dart';
+import 'package:pyble/editor/recovery_panel.dart';
 
 void main() {
   // The production manager constructs the fbp stack whose readiness/scan/connect
@@ -34,6 +38,28 @@ void main() {
   runApp(
     ProviderScope(
       overrides: <Override>[
+        draftRepositoryFactoryProvider.overrideWithValue(openDraftRepository),
+        boardTargetConfirmationProvider.overrideWithValue((request) async {
+          final BuildContext? context = appNavigatorKey.currentContext;
+          if (context == null) return false;
+          return confirmRecoveryBoardTarget(
+            context,
+            path: request.path,
+            run: request.run,
+          );
+        }),
+        editorVolatileReplacementConfirmationProvider.overrideWithValue(
+          () async {
+            final BuildContext? context = appNavigatorKey.currentContext;
+            if (context == null) return false;
+            return confirmVolatileReplacement(context);
+          },
+        ),
+        editorReplacementConfirmationProvider.overrideWithValue(() async {
+          final BuildContext? context = appNavigatorKey.currentContext;
+          if (context == null) return false;
+          return confirmRecoveryReplacement(context);
+        }),
         // The REAL runtime session (ADR-0009). `.production` builds
         // FbpBleAdapter + FbpBleReadinessSource + the accumulating Scanner and
         // the `PbleConnection.fromLink` connect factory internally, so the

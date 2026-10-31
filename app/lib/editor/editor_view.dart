@@ -22,6 +22,10 @@ import 'package:pyble/pble/pble.dart';
 import 'package:pyble/theme/theme.dart';
 
 import 'editor_document.dart';
+import 'board_target_guard.dart';
+import 'draft_recovery.dart';
+import 'recovery_gate.dart';
+import 'recovery_panel.dart';
 import 'editor_display_settings.dart';
 import 'editor_surface.dart';
 import 'editor_surface_factory.dart';
@@ -103,6 +107,7 @@ class _EditorViewState extends ConsumerState<EditorView> {
         // present, and it fixes on tap — the buffer is never rewritten behind
         // the user's back.
         const _SmartPunctuationBanner(),
+        const RecoveryStatusBar(),
         // The editable code well — a recessed monospace surface (§1.4).
         Expanded(
           child: surfaceBuilder(
@@ -267,6 +272,8 @@ class _EditorHeader extends ConsumerWidget {
     try {
       final String path = await ref.read(saveControllerProvider).save();
       messenger.showSnackBar(SnackBar(content: Text(l10n.editorSaved(path))));
+    } on BoardActionCancelled {
+      return;
     } on PbleException catch (e) {
       // The typed §8 status name (EBusy / ENoSpc / ECrc …) is a PBLE/1
       // technical identifier: rendered verbatim, never localized (FR-I18N-4).
@@ -291,27 +298,77 @@ class _EditorHeader extends ConsumerWidget {
   /// no way to get it back (the document is volatile by design).
   Future<void> _newDocument(BuildContext context, WidgetRef ref) async {
     final AppLocalizations l10n = AppLocalizations.of(context);
-    if (ref.read(editorDocumentProvider).dirty) {
-      final bool? discard = await showDialog<bool>(
-        context: context,
-        builder: (BuildContext ctx) => AlertDialog(
-          title: Text(l10n.editorDiscardTitle),
-          content: Text(l10n.editorDiscardDetail),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: Text(l10n.commonCancel),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: Text(l10n.editorDiscardConfirm),
-            ),
-          ],
-        ),
-      );
-      if (discard != true) return;
+    final int epoch = ref.read(editorDocumentEpochProvider);
+    final EditorDocument document = ref.read(editorDocumentProvider);
+    final DraftRecoveryState recovery = ref.read(draftRecoveryProvider);
+    final bool meaningful =
+        document.content.isNotEmpty ||
+        document.name != kDefaultDocumentName ||
+        document.boardPath != null;
+    final bool needsChoice =
+        document.dirty ||
+        (recovery.enabled &&
+            meaningful &&
+            recovery.status != DraftRecoveryStatus.saved);
+    if (needsChoice) {
+      if (recovery.enabled) {
+        if (!await confirmRecoveryReplacement(context)) return;
+      } else {
+        final bool? discard = await showDialog<bool>(
+          context: context,
+          builder: (BuildContext ctx) => AlertDialog(
+            scrollable: true,
+            title: Text(l10n.editorDiscardTitle),
+            content: Text(l10n.editorDiscardDetail),
+            actions: <Widget>[
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: Text(l10n.commonCancel),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: Text(l10n.editorDiscardConfirm),
+              ),
+            ],
+          ),
+        );
+        if (discard != true) return;
+      }
     }
-    ref.read(editorDocumentProvider.notifier).newDocument();
+    if (!context.mounted) return;
+    if (ref.read(editorDocumentEpochProvider) != epoch) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(l10n.recoveryChanged)));
+      return;
+    }
+    if (!recovery.enabled) {
+      ref.read(editorDocumentProvider.notifier).newDocument();
+      return;
+    }
+    final bool replaced = await ref
+        .read(draftRecoveryProvider.notifier)
+        .replaceDocument(const EditorDocument.untitled(), expectedEpoch: epoch);
+    if (!replaced && context.mounted) {
+      if (ref.read(editorDocumentEpochProvider) != epoch) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(l10n.recoveryChanged)));
+        return;
+      }
+      if (!await confirmVolatileReplacement(context)) return;
+      if (!context.mounted || ref.read(editorDocumentEpochProvider) != epoch) {
+        return;
+      }
+      ref.read(draftRecoveryProvider.notifier).continueWithoutRecovery();
+      await ref
+          .read(draftRecoveryProvider.notifier)
+          .replaceDocument(
+            const EditorDocument.untitled(),
+            expectedEpoch: epoch,
+            allowVolatile: true,
+          );
+    }
   }
 }
 

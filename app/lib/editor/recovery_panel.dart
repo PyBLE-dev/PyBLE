@@ -34,27 +34,30 @@ class RecoveryPanel extends StatelessWidget {
     this.busy = false,
     this.failure,
     this.onContinue,
+    this.currentContent,
   });
 
   final String name;
   final String content;
-  final DateTime checkpointTime;
+  final DateTime? checkpointTime;
   final Future<void> Function() onRestore;
   final Future<void> Function() onDiscard;
   final bool restored;
   final bool busy;
   final String? failure;
   final VoidCallback? onContinue;
+  final String? currentContent;
 
   @override
   Widget build(BuildContext context) {
     final AppLocalizations l10n = AppLocalizations.of(context);
     final ThemeData theme = Theme.of(context);
     final MaterialLocalizations material = MaterialLocalizations.of(context);
-    final DateTime localTime = checkpointTime.toLocal();
-    final String when =
-        '${material.formatMediumDate(localTime)} '
-        '${material.formatTimeOfDay(TimeOfDay.fromDateTime(localTime))}';
+    final DateTime? localTime = checkpointTime?.toLocal();
+    final String? when = localTime == null
+        ? null
+        : '${material.formatMediumDate(localTime)} '
+              '${material.formatTimeOfDay(TimeOfDay.fromDateTime(localTime))}';
     return SafeArea(
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
@@ -70,9 +73,46 @@ class RecoveryPanel extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             Text(l10n.recoveryLocalOnly),
+            if (currentContent != null) ...<Widget>[
+              const SizedBox(height: 12),
+              Text(
+                l10n.recoveryCurrentText,
+                style: theme.textTheme.titleMedium,
+              ),
+              Container(
+                constraints: const BoxConstraints(maxHeight: 160),
+                padding: const EdgeInsets.all(12),
+                color: theme.colorScheme.surfaceContainerLow,
+                child: SingleChildScrollView(
+                  child: SelectableText(currentContent!),
+                ),
+              ),
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: TextButton.icon(
+                  onPressed: busy
+                      ? null
+                      : () async {
+                          final ScaffoldMessengerState? messenger =
+                              ScaffoldMessenger.maybeOf(context);
+                          await Clipboard.setData(
+                            ClipboardData(text: currentContent!),
+                          );
+                          if (messenger?.mounted ?? false) {
+                            messenger!.showSnackBar(
+                              SnackBar(content: Text(l10n.recoveryCopied)),
+                            );
+                          }
+                        },
+                  icon: const Icon(Icons.copy_outlined),
+                  label: Text(l10n.recoveryCopyCurrent),
+                ),
+              ),
+              Text(l10n.recoveryStoredText, style: theme.textTheme.titleMedium),
+            ],
             const SizedBox(height: 12),
             SelectableText(name, style: theme.textTheme.titleMedium),
-            Text(l10n.recoveryCheckpointTime(when)),
+            if (when != null) Text(l10n.recoveryCheckpointTime(when)),
             const SizedBox(height: 12),
             Container(
               constraints: const BoxConstraints(maxHeight: 240),
@@ -117,9 +157,11 @@ class RecoveryPanel extends StatelessWidget {
                           final ScaffoldMessengerState? messenger =
                               ScaffoldMessenger.maybeOf(context);
                           await Clipboard.setData(ClipboardData(text: content));
-                          messenger?.showSnackBar(
-                            SnackBar(content: Text(l10n.recoveryCopied)),
-                          );
+                          if (messenger?.mounted ?? false) {
+                            messenger!.showSnackBar(
+                              SnackBar(content: Text(l10n.recoveryCopied)),
+                            );
+                          }
                         },
                   icon: const Icon(Icons.copy_outlined),
                   label: Text(l10n.recoveryCopy),
@@ -130,8 +172,9 @@ class RecoveryPanel extends StatelessWidget {
                     onPressed: busy
                         ? null
                         : () async {
-                            if (await _confirmDiscard(context))
+                            if (await _confirmDiscard(context)) {
                               await onDiscard();
+                            }
                           },
                     child: Text(l10n.recoveryDiscard),
                   ),
@@ -232,6 +275,31 @@ Future<bool> confirmRecoveryReplacement(BuildContext context) async {
             FilledButton(
               onPressed: () => Navigator.of(ctx).pop(true),
               child: Text(l10n.recoveryReplace),
+            ),
+          ],
+        ),
+      ) ??
+      false;
+}
+
+/// A separate choice after a failed durable replacement. The current buffer
+/// remains untouched until the caller applies this explicitly temporary edit.
+Future<bool> confirmVolatileReplacement(BuildContext context) async {
+  final AppLocalizations l10n = AppLocalizations.of(context);
+  return await showDialog<bool>(
+        context: context,
+        builder: (BuildContext ctx) => AlertDialog(
+          scrollable: true,
+          title: Text(l10n.recoverySaveFailed),
+          content: Text(l10n.recoveryVolatileReplaceDetail),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: Text(l10n.commonCancel),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: Text(l10n.recoveryContinue),
             ),
           ],
         ),

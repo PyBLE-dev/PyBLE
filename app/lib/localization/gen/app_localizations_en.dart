@@ -1848,7 +1848,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get recoveryTitle => 'Recover your current text draft';
 
   @override
-  String get recoveryRestoredTitle => 'Your restored text draft';
+  String get recoveryRestoredTitle => 'Your current text draft';
 
   @override
   String get recoveryLocalOnly =>
@@ -1989,4 +1989,23 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get recoveryChanged =>
       'The current draft changed. Review it and confirm again.';
+
+  @override
+  String get recoveryCurrentText =>
+      'Current session text — copy it before replacing';
+
+  @override
+  String get recoveryCopyCurrent => 'Copy current text';
+
+  @override
+  String get recoveryStoredText => 'Stored recovery copy';
+
+  @override
+  String get recoveryVolatileReplaceDetail =>
+      'The current draft and previous recovery storage have been kept. Cancel to keep working on the current text, or explicitly replace it in a temporary session without recovery. Copy any text you need first.';
+
+  @override
+  String runSourceSessionChanged(String path) {
+    return 'The upload to $path may have completed on the previous board. Run was not sent because the connection changed.';
+  }
 }
