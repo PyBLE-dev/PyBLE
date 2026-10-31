@@ -153,7 +153,8 @@ must use the actual delivered package.
 | Provisioning | Production App Store profile; debugging disabled, no development-device list, beta reporting enabled; valid through 17 May 2027 |
 | Validation | `tools/validate_ios_ipa.sh` passes code-signature, compiled minimum OS, embedded-asset mode/classification and Xcode `swinfo` checks; only the three expected unsigned resource-bundle records are excluded |
 
-The archive and exported IPA are retained privately. A distribution package
+The archive (including dSYMs), exported IPA and Android R8 mapping are retained
+privately outside the temporary build worktree. A distribution package
 with no development-device list is not the separately installed development
 Preview app. Its local validation does not establish App Store processing,
 TestFlight availability, or store-installed upgrade behavior.
@@ -195,11 +196,16 @@ certificate. A valid Apple distribution identity and cached production App
 Store provisioning profile are available. Signing access alone does not prove
 an authenticated store session, role, account version history or review status.
 
-No dedicated Play/App Store Connect connector or configured command-line store
-credential was found in the standard locations inspected. Account access and
-whether build 9 has already been consumed remain **unverified**. Read-only
-browser discovery did not establish an authenticated console session. This is not a
-claim that the owner has no access through the respective web consoles.
+No dedicated Play/App Store Connect connector or configured standalone
+command-line store credential was found in the standard locations inspected.
+However, Xcode preferences contain one configured production Apple-account
+reference, and its cached provisioning metadata includes the candidate signing
+team. The existing Xcode account may therefore support an archive upload after
+admission without a separate App Store Connect API key. Account metadata alone
+does not verify a live session, App Store Connect role or whether build 9 has
+already been consumed; these remain **unverified**. Read-only browser discovery
+did not establish an authenticated console session. This is not a claim that
+the owner lacks web-console access or that Xcode has no potential upload route.
 
 After the candidate is admitted, the authorized distribution operator must
 verify the exact package, unused build numbers and current declarations, upload
