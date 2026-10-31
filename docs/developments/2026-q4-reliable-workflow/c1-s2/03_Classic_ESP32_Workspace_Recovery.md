@@ -23,7 +23,7 @@ IDs and the UI renders the full result count. Pico 2 W (`3DCB`) was present.
 Serial ownership was free. Short UART captures saw only the ROM boot; a longer
 45-second controlled capture reached the workspace recovery message, then the
 MicroPython 1.28.0 / PyBLE 0.6.1 banner and REPL. This is the intentional
-[nonblank-media protection](../../../specifications/firmware/TDD.md#91-filesystem)
+[nonblank-media protection](../../../specifications/firmware/TDD.md#91-vfs--littlefs)
 path, rather than evidence of unsupported silicon or a scan-list cap. The
 complete read-only media scan explains the delayed startup message.
 
