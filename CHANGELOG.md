@@ -17,8 +17,9 @@ merged after all 36 checks on its final head passed. Internal-account TestFlight
 `0.3.0 (9)` offer/Open, production About and bounded device smoke are verified
 ([delivery record](docs/developments/2026-q4-reliable-workflow/c1-s2/06_Release_Readiness.md#31-october-testflight-delivery-and-published-metadata));
 the exact update transaction was not observed. External build 9 is submitted
-and Waiting for Review; Google Play submission/delivery remain pending. Lenovo still has Play `0.2.0 (8)`; earlier
-iPad `0.2.0 (6)`, build-5 Transporter and build-8 handoff records remain historical.
+and Waiting for Review; Google Play open-testing build 9 is submitted with
+Changes in review. Review approval and remaining delivery are pending. Lenovo
+still has Play `0.2.0 (8)`; earlier iPad `0.2.0 (6)`, build-5 Transporter and build-8 handoff records remain historical.
 
 ### App source
 

@@ -113,8 +113,11 @@ TestFlight `0.3.0 (9)` is verified for the existing internal account on the
 connected iPad, including production About and a bounded board smoke check
 ([delivery record](docs/developments/2026-q4-reliable-workflow/c1-s2/06_Release_Readiness.md#31-october-testflight-delivery-and-published-metadata)).
 The exact update transaction was not observed. Build 9 is submitted to the
-existing external group and is **Waiting for Review**; Google Play submission
-remains pending. This is not an all-tester availability claim.
+existing external group and is **Waiting for Review**; Google Play
+open-testing build 9 is submitted with **Changes in review**
+([submission record](docs/developments/2026-q4-reliable-workflow/c1-s2/06_Release_Readiness.md#31-october-google-play-open-testing-submission)).
+Neither review state establishes approval or tester delivery. Lenovo still
+offers and runs Play `0.2.0 (8)`.
 
 ### Firmware
 

@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: MIT -->
 <!-- Part of PyBLE (https://pyble.dev) — see /LICENSE. -->
 
-# PyBLE 0.3.0 (9) — prepared app release packet
+# PyBLE 0.3.0 (9) — app release packet
 
 Recorded 31 October 2026 for the existing Google Play open-testing and
 TestFlight channels. Engineering admission and [PR #41 integration](../developments/2026-q4-reliable-workflow/c1-s2/00_Execution_Record.md#pr-41-final-integration-receipt)
@@ -10,16 +10,22 @@ are complete. Apple accepted build `9`; later internal-account TestFlight
 ([delivery record](../developments/2026-q4-reliable-workflow/c1-s2/06_Release_Readiness.md#31-october-testflight-delivery-and-published-metadata)).
 The exact update transaction was not observed. Build 9 is assigned to the
 existing PyBLE external group and submitted; the reloaded iOS Builds page
-reports **Waiting for Review** ([submission receipt](../developments/2026-q4-reliable-workflow/c1-s2/06_Release_Readiness.md#31-october-external-testing-submission)).
+reports **Waiting for Review**, rechecked at `15:23:25 UTC` ([submission receipt](../developments/2026-q4-reliable-workflow/c1-s2/06_Release_Readiness.md#31-october-external-testing-submission)).
 This is not approval or an all-tester availability claim.
-Apple build `9` is consumed: do not repeat its upload. A replacement binary
-requires an explicit next-build contract and rebuilt artifacts. Google Play
-submission remains pending: the Lenovo browser reached Console, but owner
-verification is required to select the PyBLE publishing account. Check its
-account history before uploading build `9`. A consumed number requires rebuilt
-artifacts, not a renamed file.
+Google Play accepted the admitted AAB as `0.3.0`, versionCode `9`, and the
+open-testing submission is **Changes in review**, durably rechecked at
+`15:23:55 UTC` ([submission receipt](../developments/2026-q4-reliable-workflow/c1-s2/06_Release_Readiness.md#31-october-google-play-open-testing-submission)).
+It requests 100% of the existing 178-country/region open-testing track;
+production build `8 (0.2.0)` and managed publishing off remain unchanged.
+Neither store's review state establishes approval or external/open-test delivery.
+Both stores have consumed build `9`: do not repeat the uploads. A replacement
+binary requires an explicit next-build contract and rebuilt artifacts, not a
+renamed file.
 
 ## Google Play release notes
+
+English (U.S.), saved and read back in the accepted release: 441 characters,
+SHA-256 `b199632c5a7442305e9dd622a47684780c2725948aee7c0a8f233281ab3a7e20`.
 
 ```text
 PyBLE can keep one current Python draft locally and offer Restore or Discard after restart. Local recovery status is separate from board saving. Recovered text needs current-destination confirmation before board Save, Run or Upload. Landscape editing stays usable above the keyboard. Blocks workspaces and multi-file projects are not included in draft recovery. Board workflows require a compatible MicroPython board running the PyBLE agent.
@@ -71,11 +77,12 @@ PyBLE 0.3.0 (9) adds explicit local recovery of one Python text draft. In a work
 | Platform | Existing production/store identity | Release implication |
 |---|---|---|
 | iPad | Historical `14:04–14:05 UTC` TestFlight snapshot offered `0.2.0 (6)`; later internal-account TestFlight offers `0.3.0 (9)` with Open, and production About/device smoke pass | Existing updated installation verified; exact update transaction unobserved. No manual update gesture or external-group availability inferred; local Preview remains separate evidence |
-| Lenovo Android | `dev.pyble.pyble` `0.2.0`, versionCode `8`; installing and initiating package `com.android.vending`, with the Play certificate recorded in readiness | Preserve this Play-signed app and its data; the isolated qualifier `0.3.0 (9)` is separate evidence and the upload-key APK is not a compatible replacement for the Play-signed install |
+| Lenovo Android | `dev.pyble.pyble` `0.2.0`, versionCode `8`; installing and initiating package `com.android.vending`, with the Play certificate recorded in readiness. Console confirms build 8 live in both production and open testing; the enrolled beta listing still offers Open, with no Update | Open-testing build 9 is submitted, not observed live or installed. Preserve the existing Play app and its data; the isolated qualifier is separate evidence and the upload-key APK is not a compatible replacement for the Play-signed install |
 
-These baseline observations do not reveal full account upload history. Apple
-has accepted the recorded build-9 upload; confirm Google Play history
-before submission. Record store-delivered About identity after actual delivery.
+The account checks and accepted submissions now establish build-9 consumption
+on both stores. The earlier device baseline alone did not supply that account
+history. Record store-delivered Android About identity and scoped smoke after
+actual availability; preserve the completed internal-account iPad evidence.
 
 ## Artifact and channel handoff
 
@@ -85,8 +92,8 @@ before submission. Record store-delivered About identity after actual delivery.
 | Android package | `dev.pyble.pyble`, production flavor, normal `lib/main.dart`; existing owner upload signer, AAB validation and native alignment checks |
 | iOS package | `dev.pyble.pyble`, normal `lib/main.dart`, distribution export and successful `tools/validate_ios_ipa.sh` |
 | Admission | Accepted recovery evidence, required app/profile matrix, packaging/provenance review and no unresolved release-blocking defect |
-| Account checks | Apple accepted build 9; do not repeat it. Complete the owner verification in Lenovo Chrome, select the actual PyBLE publishing account, then verify Google Play build-9 availability, upload/signing identity, declarations and review instructions |
-| Submit | Internal-account Apple delivery is verified; external build 9 is assigned/submitted and Waiting for Review. Upload the admitted Android artifact only after its independent account checks; retain each platform outcome |
+| Account checks | Both authenticated accounts accepted build 9 without a number conflict; retained artifact identities, declarations and review instructions support the submissions. Do not repeat either upload |
+| Submit | Complete for selected channels: Apple external build 9 Waiting for Review; Google Play open-testing build 9 Changes in review. Internal-account Apple delivery is separately verified; approval/live rollout is not inferred from submission |
 | Verify delivery | Retain the completed internal-account iPad installation/About/smoke evidence and its transaction limit; verify external-group and Google Play outcomes separately |
 | Public copy | Update release availability only after observing it; preserve each platform's actual status |
 

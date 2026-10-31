@@ -9,7 +9,7 @@
 | Scope | App-only bounded current-text recovery; existing Play open-testing and TestFlight channels |
 | Runtime source | Recovery baseline plus landscape layout, native keyboard dismissal and iPad palette-geometry repairs at `bef67bded9e5b83437e3eb0e2ec4be6a4cfd1a64` |
 | Build checkout | Release worktree `c6e685dd3ebe718ed89fcfe58e441331eb174648`; app tree `60b3a68b693551af5d83076547c502f69838e052`, verified identical to the runtime baseline |
-| State | M-02 and app-only M-04 engineering admission accepted on 31 October for the frozen artifacts below. [PR #41](https://github.com/PyBLE-dev/PyBLE/pull/41) merged at `247e58a` after all 36 final-head checks passed; M-05 is partial: internal-account TestFlight delivery verified; external build 9 is submitted and Waiting for Review; Google Play delivery remains pending |
+| State | M-02 and app-only M-04 engineering admission accepted on 31 October for the frozen artifacts below. [PR #41](https://github.com/PyBLE-dev/PyBLE/pull/41) merged at `247e58a` after all 36 final-head checks passed; M-05 is partial: internal-account TestFlight delivery verified; external build 9 is submitted and Waiting for Review; Google Play open-testing build 9 is submitted with Changes in review; approval and delivery remain pending |
 | Local evidence | Ignored `local/recovery-completion/release/candidate-bef67bd/`: build/check logs, source/artifact manifests, runtime evidence and retained signed binaries |
 | Public copy | [Release packet](../../../publication/app-0.3.0-build-9-release-packet.md); build-9 test details saved and app description publicly verified; TestFlight delivery observed for the existing internal account only |
 
@@ -33,7 +33,7 @@ claim a new firmware release, fresh firmware OI-1 qualification or a Ready badge
 | Five-profile app compatibility | Q01–Q10 below with exact app/firmware identity, actual observations and retained failures | Accepted Q01–Q10 on the exact named firmware inputs below, with source-impact mapping for earlier unaffected rows and final affected keyboard/recovery reruns on both tablets; retained failures remain visible in the device reports |
 | Production packaging | Android upload signer/AAB/APK/native alignment; iOS distribution export/IPA validation; capability parity | Android and iOS checks below pass for the repaired source and exact retained artifacts |
 | Release review | Frozen artifact identity, resolved mandatory failures, supported scope, privacy/dependency review and recorded acceptance | Accepted app-only M-04 engineering admission for `bef67bd` and the hashes below, with the Lenovo OEM precondition and historical firmware limits retained |
-| M-05 channel delivery | Actual upload/processing/review/availability, followed by store-delivered installed identity and upgrade/launch checks | Apple upload accepted at `14:03:25 UTC`; later internal-account TestFlight `0.3.0 (9)` offer/Open, production About and bounded device smoke pass. The update transaction was not observed. External build 9 is submitted and Waiting for Review; Google Play submission/delivery remain pending |
+| M-05 channel delivery | Actual upload/processing/review/availability, followed by store-delivered installed identity and upgrade/launch checks | Apple upload accepted at `14:03:25 UTC`; later internal-account TestFlight `0.3.0 (9)` offer/Open, production About and bounded device smoke pass. The update transaction was not observed. External build 9 is submitted and Waiting for Review; Google Play open-testing build 9 is submitted with Changes in review; its approval and delivery remain pending |
 
 Pilot participation and useful-return evidence remain separate from maintenance
 release admission. A second operator is required for the optional reproduction
@@ -314,7 +314,7 @@ SHA-256 `2c7b0c6c652a078eefada990f4a018ae4650355bfb703858c581b5cf430e5483`.
 Its advisory mapping, audit JSON and summary remain under ignored
 `local/recovery-completion/dependency-audit/`.
 
-## Distribution access and remaining account work
+## Distribution access and account verification
 
 The owner Android upload identity is locally usable and matches the historical
 certificate. A valid Apple distribution identity and cached production App
@@ -327,8 +327,9 @@ version `0.2.0`, versionCode `8`, with installing and initiating package
 last update on 17 September. Its verified signing certificate SHA-256 is
 `e3c1334dc7aad1ae20fe043b52c2d5638584a67a66e6a5255a87bf89f56f06d0`, distinct
 from the owner upload certificate above. The production app was not replaced.
-This installed Play build does not establish whether build 9 was subsequently
-uploaded or consumed in a store account; that question remains an account check.
+This installed baseline alone did not establish account upload history. The later
+authenticated Console check and accepted build-9 submission below now establish
+that separate account state; the installed app still remains build 8.
 
 No dedicated Play/App Store Connect connector or configured standalone
 command-line store credential was found in the standard locations inspected.
@@ -349,26 +350,29 @@ proven absent. No existing repository workflow consumes a Play or App Store
 publisher credential. This inspection found no configured CI upload route;
 it does not infer that the owner lacks credentials elsewhere.
 
-A later Lenovo Chrome preflight reached Google Play Console, but an authenticated
-PyBLE publishing context was not established. Switching to the intended Google
-account reached the device's “Verify it’s you” prompt. Owner verification and
-selection of the actual PyBLE publishing account remain the next steps. No
-Play upload or rollout occurred; build-9 account history remains unverified.
-Account names, email addresses and unrelated account details remain private.
-The qualified AAB is staged on Lenovo at
+An initial Lenovo Chrome preflight reached Google Play Console but required
+owner verification and selection of the actual PyBLE publishing account. The
+owner subsequently authenticated; the correct app's account history and live
+tracks were inspected before the accepted build-9 upload and review submission
+recorded below. Account names, email addresses and unrelated account details
+remain private.
+
+The qualified AAB was staged at
 `/sdcard/Download/PyBLE-0.3.0-build-9-bb041a9a-20261031.aab`.
-Device-side verification confirms 64,439,893 bytes and SHA-256
+Device-side verification confirmed 64,439,893 bytes and SHA-256
 `bb041a9adcba7e84ece9800c418e69d7fa62274c2a170a929a37797a02784429`,
-matching the admitted artifact above. The private receipt is
+matching the admitted artifact above. The private staging receipt is
 `local/recovery-completion/android/play-console/aab-device-preparation.json`,
 SHA-256 `f23f53d2e3e1a1ef808dfc8c0124b2489325e9158819cb6948b40ef913751405`.
-This transfer is not a Play upload. After owner verification, confirm the
-publishing account and available build number before selecting this AAB.
+After submission was durably verified, that uniquely named device copy was
+removed only after another size/hash check; the retained host artifact is
+unchanged. `staged-download-cleanup.json` records the verified removal.
 
-Engineering admission and PR #41 integration are complete. Apple accepted the
-archive upload below, and later internal-account TestFlight delivery was
-observed as recorded in the continuation. External build 9 is submitted and Waiting for Review. Google Play account
-history, unused build number and submission remain separate pending work. An upload receipt alone does not substitute for channel delivery.
+Engineering admission and PR #41 integration are complete. Both stores have
+accepted build `9`; neither upload should be repeated. Internal-account
+TestFlight delivery is verified. Apple external testing remains Waiting for
+Review and Google Play open testing remains Changes in review at the dated
+checks below. Review submission alone does not establish approval or delivery.
 
 ## 31 October App Store Connect upload receipt
 
@@ -431,8 +435,8 @@ changing that historical result.
 | Bounded device smoke | Production About `0.3.0 (9)`, all five known boards visible, C3 connection to Ready with agent `0.6.1`, explicit disconnect, then cold relaunch and About `0.3.0 (9)` pass |
 | Update transaction | The exact update transaction was not observed. Automatic Updates had previously been enabled; the observations are consistent with that mechanism, but no manually exercised build-6-to-9 installation gesture is claimed |
 | Data and firmware boundary | No sideload, manual installation, uninstall, data clearing, text replacement, board file write or Run was performed in this delivery smoke. It does not repeat or extend the full HIL matrix |
-| Google Play | Lenovo recheck at approximately `14:34 UTC` still finds Play `0.2.0 (8)`; app `0.3.0 (9)` submission and channel delivery remain unverified |
-| External testing | Build `0.3.0 (9)` assigned to existing `PyBLE external` group, submitted and verified after reload as Waiting for Review at `15:03:35 UTC`; approval and external availability are not yet established |
+| Google Play | The `14:34 UTC` Lenovo snapshot still found Play `0.2.0 (8)`. The later accepted open-testing submission is recorded below; the final Play listing/install check still offers no update and remains build 8 |
+| External testing | Build `0.3.0 (9)` assigned to existing `PyBLE external` group, submitted and verified after reload as Waiting for Review at `15:03:35 UTC` and again at `15:23:25 UTC`; approval and external availability are not yet established |
 | Build-specific test details | English (U.S.) What to Test for `0.3.0 (9)` saved and exactly read back after reload: 2,242 characters; SHA-256 `01d14e5a7c0bfd50ad77c9d0f4d4571ba7be058e064d430c81d7f6c3f0d7507b`; exact published copy is in the [release packet](../../../publication/app-0.3.0-build-9-release-packet.md#testflight--what-to-test) |
 | App-level public description | English (U.S.) Beta App Description saved, reloaded and exactly verified: 1,523 characters; fresh public HTTP response also matches. [PYB-002.1 correction](../c1-s1/05_TestFlight_Metadata_Correction.md#31-october-published-description-and-closure) is complete; historical build-6 provenance/minimum-OS questions remain separate |
 
@@ -472,3 +476,43 @@ save/reload evidence and `build9-review-notes.txt`. Await Apple's actual review
 outcome and observe external availability before changing that claim. M-05
 remains partial; internal-account delivery is verified and Google Play delivery
 is still separate pending work.
+
+A fresh authenticated-page reload at `2026-10-31T15:23:25Z` again verified
+`0.3.0 (9)` as **Waiting for Review** in the same external group's Builds tab.
+This read-only recheck made no store change. Its private receipt is
+`local/recovery-completion/ipad/testflight-external-status-recheck.json`, SHA-256
+`83b72cac5668f32304c70b39a8ec6d43ce1ae73056c89c476b6671924103ea97`.
+
+## 31 October Google Play open-testing submission
+
+After owner authentication, the actual PyBLE Console showed existing build
+`8 (0.2.0)` live in both production and open testing. The pre-upload bundle
+history contained codes `8`, `4` and `2`; code `9` was available at that check.
+Google then accepted the admitted AAB as `dev.pyble.pyble`, version `0.3.0`,
+versionCode `9`. Build `9` is now consumed; do not repeat its upload. A replacement
+binary requires an explicit next-build contract and rebuilt artifacts.
+
+| Observation | Recorded result |
+|---|---|
+| Accepted artifact | 64,439,893-byte AAB; SHA-256 `bb041a9adcba7e84ece9800c418e69d7fa62274c2a170a929a37797a02784429`, matching the frozen admitted artifact |
+| Saved draft and validation | Open-testing release `9 (0.3.0)` saved; preview showed Ready to launch with no observed validation error, warning or required declaration prompt |
+| Release notes | Exact prepared English (U.S.) text accepted and read back: 441 characters, SHA-256 `b199632c5a7442305e9dd622a47684780c2725948aee7c0a8f233281ab3a7e20`; the [release packet](../../../publication/app-0.3.0-build-9-release-packet.md#google-play-release-notes) preserves it |
+| Submitted scope | Exactly one prepared change: Open testing `9 (0.3.0)`, Start full rollout, requesting 100% of the existing 178-country/region open-testing track. This is not production promotion |
+| Submission receipt | Send 1 change for review and its confirmation completed; receipt recorded at `2026-10-31T15:22:21Z` |
+| Durable current state | Fresh Console page and native semantic readback at `2026-10-31T15:23:55Z`: **Changes in review**, only the open-testing build-9 change |
+| Review progress | Automated common-issue checks were running; content review follows automatically. No review completion or duration is promised |
+| Publishing and production | Managed publishing remains off, unchanged; production `8 (0.2.0)` remains unchanged. The requested open-testing rollout has not been observed live |
+| Actual Play delivery check | The enrolled Lenovo beta tester's Play listing offers Open and Uninstall, with no Update and `0.2.0` notes. Installed `dev.pyble.pyble` remains `0.2.0`, versionCode `8`, installed by `com.android.vending`. No upgrade or production-app data change was performed |
+
+The private consolidated receipt is
+`local/recovery-completion/android/play-console/release-preparation.json`,
+SHA-256 `dff88fa5974a99cee0840825f802133236a381339440db88e2fb03b6b68c11d4`.
+Its one-unsent-change fields describe preparation before submission; the later
+submission and durable review fields supersede that phase. The same directory
+retains validation, final submitted-state and actual Play-listing captures.
+The uniquely staged Downloads AAB was removed after hash/size verification;
+`staged-download-cleanup.json` has SHA-256
+`ffb6465b4255e2416363e3d275cacfa3b2ce847b509b47befb2482233ddf357c`.
+No store approval, live build-9 rollout or Android installation of the update
+has been observed. PYB-014.1 submission is complete for the selected channels;
+PYB-014.2 and M-05 remain partial until the remaining delivery evidence exists.

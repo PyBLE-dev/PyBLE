@@ -11,7 +11,7 @@ runtime `bef67bd` after required automated and physical checks. Device closeout
 is complete, and [PR #41](https://github.com/PyBLE-dev/PyBLE/pull/41) merged after
 all 36 final-head checks passed. The [delivery record](../developments/2026-q4-reliable-workflow/c1-s2/06_Release_Readiness.md#31-october-testflight-delivery-and-published-metadata)
 verifies internal-account TestFlight `0.3.0 (9)`; external build 9 is submitted
-and Waiting for Review, while Google Play delivery remains pending. No named human sign-off is claimed.
+and Waiting for Review, while Google Play open-testing build 9 is submitted with Changes in review; approval and delivery remain pending. No named human sign-off is claimed.
 
 ## Context
 
