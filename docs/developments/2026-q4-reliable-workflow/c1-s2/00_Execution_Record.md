@@ -260,7 +260,11 @@ human sign-off or a Scrum ceremony.
   separate from the 36 passing frozen-runtime checks.
 - **Next release stage — M-05:** track the submitted Google Play open-testing
   build 9 in Changes in review and verify its availability and installed identity
-  after approval; production build 8 remains unchanged. Internal-account TestFlight
+  after approval. The subsequently requested production promotion is
+  [held before submission](06_Release_Readiness.md#31-october-android-production-scope-decision)
+  on the saved audience/Bluetooth requirement while the owner confirms the
+  intended audience; earlier production-build-8 observations remain history.
+  Internal-account TestFlight
   delivery is verified in the [delivery record](06_Release_Readiness.md#31-october-testflight-delivery-and-published-metadata);
   external build 9 is assigned and submitted with status Waiting for Review.
   Track Apple's decision and subsequent external availability separately.

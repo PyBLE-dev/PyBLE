@@ -14,6 +14,12 @@
 
 **31 October acceptance update:** scoped current-text recovery (PYB-006.2 / M-02) and the app-only M-04 candidate pass engineering review at `bef67bd`: 984 ordinary tests, 36 frozen-runtime CI checks, both-platform recovery/keyboard evidence and all ten declared app/profile rows. The [C1-S2 record](c1-s2/00_Execution_Record.md) preserves exact artifacts, firmware baselines, earlier-row impact assessments and the temporary Android qualifier battery-policy condition. Signed packages and the release packet are prepared; original device policy and normal board advertising are restored, and owned fixtures are cleaned. [PR #41](https://github.com/PyBLE-dev/PyBLE/pull/41) merged after all 36 checks on its final head passed. Internal-account TestFlight `0.3.0 (9)` offer/Open, production About and bounded device smoke are verified ([delivery record](c1-s2/06_Release_Readiness.md#31-october-testflight-delivery-and-published-metadata)); the update transaction was not observed. PYB-002.1 public-description correction is complete. M-05 remains partial: external build 9 is submitted and Waiting for Review; Google Play open-testing build 9 is submitted with Changes in review; approval and delivery remain pending. S1 remains six Done / two Prepared / four Awaiting evidence; S2 has ten engineering tasks Done and participant follow-up unfinished. Original dates/hours remain the baseline; the [continuation plan](04_Sprint_Plan.md#31-october-continuation-order-and-reforecast) records the next work and unresolved human capacity.
 
+**Production continuation:** the subsequent Android production request is held
+before submission on the [saved child-audience/Bluetooth requirement](c1-s2/06_Release_Readiness.md#31-october-android-production-scope-decision).
+The existing open-testing review is unchanged. Scoped engineering acceptance
+remains valid; it is not unconditional production-policy admission. M-05 remains
+partial while the owner clarifies the intended audience and delivery is pending.
+
 ## Assessment and evidence states
 
 Use **Proposed** until work is selected. At a milestone assessment, record one of

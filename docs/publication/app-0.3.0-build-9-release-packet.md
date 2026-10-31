@@ -3,8 +3,14 @@
 
 # PyBLE 0.3.0 (9) — app release packet
 
-Recorded 31 October 2026 for the existing Google Play open-testing and
-TestFlight channels. Engineering admission and [PR #41 integration](../developments/2026-q4-reliable-workflow/c1-s2/00_Execution_Record.md#pr-41-final-integration-receipt)
+Recorded 31 October 2026 for Google Play and TestFlight. The initial open-testing
+submission is followed by an explicit owner decision to promote the same
+accepted Android build to production. The saved production draft is not
+submitted: promotion is blocked on the actual child-audience/Bluetooth-CDM
+mismatch recorded in the [production decision](../developments/2026-q4-reliable-workflow/c1-s2/06_Release_Readiness.md#31-october-android-production-scope-decision).
+This pre-existing package/audience issue is also relevant to the earlier
+open-testing review and production baseline; the earlier review remains
+unchanged pending the owner's audience decision. Scoped engineering acceptance and [PR #41 integration](../developments/2026-q4-reliable-workflow/c1-s2/00_Execution_Record.md#pr-41-final-integration-receipt)
 are complete. Apple accepted build `9`; later internal-account TestFlight
 `0.3.0 (9)` offer/Open, production About and bounded physical smoke pass
 ([delivery record](../developments/2026-q4-reliable-workflow/c1-s2/06_Release_Readiness.md#31-october-testflight-delivery-and-published-metadata)).
@@ -16,7 +22,9 @@ Google Play accepted the admitted AAB as `0.3.0`, versionCode `9`, and the
 open-testing submission is **Changes in review**, durably rechecked at
 `15:23:55 UTC` ([submission receipt](../developments/2026-q4-reliable-workflow/c1-s2/06_Release_Readiness.md#31-october-google-play-open-testing-submission)).
 It requests 100% of the existing 178-country/region open-testing track;
-production build `8 (0.2.0)` and managed publishing off remain unchanged.
+production build `8 (0.2.0)` and managed publishing off were unchanged at that
+check. The subsequent [production scope decision](../developments/2026-q4-reliable-workflow/c1-s2/06_Release_Readiness.md#31-october-android-production-scope-decision)
+is separate from the initial open-testing submission.
 Neither store's review state establishes approval or external/open-test delivery.
 Both stores have consumed build `9`: do not repeat the uploads. A replacement
 binary requires an explicit next-build contract and rebuilt artifacts, not a
@@ -91,9 +99,9 @@ actual availability; preserve the completed internal-account iPad evidence.
 | Candidate | Final accepted source/app tree, locked dependencies, exact signed artifact hashes, full `0.3.0 (9)` identity and retained checks |
 | Android package | `dev.pyble.pyble`, production flavor, normal `lib/main.dart`; existing owner upload signer, AAB validation and native alignment checks |
 | iOS package | `dev.pyble.pyble`, normal `lib/main.dart`, distribution export and successful `tools/validate_ios_ipa.sh` |
-| Admission | Accepted recovery evidence, required app/profile matrix, packaging/provenance review and no unresolved release-blocking defect |
-| Account checks | Both authenticated accounts accepted build 9 without a number conflict; retained artifact identities, declarations and review instructions support the submissions. Do not repeat either upload |
-| Submit | Complete for selected channels: Apple external build 9 Waiting for Review; Google Play open-testing build 9 Changes in review. Internal-account Apple delivery is separately verified; approval/live rollout is not inferred from submission |
+| Scoped engineering admission | Accepted recovery evidence, required app/profile matrix and packaging/provenance review; this does not establish Families compliance or unconditional production admission |
+| Account checks | Both authenticated accounts accepted build 9 without a number conflict; retained artifact identities match. Saved Android declarations were observed without edits or reattestation; the [audience/CDM finding](../developments/2026-q4-reliable-workflow/c1-s2/06_Release_Readiness.md#31-october-android-production-scope-decision) holds new production submission. Do not repeat either upload |
+| Submit | Initial test-channel submissions complete: Apple external build 9 Waiting for Review and Google Play open-testing build 9 Changes in review. Newly selected Android production promotion is blocked on the actual audience/Bluetooth requirement; its final Restart review dialog was not confirmed. Internal-account Apple delivery is separately verified |
 | Verify delivery | Retain the completed internal-account iPad installation/About/smoke evidence and its transaction limit; verify external-group and Google Play outcomes separately |
 | Public copy | Update release availability only after observing it; preserve each platform's actual status |
 

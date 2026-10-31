@@ -118,6 +118,9 @@ open-testing build 9 is submitted with **Changes in review**
 ([submission record](docs/developments/2026-q4-reliable-workflow/c1-s2/06_Release_Readiness.md#31-october-google-play-open-testing-submission)).
 Neither review state establishes approval or tester delivery. Lenovo still
 offers and runs Play `0.2.0 (8)`.
+The subsequently requested [Android production promotion](docs/developments/2026-q4-reliable-workflow/c1-s2/06_Release_Readiness.md#31-october-android-production-scope-decision)
+is held before submission while the saved child audience and Bluetooth
+implementation are reconciled. The existing open-testing review is unchanged.
 
 ### Firmware
 

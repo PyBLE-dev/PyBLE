@@ -31,8 +31,40 @@ behavior. No pre-upgrade draft that existed only in memory can be recovered.
 The board/GitHub flow analysis and proposed Console answers below still need
 owner review against the exact final bundle and all active versions. This
 addendum records a source change, not a submitted Data safety declaration.
-See the [prepared release packet](app-0.3.0-build-9-release-packet.md) for
+See the [release packet](app-0.3.0-build-9-release-packet.md) for
 candidate-specific tester copy and the channel handoff.
+
+## 31 October 2026 — actual Console inspection and audience hold
+
+During production preparation, the authenticated Console showed ten completed
+App content declarations, no action needed and no reported policy issues.
+The saved Data safety summary, last edited on 7 August 2026, stated that the
+app does not collect or share data, that data is not encrypted, and that the
+app is committed to the Play Families Policy. The saved target ages were
+9–12, 13–15, 16–17 and 18+, also last edited on 7 August. These are observed
+existing answers, not a new source-consistency PASS or owner reattestation.
+No declaration or audience setting was changed during this inspection.
+
+The source review found a concrete child-audience/Bluetooth-CDM mismatch,
+recorded in the [production decision and policy review](../developments/2026-q4-reliable-workflow/c1-s2/06_Release_Readiness.md#31-october-android-production-scope-decision).
+This package/audience issue also applies to assessment of the existing Android
+baseline and ongoing open-testing review. New production submission is held;
+the earlier open-testing submission remains unchanged pending the owner's
+actual audience decision. Console's green preparation is not policy clearance.
+
+The broader declaration tables below remain conservative, unverified proposals.
+The existing optional GitHub traffic and user-directed board transfers require
+accurate assessment, but this inspection does not ratify all proposed categories
+or establish a new broad Data safety production blocker. Candidate `0.3.0` adds
+local recovery and does not add an outbound data flow.
+
+Private evidence is
+`local/recovery-completion/android/play-console-production/production-release-preparation.json`,
+SHA-256 `c8504d5dbf278c8c2d7544e084979afcc181928bdb58be5458b2f8582ed32e86`,
+with the hold recorded at `2026-10-31T15:37:16Z`. The immutable source/policy audit
+`policy-review/families-bluetooth-review.json` in the same directory has SHA-256
+`44f6a9ffefc12b7be4a60a1f0ef91ed791072f303eb934c3c0d0efbb4fa7c8a0`.
+No production-build-9 review submission, approval or rollout is claimed.
 
 ## Why the internal-testing answer needs review
 
