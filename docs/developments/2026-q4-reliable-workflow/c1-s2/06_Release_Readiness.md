@@ -7,10 +7,10 @@
 |---|---|
 | Date | 31 October 2026, Asia/Bangkok |
 | Scope | App-only bounded current-text recovery; existing Play open-testing and TestFlight channels |
-| Runtime source | Recovery baseline plus landscape layout and native keyboard-dismissal repairs at `01a7ac8acab32e926c185c8567f9b8dca08d3d68` |
-| Build checkout | Release worktree `c98c0b4cc202c4c998ad84187a0c80bd59747f9d`; app tree `10336954910872172006300bdcc15d62231471e9`, verified identical to the runtime baseline |
-| State | Production Android and iOS rebuilt cleanly with both keyboard repairs; packaging and the bounded Android 16 KiB runtime smoke pass. Physical acceptance and final release admission remain outstanding |
-| Local evidence | Ignored `local/recovery-completion/release/candidate-01a7ac8/`: build/check logs, source/artifact manifests, runtime evidence and retained signed binaries |
+| Runtime source | Recovery baseline plus landscape layout, native keyboard dismissal and iPad palette-geometry repairs at `bef67bded9e5b83437e3eb0e2ec4be6a4cfd1a64` |
+| Build checkout | Release worktree `c6e685dd3ebe718ed89fcfe58e441331eb174648`; app tree `60b3a68b693551af5d83076547c502f69838e052`, verified identical to the runtime baseline |
+| State | Production Android and iOS rebuilt cleanly with the iPad palette-geometry repair; packaging and the bounded Android 16 KiB runtime smoke pass. Final physical acceptance and release admission remain separate gates |
+| Local evidence | Ignored `local/recovery-completion/release/candidate-bef67bd/`: build/check logs, source/artifact manifests, runtime evidence and retained signed binaries |
 | Public copy | [Prepared release packet](../../../publication/app-0.3.0-build-9-release-packet.md); no submission or availability claim |
 
 ## Gate selection
@@ -25,7 +25,7 @@ claim a new firmware release, fresh firmware OI-1 qualification or a Ready badge
 | Gate | Required evidence | Current disposition |
 |---|---|---|
 | M-02 recovery acceptance | All DR-T01–14 required evidence, including representative physical generated-text recovery and both platform offline/current-board-consent records | Reconcile against the [execution record](00_Execution_Record.md) and actual device reports; installation/scan alone is insufficient |
-| App regression | Accepted source contract, red/green history, locked dependencies, ordinary tests, pinned goldens, platform builds and repository gates | PR #40/post-merge CI passed historically; the final keyboard repair records 978 ordinary Flutter tests, 28 shell widget tests, one platform-fallback test and clean analysis/source gates. Integrated-candidate CI and final physical acceptance remain separate |
+| App regression | Accepted source contract, red/green history, locked dependencies, ordinary tests, pinned goldens, platform builds and repository gates | PR #40/post-merge CI passed historically; the final keyboard repairs record 984 ordinary Flutter tests, including 28 shell widget tests, six iOS guide/platform-control tests and one platform-fallback test, plus clean analysis/source gates. Integrated-candidate CI and final physical acceptance remain separate |
 | Five-profile app compatibility | Q01–Q10 below with exact app/firmware identity, actual observations and retained failures | Final complete candidate-bound matrix not yet established |
 | Production packaging | Android upload signer/AAB/APK/native alignment; iOS distribution export/IPA validation; capability parity | Android and iOS checks below pass for the repaired source and exact retained artifacts |
 | Release review | Frozen artifact identity, resolved mandatory failures, supported scope, privacy/dependency review and recorded acceptance | Not yet admitted |
@@ -89,8 +89,8 @@ manager and never written into source or logs.
 
 | Artifact | SHA-256 | Bytes |
 |---|---|---:|
-| `PyBLE-0.3.0-build-9-production-release.aab` | `8bc29ec294a1369abf1adba644d7494ae97bf04a1198577c2f0b95c7cdbf5e6a` | 64,416,064 |
-| `PyBLE-0.3.0-build-9-production-release.apk` | `d0b8e1ec19919b707c0776cef9c377a3fe015442ead1c743e5b689c2522b6aff` | 66,439,954 |
+| `PyBLE-0.3.0-build-9-production-release.aab` | `bb041a9adcba7e84ece9800c418e69d7fa62274c2a170a929a37797a02784429` | 64,439,893 |
+| `PyBLE-0.3.0-build-9-production-release.apk` | `92dd447ea9ee48ee00225825cbf89cb58807f3ba4d5f74d6e54d791874dd8979` | 66,456,338 |
 
 | Check | Actual result |
 |---|---|
@@ -107,13 +107,18 @@ The 16 KiB runtime observation also force-stopped and relaunched the same
 installed package without data clearing. The normal disconnected screen
 returned without a fatal exception or native-library load error. The database
 created by the earlier `6f5b3ea` production candidate, subsequently reused by
-`e54a78a`, and its WAL reopened with
+`e54a78a` and `01a7ac8`, and its WAL reopened with
 `integrity_check=ok` and the expected `projects`, `project_files` and `settings` tables. This is a
 native packaging/startup smoke, not a physical BLE row or the full recovery
 acceptance matrix. The SQLite database's own page size is independent of the
 operating-system memory page size. The emulator uses Google APIs 16 KiB arm64
 API 36 image revision 7; its fingerprint and private UI captures are recorded
 with the candidate manifest.
+
+The first final smoke attempt stopped at the emulator-only ADB root request,
+before package installation. Its failed attempt is retained. The completed
+rerun verified the reconnected emulator identity and root user before the
+installation and runtime checks; no physical-device settings were changed.
 
 The first local invocation incorrectly used `--no-pub` after fresh `pub get`,
 leaving the integration-test plugin in a generated Android registrant. Its
@@ -126,15 +131,18 @@ but reused stale Gradle merged/stripped native libraries. Comparing packaged
 `libapp.so` against current build inputs exposed the mismatch; those artifacts
 were rejected and retained under `rejected-stale-gradle-e54a78a/`. Running
 `flutter clean` and both canonical production commands resolved that mismatch.
-The final native-keyboard repair used another clean build; its packaged AOT
+The native-dismissal and subsequent iPad palette-geometry repairs each used a clean build; its packaged AOT
 libraries match current stripped outputs and the AAB on all three ABIs. The
 `6f5b3ea` artifacts under `artifacts-6f5b3ea/` and pre-native-fix `e54a78a`
-artifacts under `candidate-e54a78a/` remain historical evidence.
+artifacts under `candidate-e54a78a/`, and pre-guide `01a7ac8` artifacts under
+`candidate-01a7ac8/` remain historical evidence. The latter package is superseded
+by the iPad reachability defect described below.
 
-The first final-candidate build encountered an OpenJDK 17 AArch64 JIT internal
+The earlier `01a7ac8` build encountered an OpenJDK 17 AArch64 JIT internal
 error in a long-lived Gradle daemon. Its failed log and crash receipt are kept
 under `failed-jvm-01a7ac8/`. A fresh-daemon clean retry built the recorded APK,
-AAB and IPA without a source change; all artifact checks were repeated.
+AAB and IPA without a source change; all artifact checks were repeated. The
+new `bef67bd` clean build completed without that failure.
 
 The APK uses the upload certificate, whereas Google Play can deliver its own
 app-signing certificate. Do not uninstall an existing user's Play app or clear
@@ -145,8 +153,8 @@ must use the actual delivered package.
 
 | Field / check | Actual result |
 |---|---|
-| IPA | `PyBLE-0.3.0-build-9-app-store.ipa`, 23,786,245 bytes |
-| SHA-256 | `4a9de1114a6f4618672d8027b7fe3b754a7412e124e1f36282a6920cda1d5390` |
+| IPA | `PyBLE-0.3.0-build-9-app-store.ipa`, 23,795,805 bytes |
+| SHA-256 | `54552bbb0cadf5f33c0bebd4e869623ea17308cd73281680c986daa6509e2c3d` |
 | Identity | `dev.pyble.pyble`, `0.3.0 (9)`, normal `lib/main.dart` |
 | Build / deployment floor | Xcode 27.2 / iOS SDK 27.2; app and compiled deployment floor at least iOS 15.0 |
 | Export | App Store Connect distribution export; automatic signing with build-number management disabled; export destination only, no upload |
@@ -186,8 +194,38 @@ a narrow current-window dismissal request on Android and iOS while retaining
 layout based on actual insets. The Android rerun observed IME visibility change
 from shown to hidden, an expanded console and retained field text. The iPad
 outcome remains part of its separate physical report. The production artifacts
-above include this repair and remain bound to `01a7ac8`; the diagnostic controls
+above include this repair and the later iPad geometry fallback; the diagnostic controls
 did not change the Blocks startup protocol.
+
+## iPad keyboard palette regression
+
+On the native-dismissal candidate `01a7ac8`, opening the docked keyboard through
+its input palette could leave console Expand underneath the keyboard and
+unreachable. This affected both the Flutter Editor and native Blockly input;
+it did not establish a failure of the dismissal handler, which could not be
+invoked. A normal initial keyboard focus produced a correct 498-point inset.
+After Hide → palette Show Keyboard, however, the local keyboard notifications
+reported end frame `[0,1024,1366,498]`, outside the current 1366×1024 view, while
+`UIKeyboardLayoutGuide` correctly reported `[0,526,1366,498]`. The engine
+registrar, current view controller and window were all present. Ignored native
+console/XCTest receipts preserve this measured mismatch.
+
+The final repair observes that current engine view's public layout guide and
+uses the maximum of native overlap and Flutter's bottom inset. It preserves
+real 70.5/81.5-point palette occlusion, treats a hidden safe-area-only guide as
+zero, and restores ordinary safe-area padding. It does not add both insets or
+change Flutter/Blockly upstream code. Generation checks, post-frame attachment,
+background reset and explicit post-metrics snapshots avoid stale callbacks and
+a measured-window-size race. The editor and Blocks host retain their identity.
+
+Signed red `4882049` and green `c6e685d` correspond to integrated red `bd36731`
+and runtime `bef67bd`. The complete ordinary suite passes 984 tests; six guide
+regressions cover the actual fallback, Blocks dismissal/host retention,
+maximum/padding behavior, resize ordering, stale callbacks/lifecycle and the
+unchanged Android path. Native iOS profile compilation and static/source gates
+pass. Exact physical iPad palette reopening and reachable Expand/dismissal
+remain acceptance observations in the [execution record](00_Execution_Record.md);
+a production IPA export alone cannot substitute for them.
 
 ## Distribution access and remaining account work
 
