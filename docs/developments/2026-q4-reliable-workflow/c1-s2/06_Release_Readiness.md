@@ -9,9 +9,9 @@
 | Scope | App-only bounded current-text recovery; existing Play open-testing and TestFlight channels |
 | Runtime source | Recovery baseline plus landscape layout, native keyboard dismissal and iPad palette-geometry repairs at `bef67bded9e5b83437e3eb0e2ec4be6a4cfd1a64` |
 | Build checkout | Release worktree `c6e685dd3ebe718ed89fcfe58e441331eb174648`; app tree `60b3a68b693551af5d83076547c502f69838e052`, verified identical to the runtime baseline |
-| State | M-02 and app-only M-04 engineering admission accepted on 31 October for the frozen artifacts below. [PR #41](https://github.com/PyBLE-dev/PyBLE/pull/41) tracks final integration; required CI and merge precede publishing; M-05 delivery remains pending |
+| State | M-02 and app-only M-04 engineering admission accepted on 31 October for the frozen artifacts below. [PR #41](https://github.com/PyBLE-dev/PyBLE/pull/41) merged at `247e58a` after all 36 final-head checks passed; M-05 delivery remains pending |
 | Local evidence | Ignored `local/recovery-completion/release/candidate-bef67bd/`: build/check logs, source/artifact manifests, runtime evidence and retained signed binaries |
-| Public copy | [Prepared release packet](../../../publication/app-0.3.0-build-9-release-packet.md); no submission or availability claim |
+| Public copy | [Release packet](../../../publication/app-0.3.0-build-9-release-packet.md); Apple upload accepted and processing started, with no new channel-availability claim |
 
 A post-freeze comment correction clarifies Android's asset/file-access adapter
 semantics. It changes no executable behavior or loading path; the retained
@@ -29,11 +29,11 @@ claim a new firmware release, fresh firmware OI-1 qualification or a Ready badge
 | Gate | Required evidence | Current disposition |
 |---|---|---|
 | M-02 recovery acceptance | All DR-T01–14 required evidence, including representative physical generated-text recovery and both platform offline/current-board-consent records | Accepted: mandatory DR-T01–14 evidence is reconciled in the [execution record](00_Execution_Record.md) and its iPad/Android reports, including final normal-candidate generated-text recovery, offline restore and current-target Cancel checks |
-| App regression | Accepted source contract, red/green history, locked dependencies, ordinary tests, pinned goldens, platform builds and repository gates | Accepted runtime evidence: 984 ordinary Flutter tests, including 28 shell widget tests, six iOS guide/platform-control tests and one platform-fallback test; 36 frozen-runtime CI checks; pinned goldens and clean analysis/source gates. The final documentation/rebase head must pass required CI for [PR #41](https://github.com/PyBLE-dev/PyBLE/pull/41) before merge and publishing |
+| App regression | Accepted source contract, red/green history, locked dependencies, ordinary tests, pinned goldens, platform builds and repository gates | Accepted runtime evidence: 984 ordinary Flutter tests, including 28 shell widget tests, six iOS guide/platform-control tests and one platform-fallback test; 36 frozen-runtime CI checks; pinned goldens and clean analysis/source gates. Final head `34dd89e` passed all 36 integration checks and merged as `247e58a`; the [merge receipt](00_Execution_Record.md#pr-41-final-integration-receipt) records workflow links and exact repository-tree equality |
 | Five-profile app compatibility | Q01–Q10 below with exact app/firmware identity, actual observations and retained failures | Accepted Q01–Q10 on the exact named firmware inputs below, with source-impact mapping for earlier unaffected rows and final affected keyboard/recovery reruns on both tablets; retained failures remain visible in the device reports |
 | Production packaging | Android upload signer/AAB/APK/native alignment; iOS distribution export/IPA validation; capability parity | Android and iOS checks below pass for the repaired source and exact retained artifacts |
 | Release review | Frozen artifact identity, resolved mandatory failures, supported scope, privacy/dependency review and recorded acceptance | Accepted app-only M-04 engineering admission for `bef67bd` and the hashes below, with the Lenovo OEM precondition and historical firmware limits retained |
-| M-05 channel delivery | Actual upload/processing/review/availability, followed by store-delivered installed identity and upgrade/launch checks | No upload or new channel delivery established by this preparation |
+| M-05 channel delivery | Actual upload/processing/review/availability, followed by store-delivered installed identity and upgrade/launch checks | Apple upload accepted on 31 October at `14:03:25 UTC`; processing started. Processing completion, TestFlight availability and installed upgrade remain unverified. Google Play upload remains unverified |
 
 Pilot participation and useful-return evidence remain separate from maintenance
 release admission. A second operator is required for the optional reproduction
@@ -161,7 +161,7 @@ must use the actual delivered package.
 | SHA-256 | `54552bbb0cadf5f33c0bebd4e869623ea17308cd73281680c986daa6509e2c3d` |
 | Identity | `dev.pyble.pyble`, `0.3.0 (9)`, normal `lib/main.dart` |
 | Build / deployment floor | Xcode 27.2 / iOS SDK 27.2; app and compiled deployment floor at least iOS 15.0 |
-| Export | App Store Connect distribution export; automatic signing with build-number management disabled; export destination only, no upload |
+| Initial export | App Store Connect distribution export; automatic signing with build-number management disabled; export destination only. The subsequent archive-upload receipt is recorded below |
 | Provisioning | Production App Store profile; debugging disabled, no development-device list, beta reporting enabled; valid through 17 May 2027 |
 | Validation | `tools/validate_ios_ipa.sh` passes code-signature, compiled minimum OS, embedded-asset mode/classification and Xcode `swinfo` checks; only the three expected unsigned resource-bundle records are excluded |
 
@@ -332,14 +332,13 @@ uploaded or consumed in a store account; that question remains an account check.
 
 No dedicated Play/App Store Connect connector or configured standalone
 command-line store credential was found in the standard locations inspected.
-However, Xcode preferences contain one configured production Apple-account
-reference, and its cached provisioning metadata includes the candidate signing
-team. The existing Xcode account may therefore support an archive upload after
-admission without a separate App Store Connect API key. Account metadata alone
-does not verify a live session, App Store Connect role or whether build 9 has
-already been consumed; these remain **unverified**. Read-only browser discovery
-did not establish an authenticated console session. This is not a claim that
-the owner lacks web-console access or that Xcode has no potential upload route.
+The initial inspection found one configured production Apple-account reference
+in Xcode and cached provisioning metadata for the candidate signing team.
+Those local records did not establish a live session, role or unused build
+number. The later successful upload below verifies that this existing account
+could upload the unchanged `0.3.0 (9)` archive without a build-number conflict.
+Read-only browser discovery did not establish an authenticated console session;
+that observation does not imply that the owner lacks web-console access.
 
 A read-only GitHub audit found zero repository Actions secrets and zero
 repository environments. The only authored active workflow is
@@ -350,10 +349,52 @@ proven absent. No existing repository workflow consumes a Play or App Store
 publisher credential. This inspection found no configured CI upload route;
 it does not infer that the owner lacks credentials elsewhere.
 
-Engineering admission is complete for the frozen artifacts. After the final
-required PR checks and merge, the authorized distribution operator must verify
-the exact package, unused build numbers and current declarations, upload the
-retained artifacts, resolve processing/review findings, and record actual
-availability and installed-store results separately. The existing Xcode account
-is a concrete route to attempt, with server authentication and receipts retained.
-The prepared packet and artifact records do not substitute for channel delivery.
+Engineering admission and PR #41 integration are complete. Apple accepted the
+archive upload below; resolve subsequent processing/review findings and record
+actual availability and installed-store results separately. Google Play account
+history, unused build number and submission remain separate pending work. A
+successful upload does not substitute for channel delivery.
+
+## 31 October App Store Connect upload receipt
+
+The existing configured Xcode account uploaded `dev.pyble.pyble` version
+`0.3.0`, build `9`, after PR #41 merged. The upload command exited zero at
+`2026-10-31T14:03:25Z`. Xcode reported “Uploaded package is processing.” and
+“Upload succeeded.” Automatic build-number changes were disabled; the upload
+reported no build-number conflict. Apple has accepted and consumed build `9`;
+do not repeat that upload. A replacement Apple binary requires an explicit
+next-build contract and rebuilt artifacts. This establishes accepted upload and
+the start of server processing only.
+
+| Observation | Recorded result |
+|---|---|
+| Submitted transport IPA | `PyBLE-0.3.0-build-9-submitted.ipa`, 23,795,921 bytes; SHA-256 `2235ebcb46362871b5722ca9416b62fe109ce5fd42a4f235f1b3e87841ca5de3` |
+| Admitted archive input | `PyBLE-0.3.0-build-9.xcarchive.zip`, the complete archive including dSYMs; SHA-256 `0e52d142ee14009a947422a6ded5ffa25ad70ad2297dae6735db802f5a6310dd` |
+| Re-export identity | Xcode re-exported and re-signed the archive for transport, so the submitted IPA differs from the prepared `54552bbb…` export above. All five Mach-O executables match outside their code-signature regions; resources, `Info.plist` and provisioning profile match. Differences are signatures, `CodeResources` and regenerated Symbols entries |
+| Submitted-package checks | `tools/validate_ios_ipa.sh` and deep/strict code-signature verification pass on the actual retained transport IPA |
+| Server upload receipt | Version `0.3.0`, build `9`, platform `IOS`; uploaded at `2026-10-31T14:03:24Z`; state `PROCESSING`, with empty errors and warnings in that receipt |
+| Processing completion / TestFlight availability | Not established by the upload receipt |
+| TestFlight snapshot | At approximately `14:04–14:05 UTC`, the connected iPad's actual TestFlight detail for PyBLE offered version `0.2.0`, build `6`, with an Open button and build-6 notes; no `0.3.0` availability was observed in that snapshot |
+| Installed-app provenance limit | The separate device query found the same bundle/build and marked it developer-accessible. The TestFlight channel view and device query are distinct evidence; neither is reconstructed as a new store-install receipt |
+| Installation / data | No update, uninstall or app-data clearing was performed during that channel check |
+| Remaining delivery evidence | Processing result, tester/group availability, then actual channel upgrade, About identity and scoped launch/workflow observations |
+
+The submitted IPA, command/validation logs, selected server responses and
+code-equivalence comparisons remain under ignored
+`local/recovery-completion/release/candidate-bef67bd/store-upload/20261031T140128Z/`.
+The `selected-server-receipts.json` SHA-256 is
+`c92ec28f87a42bfee8c2bb7b2e2b0afacb2b284472ed26bea5f649ee416afaba`;
+`submitted-code-equivalence.json` is
+`24db92bf0f8256859a29d0db5fc041e4b718a1988bb2974e456a7c8296f0c0ee`.
+The opaque server delivery identifier and account metadata remain private.
+A later read-only command-line status request required separate authenticated
+credentials and yielded no newer processing state; no credential was extracted.
+The iPad Safari App Store Connect check reached Apple's sign-in page, without
+an authenticated browser session. Follow-through on processing and tester-group
+availability therefore remains pending authenticated account access. Its private
+capture is `local/recovery-completion/ipad/asc-session-after-upload.{log,xcresult}`.
+
+The timestamped TestFlight captures are retained privately as
+`local/recovery-completion/ipad/testflight-pyble-after-upload.{log,xcresult}`.
+M-05 remains unfinished; no Play submission or completed TestFlight delivery is
+inferred from this Apple upload.
