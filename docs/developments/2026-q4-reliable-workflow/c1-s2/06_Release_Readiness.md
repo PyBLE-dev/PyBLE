@@ -29,7 +29,7 @@ claim a new firmware release, fresh firmware OI-1 qualification or a Ready badge
 | Gate | Required evidence | Current disposition |
 |---|---|---|
 | M-02 recovery acceptance | All DR-T01–14 required evidence, including representative physical generated-text recovery and both platform offline/current-board-consent records | Accepted: mandatory DR-T01–14 evidence is reconciled in the [execution record](00_Execution_Record.md) and its iPad/Android reports, including final normal-candidate generated-text recovery, offline restore and current-target Cancel checks |
-| App regression | Accepted source contract, red/green history, locked dependencies, ordinary tests, pinned goldens, platform builds and repository gates | Accepted runtime evidence: 984 ordinary Flutter tests, including 28 shell widget tests, six iOS guide/platform-control tests and one platform-fallback test; 36 Android runtime CI checks; pinned goldens and clean analysis/source gates. The final documentation/rebase head must still pass required PR CI before merge and publishing |
+| App regression | Accepted source contract, red/green history, locked dependencies, ordinary tests, pinned goldens, platform builds and repository gates | Accepted runtime evidence: 984 ordinary Flutter tests, including 28 shell widget tests, six iOS guide/platform-control tests and one platform-fallback test; 36 frozen-runtime CI checks; pinned goldens and clean analysis/source gates. The final documentation/rebase head must still pass required PR CI before merge and publishing |
 | Five-profile app compatibility | Q01–Q10 below with exact app/firmware identity, actual observations and retained failures | Accepted Q01–Q10 on the exact named firmware inputs below, with source-impact mapping for earlier unaffected rows and final affected keyboard/recovery reruns on both tablets; retained failures remain visible in the device reports |
 | Production packaging | Android upload signer/AAB/APK/native alignment; iOS distribution export/IPA validation; capability parity | Android and iOS checks below pass for the repaired source and exact retained artifacts |
 | Release review | Frozen artifact identity, resolved mandatory failures, supported scope, privacy/dependency review and recorded acceptance | Accepted app-only M-04 engineering admission for `bef67bd` and the hashes below, with the Lenovo OEM precondition and historical firmware limits retained |
@@ -320,6 +320,14 @@ The owner Android upload identity is locally usable and matches the historical
 certificate. A valid Apple distribution identity and cached production App
 Store provisioning profile are available. Signing access alone does not prove
 an authenticated store session, role, account version history or review status.
+
+A read-only check of the Lenovo production package found `dev.pyble.pyble`
+version `0.2.0`, versionCode `8`, installed by `com.android.vending`, with its
+last update on 17 September. Its verified signing certificate SHA-256 is
+`e3c1334dc7aad1ae20fe043b52c2d5638584a67a66e6a5255a87bf89f56f06d0`, distinct
+from the owner upload certificate above. The production app was not replaced.
+This installed Play build does not establish whether build 9 was subsequently
+uploaded or consumed in a store account; that question remains an account check.
 
 No dedicated Play/App Store Connect connector or configured standalone
 command-line store credential was found in the standard locations inspected.
