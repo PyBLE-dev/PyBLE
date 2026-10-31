@@ -5,12 +5,14 @@
 
 | Field | Value |
 |---|---|
-| Status | C1-S1 early execution recorded; original S2–S6 forecasts are not ready for selection after the new recovery/matrix estimates |
+| Status | C1-S1 remains partial; bounded S2 candidate implementation selected 31 October with acceptance pending. Original S2–S6 dates/hours remain baseline forecasts requiring capacity reconciliation |
 | Cycle | `C1`, 28 September–20 December 2026, Asia/Bangkok |
 | Basis | [Strategy revision 1.4, §8](../../planning/PyBLE_Implementation_Plan_and_Strategy_v1.0.md#8-twelve-week-implementation-schedule) |
 | Product Goal and quality rules | [Working agreement](01_Overview_and_Scrum_Framework.md) |
 | Acceptance criteria | [Product backlog and stories](05_Product_Backlog_and_Stories.md) |
 | Task-level proposal | [Sprint backlogs](06_Sprint_Backlogs.md) |
+
+**31 October implementation update:** bounded recovery work is underway for candidate `0.3.0+9`, following the user’s next-release request. [C1-S2 implementation record](c1-s2/00_Execution_Record.md) records source, automated and physical states separately. S1 remains six Done / two Prepared / four Awaiting evidence. Original dates/hours below remain the planning baseline; no completed Sprint, adopted 60-hour capacity forecast or release admission is inferred.
 
 ## Forecast and commitment boundary
 
@@ -36,6 +38,21 @@
 | Connected tablets now verified; human capacity, pilot owner and exact-board setup still unconfirmed | Bind future recovery runs to their actual candidate and board, and confirm owners before selecting revised scope; maintain rolling follow-up only for actual consenting activations |
 
 The remaining 18h under S2–S4's combined 78h ceiling cannot silently absorb all displaced matrix, activation and repair tasks. Reorder those tasks, review the November recruitment window, and reforecast S5/S6 if required. The tables below preserve the original allowance/calendar for comparison; they are **not** an adopted revised forecast. A tested foundation is not the completed recovery user story. All selected increments still need their applicable Definition of Done.
+
+## C1-S2 implementation execution — 31 October
+
+The next-release instruction selects PYB-006.2 engineering and its required
+verification, supporting PYB-009.1 recipe work and applicable PYB-008.1 evidence.
+The [execution record](c1-s2/00_Execution_Record.md) owns actual results. Source
+storage/coordinator/UI/guard work is implemented; the usable story remains in
+progress until all applicable acceptance passes. The original 12–25 October S2
+window is historical; calendar position does not mark S2 or S3 complete.
+
+The 45–72-hour estimate and 60-hour S2–S4 allocation option remain estimates.
+They are not confirmed staffing, measured effort or an adopted replacement for
+the tables below. Reorder displaced matrix/activation work with actual capacity;
+keep pilot evidence and the M-01/SG0 gap visible while known engineering work
+continues. No automatic completion of S1, SG0, broader A-24 or PyBLE Ready follows.
 
 ## Capacity model
 

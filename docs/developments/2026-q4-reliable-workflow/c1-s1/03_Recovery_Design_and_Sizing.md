@@ -14,6 +14,12 @@
 | Runtime / physical results | None produced by this design task; current released/source behavior remains volatile |
 | Effort records | Original S1 allowance: 3h + 1h. These are planning allowances, not an assertion of four elapsed hours or a team velocity |
 
+**31 October handoff:** this is the S1 design/inventory baseline. The
+[C1-S2 implementation record](../c1-s2/00_Execution_Record.md) and
+[scoped operator recipe](../c1-s2/01_Operator_Recipe.md) now track candidate source
+and actual acceptance states. Original estimates are not measured effort or
+confirmed future capacity; historical device access is not a new candidate run.
+
 ## 1. Source-grounded findings
 
 | Source inspected | Observed behavior | Design consequence |

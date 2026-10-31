@@ -192,7 +192,7 @@ abstract interface class BleSession {
 
 **Public API:** an app-owned `EditorSurface` push-in/stream-out widget contract: the caller supplies the current text, change callback, editor text style, localized hint, and Signal colors. The default factory builds the rich `flutter_code_editor` adapter; tests and the R1 escape hatch can select the retained plain-field adapter without changing feature code. A later `EditorTabs` controller is backed by Drift `project_files`.
 
-**Key state:** the volatile current buffer (dirty flag) plus session-wide editor display settings. Font size defaults to 14 sp, moves in one-point steps over the inclusive 10–24 sp range, and applies only to code plus its line-number gutter; the platform `TextScaler` still composes over it. A-24 hydrates that display value through the single Drift settings store. Open buffers, active tab, and find/replace state land with the full persistent editor. Save persists to Drift (D4); Run uploads then runs through `Connection` (the §8.2 loop).
+**Key state:** the shared in-memory current buffer (board dirty flag), bounded current-text recovery checkpoints ([§9.3](#93-bounded-current-text-recovery-specified)), and session-wide editor display settings. Font size defaults to 14 sp, moves in one-point steps over the inclusive 10–24 sp range, and applies only to code plus its line-number gutter; the platform `TextScaler` still composes over it. A-24 hydrates that display value through the single Drift settings store. Open buffers, active tab, and find/replace state land with the full persistent editor. Save persists to Drift (D4); Run uploads then runs through `Connection` (the §8.2 loop).
 
 **Dependencies:** `Connection` (run/save), `lib/data/` (persist), `lib/localization/`. No `lib/ble/`.
 
@@ -684,7 +684,7 @@ The label is UTF-8 and **bounded** — the client enforces a length cap before s
 
 ## 9. Persistence design (`lib/data/`)
 
-The full target Drift schema models exactly the six content tables of [specs.md §8](specs.md) / [PRD §12.1](../prd.md), plus a lightweight settings store. This is target architecture, not a claim that the current `lib/data/` placeholder implements it; the bounded first subset is specified in [§9.3](#93-bounded-current-text-recovery-specified). No managed-fleet/lab/calibration tables (DAT-8, CON-7). — *(satisfies DAT-1..8, FR-PROJ-1..7, IF-3.)*
+The full target Drift schema models exactly the six content tables of [specs.md §8](specs.md) / [PRD §12.1](../prd.md), plus a lightweight settings store. This is target architecture; the candidate implements only the bounded current-text subset, not the complete six-table system; the bounded first subset is specified in [§9.3](#93-bounded-current-text-recovery-specified). No managed-fleet/lab/calibration tables (DAT-8, CON-7). — *(satisfies DAT-1..8, FR-PROJ-1..7, IF-3.)*
 
 ### 9.1 Schema
 
@@ -705,7 +705,7 @@ Drift schema versions with explicit `MigrationStrategy` step migrations (forward
 
 ### 9.3 Bounded current-text recovery (specified)
 
-**C1-S1 / PYB-006.1, 2026-09-25 — implementation pending.**
+**C1-S1 / PYB-006.1 contract, 2026-09-25; C1-S2 / PYB-006.2 candidate source implementation, 2026-10-31. Integrated and physical acceptance pending.**
 [ADR-0048](../../decisions/0048-bounded-current-text-draft-recovery.md) and
 [current-draft-recovery.md](current-draft-recovery.md) own the bounded successor
 to ADR-0010. Start with the necessary `projects`/`project_files` subset and the
@@ -730,8 +730,11 @@ include real file-backed restart/failure tests and actual iPad/Android evidence.
 exceeds the original one-Sprint recovery allowance and proposes reforecasting;
 safety cases remain required. Blocks graph recovery, full projects/history,
 console state, saved boards, durable settings and import provenance remain
-carried to their existing A-24/related stories. No runtime behavior or new
-protocol operation is implemented by this specification change.
+carried to their existing A-24/related stories. The candidate now implements
+the bounded repository/coordinator/UI and guarded action paths described here;
+[the execution record](../../developments/2026-q4-reliable-workflow/c1-s2/00_Execution_Record.md)
+tracks final verification and admission. This app-only change adds no protocol
+operation and does not qualify or publish firmware.
 
 ## 10. GitHub import design (`lib/github_import/`)
 
@@ -1125,7 +1128,7 @@ those semantics early.
 
 `flutter_code_editor` 0.3.5 behind the app-owned `EditorSurface` interface ([§4.3](#43-libeditor--code-editor), [ADR-0012](../../decisions/0012-flutter-code-editor-behind-editorsurface.md)), with the existing plain `TextField` retained as the immediate fallback and a WebView-hosted editor (Monaco/CodeMirror) remaining the documented later fallback ([PRD §16.1](../prd.md), [OI-1](specs.md)). Python highlighting, line numbers, auto-indent (FR-EDIT-1); tabs + Save/Run (FR-EDIT-2); find, optional find/replace (FR-EDIT-3); external-keyboard shortcuts for Save/Run/Stop/comment/find (FR-EDIT-4); large touch targets, no phone breakage, and editor-only font adjustment that preserves system scaling (FR-EDIT-5). Save persists to Drift; Run uploads then runs through `Connection` (FR-EDIT-7).
 
-**Working-loop increment — FROZEN (A-20 subset · `[docs]` 2026-07-02, amended 2026-08-22 by [ADR-0012](../../decisions/0012-flutter-code-editor-behind-editorsurface.md), [ADR-0010](../../decisions/0010-working-loop-in-memory-document.md)).** The shippable editor keeps the **single volatile in-memory current document** ([§11.6](#116-working-loop-provider-contract-frozen)) while moving its presentation behind `EditorSurface`. The default rich adapter supplies Python highlighting and an always-visible, one-based, vertically synchronized line-number gutter; only line numbers are enabled in the gutter (package errors and folding handles stay off), package find/autocomplete UI stays off, and no network analyzer is reachable from `lib/editor`. The plain `TextField` remains executable as the R1 fallback. Both paths preserve the smart-punctuation invariant, and adapter-owned Tab handling must indent a multi-line selection without replacing it.
+**Working-loop increment — FROZEN (A-20 subset · `[docs]` 2026-07-02, amended 2026-08-22 by [ADR-0012](../../decisions/0012-flutter-code-editor-behind-editorsurface.md), [ADR-0010](../../decisions/0010-working-loop-in-memory-document.md)).** The editor keeps the **single shared in-memory current document**; the 31 October candidate adds the bounded durable checkpoint from [§9.3](#93-bounded-current-text-recovery-specified) ([§11.6](#116-working-loop-provider-contract-frozen)) while moving its presentation behind `EditorSurface`. The default rich adapter supplies Python highlighting and an always-visible, one-based, vertically synchronized line-number gutter; only line numbers are enabled in the gutter (package errors and folding handles stay off), package find/autocomplete UI stays off, and no network analyzer is reachable from `lib/editor`. The plain `TextField` remains executable as the R1 fallback. Both paths preserve the smart-punctuation invariant, and adapter-owned Tab handling must indent a multi-line selection without replacing it.
 
 The same bounded increment adds session-wide editor zoom: default 14 sp, inclusive 10–24 sp, one-point steps. Code and gutter share the selected family/size/height and update immediately; changing it preserves document bytes, selection, undo history, dirty state, and board path. Controls remain accessible at phone width and compose with the full platform text scaler. Durable display preference, syntax-editor tabs, app-owned localized find/replace, the remaining shortcuts, Save-to-project (FR-EDIT-7), and buffers-survive-restart (NFR-REL-3/FR-PROJ-6) remain carried to A-24 or later. The document and display providers are the hooks A-24 rebinds to the one Drift `SettingsStore`; no parallel preferences backend is admitted.
 
@@ -1856,14 +1859,17 @@ board display. Two UX surfaces:
 
 **FROZEN (working-loop increment · `[docs]` 2026-07-02, [ADR-0010](../../decisions/0010-working-loop-in-memory-document.md)).** This is the shared Riverpod contract the edit→run→watch→manage loop implements to, across A-20 (editor), A-21 (console), A-16 (run-control toolbar) and A-30 (files). Ownership is **disjoint** so the feature engineers work in parallel. Every provider binds only to the neutral `Connection` seam + neutral types ([§5](#5-the-connection-api-design)) — **no UI package imports `lib/ble`** (CON-8, FR-UI-7); app-layer packages MAY cross-import each other's **public** providers (`files → editor`, shell → run-control). API sketches are illustrative; the frozen interface is whatever the `[red]` tests pin ([§15](#15-test-design)).
 
-**Specified successor (2026-09-25).** The volatile behavior below remains the
-current implemented baseline. [§9.3](#93-bounded-current-text-recovery-specified)
-and [the current-draft contract](current-draft-recovery.md) define its bounded
-persistence replacement, including stronger epoch/session checks for affected
-asynchronous actions. Do not read either the older illustrative API or the
-successor design as evidence that persistence has shipped.
+**Bounded successor implemented in candidate source (2026-10-31).** The
+volatile behavior below records the historical working-loop baseline.
+[§9.3](#93-bounded-current-text-recovery-specified) and
+[the current-draft contract](current-draft-recovery.md) define its current-text
+replacement, including explicit offline recovery and epoch/session checks.
+The shared document provider remains in memory while the recovery coordinator
+checkpoints accepted text through Drift. The
+[C1-S2 record](../../developments/2026-q4-reliable-workflow/c1-s2/00_Execution_Record.md)
+tracks integrated/physical acceptance separately; source is not store delivery.
 
-**(a) Current document — `lib/editor` (owner: app-editor-console-engineer).** A single volatile in-memory document; survives navigation, not restart (persistence deferred to A-24, [§11.1](#111-editor)):
+**(a) Historical working-loop current document — `lib/editor` (owner: app-editor-console-engineer).** The original single volatile in-memory document survived navigation, not restart (persistence deferred to A-24, [§11.1](#111-editor)):
 
 ```dart
 @immutable

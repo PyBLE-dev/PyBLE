@@ -18,6 +18,8 @@
 
 This package derives execution views from the strategy. It does not replace normative specifications, expand hardware claims, create GitHub issues, or authorize store/website publication. The strategy and original package were recorded together in planning baseline `d039db0`. The [C1-S1 execution record](c1-s1/00_Execution_Record.md) owns actual results and blockers.
 
+**31 October implementation update:** bounded recovery work is underway for candidate `0.3.0+9`, following the user’s next-release request. [C1-S2 implementation record](c1-s2/00_Execution_Record.md) records source, automated and physical states separately. S1 remains six Done / two Prepared / four Awaiting evidence. Original dates/hours below remain the planning baseline; no completed Sprint, adopted 60-hour capacity forecast or release admission is inferred.
+
 ## Navigation and ownership of information
 
 | File | Canonical responsibility in this package | Update trigger |
@@ -29,6 +31,7 @@ This package derives execution views from the strategy. It does not replace norm
 | [05 — Product backlog and stories](05_Product_Backlog_and_Stories.md) | Ordered work, parent/child identities, acceptance criteria, and source traceability | Refinement or changed user evidence |
 | [06 — Sprint backlogs](06_Sprint_Backlogs.md) | Task allowances, dependencies, C1-S1 execution status and later forecasts requiring replanning | Developers select/adapt work during a Sprint |
 | [C1-S1 — Execution and evidence](c1-s1/00_Execution_Record.md) | Actual channel checks, pilot kit, recovery design/sizing and validation inventory | New evidence, source review or a resolved blocker |
+| [C1-S2 — Implementation and evidence](c1-s2/00_Execution_Record.md) | Bounded recovery candidate, actual test states, remaining physical/release work and scoped operator recipe | Source integration, actual platform runs or admission decision |
 
 ```mermaid
 flowchart LR
@@ -61,7 +64,7 @@ flowchart LR
 | App source is `0.2.0+8`; physical retry verifies Play `0.2.0 (8)` and TestFlight `0.2.0 (6)` | Android payloads map to the historical build-8 bundle; iPad source mapping remains unknown. Neither channel check proves BLE or older-OS compatibility |
 | Firmware v0.6.1 is published on owner confirmation across five exact profiles | Pending automated results stay pending; no automatic PyBLE Ready badge |
 | Issue #24 is closed/superseded | Do not resurrect its old release umbrella as a dependency |
-| Editor draft is volatile under [ADR-0010](../../decisions/0010-working-loop-in-memory-document.md) | Close an accepted subset of A-24; do not claim full project persistence or Blocks recovery |
+| S1 baseline draft was volatile; [ADR-0048](../../decisions/0048-bounded-current-text-draft-recovery.md) now has a bounded candidate implementation | Complete applicable recovery acceptance; full project persistence and Blocks graph recovery remain carried |
 | Lifecycle protections, tutorials, imports, and test tools already exist | Reuse them; refine only observed gaps and the documented persistence gap |
 
 ## Applying Scrum to PyBLE
