@@ -5,14 +5,14 @@
 
 | Field | Value |
 |---|---|
-| Status | C1-S1 remains partial; bounded S2 candidate merged 31 October with physical acceptance pending. Original S2–S6 dates/hours remain baseline forecasts requiring capacity reconciliation |
+| Status | C1-S1 remains partial; bounded S2 recovery and app-only qualification pass 31 October engineering review. S2 follow-up and M-05 delivery remain unfinished; original dates/hours remain baseline forecasts |
 | Cycle | `C1`, 28 September–20 December 2026, Asia/Bangkok |
-| Basis | [Strategy revision 1.7, §8](../../planning/PyBLE_Implementation_Plan_and_Strategy_v1.0.md#8-twelve-week-implementation-schedule) |
+| Basis | [Strategy revision 1.8, §8](../../planning/PyBLE_Implementation_Plan_and_Strategy_v1.0.md#8-twelve-week-implementation-schedule) |
 | Product Goal and quality rules | [Working agreement](01_Overview_and_Scrum_Framework.md) |
 | Acceptance criteria | [Product backlog and stories](05_Product_Backlog_and_Stories.md) |
 | Task-level proposal | [Sprint backlogs](06_Sprint_Backlogs.md) |
 
-**31 October continuation update:** the `0.3.0+9` recovery baseline merged in [PR #40](https://github.com/PyBLE-dev/PyBLE/pull/40). Physical qualification exposed three keyboard defects; their repairs at `bef67bd` pass 984 ordinary tests and all 36 PR #41 checks. iPad recovery, final keyboard regressions and all five iPad app-only board rows pass with declared source/firmware scope. Earlier Android recovery and board rows pass, but a later final-candidate Blocks startup observation remains under investigation. Signed packages and a channel packet are prepared; admission and actual store delivery remain separate. The [C1-S2 record](c1-s2/00_Execution_Record.md) binds the evidence. S1 remains six Done / two Prepared / four Awaiting evidence. Original dates/hours remain the baseline; the [continuation plan](04_Sprint_Plan.md#31-october-continuation-order-and-reforecast) records unresolved capacity inputs.
+**31 October acceptance update:** scoped current-text recovery (PYB-006.2 / M-02) and the app-only M-04 candidate pass engineering review at `bef67bd`: 984 ordinary tests, 36 frozen-runtime CI checks, both-platform recovery/keyboard evidence and all ten declared app/profile rows. The [C1-S2 record](c1-s2/00_Execution_Record.md) preserves exact artifacts, firmware baselines, earlier-row impact assessments and the temporary Android qualifier battery-policy condition. Signed packages and the release packet are prepared; original device policy and normal board advertising are restored, and owned fixtures are cleaned. Final branch integration and actual M-05 store delivery remain separate. S1 remains six Done / two Prepared / four Awaiting evidence; S2 has ten engineering tasks Done and participant follow-up unfinished. Original dates/hours remain the baseline; the [continuation plan](04_Sprint_Plan.md#31-october-continuation-order-and-reforecast) records the next work and unresolved human capacity.
 
 ## Forecast and commitment boundary
 
@@ -64,9 +64,9 @@ measured velocity or a new delivery deadline. The original C1-S3 window is
 
 | Order / stream | Current work and completion evidence | Forecast treatment |
 |---|---|---|
-| 1 — M-02 recovery acceptance | Complete remaining representative iPad/Android recovery, current-board consent and Blocks-to-Editor checks; reconcile DR-T01–14 against exact artifacts and review the result | Selected now; record actual duration and residual scenarios before forecasting completion |
-| 2 — M-04 release qualification | Freeze the selected app artifacts and complete the applicable five-profile × two-platform affected app matrix, provenance and release review | Follows accepted recovery behavior; unchanged firmware does not automatically require fresh firmware-release qualification |
-| 3 — M-05 distribution | Prepare the existing Play/TestFlight handoffs; submit only an admitted candidate; record processing/availability and installed-channel evidence separately | Preparation can overlap qualification; external access/review duration is unresolved |
+| 1 — M-02 recovery acceptance | Accepted: DR-T01–14 reviewed against automated and exact platform evidence, including generated text and current-target consent | Completed outcome on 31 October; no measured human effort inferred from agent execution |
+| 2 — M-04 release qualification | Engineering pass: frozen `bef67bd` artifacts, ten declared app/profile rows, packaging and scoped review; device closeout complete; branch integration tracked separately | This outcome covers the same later forecast batches; do not repeat them without a changed artifact or invalidated evidence |
+| 3 — M-05 distribution | Prepared handoffs; verify account/build-number state, submit the admitted artifact after final integration, then record processing/availability and installed-channel evidence | Next release stage; owner access and external review duration remain unresolved |
 | Parallel — M-01 pilot baseline | Confirm pilot owner, primary cohort, exact reference setup and actual weekly capacity; collect real consented baseline sessions using the prepared kit | Awaiting human inputs; engineering observations are not participant starts |
 | Later — M-03/M-06 learning | Collect useful-task and prospective day-7–14 follow-up observations from actual consenting activations | Preserve original recruitment targets; reforecast dates after real recruitment and capacity are known |
 | Conditional — Ready rehearsal | Use an assigned second operator for one exact profile only after capacity is selected | Remains optional; it is not a prerequisite for unrelated maintenance delivery |

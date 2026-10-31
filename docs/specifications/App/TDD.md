@@ -705,7 +705,7 @@ Drift schema versions with explicit `MigrationStrategy` step migrations (forward
 
 ### 9.3 Bounded current-text recovery (specified)
 
-**C1-S1 / PYB-006.1 contract, 2026-09-25; C1-S2 / PYB-006.2 source merged in PR #40, 2026-10-31. Integrated CI passes; required physical acceptance remains pending.**
+**C1-S1 / PYB-006.1 contract, 2026-09-25; C1-S2 / PYB-006.2 source merged in PR #40, 2026-10-31. Bounded recovery passes 31 October engineering acceptance with required automated and both-platform physical evidence; channel delivery remains separate.**
 [ADR-0048](../../decisions/0048-bounded-current-text-draft-recovery.md) and
 [current-draft-recovery.md](current-draft-recovery.md) own the bounded successor
 to ADR-0010. Start with the necessary `projects`/`project_files` subset and the

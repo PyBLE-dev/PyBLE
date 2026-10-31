@@ -11,7 +11,7 @@
 | Candidate | App `0.3.0+9`; recovery baseline merged at `6f5b3ea`, landscape repair `e54a78a`, native dismissal `01a7ac8`, and guide correction `bef67bd` under PR #41; platform and release reports bind each actual artifact |
 | Scope | PYB-006.2 bounded current-text recovery; supporting PYB-009.1 recipe and applicable PYB-008.1 observations |
 | Contract | [Current-draft recovery](../../../specifications/App/current-draft-recovery.md), [ADR-0048](../../../decisions/0048-bounded-current-text-draft-recovery.md) |
-| Overall state | Recovery baseline merged with passing post-merge CI; both native platform storage restart baselines and normal-app recovery observations retained. Latest guide-correction source passes 984 ordinary tests, rebuilt production packaging and the exact iPad palette regression. All five iPad Q rows pass with their declared source/baseline scope, and 36 PR #41 checks pass at `bef67bd`. A repeated final-candidate Android Blocks startup failure remains under investigation. PYB-006.2 and M-02 are not Done |
+| Overall state | Scoped PYB-006.2 / M-02 and app-only M-04 pass engineering review at frozen runtime `bef67bd`: 984 ordinary tests, 36 runtime-head CI checks, both-platform recovery/keyboard evidence and all ten declared app/profile rows. Device policy, owned fixtures and normal board advertising are restored; final branch integration, M-05 channel delivery and S2 participant follow-up remain unfinished |
 | S1 state | Unchanged: six Done, two Prepared, four Awaiting evidence; M-01/SG0 and pilot work remain unfinished |
 | Capacity/calendar | Original S2 allowance 24h and 12–25 October dates remain historical forecasts. The 45–72h estimate / 60h S2–S4 option is not measured effort or confirmed human capacity |
 | Method | Separate storage, coordinator and UI Git worktrees; root integrates board/session guards, regressions, release records and qualification attempts |
@@ -38,7 +38,7 @@ acknowledgement is not a claim that dismissal occurred. That revision's app tree
 It passes 978 ordinary tests, including 28 shell tests and one platform-fallback
 test, clean analysis/source gates, and Android/iOS native builds. Android's
 physical rerun observes the keyboard hide and console expand while retaining
-field text; the iPad result remains separately tracked. Signed production
+field text; the final iPad continuation is recorded below. Signed production
 artifacts were rebuilt and passed the packaging and repeated 16 KiB runtime
 checks in the release report. A subsequent iPad keyboard-palette Hide→Show
 transition left the docked keyboard covering the console Expand control while
@@ -53,8 +53,8 @@ scope; no M-02/M-04 acceptance follows from packaging alone.
 | Workstream | Evidence authority | Current disposition |
 |---|---|---|
 | iPad normal workflow | [iPad acceptance continuation](04_iPad_Acceptance.md) | Normal Preview passes offline Unicode Restore/current-board consent at `e54a78a`, generated-text handoff/recovery at `01a7ac8`, and Editor/native Blocks palette Hide→Show/dismissal at `bef67bd`; exact text and usable viewports are retained. All five iPad Q rows pass on their recorded candidates; exact firmware baselines and unchanged-behavior impact assessment remain explicit |
-| Android normal workflow | [Android acceptance continuation](05_Android_Acceptance.md) | Recorded `01a7ac8` P01–P15 scope and five Android Q rows pass with stated earlier-profile/accessibility limits. A repeated Blocks startup watchdog on the subsequent final-candidate attempt is under investigation; earlier passes do not close that admission issue |
-| Production artifacts and channel packet | [Release readiness](06_Release_Readiness.md) | Current `bef67bd` signed Android/iOS artifacts pass packaging and repeated 16 KiB Android startup/storage checks. Earlier artifacts are historical; physical acceptance, release admission and channel delivery remain separately tracked |
+| Android normal workflow | [Android acceptance continuation](05_Android_Acceptance.md) | Recorded P01–P15 scope and all five Q rows pass with explicit earlier-source/accessibility limits. Final `bef67bd` normal profile `945e9746…` passes Editor/native Blocks keyboard checks and generated-text/offline recovery after actual launcher start under temporary qualifier-only Unrestricted battery policy; original watchdogs and the policy condition remain recorded |
+| Production artifacts and channel packet | [Release readiness](06_Release_Readiness.md) | Current `bef67bd` signed Android/iOS artifacts pass packaging and repeated 16 KiB Android startup/storage checks. Earlier artifacts are historical; scoped engineering acceptance is recorded below, with device closeout complete and final integration/actual channel delivery separate |
 | Pilot and capacity | [Pilot kit](../c1-s1/02_Pilot_Protocol_and_Observation_Kit.md) and [continuation order](../04_Sprint_Plan.md#31-october-continuation-order-and-reforecast) | Human owner/cohort/setup/capacity and actual consented sessions remain pending |
 
 The subsequent guide correction is integrated at
@@ -74,9 +74,18 @@ also pass. The exact iPad Editor and native Blocks palette Hide→Show transitio
 on `bef67bd`: Expand stays above the keyboard and is hittable, dismissal restores
 the available viewport, and exact text/Blocks field state are retained. Native
 screenshots and accessibility frames agree. A subsequent Lenovo
-final-candidate run also repeatedly reached the Blocks startup watchdog. Its
-investigation remains open; the preceding successful Android observations are
-retained with their actual source and artifact scope.
+final-candidate run repeatedly reached the Blocks startup watchdog. Retained
+OS traces show suppressed renderer-service startup. A same-UID native control
+and the normal final profile then load under the explicitly recorded
+qualifier-only Unrestricted battery condition; the normal run uses the actual
+launcher icon. Its Hello example, native-field keyboard dismissal, guarded
+generated-text handoff, acknowledged checkpoint, both-radios-off process
+relaunch, exact local Restore and current-target Save/Run cancellation pass.
+An early helper incorrectly expected an enabled Preview action in an empty
+workspace; the retained hierarchy already showed a valid workspace and Browse
+examples. That selector failure is distinct from the genuine earlier watchdogs.
+No app startup patch, general production-package failure or universal battery
+workaround is claimed. Earlier rows retain their actual source/artifact scope.
 
 After artifact freeze, `ef19773` corrects four explanatory comment lines in
 `blockly_webview.dart` about the pinned Android asset-loading adapter. It changes
@@ -123,7 +132,7 @@ engineering scope review by the Codex integration operator selects these
 current, verified baselines for the app-only Q rows, using the unchanged runtime,
 board, upstream and build-driver sources as the rationale. This is a bounded
 compatibility scope decision, not binary equivalence, a human release sign-off,
-or admission of an unfinished matrix. No firmware update is selected. Claims of
+or a waiver of matrix requirements. No firmware update is selected. Claims of
 candidate-app testing against published `c8f549ee` on all profiles remain outside
 this evidence. No new firmware qualification or full firmware-suite pass is
 created by this comparison.
@@ -133,36 +142,37 @@ created by this comparison.
 An acknowledged current-text checkpoint can be offered after an app restart for
 explicit local Restore or Discard. The bounded feature protects one text slot;
 it does not implement project management, Blocks workspace recovery or backup.
-Existing channel installations are separate from this unqualified candidate.
+Existing channel installations are separate from this engineering-qualified candidate.
 
 | Component | Candidate behavior | Evidence boundary |
 |---|---|---|
-| Drift repository | `projects` / `project_files` subset and one SettingsStore; atomic content/metadata/generation; exact UTF-8 and SHA-256; 1 MiB admission bound | File-backed tests/schema fixtures plus Android/iPad native storage harnesses; full interaction/board acceptance remains pending |
+| Drift repository | `projects` / `project_files` subset and one SettingsStore; atomic content/metadata/generation; exact UTF-8 and SHA-256; 1 MiB admission bound | File-backed tests/schema fixtures, both native storage harnesses and the accepted normal-app platform observations |
 | Production storage | `pyble.sqlite` below the platform app-private Application Support directory; owned background database connection with WAL and FULL synchronization | No cache/scratch/preferences substitute; preserve database/WAL/journal on failure |
 | Recovery coordinator | One active checkpoint and one coalesced pending revision; 500ms idle and maximum 2s active scheduling; manual/lifecycle flush; durable acknowledgement separate from board dirty | Controller timer/epoch/failure tests; callbacks are not a promise that every last keystroke survives termination |
 | Startup and local panel | Resolve storage before Connect mounts; explicit preview/Restore/Discard; ten-second bounded wait; Retry / clearly volatile continuation | ARB-backed widget/semantics checks; disconnected preview/copy is a narrow shell exception |
 | Guarded replacement | Confirm meaningful pending/dirty replacements; commit replacement/tombstone before adoption; keep live text if storage fails; require explicit volatile fallback | New, Board Open and Blocks-to-Editor keep captured editor epochs across confirmation and asynchronous work |
-| Board authority | Restored text is dirty and unbound; Save/Run/Files Upload require current destination consent; paths in recovery metadata confer no authority | Recording-connection/session tests; physical board consent and absence of hidden writes remain required |
+| Board authority | Restored text is dirty and unbound; Save/Run/Files Upload require current destination consent; paths in recovery metadata confer no authority | Recording-connection/session tests and observed physical current-target consent/cancellation; no implicit board write is authorized |
 | Stale work | Epoch checks detect edit-away/back; facade/session guards fence Board Open and Save/Upload completion; PUT-to-Run refuses a changed attachment | A stable Connection facade is tested; no persistent board identity/session stamp is introduced |
 | Unsafe store state | Conflict/corrupt/unsupported checkpoint state stops writes; Retry rereads and offers a choice without replacing live text | Generation conflict regression; no silent reset, downgrade or deletion |
 
 ## Sprint tasks and delivery state
 
-These statuses report progress toward the selected outcome. **Implemented** is
-source progress; it is not a Done Increment or release admission.
+The engineering review accepts the bounded recovery outcome and its supporting
+recipe/platform work. Device closeout is complete. Ten engineering tasks are
+Done; participant follow-up is a separate unfinished task, so the whole Sprint is not complete.
 
-| Task | Current state | Remaining acceptance |
+| Task | Current state | Evidence / carried boundary |
 |---|---|---|
-| C1-S2-T01 / PYB-009.1 | Prepared — [scoped recipe](01_Operator_Recipe.md) | Execute against exact candidate; reconcile observations and operator gaps |
-| C1-S2-T02 / PYB-006.2 | Implemented — checkpoint/relaunch/side-effect tests | Integrated regression passes; reconcile required physical acceptance |
-| C1-S2-T03 / PYB-006.2 | Implemented — storage failure/interruption/stale-operation tests | Integrated regression passes; reconcile required physical acceptance |
-| C1-S2-T04 / PYB-006.2 | Implemented — durable storage and schema | Integrated regression and native storage checks pass; reconcile required physical acceptance |
-| C1-S2-T05 / PYB-006.2 | Implemented — startup choices/coordinator/UI | Integrated regression passes; remaining physical interaction/restart checks |
-| C1-S2-T06 / PYB-006.2 | Implemented — failure guidance/localization/volatile choices | Automated localization/accessibility/regression checks pass; applicable physical checks remain separate |
-| C1-S2-T07 / PYB-006.2 | Implemented and checked — latest source has 984 ordinary tests, including 28 shell, one dismissal-fallback and six guide tests, with clean analysis | PR #40 baseline CI and all 36 PR #41 checks at `bef67bd` pass, including pinned goldens/native WebView; physical/release evidence remains separate |
-| C1-S2-T08 / PYB-008.1 | Earlier Android continuation recorded; final-candidate issue under investigation | [Normal-app recovery and five Android Q rows](05_Android_Acceptance.md) pass on their stated sources; repeated Blocks startup watchdog during final-candidate checking remains unresolved |
-| C1-S2-T09 / PYB-008.1 | Physical iPad execution complete; final integrated review pending | iPad native storage restart and normal Preview offline Restore/current-board Save/Run consent pass for the recorded artifact; generated-text handoff/recovery and the final Editor/Blocks palette regression also pass; all five iPad release-matrix rows pass with their recorded source and baseline scope |
-| C1-S2-T10 / PYB-006.2 | In progress — integration/evidence review | Record final checks, immutable candidates, physical results and carried limitations |
+| C1-S2-T01 / PYB-009.1 | Done — scoped operator recipe executed and reviewed | Actual setup/keyboard corrections incorporated; optional second-operator reproduction remains PYB-009.2 |
+| C1-S2-T02 / PYB-006.2 | Done — checkpoint/relaunch/side-effect tests | Meaningful red/green evidence and integrated suite pass |
+| C1-S2-T03 / PYB-006.2 | Done — storage failure/interruption/stale-operation tests | File-backed fault and controller/session oracles pass |
+| C1-S2-T04 / PYB-006.2 | Done — durable storage and schema | Automated and both-platform native storage/restart evidence pass |
+| C1-S2-T05 / PYB-006.2 | Done — startup choices/coordinator/UI | Normal-app offline Restore, explicit Discard and generated-text recovery observed |
+| C1-S2-T06 / PYB-006.2 | Done — failure guidance/localization/volatile choices | Required widget/localization/semantics and scoped physical evidence pass |
+| C1-S2-T07 / PYB-006.2 | Done — applicable automated regression | 984 ordinary tests; 36 frozen-runtime CI checks including pinned goldens/native WebView; later documentation integration tracked separately |
+| C1-S2-T08 / PYB-008.1 | Done — Android observations reviewed | [Android report](05_Android_Acceptance.md): exact sources, final affected checks, OEM qualifier condition and retained failures |
+| C1-S2-T09 / PYB-008.1 | Done — iPad observations reviewed | [iPad report](04_iPad_Acceptance.md): offline/consent/generated text, final palette regression and all five app/profile rows |
+| C1-S2-T10 / PYB-006.2 | Done — scoped review, evidence reconciliation and device closeout | Actual policy restoration, owned-fixture cleanup and restored advertising recorded; final branch CI/review/merge remains an integration step |
 | C1-S2-T11 / PYB-011.2 | Awaiting participant evidence | No consenting activation dates or mature follow-up records supplied |
 
 ## Required scenario evidence
@@ -174,21 +184,21 @@ source gates; physical observations remain bound to their recorded artifacts.
 | Scenario | Implemented evidence | Current acceptance state |
 |---|---|---|
 | DR-T01 | Real repository validation/round-trip tests: exact Unicode, filenames, content bound and invalid metadata | Automated integrated suite passing |
-| DR-T02 | File-backed close/reopen retains the committed slot and generation | Automated suite and Lenovo separate-process harness passing; iPad separate-process profile harness passing; full interaction matrix pending |
-| DR-T03 | Child-process SIGKILL before/after write checkpoints; whole old/new committed content oracle | Host fault-controlled interruption tests and both-platform killed-process restart checks pass; deterministic physical phase timing is not claimed; remaining normal-app interaction scenarios are recorded separately |
+| DR-T02 | File-backed close/reopen retains the committed slot and generation | Automated suite and Lenovo separate-process harness passing; iPad separate-process profile harness passing; normal-app restart/Restore observed on both platforms |
+| DR-T03 | Child-process SIGKILL before/after write checkpoints; whole old/new committed content oracle | Host fault-controlled interruption tests and both-platform killed-process restart checks pass; deterministic physical phase timing is not claimed; normal-app interaction scenarios are recorded separately |
 | DR-T04 | Real storage failure injection plus controller failure state retains previous copy and live edits | Automated integrated suite passing |
 | DR-T05 | Bad hash/metadata, corrupt/truncated database and unsupported version fixtures; bounded startup error UI | Automated integrated suite passing |
 | DR-T06 | Fresh v1/reopen, exported first schema and unsupported-version refusal; no fictional released v0 | Integrated schema tests pass; future schema migrations remain gated on new fixtures |
-| DR-T07 | Explicit Restore/Discard, failed discard, volatile Retry, late hydration and no implicit board writes | Automated suite, Lenovo Restore/offline preview/relaunch, and iPad normal-app offline preview/Discard cancellation/Restore pass; final-candidate interaction matrix pending |
+| DR-T07 | Explicit Restore/Discard, failed discard, volatile Retry, late hydration and no implicit board writes | Automated suite, Lenovo Restore/offline preview/relaunch, and iPad normal-app offline preview/Discard cancellation/Restore pass; final normal-app affected checks also pass with the Android OEM condition recorded |
 | DR-T08 | Deterministic 500ms / continuous-edit 2s scheduling; delayed commits, startup timeout and epoch tests | Integrated clock/epoch/lifecycle tests pass; candidate-specific physical interruption scope remains explicit |
 | DR-T09 | Active write/replacement serialization, tombstones and no queued resurrection | Automated integrated suite passing |
-| DR-T10 | Recovered-target cancellation and stale document/path/session consent | Recording-connection tests and Lenovo/iPad current-target Save/Run consent with cancellation pass for their recorded candidates; iPad Files Upload cancellation preserves the empty destination, while confirmation writes only the selected file. Final affected checks remain separate |
+| DR-T10 | Recovered-target cancellation and stale document/path/session consent | Recording-connection tests and Lenovo/iPad current-target Save/Run consent with cancellation pass for their recorded candidates; iPad Files Upload cancellation preserves the empty destination, while confirmation writes only the selected file. Final affected checks pass within their declared artifact/platform conditions |
 | DR-T11 | Stable-facade board swap, delayed GET, stale completion and PUT-to-Run attachment refusal | Integrated recording-connection/session regression passes |
 | DR-T12 | Explicit generated text handoff with editor-epoch/revision guards; existing workspace/sidecar behavior retained | Affected automated regression and representative Android/iPad device checks pass. The iPad normal Preview preserves the previous Unicode draft on handoff cancellation, adopts exact generated text only on confirmation, and offers that committed text after actual relaunch |
 | DR-T13 | Local/board status separation, ARB error/status copy, disconnected preview, keyboard and 2× text | Automated UI/localization/semantics and pinned golden CI pass; physical Lenovo 2× preview observed; local macOS mismatch remains documented separately |
-| DR-T14 | Exact recorded Android/iPad candidate, offline restore and explicit current target consent | Lenovo observations and signed iPad native-storage checks retained; normal iPad offline Restore and current-target Save/Run consent now pass. Both-platform generated-text checks also pass; final iPad keyboard regression passes; the subsequent Android Blocks startup observation remains under investigation |
+| DR-T14 | Exact recorded Android/iPad candidate, offline restore and explicit current target consent | Lenovo observations and signed iPad native-storage checks retained; normal iPad offline Restore and current-target Save/Run consent now pass. Both-platform generated-text checks also pass; final keyboard regressions and affected normal-app checks pass on both platforms with the Android qualifier condition explicit |
 
-## Verification and remaining admission
+## Verification and distribution boundary
 
 | Check | Reported result / limitation |
 |---|---|
@@ -214,11 +224,48 @@ flowchart LR
     M01 -. "Independent evidence stream" .-> REVIEW
 ```
 
-The next required work is resolving the final-candidate Android Blocks startup
-observation and reviewing the now-completed iPad release-matrix evidence. Preserve
-failed/not-run rows rather than weakening the contract to meet a date. Human
-pilot work continues as its own evidence stream. No full A-24 completion,
-qualified release or publication follows from source commits alone.
+## 31 October engineering acceptance and next stage
+
+The Codex integration operator, under the user's completion request, reviewed
+DR-T01–14, the exact platform reports and the frozen candidate against the
+selected story criteria and Definition of Done. This is an automated engineering
+review with parallel source/evidence review; it does not invent an independent
+human sign-off or a Scrum ceremony.
+
+- **PYB-006.2 / M-02 accepted:** one durable current-text slot, explicit local
+  Restore/Discard and current-board consent, with required failure/stale-work
+  coverage. Full A-24 projects/history, durable settings and Blocks graphs remain
+  outside this accepted slice.
+- **PYB-008.1/.2 and app-only M-04 engineering pass:** all ten declared profile /
+  platform rows, exact unchanged firmware inputs, final affected keyboard and
+  generated-text checks, signed packaging and Android 16 KiB runtime evidence.
+  Earlier-row impact assessments and the Lenovo qualifier's temporary battery
+  condition remain part of the accepted scope. No new firmware qualification,
+  published-image equivalence on all five profiles or Ready badge is inferred.
+- **Review scope:** source/red-green history, locked dependency/license/privacy
+  records and the [scoped dependency audit](06_Release_Readiness.md) were checked.
+  The website's remaining moderate toolchain findings are separate maintenance;
+  the audit is not a vulnerability-free claim.
+- **Closeout complete:** the qualifier is back to Optimized with Unrestricted
+  off and removed from the device-idle allowlist. Global DuraSpeed settings are
+  unchanged, and the production package was not altered. All 19 authored files
+  were read/CRC-checked and backed up before removal; ten empty owned
+  directories were also removed across eight cleanup sessions. Unrelated root
+  entries were preserved. Classic
+  ESP32 returned to advertising after fresh ROM identity verification and an
+  ordinary RTS reset, with no firmware/filesystem write; all five boards then
+  advertised. That restoration is not counted as an app reconnect pass. The
+  platform/release reports retain the private receipts. Final branch
+  CI/review/merge remains separate from the 36 passing frozen-runtime checks.
+- **Next release stage — M-05:** verify store access and unused build numbers,
+  upload only the admitted artifacts after final integration, then record processing,
+  actual availability and store-delivered upgrade/launch evidence separately.
+  Prepared binaries, local Preview installs and passing engineering tests do not
+  establish channel delivery.
+
+Human pilot work remains its own evidence stream. T11 and the earlier S1
+participant obligations are unfinished; no recruitment, consent, return-rate
+result or human capacity is reconstructed from these engineering runs.
 
 ## Integrated source and CI review
 
@@ -238,7 +285,7 @@ establish store publication or acceptance of unperformed physical scenarios.
 
 The final boundedness audit added SQL byte/count preflights before metadata or
 row materialization: corrupt metadata is capped before JSON reaches the UI
-isolate. The final ordinary suite is 972 passing tests. [Platform results](02_Platform_Qualification.md)
+isolate. At that earlier checkpoint, the ordinary suite had 972 passing tests. [Platform results](02_Platform_Qualification.md)
 include successful iPad profile assertion receipts and a killed-process boundary.
 All five boards now appear in the Lenovo scan after the [classic ESP32 recovery](03_Classic_ESP32_Workspace_Recovery.md).
 Its workspace exactly matched an intentional invalid-media fixture left by an

@@ -8,7 +8,7 @@
 | Date / operator | 31 October 2026, Asia/Bangkok; automated operator on the maintainer's Mac |
 | Source | App source candidate `0.3.0+9`; final bounded source `90311f3` (including storage preflight fix `8657e5a`); earlier source snapshots identified below |
 | Scope | Local storage, explicit offline recovery and platform builds; partial evidence toward DR-T02/03/07/13/14 |
-| Acceptance | Engineering observations only; full physical board consent, interruption/interaction matrix and release qualification remain pending |
+| Acceptance | Historical initial checkpoint; subsequent normal-app consent, recovery and app-only qualification are accepted in the linked 04/05/current execution records |
 | Raw evidence | Ignored `local/recovery-implementation/`: commands/results, source manifests, screenshots/UI dumps, retained checkpoint and APK; raw captures are not committed |
 | Review | [Execution record](00_Execution_Record.md), [operator recipe](01_Operator_Recipe.md), [merged PR #40](https://github.com/PyBLE-dev/PyBLE/pull/40) |
 
@@ -141,7 +141,9 @@ The remaining normal-app interaction, current-target consent and Blocks handoff
 work from this historical record is reconciled in the [iPad](04_iPad_Acceptance.md),
 [Android](05_Android_Acceptance.md) and [current execution](00_Execution_Record.md)
 records. All five iPad Q rows now pass within their exact source/firmware scope;
-the final Android Blocks startup observation remains under investigation.
+the final Android Blocks/keyboard/generated-text checks pass under their
+recorded qualifier-only OEM condition. Original watchdogs and selector failures
+remain retained.
 Candidate provenance, retained failures and final admission stay explicit.
 Participant follow-up and unfinished M-01/SG0 pilot work remain separate from
 engineering recovery evidence.

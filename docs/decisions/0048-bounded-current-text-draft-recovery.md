@@ -6,8 +6,10 @@
 **Status:** Accepted for the bounded implementation; candidate source implemented
 2026-10-31 under the user's next-release request. The contract was specified
 2026-09-25 during C1-S1. PR #40 merged the source and integrated CI passes.
-Required physical acceptance and release admission remain pending; no named
-human sign-off is claimed.
+Scoped recovery acceptance and app-only qualification are recorded for frozen
+runtime `bef67bd` after required automated and physical checks. Device closeout
+is complete; final branch integration and channel delivery remain separate; no
+named human sign-off is claimed.
 
 ## Context
 

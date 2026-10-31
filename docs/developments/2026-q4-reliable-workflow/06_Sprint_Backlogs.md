@@ -5,7 +5,7 @@
 
 | Field | Rule |
 |---|---|
-| Status | C1-S1: six Done, two Prepared, four Awaiting evidence. C1-S2 candidate source is merged and automated checks pass; required physical acceptance remains pending on 31 October. Original allowances/calendar remain baseline; later work requires replanning |
+| Status | C1-S1: six Done, two Prepared, four Awaiting evidence. C1-S2: ten engineering tasks Done, T11 Awaiting participant evidence. M-02 and app-only M-04 accepted 31 October; final integration and M-05 delivery pending. Original allowances/calendar remain historical |
 | Product/Sprint Goals | [Framework](01_Overview_and_Scrum_Framework.md) and [Sprint plan](04_Sprint_Plan.md) |
 | Acceptance authority | [Product backlog and stories](05_Product_Backlog_and_Stories.md); task completion never overrides a parent story's acceptance criteria |
 | Selection | Developers confirm scope, ownership, estimates and task plan at each Sprint Planning |
@@ -20,7 +20,7 @@ The initial tasks are small planning units, generally 1–4 hours. If a task or 
 
 Record optional follow-up consent and the prospective day-7–14 window at each activation. Collect follow-up as windows arrive, starting with the first cohort; do not postpone early cohorts until S5. S1 observation allowances include any follow-up due within S1; S2-T11, S3-T10 and later follow-up rows continue it. Developers must reallocate headroom or other selected work if actual pilot effort exceeds these allowances, preserving required recovery review and tests. Record missed windows as missing/late evidence rather than reconstructing an on-time response.
 
-**31 October continuation update:** the `0.3.0+9` recovery baseline merged in [PR #40](https://github.com/PyBLE-dev/PyBLE/pull/40). Physical qualification exposed three keyboard defects; their repairs at `bef67bd` pass 984 ordinary tests and all 36 PR #41 checks. iPad recovery, final keyboard regressions and all five iPad app-only board rows pass with declared source/firmware scope. Earlier Android recovery and board rows pass, but a later final-candidate Blocks startup observation remains under investigation. Signed packages and a channel packet are prepared; admission and actual store delivery remain separate. The [C1-S2 record](c1-s2/00_Execution_Record.md) binds the evidence. S1 remains six Done / two Prepared / four Awaiting evidence. Original dates/hours remain the baseline; the [continuation plan](04_Sprint_Plan.md#31-october-continuation-order-and-reforecast) records unresolved capacity inputs.
+**31 October acceptance update:** scoped current-text recovery (PYB-006.2 / M-02) and the app-only M-04 candidate pass engineering review at `bef67bd`: 984 ordinary tests, 36 frozen-runtime CI checks, both-platform recovery/keyboard evidence and all ten declared app/profile rows. The [C1-S2 record](c1-s2/00_Execution_Record.md) preserves exact artifacts, firmware baselines, earlier-row impact assessments and the temporary Android qualifier battery-policy condition. Signed packages and the release packet are prepared; original device policy and normal board advertising are restored, and owned fixtures are cleaned. Final branch integration and actual M-05 store delivery remain separate. S1 remains six Done / two Prepared / four Awaiting evidence; S2 has ten engineering tasks Done and participant follow-up unfinished. Original dates/hours remain the baseline; the [continuation plan](04_Sprint_Plan.md#31-october-continuation-order-and-reforecast) records the next work and unresolved human capacity.
 
 ## C1-S1 — reproduce the current workflow and size recovery
 
@@ -64,23 +64,24 @@ Five baseline starts is a target, not the implied result of reserving six hours.
 
 | Task ID | Parent child item | Proposed task and expected output | Dependency | Contribution role | h | Status |
 |---|---|---|---|---|---:|---|
-| C1-S2-T01 | PYB-009.1 | Complete the scoped restart/setup/operator recipe and expected evidence for this increment | 006.1 scope; initial 009.1 inventory | QA + App | 2 | Prepared — scoped recipe; execution/reproduction pending |
-| C1-S2-T02 | PYB-006.2 | Add meaningful failing tests for the accepted write boundary, relaunch recovery and absence of implicit board/network actions | Approved 006.1; specification-first sequence | App | 2 | Implemented and checked — integrated suite and CI pass |
-| C1-S2-T03 | PYB-006.2 | Add failing tests for interrupted/corrupt/full local storage and stale completions against newer edits | Approved 006.1 | App | 2 | Implemented and checked — integrated failure/race suite and CI pass |
-| C1-S2-T04 | PYB-006.2 | Implement the minimal accepted durable storage/migration behavior until relevant tests pass | T02/T03 red evidence | App | 4 | Implemented — candidate storage; acceptance pending |
-| C1-S2-T05 | PYB-006.2 | Implement hydration and specified recovery/discard behavior through existing providers | T04 and accepted UI contract | App | 4 | Implemented — candidate coordinator/UI; acceptance pending |
-| C1-S2-T06 | PYB-006.2 | Complete non-destructive error handling, truthful scope and localized recovery guidance | T04/T05 | App | 2 | Implemented — candidate guidance/errors; acceptance pending |
-| C1-S2-T07 | PYB-006.2 | Run affected controller/widget/lifecycle regressions and repository gates; resolve scoped failures | T04–T06 | App + QA | 2 | Implemented and checked — 984 guide-correction ordinary tests; all 36 PR #41 checks pass at `bef67bd`, including pinned goldens/native WebView |
-| C1-S2-T08 | PYB-008.1 | Run representative Android restart/interruption scenarios on the recorded candidate; retain actual results | T01/T07; device/candidate | QA | 2 | Earlier Android continuation recorded — five Q rows pass on stated sources; final-candidate Blocks startup failure under investigation |
-| C1-S2-T09 | PYB-008.1 | Run representative iPad restart/interruption scenarios on the recorded candidate; retain actual results | T01/T07; device/candidate | QA | 2 | Physical execution complete — offline Restore, target consent, generated-text, final palette regression and all five iPad Q rows pass with recorded source limits; integrated review pending |
-| C1-S2-T10 | PYB-006.2 | Review integration/evidence and update user guidance plus carried A-24/Blocks limitations | T07–T09 and all applicable acceptance | App + reviewer | 1 | In progress — integration review and evidence reconciliation |
+| C1-S2-T01 | PYB-009.1 | Complete the scoped restart/setup/operator recipe and expected evidence for this increment | 006.1 scope; initial 009.1 inventory | QA + App | 2 | Done — scoped recipe executed, corrected and reviewed; independent reproduction is optional 009.2 |
+| C1-S2-T02 | PYB-006.2 | Add meaningful failing tests for the accepted write boundary, relaunch recovery and absence of implicit board/network actions | Approved 006.1; specification-first sequence | App | 2 | Done — meaningful red/green tests and integrated regression pass |
+| C1-S2-T03 | PYB-006.2 | Add failing tests for interrupted/corrupt/full local storage and stale completions against newer edits | Approved 006.1 | App | 2 | Done — required fault/interruption/stale-work oracles pass |
+| C1-S2-T04 | PYB-006.2 | Implement the minimal accepted durable storage/migration behavior until relevant tests pass | T02/T03 red evidence | App | 4 | Done — durable storage/schema and both native restart baselines accepted |
+| C1-S2-T05 | PYB-006.2 | Implement hydration and specified recovery/discard behavior through existing providers | T04 and accepted UI contract | App | 4 | Done — startup choices and normal-app recovery accepted |
+| C1-S2-T06 | PYB-006.2 | Complete non-destructive error handling, truthful scope and localized recovery guidance | T04/T05 | App | 2 | Done — guidance/error/localization and required scoped evidence accepted |
+| C1-S2-T07 | PYB-006.2 | Run affected controller/widget/lifecycle regressions and repository gates; resolve scoped failures | T04–T06 | App + QA | 2 | Done — 984 ordinary tests and 36 frozen-runtime CI checks pass; final branch integration separate |
+| C1-S2-T08 | PYB-008.1 | Run representative Android restart/interruption scenarios on the recorded candidate; retain actual results | T01/T07; device/candidate | QA | 2 | Done — Android recovery, final affected checks and declared Q rows accepted with OEM test condition |
+| C1-S2-T09 | PYB-008.1 | Run representative iPad restart/interruption scenarios on the recorded candidate; retain actual results | T01/T07; device/candidate | QA | 2 | Done — iPad recovery, final palette regression and declared Q rows accepted |
+| C1-S2-T10 | PYB-006.2 | Review integration/evidence and update user guidance plus carried A-24/Blocks limitations | T07–T09 and all applicable acceptance | App + reviewer | 1 | Done — scoped engineering review and device closeout; final branch integration tracked separately |
 | C1-S2-T11 | PYB-011.2 | Collect due consented follow-up and account for early windows, missing responses and task opportunity | 004 prospective method; actual activation dates | Pilot | 1 | Awaiting participant evidence — no activation dates supplied |
 | **C1-S2 total** | | | | | **24** | |
 
 These allowances do not assert that persistence fits 24 hours. Developers must confirm the estimate or change the forecast at Planning. Required corruption/recovery protections remain part of the usable slice. Representative runs cannot complete the whole five-profile release matrix.
 
-Current S2 task states are source/evidence progress, not additional Done
-increments. [The S2 record](c1-s2/00_Execution_Record.md) supplies current proof;
+The bounded recovery increment and its supporting engineering tasks are
+accepted and device closeout is complete. T11 remains unfinished,
+so the whole S2 Sprint is not Done. [The S2 record](c1-s2/00_Execution_Record.md) supplies current proof;
 [the scoped recipe](c1-s2/01_Operator_Recipe.md) keeps physical steps and expected
 oracles explicit. Missing participants are not technical test failures and have
 not been replaced by maintainer or automated sessions.
@@ -97,19 +98,21 @@ not been replaced by maintainer or automated sessions.
 
 | Task ID | Parent child item | Proposed task and expected output | Dependency | Contribution role | h | Status |
 |---|---|---|---|---|---:|---|
-| C1-S3-T01 | PYB-008.1 | Bind candidate/build/provenance and safe setup to the selected qualification plan | 001; 009.1; candidate available | QA + release | 2 | Proposed |
-| C1-S3-T02 | PYB-008.2 | Execute the first costed batch of required profile/platform scenarios; retain results and defects | T01; exact devices; agreed batch | QA + firmware | 4 | Proposed |
-| C1-S3-T03 | PYB-008.2 | Execute the next costed batch; preserve every required unrun row explicitly | T01; exact devices; agreed batch | QA + firmware | 4 | Proposed |
-| C1-S3-T04 | PYB-008.2 | Execute the next risk-prioritized batch or affected rerun; record immutable evidence | T01; previous findings | QA + firmware | 4 | Proposed |
+| C1-S3-T01 | PYB-008.1 | Bind candidate/build/provenance and safe setup to the selected qualification plan | 001; 009.1; candidate available | QA + release | 2 | Covered by 31 October continuation for the accepted candidate; original allowance retained |
+| C1-S3-T02 | PYB-008.2 | Execute the first costed batch of required profile/platform scenarios; retain results and defects | T01; exact devices; agreed batch | QA + firmware | 4 | Covered by accepted app-only matrix; no duplicate execution or hours claimed |
+| C1-S3-T03 | PYB-008.2 | Execute the next costed batch; preserve every required unrun row explicitly | T01; exact devices; agreed batch | QA + firmware | 4 | Covered by accepted app-only matrix; no duplicate execution or hours claimed |
+| C1-S3-T04 | PYB-008.2 | Execute the next risk-prioritized batch or affected rerun; record immutable evidence | T01; previous findings | QA + firmware | 4 | Affected reruns completed in continuation; new source changes require new impact review |
 | C1-S3-T05 | PYB-011.1 | Observe a scheduled primary-cohort activation/Task C batch on a recorded tested setup | 003/004; participant access | Pilot | 2 | Proposed |
 | C1-S3-T06 | PYB-011.1 | Observe the next useful-task batch and reasons to choose another workflow or return | 003/004; participant access | Pilot | 2 | Proposed |
 | C1-S3-T07 | PYB-011.1 | Analyze task outcomes, assistance and comparable cohorts; reconcile activation records | T05/T06; existing observations | Pilot | 1 | Proposed |
-| C1-S3-T08 | PYB-009.1 | Correct operator instructions and evidence index from actual execution | T02–T04 findings | QA | 2 | Proposed |
-| C1-S3-T09 | PYB-008.2 | Review matrix states, blockers and remaining cost; determine which bounded claims are supported | T02–T04/T08 | QA + reviewer | 2 | Proposed |
+| C1-S3-T08 | PYB-009.1 | Correct operator instructions and evidence index from actual execution | T02–T04 findings | QA | 2 | Covered by executed/reviewed recipe and evidence reconciliation |
+| C1-S3-T09 | PYB-008.2 | Review matrix states, blockers and remaining cost; determine which bounded claims are supported | T02–T04/T08 | QA + reviewer | 2 | Covered by scoped 31 October engineering review; limitations retained |
 | C1-S3-T10 | PYB-011.2 | Collect rolling follow-up in each due window and account for missing responses/opportunity | Consented activation records; prospective method | Pilot | 1 | Proposed |
 | **C1-S3 total** | | | | | **24** | |
 
-At Planning, map each batch to exact rows among `esp32-4mb`, `esp32-s3-n16r8`, `waveshare-esp32-s3-lcd-147b`, `esp32-c3-4mb`, and `rpi-pico2-w`, on iPadOS and Android as required. The twelve-hour execution allowance is not a prediction that all ten combinations and every normative repetition fit. Completing a batch is not completing PYB-008.2 while required rows remain unrun or failing.
+The original batch allowances above are not additional work or measured hours
+for the already-accepted candidate. At future Planning, map any newly required
+batch to exact rows among `esp32-4mb`, `esp32-s3-n16r8`, `waveshare-esp32-s3-lcd-147b`, `esp32-c3-4mb`, and `rpi-pico2-w`, on iPadOS and Android as required. The twelve-hour execution allowance is not a prediction that all ten combinations and every normative repetition fit. Completing a batch is not completing PYB-008.2 while required rows remain unrun or failing.
 
 ## C1-S4 — improve the observed task and mature the cohort
 
@@ -150,15 +153,15 @@ An analysis task can finish with fewer than 12 starts, but PYB-011.1 remains unf
 
 | Task ID | Parent child item | Proposed task and expected output | Dependency | Contribution role | h | Status |
 |---|---|---|---|---|---:|---|
-| C1-S5-T01 | PYB-013.1 | Freeze candidate identity/included changes and map applicable release requirements | Selected source/increment; 001/009 evidence | Release + QA | 2 | Proposed |
-| C1-S5-T02 | PYB-008.2 | Execute a costed remaining required matrix batch or invalidated-evidence rerun | T01; exact devices | QA + firmware | 4 | Proposed |
-| C1-S5-T03 | PYB-008.2 | Execute the next required batch and retain outstanding rows honestly | T01; exact devices | QA + firmware | 4 | Proposed |
-| C1-S5-T04 | PYB-008.2 | Complete applicable cross-version/affected regressions and review unresolved defects | T01; named baselines; prior findings | QA + App/firmware | 3 | Proposed |
-| C1-S5-T05 | PYB-013.1 | Assemble immutable evidence index, limitations and accurate release notes | T02–T04 actual results; prior accepted evidence | Release | 3 | Proposed |
-| C1-S5-T06 | PYB-013.1 | Review release admission and record sign-off or blocking conditions | T05/T09; all mandatory gates | Release + reviewer | 2 | Proposed |
-| C1-S5-T07 | PYB-014.1 | If admitted and authorized, submit exact artifact to selected existing channel and retain receipt/state | T06 pass; owner access/authorization | Release | 2 | Proposed |
+| C1-S5-T01 | PYB-013.1 | Freeze candidate identity/included changes and map applicable release requirements | Selected source/increment; 001/009 evidence | Release + QA | 2 | Covered by frozen candidate and prepared release record |
+| C1-S5-T02 | PYB-008.2 | Execute a costed remaining required matrix batch or invalidated-evidence rerun | T01; exact devices | QA + firmware | 4 | Current candidate rows covered; rerun only invalidated or newly selected scope |
+| C1-S5-T03 | PYB-008.2 | Execute the next required batch and retain outstanding rows honestly | T01; exact devices | QA + firmware | 4 | Current candidate rows covered; rerun only invalidated or newly selected scope |
+| C1-S5-T04 | PYB-008.2 | Complete applicable cross-version/affected regressions and review unresolved defects | T01; named baselines; prior findings | QA + App/firmware | 3 | Covered by declared-baseline and affected-regression review |
+| C1-S5-T05 | PYB-013.1 | Assemble immutable evidence index, limitations and accurate release notes | T02–T04 actual results; prior accepted evidence | Release | 3 | Prepared — exact artifacts, evidence index, limitations and release notes retained |
+| C1-S5-T06 | PYB-013.1 | Review release admission and record sign-off or blocking conditions | T05/T09; all mandatory gates | Release + reviewer | 2 | Covered by scoped engineering admission and closeout; final integration separate |
+| C1-S5-T07 | PYB-014.1 | If admitted and authorized, submit exact artifact to selected existing channel and retain receipt/state | T06 pass; owner access/authorization | Release | 2 | Pending — store-account/build-number verification and actual submission receipt |
 | C1-S5-T08 | PYB-011.2 | Collect follow-up in due windows and account for closed windows; label immature windows and missing responses | Consented activation records; agreed method | Pilot | 2 | Proposed |
-| C1-S5-T09 | PYB-013.1 | Verify update/recovery instructions against selected artifacts and accepted scope | T01; current operator/distribution guide | Release + QA | 2 | Proposed |
+| C1-S5-T09 | PYB-013.1 | Verify update/recovery instructions against selected artifacts and accepted scope | T01; current operator/distribution guide | Release + QA | 2 | Prepared for admitted scope; actual store-upgrade observations remain 014.2 |
 | **C1-S5 total** | | | | | **24** | |
 
 The required matrix may cost more than these batches. Use the S1/Planning estimate to revise the forecast before committing; a Sprint end never shortens normative tests. If release admission is blocked, T07 is not Done and submission does not proceed. Participants activated on 22 November mature on 6 December, after the proposed Friday Review; finalize that accounting in C1-S6 without inventing early results.
@@ -175,7 +178,7 @@ The required matrix may cost more than these batches. Use the S1/Planning estima
 
 | Task ID | Parent child item | Proposed task and expected output | Dependency | Contribution role | h | Status |
 |---|---|---|---|---|---:|---|
-| C1-S6-T01 | PYB-014.1 | Verify submission/processing/availability state and remaining distribution actions | 013 admission; submission/access as applicable | Release | 2 | Proposed |
+| C1-S6-T01 | PYB-014.1 | Verify submission/processing/availability state and remaining distribution actions | 013 admission; submission/access as applicable | Release | 2 | Pending — account/build-number checks and actual submission/processing evidence |
 | C1-S6-T02 | PYB-014.2 | If Android is selected, verify eligible installation of its qualified candidate, installed build and applicable smoke behavior | Actual selected-candidate Android availability | Release + QA | 2 | Proposed |
 | C1-S6-T03 | PYB-014.2 | If iPad is selected, verify eligible installation of its qualified candidate, installed build/provenance and applicable smoke behavior | Actual selected-candidate TestFlight availability | Release + QA | 2 | Proposed |
 | C1-S6-T04 | PYB-014.2 | Reconcile user-facing installation/update/support guidance with actual channel outcomes | T01 and selected-channel T02/T03 results | Release + Docs | 2 | Proposed |
@@ -183,7 +186,7 @@ The required matrix may cost more than these batches. Use the S1/Planning estima
 | C1-S6-T06 | PYB-011.2 | Analyze full mature denominator, useful returns, prompting, opportunity and missing data | T05 and earlier observations | Pilot | 3 | Proposed |
 | C1-S6-T07 | PYB-011.2 | Summarize task/support effort and reasons to choose or leave PyBLE | Observations and support records | Pilot + Developers | 2 | Proposed |
 | C1-S6-T08 | Cycle decision — strategy §19 | Prepare the evidence-based next-investment recommendation and proposed backlog order for Review | T06/T07; milestone states | Product Owner + Developers | 3 | Proposed |
-| C1-S6-T09 | PYB-009.1 | Close the operator/evidence index with current limits and any explicitly funded Ready rehearsal status | Actual 008/009 records | QA | 2 | Proposed |
+| C1-S6-T09 | PYB-009.1 | Close the operator/evidence index with current limits and any explicitly funded Ready rehearsal status | Actual 008/009 records | QA | 2 | Current engineering index reconciled; later channel/reproduction results remain to add |
 | **C1-S6 total** | | | | | **20** | |
 
 T08 prepares a product decision; the Sprint Review/Retrospective meetings remain within the event reserve. A closed observation record may report an inconclusive target. A blocked app installation is not a completed installation, even when its blocker is documented.

@@ -37,14 +37,14 @@ v0.7.0 remains non-normative and requires separate maintainer approval.
   and launches are verified on connected tablets; fresh enrollment/reinstallation
   was not exercised. The pilot kit, recovery design and validation inventory
   are prepared; this does not complete the Sprint or board qualification.
-- Validate and qualify the implemented [bounded current-text recovery candidate](developments/2026-q4-reliable-workflow/c1-s2/00_Execution_Record.md)
-  against the [contract](specifications/App/current-draft-recovery.md). Merged
-  candidate `0.3.0+9` supplies atomic local checkpoints and offline recovery;
-  full A-24 and Blocks graph persistence remain separate scope. The original
-  45–72 hour estimate remains a forecast, not measured effort.
+- Deliver the engineering-accepted [bounded current-text recovery candidate](developments/2026-q4-reliable-workflow/c1-s2/00_Execution_Record.md).
+  Candidate `0.3.0+9` passes its [contract](specifications/App/current-draft-recovery.md)
+  and declared app-only matrix with exact test conditions recorded. Full A-24
+  and Blocks graph persistence remain separate scope. The original 45–72 hour
+  estimate remains a forecast, not measured effort.
 - Correct the [stale public TestFlight description](developments/2026-q4-reliable-workflow/c1-s1/05_TestFlight_Metadata_Correction.md)
   through the distribution owner; replacement copy is prepared, not published.
-- Complete [release qualification and channel delivery](developments/2026-q4-reliable-workflow/c1-s2/06_Release_Readiness.md) for merged app `0.3.0+9`,
+- Complete [final integration and channel delivery](developments/2026-q4-reliable-workflow/c1-s2/06_Release_Readiness.md) for qualified app `0.3.0+9`,
   retaining the recorded 0.2.0 channel baseline until the new channel is verified. The
   [Android publication review](testing/website/android-open-testing-2026-09-25.md)
   records live open-testing availability. The

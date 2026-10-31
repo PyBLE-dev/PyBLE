@@ -11,8 +11,9 @@ incomplete automated evidence remains pending. The qualified v0.6.0 release
 remains a separate historical baseline built from its annotated tag.
 
 The merged app source now targets `0.3.0+9`. Its local Android and iPad Preview
-installations are engineering candidates, with release qualification and channel
-delivery tracked separately. The recorded existing-channel baseline is Android
+installations support scoped engineering acceptance for bounded recovery and
+the declared app-only matrix. Device closeout is complete; final integration and actual channel
+delivery remain separate. The recorded existing-channel baseline is Android
 Play `0.2.0 (8)` and iPad TestFlight `0.2.0 (6)`; the earlier build-5 Transporter
 and build-8 submission handoffs remain historical artifact records.
 
