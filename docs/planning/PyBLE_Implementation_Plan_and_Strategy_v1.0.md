@@ -13,8 +13,8 @@
 |---|---|
 | Document version | 1.8 — accepted bounded recovery and app-only qualification; channel/pilot continuation; original filename retained |
 | Prepared | 25 September 2026 |
-| Last reviewed | 31 October 2026; bounded M-02 and app-only M-04 engineering acceptance recorded with exact candidate, firmware and OEM test conditions; device closeout complete; [PR #41](https://github.com/PyBLE-dev/PyBLE/pull/41) tracks final integration; required CI and merge precede publishing; channel delivery pending |
-| Status | C1-S1 has six tasks Done, two Prepared awaiting pilot setup and four Awaiting evidence; Sprint and SG0 remain unfinished. Bounded recovery and app-only qualification pass scoped engineering review; device closeout is complete. [PR #41](https://github.com/PyBLE-dev/PyBLE/pull/41) tracks final integration; required CI and merge precede publishing. Actual channel delivery remains pending. Human capacity and recruitment dates need replanning; no new protocol behavior approved |
+| Last reviewed | 31 October 2026; bounded M-02 and app-only M-04 engineering acceptance recorded with exact candidate, firmware and OEM test conditions; device closeout complete; [PR #41](https://github.com/PyBLE-dev/PyBLE/pull/41) merged after all 36 checks on its final head passed; channel delivery pending |
+| Status | C1-S1 has six tasks Done, two Prepared awaiting pilot setup and four Awaiting evidence; Sprint and SG0 remain unfinished. Bounded recovery and app-only qualification pass scoped engineering review; device closeout is complete. [PR #41](https://github.com/PyBLE-dev/PyBLE/pull/41) merged after all 36 checks on its final head passed. Actual channel delivery remains pending. Human capacity and recruitment dates need replanning; no new protocol behavior approved |
 | Product | PyBLE — Python over Bluetooth Low Energy |
 | Organization | SciLabPro |
 | Planning horizon | Immediate 12-week delivery cycle, followed by conditional expansion through September 2028 |
@@ -188,7 +188,7 @@ Do not spend the first sprint rebuilding a large analytics dashboard. A small pr
 | [Device information types](../../app/lib/pble/types.dart) | Negotiated chip, agent version, and capabilities | A support export must distinguish observed data from operator-supplied profile/provenance; current HELLO does not prove an artifact hash |
 | [Host conformance fixtures](../../tests/firmware_tests/host/conformance/README.md), [HIL guide](../../tests/firmware_tests/hil/README.md) | Shared vectors, compiled-native/portable tests, physical benches and release evidence tools | Add a coverage map and operator recipe before creating another harness or schema |
 
-**Accepted next-release engineering increment:** PYB-006.2 closes the bounded current-text part of the carried A-24 persistence gap. The [C1-S2 record](../developments/2026-q4-reliable-workflow/c1-s2/00_Execution_Record.md) binds its 31 October engineering acceptance, exact artifacts, physical conditions and carried limits. One acknowledged Drift checkpoint can be restored offline; generated Blocks text is covered only after explicit adoption into Editor. Full projects, Blocks graphs and new protocol operations remain outside this increment. [PR #41](https://github.com/PyBLE-dev/PyBLE/pull/41) tracks final integration; required CI and merge precede publishing. Complete M-05 distribution next, while arranging real pilot observations and confirmed human capacity. The original design/sizing estimates remain historical forecasts, not measured effort.[^app-contract]
+**Accepted next-release engineering increment:** PYB-006.2 closes the bounded current-text part of the carried A-24 persistence gap. The [C1-S2 record](../developments/2026-q4-reliable-workflow/c1-s2/00_Execution_Record.md) binds its 31 October engineering acceptance, exact artifacts, physical conditions and carried limits. One acknowledged Drift checkpoint can be restored offline; generated Blocks text is covered only after explicit adoption into Editor. Full projects, Blocks graphs and new protocol operations remain outside this increment. [PR #41](https://github.com/PyBLE-dev/PyBLE/pull/41) merged after all 36 checks on its final head passed. Apple accepted the upload and started processing ([receipt](../developments/2026-q4-reliable-workflow/c1-s2/06_Release_Readiness.md#31-october-app-store-connect-upload-receipt)). Complete M-05 distribution next, while arranging real pilot observations and confirmed human capacity. The original design/sizing estimates remain historical forecasts, not measured effort.[^app-contract]
 
 ## 3. Target users and positioning
 
@@ -390,8 +390,7 @@ The cycle intentionally excludes a complete new protocol version, full classroom
 **31 October continuation:** bounded recovery M-02 and app-only M-04 pass
 engineering review at frozen `bef67bd`, with required automated/platform
 evidence, exact firmware inputs and the documented Lenovo qualifier condition.
-Device closeout is complete. [PR #41](https://github.com/PyBLE-dev/PyBLE/pull/41) tracks final integration; required CI and
-merge precede publishing. M-05 account, submission and installed-channel
+Device closeout is complete. [PR #41](https://github.com/PyBLE-dev/PyBLE/pull/41) merged after all 36 checks on its final head passed. M-05 account, submission and installed-channel
 verification remain the next release stage. Do not schedule the same accepted
 matrix again without changed scope or invalidated evidence.
 The [dated continuation order](../developments/2026-q4-reliable-workflow/04_Sprint_Plan.md#31-october-continuation-order-and-reforecast)
@@ -879,7 +878,7 @@ At cycle end, choose one principal next investment: Reliable Projects, partner p
 - [ ] Assign one owner and one review path for each initial issue.
 - [ ] Inventory exact test boards, tablets, cables, and available recovery equipment.
 - [ ] Freeze Task A/B/C definitions, assistance/timeout rules, prospective follow-up windows and task-opportunity questions, consent procedure, and manual support template; observe initial eligible participants.
-- [x] Specify and peer-review the bounded current-text contract and its acceptance scenarios; size the safe increment. Runtime implementation and bounded engineering acceptance are recorded in C1-S2. The dated continuation order preserves original forecasts and moves remaining release work to final integration and channel delivery.
+- [x] Specify and peer-review the bounded current-text contract and its acceptance scenarios; size the safe increment. Runtime implementation and bounded engineering acceptance are recorded in C1-S2. The dated continuation order preserves original forecasts; source integration and the Apple upload are recorded, while channel delivery remains pending.
 - [ ] If operator/capacity is available, include one existing-profile Ready rehearsal and draft record in PYB-009; show installation status and pending evidence explicitly.
 
 ### 20.2 Issue template

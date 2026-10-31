@@ -108,8 +108,10 @@ for accepted automated and candidate-specific device evidence, including the
 declared five-profile × two-platform app matrix and test conditions. Local
 Android and iPad Preview installations remain separate from store delivery.
 The [release readiness record](docs/developments/2026-q4-reliable-workflow/c1-s2/06_Release_Readiness.md)
-tracks the engineering-qualified artifacts, completed device closeout and channel handoff;
-`0.3.0 (9)` is not yet established as a store-delivered update.
+tracks the engineering-qualified artifacts, completed device closeout and channel handoff.
+Apple accepted the `0.3.0 (9)` upload and started processing ([receipt](docs/developments/2026-q4-reliable-workflow/c1-s2/06_Release_Readiness.md#31-october-app-store-connect-upload-receipt));
+TestFlight delivery and Google Play submission remain unverified. This candidate
+is not yet established as a store-delivered update.
 
 ### Firmware
 
