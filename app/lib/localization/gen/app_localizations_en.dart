@@ -1843,4 +1843,150 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get githubImportNoAutomaticRun =>
       'Downloaded files are not opened or run automatically.';
+
+  @override
+  String get recoveryTitle => 'Recover your current text draft';
+
+  @override
+  String get recoveryRestoredTitle => 'Your restored text draft';
+
+  @override
+  String get recoveryLocalOnly =>
+      'This copy stays on this device. Restoring does not connect, upload or run code. Choose and confirm a board target again before writing.';
+
+  @override
+  String recoveryCheckpointTime(String time) {
+    return 'Recovery checkpoint: $time';
+  }
+
+  @override
+  String get recoveryScope =>
+      'One current text draft only. Blocks workspaces, other files and projects are not included. Pending edits may be lost if the app stops before saving locally.';
+
+  @override
+  String get recoveryRestore => 'Restore';
+
+  @override
+  String get recoveryDiscard => 'Discard recovery copy';
+
+  @override
+  String get recoveryCopy => 'Copy text';
+
+  @override
+  String get recoveryCopied => 'Text copied.';
+
+  @override
+  String get recoveryConnect => 'Connect a board';
+
+  @override
+  String get recoveryDiscardTitle => 'Discard this recovery copy?';
+
+  @override
+  String get recoveryDiscardDetail =>
+      'This deletes the single local recovery copy and starts an empty draft. It cannot be undone. No board file is changed.';
+
+  @override
+  String get recoveryBoardTargetTitle => 'Confirm the current board target';
+
+  @override
+  String recoveryBoardTargetRunDetail(String path) {
+    return 'Upload this recovered text to $path on the currently connected board, replacing any file there, then run it? The previous board path does not authorize this action.';
+  }
+
+  @override
+  String recoveryBoardTargetSaveDetail(String path) {
+    return 'Upload this recovered text to $path on the currently connected board, replacing any file there? This action does not run code. The previous board path does not authorize this action.';
+  }
+
+  @override
+  String get recoveryBoardTargetRun => 'Upload and run';
+
+  @override
+  String get recoveryBoardTargetSave => 'Upload to board';
+
+  @override
+  String get recoveryReplaceTitle => 'Replace the current draft?';
+
+  @override
+  String get recoveryReplaceDetail =>
+      'This replaces the current text and its single local recovery copy. There is no draft history. Copy any text you want to keep before continuing.';
+
+  @override
+  String get recoveryReplace => 'Replace draft';
+
+  @override
+  String get recoveryLoading => 'Opening local recovery storage…';
+
+  @override
+  String get recoveryTimeout =>
+      'Local recovery storage has not responded. Retry, or continue with a temporary draft. Your existing storage will be preserved.';
+
+  @override
+  String get recoveryUnavailable =>
+      'Local recovery is unavailable. Your existing storage has been preserved.';
+
+  @override
+  String get recoveryErrorStorage =>
+      'The recovery copy could not be read or written. Check device storage and try again.';
+
+  @override
+  String get recoveryErrorCorrupt =>
+      'The recovery storage is damaged or contains invalid text or metadata. It has been preserved.';
+
+  @override
+  String get recoveryErrorUnsupported =>
+      'This recovery copy needs a compatible app version. Its storage has been preserved.';
+
+  @override
+  String get recoveryErrorTooLarge =>
+      'This draft exceeds the 1 MiB recovery limit. Its current text is only in memory; the previous recovery copy is preserved.';
+
+  @override
+  String get recoveryErrorInvalid =>
+      'The current text or filename cannot be saved as a recovery copy. Its text remains in memory; the previous copy is preserved.';
+
+  @override
+  String get recoveryErrorConflict =>
+      'Recovery storage changed unexpectedly. Retry and review the available text before replacing it.';
+
+  @override
+  String get recoveryRetry => 'Retry';
+
+  @override
+  String get recoveryContinue => 'Continue without recovery';
+
+  @override
+  String get recoveryVolatile =>
+      'Recovery is off for this session. Current edits are only in memory. Existing recovery storage is preserved.';
+
+  @override
+  String get recoveryPending => 'Recovery copy pending';
+
+  @override
+  String get recoverySaving => 'Saving recovery copy…';
+
+  @override
+  String get recoverySaved => 'Saved locally';
+
+  @override
+  String get recoverySave => 'Save recovery copy';
+
+  @override
+  String get recoverySavedFeedback =>
+      'The requested text revision was saved locally.';
+
+  @override
+  String get recoverySaveFailed =>
+      'Recovery copy not saved. Your current text remains in memory.';
+
+  @override
+  String get recoveryOpen => 'View local draft';
+
+  @override
+  String get recoveryNewFailed =>
+      'The new draft could not replace the recovery copy. Your current draft has been kept.';
+
+  @override
+  String get recoveryChanged =>
+      'The current draft changed. Review it and confirm again.';
 }
