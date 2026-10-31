@@ -19,6 +19,18 @@ and submission packet do not claim Play submission, approval, or rollout.
 
 ### App source
 
+- Prepared app source candidate `0.3.0+9` with bounded on-device current-text
+  recovery using Drift. Exact text and metadata commit atomically; startup
+  offers offline preview, Restore and confirmed Discard, with separate local
+  checkpoint status and an explicit Save recovery copy action. Storage errors
+  preserve the previous copy and live text, with explicit volatile continuation.
+- Added document-epoch and connection-session guards for Editor Save/Run,
+  Files Open/Upload and Blocks-to-Editor replacement. Restored drafts require
+  current-destination confirmation before board writes; a board swap after text
+  upload refuses Run and reports the partial outcome. Full project and Blocks
+  graph persistence remain carried. Candidate validation is recorded under
+  `docs/developments/2026-q4-reliable-workflow/c1-s2/`; no store release claimed.
+
 - Added a full offline Privacy policy route from About, with the published
   policy, effective date and privacy contact. Reading it preserves the live
   board session, editor, Blocks and console state, including at large text
@@ -90,8 +102,8 @@ and submission packet do not claim Play submission, approval, or rollout.
   results or new release are claimed.
 - Specified bounded Drift current-text recovery, local restore/discard,
   failure handling and document/session guards in ADR-0048 and the App
-  contracts. Implementation remains pending; sizing requires revising the
-  original S2 forecast.
+  contracts. The bounded successor is implemented in the 0.3.0 source candidate;
+  acceptance and broader persistence obligations follow the C1-S2 record.
 - Verified live Android open-testing wording and prepared correction of the
   older public TestFlight description. Installed identities are now recorded;
   Android code/assets match the retained build-8 AAB, while iPad build-6 source

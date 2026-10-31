@@ -93,7 +93,7 @@ procedures for any affected BLE/profile matrix rows.
 
 ## Additional isolated platform-storage harness
 
-`app/integration_test/draft_recovery_device_test.dart` provides `seed` and `verify`
+`app/integration_test/draft_recovery_device_qualification.dart` provides `seed` and `verify`
 phases using the actual platform Application Support store and a recording board
 seam. The phase is selected with `PYBLE_RECOVERY_TEST_PHASE=seed` or `verify`.
 The qualification database is `qualification-current-draft.sqlite`, separate
@@ -138,3 +138,10 @@ Two representative recovery runs do not qualify five firmware profiles or award
 PyBLE Ready. This recipe is complete as a prepared instruction set; execution,
 correction from actual observations and second-operator reproduction remain
 separate evidence obligations under PYB-009.
+
+The manual harness is deliberately separate from the single CI Android smoke
+entry point. Use `--keep-app-running` with `flutter drive` for the seed phase:
+its default cleanup uninstalls the app and removes its private data. Force-stop
+that exact isolated package before the verify phase, retain both artifacts, and
+verify the second installation preserves the same data container. Never run a
+qualification harness over a user's installed store app.
