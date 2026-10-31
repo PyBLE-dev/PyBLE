@@ -45,7 +45,8 @@ v0.7.0 remains non-normative and requires separate maintainer approval.
 - Correct the [stale public TestFlight description](developments/2026-q4-reliable-workflow/c1-s1/05_TestFlight_Metadata_Correction.md)
   through the distribution owner; replacement copy is prepared, not published.
 - Complete [channel delivery](developments/2026-q4-reliable-workflow/c1-s2/06_Release_Readiness.md) for qualified app `0.3.0+9`.
-  [PR #41](https://github.com/PyBLE-dev/PyBLE/pull/41) tracks final integration; required CI and merge precede publishing.
+  [PR #41](https://github.com/PyBLE-dev/PyBLE/pull/41) merged after all 36 checks on its final head passed.
+  Apple accepted the upload and started processing ([receipt](developments/2026-q4-reliable-workflow/c1-s2/06_Release_Readiness.md#31-october-app-store-connect-upload-receipt)); TestFlight delivery and Google Play submission remain unverified.
   Retain the recorded 0.2.0 channel baseline until the new channel is verified. The
   [Android publication review](testing/website/android-open-testing-2026-09-25.md)
   records live open-testing availability. The

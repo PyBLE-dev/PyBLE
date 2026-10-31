@@ -12,9 +12,9 @@ remains a separate historical baseline built from its annotated tag.
 
 The merged app source now targets `0.3.0+9`. Its local Android and iPad Preview
 installations support scoped engineering acceptance for bounded recovery and
-the declared app-only matrix. Device closeout is complete. [PR #41](https://github.com/PyBLE-dev/PyBLE/pull/41) tracks final
-integration; required CI and merge precede publishing. Actual channel delivery
-remains pending. The recorded existing-channel baseline is Android
+the declared app-only matrix. Device closeout is complete. [PR #41](https://github.com/PyBLE-dev/PyBLE/pull/41) merged after all 36 checks on its final head passed. Apple accepted the
+`0.3.0 (9)` upload and started processing; the [receipt](docs/developments/2026-q4-reliable-workflow/c1-s2/06_Release_Readiness.md#31-october-app-store-connect-upload-receipt)
+does not establish TestFlight delivery. Actual channel delivery remains pending. The recorded existing-channel baseline is Android
 Play `0.2.0 (8)` and iPad TestFlight `0.2.0 (6)`; the earlier build-5 Transporter
 and build-8 submission handoffs remain historical artifact records.
 
