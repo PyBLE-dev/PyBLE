@@ -15,9 +15,13 @@ library;
 import 'package:flutter/material.dart';
 
 import 'package:pyble/localization/localization.dart';
+import 'package:pyble/editor/recovery_gate.dart';
 import 'package:pyble/theme/theme.dart';
 
 import 'shell.dart';
+
+/// Navigator used by explicit user confirmations, never by local recovery itself.
+final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 
 /// The PyBLE root widget: a `MaterialApp` hosting the responsive shell.
 class PybleApp extends StatelessWidget {
@@ -26,6 +30,7 @@ class PybleApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: appNavigatorKey,
       // The app wordmark is a brand proper noun, sourced from the ARB (rendered
       // verbatim) so the OS task-switcher title follows the localization path.
       onGenerateTitle: (BuildContext context) =>
@@ -40,7 +45,7 @@ class PybleApp extends StatelessWidget {
       highContrastDarkTheme: PybleTheme.highContrastDark,
       themeMode: ThemeMode.system,
       debugShowCheckedModeBanner: false,
-      home: const PybleShell(),
+      home: const RecoveryGate(child: PybleShell()),
     );
   }
 }

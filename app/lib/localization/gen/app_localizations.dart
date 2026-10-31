@@ -3000,7 +3000,7 @@ abstract class AppLocalizations {
   /// Bounded current-text recovery: recoveryRestoredTitle.
   ///
   /// In en, this message translates to:
-  /// **'Your restored text draft'**
+  /// **'Your current text draft'**
   String get recoveryRestoredTitle;
 
   /// Bounded current-text recovery: recoveryLocalOnly.
@@ -3236,6 +3236,36 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'The current draft changed. Review it and confirm again.'**
   String get recoveryChanged;
+
+  /// Current volatile text heading during recovery retry.
+  ///
+  /// In en, this message translates to:
+  /// **'Current session text — copy it before replacing'**
+  String get recoveryCurrentText;
+
+  /// Explicit copy of live text before a recovery choice.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy current text'**
+  String get recoveryCopyCurrent;
+
+  /// Stored candidate heading beside volatile text.
+  ///
+  /// In en, this message translates to:
+  /// **'Stored recovery copy'**
+  String get recoveryStoredText;
+
+  /// Separate choice after durable replacement fails.
+  ///
+  /// In en, this message translates to:
+  /// **'The current draft and previous recovery storage have been kept. Cancel to keep working on the current text, or explicitly replace it in a temporary session without recovery. Copy any text you need first.'**
+  String get recoveryVolatileReplaceDetail;
+
+  /// Truthful partial result when a board attachment changes after PUT but before Run.
+  ///
+  /// In en, this message translates to:
+  /// **'The upload to {path} may have completed on the previous board. Run was not sent because the connection changed.'**
+  String runSourceSessionChanged(String path);
 }
 
 class _AppLocalizationsDelegate

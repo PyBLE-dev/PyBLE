@@ -19,6 +19,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:pyble/console/console.dart';
 import 'package:pyble/editor/editor.dart';
+import 'package:pyble/editor/board_target_guard.dart';
+import 'package:pyble/editor/draft_recovery.dart';
+import 'package:pyble/editor/recovery_gate.dart';
 import 'package:pyble/localization/localization.dart';
 import 'package:pyble/pble/pble.dart';
 import 'package:pyble/theme/theme.dart';
@@ -149,18 +152,49 @@ class PybleShell extends ConsumerWidget {
 /// Pin-reference pane, or console strip, none of which means anything without a
 /// board. The toolbar's connection action is an inert Connect slot here (the
 /// live scan/connect flow is the surface below); Run/Stop are disabled.
-class _DisconnectedShell extends StatelessWidget {
+class _DisconnectedShell extends ConsumerStatefulWidget {
   const _DisconnectedShell();
 
   @override
+  ConsumerState<_DisconnectedShell> createState() => _DisconnectedShellState();
+}
+
+class _DisconnectedShellState extends ConsumerState<_DisconnectedShell> {
+  bool _showRecovery = true;
+
+  @override
   Widget build(BuildContext context) {
-    return const Scaffold(
+    final DraftRecoveryState recovery = ref.watch(draftRecoveryProvider);
+    final bool recovered = ref.watch(editorRecoveredDraftProvider);
+    final EditorDocument document = ref.watch(editorDocumentProvider);
+    final bool previewAvailable =
+        recovery.enabled && (recovered || document.content.isNotEmpty);
+    final AppLocalizations l10n = AppLocalizations.of(context);
+    return Scaffold(
       body: SafeArea(
         child: Column(
           children: <Widget>[
-            _Toolbar(),
-            Divider(height: 1),
-            Expanded(child: ConnectPage()),
+            const _Toolbar(),
+            const Divider(height: 1),
+            if (previewAvailable) ...<Widget>[
+              TextButton.icon(
+                onPressed: () => setState(() => _showRecovery = !_showRecovery),
+                icon: Icon(
+                  _showRecovery ? Icons.bluetooth : Icons.description_outlined,
+                ),
+                label: Text(
+                  _showRecovery ? l10n.recoveryConnect : l10n.recoveryOpen,
+                ),
+              ),
+              const RecoveryStatusBar(),
+            ],
+            Expanded(
+              child: previewAvailable && _showRecovery
+                  ? CurrentDraftPreview(
+                      onContinue: () => setState(() => _showRecovery = false),
+                    )
+                  : const ConnectPage(),
+            ),
           ],
         ),
       ),
@@ -509,13 +543,15 @@ class _Toolbar extends ConsumerWidget {
     } on EBusy {
       // EBusy is never swallowed: tell the user a program is already running.
       messenger.showSnackBar(SnackBar(content: Text(l10n.runBusyMessage)));
+    } on BoardActionCancelled {
+      return;
     } catch (e) {
       // NOTHING else was surfaced before: every other failure (a typed ERange
       // for an over-long buffer, a link timeout, a torn-down connection)
       // became an unhandled async error, so pressing Run did LITERALLY nothing
       // visible. FR-RUN-3 requires the failure to be honest.
       messenger.showSnackBar(
-        SnackBar(content: Text(l10n.runFailed(_reasonOf(e)))),
+        SnackBar(content: Text(l10n.runFailed(_reasonOf(e, l10n)))),
       );
     }
   }
@@ -531,15 +567,19 @@ class _Toolbar extends ConsumerWidget {
       await action();
     } catch (e) {
       messenger.showSnackBar(
-        SnackBar(content: Text(l10n.runFailed(_reasonOf(e)))),
+        SnackBar(content: Text(l10n.runFailed(_reasonOf(e, l10n)))),
       );
     }
   }
 
   /// The technical reason token for [e]. A typed PBLE/1 §8 status name is a
   /// technical identifier rendered verbatim (FR-I18N-4).
-  static String _reasonOf(Object e) =>
-      e is PbleException ? e.runtimeType.toString() : e.toString();
+  static String _reasonOf(Object e, AppLocalizations l10n) => switch (e) {
+    ProgramSourceSessionChanged(:final sourcePath) =>
+      l10n.runSourceSessionChanged(sourcePath),
+    PbleException() => e.runtimeType.toString(),
+    _ => e.toString(),
+  };
 
   static void _openAbout(BuildContext context) {
     Navigator.of(context).push<void>(
