@@ -353,4 +353,34 @@ void main() {
       );
     },
   );
+  test(
+    'conflicting external writer requires reread and explicit choice on Retry',
+    () async {
+      final s = Store(), c = container(s);
+      await recovery(c).start();
+      editor(c).setContent('first');
+      expect(await recovery(c).saveRecoveryCopy(), isTrue);
+      s.snapshot = DraftSnapshot(
+        name: 'other.py',
+        content: 'external',
+        generation: 2,
+        checkpointTime: DateTime.utc(2026),
+      );
+      s.generation = 2;
+      editor(c).setContent('live newer');
+      expect(await recovery(c).saveRecoveryCopy(), isFalse);
+      expect(
+        c.read(draftRecoveryProvider).failure,
+        DraftStorageFailure.conflict,
+      );
+      await recovery(c).retry();
+      expect(
+        c.read(draftRecoveryProvider).status,
+        DraftRecoveryStatus.decision,
+      );
+      expect(c.read(draftRecoveryProvider).candidate?.content, 'external');
+      expect(c.read(editorDocumentProvider).content, 'live newer');
+      expect(s.snapshot?.content, 'external');
+    },
+  );
 }
