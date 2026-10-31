@@ -12,11 +12,13 @@ remains a separate historical baseline built from its annotated tag.
 
 The merged app source now targets `0.3.0+9`. Its local Android and iPad Preview
 installations support scoped engineering acceptance for bounded recovery and
-the declared app-only matrix. Device closeout is complete. [PR #41](https://github.com/PyBLE-dev/PyBLE/pull/41) merged after all 36 checks on its final head passed. Apple accepted the
-`0.3.0 (9)` upload and started processing; the [receipt](docs/developments/2026-q4-reliable-workflow/c1-s2/06_Release_Readiness.md#31-october-app-store-connect-upload-receipt)
-does not establish TestFlight delivery. Actual channel delivery remains pending. The recorded existing-channel baseline is Android
-Play `0.2.0 (8)` and iPad TestFlight `0.2.0 (6)`; the earlier build-5 Transporter
-and build-8 submission handoffs remain historical artifact records.
+the declared app-only matrix. Device closeout is complete. [PR #41](https://github.com/PyBLE-dev/PyBLE/pull/41)
+merged after all 36 checks on its final head passed. Internal-account TestFlight
+`0.3.0 (9)` offer/Open, production About and bounded device smoke are verified
+([delivery record](docs/developments/2026-q4-reliable-workflow/c1-s2/06_Release_Readiness.md#31-october-testflight-delivery-and-published-metadata));
+the exact update transaction was not observed. External build 9 is submitted
+and Waiting for Review; Google Play submission/delivery remain pending. Lenovo still has Play `0.2.0 (8)`; earlier
+iPad `0.2.0 (6)`, build-5 Transporter and build-8 handoff records remain historical.
 
 ### App source
 
@@ -111,11 +113,11 @@ and build-8 submission handoffs remain historical artifact records.
   failure handling and document/session guards in ADR-0048 and the App
   contracts. The bounded successor is implemented in the 0.3.0 source candidate;
   acceptance and broader persistence obligations follow the C1-S2 record.
-- Verified live Android open-testing wording and prepared correction of the
-  older public TestFlight description. Installed identities are now recorded;
-  Android code/assets match the retained build-8 AAB, while iPad build-6 source
-  mapping and a minimum-OS metadata discrepancy need distribution-owner
-  follow-up. The TestFlight metadata change remains pending.
+- Verified live Android open-testing wording and completed the public
+  TestFlight description correction on 31 October. English (U.S.) app-level
+  copy was saved/reloaded and independently verified in the public response;
+  build-9 What to Test was separately saved and exactly reloaded. Historical
+  iPad build-6 source/minimum-OS questions remain separate from this correction.
 - Prepared Google Play open-testing listing text, reviewer hardware setup,
   tester instructions, data-use assessment, and reproducible store artwork
   with authentic screenshot provenance. Store availability remains a separate

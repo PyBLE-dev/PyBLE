@@ -74,8 +74,12 @@ The original 136-hour task allocation, 20-hour planned headroom and 84-hour rese
 The user requested the next-release implementation after the C1-S1 integration
 and cleanup. The [C1-S2 record](../c1-s2/00_Execution_Record.md) now records scoped
 PYB-006.2 / M-02 and app-only M-04 engineering acceptance, including both-tablet
-physical evidence; it tracks final integration and pending channel delivery. The
-25 September findings above remain historical evidence. This handoff does not
+physical evidence. The later [delivery record](../c1-s2/06_Release_Readiness.md#31-october-testflight-delivery-and-published-metadata)
+verifies internal-account TestFlight `0.3.0 (9)` and bounded production smoke;
+external build 9 is submitted and Waiting for Review; Google Play delivery remains pending. The [public-description
+correction](05_TestFlight_Metadata_Correction.md#31-october-published-description-and-closure)
+closes residual PYB-002.1 on 31 October. The 25 September findings above remain
+historical evidence. This handoff does not
 complete the two Prepared or four Awaiting-evidence S1 tasks, M-01/SG0, full A-24,
 participant observations, a Ready badge or store delivery.
 
