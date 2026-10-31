@@ -11,7 +11,7 @@
 | Candidate | App `0.3.0+9`; recovery baseline merged at `6f5b3ea`, landscape repair `e54a78a`, native dismissal `01a7ac8`, and guide correction `bef67bd` under PR #41; platform and release reports bind each actual artifact |
 | Scope | PYB-006.2 bounded current-text recovery; supporting PYB-009.1 recipe and applicable PYB-008.1 observations |
 | Contract | [Current-draft recovery](../../../specifications/App/current-draft-recovery.md), [ADR-0048](../../../decisions/0048-bounded-current-text-draft-recovery.md) |
-| Overall state | Scoped PYB-006.2 / M-02 and app-only M-04 pass engineering review at frozen runtime `bef67bd`: 984 ordinary tests, 36 runtime-head CI checks, both-platform recovery/keyboard evidence and all ten declared app/profile rows. Device policy, owned fixtures and normal board advertising are restored; final branch integration, M-05 channel delivery and S2 participant follow-up remain unfinished |
+| Overall state | Scoped PYB-006.2 / M-02 and app-only M-04 pass engineering review at frozen runtime `bef67bd`: 984 ordinary tests, 36 runtime-head CI checks, both-platform recovery/keyboard evidence and all ten declared app/profile rows. Device policy, owned fixtures and normal board advertising are restored; [PR #41](https://github.com/PyBLE-dev/PyBLE/pull/41) tracks final integration; required CI and merge precede publishing. M-05 channel delivery and S2 participant follow-up remain unfinished |
 | S1 state | Unchanged: six Done, two Prepared, four Awaiting evidence; M-01/SG0 and pilot work remain unfinished |
 | Capacity/calendar | Original S2 allowance 24h and 12–25 October dates remain historical forecasts. The 45–72h estimate / 60h S2–S4 option is not measured effort or confirmed human capacity |
 | Method | Separate storage, coordinator and UI Git worktrees; root integrates board/session guards, regressions, release records and qualification attempts |
@@ -54,7 +54,7 @@ scope; no M-02/M-04 acceptance follows from packaging alone.
 |---|---|---|
 | iPad normal workflow | [iPad acceptance continuation](04_iPad_Acceptance.md) | Normal Preview passes offline Unicode Restore/current-board consent at `e54a78a`, generated-text handoff/recovery at `01a7ac8`, and Editor/native Blocks palette Hide→Show/dismissal at `bef67bd`; exact text and usable viewports are retained. All five iPad Q rows pass on their recorded candidates; exact firmware baselines and unchanged-behavior impact assessment remain explicit |
 | Android normal workflow | [Android acceptance continuation](05_Android_Acceptance.md) | Recorded P01–P15 scope and all five Q rows pass with explicit earlier-source/accessibility limits. Final `bef67bd` normal profile `945e9746…` passes Editor/native Blocks keyboard checks and generated-text/offline recovery after actual launcher start under temporary qualifier-only Unrestricted battery policy; original watchdogs and the policy condition remain recorded |
-| Production artifacts and channel packet | [Release readiness](06_Release_Readiness.md) | Current `bef67bd` signed Android/iOS artifacts pass packaging and repeated 16 KiB Android startup/storage checks. Earlier artifacts are historical; scoped engineering acceptance is recorded below, with device closeout complete and final integration/actual channel delivery separate |
+| Production artifacts and channel packet | [Release readiness](06_Release_Readiness.md) | Current `bef67bd` signed Android/iOS artifacts pass packaging and repeated 16 KiB Android startup/storage checks. Earlier artifacts are historical; scoped engineering acceptance is recorded below, with device closeout complete. [PR #41](https://github.com/PyBLE-dev/PyBLE/pull/41) tracks final integration; required CI and merge precede publishing. Actual channel delivery remains pending |
 | Pilot and capacity | [Pilot kit](../c1-s1/02_Pilot_Protocol_and_Observation_Kit.md) and [continuation order](../04_Sprint_Plan.md#31-october-continuation-order-and-reforecast) | Human owner/cohort/setup/capacity and actual consented sessions remain pending |
 
 The subsequent guide correction is integrated at
@@ -255,8 +255,9 @@ human sign-off or a Scrum ceremony.
   ESP32 returned to advertising after fresh ROM identity verification and an
   ordinary RTS reset, with no firmware/filesystem write; all five boards then
   advertised. That restoration is not counted as an app reconnect pass. The
-  platform/release reports retain the private receipts. Final branch
-  CI/review/merge remains separate from the 36 passing frozen-runtime checks.
+  platform/release reports retain the private receipts. [PR #41](https://github.com/PyBLE-dev/PyBLE/pull/41)
+  tracks final integration; required CI and merge precede publishing and remain
+  separate from the 36 passing frozen-runtime checks.
 - **Next release stage — M-05:** verify store access and unused build numbers,
   upload only the admitted artifacts after final integration, then record processing,
   actual availability and store-delivered upgrade/launch evidence separately.

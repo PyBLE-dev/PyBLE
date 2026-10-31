@@ -8,8 +8,8 @@
 2026-09-25 during C1-S1. PR #40 merged the source and integrated CI passes.
 Scoped recovery acceptance and app-only qualification are recorded for frozen
 runtime `bef67bd` after required automated and physical checks. Device closeout
-is complete; final branch integration and channel delivery remain separate; no
-named human sign-off is claimed.
+is complete. [PR #41](https://github.com/PyBLE-dev/PyBLE/pull/41) tracks final integration; required CI and merge precede
+publishing. Channel delivery remains pending; no named human sign-off is claimed.
 
 ## Context
 

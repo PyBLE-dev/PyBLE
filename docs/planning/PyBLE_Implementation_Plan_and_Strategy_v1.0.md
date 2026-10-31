@@ -13,8 +13,8 @@
 |---|---|
 | Document version | 1.8 — accepted bounded recovery and app-only qualification; channel/pilot continuation; original filename retained |
 | Prepared | 25 September 2026 |
-| Last reviewed | 31 October 2026; bounded M-02 and app-only M-04 engineering acceptance recorded with exact candidate, firmware and OEM test conditions; device closeout complete; final integration and channel delivery separate |
-| Status | C1-S1 has six tasks Done, two Prepared awaiting pilot setup and four Awaiting evidence; Sprint and SG0 remain unfinished. Bounded recovery and app-only qualification pass scoped engineering review; device closeout is complete; final integration and actual channel delivery remain separate. Human capacity and recruitment dates need replanning; no new protocol behavior approved |
+| Last reviewed | 31 October 2026; bounded M-02 and app-only M-04 engineering acceptance recorded with exact candidate, firmware and OEM test conditions; device closeout complete; [PR #41](https://github.com/PyBLE-dev/PyBLE/pull/41) tracks final integration; required CI and merge precede publishing; channel delivery pending |
+| Status | C1-S1 has six tasks Done, two Prepared awaiting pilot setup and four Awaiting evidence; Sprint and SG0 remain unfinished. Bounded recovery and app-only qualification pass scoped engineering review; device closeout is complete. [PR #41](https://github.com/PyBLE-dev/PyBLE/pull/41) tracks final integration; required CI and merge precede publishing. Actual channel delivery remains pending. Human capacity and recruitment dates need replanning; no new protocol behavior approved |
 | Product | PyBLE — Python over Bluetooth Low Energy |
 | Organization | SciLabPro |
 | Planning horizon | Immediate 12-week delivery cycle, followed by conditional expansion through September 2028 |
@@ -188,7 +188,7 @@ Do not spend the first sprint rebuilding a large analytics dashboard. A small pr
 | [Device information types](../../app/lib/pble/types.dart) | Negotiated chip, agent version, and capabilities | A support export must distinguish observed data from operator-supplied profile/provenance; current HELLO does not prove an artifact hash |
 | [Host conformance fixtures](../../tests/firmware_tests/host/conformance/README.md), [HIL guide](../../tests/firmware_tests/hil/README.md) | Shared vectors, compiled-native/portable tests, physical benches and release evidence tools | Add a coverage map and operator recipe before creating another harness or schema |
 
-**Accepted next-release engineering increment:** PYB-006.2 closes the bounded current-text part of the carried A-24 persistence gap. The [C1-S2 record](../developments/2026-q4-reliable-workflow/c1-s2/00_Execution_Record.md) binds its 31 October engineering acceptance, exact artifacts, physical conditions and carried limits. One acknowledged Drift checkpoint can be restored offline; generated Blocks text is covered only after explicit adoption into Editor. Full projects, Blocks graphs and new protocol operations remain outside this increment. Complete final integration and M-05 distribution next, while arranging real pilot observations and confirmed human capacity. The original design/sizing estimates remain historical forecasts, not measured effort.[^app-contract]
+**Accepted next-release engineering increment:** PYB-006.2 closes the bounded current-text part of the carried A-24 persistence gap. The [C1-S2 record](../developments/2026-q4-reliable-workflow/c1-s2/00_Execution_Record.md) binds its 31 October engineering acceptance, exact artifacts, physical conditions and carried limits. One acknowledged Drift checkpoint can be restored offline; generated Blocks text is covered only after explicit adoption into Editor. Full projects, Blocks graphs and new protocol operations remain outside this increment. [PR #41](https://github.com/PyBLE-dev/PyBLE/pull/41) tracks final integration; required CI and merge precede publishing. Complete M-05 distribution next, while arranging real pilot observations and confirmed human capacity. The original design/sizing estimates remain historical forecasts, not measured effort.[^app-contract]
 
 ## 3. Target users and positioning
 
@@ -390,8 +390,9 @@ The cycle intentionally excludes a complete new protocol version, full classroom
 **31 October continuation:** bounded recovery M-02 and app-only M-04 pass
 engineering review at frozen `bef67bd`, with required automated/platform
 evidence, exact firmware inputs and the documented Lenovo qualifier condition.
-Device closeout is complete. Finish final branch integration, then M-05 account,
-submission and installed-channel verification. Do not schedule the same accepted
+Device closeout is complete. [PR #41](https://github.com/PyBLE-dev/PyBLE/pull/41) tracks final integration; required CI and
+merge precede publishing. M-05 account, submission and installed-channel
+verification remain the next release stage. Do not schedule the same accepted
 matrix again without changed scope or invalidated evidence.
 The [dated continuation order](../developments/2026-q4-reliable-workflow/04_Sprint_Plan.md#31-october-continuation-order-and-reforecast)
 records this selection and the human capacity/pilot inputs still needed. Source
