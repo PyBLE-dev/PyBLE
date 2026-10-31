@@ -6,10 +6,10 @@
 | Field | Record |
 |---|---|
 | Date | 31 October 2026, Asia/Bangkok |
-| Scope | App-only bounded current-text recovery; existing Play open-testing and TestFlight channels |
+| Scope | App-only bounded current-text recovery; existing Play open-testing and TestFlight channels, with subsequent explicit owner authorization to promote the same accepted Android build to production |
 | Runtime source | Recovery baseline plus landscape layout, native keyboard dismissal and iPad palette-geometry repairs at `bef67bded9e5b83437e3eb0e2ec4be6a4cfd1a64` |
 | Build checkout | Release worktree `c6e685dd3ebe718ed89fcfe58e441331eb174648`; app tree `60b3a68b693551af5d83076547c502f69838e052`, verified identical to the runtime baseline |
-| State | M-02 and app-only M-04 engineering admission accepted on 31 October for the frozen artifacts below. [PR #41](https://github.com/PyBLE-dev/PyBLE/pull/41) merged at `247e58a` after all 36 final-head checks passed; M-05 is partial: internal-account TestFlight delivery verified; external build 9 is submitted and Waiting for Review; Google Play open-testing build 9 is submitted with Changes in review; approval and delivery remain pending |
+| State | M-02 and app-only M-04 engineering admission accepted on 31 October for the frozen artifacts below. [PR #41](https://github.com/PyBLE-dev/PyBLE/pull/41) merged at `247e58a` after all 36 final-head checks passed; M-05 is partial: internal-account TestFlight delivery verified; external build 9 is submitted and Waiting for Review; Google Play open-testing build 9 is submitted with Changes in review; production promotion is blocked on the audience/Bluetooth requirement below; approval and delivery remain pending |
 | Local evidence | Ignored `local/recovery-completion/release/candidate-bef67bd/`: build/check logs, source/artifact manifests, runtime evidence and retained signed binaries |
 | Public copy | [Release packet](../../../publication/app-0.3.0-build-9-release-packet.md); build-9 test details saved and app description publicly verified; TestFlight delivery observed for the existing internal account only |
 
@@ -516,3 +516,72 @@ The uniquely staged Downloads AAB was removed after hash/size verification;
 No store approval, live build-9 rollout or Android installation of the update
 has been observed. PYB-014.1 submission is complete for the selected channels;
 PYB-014.2 and M-05 remain partial until the remaining delivery evidence exists.
+
+## 31 October Android production scope decision
+
+After the open-testing submission above, the user explicitly requested Android
+production release of `0.3.0 (9)`. This is the separate production decision
+required by [PYB-014.1](../05_Product_Backlog_and_Stories.md#35-release-and-channel-verification).
+It extends the selected track scope to production using the same accepted AAB
+from the Play artifact library; it does not authorize a new binary or another
+build-9 upload. The frozen source, signed artifact hash, packaging checks and
+app-only M-04 engineering admission remain unchanged. The earlier
+`15:23:55 UTC` open-testing receipt and production-build-8 baseline remain dated
+history.
+
+The production draft uses accepted build `9` from the artifact library. Its
+preview passed and requested a full rollout to the existing 178 countries and
+regions. The final Restart review confirmation was **not confirmed**; production
+build `9` has not been submitted for review or observed live. The earlier
+open-testing review remains separate.
+
+The actual maintained target-audience settings include ages **9–12, 13–15,
+16–17 and 18+**, with a Families commitment last updated on 7 August. Console
+showed no required actions, ten completed App content declarations and no
+policy issues. Those automated/account views do not resolve the specific
+implementation requirement found during source review.
+
+For an audience including children, the current [Google Play Families policy](https://support.google.com/googleplay/android-developer/answer/9893335?hl=en)
+requires Companion Device Manager (CDM) when requesting Bluetooth, with an
+exception only for apps targeting OS versions that cannot support CDM.
+[Android documents CDM from API 26](https://developer.android.com/develop/connectivity/bluetooth/companion-device-pairing).
+This candidate supports API 24 and later and targets API 36, including the tested
+API-31 Lenovo; the incompatible-OS-only exception does not apply. The frozen
+[scan adapter](../../../../app/lib/ble/fbp_ble_adapter.dart) invokes
+`FlutterBluePlus.startScan`. The [locked](../../../../app/pubspec.lock)
+`flutter_blue_plus_android 7.0.4` path requests `BLUETOOTH_SCAN` directly and calls
+`BluetoothLeScanner.startScan`; the reviewed path does not use CDM.
+
+This is a pre-existing Android package/audience issue, also relevant to the
+ongoing open-testing review and existing production baseline; it is not a
+requirement unique to production promotion. The previously submitted open-testing
+review has not been changed while the owner clarifies the audience. Its accepted
+submission does not establish policy clearance.
+
+The newly requested production promotion is therefore **blocked by the saved
+audience and the Bluetooth implementation mismatch**, not by a Google validation
+error. The owner's actual intended audience must be established before choosing an
+accurate audience correction or a separately specified and qualified
+implementation change. No audience declaration has been changed to bypass
+this decision. The broader Data safety worksheet remains a conservative
+proposal, not a newly attested declaration or an additional established
+production blocker. Existing scoped M-02/app-only M-04 engineering results stay
+valid; they do not establish current Families compliance or unconditional
+production admission.
+
+The production preparation and unchanged App content observations are retained
+in `local/recovery-completion/android/play-console-production/production-release-preparation.json`,
+SHA-256 `c8504d5dbf278c8c2d7544e084979afcc181928bdb58be5458b2f8582ed32e86`.
+Its hold was recorded at `2026-10-31T15:37:16Z` with the final confirmation still
+open and unconfirmed. The [Data safety assessment](../../../publication/google-play-data-safety.md#31-october-2026--actual-console-inspection-and-audience-hold)
+records the observed saved answers without adopting or reattesting them.
+
+The immutable source/policy audit is retained privately as
+`local/recovery-completion/android/play-console-production/policy-review/families-bluetooth-review.json`,
+SHA-256 `44f6a9ffefc12b7be4a60a1f0ef91ed791072f303eb934c3c0d0efbb4fa7c8a0`.
+It binds the frozen source, admitted AAB, supported API range, locked plugin and
+saved audience evidence; the same directory retains the reviewed policy page.
+
+The iPad's final observed external state remains Waiting for Review at
+`15:23:25 UTC`; its verified internal-account delivery is separate. No further
+iPad operation is required to document that snapshot.
