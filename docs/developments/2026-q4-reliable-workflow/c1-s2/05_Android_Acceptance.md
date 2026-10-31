@@ -123,5 +123,10 @@ accessibility-service, touch-exploration and font settings were restored in a
 All board connections were explicitly released; temporary diagnostic apps,
 device helper files and the debugging forward were removed. The isolated
 qualification app/data and private evidence remain available for review. An
-exact ownership manifest records the disposable board fixtures for coordinated
-cleanup without touching other files.
+exact ownership manifest records the disposable board fixtures. Coordinated
+cleanup removed nine authored files and five empty owned directories from the
+Classic ESP32, generic S3, Waveshare and Pico. Each file was read and privately
+backed up before deletion; unchanged unrelated root entries and disconnection
+were verified for every board. The C3 fixtures remain reserved for the iPad
+acceptance run. Private per-board cleanup receipts retain the commands,
+readback hashes and before/after listings.
