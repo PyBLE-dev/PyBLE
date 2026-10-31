@@ -155,7 +155,7 @@ describe("production build contract", () => {
       "8.5.26",
     );
     expect(packageLock.packages?.["node_modules/nanoid"]?.version).toBe(
-      "3.3.18",
+      "3.3.20",
     );
     expect(packageLock.packages?.["node_modules/image-size"]).toBeUndefined();
     expect(
