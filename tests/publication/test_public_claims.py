@@ -188,7 +188,7 @@ class PublicClaimsTest(unittest.TestCase):
     def test_readme_distinguishes_app_source_from_store_availability(self) -> None:
         firmware = markdown_section(self.readme, "What works")
         normalized = " ".join(firmware.split())
-        self.assertIn("0.2.0+8", firmware)
+        self.assertIn("0.3.0+9", firmware)
         self.assertIn("Google Play open testing", normalized)
         self.assertIn("published Android version is `0.2.0`", normalized)
         self.assertIn("exact source", normalized)

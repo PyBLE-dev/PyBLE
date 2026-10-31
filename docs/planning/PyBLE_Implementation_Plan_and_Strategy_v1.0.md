@@ -11,9 +11,9 @@
 
 | Field | Value |
 |---|---|
-| Document version | 1.4 — C1-S1 device retry and precise remaining states; original filename retained |
+| Document version | 1.5 — bounded recovery candidate implementation; original filename retained |
 | Prepared | 25 September 2026 |
-| Last reviewed | 25 September 2026; connected Lenovo/iPad channel verification and remaining pilot dependencies incorporated |
+| Last reviewed | 31 October 2026; bounded current-text recovery candidate selected and implemented; acceptance tracked separately |
 | Status | C1-S1 has six tasks Done, two Prepared awaiting pilot setup and four Awaiting evidence; Sprint and SG0 remain unfinished. Future capacity and scope need replanning; no new protocol behavior approved |
 | Product | PyBLE — Python over Bluetooth Low Energy |
 | Organization | SciLabPro |
@@ -37,6 +37,7 @@
 | 1.2 | Focused pilot selection and useful second tasks; contextualized retention; defined one version-bound PyBLE Ready badge, installation labels, maintenance rules, and a staged existing-profile/partner pilot |
 | 1.3 | Executed C1-S1 repository deliverables in parallel worktrees; recorded device/pilot blockers, stale TestFlight metadata, a bounded recovery contract and larger engineering/matrix estimates; future allocations require replanning |
 | 1.4 | Verified existing Play/TestFlight installations on connected tablets; recorded artifact evidence and remaining provenance/metadata limits; replaced blanket pilot blockers with Prepared/Awaiting evidence states without waiving acceptance criteria |
+| 1.5 | Implemented bounded current-text recovery for source candidate 0.3.0+9; added candidate execution/operator records; preserved remaining pilot, platform and release gates |
 
 ## Contents
 
@@ -118,10 +119,10 @@ The inspected repository already contains the following capabilities and develop
 
 | Area | Existing baseline | Consequence for implementation |
 |---|---|---|
-| Tablet app | Flutter app; inspected source identifies `0.2.0+8` | Improve and qualify the existing app rather than create a new client |
+| Tablet app | Flutter app; historical source baseline `0.2.0+8`; next candidate `0.3.0+9` | Improve and qualify the existing app rather than create a new client |
 | Distribution | Android 0.2.0 published on Google Play for open testing; iPad external TestFlight beta | Verify installed build identity separately; production-track availability is not claimed |
 | Normal workflow | BLE discovery, PBLE/1 connection, editor, files, run/stop, soft reboot, console | Measure and repair the complete workflow, not isolated features |
-| Mobile state | Session ownership and connection retirement protections already implemented; editor document remains in memory | Preserve lifecycle fixes; close the recorded process-restart persistence gap |
+| Mobile state | Session ownership and connection retirement protections already implemented; current-text recovery implemented in the next source candidate | Qualify bounded recovery on recorded platform candidates; retain full-state obligations |
 | Learning | Blockly, tutorials, reviewed screenshots, official examples repository | Improve discoverability and completion; do not duplicate the Learning Center |
 | Import | Reviewed, SHA-pinned public GitHub `.py` import | Preserve preview, explicit overwrite approval, and non-execution on import |
 | Firmware | Public v0.6.1 recorded as owner-confirmed | Preserve the distinction between publication and complete automated qualification |
@@ -160,7 +161,7 @@ The [execution record](../developments/2026-q4-reliable-workflow/c1-s1/00_Execut
 | PYB-001 | Reviewed ledger; [Lenovo Play `0.2.0 (8)`](../developments/2026-q4-reliable-workflow/c1-s1/06_Android_Channel_Verification.md) and [iPad TestFlight `0.2.0 (6)`](../developments/2026-q4-reliable-workflow/c1-s1/07_iPad_Channel_Verification.md) existing installations, channel/Open and launch verified | iPad build-to-source mapping remains unknown; Android code/asset correspondence does not establish complete binary equivalence or store-console provenance. Fresh enrollment/reinstallation was not performed |
 | Residual PYB-002.1 | Accurate replacement TestFlight app-level description prepared after the public page exposed its older ESP/agent-0.4.0 baseline | Distribution owner must apply it and verify the public result; also reconcile build-6 installed `MinimumOSVersion` 18 with TestFlight notes stating 15 before asserting support. No store mutation performed; Android's earlier correction remains complete |
 | PYB-003/004 | Operational pilot protocol, safe Tasks A/B/C, consent/retention rules and empty observation/support templates | Human owner, reachable cohort, tested setup and collection decision unconfirmed; no participants or observed outcomes |
-| PYB-006.1 | [Recovery contract](../specifications/App/current-draft-recovery.md), ADR-0048, source/peer review, scenario matrix and estimate | Runtime implementation pending; broader A-24/Blocks scope remains carried |
+| PYB-006.1 | [Recovery contract](../specifications/App/current-draft-recovery.md), ADR-0048, source/peer review, scenario matrix and estimate | Bounded implementation now tracked in the [C1-S2 record](../developments/2026-q4-reliable-workflow/c1-s2/00_Execution_Record.md); platform/release acceptance and broader A-24/Blocks scope remain carried |
 | PYB-009.1 | Existing tool/gate inventory, ten platform/profile rows, cost model and initial operator recipe; 110 focused host harness tests pass | S2 scoped procedure, hardware/operator access, actual physical runs and independent reproduction remain pending |
 
 The recovery estimate is **38–63 engineering hours**, or **45–72 hours** with the original recipe, representative-platform and follow-up allowances. The [design review](../developments/2026-q4-reliable-workflow/c1-s1/03_Recovery_Design_and_Sizing.md) offers a conditional 60-hour S2–S4 allocation, displacing earlier matrix and activation forecasts. The [validation inventory](../developments/2026-q4-reliable-workflow/c1-s1/04_Validation_Inventory_and_Operator_Recipe.md) estimates 13.5–26 operator hours for the app matrix and 30–59 for fresh full firmware qualification, excluding builds, unavailable access and defect repair. These are working estimates, not actual effort or promises. **SG0 remains blocked.**
@@ -178,13 +179,13 @@ Do not spend the first sprint rebuilding a large analytics dashboard. A small pr
 | Area and inspected source | Already present | Remaining work for this plan |
 |---|---|---|
 | [Connection manager](../../app/lib/pble/connection_manager.dart) | Session ownership, stale acquisition protection, serialized connection retirement | Observe failures and extend targeted regressions; preserve the existing `Connection` seam |
-| [Editor document](../../app/lib/editor/editor_document.dart), [ADR-0010](../decisions/0010-working-loop-in-memory-document.md), [data placeholder](../../app/lib/data/data.dart) | One document survives navigation in memory; A-24 persistence explicitly deferred | Specify and implement a bounded durable-draft increment; distinguish process eviction/relaunch from a BLE disconnect |
+| [Editor document](../../app/lib/editor/editor_document.dart), [ADR-0010](../decisions/0010-working-loop-in-memory-document.md), [recovery storage](../../app/lib/data/drift_draft_repository.dart) | One current-text recovery slot implemented with atomic Drift transactions | Verify candidate durability, failure and platform evidence; full projects/Blocks persistence remains deferred |
 | [PBLE connection](../../app/lib/pble/pble_connection.dart) | Transfer fails on link loss; a subsequent PUT can consume a firmware-provided resume offset | Measure user retry/reconnect behavior; do not claim automatic continuation from protocol resumability alone |
 | [First-program tutorial](../../tools/web/src/app/learn/first-program/page.tsx) | Console-only `print("Hello from PyBLE!")` task without wiring | Reuse it for baseline observation and improve only demonstrated friction |
 | [Device information types](../../app/lib/pble/types.dart) | Negotiated chip, agent version, and capabilities | A support export must distinguish observed data from operator-supplied profile/provenance; current HELLO does not prove an artifact hash |
 | [Host conformance fixtures](../../tests/firmware_tests/host/conformance/README.md), [HIL guide](../../tests/firmware_tests/hil/README.md) | Shared vectors, compiled-native/portable tests, physical benches and release evidence tools | Add a coverage map and operator recipe before creating another harness or schema |
 
-**First engineering candidate:** PYB-006, the carried A-24 persistence gap. Its bounded specification and sizing are now recorded in C1-S1; select implementation against that estimate while collecting first-use observations; an already documented loss condition does not need rediscovery by participants. Start with durable recovery of the current text document and explicitly scope Blocks recovery. The existing ADR selects Drift and rejects an ad-hoc scratch-file workaround; any different design needs an explicit superseding decision. This does not approve a full project manager, automatic board writes, or new protocol operations.[^app-contract]
+**Selected next-release engineering candidate:** PYB-006.2, the bounded part of the carried A-24 persistence gap. Implementation and evidence are tracked in the [C1-S2 record](../developments/2026-q4-reliable-workflow/c1-s2/00_Execution_Record.md). Its bounded specification and sizing are now recorded in C1-S1; select implementation against that estimate while collecting first-use observations; an already documented loss condition does not need rediscovery by participants. Start with durable recovery of the current text document and explicitly scope Blocks recovery. The existing ADR selects Drift and rejects an ad-hoc scratch-file workaround; any different design needs an explicit superseding decision. This does not approve a full project manager, automatic board writes, or new protocol operations.[^app-contract]
 
 ## 3. Target users and positioning
 

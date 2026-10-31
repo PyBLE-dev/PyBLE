@@ -37,13 +37,14 @@ v0.7.0 remains non-normative and requires separate maintainer approval.
   and launches are verified on connected tablets; fresh enrollment/reinstallation
   was not exercised. The pilot kit, recovery design and validation inventory
   are prepared; this does not complete the Sprint or board qualification.
-- Implement the [bounded current-text recovery contract](specifications/App/current-draft-recovery.md)
-  after replanning against its 45–72 hour working estimate for engineering,
-  recipe, representative platform checks and follow-up. Current drafts remain
-  volatile; full A-24 and Blocks persistence remain separate scope.
+- Validate and qualify the implemented [bounded current-text recovery candidate](developments/2026-q4-reliable-workflow/c1-s2/00_Execution_Record.md)
+  against the [contract](specifications/App/current-draft-recovery.md). Source
+  candidate `0.3.0+9` supplies atomic local checkpoints and offline recovery;
+  full A-24 and Blocks graph persistence remain separate scope. The original
+  45–72 hour estimate remains a forecast, not measured effort.
 - Correct the [stale public TestFlight description](developments/2026-q4-reliable-workflow/c1-s1/05_TestFlight_Metadata_Correction.md)
   through the distribution owner; replacement copy is prepared, not published.
-- Continue the app 0.2.0 beta train; source is currently `0.2.0+8`. The
+- Prepare the next app `0.3.0+9` candidate while retaining the published 0.2.0 channel baseline. The
   [Android publication review](testing/website/android-open-testing-2026-09-25.md)
   records live open-testing availability. The
   [prepared build-8 handoff](testing/google-play/0.2.0-build-8.md) remains a
