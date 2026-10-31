@@ -72,6 +72,15 @@ dependencies:
   # have an explicit direct constraint under BLD-2.
   highlight: ^0.7.0
 
+  # Bounded on-device current-text recovery (PYB-006.2 / ADR-0048).
+  # Drift MIT; sqlite3 MIT (SQLite public-domain amalgamation via build hooks);
+  # crypto BSD-3-Clause; path_provider BSD-3-Clause. One app-private store,
+  # background database connection and no remote sync or scratch-file backend.
+  drift: ^2.35.3
+  sqlite3: 3.5.0
+  crypto: ^3.0.8
+  path_provider: ^2.1.6
+
   # Offline Blockly host (A-31). License: BSD-3-Clause. Min version: 4.14.1,
   # which is compatible with PyBLE's Android 24 / iOS 15 platform floors and
   # whose WebViewController supports loadFlutterAsset + JavaScript channels.
@@ -86,6 +95,11 @@ dev_dependencies:
   # pinned Flutter SDK and is test-only.
   integration_test:
     sdk: flutter
+
+  # Drift schema generation/export and migration verification (MIT),
+  # build_runner BSD-3-Clause. Build-time only, never app runtime.
+  drift_dev: ^2.35.2
+  build_runner: ^2.15.1
 
   # Recommended Flutter lint set, activated via analysis_options.yaml.
   # License: BSD-3-Clause. Min version: 6.0.0 (toolchain default for the
