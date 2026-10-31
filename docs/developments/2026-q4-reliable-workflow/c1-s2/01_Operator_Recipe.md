@@ -145,3 +145,11 @@ its default cleanup uninstalls the app and removes its private data. Force-stop
 that exact isolated package before the verify phase, retain both artifacts, and
 verify the second installation preserves the same data container. Never run a
 qualification harness over a user's installed store app.
+
+For iOS where Flutter's debug launch is unavailable, a signed profile build of
+this same harness can launch through `devicectl`. Copy the phase's result JSON
+from app-private Application Support and require `passed=true`; its receipt is
+written only after every assertion and repository close. Kill and verify absence
+of the seed process before installing/launching verify into the same container.
+This is native harness evidence, not a substitute for production UI/physical BLE
+checks. See the [actual platform report](02_Platform_Qualification.md).

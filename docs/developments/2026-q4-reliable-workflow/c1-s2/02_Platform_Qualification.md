@@ -6,7 +6,7 @@
 | Field | Record |
 |---|---|
 | Date / operator | 31 October 2026, Asia/Bangkok; automated operator on the maintainer's Mac |
-| Source | App source candidate `0.3.0+9`; integrated source `4479ff6a02e04d1b8e28a01cd70dfa702e8fb218` |
+| Source | App source candidate `0.3.0+9`; final bounded source `90311f3` (including storage preflight fix `8657e5a`); earlier source snapshots identified below |
 | Scope | Local storage, explicit offline recovery and platform builds; partial evidence toward DR-T02/03/07/13/14 |
 | Acceptance | Engineering observations only; full physical board consent, interruption/interaction matrix and release qualification remain pending |
 | Raw evidence | Ignored `local/recovery-implementation/`: commands/results, source manifests, screenshots/UI dumps, retained checkpoint and APK; raw captures are not committed |
@@ -74,9 +74,46 @@ A signed build is build evidence. It does not establish successful installation,
 execution, offline restoration, TestFlight availability or physical BLE behavior.
 Any further install/launch result must be recorded separately.
 
+## Final bounded candidates and iPad native execution
+
+| Evidence | Result |
+|---|---|
+| Final ordinary suite | 972 tests pass; full analysis clean after the metadata byte/count preflight fix |
+| Final Android production-entry APK | `artifacts/pyble-0.3.0-9-recovery-final.apk`; SHA-256 `957982f5acec969f8003d04b2d6444eecbba9af26b7392d760badb5be5d6bd0e`; installed on Lenovo, version `0.3.0 (9)` |
+| Final runtime source | Copied `lib/` is byte-identical to `90311f3`; only copied native bundle/application identities differ. Final source manifests retained |
+| iPad route | Signed **profile** mode launches through `devicectl` using current device settings; this bypasses the unavailable Flutter debug/JIT route |
+| iPad seed | All seed assertions and repository close completed; bounded test receipt says `phase=seed`, `passed=true`, `platform=ios`, completion `2026-10-31T04:06:31.192251Z` |
+| iPad process boundary | Seed process 5826 killed with `devicectl device process terminate --kill`; subsequent process enumeration confirms it absent |
+| iPad verify | Final bounded candidate installed into the same isolated container and launched separately; all exact-text, dirty/unbound, explicit Restore and declined-board-write assertions completed; receipt `passed=true` at `2026-10-31T04:08:45.983001Z` |
+| iPad database integrity | Seed/verify closed files both SHA-256 `d3c028da3b7439503b9a6f54e5ab2520d60f9a4a7ca7af59a62b0d3b841587b6` |
+| Retained iPad profile archives | Seed with receipt: SHA-256 `6d707ede856b1cd8de9c4ccd383b60b5ba86fe52c2d302d5c83e16edddc10514`; verify: `9588a9e94a9eb484b9408a8e86f61e0c12c8fadcc5147caf970f72f3411bcb87` |
+
+Receipts are written only after assertions and store close, are removed before
+rerunning that phase, and contain bounded test metadata rather than user source.
+The seed preceded the final corrupt-metadata bound; verify used the new bound
+against that same valid v1 store. This proves compatible valid-state reopening.
+These native profile harness checks do not claim the full iPad production UI or
+physical BLE board scenarios have passed.
+
+## Five-board discovery observation
+
+The owner reported all five boards connected. A fresh Lenovo scan in the final
+qualification app shows `PyBLE-DA86`, `PyBLE-3DCB`, `PyBLE-5646` and `PyBLE-C81A`.
+The [historical hardware record](../../../testing/tutorial-five-board-screenshot-provenance-2026-08-28.md)
+associates the absent `8C9E` label with classic ESP32, and `3DCB` with Pico 2 W.
+Names are contextual labels, not new identity or authorization evidence.
+
+Source inspection found no four-result limit: the adapter filters by PBLE
+service UUID, the accumulator retains distinct OS device IDs and the list
+renders the complete hit count. Both ESP/Pico agents resume advertising after
+disconnection. An active connection elsewhere or absent firmware advertising
+can explain a missing board, but neither cause has yet been established for
+`8C9E`. USB enumeration of its CP2102 adapter alone does not prove agent health.
+No board was reset, flashed or sent a command during this diagnosis.
+
 ## Remaining release evidence
 
-Complete iPad execution, the remaining Android interaction/interruption rows,
+Complete the iPad production interaction matrix, remaining Android interaction/interruption rows,
 explicit harmless physical board Save/Run/Files destination consent, applicable
 Blocks handoff checks and the selected release matrix. Preserve candidate
 provenance and report every unrun row. Participant follow-up and the unfinished
