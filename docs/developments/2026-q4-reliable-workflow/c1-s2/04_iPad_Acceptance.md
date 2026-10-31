@@ -130,7 +130,9 @@ and their CRC-verified backups/cleanup are recorded with the
 preserved. The S3, Waveshare and Pico follow-up fixtures have likewise been CRC-verified,
 backed up and removed with unrelated root entries unchanged. C3 fixtures remain
 tracked privately for cleanup after the final Android continuation. Raw captures, binaries, database backups and helper
-sources remain ignored. No user project or original store installation is reset.
+sources remain ignored. The task-created XCTest runner was uninstalled after
+the completed iPad checks; Preview and both pre-existing PyBLE installations
+were preserved. No user project or original store installation is reset.
 
 This report establishes only its recorded observations. Final admission,
 production package identity and channel delivery are tracked in
