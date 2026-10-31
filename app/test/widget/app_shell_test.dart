@@ -23,8 +23,10 @@
 
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:pyble/app/app.dart';
@@ -93,6 +95,108 @@ Future<void> _focusLandscapeBlocks(WidgetTester tester) async {
 
 void main() {
   group('landscape software keyboard', () {
+    for (final TargetPlatform platform in <TargetPlatform>[
+      TargetPlatform.android,
+      TargetPlatform.iOS,
+    ]) {
+      testWidgets('Expand dismisses a native Blocks keyboard on $platform', (
+        WidgetTester tester,
+      ) async {
+        debugDefaultTargetPlatformOverride = platform;
+        addTearDown(() => debugDefaultTargetPlatformOverride = null);
+        const MethodChannel keyboard = MethodChannel('dev.pyble/keyboard');
+        final List<MethodCall> requests = <MethodCall>[];
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          keyboard,
+          (MethodCall call) async => requests.add(call),
+        );
+        addTearDown(
+          () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+            keyboard,
+            null,
+          ),
+        );
+        await pumpShell(
+          tester,
+          connection: fakeConnection(initial: ConnState.ready),
+          surface: androidTabletLandscape,
+        );
+        await _focusLandscapeBlocks(tester);
+        final Element host = tester.element(
+          find.byKey(_blocksWorkspaceHostKey),
+        );
+        expect(find.byType(EditableText), findsNothing);
+        tester.view.viewInsets = const FakeViewPadding(bottom: 808);
+        addTearDown(tester.view.resetViewInsets);
+        await tester.pump();
+
+        await tester.tap(find.byKey(kConsoleStripToggleKey));
+        await tester.pump();
+        expect(requests.map((MethodCall call) => call.method), <String>[
+          'dismissKeyboard',
+        ]);
+        expect(requests.single.arguments, isNull);
+        expect(
+          tester
+              .widget<ConsoleStripView>(find.byType(ConsoleStripView))
+              .collapsed,
+          isTrue,
+          reason: 'acknowledging a hide request does not prove IME dismissal',
+        );
+        expect(tester.element(find.byKey(_blocksWorkspaceHostKey)), same(host));
+        tester.view.resetViewInsets();
+        await tester.pump();
+        expect(
+          tester
+              .widget<ConsoleStripView>(find.byType(ConsoleStripView))
+              .collapsed,
+          isFalse,
+        );
+        expect(tester.element(find.byKey(_blocksWorkspaceHostKey)), same(host));
+        expect(tester.takeException(), isNull);
+      });
+    }
+
+    testWidgets('Expand preserves a Flutter editor draft and selection', (
+      WidgetTester tester,
+    ) async {
+      const MethodChannel keyboard = MethodChannel('dev.pyble/keyboard');
+      final List<String> requests = <String>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        keyboard,
+        (MethodCall call) async => requests.add(call.method),
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          keyboard,
+          null,
+        ),
+      );
+      await pumpShell(
+        tester,
+        connection: fakeConnection(initial: ConnState.ready),
+        surface: androidTabletLandscape,
+      );
+      final Finder editor = find.byType(EditableText).first;
+      await tester.tap(editor);
+      await tester.enterText(editor, '# retained draft');
+      final EditableText before = tester.widget<EditableText>(editor);
+      before.controller.selection = const TextSelection.collapsed(offset: 5);
+      tester.view.viewInsets = const FakeViewPadding(bottom: 808);
+      addTearDown(tester.view.resetViewInsets);
+      await tester.pump();
+      await tester.tap(find.byKey(kConsoleStripToggleKey));
+      await tester.pump();
+      expect(requests, <String>['dismissKeyboard']);
+      expect(before.focusNode.hasFocus, isFalse);
+      expect(before.controller.text, '# retained draft');
+      expect(
+        before.controller.selection,
+        const TextSelection.collapsed(offset: 5),
+      );
+      expect(tester.takeException(), isNull);
+    });
+
     for (final double inset in <double>[404, 440]) {
       testWidgets('keeps editing and navigation usable with $inset dp inset', (
         WidgetTester tester,

@@ -2037,6 +2037,17 @@ Tablet-first, responsive (CON-5, FR-UI-5). The shell is **connection-gated** ([A
   stays ≥ 720 dp and ≥ 60% may a 360–420 dp generated-Python inspector appear.
   Host notices sit outside the canvas. The console is collapsed/on demand and
   expands after Run or new output.
+- **Landscape keyboard dismissal (FR-UI-8).** While a software-keyboard inset
+  is present, explicit console Expand first releases Flutter focus, then asks
+  the app-owned `dev.pyble/keyboard` channel to `dismissKeyboard`. Android hides
+  the IME using the current Activity window token; iOS ends editing in the
+  window of the registered Flutter view controller, including native WebView
+  fields. Flutter's `TextInput.hide` alone does not dismiss every embedded
+  native input owner. Other platforms use the ordinary Flutter hide request.
+  Native completion acknowledges a request, not keyboard visibility: the shell
+  stays collapsed until actual view insets clear. This action does not clear
+  a text client, replace the Blocks host, discard buffered output, or mutate
+  the document/selection.
 - **Portrait / stacked tablet** layout uses a bottom bar to swap the full-width
   Editor, Console, Files, and Blocks work surfaces (FR-UI-2,
   [PRD §19.2](../prd.md)); editor remains the default primary surface. Blocks is
