@@ -30,7 +30,11 @@ void main() {
       (calls.lastWhere((MethodCall call) => call.method == 'observe').arguments
           as int);
 
-  Future<void> report(WidgetTester tester, double bottom, {int? epoch}) async {
+  Future<void> sendReport(
+    WidgetTester tester,
+    double bottom, {
+    int? epoch,
+  }) async {
     await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
       _channel.name,
       _channel.codec.encodeMethodCall(
@@ -41,6 +45,10 @@ void main() {
       ),
       (_) {},
     );
+  }
+
+  Future<void> report(WidgetTester tester, double bottom, {int? epoch}) async {
+    await sendReport(tester, bottom, epoch: epoch);
     await tester.pump();
   }
 
@@ -83,6 +91,64 @@ void main() {
   );
 
   testWidgets(
+    'native guide keeps the Blocks host and dismissal control usable',
+    (WidgetTester tester) async {
+      const MethodChannel keyboard = MethodChannel('dev.pyble/keyboard');
+      final List<String> requests = <String>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        keyboard,
+        (MethodCall call) async => requests.add(call.method),
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          keyboard,
+          null,
+        ),
+      );
+      await pumpShell(
+        tester,
+        connection: fakeConnection(initial: ConnState.ready),
+      );
+      await tester.tap(
+        find.descendant(
+          of: find.byType(NavigationRail),
+          matching: find.text('Blocks'),
+        ),
+      );
+      await tester.pump();
+      final Finder workspace = find.byKey(
+        const ValueKey<String>('blocksWorkspaceHost-0'),
+      );
+      final Element host = tester.element(workspace);
+      await report(tester, 498);
+      expect(
+        tester.getRect(find.byKey(kConsoleStripToggleKey)).bottom,
+        lessThanOrEqualTo(1024 - 498),
+      );
+      await tester.tap(find.byKey(kConsoleStripToggleKey));
+      await tester.pump();
+      expect(requests, <String>['dismissKeyboard']);
+      expect(
+        tester
+            .widget<ConsoleStripView>(find.byType(ConsoleStripView))
+            .collapsed,
+        isTrue,
+      );
+      expect(tester.element(workspace), same(host));
+      await report(tester, 0);
+      expect(
+        tester
+            .widget<ConsoleStripView>(find.byType(ConsoleStripView))
+            .collapsed,
+        isFalse,
+      );
+      expect(tester.element(workspace), same(host));
+      expect(tester.takeException(), isNull);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
+
+  testWidgets(
     'guide and Flutter insets combine by maximum and restore padding',
     (WidgetTester tester) async {
       await pumpShell(
@@ -112,6 +178,39 @@ void main() {
   );
 
   testWidgets(
+    'post-metrics refresh recovers a guide value that preceded window resizing',
+    (WidgetTester tester) async {
+      await pumpShell(
+        tester,
+        connection: fakeConnection(initial: ConnState.ready),
+        surface: const ShellSurface('short_window', Size(1366, 600), 2),
+      );
+      await report(tester, 650);
+      expect(geometry(tester).viewInsets.bottom, 0);
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(_channel, (
+        MethodCall call,
+      ) async {
+        calls.add(call);
+        if (call.method == 'observe') {
+          // Native observe returns a current snapshot even when unchanged.
+          await sendReport(tester, 650, epoch: call.arguments as int);
+        }
+        return null;
+      });
+      tester.view.physicalSize = const Size(2732, 2048);
+      await tester.pump();
+      await tester.pump();
+      expect(geometry(tester).viewInsets.bottom, 650);
+      expect(
+        tester.getRect(find.byKey(kConsoleStripToggleKey)).bottom,
+        lessThanOrEqualTo(1024 - 650),
+      );
+      expect(tester.takeException(), isNull);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
+
+  testWidgets(
     'background resets observation and stale or invalid reports are inert',
     (WidgetTester tester) async {
       await pumpShell(
@@ -120,11 +219,15 @@ void main() {
       );
       final int old = generation();
       await report(tester, 498);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
       await tester.pump();
       expect(geometry(tester).viewInsets.bottom, 0);
       await report(tester, 498, epoch: old);
       expect(geometry(tester).viewInsets.bottom, 0);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
       await tester.pump();
       expect(generation(), isNot(old));

@@ -19,6 +19,7 @@ import 'package:pyble/editor/recovery_gate.dart';
 import 'package:pyble/theme/theme.dart';
 
 import 'shell.dart';
+import 'keyboard_insets.dart';
 
 /// Navigator used by explicit user confirmations, never by local recovery itself.
 final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
@@ -45,6 +46,8 @@ class PybleApp extends StatelessWidget {
       highContrastDarkTheme: PybleTheme.highContrastDark,
       themeMode: ThemeMode.system,
       debugShowCheckedModeBanner: false,
+      builder: (BuildContext context, Widget? child) =>
+          KeyboardInsets(child: child ?? const SizedBox.shrink()),
       home: const RecoveryGate(child: PybleShell()),
     );
   }
