@@ -73,5 +73,5 @@ records scoped engineering acceptance after integrated/physical checks, with
 exact test conditions and completed device closeout. [PR #41](https://github.com/PyBLE-dev/PyBLE/pull/41)
 merged after all 36 final-head checks passed. The [delivery record](../developments/2026-q4-reliable-workflow/c1-s2/06_Release_Readiness.md#31-october-testflight-delivery-and-published-metadata)
 verifies internal-account TestFlight `0.3.0 (9)`; external build 9 is submitted
-and Waiting for Review, while Google Play delivery remains pending. The remaining A-24 project, settings, console, import
+and Waiting for Review, while Google Play open-testing build 9 is submitted with Changes in review; approval and delivery remain pending. The remaining A-24 project, settings, console, import
 and Blocks obligations remain carried.

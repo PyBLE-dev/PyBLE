@@ -47,7 +47,7 @@ v0.7.0 remains non-normative and requires separate maintainer approval.
 - Complete [channel delivery](developments/2026-q4-reliable-workflow/c1-s2/06_Release_Readiness.md) for qualified app `0.3.0+9`.
   [PR #41](https://github.com/PyBLE-dev/PyBLE/pull/41) merged after all 36 checks on its final head passed.
   Internal-account TestFlight `0.3.0 (9)` offer/Open, installed identity and bounded smoke are verified ([delivery record](developments/2026-q4-reliable-workflow/c1-s2/06_Release_Readiness.md#31-october-testflight-delivery-and-published-metadata)); the update transaction was not observed.
-  External build 9 is submitted and Waiting for Review; Google Play submission remains pending. Lenovo still has Play `0.2.0 (8)`; earlier iPad build-6 evidence remains historical. The
+  External build 9 is submitted and Waiting for Review; Google Play open-testing build 9 is submitted with Changes in review; approval/delivery remain pending. Lenovo still has Play `0.2.0 (8)`; earlier iPad build-6 evidence remains historical. The
   [Android publication review](testing/website/android-open-testing-2026-09-25.md)
   records live open-testing availability. The
   [prepared build-8 handoff](testing/google-play/0.2.0-build-8.md) remains a
