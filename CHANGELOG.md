@@ -77,6 +77,10 @@ and submission packet do not claim Play submission, approval, or rollout.
 
 ### Website and repository source
 
+- Updated the website dependency set to Next.js 16.4.3, Vite 8.3.5 and
+  Vitest 4.1.12, with patched Sharp, Undici, source-map-js and supporting
+  dependencies. Refreshed the reviewed license notices and dependency
+  regression assertions while retaining the high/critical audit gate.
 - Prepared Google Play open-testing listing text, reviewer hardware setup,
   tester instructions, data-use assessment, and reproducible store artwork
   with authentic screenshot provenance. Store availability remains a separate
