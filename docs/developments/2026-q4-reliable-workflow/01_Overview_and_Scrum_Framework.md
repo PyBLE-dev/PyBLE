@@ -18,7 +18,7 @@
 
 This package derives execution views from the strategy. It does not replace normative specifications, expand hardware claims, create GitHub issues, or authorize store/website publication. The strategy and original package were recorded together in planning baseline `d039db0`. The [C1-S1 execution record](c1-s1/00_Execution_Record.md) owns actual results and blockers.
 
-**31 October implementation update:** bounded recovery work is underway for candidate `0.3.0+9`, following the user’s next-release request. [C1-S2 implementation record](c1-s2/00_Execution_Record.md) records source, automated and physical states separately. S1 remains six Done / two Prepared / four Awaiting evidence. Original dates/hours below remain the planning baseline; no completed Sprint, adopted 60-hour capacity forecast or release admission is inferred.
+**31 October continuation update:** bounded recovery candidate `0.3.0+9` is merged in [PR #40](https://github.com/PyBLE-dev/PyBLE/pull/40) at `6f5b3ea`; the integrated suite and post-merge CI pass. Both tablets have local candidate installations and native storage restart evidence. [C1-S2 implementation record](c1-s2/00_Execution_Record.md) tracks the remaining physical acceptance separately from release qualification. S1 remains six Done / two Prepared / four Awaiting evidence. Original dates/hours remain the planning baseline; the current continuation order and unresolved capacity inputs are recorded in the [Sprint plan](04_Sprint_Plan.md#31-october-continuation-order-and-reforecast).
 
 ## Navigation and ownership of information
 
@@ -35,7 +35,7 @@ This package derives execution views from the strategy. It does not replace norm
 
 ```mermaid
 flowchart LR
-    Strategy["Strategy revision 1.4"] --> Goal["One Product Goal"]
+    Strategy["Strategy revision 1.6"] --> Goal["One Product Goal"]
     Goal --> Roadmap["Outcome roadmap and milestones"]
     Roadmap --> Product["Ordered Product Backlog"]
     Product --> Planning["Sprint Planning"]
@@ -140,7 +140,7 @@ When facts or priority change, update the canonical file above and its dependent
 
 | Source | Use and precedence |
 |---|---|
-| [Strategy revision 1.4](../../planning/PyBLE_Implementation_Plan_and_Strategy_v1.0.md) | Scope, targets, six-Sprint capacity, three outcomes, Ready program and conditional horizons |
+| [Strategy revision 1.6](../../planning/PyBLE_Implementation_Plan_and_Strategy_v1.0.md) | Scope, targets, six-Sprint capacity, three outcomes, Ready program and conditional horizons |
 | [Public roadmap](../../ROADMAP.md), [README](../../../README.md) | Current capability and distribution baseline |
 | [App specification](../../specifications/App/specs.md), [App TDD](../../specifications/App/TDD.md), [ADR-0010](../../decisions/0010-working-loop-in-memory-document.md) | Persistence contract and recorded implementation deviation; consult frozen working-loop scope |
 | [Firmware roadmap](../../planning/firmware-v0.6.1-v0.7.0-roadmap.md), [PBLE/1](../../specifications/protocol.md) | v0.7 proposals versus frozen wire behavior; old v0.6.1 publication/#24 wording is historical |

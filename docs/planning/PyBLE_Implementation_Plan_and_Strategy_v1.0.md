@@ -11,10 +11,10 @@
 
 | Field | Value |
 |---|---|
-| Document version | 1.5 — bounded recovery candidate implementation; original filename retained |
+| Document version | 1.6 — merged recovery candidate and acceptance continuation; original filename retained |
 | Prepared | 25 September 2026 |
-| Last reviewed | 31 October 2026; bounded current-text recovery candidate selected and implemented; acceptance tracked separately |
-| Status | C1-S1 has six tasks Done, two Prepared awaiting pilot setup and four Awaiting evidence; Sprint and SG0 remain unfinished. Future capacity and scope need replanning; no new protocol behavior approved |
+| Last reviewed | 31 October 2026; PR #40 merged and integrated CI passed; physical acceptance and release continuation tracked separately |
+| Status | C1-S1 has six tasks Done, two Prepared awaiting pilot setup and four Awaiting evidence; Sprint and SG0 remain unfinished. Bounded recovery source is merged, with physical acceptance and release qualification underway. Human capacity and recruitment dates need replanning; no new protocol behavior approved |
 | Product | PyBLE — Python over Bluetooth Low Energy |
 | Organization | SciLabPro |
 | Planning horizon | Immediate 12-week delivery cycle, followed by conditional expansion through September 2028 |
@@ -26,7 +26,7 @@
 
 **Scope of this document.** This plan converts the preceding PyBLE strategy discussion into executable workstreams, priorities, acceptance criteria, and decision gates. Existing repository specifications and contributor rules remain authoritative. Proposed features, names, metrics, staffing, and dates below are planning choices—not claims that those features exist or that resources and approvals are secured.
 
-**Evidence boundary.** The baseline review inspected repository source, specifications, test entry points, publication records, and the GitHub state of PR #33 and issue #24 on 25 September. Revision 1.2 incorporates the subsequent strategy and PyBLE Ready feedback. The dated Android publication review establishes listing status only. Revision 1.3 records direct live-channel/website checks and the original unavailable/locked device attempts. Revision 1.4 adds the connected-device retry in the [C1-S1 ledger](../developments/2026-q4-reliable-workflow/c1-s1/01_Channel_and_Artifact_Ledger.md): existing Play `0.2.0 (8)` and TestFlight `0.2.0 (6)` installations and launches verified. Fresh enrollment/reinstallation was not performed. Android's code/asset comparison supports historical source mapping; iPad source mapping remains unknown. No participant outcome or new physical-board result has been measured. Previously reported publicity and GitHub counts are not proof of product-market fit.[^android-review]
+**Evidence boundary.** The baseline review inspected repository source, specifications, test entry points, publication records, and the GitHub state of PR #33 and issue #24 on 25 September. Revision 1.2 incorporates the subsequent strategy and PyBLE Ready feedback. The dated Android publication review establishes listing status only. Revision 1.3 records direct live-channel/website checks and the original unavailable/locked device attempts. Revision 1.4 adds the connected-device retry in the [C1-S1 ledger](../developments/2026-q4-reliable-workflow/c1-s1/01_Channel_and_Artifact_Ledger.md): existing Play `0.2.0 (8)` and TestFlight `0.2.0 (6)` installations and launches verified. Fresh enrollment/reinstallation was not performed. Android's code/asset comparison supports historical source mapping; iPad source mapping remains unknown. No participant outcome was measured in that baseline review. The subsequent [C1-S2 record](../developments/2026-q4-reliable-workflow/c1-s2/00_Execution_Record.md) adds candidate-specific native storage/restart and board-workflow observations, PR #40 merge evidence and successful integrated CI. Those engineering observations do not supply participant outcomes. Previously reported publicity and GitHub counts are not proof of product-market fit.[^android-review]
 
 **Continuation decision.** Carry forward the completed Android publication/copy correction. Concentrate weekly execution on three outcomes: verify what users install, preserve their work through interruptions, and observe useful repeat tasks in one primary audience. Reuse existing lifecycle handling, tutorials, conformance fixtures, and release tooling. A bounded PyBLE Ready rehearsal can reuse one existing profile's evidence work; new ports, broad badge promotion, classroom bundles, and new protocol behavior remain conditional.
 
@@ -38,6 +38,7 @@
 | 1.3 | Executed C1-S1 repository deliverables in parallel worktrees; recorded device/pilot blockers, stale TestFlight metadata, a bounded recovery contract and larger engineering/matrix estimates; future allocations require replanning |
 | 1.4 | Verified existing Play/TestFlight installations on connected tablets; recorded artifact evidence and remaining provenance/metadata limits; replaced blanket pilot blockers with Prepared/Awaiting evidence states without waiving acceptance criteria |
 | 1.5 | Implemented bounded current-text recovery for source candidate 0.3.0+9; added candidate execution/operator records; preserved remaining pilot, platform and release gates |
+| 1.6 | Reconciled PR #40 merge, passing integrated CI and both local tablet candidates; selected acceptance → qualification → distribution continuation, with human capacity and participant evidence still explicit |
 
 ## Contents
 
@@ -119,10 +120,10 @@ The inspected repository already contains the following capabilities and develop
 
 | Area | Existing baseline | Consequence for implementation |
 |---|---|---|
-| Tablet app | Flutter app; historical source baseline `0.2.0+8`; next candidate `0.3.0+9` | Improve and qualify the existing app rather than create a new client |
+| Tablet app | Flutter app; historical source baseline `0.2.0+8`; merged candidate `0.3.0+9` | Improve and qualify the existing app rather than create a new client |
 | Distribution | Android 0.2.0 published on Google Play for open testing; iPad external TestFlight beta | Verify installed build identity separately; production-track availability is not claimed |
 | Normal workflow | BLE discovery, PBLE/1 connection, editor, files, run/stop, soft reboot, console | Measure and repair the complete workflow, not isolated features |
-| Mobile state | Session ownership and connection retirement protections already implemented; current-text recovery implemented in the next source candidate | Qualify bounded recovery on recorded platform candidates; retain full-state obligations |
+| Mobile state | Session ownership and connection retirement protections already implemented; current-text recovery merged in the `0.3.0+9` source candidate | Qualify bounded recovery on recorded platform candidates; retain full-state obligations |
 | Learning | Blockly, tutorials, reviewed screenshots, official examples repository | Improve discoverability and completion; do not duplicate the Learning Center |
 | Import | Reviewed, SHA-pinned public GitHub `.py` import | Preserve preview, explicit overwrite approval, and non-execution on import |
 | Firmware | Public v0.6.1 recorded as owner-confirmed | Preserve the distinction between publication and complete automated qualification |
@@ -383,6 +384,14 @@ The draft allocation below uses 136 planned hours and leaves 20 planned hours un
 The cycle intentionally excludes a complete new protocol version, full classroom product, security implementation, and multiple new ports.
 
 ### 8.2 Sprint plan
+
+**31 October continuation:** PR #40 has merged and integrated CI passes. Complete
+remaining M-02 physical acceptance, then the applicable M-04 app-release matrix
+and M-05 channel delivery; prepare distribution in parallel where independent.
+The [dated continuation order](../developments/2026-q4-reliable-workflow/04_Sprint_Plan.md#31-october-continuation-order-and-reforecast)
+records this selection and the human capacity/pilot inputs still needed. Source
+progress does not reconstruct the original Sprint schedule or participant
+sessions. The original forecasts remain below for comparison.
 
 **Reforecast required after C1-S1:** the hour rows below retain the original 136-hour base allocation, not an accepted revised selection. Recovery's 45–72 hour estimate exceeds S2's allowance. A conditional S2/S3/S4 allocation of 26/22/12 hours preserves each 26-hour ceiling but leaves only 18 hours for displaced work across those three Sprints. Reorder matrix, activation and conditional fixes with actual owners/access; reassess S5/S6 and the 22 November recruitment target. Do not borrow the event reserve silently, drop failure cases, or count one physical run twice. The [Sprint plan](../developments/2026-q4-reliable-workflow/04_Sprint_Plan.md#c1-s1-findings-and-required-reforecast) owns the detailed comparison.
 

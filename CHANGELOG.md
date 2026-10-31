@@ -10,16 +10,15 @@ or firmware release. Firmware v0.6.1 is published on the owner's confirmation;
 incomplete automated evidence remains pending. The qualified v0.6.0 release
 remains a separate historical baseline built from its annotated tag.
 
-The current compatible app feature set now targets `0.2.0`; build `5` was
-handed off through Transporter for TestFlight. This candidate identity improves
-test and evidence traceability but does not designate a qualified store release
-or claim App Store Connect processing, beta-review approval, or availability.
-The next prepared Android open-testing candidate is `0.2.0 (8)`; its bundle
-and submission packet do not claim Play submission, approval, or rollout.
+The merged app source now targets `0.3.0+9`. Its local Android and iPad Preview
+installations are engineering candidates, with release qualification and channel
+delivery tracked separately. The recorded existing-channel baseline is Android
+Play `0.2.0 (8)` and iPad TestFlight `0.2.0 (6)`; the earlier build-5 Transporter
+and build-8 submission handoffs remain historical artifact records.
 
 ### App source
 
-- Prepared app source candidate `0.3.0+9` with bounded on-device current-text
+- Merged app source candidate `0.3.0+9` with bounded on-device current-text
   recovery using Drift. Exact text and metadata commit atomically; startup
   offers offline preview, Restore and confirmed Discard, with separate local
   checkpoint status and an explicit Save recovery copy action. Storage errors

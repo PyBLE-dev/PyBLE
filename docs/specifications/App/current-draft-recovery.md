@@ -6,7 +6,7 @@
 | Field | Value |
 |---|---|
 | Design baseline | 25 September 2026; C1-S1-T10/T11, PYB-006.1 |
-| Status | Bounded source implementation for candidate `0.3.0+9`, 31 October 2026; final integrated checks and required physical acceptance remain pending |
+| Status | Bounded `0.3.0+9` source merged in PR #40 on 31 October 2026; integrated checks pass; required physical acceptance remains pending |
 | Decision | [ADR-0048](../../decisions/0048-bounded-current-text-draft-recovery.md) |
 | Parent obligations | A-24; FR-EDIT-7, FR-PROJ-2/6, NFR-REL-3; their broader acceptance remains carried |
 | Delivery and sizing | [C1-S1 design review](../../developments/2026-q4-reliable-workflow/c1-s1/03_Recovery_Design_and_Sizing.md) |
