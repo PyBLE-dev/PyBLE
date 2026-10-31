@@ -322,7 +322,8 @@ Store provisioning profile are available. Signing access alone does not prove
 an authenticated store session, role, account version history or review status.
 
 A read-only check of the Lenovo production package found `dev.pyble.pyble`
-version `0.2.0`, versionCode `8`, installed by `com.android.vending`, with its
+version `0.2.0`, versionCode `8`, with installing and initiating package
+`com.android.vending` and its
 last update on 17 September. Its verified signing certificate SHA-256 is
 `e3c1334dc7aad1ae20fe043b52c2d5638584a67a66e6a5255a87bf89f56f06d0`, distinct
 from the owner upload certificate above. The production app was not replaced.
