@@ -70,6 +70,8 @@ That 25 September inspection was design-only. The 31 October candidate now
 implements the bounded current-text successor; its
 [C1-S2 execution record](../developments/2026-q4-reliable-workflow/c1-s2/00_Execution_Record.md)
 records scoped engineering acceptance after integrated/physical checks, with
-exact test conditions and completed device closeout. [PR #41](https://github.com/PyBLE-dev/PyBLE/pull/41) tracks final
-integration; required CI and merge precede publishing. Channel delivery remains pending. The remaining A-24 project, settings, console, import and
-Blocks obligations remain carried.
+exact test conditions and completed device closeout. [PR #41](https://github.com/PyBLE-dev/PyBLE/pull/41)
+merged after all 36 final-head checks passed. The [delivery record](../developments/2026-q4-reliable-workflow/c1-s2/06_Release_Readiness.md#31-october-testflight-delivery-and-published-metadata)
+verifies internal-account TestFlight `0.3.0 (9)`; external build 9 is submitted
+and Waiting for Review, while Google Play delivery remains pending. The remaining A-24 project, settings, console, import
+and Blocks obligations remain carried.

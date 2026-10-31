@@ -91,7 +91,7 @@ does not establish its installed build/source identity or mean those earlier
 artifacts contain later connection-lifecycle fixes. Both platforms share the
 same Flutter source and app test gates. The iOS/iPadOS project minimum is 15.
 
-### Next app candidate: local draft recovery
+### Local draft recovery in app 0.3.0
 
 The merged `0.3.0+9` candidate adds one on-device current-text recovery copy.
 After restart, preview and explicitly Restore or Discard the last committed
@@ -109,9 +109,12 @@ declared five-profile × two-platform app matrix and test conditions. Local
 Android and iPad Preview installations remain separate from store delivery.
 The [release readiness record](docs/developments/2026-q4-reliable-workflow/c1-s2/06_Release_Readiness.md)
 tracks the engineering-qualified artifacts, completed device closeout and channel handoff.
-Apple accepted the `0.3.0 (9)` upload and started processing ([receipt](docs/developments/2026-q4-reliable-workflow/c1-s2/06_Release_Readiness.md#31-october-app-store-connect-upload-receipt));
-TestFlight delivery and Google Play submission remain unverified. This candidate
-is not yet established as a store-delivered update.
+TestFlight `0.3.0 (9)` is verified for the existing internal account on the
+connected iPad, including production About and a bounded board smoke check
+([delivery record](docs/developments/2026-q4-reliable-workflow/c1-s2/06_Release_Readiness.md#31-october-testflight-delivery-and-published-metadata)).
+The exact update transaction was not observed. Build 9 is submitted to the
+existing external group and is **Waiting for Review**; Google Play submission
+remains pending. This is not an all-tester availability claim.
 
 ### Firmware
 

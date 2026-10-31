@@ -30,8 +30,10 @@ Archives, source manifests, native accessibility trees, screenshots and
 differs from the normal application. Signature verification and installation
 pass. Installs reuse the same Preview container without clearing its data.
 
-The existing TestFlight `dev.pyble.pyble` installation remains `0.2.0 (6)`.
-Preview acceptance does not establish a TestFlight-delivered upgrade. Before
+During these qualification runs, the existing `dev.pyble.pyble` installation
+was `0.2.0 (6)`. Later internal-account TestFlight `0.3.0 (9)` delivery and bounded
+production-app smoke are recorded separately in [release readiness](06_Release_Readiness.md#31-october-testflight-delivery-and-published-metadata);
+Preview acceptance alone does not establish that channel outcome. Before
 these runs, a private backup of Preview application support passed SQLite
 `integrity_check` and contained zero draft rows and zero content bytes. No
 storage reset established that initial state.

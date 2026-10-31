@@ -15,8 +15,10 @@ This is the normative contract for PYB-006.2. Candidate source now implements
 its bounded current-text storage, coordinator, recovery UI and guarded board
 actions. [The implementation record](../../developments/2026-q4-reliable-workflow/c1-s2/00_Execution_Record.md)
 records the scoped automated/physical acceptance and declared test conditions.
-Existing Play/TestFlight installations remain the previously recorded versions;
-channel availability is separate from this engineering acceptance. [ADR-0048](../../decisions/0048-bounded-current-text-draft-recovery.md)
+[Channel evidence](../../developments/2026-q4-reliable-workflow/c1-s2/06_Release_Readiness.md#31-october-testflight-delivery-and-published-metadata)
+separately verifies internal-account TestFlight `0.3.0 (9)` delivery; external
+build 9 is submitted and Waiting for Review. Google Play delivery remains pending. Engineering acceptance alone
+does not establish channel availability. [ADR-0048](../../decisions/0048-bounded-current-text-draft-recovery.md)
 supersedes the volatile-only current-text limitation in ADR-0010 for this slice.
 No PBLE/1 change or board-identity allowlist is introduced.
 

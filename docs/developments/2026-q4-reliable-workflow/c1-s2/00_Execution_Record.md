@@ -11,7 +11,7 @@
 | Candidate | App `0.3.0+9`; recovery baseline merged at `6f5b3ea`, landscape repair `e54a78a`, native dismissal `01a7ac8`, and guide correction `bef67bd` under PR #41; platform and release reports bind each actual artifact |
 | Scope | PYB-006.2 bounded current-text recovery; supporting PYB-009.1 recipe and applicable PYB-008.1 observations |
 | Contract | [Current-draft recovery](../../../specifications/App/current-draft-recovery.md), [ADR-0048](../../../decisions/0048-bounded-current-text-draft-recovery.md) |
-| Overall state | Scoped PYB-006.2 / M-02 and app-only M-04 pass engineering review at frozen runtime `bef67bd`: 984 ordinary tests, 36 runtime-head CI checks, both-platform recovery/keyboard evidence and all ten declared app/profile rows. Device policy, owned fixtures and normal board advertising are restored; [PR #41](https://github.com/PyBLE-dev/PyBLE/pull/41) merged at `247e58a` after all 36 final-head checks passed. M-05 channel delivery and S2 participant follow-up remain unfinished |
+| Overall state | Scoped PYB-006.2 / M-02 and app-only M-04 pass engineering review at frozen runtime `bef67bd`: 984 ordinary tests, 36 runtime-head CI checks, both-platform recovery/keyboard evidence and all ten declared app/profile rows. Device policy, owned fixtures and normal board advertising are restored; [PR #41](https://github.com/PyBLE-dev/PyBLE/pull/41) merged at `247e58a` after all 36 final-head checks passed. M-05 is partial: internal-account TestFlight delivery verified; external build 9 is submitted and Waiting for Review; Google Play remains pending. S2 participant follow-up remains unfinished |
 | S1 state | Unchanged: six Done, two Prepared, four Awaiting evidence; M-01/SG0 and pilot work remain unfinished |
 | Capacity/calendar | Original S2 allowance 24h and 12–25 October dates remain historical forecasts. The 45–72h estimate / 60h S2–S4 option is not measured effort or confirmed human capacity |
 | Method | Separate storage, coordinator and UI Git worktrees; root integrates board/session guards, regressions, release records and qualification attempts |
@@ -54,7 +54,7 @@ scope; no M-02/M-04 acceptance follows from packaging alone.
 |---|---|---|
 | iPad normal workflow | [iPad acceptance continuation](04_iPad_Acceptance.md) | Normal Preview passes offline Unicode Restore/current-board consent at `e54a78a`, generated-text handoff/recovery at `01a7ac8`, and Editor/native Blocks palette Hide→Show/dismissal at `bef67bd`; exact text and usable viewports are retained. All five iPad Q rows pass on their recorded candidates; exact firmware baselines and unchanged-behavior impact assessment remain explicit |
 | Android normal workflow | [Android acceptance continuation](05_Android_Acceptance.md) | Recorded P01–P15 scope and all five Q rows pass with explicit earlier-source/accessibility limits. Final `bef67bd` normal profile `945e9746…` passes Editor/native Blocks keyboard checks and generated-text/offline recovery after actual launcher start under temporary qualifier-only Unrestricted battery policy; original watchdogs and the policy condition remain recorded |
-| Production artifacts and channel packet | [Release readiness](06_Release_Readiness.md) | Current `bef67bd` signed Android/iOS artifacts pass packaging and repeated 16 KiB Android startup/storage checks. Earlier artifacts are historical; scoped engineering acceptance is recorded below, with device closeout complete. [PR #41](https://github.com/PyBLE-dev/PyBLE/pull/41) merged at `247e58a` after all 36 final-head checks passed. Apple accepted the `0.3.0 (9)` upload and started processing; actual channel delivery remains pending |
+| Production artifacts and channel packet | [Release readiness](06_Release_Readiness.md) | Current `bef67bd` signed Android/iOS artifacts pass packaging and repeated 16 KiB Android startup/storage checks. Earlier artifacts are historical; scoped engineering acceptance is recorded below, with device closeout complete. [PR #41](https://github.com/PyBLE-dev/PyBLE/pull/41) merged at `247e58a` after all 36 final-head checks passed. Apple upload accepted; later internal-account TestFlight `0.3.0 (9)` offer/Open, production About and bounded smoke verified. External build 9 is submitted and Waiting for Review; Google Play delivery remains pending |
 | Pilot and capacity | [Pilot kit](../c1-s1/02_Pilot_Protocol_and_Observation_Kit.md) and [continuation order](../04_Sprint_Plan.md#31-october-continuation-order-and-reforecast) | Human owner/cohort/setup/capacity and actual consented sessions remain pending |
 
 The subsequent guide correction is integrated at
@@ -210,7 +210,7 @@ source gates; physical observations remain bound to their recorded artifacts.
 | Full app regression and repository gates | At app source `90311f3`: 972 ordinary Flutter tests pass; analysis clean; 204 Dart files formatted; no-leak/SPDX/import/locale/DCO pass; 42 publication tests and Markdown links pass after documentation updates |
 | Android additional harness | Lenovo Android 12 separate-process seed/verify and production-entry offline UI checks pass in an isolated app; [scope/artifacts](02_Platform_Qualification.md) |
 | iPad additional harness | Signed profile build/install/launch succeed. Seed and verify assertion receipts pass across a killed process; closed database hash unchanged. Flutter debug path remains unavailable |
-| Candidate store state | Apple accepted the `0.3.0 (9)` upload on 31 October at `14:03:25 UTC` and started processing; see the [channel receipt](06_Release_Readiness.md#31-october-app-store-connect-upload-receipt). Processing completion, new TestFlight availability and an installed-channel upgrade remain unverified. No Google Play upload is established |
+| Candidate store state | Apple accepted the `0.3.0 (9)` upload on 31 October at `14:03:25 UTC` and started processing; see the [channel receipt](06_Release_Readiness.md#31-october-app-store-connect-upload-receipt). Later internal-account TestFlight offer/Open, production About and bounded smoke verify the existing updated installation; the exact update transaction was not observed. External build 9 is submitted and Waiting for Review; Google Play upload/delivery remain pending |
 | Firmware and Ready | No new firmware publication or complete five-profile qualification; no second-operator reproduction or PyBLE Ready award |
 
 ```mermaid
@@ -259,9 +259,11 @@ human sign-off or a Scrum ceremony.
   merged after all 36 final-head checks passed; those integration checks are
   separate from the 36 passing frozen-runtime checks.
 - **Next release stage — M-05:** verify Google Play access and the unused build
-  number before uploading its admitted artifact; follow the accepted Apple
-  upload through processing. Record actual channel availability and
-  store-delivered upgrade/launch evidence separately.
+  number before uploading its admitted artifact. Internal-account TestFlight
+  delivery is verified in the [delivery record](06_Release_Readiness.md#31-october-testflight-delivery-and-published-metadata);
+  external build 9 is assigned and submitted with status Waiting for Review.
+  Track Apple's decision and subsequent external availability separately.
+  The update transaction was not observed; no manual upgrade gesture is claimed.
   Prepared binaries, local Preview installs and passing engineering tests do not
   establish channel delivery.
 
