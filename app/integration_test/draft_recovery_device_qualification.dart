@@ -8,6 +8,7 @@
 library;
 
 import 'dart:io';
+import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
@@ -32,6 +33,10 @@ void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   testWidgets('platform durable recovery ($_phase)', (tester) async {
     final directory = await getApplicationSupportDirectory();
+    final resultFile = File(
+      '${directory.path}/qualification-$_phase-result.json',
+    );
+    if (await resultFile.exists()) await resultFile.delete();
     final file = File('${directory.path}/qualification-current-draft.sqlite');
     final repository = await DriftDraftRepository.open(file);
     try {
@@ -90,5 +95,16 @@ void main() {
     } finally {
       await repository.close();
     }
+    // A profile-mode app may have no attached stdout/test driver. Emit a
+    // bounded test-only receipt only after every assertion and store close.
+    await resultFile.writeAsString(
+      jsonEncode({
+        'phase': _phase,
+        'passed': true,
+        'platform': Platform.operatingSystem,
+        'completedAt': DateTime.now().toUtc().toIso8601String(),
+      }),
+      flush: true,
+    );
   });
 }
