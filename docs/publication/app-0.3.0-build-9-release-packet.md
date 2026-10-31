@@ -13,7 +13,7 @@ contract and rebuilt artifacts, not a renamed file.
 ## Google Play release notes
 
 ```text
-PyBLE can now keep one current Python draft locally and offer Restore or Discard after an app restart. Local recovery status is shown separately from saving to a board. Recovered text requires confirmation of the current destination before board Save, Run or Upload. Blocks workspaces and multi-file projects are not included in local draft recovery. A compatible MicroPython board with the PyBLE agent is still required for board workflows.
+PyBLE can keep one current Python draft locally and offer Restore or Discard after restart. Local recovery status is separate from board saving. Recovered text needs current-destination confirmation before board Save, Run or Upload. Landscape editing stays usable above the keyboard. Blocks workspaces and multi-file projects are not included in draft recovery. Board workflows require a compatible MicroPython board running the PyBLE agent.
 ```
 
 ## TestFlight — What to Test
