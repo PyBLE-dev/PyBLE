@@ -67,8 +67,8 @@ technology and P01–P15 coverage are still outstanding.
 | Release compile | `flutter build ios --release --no-codesign` succeeded in the isolated copied project |
 | Signed harness compile | `flutter build ios --debug --target integration_test/draft_recovery_device_qualification.dart --dart-define=PYBLE_RECOVERY_TEST_PHASE=seed` succeeded using an available development identity |
 | Installation | Direct `devicectl` installation of the signed isolated harness succeeded; the existing TestFlight application was preserved |
-| Launch | Both wireless and USB Flutter attempts reported that Developer Mode must be enabled; no successful harness or production-UI execution is claimed |
-| Next action | Owner enables Settings → Privacy & Security → Developer Mode, restarts/confirms if required, unlocks and reconnects; then execute seed → terminate → verify and P01–P15 as applicable |
+| Launch | Wireless and USB Flutter debug attempts reported that Developer Mode must be enabled; subsequent signed profile harness execution succeeded as recorded below |
+| Next action | Complete production UI/board P01–P15 as applicable. Profile seed → terminate → verify has passed using current settings; Developer Mode remains an optional prerequisite for the separate debug/JIT route |
 
 A signed build is build evidence. It does not establish successful installation,
 execution, offline restoration, TestFlight availability or physical BLE behavior.
@@ -106,10 +106,26 @@ Names are contextual labels, not new identity or authorization evidence.
 Source inspection found no four-result limit: the adapter filters by PBLE
 service UUID, the accumulator retains distinct OS device IDs and the list
 renders the complete hit count. Both ESP/Pico agents resume advertising after
-disconnection. An active connection elsewhere or absent firmware advertising
-can explain a missing board, but neither cause has yet been established for
-`8C9E`. USB enumeration of its CP2102 adapter alone does not prove agent health.
-No board was reset, flashed or sent a command during this diagnosis.
+disconnection. The live classic ESP32 was subsequently identified through its CP2102 ROM
+interface: ESP32-D0WD revision 1.0, base MAC ending `8C:9C` (Bluetooth suffix
+`8C9E`). A 115200-baud read of the first 256 KiB matches the retained c8f549ee
+0.6.1 install prefix at offset 0x1000. The initial 460800-baud attempt had a
+framing error; no flash write occurred. Exact complete-image equivalence is
+not inferred from a prefix.
+
+A 45-second controlled startup trace then captured:
+`PyBLE workspace recovery is required; reconnect by USB.`, followed by the
+MicroPython 1.28.0 / PyBLE 0.6.1 banner and REPL. This confirms the workspace
+mount/refusal path, which deliberately withholds BLE agent startup. It explains
+the absent fifth advertisement. Short early captures missed the later message;
+the guard scans the complete 2 MiB workspace before refusing it.
+
+Retained September qualification records for the same board contain an
+intentional invalid-media fixture and a failed acquisition before its planned
+recovery. Its fixture hash is preserved separately; this history alone does not
+prove current contents. The fresh complete current workspace backup exactly matched that refusal fixture. The verified original owner backup
+and its valid LFS2 workspace remain intact, with identical partition geometry.
+ROM reads and startup tracing involved controlled resets. The verified valid pre-test workspace was then restored only to its original region, and the next scan shows all five boards. See the [recovery report](03_Classic_ESP32_Workspace_Recovery.md) for backups, hashes, offline inventory and the verified write.
 
 ## Remaining release evidence
 
@@ -118,3 +134,39 @@ explicit harmless physical board Save/Run/Files destination consent, applicable
 Blocks handoff checks and the selected release matrix. Preserve candidate
 provenance and report every unrun row. Participant follow-up and the unfinished
 M-01/SG0 pilot work remain separate from engineering recovery evidence.
+
+## Lenovo production workflow on recovered classic ESP32
+
+The final production entry connected to `8C9E` and showed **Ready**, runtime
+`esp32` and agent **0.6.1**. The initial Editor was empty. A disposable
+`print(123)` draft was entered, explicitly checkpointed and shown **Saved
+locally**. The app was force-stopped and relaunched; startup preview offered the
+exact text before any connection. Explicit Restore displayed it while
+Disconnected. Only then was the classic board selected again.
+
+Board Save displayed the exact `/untitled.py` destination and explained that
+upload does not run code. Cancel dismissed that choice. A subsequent explicitly
+confirmed upload succeeded and cleared board-dirty state while local status
+remained separate. Run requested separate upload-and-run consent for the same
+current destination. On confirmation the board console returned `123` and
+**Finished**, and the connection returned Ready. Files refresh showed the
+10-byte test file. The transfer stayed on the selected physical board; this is
+an observed happy path, not a physical board-swap race test.
+
+Raw UI XML records under the ignored evidence directory include
+`lenovo-live-relaunch-prompt.xml`, `lenovo-live-restored-offline.xml`,
+`lenovo-real-save-consent.xml`, `lenovo-real-run-consent.xml` and
+`lenovo-print-run-result.xml`. The automated recording seams remain the evidence
+for exact zero-verb cancellation/race assertions; no radio packet capture was
+claimed for the physical cancellation.
+
+Afterward only the created 10-byte `/untitled.py` test file was explicitly
+deleted, with its exact-name confirmation. Existing directories were preserved.
+New then committed the empty local slot; the disposable Editor text was cleared
+and its saved-local status retained. A fresh launch after that tombstone showed no stale recovery prompt or test text, and the final disconnected scan again showed all five boards.
+
+The iPad's isolated harness was terminated and removed after its receipts,
+checkpoint files and signed archives were retained. The original TestFlight
+application remained installed and was brought forward without terminating it.
+The separate Lenovo production-entry candidate remains available for review;
+its test draft and board test file were cleared as described above.
