@@ -2048,6 +2048,19 @@ Tablet-first, responsive (CON-5, FR-UI-5). The shell is **connection-gated** ([A
   stays collapsed until actual view insets clear. This action does not clear
   a text client, replace the Blocks host, discard buffered output, or mutate
   the document/selection.
+- **iOS keyboard geometry (FR-UI-8).** Observe the current engine view's public
+  `UIKeyboardLayoutGuide` after the first Flutter frame and when the app resumes
+  or view metrics change. A noninteractive view constrained to the guide reports
+  docked keyboard/palette overlap; a hidden guide's safe-area-only overlap is
+  zero. Do not infer visibility from notification end frames: physical iPad
+  Hide → palette Show Keyboard can report an offscreen end frame while the
+  guide correctly intersects the view. The application-level MediaQuery uses
+  `max(Flutter bottom inset, guide overlap)` and recalculates bottom padding
+  from viewPadding. Observation belongs to the current engine/view, stops on
+  detach/background, rejects stale generations and invalid geometry, and never
+  recreates the editor or Blocks host. Regression tests cover zero/stale Flutter
+  insets, already-correct insets without double shrink, palette retention,
+  safe-area restoration, stale callbacks, resume and ordinary non-iOS layout.
 - **Portrait / stacked tablet** layout uses a bottom bar to swap the full-width
   Editor, Console, Files, and Blocks work surfaces (FR-UI-2,
   [PRD §19.2](../prd.md)); editor remains the default primary surface. Blocks is
