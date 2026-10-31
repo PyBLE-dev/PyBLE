@@ -2382,5 +2382,187 @@
   "githubImportNoAutomaticRun": "Downloaded files are not opened or run automatically.",
   "@githubImportNoAutomaticRun": {
     "description": "Safety note on review and terminal import states."
+  },
+  "recoveryTitle": "Recover your current text draft",
+  "@recoveryTitle": {
+    "description": "Bounded current-text recovery: recoveryTitle."
+  },
+  "recoveryRestoredTitle": "Your restored text draft",
+  "@recoveryRestoredTitle": {
+    "description": "Bounded current-text recovery: recoveryRestoredTitle."
+  },
+  "recoveryLocalOnly": "This copy stays on this device. Restoring does not connect, upload or run code. Choose and confirm a board target again before writing.",
+  "@recoveryLocalOnly": {
+    "description": "Bounded current-text recovery: recoveryLocalOnly."
+  },
+  "recoveryCheckpointTime": "Recovery checkpoint: {time}",
+  "@recoveryCheckpointTime": {
+    "description": "Bounded current-text recovery: recoveryCheckpointTime.",
+    "placeholders": {
+      "time": {
+        "type": "String",
+        "example": "Oct 31, 2026 12:00"
+      }
+    }
+  },
+  "recoveryScope": "One current text draft only. Blocks workspaces, other files and projects are not included. Pending edits may be lost if the app stops before saving locally.",
+  "@recoveryScope": {
+    "description": "Bounded current-text recovery: recoveryScope."
+  },
+  "recoveryRestore": "Restore",
+  "@recoveryRestore": {
+    "description": "Bounded current-text recovery: recoveryRestore."
+  },
+  "recoveryDiscard": "Discard recovery copy",
+  "@recoveryDiscard": {
+    "description": "Bounded current-text recovery: recoveryDiscard."
+  },
+  "recoveryCopy": "Copy text",
+  "@recoveryCopy": {
+    "description": "Bounded current-text recovery: recoveryCopy."
+  },
+  "recoveryCopied": "Text copied.",
+  "@recoveryCopied": {
+    "description": "Bounded current-text recovery: recoveryCopied."
+  },
+  "recoveryConnect": "Connect a board",
+  "@recoveryConnect": {
+    "description": "Bounded current-text recovery: recoveryConnect."
+  },
+  "recoveryDiscardTitle": "Discard this recovery copy?",
+  "@recoveryDiscardTitle": {
+    "description": "Bounded current-text recovery: recoveryDiscardTitle."
+  },
+  "recoveryDiscardDetail": "This deletes the single local recovery copy and starts an empty draft. It cannot be undone. No board file is changed.",
+  "@recoveryDiscardDetail": {
+    "description": "Bounded current-text recovery: recoveryDiscardDetail."
+  },
+  "recoveryBoardTargetTitle": "Confirm the current board target",
+  "@recoveryBoardTargetTitle": {
+    "description": "Bounded current-text recovery: recoveryBoardTargetTitle."
+  },
+  "recoveryBoardTargetRunDetail": "Upload this recovered text to {path} on the currently connected board, replacing any file there, then run it? The previous board path does not authorize this action.",
+  "@recoveryBoardTargetRunDetail": {
+    "description": "Bounded current-text recovery: recoveryBoardTargetRunDetail.",
+    "placeholders": {
+      "path": {
+        "type": "String",
+        "example": "/main.py"
+      }
+    }
+  },
+  "recoveryBoardTargetSaveDetail": "Upload this recovered text to {path} on the currently connected board, replacing any file there? This action does not run code. The previous board path does not authorize this action.",
+  "@recoveryBoardTargetSaveDetail": {
+    "description": "Bounded current-text recovery: recoveryBoardTargetSaveDetail.",
+    "placeholders": {
+      "path": {
+        "type": "String",
+        "example": "/main.py"
+      }
+    }
+  },
+  "recoveryBoardTargetRun": "Upload and run",
+  "@recoveryBoardTargetRun": {
+    "description": "Bounded current-text recovery: recoveryBoardTargetRun."
+  },
+  "recoveryBoardTargetSave": "Upload to board",
+  "@recoveryBoardTargetSave": {
+    "description": "Bounded current-text recovery: recoveryBoardTargetSave."
+  },
+  "recoveryReplaceTitle": "Replace the current draft?",
+  "@recoveryReplaceTitle": {
+    "description": "Bounded current-text recovery: recoveryReplaceTitle."
+  },
+  "recoveryReplaceDetail": "This replaces the current text and its single local recovery copy. There is no draft history. Copy any text you want to keep before continuing.",
+  "@recoveryReplaceDetail": {
+    "description": "Bounded current-text recovery: recoveryReplaceDetail."
+  },
+  "recoveryReplace": "Replace draft",
+  "@recoveryReplace": {
+    "description": "Bounded current-text recovery: recoveryReplace."
+  },
+  "recoveryLoading": "Opening local recovery storage…",
+  "@recoveryLoading": {
+    "description": "Bounded current-text recovery: recoveryLoading."
+  },
+  "recoveryTimeout": "Local recovery storage has not responded. Retry, or continue with a temporary draft. Your existing storage will be preserved.",
+  "@recoveryTimeout": {
+    "description": "Bounded current-text recovery: recoveryTimeout."
+  },
+  "recoveryUnavailable": "Local recovery is unavailable. Your existing storage has been preserved.",
+  "@recoveryUnavailable": {
+    "description": "Bounded current-text recovery: recoveryUnavailable."
+  },
+  "recoveryErrorStorage": "The recovery copy could not be read or written. Check device storage and try again.",
+  "@recoveryErrorStorage": {
+    "description": "Bounded current-text recovery: recoveryErrorStorage."
+  },
+  "recoveryErrorCorrupt": "The recovery storage is damaged or contains invalid text or metadata. It has been preserved.",
+  "@recoveryErrorCorrupt": {
+    "description": "Bounded current-text recovery: recoveryErrorCorrupt."
+  },
+  "recoveryErrorUnsupported": "This recovery copy needs a compatible app version. Its storage has been preserved.",
+  "@recoveryErrorUnsupported": {
+    "description": "Bounded current-text recovery: recoveryErrorUnsupported."
+  },
+  "recoveryErrorTooLarge": "This draft exceeds the 1 MiB recovery limit. Its current text is only in memory; the previous recovery copy is preserved.",
+  "@recoveryErrorTooLarge": {
+    "description": "Bounded current-text recovery: recoveryErrorTooLarge."
+  },
+  "recoveryErrorInvalid": "The current text or filename cannot be saved as a recovery copy. Its text remains in memory; the previous copy is preserved.",
+  "@recoveryErrorInvalid": {
+    "description": "Bounded current-text recovery: recoveryErrorInvalid."
+  },
+  "recoveryErrorConflict": "Recovery storage changed unexpectedly. Retry and review the available text before replacing it.",
+  "@recoveryErrorConflict": {
+    "description": "Bounded current-text recovery: recoveryErrorConflict."
+  },
+  "recoveryRetry": "Retry",
+  "@recoveryRetry": {
+    "description": "Bounded current-text recovery: recoveryRetry."
+  },
+  "recoveryContinue": "Continue without recovery",
+  "@recoveryContinue": {
+    "description": "Bounded current-text recovery: recoveryContinue."
+  },
+  "recoveryVolatile": "Recovery is off for this session. Current edits are only in memory. Existing recovery storage is preserved.",
+  "@recoveryVolatile": {
+    "description": "Bounded current-text recovery: recoveryVolatile."
+  },
+  "recoveryPending": "Recovery copy pending",
+  "@recoveryPending": {
+    "description": "Bounded current-text recovery: recoveryPending."
+  },
+  "recoverySaving": "Saving recovery copy…",
+  "@recoverySaving": {
+    "description": "Bounded current-text recovery: recoverySaving."
+  },
+  "recoverySaved": "Saved locally",
+  "@recoverySaved": {
+    "description": "Bounded current-text recovery: recoverySaved."
+  },
+  "recoverySave": "Save recovery copy",
+  "@recoverySave": {
+    "description": "Bounded current-text recovery: recoverySave."
+  },
+  "recoverySavedFeedback": "The requested text revision was saved locally.",
+  "@recoverySavedFeedback": {
+    "description": "Bounded current-text recovery: recoverySavedFeedback."
+  },
+  "recoverySaveFailed": "Recovery copy not saved. Your current text remains in memory.",
+  "@recoverySaveFailed": {
+    "description": "Bounded current-text recovery: recoverySaveFailed."
+  },
+  "recoveryOpen": "View local draft",
+  "@recoveryOpen": {
+    "description": "Bounded current-text recovery: recoveryOpen."
+  },
+  "recoveryNewFailed": "The new draft could not replace the recovery copy. Your current draft has been kept.",
+  "@recoveryNewFailed": {
+    "description": "Bounded current-text recovery: recoveryNewFailed."
+  },
+  "recoveryChanged": "The current draft changed. Review it and confirm again.",
+  "@recoveryChanged": {
+    "description": "Bounded current-text recovery: recoveryChanged."
   }
 }

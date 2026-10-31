@@ -2990,6 +2990,252 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Downloaded files are not opened or run automatically.'**
   String get githubImportNoAutomaticRun;
+
+  /// Bounded current-text recovery: recoveryTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Recover your current text draft'**
+  String get recoveryTitle;
+
+  /// Bounded current-text recovery: recoveryRestoredTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Your restored text draft'**
+  String get recoveryRestoredTitle;
+
+  /// Bounded current-text recovery: recoveryLocalOnly.
+  ///
+  /// In en, this message translates to:
+  /// **'This copy stays on this device. Restoring does not connect, upload or run code. Choose and confirm a board target again before writing.'**
+  String get recoveryLocalOnly;
+
+  /// Bounded current-text recovery: recoveryCheckpointTime.
+  ///
+  /// In en, this message translates to:
+  /// **'Recovery checkpoint: {time}'**
+  String recoveryCheckpointTime(String time);
+
+  /// Bounded current-text recovery: recoveryScope.
+  ///
+  /// In en, this message translates to:
+  /// **'One current text draft only. Blocks workspaces, other files and projects are not included. Pending edits may be lost if the app stops before saving locally.'**
+  String get recoveryScope;
+
+  /// Bounded current-text recovery: recoveryRestore.
+  ///
+  /// In en, this message translates to:
+  /// **'Restore'**
+  String get recoveryRestore;
+
+  /// Bounded current-text recovery: recoveryDiscard.
+  ///
+  /// In en, this message translates to:
+  /// **'Discard recovery copy'**
+  String get recoveryDiscard;
+
+  /// Bounded current-text recovery: recoveryCopy.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy text'**
+  String get recoveryCopy;
+
+  /// Bounded current-text recovery: recoveryCopied.
+  ///
+  /// In en, this message translates to:
+  /// **'Text copied.'**
+  String get recoveryCopied;
+
+  /// Bounded current-text recovery: recoveryConnect.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect a board'**
+  String get recoveryConnect;
+
+  /// Bounded current-text recovery: recoveryDiscardTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Discard this recovery copy?'**
+  String get recoveryDiscardTitle;
+
+  /// Bounded current-text recovery: recoveryDiscardDetail.
+  ///
+  /// In en, this message translates to:
+  /// **'This deletes the single local recovery copy and starts an empty draft. It cannot be undone. No board file is changed.'**
+  String get recoveryDiscardDetail;
+
+  /// Bounded current-text recovery: recoveryBoardTargetTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm the current board target'**
+  String get recoveryBoardTargetTitle;
+
+  /// Bounded current-text recovery: recoveryBoardTargetRunDetail.
+  ///
+  /// In en, this message translates to:
+  /// **'Upload this recovered text to {path} on the currently connected board, replacing any file there, then run it? The previous board path does not authorize this action.'**
+  String recoveryBoardTargetRunDetail(String path);
+
+  /// Bounded current-text recovery: recoveryBoardTargetSaveDetail.
+  ///
+  /// In en, this message translates to:
+  /// **'Upload this recovered text to {path} on the currently connected board, replacing any file there? This action does not run code. The previous board path does not authorize this action.'**
+  String recoveryBoardTargetSaveDetail(String path);
+
+  /// Bounded current-text recovery: recoveryBoardTargetRun.
+  ///
+  /// In en, this message translates to:
+  /// **'Upload and run'**
+  String get recoveryBoardTargetRun;
+
+  /// Bounded current-text recovery: recoveryBoardTargetSave.
+  ///
+  /// In en, this message translates to:
+  /// **'Upload to board'**
+  String get recoveryBoardTargetSave;
+
+  /// Bounded current-text recovery: recoveryReplaceTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Replace the current draft?'**
+  String get recoveryReplaceTitle;
+
+  /// Bounded current-text recovery: recoveryReplaceDetail.
+  ///
+  /// In en, this message translates to:
+  /// **'This replaces the current text and its single local recovery copy. There is no draft history. Copy any text you want to keep before continuing.'**
+  String get recoveryReplaceDetail;
+
+  /// Bounded current-text recovery: recoveryReplace.
+  ///
+  /// In en, this message translates to:
+  /// **'Replace draft'**
+  String get recoveryReplace;
+
+  /// Bounded current-text recovery: recoveryLoading.
+  ///
+  /// In en, this message translates to:
+  /// **'Opening local recovery storage…'**
+  String get recoveryLoading;
+
+  /// Bounded current-text recovery: recoveryTimeout.
+  ///
+  /// In en, this message translates to:
+  /// **'Local recovery storage has not responded. Retry, or continue with a temporary draft. Your existing storage will be preserved.'**
+  String get recoveryTimeout;
+
+  /// Bounded current-text recovery: recoveryUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Local recovery is unavailable. Your existing storage has been preserved.'**
+  String get recoveryUnavailable;
+
+  /// Bounded current-text recovery: recoveryErrorStorage.
+  ///
+  /// In en, this message translates to:
+  /// **'The recovery copy could not be read or written. Check device storage and try again.'**
+  String get recoveryErrorStorage;
+
+  /// Bounded current-text recovery: recoveryErrorCorrupt.
+  ///
+  /// In en, this message translates to:
+  /// **'The recovery storage is damaged or contains invalid text or metadata. It has been preserved.'**
+  String get recoveryErrorCorrupt;
+
+  /// Bounded current-text recovery: recoveryErrorUnsupported.
+  ///
+  /// In en, this message translates to:
+  /// **'This recovery copy needs a compatible app version. Its storage has been preserved.'**
+  String get recoveryErrorUnsupported;
+
+  /// Bounded current-text recovery: recoveryErrorTooLarge.
+  ///
+  /// In en, this message translates to:
+  /// **'This draft exceeds the 1 MiB recovery limit. Its current text is only in memory; the previous recovery copy is preserved.'**
+  String get recoveryErrorTooLarge;
+
+  /// Bounded current-text recovery: recoveryErrorInvalid.
+  ///
+  /// In en, this message translates to:
+  /// **'The current text or filename cannot be saved as a recovery copy. Its text remains in memory; the previous copy is preserved.'**
+  String get recoveryErrorInvalid;
+
+  /// Bounded current-text recovery: recoveryErrorConflict.
+  ///
+  /// In en, this message translates to:
+  /// **'Recovery storage changed unexpectedly. Retry and review the available text before replacing it.'**
+  String get recoveryErrorConflict;
+
+  /// Bounded current-text recovery: recoveryRetry.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry'**
+  String get recoveryRetry;
+
+  /// Bounded current-text recovery: recoveryContinue.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue without recovery'**
+  String get recoveryContinue;
+
+  /// Bounded current-text recovery: recoveryVolatile.
+  ///
+  /// In en, this message translates to:
+  /// **'Recovery is off for this session. Current edits are only in memory. Existing recovery storage is preserved.'**
+  String get recoveryVolatile;
+
+  /// Bounded current-text recovery: recoveryPending.
+  ///
+  /// In en, this message translates to:
+  /// **'Recovery copy pending'**
+  String get recoveryPending;
+
+  /// Bounded current-text recovery: recoverySaving.
+  ///
+  /// In en, this message translates to:
+  /// **'Saving recovery copy…'**
+  String get recoverySaving;
+
+  /// Bounded current-text recovery: recoverySaved.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved locally'**
+  String get recoverySaved;
+
+  /// Bounded current-text recovery: recoverySave.
+  ///
+  /// In en, this message translates to:
+  /// **'Save recovery copy'**
+  String get recoverySave;
+
+  /// Bounded current-text recovery: recoverySavedFeedback.
+  ///
+  /// In en, this message translates to:
+  /// **'The requested text revision was saved locally.'**
+  String get recoverySavedFeedback;
+
+  /// Bounded current-text recovery: recoverySaveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Recovery copy not saved. Your current text remains in memory.'**
+  String get recoverySaveFailed;
+
+  /// Bounded current-text recovery: recoveryOpen.
+  ///
+  /// In en, this message translates to:
+  /// **'View local draft'**
+  String get recoveryOpen;
+
+  /// Bounded current-text recovery: recoveryNewFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The new draft could not replace the recovery copy. Your current draft has been kept.'**
+  String get recoveryNewFailed;
+
+  /// Bounded current-text recovery: recoveryChanged.
+  ///
+  /// In en, this message translates to:
+  /// **'The current draft changed. Review it and confirm again.'**
+  String get recoveryChanged;
 }
 
 class _AppLocalizationsDelegate
