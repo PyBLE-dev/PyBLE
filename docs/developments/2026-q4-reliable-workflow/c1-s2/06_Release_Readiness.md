@@ -7,10 +7,10 @@
 |---|---|
 | Date | 31 October 2026, Asia/Bangkok |
 | Scope | App-only bounded current-text recovery; existing Play open-testing and TestFlight channels |
-| Runtime source | Recovery baseline plus landscape-keyboard repair at `e54a78acf32e7ea26166a60d66573fdf9e697ad4` |
-| Build checkout | Release worktree `e8aeddd8ddbda85293dcca72ad524823bd5ae66a`; app tree `d0f2a464e9886c8451a0cb046123973095f246c6`, verified identical to the runtime baseline |
-| State | Production Android and iOS rebuilt cleanly with the keyboard-layout repair; packaging and the bounded Android 16 KiB runtime smoke pass. Physical acceptance and final release admission remain outstanding |
-| Local evidence | Ignored `local/recovery-completion/release/candidate-e54a78a/`: build/check logs, source/artifact manifests, runtime evidence and retained signed binaries |
+| Runtime source | Recovery baseline plus landscape layout and native keyboard-dismissal repairs at `01a7ac8acab32e926c185c8567f9b8dca08d3d68` |
+| Build checkout | Release worktree `c98c0b4cc202c4c998ad84187a0c80bd59747f9d`; app tree `10336954910872172006300bdcc15d62231471e9`, verified identical to the runtime baseline |
+| State | Production Android and iOS rebuilt cleanly with both keyboard repairs; packaging and the bounded Android 16 KiB runtime smoke pass. Physical acceptance and final release admission remain outstanding |
+| Local evidence | Ignored `local/recovery-completion/release/candidate-01a7ac8/`: build/check logs, source/artifact manifests, runtime evidence and retained signed binaries |
 | Public copy | [Prepared release packet](../../../publication/app-0.3.0-build-9-release-packet.md); no submission or availability claim |
 
 ## Gate selection
@@ -25,7 +25,7 @@ claim a new firmware release, fresh firmware OI-1 qualification or a Ready badge
 | Gate | Required evidence | Current disposition |
 |---|---|---|
 | M-02 recovery acceptance | All DR-T01–14 required evidence, including representative physical generated-text recovery and both platform offline/current-board-consent records | Reconcile against the [execution record](00_Execution_Record.md) and actual device reports; installation/scan alone is insufficient |
-| App regression | Accepted source contract, red/green history, locked dependencies, ordinary tests, pinned goldens, platform builds and repository gates | PR #40/post-merge CI passed historically; the keyboard repair records 974 ordinary Flutter tests, 25 shell widget tests and clean analysis/source gates. Integrated-candidate CI and final physical acceptance remain separate |
+| App regression | Accepted source contract, red/green history, locked dependencies, ordinary tests, pinned goldens, platform builds and repository gates | PR #40/post-merge CI passed historically; the final keyboard repair records 978 ordinary Flutter tests, 28 shell widget tests, one platform-fallback test and clean analysis/source gates. Integrated-candidate CI and final physical acceptance remain separate |
 | Five-profile app compatibility | Q01–Q10 below with exact app/firmware identity, actual observations and retained failures | Final complete candidate-bound matrix not yet established |
 | Production packaging | Android upload signer/AAB/APK/native alignment; iOS distribution export/IPA validation; capability parity | Android and iOS checks below pass for the repaired source and exact retained artifacts |
 | Release review | Frozen artifact identity, resolved mandatory failures, supported scope, privacy/dependency review and recorded acceptance | Not yet admitted |
@@ -45,6 +45,15 @@ physical or packaging evidence.
 | Q05 | Q06 | `waveshare-esp32-s3-lcd-147b` | Common workflow plus affected recovery; keep its exact-board/image identity distinct from generic S3 |
 | Q07 | Q08 | `esp32-c3-4mb` | Common workflow plus affected recovery and real-UI tight-loop/print-flood Stop; see scope below |
 | Q09 | Q10 | `rpi-pico2-w` | Common workflow plus affected recovery on each physical platform; no new full GP2 qualification inferred |
+
+The selected unchanged firmware inputs are the published `c8f549ee` reference
+for classic ESP32 and the retained `96497b9` observer reference for generic S3,
+Waveshare S3, C3 and Pico 2 W. Current immutable image checks and exact hashes
+are recorded with the [execution evidence](00_Execution_Record.md). Runtime and
+build-driver source review found no differences between those references, but
+the artifact bytes differ. This is an app-only matrix on those named inputs;
+it must not be relabeled as five current published-image passes or a fresh
+firmware qualification. No firmware update is part of this release preparation.
 
 Each common row includes ordinary service-filtered discovery/HELLO, editing and
 saving a harmless file, Run/stdout/terminal state, Stop, exact file readback,
@@ -80,8 +89,8 @@ manager and never written into source or logs.
 
 | Artifact | SHA-256 | Bytes |
 |---|---|---:|
-| `PyBLE-0.3.0-build-9-production-release.aab` | `6fe609a2ebfb925bbffe2662d64a24b4b9bfdb8b5b39ee3fde6077f3cf8fba73` | 64,413,036 |
-| `PyBLE-0.3.0-build-9-production-release.apk` | `71b99f8312c298693e6a8ed1aaa9fc4dc960ac6371504fdfec81152873f67ef8` | 66,439,954 |
+| `PyBLE-0.3.0-build-9-production-release.aab` | `8bc29ec294a1369abf1adba644d7494ae97bf04a1198577c2f0b95c7cdbf5e6a` | 64,416,064 |
+| `PyBLE-0.3.0-build-9-production-release.apk` | `d0b8e1ec19919b707c0776cef9c377a3fe015442ead1c743e5b689c2522b6aff` | 66,439,954 |
 
 | Check | Actual result |
 |---|---|
@@ -97,9 +106,9 @@ manager and never written into source or logs.
 The 16 KiB runtime observation also force-stopped and relaunched the same
 installed package without data clearing. The normal disconnected screen
 returned without a fatal exception or native-library load error. The database
-created by the earlier `6f5b3ea` production candidate and its WAL reopened with
-`integrity_check=ok`
-and the expected `projects`, `project_files` and `settings` tables. This is a
+created by the earlier `6f5b3ea` production candidate, subsequently reused by
+`e54a78a`, and its WAL reopened with
+`integrity_check=ok` and the expected `projects`, `project_files` and `settings` tables. This is a
 native packaging/startup smoke, not a physical BLE row or the full recovery
 acceptance matrix. The SQLite database's own page size is independent of the
 operating-system memory page size. The emulator uses Google APIs 16 KiB arm64
@@ -116,10 +125,16 @@ A later incremental rebuild after the keyboard repair regenerated AOT inputs
 but reused stale Gradle merged/stripped native libraries. Comparing packaged
 `libapp.so` against current build inputs exposed the mismatch; those artifacts
 were rejected and retained under `rejected-stale-gradle-e54a78a/`. Running
-`flutter clean` and both canonical production commands rebuilt the current
-artifacts above. Their packaged AOT libraries match current stripped outputs
-on all three ABIs. The earlier `6f5b3ea` artifacts remain historical evidence
-under `artifacts-6f5b3ea/`; they are not the repaired release candidate.
+`flutter clean` and both canonical production commands resolved that mismatch.
+The final native-keyboard repair used another clean build; its packaged AOT
+libraries match current stripped outputs and the AAB on all three ABIs. The
+`6f5b3ea` artifacts under `artifacts-6f5b3ea/` and pre-native-fix `e54a78a`
+artifacts under `candidate-e54a78a/` remain historical evidence.
+
+The first final-candidate build encountered an OpenJDK 17 AArch64 JIT internal
+error in a long-lived Gradle daemon. Its failed log and crash receipt are kept
+under `failed-jvm-01a7ac8/`. A fresh-daemon clean retry built the recorded APK,
+AAB and IPA without a source change; all artifact checks were repeated.
 
 The APK uses the upload certificate, whereas Google Play can deliver its own
 app-signing certificate. Do not uninstall an existing user's Play app or clear
@@ -130,8 +145,8 @@ must use the actual delivered package.
 
 | Field / check | Actual result |
 |---|---|
-| IPA | `PyBLE-0.3.0-build-9-app-store.ipa`, 23,784,757 bytes |
-| SHA-256 | `14146b8951e4cd3298d27eb20e2036c80bbcd1b05bba42c98bf1abbd53b5eba6` |
+| IPA | `PyBLE-0.3.0-build-9-app-store.ipa`, 23,786,245 bytes |
+| SHA-256 | `4a9de1114a6f4618672d8027b7fe3b754a7412e124e1f36282a6920cda1d5390` |
 | Identity | `dev.pyble.pyble`, `0.3.0 (9)`, normal `lib/main.dart` |
 | Build / deployment floor | Xcode 27.2 / iOS SDK 27.2; app and compiled deployment floor at least iOS 15.0 |
 | Export | App Store Connect distribution export; automatic signing with build-number management disabled; export destination only, no upload |
@@ -159,12 +174,19 @@ The current isolated profile candidate subsequently reached the real Blocks
 workspace. These observations distinguish the retained debug failure from a
 completed profile-candidate failure; they do not identify the original cause
 or prove DR-T12 by themselves. The inline control exposed a possible callback
-ordering hazard, but neither exact-asset control reproduced it, so no runtime
-change or claimed fix followed. The physical report must separately record
+ordering hazard, but neither exact-asset control reproduced it, so no startup-protocol
+change or claimed startup fix followed. The physical report must separately record
 actual generated-text handoff, recovery and cold relaunch. Diagnostic fixture
 sources, APK hashes and callback logs remain under ignored
 `local/recovery-completion/{native-webview-smoke,flutter-webview-smoke,android}/`.
-The production artifacts above remain bound to `e54a78a`.
+A separate physical finding established that console Expand did not dismiss
+an Android keyboard owned by a native Blockly field. The final candidate adds
+a narrow current-window dismissal request on Android and iOS while retaining
+layout based on actual insets. The Android rerun observed IME visibility change
+from shown to hidden, an expanded console and retained field text. The iPad
+outcome remains part of its separate physical report. The production artifacts
+above include this repair and remain bound to `01a7ac8`; the diagnostic controls
+did not change the Blocks startup protocol.
 
 ## Distribution access and remaining account work
 
@@ -175,7 +197,8 @@ an authenticated store session, role, account version history or review status.
 
 No dedicated Play/App Store Connect connector or configured command-line store
 credential was found in the standard locations inspected. Account access and
-whether build 9 has already been consumed remain **unverified**. This is not a
+whether build 9 has already been consumed remain **unverified**. Read-only
+browser discovery did not establish an authenticated console session. This is not a
 claim that the owner has no access through the respective web consoles.
 
 After the candidate is admitted, the authorized distribution operator must
