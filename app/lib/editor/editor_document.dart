@@ -1,14 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Part of PyBLE (https://pyble.dev) — see /LICENSE.
 
-/// A-20 — the working-loop current document (ADR-0010, TDD §11.6a, specs.md
-/// FR-EDIT §4.6). A single, volatile in-memory buffer the editor edits,
-/// run-control runs, and the files explorer opens-into / uploads-from.
-///
-/// It survives navigation (a keep-alive `NotifierProvider`) but NOT a process
-/// restart: persistence to Drift is the A-24 hook, reached through
-/// [EditorDocumentController.openFromBoard] / [EditorDocumentController.markSaved]
-/// — a RECORDED deviation from FR-EDIT-7 (carried, not dropped).
+/// The working-loop current document. The recovery coordinator observes every
+/// mutation epoch and checkpoints the bounded current-text slot independently
+/// from board upload state (ADR-0048). Broader project persistence remains A-24.
 ///
 /// Binds to no transport type and imports no `lib/ble` (CON-8, D2): the document
 /// is a pure value; the seam verbs live in `run_controller.dart` /
@@ -79,6 +74,7 @@ class EditorDocumentController extends Notifier<EditorDocument> {
 
   /// Resets to a fresh, empty untitled buffer (dirty=false, boardPath=null).
   void newDocument() {
+    ref.read(editorRecoveredDraftProvider.notifier).state = false;
     state = const EditorDocument.untitled();
     _bumpEpoch();
   }
@@ -99,6 +95,7 @@ class EditorDocumentController extends Notifier<EditorDocument> {
   /// Adopts a file downloaded from the board: the display name becomes the leaf
   /// of [path], [boardPath] becomes [path], and the buffer is clean.
   void openFromBoard({required String path, required String content}) {
+    ref.read(editorRecoveredDraftProvider.notifier).state = false;
     state = EditorDocument(
       name: _leaf(path),
       content: content,
@@ -115,6 +112,7 @@ class EditorDocumentController extends Notifier<EditorDocument> {
   /// not a board path, and [boardPath] stays null until the normal editor Save
   /// succeeds.
   void openGenerated({required String name, required String content}) {
+    ref.read(editorRecoveredDraftProvider.notifier).state = false;
     state = EditorDocument(
       name: _leaf(name),
       content: content,
@@ -133,6 +131,20 @@ class EditorDocumentController extends Notifier<EditorDocument> {
       dirty: false,
       boardPath: boardPath ?? state.boardPath,
     );
+    _bumpEpoch();
+  }
+
+  /// Coordinator-only adoption after a guarded, confirmed replacement.
+  void adoptDocument(EditorDocument document) {
+    ref.read(editorRecoveredDraftProvider.notifier).state = false;
+    state = document;
+    _bumpEpoch();
+  }
+
+  /// Restore exact local text without importing historical board authority.
+  void restoreDraft({required String name, required String content}) {
+    ref.read(editorRecoveredDraftProvider.notifier).state = true;
+    state = EditorDocument(name: name, content: content, dirty: true);
     _bumpEpoch();
   }
 
@@ -173,4 +185,11 @@ editorDocumentProvider =
 /// happen to match again.
 final StateProvider<int> editorDocumentEpochProvider = StateProvider<int>(
   (Ref ref) => 0,
+);
+
+/// A recovered document always needs explicit current-session target consent.
+/// This marker survives text edits and successful uploads; session/path grants
+/// are owned by the board-action seam and are never persisted.
+final StateProvider<bool> editorRecoveredDraftProvider = StateProvider<bool>(
+  (Ref ref) => false,
 );
