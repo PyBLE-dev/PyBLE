@@ -168,7 +168,11 @@ class _DisconnectedShellState extends ConsumerState<_DisconnectedShell> {
     final bool recovered = ref.watch(editorRecoveredDraftProvider);
     final EditorDocument document = ref.watch(editorDocumentProvider);
     final bool previewAvailable =
-        recovery.enabled && (recovered || document.content.isNotEmpty);
+        recovery.enabled &&
+        (recovered ||
+            document.content.isNotEmpty ||
+            document.name != kDefaultDocumentName ||
+            document.boardPath != null);
     final AppLocalizations l10n = AppLocalizations.of(context);
     return Scaffold(
       body: SafeArea(

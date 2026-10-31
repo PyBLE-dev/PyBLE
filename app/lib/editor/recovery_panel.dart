@@ -19,6 +19,7 @@ const Key kRecoveryCopyKey = ValueKey<String>('recoveryCopy');
 const Key kRecoveryRetryKey = ValueKey<String>('recoveryRetry');
 const Key kRecoveryContinueKey = ValueKey<String>('recoveryContinue');
 const Key kRecoverySaveKey = ValueKey<String>('recoverySave');
+const Key kRecoveryKeepCurrentKey = ValueKey<String>('recoveryKeepCurrent');
 
 /// A scrollable, selectable source preview. Merely mounting or dismissing it
 /// never restores, discards, copies, connects to a board, or runs code.
@@ -35,6 +36,8 @@ class RecoveryPanel extends StatelessWidget {
     this.failure,
     this.onContinue,
     this.currentContent,
+    this.currentName,
+    this.onKeepCurrent,
   });
 
   final String name;
@@ -47,6 +50,8 @@ class RecoveryPanel extends StatelessWidget {
   final String? failure;
   final VoidCallback? onContinue;
   final String? currentContent;
+  final String? currentName;
+  final VoidCallback? onKeepCurrent;
 
   @override
   Widget build(BuildContext context) {
@@ -79,6 +84,7 @@ class RecoveryPanel extends StatelessWidget {
                 l10n.recoveryCurrentText,
                 style: theme.textTheme.titleMedium,
               ),
+              if (currentName != null) SelectableText(currentName!),
               Container(
                 constraints: const BoxConstraints(maxHeight: 160),
                 padding: const EdgeInsets.all(12),
@@ -177,6 +183,12 @@ class RecoveryPanel extends StatelessWidget {
                             }
                           },
                     child: Text(l10n.recoveryDiscard),
+                  ),
+                if (onKeepCurrent != null)
+                  OutlinedButton(
+                    key: kRecoveryKeepCurrentKey,
+                    onPressed: busy ? null : onKeepCurrent,
+                    child: Text(l10n.recoveryKeepCurrent),
                   ),
                 if (onContinue != null)
                   FilledButton(

@@ -66,13 +66,19 @@ class _RecoveryGateState extends ConsumerState<RecoveryGate>
     if (recovery.blocksStartup) {
       final DraftSnapshot? candidate = recovery.candidate;
       final EditorDocument current = ref.watch(editorDocumentProvider);
+      final bool currentMeaningful =
+          current.content.isNotEmpty ||
+          current.name != kDefaultDocumentName ||
+          current.boardPath != null;
       if (candidate != null && recovery.status != DraftRecoveryStatus.loading) {
         return Scaffold(
           body: PopScope(
             canPop: false,
             child: RecoveryPanel(
-              currentContent: current.content.isNotEmpty
-                  ? current.content
+              currentContent: currentMeaningful ? current.content : null,
+              currentName: currentMeaningful ? current.name : null,
+              onKeepCurrent: currentMeaningful
+                  ? controller.continueWithoutRecovery
                   : null,
               name: candidate.name,
               content: candidate.content,
@@ -163,11 +169,29 @@ class _RecoveryGateState extends ConsumerState<RecoveryGate>
                   runSpacing: 4,
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: <Widget>[
-                    Text(l10n.recoveryVolatile),
+                    Text(l10n.recoveryVolatileShort),
                     TextButton(
                       key: kRecoveryRetryKey,
                       onPressed: () => controller.retry(),
                       child: Text(l10n.recoveryRetry),
+                    ),
+                    IconButton(
+                      tooltip: l10n.recoveryVolatile,
+                      icon: const Icon(Icons.info_outline),
+                      onPressed: () => showDialog<void>(
+                        context: context,
+                        builder: (BuildContext context) => AlertDialog(
+                          scrollable: true,
+                          title: Text(l10n.recoveryTitle),
+                          content: Text(l10n.recoveryVolatile),
+                          actions: <Widget>[
+                            TextButton(
+                              onPressed: () => Navigator.of(context).pop(),
+                              child: Text(l10n.recoveryClose),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   ],
                 ),
@@ -195,7 +219,7 @@ class RecoveryStatusBar extends ConsumerWidget {
       DraftRecoveryStatus.saved => l10n.recoverySaved,
       DraftRecoveryStatus.saving => l10n.recoverySaving,
       DraftRecoveryStatus.pending => l10n.recoveryPending,
-      DraftRecoveryStatus.volatile => l10n.recoveryVolatile,
+      DraftRecoveryStatus.volatile => l10n.recoveryVolatileShort,
       DraftRecoveryStatus.loading => l10n.recoveryLoading,
       DraftRecoveryStatus.decision => l10n.recoveryTitle,
       DraftRecoveryStatus.failed =>
@@ -216,31 +240,49 @@ class RecoveryStatusBar extends ConsumerWidget {
           spacing: 12,
           crossAxisAlignment: WrapCrossAlignment.center,
           children: <Widget>[
-            Semantics(liveRegion: true, child: Text(label)),
-            TextButton.icon(
-              key: kRecoverySaveKey,
-              onPressed: canSave
-                  ? () async {
-                      final ScaffoldMessengerState messenger =
-                          ScaffoldMessenger.of(context);
-                      final bool saved = await ref
-                          .read(draftRecoveryProvider.notifier)
-                          .saveRecoveryCopy();
-                      if (!messenger.mounted) return;
-                      messenger.showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            saved
-                                ? l10n.recoverySavedFeedback
-                                : l10n.recoverySaveFailed,
+            if (recovery.status != DraftRecoveryStatus.volatile)
+              Semantics(liveRegion: true, child: Text(label)),
+            if (recovery.status == DraftRecoveryStatus.failed) ...<Widget>[
+              TextButton(
+                key: kRecoveryRetryKey,
+                onPressed: () =>
+                    ref.read(draftRecoveryProvider.notifier).retry(),
+                child: Text(l10n.recoveryRetry),
+              ),
+              TextButton(
+                key: kRecoveryContinueKey,
+                onPressed: () => ref
+                    .read(draftRecoveryProvider.notifier)
+                    .continueWithoutRecovery(),
+                child: Text(l10n.recoveryContinue),
+              ),
+            ],
+            if (recovery.status != DraftRecoveryStatus.volatile &&
+                recovery.status != DraftRecoveryStatus.failed)
+              TextButton.icon(
+                key: kRecoverySaveKey,
+                onPressed: canSave
+                    ? () async {
+                        final ScaffoldMessengerState messenger =
+                            ScaffoldMessenger.of(context);
+                        final bool saved = await ref
+                            .read(draftRecoveryProvider.notifier)
+                            .saveRecoveryCopy();
+                        if (!messenger.mounted) return;
+                        messenger.showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              saved
+                                  ? l10n.recoverySavedFeedback
+                                  : l10n.recoverySaveFailed,
+                            ),
                           ),
-                        ),
-                      );
-                    }
-                  : null,
-              icon: const Icon(Icons.save_alt),
-              label: Text(l10n.recoverySave),
-            ),
+                        );
+                      }
+                    : null,
+                icon: const Icon(Icons.save_alt),
+                label: Text(l10n.recoverySave),
+              ),
             TextButton(
               onPressed: () => showModalBottomSheet<void>(
                 context: context,

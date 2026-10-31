@@ -121,7 +121,7 @@ void main() {
       await tester.tap(find.byKey(kRecoveryContinueKey));
       await tester.pump();
       expect(find.text('connection workflow mounted'), findsOneWidget);
-      expect(find.textContaining('Recovery is off'), findsOneWidget);
+      expect(find.textContaining('Recovery off:'), findsOneWidget);
       containerOf(
         tester,
       ).read(editorDocumentProvider.notifier).setContent('live text');
@@ -157,6 +157,17 @@ void main() {
       expect(
         containerOf(tester).read(editorDocumentProvider).content,
         'live text',
+      );
+      await tester.tap(find.byKey(kRecoveryKeepCurrentKey));
+      await tester.pump();
+      expect(
+        containerOf(tester).read(editorDocumentProvider).content,
+        'live text',
+      );
+      expect(store.slot.snapshot!.content, 'prior text');
+      expect(
+        containerOf(tester).read(draftRecoveryProvider).status,
+        DraftRecoveryStatus.volatile,
       );
     },
   );
@@ -228,7 +239,12 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Replace draft'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Continue without recovery'));
+      await tester.tap(
+        find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.text('Continue without recovery'),
+        ),
+      );
       await tester.pumpAndSettle();
       expect(containerOf(tester).read(editorDocumentProvider).content, isEmpty);
       expect(store.slot.snapshot!.content, 'prior text');
@@ -308,6 +324,16 @@ void main() {
       expect(find.text('Your current text draft'), findsOneWidget);
       expect(find.byType(ConnectScreen), findsNothing);
       expect(scanner.scanStartCount, 0);
+      final Future<bool> answer = confirmRecoveryBoardTarget(
+        appNavigatorKey.currentContext!,
+        path: '/main.py',
+        run: true,
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsOneWidget);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(await answer, isFalse);
       expect(tester.takeException(), isNull);
     },
   );
@@ -439,7 +465,41 @@ void main() {
       ).read(draftRecoveryProvider.notifier).continueWithoutRecovery();
       await tester.pump();
       expect(tester.takeException(), isNull);
-      expect(tester.getSize(find.byType(EditableText)).height, greaterThan(80));
+      expect(
+        tester
+            .getSize(find.byKey(const ValueKey<String>('editorRichSurface')))
+            .height,
+        greaterThan(80),
+      );
+    },
+  );
+  testWidgets(
+    'retry can keep an empty named live draft without deleting stored text',
+    (WidgetTester tester) async {
+      final _Store store = _Store()..delayed = Completer<DraftRead>();
+      await _pump(tester, store);
+      await tester.pump(const Duration(seconds: 10));
+      await tester.tap(find.byKey(kRecoveryContinueKey));
+      await tester.pump();
+      containerOf(tester)
+          .read(editorDocumentProvider.notifier)
+          .openGenerated(name: 'empty.py', content: '');
+      store.delayed!.complete(store.slot);
+      await tester.pump();
+      store.delayed = null;
+      await tester.tap(find.byKey(kRecoveryRetryKey));
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('empty.py'), findsOneWidget);
+      expect(find.text('prior text'), findsOneWidget);
+      await tester.tap(find.byKey(kRecoveryKeepCurrentKey));
+      await tester.pump();
+      final EditorDocument document = containerOf(
+        tester,
+      ).read(editorDocumentProvider);
+      expect(document.name, 'empty.py');
+      expect(document.content, isEmpty);
+      expect(store.slot.snapshot!.content, 'prior text');
     },
   );
 }

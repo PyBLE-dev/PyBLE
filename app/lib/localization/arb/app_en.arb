@@ -2577,5 +2577,11 @@
   "@runSourceSessionChanged": {
     "description": "Truthful partial result when a board attachment changes after PUT but before Run.",
     "placeholders": {"path": {"type": "String", "example": "/main.py"}}
-  }
+  },
+  "recoveryVolatileShort": "Recovery off: edits stay in memory.",
+  "@recoveryVolatileShort": {"description": "Concise persistent volatile warning for compact layouts."},
+  "recoveryClose": "Close",
+  "@recoveryClose": {"description": "Closes local recovery details without changing storage or text."},
+  "recoveryKeepCurrent": "Keep current text without recovery",
+  "@recoveryKeepCurrent": {"description": "Keeps the current volatile text and existing stored copy after retry, with no replacement."}
 }

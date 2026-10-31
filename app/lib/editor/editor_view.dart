@@ -348,7 +348,13 @@ class _EditorHeader extends ConsumerWidget {
     }
     final bool replaced = await ref
         .read(draftRecoveryProvider.notifier)
-        .replaceDocument(const EditorDocument.untitled(), expectedEpoch: epoch);
+        .replaceDocument(
+          const EditorDocument.untitled(),
+          expectedEpoch: epoch,
+          allowVolatile:
+              ref.read(draftRecoveryProvider).status ==
+              DraftRecoveryStatus.volatile,
+        );
     if (!replaced && context.mounted) {
       if (ref.read(editorDocumentEpochProvider) != epoch) {
         ScaffoldMessenger.of(
