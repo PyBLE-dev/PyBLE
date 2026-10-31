@@ -44,6 +44,12 @@ Toolchain pin: **Flutter 3.44.1 (stable)** / Dart SDK `^3.12.1` (see
 | `http` | runtime | `^1.6.0` | 1.6.0 | BSD-3-Clause | The bounded public GitHub REST client for the connected A-33 subset ([ADR-0040](../docs/decisions/0040-sha-pinned-connected-github-import.md)). The direct dependency is confined to `lib/github_import/`'s production composition point and `GithubRepositoryClient`; all feature consumers bind to the neutral `GithubApi` seam. The adapter accepts only canonical public repository input, sends no credential or user source, permits requests only to exact HTTPS host `api.github.com`, disables redirects, pins every browse to a full commit SHA, and bounds time and response bodies. Min 1.6.0 supplies the abortable request surface used by the cancellation contract on the pinned Dart/Flutter toolchain. |
 | `highlight` | runtime | `^0.7.0` | 0.7.0 | MIT | Python grammar data consumed directly by `lib/editor`'s rich adapter (A-20). It also appears in `flutter_code_editor`'s closure, but PyBLE's direct import makes the dependency and compatible minimum explicit under BLD-2. |
 | `webview_flutter` | runtime | `^4.14.1` | 4.14.1 | BSD-3-Clause | The offline platform-WebView host for the pinned Blockly runtime (A-31, ADR-0013). Min 4.14.1 is compatible with PyBLE's Android 24 / iOS 15 platform floors and supplies `loadFlutterAsset`, JavaScript channels, and navigation delegates. Its sole importer is `lib/blocks/`; generated source and board actions stay in Dart behind the neutral `Connection` seam. |
+| `drift` | runtime | `^2.35.3` | 2.35.3 | MIT | ADR-0048 bounded current-text recovery. Typed atomic SQLite transactions and owned background native executor; no second persistence backend. |
+| `sqlite3` | runtime | `3.5.0` (exact) | 3.5.0 | MIT | Native SQLite bindings/build hooks used by Drift; exact compatibility ceiling for Flutter 3.44.1's pinned `meta` 1.18.0. Later sqlite3 releases require newer hooks/meta; no dependency override is used. SQLite itself is public domain; default upstream SQLite build, no sqlite3mc/encryption fork. |
+| `crypto` | runtime | `^3.0.8` | 3.0.8 | BSD-3-Clause | Exact UTF-8 SHA-256 identity checks for local recovery; accidental corruption detection, never board authority or authenticity. Promoted from transitive to explicit direct dependency. |
+| `path_provider` | runtime | `^2.1.6` | 2.1.6 | BSD-3-Clause | Resolves the app-private persistent Application Support directory for the single Drift store. No temp/cache/external storage, source upload or remote sync. |
+| `drift_dev` | dev | `^2.35.2` | 2.35.2 | MIT | Typed table generation and initial v1 schema export; build-time only. |
+| `build_runner` | dev | `^2.15.1` | 2.15.1 | BSD-3-Clause | Reproducible Drift source generation. Resolved with the pinned SDK/meta without overrides; build-time only. |
 | `flutter_test` | dev (SDK) | Flutter SDK | 3.44.1 | BSD-3-Clause | Widget/unit/golden test harness; the substrate for the G1 suites (NFR-MAINT-4). |
 | `integration_test` | dev (SDK) | Flutter SDK | 3.44.1 | BSD-3-Clause | On-device Android/iPadOS parity coverage for the real Blockly platform WebView, local asset load, JavaScript bridge, generated Python, and file-backed actions (A-31). Ships with the Flutter SDK and is never part of a release build. |
 | `flutter_lints` | dev | `^6.0.0` | 6.0.0 | BSD-3-Clause | Recommended Flutter lint set, activated via `analysis_options.yaml`; the static-analysis floor for the app CI gate. Toolchain-default major for Flutter 3.44.1. |
@@ -68,7 +74,6 @@ below the table.
 | `charcode` | 1.4.0 | BSD-3-Clause |
 | `clock` | 1.1.2 | Apache-2.0 |
 | `collection` | 1.19.1 | BSD-3-Clause |
-| `crypto` | 3.0.7 | BSD-3-Clause |
 | `dbus` `‡` | 0.7.14 | MPL-2.0 |
 | `equatable` | 2.1.0 | MIT |
 | `fake_async` | 1.3.3 | Apache-2.0 |
@@ -132,6 +137,64 @@ below the table.
 | `webdriver` | 3.1.0 | Apache-2.0 |
 | `win32` | 6.3.0 | BSD-3-Clause |
 | `xml` | 6.6.1 | MIT |
+
+### Recovery dependency additions (PYB-006.2)
+
+These additional locked transitive packages were checked against the exact package
+`LICENSE` files on 31 October 2026. Build generators, analyzer and their helper
+packages are development inputs; platform adapters compile only for their target.
+The original transitive table plus this table covers the resolved graph.
+
+| Package | Resolved | SPDX |
+|---|---|---|
+| `_fe_analyzer_shared` | 100.0.0 | BSD-3-Clause |
+| `analyzer` | 13.0.0 | BSD-3-Clause |
+| `build` | 4.0.7 | BSD-3-Clause |
+| `build_config` | 1.3.3 | BSD-3-Clause |
+| `build_daemon` | 4.1.7 | BSD-3-Clause |
+| `built_collection` | 5.1.2 | BSD-3-Clause |
+| `built_value` | 8.13.0 | BSD-3-Clause |
+| `checked_yaml` | 2.0.4 | BSD-3-Clause |
+| `cli_util` | 0.6.0 | BSD-3-Clause |
+| `code_assets` | 1.2.1 | BSD-3-Clause |
+| `convert` | 3.1.2 | BSD-3-Clause |
+| `dart_style` | 3.1.9 | BSD-3-Clause |
+| `fixnum` | 1.1.1 | BSD-3-Clause |
+| `glob` | 2.2.0 | BSD-3-Clause |
+| `graphs` | 2.3.2 | BSD-3-Clause |
+| `hooks` | 2.0.2 | BSD-3-Clause |
+| `http_multi_server` | 3.2.3 | BSD-3-Clause |
+| `io` | 1.1.0 | BSD-3-Clause |
+| `jni` | 1.1.1 | BSD-3-Clause |
+| `jni_flutter` | 1.0.4+1 | BSD-3-Clause |
+| `jni_util` | 1.0.0 | BSD-3-Clause |
+| `json_annotation` | 4.12.0 | BSD-3-Clause |
+| `logging` | 1.3.0 | BSD-3-Clause |
+| `mime` | 2.1.0 | BSD-3-Clause |
+| `native_toolchain_c` | 0.19.2 | BSD-3-Clause |
+| `objective_c` | 9.5.0 | BSD-3-Clause |
+| `package_config` | 2.2.0 | BSD-3-Clause |
+| `path_provider_android` | 2.3.1 | BSD-3-Clause |
+| `path_provider_foundation` | 2.6.0 | BSD-3-Clause |
+| `path_provider_linux` | 2.2.2 | BSD-3-Clause |
+| `path_provider_platform_interface` | 2.1.3 | BSD-3-Clause |
+| `path_provider_windows` | 2.3.0 | BSD-3-Clause |
+| `pool` | 1.5.3 | BSD-3-Clause |
+| `pub_semver` | 2.2.1 | BSD-3-Clause |
+| `pubspec_parse` | 1.7.0 | BSD-3-Clause |
+| `recase` | 4.1.0 | BSD-2-Clause |
+| `record_use` | 0.6.0 | BSD-3-Clause |
+| `shelf` | 1.4.3 | BSD-3-Clause |
+| `shelf_web_socket` | 3.0.0 | BSD-3-Clause |
+| `source_gen` | 4.2.4 | BSD-3-Clause |
+| `sqlparser` | 0.45.1 | MIT |
+| `stream_transform` | 2.1.2 | BSD-3-Clause |
+| `watcher` | 1.2.1 | BSD-3-Clause |
+| `web_socket` | 1.0.1 | BSD-3-Clause |
+| `web_socket_channel` | 3.0.3 | BSD-3-Clause |
+| `xdg_directories` | 1.1.0 | BSD-3-Clause |
+| `yaml` | 3.1.4 | MIT |
+| `yaml_edit` | 2.2.4 | BSD-3-Clause |
 
 ### `†` Owner-ratified shipped carve-out — `autotrie` 2.0.0 (MPL-2.0)
 
@@ -205,6 +268,22 @@ rationale when added:
 
 | Package | Sprint / story | Purpose |
 |---|---|---|
-| `drift`, `sqlite3` | S5 / A-24 | Local persistence. |
 | `fl_chart` | later | Plotting surface. |
 | `go_router` | — | Not planned for S1; navigation is index-based via a Riverpod `StateProvider` + `IndexedStack`. |
+
+## Recovery build and notice reproduction
+
+- Run `dart run build_runner build` from `app/`, then
+  `dart run drift_dev schema dump lib/data/draft_database.dart drift_schemas/`.
+  The first generated database source and schema are reviewed and committed;
+  `build.yaml` preserves the authored-source SPDX preamble on regeneration.
+- Pub-package license texts remain in Flutter's mechanically generated
+  `NOTICES.Z` and in-app LicenseRegistry. The SQLite native amalgamation's
+  public-domain provenance is separately bundled in
+  `assets/licenses/SQLite-PUBLIC-DOMAIN.txt`; PyBLE adds no custom SQLite code.
+- The default `sqlite3` build hook obtains its upstream binaries from the
+  package's release assets, with the package-pinned SHA-256 checks. No binaries,
+  compiler outputs or native signing inputs are committed here.
+- The database is `pyble.sqlite` in Application Support. Its `-wal`/`-shm`
+  companions belong to the same store. Device/OS backup behavior is external
+  to PyBLE's local checkpoint promise; no backup/sync feature is added.

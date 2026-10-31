@@ -28,4 +28,10 @@ void registerBundledLicenses() {
     );
     yield LicenseEntryWithLineBreaks(<String>['Blockly'], text);
   });
+  LicenseRegistry.addLicense(() async* {
+    final String text = await rootBundle.loadString(
+      'assets/licenses/SQLite-PUBLIC-DOMAIN.txt',
+    );
+    yield LicenseEntryWithLineBreaks(<String>['SQLite'], text);
+  });
 }

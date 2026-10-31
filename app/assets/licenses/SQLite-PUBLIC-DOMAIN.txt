@@ -1,0 +1,11 @@
+SQLite native database engine
+
+SQLite is public-domain software, as documented by the SQLite project:
+https://www.sqlite.org/copyright.html
+
+PyBLE uses the default SQLite engine supplied by the unmodified sqlite3 Dart
+package's build hook. The Dart bindings are separately MIT licensed; their
+license is included in Flutter's generated package notices. PyBLE does not
+ship the optional sqlite3mc engine.
+
+Package provenance and locked versions: app/DEPENDENCIES.md and pubspec.lock.
