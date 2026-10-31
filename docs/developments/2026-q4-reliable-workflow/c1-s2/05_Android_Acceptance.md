@@ -15,7 +15,7 @@
 | Final native DEX SHA-256 | `1b62aceb530a2d361980b18d009188994cf7c92118d22842af3a6293757b61bb` |
 | Original debug APK | Source equivalent to `6f5b3ea`; SHA-256 `957982f5acec969f8003d04b2d6444eecbba9af26b7392d760badb5be5d6bd0e`; original failures retained |
 | Earlier profile APK | Runtime equivalent to `e54a78a`; SHA-256 `5b93b0c68bfc7bfa06a3a887ab70192a4d47c4786cf82e5428005ef94b199861` |
-| Governing evidence | [Recovery contract](../../../specifications/App/current-draft-recovery.md#7-required-evidence-before-acceptance), [operator recipe](01_Operator_Recipe.md), [execution record](00_Execution_Record.md), [release matrix](../c1-s1/04_Release_Qualification_Matrix.md) |
+| Governing evidence | [Recovery contract](../../../specifications/App/current-draft-recovery.md#7-required-evidence-before-acceptance), [operator recipe](01_Operator_Recipe.md), [execution record](00_Execution_Record.md), [validation inventory](../c1-s1/04_Validation_Inventory_and_Operator_Recipe.md) |
 | Private evidence | Ignored `local/recovery-completion/android/`: exact artifact/source manifests, native assertions, fresh UI XML/screenshots, logs, initial isolated-data backup and installed-artifact hash |
 
 Both profile candidates were built from the normal application entry point.
