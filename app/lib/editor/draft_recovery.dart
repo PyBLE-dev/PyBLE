@@ -335,6 +335,7 @@ class DraftRecoveryController extends Notifier<DraftRecoveryState> {
           failure: _failure(error),
         );
       }
+      _stopOnUnsafeFailure(error);
       return false;
     } finally {
       _replacement = false;
@@ -461,6 +462,7 @@ class DraftRecoveryController extends Notifier<DraftRecoveryState> {
               hasResolvedStartup: true,
             );
           }
+          _stopOnUnsafeFailure(error);
           checkpoint.completion.complete(false);
         }
       }
@@ -541,6 +543,7 @@ class DraftRecoveryController extends Notifier<DraftRecoveryState> {
           hasResolvedStartup: true,
         );
       }
+      _stopOnUnsafeFailure(error);
       return false;
     } finally {
       _replacement = false;
@@ -574,6 +577,19 @@ class DraftRecoveryController extends Notifier<DraftRecoveryState> {
     _maximum?.cancel();
     _idle = null;
     _maximum = null;
+  }
+
+  void _stopOnUnsafeFailure(Object error) {
+    final reason = _failure(error);
+    if (reason == DraftStorageFailure.conflict ||
+        reason == DraftStorageFailure.corrupt ||
+        reason == DraftStorageFailure.unsupportedVersion) {
+      // The high-water mark/content can no longer be trusted. Retry must read
+      // and offer an explicit choice rather than reusing a stale generation.
+      _writable = false;
+      _cancelTimers();
+      _cancelQueued();
+    }
   }
 
   DraftStorageFailure _failure(Object error) => error is DraftStorageException
