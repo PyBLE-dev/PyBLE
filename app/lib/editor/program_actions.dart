@@ -32,6 +32,13 @@ class ProgramBundlePathTooLong implements Exception {
   String toString() => 'ProgramBundlePathTooLong($path)';
 }
 
+/// The text upload may have completed on its original board, but Run was
+/// refused after the facade changed attachment. Keep that partial result.
+class ProgramSourceSessionChanged implements Exception {
+  const ProgramSourceSessionChanged({required this.sourcePath});
+  final String sourcePath;
+}
+
 /// The source upload completed, but its sidecar commit record did not.
 ///
 /// PBLE/1 has no multi-file transaction. Callers must therefore report that
@@ -140,7 +147,7 @@ class ProgramActions {
         !identical(connectionSessionStampOf(connection), stamp)) {
       // The upload may have completed on the previous attachment. Do not send
       // the second verb to a replacement board.
-      throw const NotConnectedException();
+      throw ProgramSourceSessionChanged(sourcePath: path);
     }
     await connection.runFile(path);
   }

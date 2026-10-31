@@ -26,7 +26,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pyble/app/providers.dart';
 import 'package:pyble/editor/editor.dart';
 import 'package:pyble/editor/board_target_guard.dart';
-import 'package:pyble/editor/draft_recovery.dart';
 import 'package:pyble/pble/pble.dart';
 
 /// The neutral, localizable classification of a file-operation failure
@@ -513,25 +512,26 @@ class FileExplorerController extends Notifier<FileExplorerState> {
       }
       state = state.copyWith(clearProgress: true);
       final String content = utf8.decode(bytes, allowMalformed: true);
-      if (!await confirmEditorReplacement(ref, expectedEpoch: documentEpoch))
+      if (!await confirmEditorReplacement(ref, expectedEpoch: documentEpoch)) {
         return;
-      final adopted = await ref
-          .read(draftRecoveryProvider.notifier)
-          .replaceDocument(
-            EditorDocument(
-              name: fileName,
-              content: content,
-              dirty: false,
-              boardPath: path,
-            ),
-            expectedEpoch: documentEpoch,
-            isStillValid: () =>
-                !_disposed &&
-                epoch == _openEpoch &&
-                _isCapturedSessionCurrent(connection: connection, stamp: stamp),
-          );
-      if (adopted)
+      }
+      final adopted = await replaceEditorDocument(
+        ref,
+        EditorDocument(
+          name: fileName,
+          content: content,
+          dirty: false,
+          boardPath: path,
+        ),
+        expectedEpoch: documentEpoch,
+        isStillValid: () =>
+            !_disposed &&
+            epoch == _openEpoch &&
+            _isCapturedSessionCurrent(connection: connection, stamp: stamp),
+      );
+      if (adopted) {
         ref.read(selectedSurfaceProvider.notifier).state = AppSurface.editor;
+      }
     } on PbleException catch (e) {
       if (epoch == _openEpoch) _fail(e, path);
     }
@@ -588,9 +588,12 @@ class FileExplorerController extends Notifier<FileExplorerState> {
     final Connection connection = _conn;
     final Object stamp = connectionSessionStampOf(connection);
     if (!await confirmBoardTarget(ref, path: path, run: false) ||
+        _disposed ||
+        _join(state.cwd, doc.name) != path ||
         ref.read(editorDocumentEpochProvider) != epoch ||
-        !_isCapturedSessionCurrent(connection: connection, stamp: stamp))
+        !_isCapturedSessionCurrent(connection: connection, stamp: stamp)) {
       return;
+    }
     try {
       await connection.putFile(
         path,

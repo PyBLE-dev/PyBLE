@@ -28,6 +28,9 @@ final boardTargetConfirmationProvider =
 final editorReplacementConfirmationProvider =
     Provider<Future<bool> Function()?>((ref) => null);
 
+final editorVolatileReplacementConfirmationProvider =
+    Provider<Future<bool> Function()?>((ref) => null);
+
 class BoardActionCancelled implements Exception {
   const BoardActionCancelled();
 }
@@ -78,4 +81,40 @@ Future<bool> confirmEditorReplacement(
   final confirm = ref.read(editorReplacementConfirmationProvider);
   if (confirm == null || !await confirm()) return false;
   return ref.read(editorDocumentEpochProvider) == expectedEpoch;
+}
+
+/// Preserve the live document on failure; volatile replacement needs its own
+/// explicit decision bound to the same document and board session.
+Future<bool> replaceEditorDocument(
+  Ref ref,
+  EditorDocument replacement, {
+  required int expectedEpoch,
+  bool Function()? isStillValid,
+}) async {
+  bool valid() =>
+      ref.read(editorDocumentEpochProvider) == expectedEpoch &&
+      (isStillValid?.call() ?? true);
+  if (!valid()) return false;
+  final controller = ref.read(draftRecoveryProvider.notifier);
+  final replaced = await controller.replaceDocument(
+    replacement,
+    expectedEpoch: expectedEpoch,
+    allowVolatile:
+        ref.read(draftRecoveryProvider).status == DraftRecoveryStatus.volatile,
+    isStillValid: isStillValid,
+  );
+  if (replaced ||
+      !valid() ||
+      ref.read(draftRecoveryProvider).status != DraftRecoveryStatus.failed) {
+    return replaced;
+  }
+  final confirm = ref.read(editorVolatileReplacementConfirmationProvider);
+  if (confirm == null || !await confirm() || !valid()) return false;
+  controller.continueWithoutRecovery();
+  return controller.replaceDocument(
+    replacement,
+    expectedEpoch: expectedEpoch,
+    allowVolatile: true,
+    isStillValid: isStillValid,
+  );
 }

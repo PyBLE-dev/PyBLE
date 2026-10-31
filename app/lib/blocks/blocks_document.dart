@@ -17,7 +17,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:pyble/editor/editor.dart';
 import 'package:pyble/editor/board_target_guard.dart';
-import 'package:pyble/editor/draft_recovery.dart';
 
 import 'blocks_companion.dart';
 import 'blocks_examples.dart';
@@ -1075,21 +1074,20 @@ class BlocksDocumentController extends Notifier<BlocksDocument> {
           !await confirmEditorReplacement(ref, expectedEpoch: editorEpoch)) {
         throw const BoardActionCancelled();
       }
-      final adopted = await ref
-          .read(draftRecoveryProvider.notifier)
-          .replaceDocument(
-            EditorDocument(
-              name: generatedName,
-              content: program.source,
-              dirty: true,
-            ),
-            expectedEpoch: editorEpoch,
-            isStillValid: () =>
-                capturedHostId == _activeHostId &&
-                state.program?.revision == program.revision &&
-                state.retainedWorkspaceRevision == program.revision &&
-                state.workspaceError == null,
-          );
+      final adopted = await replaceEditorDocument(
+        ref,
+        EditorDocument(
+          name: generatedName,
+          content: program.source,
+          dirty: true,
+        ),
+        expectedEpoch: editorEpoch,
+        isStillValid: () =>
+            capturedHostId == _activeHostId &&
+            state.program?.revision == program.revision &&
+            state.retainedWorkspaceRevision == program.revision &&
+            state.workspaceError == null,
+      );
       if (!adopted) throw const BoardActionCancelled();
     } finally {
       _endAction();

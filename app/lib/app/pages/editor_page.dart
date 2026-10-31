@@ -2,8 +2,8 @@
 // Part of PyBLE (https://pyble.dev) — see /LICENSE.
 
 /// A-20 — the Editor surface host. Delegates to the live [EditorView] in
-/// `lib/editor` (owner: app-editor-console-engineer), which edits the volatile
-/// in-memory current document (ADR-0010). This page is a thin app-layer host: it
+/// `lib/editor` (owner: app-editor-console-engineer), which edits the shared
+/// current document with bounded local recovery (ADR-0048). This page is a thin app-layer host: it
 /// bears no display copy (all strings live in the feature view, sourced from
 /// `AppLocalizations`) and binds to no transport type (CON-8, D2).
 library;
