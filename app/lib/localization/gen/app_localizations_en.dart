@@ -2008,4 +2008,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String runSourceSessionChanged(String path) {
     return 'The upload to $path may have completed on the previous board. Run was not sent because the connection changed.';
   }
+
+  @override
+  String get recoveryVolatileShort => 'Recovery off: edits stay in memory.';
+
+  @override
+  String get recoveryClose => 'Close';
+
+  @override
+  String get recoveryKeepCurrent => 'Keep current text without recovery';
 }

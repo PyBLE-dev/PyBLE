@@ -3266,6 +3266,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'The upload to {path} may have completed on the previous board. Run was not sent because the connection changed.'**
   String runSourceSessionChanged(String path);
+
+  /// Concise persistent volatile warning for compact layouts.
+  ///
+  /// In en, this message translates to:
+  /// **'Recovery off: edits stay in memory.'**
+  String get recoveryVolatileShort;
+
+  /// Closes local recovery details without changing storage or text.
+  ///
+  /// In en, this message translates to:
+  /// **'Close'**
+  String get recoveryClose;
+
+  /// Keeps the current volatile text and existing stored copy after retry, with no replacement.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep current text without recovery'**
+  String get recoveryKeepCurrent;
 }
 
 class _AppLocalizationsDelegate
