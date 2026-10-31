@@ -128,8 +128,9 @@ Only disposable qualification files/folders are written. The classic fixtures
 and their CRC-verified backups/cleanup are recorded with the
 [Android continuation](05_Android_Acceptance.md); pre-existing root entries are
 preserved. The S3, Waveshare and Pico follow-up fixtures have likewise been CRC-verified,
-backed up and removed with unrelated root entries unchanged. C3 fixtures remain
-tracked privately for cleanup after the final Android continuation. Raw captures, binaries, database backups and helper
+backed up and removed with unrelated root entries unchanged. After the final
+Android continuation, all four C3 fixtures and both empty owned directories were
+likewise verified, backed up and removed; unrelated entries remain intact. Raw captures, binaries, database backups and helper
 sources remain ignored. The task-created XCTest runner was uninstalled after
 the completed iPad checks; Preview and both pre-existing PyBLE installations
 were preserved. No user project or original store installation is reset.
