@@ -27,7 +27,7 @@ Use a compatible, separately provisioned MicroPython board running the PyBLE age
 2. Restore while disconnected. Recovery should preserve the text without connecting to or writing to a board. Cancel a Discard confirmation, then confirm Discard using only disposable content; check the next launch.
 3. Deliberately connect to a board. Check the current destination and separate Save/Run effects before confirming. Cancel a confirmation and verify that no unwanted board action occurs.
 4. Copy generated Python from Blocks into Editor, save its recovery copy, and restart. Only the generated text is covered; the Blocks workspace, graph revisions and companion files are not restored by this local slot.
-5. Exercise New, Board Open, Files Upload, disconnect/reconnect, portrait/landscape, larger text, an external keyboard and VoiceOver where available. Report any lost text, stale destination, inaccessible control or inaccurate success message.
+5. Exercise New, Board Open, Files Upload, disconnect/reconnect, portrait/landscape, larger text, an external keyboard and VoiceOver where available. On iPad, hide and reopen the docked keyboard through its input palette, then check that console Expand remains reachable and dismisses it. Report any lost text, stale destination, inaccessible control or inaccurate success message.
 
 There is one recovery slot and no draft history. Wait for Saved locally before expecting an edit to survive termination. Storage failure can leave current edits only in memory; follow the displayed guidance. App removal or clearing app storage removes local recovery data. A draft that existed only in memory in an older version cannot be recovered by upgrading.
 
