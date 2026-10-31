@@ -70,7 +70,7 @@ records the final complete run and exact candidate revision before acceptance.
 | DR-T07 | Explicit Restore/Discard, failed discard, volatile Retry, late hydration and no implicit board writes | Automated suite and Lenovo Restore/offline preview/relaunch pass; complete interaction matrix pending |
 | DR-T08 | Deterministic 500ms / continuous-edit 2s scheduling; delayed commits, startup timeout and epoch tests | Component tests passing; physical lifecycle interruption pending |
 | DR-T09 | Active write/replacement serialization, tombstones and no queued resurrection | Automated integrated suite passing |
-| DR-T10 | Recovered-target cancellation and stale document/path/session consent | Recording-connection tests passing; physical target consent pending |
+| DR-T10 | Recovered-target cancellation and stale document/path/session consent | Recording-connection tests and Lenovo current-target Save/Run consent pass; iPad physical board consent pending |
 | DR-T11 | Stable-facade board swap, delayed GET, stale completion and PUT-to-Run attachment refusal | Recording-connection tests passing; final integrated regression pending |
 | DR-T12 | Explicit generated text handoff with editor-epoch/revision guards; existing workspace/sidecar behavior retained | Affected automated regression required in final suite; representative device checks pending |
 | DR-T13 | Local/board status separation, ARB error/status copy, disconnected preview, keyboard and 2× text | Automated UI/localization pass; physical Lenovo 2× preview observed; local golden baseline mismatch reproduced unchanged, pinned CI pending |
@@ -115,13 +115,19 @@ All 33 rendered test images match byte-for-byte with the same tests run from
 unchanged `origin/main` at `8dde8d6` on this host. Existing baselines are retained;
 this result is not a golden pass. The workflow pins macOS 15, whose result is
 tracked on [draft PR #40](https://github.com/PyBLE-dev/PyBLE/pull/40).
-The source and documentation are reviewable on `feature/current-draft-recovery`.
+At `709556e`, both the push and pull-request workflow runs passed all 18 jobs
+(36 successful checks total), including the pinned golden and native Android
+jobs. Subsequent changes in this record are documentation-only; their workflow
+state remains visible on the PR. The source and documentation are reviewable
+on `feature/current-draft-recovery`.
 No merge or store publication is implied by that draft.
 
 The final boundedness audit added SQL byte/count preflights before metadata or
 row materialization: corrupt metadata is capped before JSON reaches the UI
 isolate. The final ordinary suite is 972 passing tests. [Platform results](02_Platform_Qualification.md)
 include successful iPad profile assertion receipts and a killed-process boundary.
-Five powered boards were reported by the owner; the Lenovo fresh scan currently
-shows four advertisements, with historical classic ESP32 label `8C9E` absent.
-That discovery observation is under investigation and is not a four-result cap.
+All five boards now appear in the Lenovo scan after the [classic ESP32 recovery](03_Classic_ESP32_Workspace_Recovery.md).
+Its workspace exactly matched an intentional invalid-media fixture left by an
+earlier qualification run. A fresh backup and the verified valid original
+workspace were preserved; restoring only that region returned `8C9E` to normal
+advertising. No firmware or scan-count logic changed.

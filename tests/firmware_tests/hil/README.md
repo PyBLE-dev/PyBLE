@@ -152,6 +152,15 @@ finishes post-readback in loader mode; returning to normal runtime or another
 clean install is a separate, explicitly sequenced qualification operation.
 Keep both receipts and all their siblings beside the later hardening result.
 
+Before handing a board back for ordinary use, account for intentional
+invalid-media fixtures even when acquisition failed. Preserve the failed
+receipts and fresh current-media backup, then explicitly restore the verified
+pre-test workspace or record that the board remains in recovery. Verify normal
+startup and advertising after that separate operation. A host report or USB
+connection does not establish runtime readiness. See the [classic ESP32
+recovery record](../../../docs/developments/2026-q4-reliable-workflow/c1-s2/03_Classic_ESP32_Workspace_Recovery.md)
+for the diagnosed leftover-fixture case; do not silently format nonblank media.
+
 The live runner receives the protected candidate directory, exact profile,
 private BLE address, both receipt paths, and new raw-log/output paths. It emits
 no passing result unless all seven live scenarios and both pre-service
