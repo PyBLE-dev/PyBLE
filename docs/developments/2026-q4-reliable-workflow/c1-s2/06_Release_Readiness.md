@@ -9,9 +9,13 @@
 | Scope | App-only bounded current-text recovery; existing Play open-testing and TestFlight channels |
 | Runtime source | Recovery baseline plus landscape layout, native keyboard dismissal and iPad palette-geometry repairs at `bef67bded9e5b83437e3eb0e2ec4be6a4cfd1a64` |
 | Build checkout | Release worktree `c6e685dd3ebe718ed89fcfe58e441331eb174648`; app tree `60b3a68b693551af5d83076547c502f69838e052`, verified identical to the runtime baseline |
-| State | Production Android and iOS rebuilt cleanly with the iPad palette-geometry repair; packaging and the bounded Android 16 KiB runtime smoke pass. Final physical acceptance and release admission remain separate gates |
+| State | M-02 and app-only M-04 engineering admission accepted on 31 October for the frozen artifacts below. Final PR required CI and merge precede publishing; M-05 delivery remains pending |
 | Local evidence | Ignored `local/recovery-completion/release/candidate-bef67bd/`: build/check logs, source/artifact manifests, runtime evidence and retained signed binaries |
 | Public copy | [Prepared release packet](../../../publication/app-0.3.0-build-9-release-packet.md); no submission or availability claim |
+
+A post-freeze comment correction clarifies Android's asset/file-access adapter
+semantics. It changes no executable behavior or loading path; the retained
+artifacts remain bound to the frozen runtime and app tree above.
 
 ## Gate selection
 
@@ -24,11 +28,11 @@ claim a new firmware release, fresh firmware OI-1 qualification or a Ready badge
 
 | Gate | Required evidence | Current disposition |
 |---|---|---|
-| M-02 recovery acceptance | All DR-T01–14 required evidence, including representative physical generated-text recovery and both platform offline/current-board-consent records | Reconcile against the [execution record](00_Execution_Record.md) and actual device reports; installation/scan alone is insufficient |
-| App regression | Accepted source contract, red/green history, locked dependencies, ordinary tests, pinned goldens, platform builds and repository gates | PR #40/post-merge CI passed historically; the final keyboard repairs record 984 ordinary Flutter tests, including 28 shell widget tests, six iOS guide/platform-control tests and one platform-fallback test, plus clean analysis/source gates. Integrated-candidate CI and final physical acceptance remain separate |
-| Five-profile app compatibility | Q01–Q10 below with exact app/firmware identity, actual observations and retained failures | Final complete candidate-bound matrix not yet established |
+| M-02 recovery acceptance | All DR-T01–14 required evidence, including representative physical generated-text recovery and both platform offline/current-board-consent records | Accepted: mandatory DR-T01–14 evidence is reconciled in the [execution record](00_Execution_Record.md) and its iPad/Android reports, including final normal-candidate generated-text recovery, offline restore and current-target Cancel checks |
+| App regression | Accepted source contract, red/green history, locked dependencies, ordinary tests, pinned goldens, platform builds and repository gates | Accepted runtime evidence: 984 ordinary Flutter tests, including 28 shell widget tests, six iOS guide/platform-control tests and one platform-fallback test; 36 Android runtime CI checks; pinned goldens and clean analysis/source gates. The final documentation/rebase head must still pass required PR CI before merge and publishing |
+| Five-profile app compatibility | Q01–Q10 below with exact app/firmware identity, actual observations and retained failures | Accepted Q01–Q10 on the exact named firmware inputs below, with source-impact mapping for earlier unaffected rows and final affected keyboard/recovery reruns on both tablets; retained failures remain visible in the device reports |
 | Production packaging | Android upload signer/AAB/APK/native alignment; iOS distribution export/IPA validation; capability parity | Android and iOS checks below pass for the repaired source and exact retained artifacts |
-| Release review | Frozen artifact identity, resolved mandatory failures, supported scope, privacy/dependency review and recorded acceptance | Not yet admitted |
+| Release review | Frozen artifact identity, resolved mandatory failures, supported scope, privacy/dependency review and recorded acceptance | Accepted app-only M-04 engineering admission for `bef67bd` and the hashes below, with the Lenovo OEM precondition and historical firmware limits retained |
 | M-05 channel delivery | Actual upload/processing/review/availability, followed by store-delivered installed identity and upgrade/launch checks | No upload or new channel delivery established by this preparation |
 
 Pilot participation and useful-return evidence remain separate from maintenance
@@ -179,10 +183,10 @@ path. The exact-asset controls observed `onPageStarted`, then `hostReady`, and
 confirmed that `window.pybleBlocks.configureHost` exists. The selected provider
 was installed/enabled and not stopped or suspended at inspection time.
 
-The current isolated profile candidate subsequently reached the real Blocks
-workspace. These observations distinguish the retained debug failure from a
-completed profile-candidate failure; they do not identify the original cause
-or prove DR-T12 by themselves. The inline control exposed a possible callback
+The earlier isolated profile candidate subsequently reached the real Blocks
+workspace. Those observations did not establish the cause of the retained
+debug failure or prove DR-T12 by themselves. A later final-candidate profile
+failure was reproduced and isolated separately below. The inline control exposed a possible callback
 ordering hazard, but neither exact-asset control reproduced it, so no startup-protocol
 change or claimed startup fix followed. The physical report must separately record
 actual generated-text handoff, recovery and cold relaunch. Diagnostic fixture
@@ -192,10 +196,72 @@ A separate physical finding established that console Expand did not dismiss
 an Android keyboard owned by a native Blockly field. The final candidate adds
 a narrow current-window dismissal request on Android and iOS while retaining
 layout based on actual insets. The Android rerun observed IME visibility change
-from shown to hidden, an expanded console and retained field text. The iPad
-outcome remains part of its separate physical report. The production artifacts
+from shown to hidden, an expanded console and retained field text. The final iPad
+report also passes reachable Expand/dismissal in both Editor and Blocks. The production artifacts
 above include this repair and the later iPad geometry fallback; the diagnostic controls
 did not change the Blocks startup protocol.
+
+## Final Android renderer suppression control
+
+The final `bef67bd` isolated qualifier profile subsequently timed out on Blocks
+startup, including Retry and a startup with no active UI-automation polling.
+The failure is retained; earlier profile success does not erase it. An ignored
+instrumented copy of the actual host completed controller setup and asset-load
+submission by 412 ms. At 3 and 9 seconds the native URL was the bundled asset,
+but bounded JavaScript readiness probes timed out. No page-start, page-finished
+or bridge callback arrived; the 15-second watchdog fired at generation zero.
+This observed failure preceded the startup gate, so no host-readiness protocol
+change was justified.
+
+Android retained the qualifier's renderer service as pending with no process or
+binder. Its ActivityManager explicitly suppressed service startup. The device's
+DuraSpeed service was enabled and listed the isolated qualifier package in its
+suppression set. The actual production package `dev.pyble.pyble` was absent from
+that set and was not changed. A plain native Activity loading the exact bundled
+assets under the same qualifier APK/UID also failed before any page/bridge
+callback, establishing that Flutter and the Blocks startup gate were not
+necessary for this failure.
+
+The ordinary qualifier App info → Battery screen initially selected
+**Optimized**. A scoped, reversible control selected **Unrestricted** for that
+qualifier alone. The same native APK/UID then emitted page-start at 594 ms,
+`hostReady` at 801 ms, page-finished at 809 ms, and successful document/API
+readiness probes at 3 and 9 seconds. DuraSpeed remained globally enabled and
+its global configuration was unchanged. No provider replacement, global
+optimization disable, hidden allowlist mutation, firmware change or app-data
+reset was used. This native control alone was not final app acceptance: a later
+normal-APK shell launch still produced a retained watchdog failure. Both the
+older and final normal profile APKs subsequently opened a valid empty workspace
+through the actual launcher. A helper initially misclassified that ready empty
+state because it waited for enabled Preview code before any blocks existed;
+the raw hierarchy instead showed Visual block workspace, Browse examples and
+Add blocks to generate Python, with no startup error. This oracle correction
+does not erase the separate real watchdog failures.
+
+The final normal `945e9746` qualifier then passed Hello example generation,
+native-field keyboard Expand/dismissal with content retained, guarded Editor
+handoff, a local generated-text checkpoint, offline cold relaunch/Restore with
+both radios off, and current-C3 Save Cancel and Run Cancel. A first post-radio
+C3 service-discovery timeout was retained; explicit reconnect succeeded before
+the two Cancel checks. The board was explicitly disconnected afterward.
+No startup source change or extra artifact rebuild followed these controls.
+
+After these observations, the qualifier's original **Optimized** battery mode
+was restored through the same ordinary Settings screen. Fresh native hierarchy
+and screenshot receipts show only Optimized checked. The qualifier was removed
+from the device-idle allowlist; the global DuraSpeed configuration is byte-for-
+byte identical to its baseline and remains enabled. The production package
+remains absent from the DuraSpeed suppression/explicit allowlist observations
+and its settings were untouched. The final acceptance therefore records the
+observed Unrestricted/actual-launcher qualification precondition and restoration,
+rather than promising operation while the OS suppresses renderer startup.
+
+Raw callback logs, the failed attempts and normal APK identities are retained
+under ignored `local/recovery-completion/android/`. OEM policy, checked-radio
+screenshots and the restoration recipe are under
+`local/recovery-completion/blockly-startup-diagnostic/`. This is an explicit
+device precondition for the isolated qualification container, not a claim of
+unconditional operation while Android suppresses its WebView renderer.
 
 ## iPad keyboard palette regression
 
@@ -223,9 +289,30 @@ and runtime `bef67bd`. The complete ordinary suite passes 984 tests; six guide
 regressions cover the actual fallback, Blocks dismissal/host retention,
 maximum/padding behavior, resize ordering, stale callbacks/lifecycle and the
 unchanged Android path. Native iOS profile compilation and static/source gates
-pass. Exact physical iPad palette reopening and reachable Expand/dismissal
-remain acceptance observations in the [execution record](00_Execution_Record.md);
-a production IPA export alone cannot substitute for them.
+pass. Final physical iPad palette reopening and reachable Expand/dismissal
+passed in both Editor and Blocks on `bef67bd`; the iPad report linked from the [execution record](00_Execution_Record.md)
+retains the original failures and measured diagnostic alongside the successful
+reruns. These physical observations, not the IPA export alone, satisfy the
+affected keyboard acceptance.
+
+## Dependency review scope
+
+On 31 October, GitHub's 19 open Dependabot entries mapped to 12 advisory
+families in the website's npm manifests. Current main already contains fixes
+for 11 families; the braces advisory was withdrawn. A fresh
+`npm audit --audit-level=high --json` exited successfully with no high or
+critical findings. It reports 15 moderate affected dependency nodes from two
+roots: minimatch in development lint tooling and Satori in vinext image tooling.
+No authored affected SVG, cache or TLS invocation was found. Production serves
+static output, and these website dependencies are outside the frozen app
+artifact. The moderate findings remain separate web maintenance; this review
+does not claim that every dependency is vulnerability-free. No alerts were
+dismissed and no dependencies were changed.
+
+The retained audit completed at `2026-10-31T12:54:17.290202+00:00` against lockfile
+SHA-256 `2c7b0c6c652a078eefada990f4a018ae4650355bfb703858c581b5cf430e5483`.
+Its advisory mapping, audit JSON and summary remain under ignored
+`local/recovery-completion/dependency-audit/`.
 
 ## Distribution access and remaining account work
 
@@ -245,8 +332,19 @@ already been consumed; these remain **unverified**. Read-only browser discovery
 did not establish an authenticated console session. This is not a claim that
 the owner lacks web-console access or that Xcode has no potential upload route.
 
-After the candidate is admitted, the authorized distribution operator must
-verify the exact package, unused build numbers and current declarations, upload
-the retained artifacts, resolve processing/review findings, and record actual
-availability and installed-store results separately. The prepared packet and
-artifact records make those steps concrete; they do not substitute for them.
+A read-only GitHub audit found zero repository Actions secrets and zero
+repository environments. The only authored active workflow is
+`.github/workflows/ci.yml`, which validates/builds but has no store-publishing
+job; the tracked tree has no Fastlane configuration. Organization-secret
+listing returned HTTP 403, so inherited organization credentials were not
+proven absent. No existing repository workflow consumes a Play or App Store
+publisher credential. This inspection found no configured CI upload route;
+it does not infer that the owner lacks credentials elsewhere.
+
+Engineering admission is complete for the frozen artifacts. After the final
+required PR checks and merge, the authorized distribution operator must verify
+the exact package, unused build numbers and current declarations, upload the
+retained artifacts, resolve processing/review findings, and record actual
+availability and installed-store results separately. The existing Xcode account
+is a concrete route to attempt, with server authentication and receipts retained.
+The prepared packet and artifact records do not substitute for channel delivery.

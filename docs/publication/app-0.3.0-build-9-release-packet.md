@@ -5,7 +5,8 @@
 
 Prepared 31 October 2026. This is candidate copy for the existing Google Play
 open-testing and TestFlight channels. It does not announce availability, a
-submission, or release admission. The [readiness record](../developments/2026-q4-reliable-workflow/c1-s2/06_Release_Readiness.md)
+submission, or store delivery. Engineering admission is accepted for the frozen
+artifacts; final PR checks and merge precede publishing. The [readiness record](../developments/2026-q4-reliable-workflow/c1-s2/06_Release_Readiness.md)
 owns the artifact and gate states. Confirm that build 9 is unused in each
 account before uploading; a consumed number requires a new source version
 contract and rebuilt artifacts, not a renamed file.
@@ -56,6 +57,11 @@ The isolated development applications used for engineering tests have different
 application identities. Their successful installation does not prove an upgrade
 of `dev.pyble.pyble`, store processing, or store delivery. A distribution export
 also does not establish successful execution on the physical tablet.
+
+The [dependency review](../developments/2026-q4-reliable-workflow/c1-s2/06_Release_Readiness.md#dependency-review-scope)
+records the current website audit separately from the frozen mobile artifact:
+no high/critical findings, with moderate web-tooling findings still open for
+maintenance. It does not claim that every dependency is vulnerability-free.
 
 ## Privacy and recovery scope
 
