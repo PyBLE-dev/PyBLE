@@ -85,6 +85,19 @@ source/artifact change. Retain the original failure before any repair/rerun.
 | P14 | Copy generated Python from Blocks into Editor and checkpoint/relaunch | The text can recover; workspace graph/revisions/sidecars are not represented as restored by the local text slot |
 | P15 | Check recovery choice/error/local panel with 2× text, keyboard and screen reader | Controls scroll/remain reachable, focus/semantics announce correctly, no technical filename/path/source is translated |
 
+### P15 keyboard regression continuation
+
+The 31 October device findings refine P15's existing reachability requirement.
+Run the affected cases on the recorded repaired candidate; preserve each
+original failure and do not substitute a mocked dismissal request for an
+observed keyboard/viewport transition.
+
+| Case | Operator action | Required oracle |
+|---|---|---|
+| P15-K1 | In landscape Editor, open the software keyboard, edit harmless text and expand the compact console strip | Navigation and console controls remain reachable; the keyboard actually dismisses, the console expands, and text/selection and buffered output are retained |
+| P15-K2 | In landscape Blocks, edit a native Blockly field with its keyboard open and expand the console | The native keyboard dismisses, the console expands, and field text/workspace state remain intact; Flutter-only focus tests do not establish this result |
+| P15-K3 | On iPad, hide the keyboard and reopen it through the keyboard palette; repeat with Editor and a native Blocks field | The visible docked keyboard leaves controls reachable above it; content is reduced by the observed overlap once and Expand can actually be tapped. Hiding the full keyboard accounts for any remaining input palette; zero keyboard occlusion is expected only after editing ends and the guide returns to its safe-area baseline |
+
 Platform-controlled interruption before/during/after checkpoint should preserve
 whole permitted old/new content. If a required phase cannot be deterministically
 hit on a device, record that limitation and its host fault-test evidence; do not

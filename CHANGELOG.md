@@ -23,6 +23,12 @@ and build-8 submission handoffs remain historical artifact records.
   offers offline preview, Restore and confirmed Discard, with separate local
   checkpoint status and an explicit Save recovery copy action. Storage errors
   preserve the previous copy and live text, with explicit volatile continuation.
+- Fixed landscape editing with the software keyboard open: the console output
+  strip temporarily collapses to its status/actions bar, and navigation
+  destinations remain reachable by scrolling. Expanding requests keyboard
+  dismissal from the current platform window, including native Blocks fields.
+  iPad layout also accounts for keyboards reopened through the keyboard palette
+  without applying the same overlap twice; document/console state is retained.
 - Added document-epoch and connection-session guards for Editor Save/Run,
   Files Open/Upload and Blocks-to-Editor replacement. Restored drafts require
   current-destination confirmation before board writes; a board swap after text

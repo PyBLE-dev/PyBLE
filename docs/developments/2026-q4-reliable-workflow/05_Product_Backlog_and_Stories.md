@@ -6,14 +6,14 @@
 | Control | Value |
 |---|---|
 | Product Goal | Make the existing tablet workflow trustworthy enough for useful repeat tasks by the selected primary audience |
-| Source | [Implementation strategy revision 1.6](../../planning/PyBLE_Implementation_Plan_and_Strategy_v1.0.md), reviewed 25 September 2026 |
+| Source | [Implementation strategy revision 1.7](../../planning/PyBLE_Implementation_Plan_and_Strategy_v1.0.md), initially derived 25 September; reconciled 31 October 2026 |
 | Cycle | Proposed 28 September–20 December 2026; Asia/Bangkok |
 | Baseline | `23ed764b0ef88dce9720c66fbd1c0655268860cf`; completed publication work is evidence, not a new commitment |
 | Status | C1-S1: PYB-001.1/.2 and PYB-006.1 scoped work Done; pilot preparation awaits setup, observation work awaits evidence, PYB-009.1 partial; PYB-006.2 source merged and automated checks passing; physical acceptance pending; later work remains forecast |
 | Accountabilities | Product Owner orders the backlog; Developers size and select work in Sprint Planning; named people and capacity remain to be assigned |
 | Navigation | [Overview and Scrum](01_Overview_and_Scrum_Framework.md) · [Roadmap](02_Product_Roadmap.md) · [Milestones](03_Milestones.md) · [Sprint plan](04_Sprint_Plan.md) · [Sprint Backlogs](06_Sprint_Backlogs.md) |
 
-**31 October continuation update:** bounded recovery candidate `0.3.0+9` is merged in [PR #40](https://github.com/PyBLE-dev/PyBLE/pull/40) at `6f5b3ea`; the integrated suite and post-merge CI pass. Both tablets have local candidate installations and native storage restart evidence. [C1-S2 implementation record](c1-s2/00_Execution_Record.md) tracks the remaining physical acceptance separately from release qualification. S1 remains six Done / two Prepared / four Awaiting evidence. Original dates/hours remain the planning baseline; the current continuation order and unresolved capacity inputs are recorded in the [Sprint plan](04_Sprint_Plan.md#31-october-continuation-order-and-reforecast).
+**31 October continuation update:** the `0.3.0+9` recovery baseline merged in [PR #40](https://github.com/PyBLE-dev/PyBLE/pull/40). Physical qualification exposed three keyboard defects; their repairs at `bef67bd` pass 984 ordinary tests and all 36 PR #41 checks. iPad recovery, final keyboard regressions and all five iPad app-only board rows pass with declared source/firmware scope. Earlier Android recovery and board rows pass, but a later final-candidate Blocks startup observation remains under investigation. Signed packages and a channel packet are prepared; admission and actual store delivery remain separate. The [C1-S2 record](c1-s2/00_Execution_Record.md) binds the evidence. S1 remains six Done / two Prepared / four Awaiting evidence. Original dates/hours remain the baseline; the [continuation plan](04_Sprint_Plan.md#31-october-continuation-order-and-reforecast) records unresolved capacity inputs.
 
 ## 1. How to use this backlog
 
@@ -41,11 +41,11 @@
 | 4 | PYB-006 / P0 | Recover the current text draft after process restart | 006.1, 006.2 | Sized in C1-S1; S2–S4 working option requires replanning; known defect does not wait for recruitment | 006.1 Done; 006.2 source merged, automated checks passing, physical acceptance pending |
 | 5 | PYB-009 / P0 | Make existing validation reproducible by an operator | 009.1; optional 009.2 | Inventory C1-S1, scoped recipe C1-S2; reproduction only with assigned capacity | T12 Done; 009.1 remains partial |
 | 6 | PYB-005 / P0 if observed | Remove a demonstrated first-use blocker | 005.1 | C1-S2 candidate; actual 004 findings | Conditional; no defect invented |
-| 7 | PYB-008 / P0 for claims | Establish the exact candidate's applicable compatibility evidence | 008.1, 008.2 | Representative checks C1-S2; staged matrix C1-S3–S5; 001, 009.1, artifacts | Proposed; hardware and mandatory workload must be costed |
+| 7 | PYB-008 / P0 for claims | Establish the exact candidate's applicable compatibility evidence | 008.1, 008.2 | Representative checks C1-S2; staged matrix C1-S3–S5; 001, 009.1, artifacts | 008.1 representative observations in progress; 008.2 complete affected app matrix and release review remain pending |
 | 8 | PYB-011 / P0 usability | Understand useful first and repeat tasks in the primary cohort | 011.1, 011.2 | Main activation collection C1-S3–S4; rolling follow-up from the first consented activation through C1-S6; 003, 004, recorded tested setup | Proposed; recruitment and follow-up are not assumed |
 | 9 | PYB-012 / P0 if severe | Resolve the highest-impact observed failure | 012.1 | C1-S4 candidate or earlier when evidence warrants | Conditional; reorder promptly when a real severe failure appears |
-| 10 | PYB-013 / P0 release | Make a candidate-specific release decision with applicable evidence | 013.1 | C1-S5 forecast; applicable 008/009 and included fixes | Proposed; maintenance candidates may qualify earlier |
-| 11 | PYB-014 / P0 when ready | Make the qualified app build installable through the selected existing channel | 014.1, 014.2 | C1-S5 submission/C1-S6 verification forecast; 013 and owner access | Proposed; external review may extend calendar |
+| 10 | PYB-013 / P0 release | Make a candidate-specific release decision with applicable evidence | 013.1 | C1-S5 forecast; applicable 008/009 and included fixes | In progress: production artifacts and release packet prepared; candidate-specific qualification and admission pending |
+| 11 | PYB-014 / P0 when ready | Make the qualified app build installable through the selected existing channel | 014.1, 014.2 | C1-S5 submission/C1-S6 verification forecast; 013 and owner access | Preparation in progress; store-account build history, upload, processing and installed-channel verification remain pending |
 | 12 | PYB-007 / P1 | Share a previewed, privacy-preserving support record | 007.1 | Optional capacity; 003 and approved export contract | Proposed; manual template is the base fallback |
 | 13 | PYB-010 / P1 | Read accurate setup and recovery guidance in Simplified Chinese | 010.1 | Optional capacity and named language reviewer | Proposed |
 | 14 | PYB-015 / P1 | Discover the verified release through accurate supporting material | 015.1 | C1-S6 optional; verified claims, 002/013 | Proposed |

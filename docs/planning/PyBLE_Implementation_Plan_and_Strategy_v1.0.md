@@ -11,9 +11,9 @@
 
 | Field | Value |
 |---|---|
-| Document version | 1.6 — merged recovery candidate and acceptance continuation; original filename retained |
+| Document version | 1.7 — physical acceptance, declared firmware baselines and release preparation; original filename retained |
 | Prepared | 25 September 2026 |
-| Last reviewed | 31 October 2026; PR #40 merged and integrated CI passed; physical acceptance and release continuation tracked separately |
+| Last reviewed | 31 October 2026; merged recovery baseline, physical acceptance continuation, firmware identity checks and release preparation reviewed; final candidate admission remains separate |
 | Status | C1-S1 has six tasks Done, two Prepared awaiting pilot setup and four Awaiting evidence; Sprint and SG0 remain unfinished. Bounded recovery source is merged, with physical acceptance and release qualification underway. Human capacity and recruitment dates need replanning; no new protocol behavior approved |
 | Product | PyBLE — Python over Bluetooth Low Energy |
 | Organization | SciLabPro |
@@ -39,6 +39,7 @@
 | 1.4 | Verified existing Play/TestFlight installations on connected tablets; recorded artifact evidence and remaining provenance/metadata limits; replaced blanket pilot blockers with Prepared/Awaiting evidence states without waiving acceptance criteria |
 | 1.5 | Implemented bounded current-text recovery for source candidate 0.3.0+9; added candidate execution/operator records; preserved remaining pilot, platform and release gates |
 | 1.6 | Reconciled PR #40 merge, passing integrated CI and both local tablet candidates; selected acceptance → qualification → distribution continuation, with human capacity and participant evidence still explicit |
+| 1.7 | Recorded normal-app acceptance progress and exact current firmware inputs for app-only compatibility; tracked prepared signed artifacts and remaining candidate, release and channel evidence without inventing pilot results |
 
 ## Contents
 
@@ -163,7 +164,7 @@ The [execution record](../developments/2026-q4-reliable-workflow/c1-s1/00_Execut
 | Residual PYB-002.1 | Accurate replacement TestFlight app-level description prepared after the public page exposed its older ESP/agent-0.4.0 baseline | Distribution owner must apply it and verify the public result; also reconcile build-6 installed `MinimumOSVersion` 18 with TestFlight notes stating 15 before asserting support. No store mutation performed; Android's earlier correction remains complete |
 | PYB-003/004 | Operational pilot protocol, safe Tasks A/B/C, consent/retention rules and empty observation/support templates | Human owner, reachable cohort, tested setup and collection decision unconfirmed; no participants or observed outcomes |
 | PYB-006.1 | [Recovery contract](../specifications/App/current-draft-recovery.md), ADR-0048, source/peer review, scenario matrix and estimate | Bounded implementation now tracked in the [C1-S2 record](../developments/2026-q4-reliable-workflow/c1-s2/00_Execution_Record.md); platform/release acceptance and broader A-24/Blocks scope remain carried |
-| PYB-009.1 | Existing tool/gate inventory, ten platform/profile rows, cost model and initial operator recipe; 110 focused host harness tests pass | S2 scoped procedure, hardware/operator access, actual physical runs and independent reproduction remain pending |
+| PYB-009.1 | Existing tool/gate inventory, ten platform/profile rows, cost model and initial operator recipe; 110 focused host harness tests pass | S2 now supplies the scoped procedure and actual connected-device observations; final candidate acceptance and independent reproduction remain separate |
 
 The recovery estimate is **38–63 engineering hours**, or **45–72 hours** with the original recipe, representative-platform and follow-up allowances. The [design review](../developments/2026-q4-reliable-workflow/c1-s1/03_Recovery_Design_and_Sizing.md) offers a conditional 60-hour S2–S4 allocation, displacing earlier matrix and activation forecasts. The [validation inventory](../developments/2026-q4-reliable-workflow/c1-s1/04_Validation_Inventory_and_Operator_Recipe.md) estimates 13.5–26 operator hours for the app matrix and 30–59 for fresh full firmware qualification, excluding builds, unavailable access and defect repair. These are working estimates, not actual effort or promises. **SG0 remains blocked.**
 
@@ -873,7 +874,7 @@ At cycle end, choose one principal next investment: Reliable Projects, partner p
 - [ ] Assign one owner and one review path for each initial issue.
 - [ ] Inventory exact test boards, tablets, cables, and available recovery equipment.
 - [ ] Freeze Task A/B/C definitions, assistance/timeout rules, prospective follow-up windows and task-opportunity questions, consent procedure, and manual support template; observe initial eligible participants.
-- [x] Specify and peer-review the bounded current-text contract and its acceptance scenarios; size the safe increment. Runtime implementation and physical acceptance remain pending; replan the original S2 forecast.
+- [x] Specify and peer-review the bounded current-text contract and its acceptance scenarios; size the safe increment. Runtime implementation is merged; final physical acceptance remains in progress in the C1-S2 record. The dated continuation order preserves and replans the original S2 forecast.
 - [ ] If operator/capacity is available, include one existing-profile Ready rehearsal and draft record in PYB-009; show installation status and pending evidence explicitly.
 
 ### 20.2 Issue template

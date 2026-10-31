@@ -44,7 +44,7 @@ v0.7.0 remains non-normative and requires separate maintainer approval.
   45–72 hour estimate remains a forecast, not measured effort.
 - Correct the [stale public TestFlight description](developments/2026-q4-reliable-workflow/c1-s1/05_TestFlight_Metadata_Correction.md)
   through the distribution owner; replacement copy is prepared, not published.
-- Complete release qualification and channel delivery for merged app `0.3.0+9`,
+- Complete [release qualification and channel delivery](developments/2026-q4-reliable-workflow/c1-s2/06_Release_Readiness.md) for merged app `0.3.0+9`,
   retaining the recorded 0.2.0 channel baseline until the new channel is verified. The
   [Android publication review](testing/website/android-open-testing-2026-09-25.md)
   records live open-testing availability. The
