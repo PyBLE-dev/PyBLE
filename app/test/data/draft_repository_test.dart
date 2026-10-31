@@ -404,6 +404,55 @@ void main() {
   });
 
   test(
+    'oversized otherwise-valid metadata is refused before hydration',
+    () async {
+      await repository.write(snapshot('safe'), expectedGeneration: 0);
+      await repository.close();
+      final sqlite.Database db = sqlite.sqlite3.open(file.path);
+      final Map<String, dynamic> metadata =
+          jsonDecode(
+                db
+                        .select(
+                          "SELECT value FROM settings WHERE key = 'current_text_draft'",
+                        )
+                        .single['value']
+                    as String,
+              )
+              as Map<String, dynamic>;
+      metadata['unexpected_padding'] = 'é' * 4096;
+      db.execute(
+        "UPDATE settings SET value = ? WHERE key = 'current_text_draft'",
+        <Object>[jsonEncode(metadata)],
+      );
+      db.close();
+      final List<int> before = await file.readAsBytes();
+      await expectLater(
+        DriftDraftRepository.open(file),
+        failure(DraftStorageFailure.corrupt),
+      );
+      expect(await file.readAsBytes(), before);
+    },
+  );
+
+  test(
+    'extra internal project rows are refused without losing storage',
+    () async {
+      await repository.close();
+      final sqlite.Database db = sqlite.sqlite3.open(file.path);
+      db.execute(
+        "INSERT INTO projects (id, name, created_at, updated_at) VALUES ('extra', 'extra', 0, 0)",
+      );
+      db.close();
+      final List<int> before = await file.readAsBytes();
+      await expectLater(
+        DriftDraftRepository.open(file),
+        failure(DraftStorageFailure.corrupt),
+      );
+      expect(await file.readAsBytes(), before);
+    },
+  );
+
+  test(
     'process kill before, during and after commit yields only whole checkpoints',
     () async {
       for (final String point in <String>['before', 'during', 'after']) {
