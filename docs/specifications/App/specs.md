@@ -1011,6 +1011,7 @@ implementation:
 - **FR-UI-5** — The layout MUST be tablet-first but MUST NOT break on a phone (phone is best-effort). MUST (*source: PRD §13.2, §19, app.md §5; verify: golden; story: A-20*)
 - **FR-UI-6** — Interactive controls MUST use large touch targets and MUST clearly communicate connection and run state (disconnected/connecting/ready/running/error). MUST (*source: PRD §13.2; verify: golden; story: A-22*)
 - **FR-UI-7** — No UI panel MUST bind to BLE directly; every panel binds to `Connection`. MUST (*source: PRD §19, app.md §1; verify: unit; story: all A-2x/3x*)
+- **FR-UI-8** — With a landscape software keyboard open, the connected shell MUST retain a usable editor viewport and reachable navigation without panel overflow. The console output strip MUST temporarily collapse to its status/actions bar while retaining buffered output; expanding it dismisses the keyboard. Navigation destinations MUST remain reachable by scrolling when height is constrained. Closing the keyboard restores the ordinary console layout and preserves the current document and selection. MUST (*source: FR-UI-1/5/6, NFR-A11Y-3; verify: widget and physical keyboard observations*)
 
 ### 4.14 Scan/Connect Flow UI (`lib/connect/`) — FR-CONNECT
 

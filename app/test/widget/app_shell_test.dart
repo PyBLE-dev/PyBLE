@@ -92,6 +92,62 @@ Future<void> _focusLandscapeBlocks(WidgetTester tester) async {
 }
 
 void main() {
+  group('landscape software keyboard', () {
+    for (final double inset in <double>[404, 440]) {
+      testWidgets('keeps editing and navigation usable with $inset dp inset', (
+        WidgetTester tester,
+      ) async {
+        const ShellSurface lenovo = ShellSurface(
+          'lenovo_landscape',
+          Size(2000 / 1.5, 800),
+          1.5,
+        );
+        await pumpShell(
+          tester,
+          connection: fakeConnection(initial: ConnState.ready),
+          surface: lenovo,
+        );
+        final Finder editor = find.byType(EditableText).first;
+        await tester.tap(editor);
+        await tester.enterText(editor, '# keyboard recovery check');
+        tester.view.viewInsets = FakeViewPadding(bottom: inset * 1.5);
+        addTearDown(tester.view.resetViewInsets);
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(tester.getSize(editor).height, greaterThanOrEqualTo(80));
+        expect(tester.getRect(editor).bottom, lessThanOrEqualTo(800 - inset));
+        expect(
+          tester
+              .widget<ConsoleStripView>(find.byType(ConsoleStripView))
+              .collapsed,
+          isTrue,
+        );
+        expect(
+          tester.widget<EditableText>(editor).controller.text,
+          '# keyboard recovery check',
+        );
+        final Finder blocks = _landscapeBlocksDestination();
+        await tester.ensureVisible(blocks);
+        expect(blocks.hitTestable(), findsOneWidget);
+
+        tester.view.resetViewInsets();
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        expect(
+          tester
+              .widget<ConsoleStripView>(find.byType(ConsoleStripView))
+              .collapsed,
+          isFalse,
+        );
+        expect(
+          tester.widget<EditableText>(editor).controller.text,
+          '# keyboard recovery check',
+        );
+      });
+    }
+  });
+
   group('A-05 shell renders and binds to Connection', () {
     testWidgets('shows the IDE navigation destinations on iPad landscape '
         '(connected)', (tester) async {
