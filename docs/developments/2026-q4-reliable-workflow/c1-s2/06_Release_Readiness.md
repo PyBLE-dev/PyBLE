@@ -143,6 +143,29 @@ with no development-device list is not the separately installed development
 Preview app. Its local validation does not establish App Store processing,
 TestFlight availability, or store-installed upgrade behavior.
 
+## Android WebView diagnostic boundary
+
+An earlier isolated debug-build Blocks startup timeout is retained in the
+private Android evidence. The first profile-build captures showed loading;
+they did not establish an expired watchdog. On the Lenovo with Google WebView
+155.0.8059.43, three separate controls passed: a native inline HTML/JavaScript
+bridge, a native WebView with the exact production Blockly assets/CSP, and a
+minimal Flutter profile app using the same pinned WebView plugins and asset
+path. The exact-asset controls observed `onPageStarted`, then `hostReady`, and
+confirmed that `window.pybleBlocks.configureHost` exists. The selected provider
+was installed/enabled and not stopped or suspended at inspection time.
+
+The current isolated profile candidate subsequently reached the real Blocks
+workspace. These observations distinguish the retained debug failure from a
+completed profile-candidate failure; they do not identify the original cause
+or prove DR-T12 by themselves. The inline control exposed a possible callback
+ordering hazard, but neither exact-asset control reproduced it, so no runtime
+change or claimed fix followed. The physical report must separately record
+actual generated-text handoff, recovery and cold relaunch. Diagnostic fixture
+sources, APK hashes and callback logs remain under ignored
+`local/recovery-completion/{native-webview-smoke,flutter-webview-smoke,android}/`.
+The production artifacts above remain bound to `e54a78a`.
+
 ## Distribution access and remaining account work
 
 The owner Android upload identity is locally usable and matches the historical
