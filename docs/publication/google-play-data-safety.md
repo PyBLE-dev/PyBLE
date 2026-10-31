@@ -6,6 +6,34 @@ Console form. Reconcile it with the exact signed bundle, all active versions
 covered by the package-level form, endpoint behavior and the final Console
 questions before submission.
 
+## 31 October 2026 — candidate 0.3.0 local recovery addendum
+
+The source candidate `0.3.0 (9)` adds a durable app-private `pyble.sqlite`
+database for one current Python text draft, its filename and bounded recovery
+metadata. This supersedes the **in-memory-only** editing description below for
+that candidate; the September table remains the historical `0.2.0` assessment.
+Blocks workspaces, multi-file projects and draft history are outside the local
+recovery slot. Restoring a draft does not itself send it to a board or network.
+
+The local database adds no app-managed cloud synchronization, telemetry or
+developer collection endpoint. The existing app policy's local retention and
+platform-backup statements still apply: OS backup depends on the platform and
+user settings. Do not equate local-only app processing with a guarantee that
+the OS never backs up app storage. Confirm packaged backup settings when
+reviewing the final artifacts.
+
+Explicit Discard removes the current recovery slot; it is not a secure-erasure
+promise for database pages, OS backups, exports or board files. Clearing app
+storage/uninstalling on Android or deleting the app on iPadOS removes the
+installed app's local data, subject to the separately described platform backup
+behavior. No pre-upgrade draft that existed only in memory can be recovered.
+
+The board/GitHub flow analysis and proposed Console answers below still need
+owner review against the exact final bundle and all active versions. This
+addendum records a source change, not a submitted Data safety declaration.
+See the [prepared release packet](app-0.3.0-build-9-release-packet.md) for
+candidate-specific tester copy and the channel handoff.
+
 ## Why the internal-testing answer needs review
 
 The move to open testing requires a Data safety form. Google defines
