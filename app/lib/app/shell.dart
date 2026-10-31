@@ -25,6 +25,7 @@ import 'package:pyble/localization/localization.dart';
 import 'package:pyble/pble/pble.dart';
 import 'package:pyble/theme/theme.dart';
 
+import 'keyboard_dismissal.dart';
 import 'pages/about_page.dart';
 import 'pages/blocks_page.dart';
 import 'pages/connect_page.dart';
@@ -335,12 +336,13 @@ class _LandscapeShell extends ConsumerWidget {
               collapsed:
                   keyboardVisible || (blocksFocused && !blocksConsoleExpanded),
               onToggle: keyboardVisible
-                  ? () {
+                  ? () async {
                       if (blocksFocused) {
                         ref.read(blocksConsoleExpandedProvider.notifier).state =
                             true;
                       }
                       FocusScope.of(context).unfocus();
+                      await dismissSoftwareKeyboard();
                     }
                   : blocksFocused
                   ? () {
