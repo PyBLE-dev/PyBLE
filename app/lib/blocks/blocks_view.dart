@@ -12,6 +12,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pyble/app/pages/surface_placeholder.dart';
 import 'package:pyble/app/providers.dart';
 import 'package:pyble/editor/editor.dart';
+import 'package:pyble/editor/board_target_guard.dart';
 import 'package:pyble/localization/localization.dart';
 import 'package:pyble/pble/pble.dart';
 import 'package:pyble/theme/theme.dart';
@@ -464,9 +465,10 @@ class BlocksView extends ConsumerWidget {
     final BlocksDocumentController controller = ref.read(
       blocksDocumentProvider.notifier,
     );
+    final int editorEpoch = ref.read(editorDocumentEpochProvider);
     try {
       try {
-        await controller.openInEditor();
+        await controller.openInEditor(expectedEditorEpoch: editorEpoch);
       } on BlocksEditorConflict catch (conflict) {
         if (!context.mounted) return;
         final bool replace =
@@ -491,10 +493,15 @@ class BlocksView extends ConsumerWidget {
             ) ??
             false;
         if (!replace || !context.mounted) return;
-        await controller.openInEditor(replaceDirty: true);
+        await controller.openInEditor(
+          replaceDirty: true,
+          expectedEditorEpoch: editorEpoch,
+        );
       }
       if (!context.mounted) return;
       ref.read(selectedSurfaceProvider.notifier).state = AppSurface.editor;
+    } on BoardActionCancelled {
+      return;
     } catch (error) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

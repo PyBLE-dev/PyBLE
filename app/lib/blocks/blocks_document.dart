@@ -16,6 +16,8 @@ import 'package:flutter/foundation.dart' show immutable;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:pyble/editor/editor.dart';
+import 'package:pyble/editor/board_target_guard.dart';
+import 'package:pyble/editor/draft_recovery.dart';
 
 import 'blocks_companion.dart';
 import 'blocks_examples.dart';
@@ -1038,22 +1040,57 @@ class BlocksDocumentController extends Notifier<BlocksDocument> {
   /// Copies a freshly acknowledged revision into an independent editor document.
   ///
   /// Callers must explicitly resolve a dirty-buffer conflict.
-  Future<void> openInEditor({bool replaceDirty = false}) async {
+  Future<void> openInEditor({
+    bool replaceDirty = false,
+    int? expectedEditorEpoch,
+  }) async {
+    final int editorEpoch =
+        expectedEditorEpoch ?? ref.read(editorDocumentEpochProvider);
+    if (ref.read(editorDocumentEpochProvider) != editorEpoch) {
+      throw BlocksEditorConflict(ref.read(editorDocumentProvider).name);
+    }
     _beginAction();
     try {
       final GeneratedProgram program = await _freshProgramForAction();
+      final int? capturedHostId = _activeHostId;
+      if (ref.read(editorDocumentEpochProvider) != editorEpoch) {
+        throw BlocksEditorConflict(ref.read(editorDocumentProvider).name);
+      }
       final EditorDocument editor = ref.read(editorDocumentProvider);
       final String generatedName = state.targetPath.substring(
         state.targetPath.lastIndexOf('/') + 1,
       );
       final bool sameGeneratedDocument =
           editor.name == generatedName && editor.content == program.source;
-      if (editor.dirty && !sameGeneratedDocument && !replaceDirty) {
+      final recoveryEnabled =
+          ref.read(draftRecoveryProvider).status !=
+          DraftRecoveryStatus.disabled;
+      if (!recoveryEnabled &&
+          editor.dirty &&
+          !sameGeneratedDocument &&
+          !replaceDirty) {
         throw BlocksEditorConflict(editor.name);
       }
-      ref
-          .read(editorDocumentProvider.notifier)
-          .openGenerated(name: generatedName, content: program.source);
+      if (recoveryEnabled &&
+          !await confirmEditorReplacement(ref, expectedEpoch: editorEpoch)) {
+        throw const BoardActionCancelled();
+      }
+      final adopted = await ref
+          .read(draftRecoveryProvider.notifier)
+          .replaceDocument(
+            EditorDocument(
+              name: generatedName,
+              content: program.source,
+              dirty: true,
+            ),
+            expectedEpoch: editorEpoch,
+            isStillValid: () =>
+                capturedHostId == _activeHostId &&
+                state.program?.revision == program.revision &&
+                state.retainedWorkspaceRevision == program.revision &&
+                state.workspaceError == null,
+          );
+      if (!adopted) throw const BoardActionCancelled();
     } finally {
       _endAction();
     }

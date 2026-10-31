@@ -28,6 +28,7 @@ import 'package:pyble/pble/pble.dart';
 import 'package:pyble/app/providers.dart';
 
 import 'editor_document.dart';
+import 'board_target_guard.dart';
 import 'program_actions.dart';
 import 'smart_punctuation.dart';
 
@@ -77,6 +78,12 @@ class SaveController {
     final int epoch = _ref.read(editorDocumentEpochProvider);
     final Connection connection = _ref.read(connectionProvider);
     final Object stamp = connectionSessionStampOf(connection);
+    if (!await confirmBoardTarget(_ref, path: path, run: false) ||
+        _ref.read(editorDocumentEpochProvider) != epoch ||
+        !identical(_ref.read(connectionProvider), connection) ||
+        !identical(connectionSessionStampOf(connection), stamp)) {
+      throw const BoardActionCancelled();
+    }
     await _ref
         .read(programActionsProvider)
         .saveSource(path: path, source: cleaned, onProgress: onProgress);
