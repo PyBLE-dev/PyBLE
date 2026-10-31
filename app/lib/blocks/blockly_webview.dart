@@ -31,10 +31,10 @@ const Duration _firstSnapshotTimeout = Duration(seconds: 15);
 /// Loads the sealed host through the platform path that can read its relative
 /// bundled resources.
 ///
-/// Android's high-target-SDK WebView defaults file access off. Its public
-/// [WebViewController.loadFile] adapter enables that setting before loading
-/// the exact `/android_asset` document; `loadFlutterAsset` does not. WKWebView
-/// continues to resolve the ordinary Flutter asset path directly.
+/// Android loads the exact `/android_asset` document through
+/// [WebViewController.loadFile]. The adapter requests file access concurrently
+/// with navigation; Android asset URLs are exempt from that general filesystem
+/// setting. WKWebView resolves the ordinary Flutter asset path directly.
 @visibleForTesting
 Future<void> loadBlocklyAssetForPlatform({
   required TargetPlatform platform,
