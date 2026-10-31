@@ -111,12 +111,12 @@ describe("production build contract", () => {
       "16.3.4",
     );
     expect(packageJson.devDependencies?.vitest).toBe("4.1.12");
-    expect(packageJson.overrides?.next?.sharp).toBe("0.35.4");
+    expect(packageJson.overrides?.next?.sharp).toBe("0.35.5");
     for (const [name, version] of [
       ["next", "16.3.4"],
       ["@next/env", "16.3.4"],
       ["@next/eslint-plugin-next", "16.3.4"],
-      ["sharp", "0.35.4"],
+      ["sharp", "0.35.5"],
       ["vitest", "4.1.12"],
       ["@vitest/mocker", "4.1.12"],
     ]) {
