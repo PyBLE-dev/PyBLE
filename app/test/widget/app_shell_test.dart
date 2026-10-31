@@ -115,7 +115,10 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(tester.takeException(), isNull);
-        expect(tester.getSize(editor).height, greaterThanOrEqualTo(80));
+        final Finder viewport = find.byWidgetPredicate(
+          (Widget widget) => widget is EditorSurface,
+        );
+        expect(tester.getSize(viewport).height, greaterThanOrEqualTo(80));
         expect(tester.getRect(editor).bottom, lessThanOrEqualTo(800 - inset));
         expect(
           tester
@@ -130,6 +133,10 @@ void main() {
         final Finder blocks = _landscapeBlocksDestination();
         await tester.ensureVisible(blocks);
         expect(blocks.hitTestable(), findsOneWidget);
+
+        await tester.tap(find.byTooltip('Expand console'));
+        await tester.pump();
+        expect(tester.widget<EditableText>(editor).focusNode.hasFocus, isFalse);
 
         tester.view.resetViewInsets();
         await tester.pumpAndSettle();

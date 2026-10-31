@@ -220,6 +220,7 @@ class _LandscapeShell extends ConsumerWidget {
     final bool filesCollapsed = ref.watch(filesPaneCollapsedProvider);
     final bool blocksFocused = selected == AppSurface.blocks;
     final bool blocksConsoleExpanded = ref.watch(blocksConsoleExpandedProvider);
+    final bool keyboardVisible = MediaQuery.viewInsetsOf(context).bottom > 0;
     final AppLocalizations l10n = AppLocalizations.of(context);
 
     final AppSurface centre = _centreSurface(selected);
@@ -331,8 +332,17 @@ class _LandscapeShell extends ConsumerWidget {
             ),
             const Divider(height: 1),
             ConsoleStripView(
-              collapsed: blocksFocused && !blocksConsoleExpanded,
-              onToggle: blocksFocused
+              collapsed:
+                  keyboardVisible || (blocksFocused && !blocksConsoleExpanded),
+              onToggle: keyboardVisible
+                  ? () {
+                      if (blocksFocused) {
+                        ref.read(blocksConsoleExpandedProvider.notifier).state =
+                            true;
+                      }
+                      FocusScope.of(context).unfocus();
+                    }
+                  : blocksFocused
                   ? () {
                       ref.read(blocksConsoleExpandedProvider.notifier).state =
                           !blocksConsoleExpanded;
@@ -410,6 +420,7 @@ class _SurfaceRail extends ConsumerWidget {
     );
     final int selectedIndex = _ideNavSurfaces.indexOf(selected);
     return NavigationRail(
+      scrollable: true,
       selectedIndex: selectedIndex < 0 ? 0 : selectedIndex,
       labelType: NavigationRailLabelType.all,
       onDestinationSelected: (int index) {
