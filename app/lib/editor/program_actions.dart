@@ -133,8 +133,16 @@ class ProgramActions {
     required String source,
     ProgressCb? onProgress,
   }) async {
+    final Connection connection = _ref.read(connectionProvider);
+    final Object stamp = connectionSessionStampOf(connection);
     await saveSource(path: path, source: source, onProgress: onProgress);
-    await _ref.read(connectionProvider).runFile(path);
+    if (!identical(_ref.read(connectionProvider), connection) ||
+        !identical(connectionSessionStampOf(connection), stamp)) {
+      // The upload may have completed on the previous attachment. Do not send
+      // the second verb to a replacement board.
+      throw const NotConnectedException();
+    }
+    await connection.runFile(path);
   }
 
   /// Writes a Python file and then its raw JSON companion commit record.
