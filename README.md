@@ -107,6 +107,8 @@ copies. See the [candidate execution record](docs/developments/2026-q4-reliable-
 for passing automated checks and candidate-specific device evidence. Local
 Android and iPad Preview installations are engineering candidates; their
 installation does not establish store availability or release qualification.
+The [release readiness record](docs/developments/2026-q4-reliable-workflow/c1-s2/06_Release_Readiness.md)
+tracks signed-artifact preparation, qualification and the channel handoff.
 
 ### Firmware
 

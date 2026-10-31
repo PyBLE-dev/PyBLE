@@ -15,7 +15,7 @@ The live public invitation's description still presents the older ESP-family/age
 
 The later device retry establishes that the observed native TestFlight offer and installed beta are `0.2.0 (6)`, with a successful launch and TestFlight signing origin. Its source/archive mapping remains unknown. Installed metadata reports `MinimumOSVersion = 18.0` while the build notes describe an iOS/iPadOS 15 rebuild; reconcile that difference with archive and store eligibility before publishing an older-OS support claim. This discovery does not change the public description or the historical build-5 handoff.
 
-## Prepared Beta App Description
+## Prepared Beta App Description for the recorded 0.2.0 channel baseline
 
 The following is app-level copy for review against the actual offered build. It is not a build-specific “What to Test” entry and does not announce a new binary, production release or completed compatibility matrix.
 
@@ -42,3 +42,20 @@ PyBLE is MIT-licensed and developed in public at https://github.com/PyBLE-dev/Py
 | Close PYB-002.1 | Both the actual metadata update and public verification must be evidenced; preparing this packet alone does not complete the correction |
 
 This residual task does not block preparation of the persistence contract or otherwise qualified maintenance work. No paid feature, app allowlist, new protocol behavior or PyBLE Ready claim is introduced.
+
+## 31 October 2026 public-page recheck
+
+A fresh HTTPS GET of the [public TestFlight invitation](https://testflight.apple.com/join/yU4e8s6d)
+at 11:46 UTC returned HTTP 200 and still showed the old three-ESP-profile and
+agent-`0.4.0` description. PYB-002.1 therefore remains unresolved. The public
+page does not establish a currently offered build, archive/source identity or
+eligibility for a particular device.
+
+Raw response and receipt: ignored
+`local/recovery-completion/public-channel-recheck/testflight.html` and
+`testflight-receipt.json`; response SHA-256
+`78b9fb6bf3ff04ce12dfdf0e2a24ae694d0fda50cc1b8a468ae5d01c8277fdfb`.
+No metadata was changed. When admitting `0.3.0`, reconcile this older prepared
+description's draft-durability sentence with the
+[new candidate packet](../../../publication/app-0.3.0-build-9-release-packet.md)
+and the actual offered build; do not publish contradictory recovery claims.

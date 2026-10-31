@@ -7,12 +7,12 @@
 |---|---|
 | Status | C1-S1 remains partial; bounded S2 candidate merged 31 October with physical acceptance pending. Original S2–S6 dates/hours remain baseline forecasts requiring capacity reconciliation |
 | Cycle | `C1`, 28 September–20 December 2026, Asia/Bangkok |
-| Basis | [Strategy revision 1.6, §8](../../planning/PyBLE_Implementation_Plan_and_Strategy_v1.0.md#8-twelve-week-implementation-schedule) |
+| Basis | [Strategy revision 1.7, §8](../../planning/PyBLE_Implementation_Plan_and_Strategy_v1.0.md#8-twelve-week-implementation-schedule) |
 | Product Goal and quality rules | [Working agreement](01_Overview_and_Scrum_Framework.md) |
 | Acceptance criteria | [Product backlog and stories](05_Product_Backlog_and_Stories.md) |
 | Task-level proposal | [Sprint backlogs](06_Sprint_Backlogs.md) |
 
-**31 October continuation update:** bounded recovery candidate `0.3.0+9` is merged in [PR #40](https://github.com/PyBLE-dev/PyBLE/pull/40) at `6f5b3ea`; the integrated suite and post-merge CI pass. Both tablets have local candidate installations and native storage restart evidence. [C1-S2 implementation record](c1-s2/00_Execution_Record.md) tracks the remaining physical acceptance separately from release qualification. S1 remains six Done / two Prepared / four Awaiting evidence. Original dates/hours remain the planning baseline; the current continuation order and unresolved capacity inputs are recorded in the [Sprint plan](04_Sprint_Plan.md#31-october-continuation-order-and-reforecast).
+**31 October continuation update:** the `0.3.0+9` recovery baseline merged in [PR #40](https://github.com/PyBLE-dev/PyBLE/pull/40). Physical qualification exposed three keyboard defects; their repairs at `bef67bd` pass 984 ordinary tests and all 36 PR #41 checks. iPad recovery, final keyboard regressions and all five iPad app-only board rows pass with declared source/firmware scope. Earlier Android recovery and board rows pass, but a later final-candidate Blocks startup observation remains under investigation. Signed packages and a channel packet are prepared; admission and actual store delivery remain separate. The [C1-S2 record](c1-s2/00_Execution_Record.md) binds the evidence. S1 remains six Done / two Prepared / four Awaiting evidence. Original dates/hours remain the baseline; the [continuation plan](04_Sprint_Plan.md#31-october-continuation-order-and-reforecast) records unresolved capacity inputs.
 
 ## Forecast and commitment boundary
 

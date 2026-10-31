@@ -9,7 +9,7 @@
 |---|---|
 | Package | PyBLE 2026 Q4 reliable workflow, Cycle 1 (`C1`) |
 | Prepared | 25 September 2026; Asia/Bangkok |
-| Strategy | [Implementation Plan, revision 1.4](../../planning/PyBLE_Implementation_Plan_and_Strategy_v1.0.md) |
+| Strategy | [Implementation Plan, revision 1.7](../../planning/PyBLE_Implementation_Plan_and_Strategy_v1.0.md) |
 | Repository baseline | `23ed764b0ef88dce9720c66fbd1c0655268860cf` |
 | Proposed cycle | 28 September–20 December 2026; six two-week Sprints |
 | Status | C1-S1 device retry on 25 September: six tasks Done, two Prepared and four Awaiting evidence; both current channel installations verified, pilot work unfinished. Later Sprints require replanning against new sizing; no staffed-team ceremony is inferred |
@@ -18,7 +18,7 @@
 
 This package derives execution views from the strategy. It does not replace normative specifications, expand hardware claims, create GitHub issues, or authorize store/website publication. The strategy and original package were recorded together in planning baseline `d039db0`. The [C1-S1 execution record](c1-s1/00_Execution_Record.md) owns actual results and blockers.
 
-**31 October continuation update:** bounded recovery candidate `0.3.0+9` is merged in [PR #40](https://github.com/PyBLE-dev/PyBLE/pull/40) at `6f5b3ea`; the integrated suite and post-merge CI pass. Both tablets have local candidate installations and native storage restart evidence. [C1-S2 implementation record](c1-s2/00_Execution_Record.md) tracks the remaining physical acceptance separately from release qualification. S1 remains six Done / two Prepared / four Awaiting evidence. Original dates/hours remain the planning baseline; the current continuation order and unresolved capacity inputs are recorded in the [Sprint plan](04_Sprint_Plan.md#31-october-continuation-order-and-reforecast).
+**31 October continuation update:** the `0.3.0+9` recovery baseline merged in [PR #40](https://github.com/PyBLE-dev/PyBLE/pull/40). Physical qualification exposed three keyboard defects; their repairs at `bef67bd` pass 984 ordinary tests and all 36 PR #41 checks. iPad recovery, final keyboard regressions and all five iPad app-only board rows pass with declared source/firmware scope. Earlier Android recovery and board rows pass, but a later final-candidate Blocks startup observation remains under investigation. Signed packages and a channel packet are prepared; admission and actual store delivery remain separate. The [C1-S2 record](c1-s2/00_Execution_Record.md) binds the evidence. S1 remains six Done / two Prepared / four Awaiting evidence. Original dates/hours remain the baseline; the [continuation plan](04_Sprint_Plan.md#31-october-continuation-order-and-reforecast) records unresolved capacity inputs.
 
 ## Navigation and ownership of information
 
@@ -35,7 +35,7 @@ This package derives execution views from the strategy. It does not replace norm
 
 ```mermaid
 flowchart LR
-    Strategy["Strategy revision 1.6"] --> Goal["One Product Goal"]
+    Strategy["Strategy revision 1.7"] --> Goal["One Product Goal"]
     Goal --> Roadmap["Outcome roadmap and milestones"]
     Roadmap --> Product["Ordered Product Backlog"]
     Product --> Planning["Sprint Planning"]
@@ -140,7 +140,7 @@ When facts or priority change, update the canonical file above and its dependent
 
 | Source | Use and precedence |
 |---|---|
-| [Strategy revision 1.6](../../planning/PyBLE_Implementation_Plan_and_Strategy_v1.0.md) | Scope, targets, six-Sprint capacity, three outcomes, Ready program and conditional horizons |
+| [Strategy revision 1.7](../../planning/PyBLE_Implementation_Plan_and_Strategy_v1.0.md) | Scope, targets, six-Sprint capacity, three outcomes, Ready program and conditional horizons |
 | [Public roadmap](../../ROADMAP.md), [README](../../../README.md) | Current capability and distribution baseline |
 | [App specification](../../specifications/App/specs.md), [App TDD](../../specifications/App/TDD.md), [ADR-0010](../../decisions/0010-working-loop-in-memory-document.md) | Persistence contract and recorded implementation deviation; consult frozen working-loop scope |
 | [Firmware roadmap](../../planning/firmware-v0.6.1-v0.7.0-roadmap.md), [PBLE/1](../../specifications/protocol.md) | v0.7 proposals versus frozen wire behavior; old v0.6.1 publication/#24 wording is historical |

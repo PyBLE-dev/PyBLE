@@ -7,13 +7,13 @@
 |---|---|
 | Status | C1-S1 has six tasks Done, two Prepared awaiting pilot setup and four Awaiting evidence; existing channel installations verified. Future direction remains conditional and forecasts need revision after sizing |
 | Planning date | 25 September 2026; dates use Asia/Bangkok |
-| Source | [Implementation strategy revision 1.6](../../planning/PyBLE_Implementation_Plan_and_Strategy_v1.0.md), particularly §§1, 6–9, 12, 14, and 19 |
+| Source | [Implementation strategy revision 1.7](../../planning/PyBLE_Implementation_Plan_and_Strategy_v1.0.md), particularly §§1, 6–9, 12, 14, and 19 |
 | Inspected baseline | `main` at `23ed764b0ef88dce9720c66fbd1c0655268860cf` |
 | First cycle | C1: 28 September–20 December 2026; later horizons conditional through September 2028 |
 | Planning authority | Product Owner orders the Product Backlog; Developers forecast feasible work during Sprint Planning; names and capacity remain unassigned |
 | Related documents | [Framework](01_Overview_and_Scrum_Framework.md), [milestones](03_Milestones.md), [Sprint Plan](04_Sprint_Plan.md), [stories](05_Product_Backlog_and_Stories.md), [Sprint Backlogs](06_Sprint_Backlogs.md) |
 
-**31 October continuation update:** bounded recovery candidate `0.3.0+9` is merged in [PR #40](https://github.com/PyBLE-dev/PyBLE/pull/40) at `6f5b3ea`; the integrated suite and post-merge CI pass. Both tablets have local candidate installations and native storage restart evidence. [C1-S2 implementation record](c1-s2/00_Execution_Record.md) tracks the remaining physical acceptance separately from release qualification. S1 remains six Done / two Prepared / four Awaiting evidence. Original dates/hours remain the planning baseline; the current continuation order and unresolved capacity inputs are recorded in the [Sprint plan](04_Sprint_Plan.md#31-october-continuation-order-and-reforecast).
+**31 October continuation update:** the `0.3.0+9` recovery baseline merged in [PR #40](https://github.com/PyBLE-dev/PyBLE/pull/40). Physical qualification exposed three keyboard defects; their repairs at `bef67bd` pass 984 ordinary tests and all 36 PR #41 checks. iPad recovery, final keyboard regressions and all five iPad app-only board rows pass with declared source/firmware scope. Earlier Android recovery and board rows pass, but a later final-candidate Blocks startup observation remains under investigation. Signed packages and a channel packet are prepared; admission and actual store delivery remain separate. The [C1-S2 record](c1-s2/00_Execution_Record.md) binds the evidence. S1 remains six Done / two Prepared / four Awaiting evidence. Original dates/hours remain the baseline; the [continuation plan](04_Sprint_Plan.md#31-october-continuation-order-and-reforecast) records unresolved capacity inputs.
 
 ## Product Goal and decision principle
 

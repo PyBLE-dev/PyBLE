@@ -12,6 +12,14 @@
 | Raw evidence | Ignored `local/recovery-implementation/`: commands/results, source manifests, screenshots/UI dumps, retained checkpoint and APK; raw captures are not committed |
 | Review | [Execution record](00_Execution_Record.md), [operator recipe](01_Operator_Recipe.md), [merged PR #40](https://github.com/PyBLE-dev/PyBLE/pull/40) |
 
+**Continuation:** this report preserves the earlier source/artifact results.
+Later normal-app observations and repairs are recorded in the
+[iPad acceptance report](04_iPad_Acceptance.md),
+[Android acceptance report](05_Android_Acceptance.md), and
+[current execution record](00_Execution_Record.md). A pending row here is not a
+claim that the same scenario remains unrun on every later candidate; a later
+pass likewise does not rewrite the earlier outcome or prove identical bytes.
+
 ## Isolation and artifact identity
 
 The installed store applications were preserved. Qualification used copied app
@@ -127,13 +135,16 @@ prove current contents. The fresh complete current workspace backup exactly matc
 and its valid LFS2 workspace remain intact, with identical partition geometry.
 ROM reads and startup tracing involved controlled resets. The verified valid pre-test workspace was then restored only to its original region, and the next scan shows all five boards. See the [recovery report](03_Classic_ESP32_Workspace_Recovery.md) for backups, hashes, offline inventory and the verified write.
 
-## Remaining release evidence
+## Subsequent acceptance evidence
 
-Complete the iPad production interaction matrix, remaining Android interaction/interruption rows,
-explicit harmless physical board Save/Run/Files destination consent, applicable
-Blocks handoff checks and the selected release matrix. Preserve candidate
-provenance and report every unrun row. Participant follow-up and the unfinished
-M-01/SG0 pilot work remain separate from engineering recovery evidence.
+The remaining normal-app interaction, current-target consent and Blocks handoff
+work from this historical record is reconciled in the [iPad](04_iPad_Acceptance.md),
+[Android](05_Android_Acceptance.md) and [current execution](00_Execution_Record.md)
+records. All five iPad Q rows now pass within their exact source/firmware scope;
+the final Android Blocks startup observation remains under investigation.
+Candidate provenance, retained failures and final admission stay explicit.
+Participant follow-up and unfinished M-01/SG0 pilot work remain separate from
+engineering recovery evidence.
 
 ## Lenovo production workflow on recovered classic ESP32
 

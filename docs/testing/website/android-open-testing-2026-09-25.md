@@ -40,7 +40,7 @@ listing remains the link; no inferred opt-in destination is introduced.
 
 ## Source and evidence boundaries
 
-The repository's App source version remains `0.2.0+8`. The public app version
+At the original review, the repository's App source version was `0.2.0+8`. The public app version
 `0.2.0` does not establish the installed store artifact's version code, source
 commit, or inclusion of later connection-lifecycle fixes. The
 [build-8 handoff](../google-play/0.2.0-build-8.md) and original submission
@@ -51,3 +51,18 @@ This record documents availability and the coordinated content contract. It
 does not attest a deployment, signed-in Play Console state, installed app
 binary, or hardware-validation result. Search engines control when indexed
 snippets refresh after updated pages are published.
+
+## 31 October 2026 public-page recheck
+
+A fresh HTTPS GET of the [official Google Play listing](https://play.google.com/store/apps/details?id=dev.pyble.pyble&hl=en&gl=US)
+at 11:46 UTC returned HTTP 200. Its English/US release notes still describe
+`0.2.0` open testing, with 16 September 2026 shown as the update date. This
+reconfirms the public copy baseline; it does not identify the current delivered
+version code, account eligibility or binary. The `0.3.0+9` app candidate remains
+under [release preparation](../../developments/2026-q4-reliable-workflow/c1-s2/06_Release_Readiness.md).
+
+Raw response and receipt: ignored
+`local/recovery-completion/public-channel-recheck/play.html` and
+`play-receipt.json`; response SHA-256
+`270403bcba91faa4c8b9c7eb0ce8aa0882a3d3251c23623faf346e8a62d8b659`.
+No enrollment, installation or store mutation was performed by this recheck.
