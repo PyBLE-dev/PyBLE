@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: MIT
+# Part of PyBLE (https://pyble.dev) — see /LICENSE.
+
+targets:
+  $default:
+    builders:
+      source_gen:combining_builder:
+        options:
+          preamble: |
+            // SPDX-License-Identifier: MIT
+            // Part of PyBLE (https://pyble.dev) — see /LICENSE.
