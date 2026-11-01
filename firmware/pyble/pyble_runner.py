@@ -300,6 +300,10 @@ class Runner:
                 return ERANGE
         elif len(data) > RUN_SOURCE_MAX:
             return ERANGE
+        # Preserve legacy active-run refusal before considering exhaustion of
+        # the next identity. Malformed payloads still win over both checks.
+        if self.rsm.state == RUNNING:
+            return EBUSY
         if int.from_bytes(self._status[9:13], "little") == MAX_RUN_ID:
             return ERANGE
         prior_state = self.rsm.state
