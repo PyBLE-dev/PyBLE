@@ -1056,8 +1056,8 @@ class BoardConfigurationSourceContractTests(unittest.TestCase):
             expected = tomllib.load(handle)["pyble"]["agent_version"]
         self.assertEqual(
             expected,
-            "0.6.1",
-            "the v0.6.1 hardening source must advance the patch version",
+            "0.7.0-dev.1",
+            "the selected run-status development source must retain its own version",
         )
         package_source = (FIRMWARE_DIR / "pyble" / "__init__.py").read_text(
             encoding="utf-8"

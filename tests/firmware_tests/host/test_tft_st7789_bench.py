@@ -554,6 +554,35 @@ class PreflightAndRedactionTest(unittest.TestCase):
 
 
 class EvidenceParserTest(unittest.TestCase):
+    def _runtime_stage(self, agent):
+        return {
+            "schema_version": 1, "status": "passed", "stage": "post-reboot",
+            "profile_id": bench.PROFILE_ID, "board_model": bench.BOARD_MODEL,
+            "preflight": {key: preflight()[key] for key in (
+                "chip", "flash_capacity_bytes", "psram_capacity_bytes", "discovery_method")},
+            "runtime": {"proto": 1, "agent": agent, "chip": bench.EXPECTED_CHIP,
+                        "mpy": bench.EXPECTED_MPY_VERSION, "mtu": 247,
+                        "window": 8, "chunk": 229, "free_mem_bytes": 262144},
+        }
+
+    def test_runtime_agent_accepts_canonical_prerelease_and_build_identifiers(self):
+        for version in ("0.6.1", "0.7.0-dev.1", "0.7.0-dev.1+local.5",
+                        "0.7.0-1alpha.1", "1.2.3+001"):
+            with self.subTest(version=version), mock.patch.object(
+                    bench, "EXPECTED_AGENT_VERSION", version):
+                identity = bench._validate_redacted_stage(
+                    self._runtime_stage(version), "post-reboot", set(), "test")
+                self.assertEqual(identity[1], version)
+
+    def test_runtime_agent_rejects_noncanonical_versions_even_if_expected_matches(self):
+        for version in ("01.2.3", "1.02.3", "1.2.03", "1.2.3-01", "1.2.3-dev..1",
+                        "1.2.3+", "1.2", "v1.2.3", "1.2.3\n", "1.2.3+bad?", "unknown"):
+            with self.subTest(version=version), mock.patch.object(
+                    bench, "EXPECTED_AGENT_VERSION", version):
+                with self.assertRaises(bench.BenchError):
+                    bench._validate_redacted_stage(
+                        self._runtime_stage(version), "post-reboot", set(), "test")
+
     def test_split_console_markers_produce_exact_evidence(self):
         text = (
             "%s=16777216,7900000,7700000,120000\n"
