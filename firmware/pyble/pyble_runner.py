@@ -217,6 +217,15 @@ class Runner:
                         bytes((selected[0], old[22], selected[1], selected[2])))
         return selected[0]
 
+    def _admit_status(self, snapshot, run_id):
+        # Validation may service a scheduled STOP for an autorun reservation.
+        # Read its latched intent inside this branch-free final publication
+        # region, after every codec/caller checkpoint. Both flags first become
+        # visible in the same committed snapshot and consume one revision.
+        self._status = snapshot[:24] + bytes((
+            snapshot[24] | (STATUS_STOPPING * bool(self._stop_requested)),))
+        self._pending_status_id = run_id
+
     def commit_reserved_run(self, origin=None):
         """Commit only an accepted RUN response or an admitted autorun."""
         if self._pending is None or self._pending_status_id is not None:
@@ -225,9 +234,9 @@ class Runner:
         if run_id == MAX_RUN_ID:
             return False
         origin = self._pending_status_origin if origin is None else origin
-        self._status = encode_run_status(
+        snapshot = encode_run_status(
             boot, run_id + 1, revision + 1, RUNNING, origin, 0, STATUS_QUEUED)
-        self._pending_status_id = run_id + 1
+        self._admit_status(snapshot, run_id + 1)
         return True
 
     def _default_emit_terminal(self, state, published):
