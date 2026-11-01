@@ -286,7 +286,10 @@ tracks specification, red/green implementation, app integration, independent
 worktrees and actual candidate qualification. Firmware `0.7.0-dev.1` and companion
 app `0.4.0+10` are development identities, with remaining Reliable Projects scope
 and public release admission still pending. This early slice follows §6.3's
-explicit scope substitution; store reviews and participant work are separate.
+scope-substitution path as an implementation assumption following the preceding
+recommendation and the user's roadmap request, not a separate explicit
+first-increment-versus-full-roadmap choice. Store reviews and participant work
+are separate; the full requested roadmap is not declared complete.
 The prior app0.3 admission and source-bound hardware limits remain historical.
 
 ## 6. Release and protocol strategy
@@ -479,7 +482,7 @@ Current execution states and the newly identified residual `PYB-002.1` are maint
 
 | ID | Stage / owner | Deliverable and acceptance criterion | Dependency |
 |---|---|---|---|
-| PYB-017 | P0 / Protocol | Approved v0.7.0 scope, ADRs, capability registry, and cross-version test plan before implementation | Default after first-cycle review; earlier design only by explicit capacity/scope decision |
+| PYB-017 | P0 / Protocol | Approved v0.7.0 scope, ADRs, capability registry, and cross-version test plan before implementation | Run-status design/implementation selected on 1 November under the recorded first-increment scope assumption; remaining scope proposed. Original forecast after first-cycle review remains historical; no human capacity is inferred |
 | PYB-018 | P0 / Firmware + App | Queryable run/session state; reconnect and autorun tests show no stale-state assumption | 017 |
 | PYB-019 | P0 / Firmware + App | Transfer inspection/abort; old destination survives failure, abort is idempotent, ordinary disconnect still permits defined resume | 017 |
 | PYB-020 | P0 / Firmware + App | Complete directory enumeration with documented mutation behavior; every entry returned once for an unchanged test directory | 017 |

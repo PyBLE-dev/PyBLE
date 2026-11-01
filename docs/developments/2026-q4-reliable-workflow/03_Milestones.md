@@ -84,15 +84,17 @@ decision that preserves the original results.
 
 ## Conditional future milestone register
 
-These milestones remain Proposed beyond the base C1 commitment. Their windows
-are options from the strategy, not simultaneous assignments. Research and paid
-support experiments remain conditional roadmap streams rather than implied
-release or publication promises.
+Except for M-08's run-status slice selected on 1 November under the
+[recorded implementation assumption](01_Overview_and_Scrum_Framework.md#1-november-selected-continuation),
+these milestones remain proposed beyond the base C1 commitment. Their original
+windows are options from the strategy, not simultaneous assignments. Research
+and paid-support experiments remain conditional roadmap streams rather than
+implied release or publication promises.
 
 | ID / status | Outcome and value | Indicative window / stories | Admission and evidence | Decision boundary |
 |---|---|---|---|---|
 | M-07 — Proposed | A complete Ready record and one external maintenance pilot make one exact profile easier to choose, set up, and sustain | Months 3–9; PYB-009 → 024 → 025; funded existing-profile rehearsal may start in C1 | Second operator reproduces published procedure; criteria/use/retest/withdrawal rules reviewed; complete artifact/hardware/workflow/installation/maintenance record; owner/reviewer; one external maintainer and measured setup/support effort | First badge only after its declared criteria pass; SG4 assesses broader expansion after the bounded pilot, not permission to start rehearsal |
-| M-08 — Selected run-status increment in progress (1 Nov); remaining scope proposed | One selected Reliable Projects capability resolves a demonstrated workflow limitation | Months 3–6, conditional; PYB-017 then selected 018…022; 032 only if separately justified | Approved scope and normative wire/spec/ADR decisions; unchanged legacy behavior; capability fallback; cross-version tests and applicable five-profile physical/release evidence | No approval of the whole v0.7.0 feature set, opcode allocation, or release date by this milestone |
+| M-08 — Selected run-status increment in progress (1 Nov); remaining scope proposed | One selected Reliable Projects capability resolves a demonstrated workflow limitation | Run-status slice selected 1 Nov; remainder retains the original conditional Months 3–6 forecast; PYB-017.1/PYB-018 selected, 019…022 and 032 only if separately justified | Approved scope and normative wire/spec/ADR decisions; unchanged legacy behavior; capability fallback; cross-version tests and applicable five-profile physical/release evidence | No approval of the whole v0.7.0 feature set, opcode allocation, or release date by this milestone |
 | M-09 — Proposed | A reusable supervised lesson and at least two measured sessions demonstrate sustainable teaching use | Months 6–12; PYB-026/028; 027 only if bundle scope is approved | Reliable core; multi-board selection/interference exercise; classroom safety/security and consent review; accessible lesson, instructor setup/intervention and outcome records | SG5 governs broader classroom use; small supervised evidence cannot establish unrestricted classroom scale |
 | M-10 — Proposed | A justified ownership/security design supports an explicitly bounded untrusted or field deployment claim | Months 12–24 through Sep 2028, only on demonstrated demand; PYB-023 | Approved ownership/authentication and versioning scope; independent review; downgrade/reset/recovery evidence; sustainable support | SG6 before untrusted/field claims; a Ready badge does not satisfy security admission |
 
