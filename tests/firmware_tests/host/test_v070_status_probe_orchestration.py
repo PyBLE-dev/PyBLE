@@ -68,6 +68,9 @@ class FakeSession:
         self.query_count = 0
         self.confirmed_mtu = None
 
+    def limit_write_fragmentation(self, mtu):
+        self.fragment_limit = mtu
+
     def confirm_caps_mtu(self, mtu):
         self.confirmed_mtu = mtu
 

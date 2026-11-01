@@ -124,6 +124,7 @@ class PbleCentral:
         self._rsp_by_id = self._rsp_by_key
         self._rsp_event = asyncio.Event()
         self._confirmed_caps_mtu = None
+        self._write_fragment_limit = None
         self._ack_history = []
         self.last_ack = 0            # highest FILE_PUT_ACK{ack_offset} seen
         self.events = []             # non-RSP, non-ACK frames (RUN_STATE, CONSOLE_*)
@@ -244,7 +245,8 @@ class PbleCentral:
         after the device's HELLO caps have been validated may the bench use the
         reported negotiated value for subsequent writes.
         """
-        return self._confirmed_caps_mtu or DEFAULT_ATT_MTU
+        return min(self._confirmed_caps_mtu or DEFAULT_ATT_MTU,
+                   self._write_fragment_limit or 65535)
 
     def confirm_caps_mtu(self, mtu):
         """Enable post-HELLO fragmentation at ``mtu``.
@@ -267,6 +269,17 @@ class PbleCentral:
                 "backend ATT MTU %d disagrees with HELLO mtu=%d" % (backend, mtu)
             )
         self._confirmed_caps_mtu = mtu
+
+    def limit_write_fragmentation(self, mtu):
+        """Use smaller command fragments without claiming a smaller ATT MTU.
+
+        Negotiated/backend evidence is retained independently and still checked
+        by confirm_caps_mtu. This limit can only lower the allowed packet size.
+        """
+        actual = self._confirmed_caps_mtu or DEFAULT_ATT_MTU
+        if type(mtu) is not int or not DEFAULT_ATT_MTU <= mtu <= actual:
+            raise ValueError("invalid write-fragment limit")
+        self._write_fragment_limit = mtu
 
     @property
     def is_connected(self):
