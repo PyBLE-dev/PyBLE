@@ -11,6 +11,29 @@ ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / 'tests/firmware_tests/hil'))
 
 
+class CleanupOwnershipTest(unittest.IsolatedAsyncioTestCase):
+    async def test_does_not_stop_a_successor_or_another_boot(self):
+        path = ROOT / 'tests/firmware_tests/hil/v070_run_status_bench.py'
+        spec = importlib.util.spec_from_file_location('v070_status_cleanup', path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        calls = []
+        async def stop():
+            calls.append('stop')
+        async def query():
+            return dict(boot_id='new-boot', run_id=3, state=1)
+        self.assertFalse(await module.stop_owned_run(query, stop, ('old-boot', 3)))
+        self.assertFalse(calls)
+        async def query_successor():
+            return dict(boot_id='old-boot', run_id=4, state=1)
+        self.assertFalse(await module.stop_owned_run(query_successor, stop, ('old-boot', 3)))
+        self.assertFalse(calls)
+        async def query_owner():
+            return dict(boot_id='old-boot', run_id=3, state=1)
+        self.assertTrue(await module.stop_owned_run(query_owner, stop, ('old-boot', 3)))
+        self.assertEqual(calls, ['stop'])
+
+
 class StatusBenchTests(unittest.TestCase):
     def test_all_shared_status_vectors(self):
         path = ROOT / 'tests/firmware_tests/hil/v070_run_status_bench.py'
