@@ -223,8 +223,9 @@ qualified v0.6.0 bytes.
 
 ## 5. Proposed v0.7.0 — Reliable Projects
 
-All wire names and opcode numbers in this section are placeholders for
-specification review. Each operation must be additive, explicitly advertised
+Except for the selected §5.2 contract now specified in PBLE/1 §6.1, wire names
+and opcode numbers in this section remain placeholders for specification
+review. Each operation must be additive, explicitly advertised
 by capability, ignored safely by old clients, and unavailable to a new client
 when the capability is absent.
 
@@ -262,17 +263,26 @@ position. The specification must define:
 
 ### 5.2 Queryable run/session snapshot
 
-Add a capability-gated `RUN_STATUS` or `RUN_INFO` request. Its response should
-contain only bounded diagnostic metadata:
+The first increment now specifies capability `run_status=1`, empty-payload
+`RUN_STATUS` (`0x24`) and opt-in `RUN_STATUS_CHANGED` (`0x42`) in
+[PBLE/1 §6.1](../specifications/protocol.md#61-additive-runsession-status--selected-v07-increment).
+The fixed 25-byte schema carries only bounded execution metadata:
 
 - a boot nonce or equivalent boot identity;
 - a monotonically increasing run ID within that boot;
 - current state: idle, running, done, or error;
 - origin: file, inline source, or autorun;
-- last terminal reason/status;
-- relevant console/input loss counters;
-- active recovery or pending reboot state; and
-- elapsed monotonic time where the port can provide it safely.
+- committed-state revision, queued/stopping flags and terminal reason.
+
+Admission means accepted response handoff or autorun admission; provisional
+reservations and failed response transmission do not change the snapshot.
+The app synchronizes before Ready/Running, caches the result for late views,
+merges revisions and preserves the legacy workflow when the capability is absent.
+
+Console/input loss counters, recovery/pending-reboot diagnostics and elapsed
+monotonic time remain proposals for later design. They are not fields in the
+selected fixed schema and must not be appended without a separately specified
+compatible extension.
 
 Do not echo inline source, console contents, secrets, or unnecessary file
 contents. Existing `RUN_STATE` events remain unchanged.
