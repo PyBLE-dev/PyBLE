@@ -367,6 +367,7 @@ static unsigned pble_mtu_val=23;
 static bool locked;
 static bool busy;
 static TickType_t tick;
+static TickType_t lock_wait;
 static unsigned calls;
 static unsigned fail_at;
 static unsigned retire_at;
@@ -378,7 +379,7 @@ static bool pble_ble_session_live(const pble_session_token_t *s) {
 static size_t pble_payload_size(unsigned mtu) { return mtu-4; }
 static TickType_t xTaskGetTickCount(void) { return tick; }
 static int xSemaphoreTakeRecursive(void *sem, TickType_t timeout) {
-    (void)sem; (void)timeout; assert(!locked); locked=true; return pdTRUE;
+    (void)sem; (void)timeout; assert(!locked); tick+=lock_wait; lock_wait=0; locked=true; return pdTRUE;
 }
 static void xSemaphoreGiveRecursive(void *sem) { (void)sem; assert(locked); locked=false; }
 static int xSemaphoreTake(void *sem, TickType_t wait) { (void)sem; assert(!locked); tick+=wait; return pdTRUE; }
@@ -417,7 +418,10 @@ int main(void) {
     calls=0; retire_at=0; busy=true; tick=0;
     CHECK(pble_ble_notify_control_message_paced(frame,35,40,&live)==PBLE_TX_AGAIN);
     CHECK(calls==0 && tick==40 && !locked);
-    busy=false; pble_mtu_val=247;
+    busy=false; tick=0; lock_wait=40;
+    CHECK(pble_ble_notify_control_message_paced(frame,35,40,&live)==PBLE_TX_AGAIN);
+    CHECK(calls==0 && tick==40 && !locked);
+    pble_mtu_val=247;
     CHECK(pble_ble_notify_control_message_paced(frame,35,1000,&live)==PBLE_TX_OK);
     CHECK(calls==1 && packets[0][0]==0xc0 && lengths[0]==36);
     CHECK(pble_ble_notify_control_message_paced(frame,492,1000,&live)==PBLE_TX_OVERSIZE);
