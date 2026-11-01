@@ -89,20 +89,12 @@ PbleFrame _cmd(PbleOpcode opcode, int id) => PbleFrame(
   payload: Uint8List(0),
 );
 
-// Dynamic invocation keeps the initial red download reproduction compilable
-// before the new optional engine acceptance seam exists.
 Future<PbleFrame> _withCut(
   PbleEngine engine,
   PbleFrame command,
   void Function(PbleFrame) cut, {
   Duration timeout = const Duration(seconds: 1),
-}) =>
-    Function.apply(
-          engine.request,
-          <Object>[command],
-          <Symbol, Object>{#timeout: timeout, #onResponseAccepted: cut},
-        )
-        as Future<PbleFrame>;
+}) => engine.request(command, timeout: timeout, onResponseAccepted: cut);
 
 void main() {
   for (final List<int> bytes in <List<int>>[
@@ -132,8 +124,9 @@ void main() {
             getBeginOkPayload(bytes.length),
           ),
         );
-        if (bytes.isNotEmpty)
+        if (bytes.isNotEmpty) {
           t.deliverNow(evt(PbleOpcode.fileGetData, getDataPayload(0, bytes)));
+        }
         t.deliverNow(
           evt(PbleOpcode.fileGetEnd, getEndPayload(pbleCrc32(bytes))),
         );
@@ -305,9 +298,7 @@ void main() {
     },
   );
 
-  testWidgets('early download watchdog is observed while final ACK is held', (
-    WidgetTester tester,
-  ) async {
+  test('early download watchdog is observed while final ACK is held', () async {
     final _HeldGetTransport t = _HeldGetTransport();
     final PbleConnection c = PbleConnection(
       engine: PbleEngine(t),
@@ -316,12 +307,12 @@ void main() {
       dataTimeout: const Duration(milliseconds: 80),
     );
     final Future<Object> result = _outcome(c.getFile('/owned.py'));
-    await tester.pump();
-    final PbleFrame begin = t.sentFrames.single;
+    final PbleFrame begin = await t.firstBegin.future;
     t.deliverNow(rsp(PbleOpcode.fileGetBegin, begin.id, getBeginOkPayload(1)));
-    await tester.pump(const Duration(milliseconds: 81));
+    // Exercise the documented inactivity ceiling while the operation still
+    // cannot await its preinstalled completion because its ACK remains held.
+    await Future<void>.delayed(const Duration(milliseconds: 81));
     t.releaseAck.complete();
-    await tester.pump();
     expect(await result, isA<PbleTimeoutException>());
     await c.dispose();
     await t.dispose();
@@ -532,8 +523,9 @@ void main() {
         PbleFrame event,
       ) {
         seen.add(event.payload.single);
-        if (event.payload.single == 1)
+        if (event.payload.single == 1) {
           nested = engine.request(_cmd(PbleOpcode.deviceInfo, 5));
+        }
       });
       t.deliverNow(evt(PbleOpcode.runState, <int>[1]));
       await pumpEventQueue();
@@ -544,13 +536,45 @@ void main() {
       await t.dispose();
     },
   );
+
+  test(
+    'reentrant on-time RSP stays authoritative after a slow EVT listener',
+    () async {
+      final _LoopbackTransport t = _LoopbackTransport(replyOnSend: false);
+      final PbleEngine engine = PbleEngine(t);
+      int cuts = 0;
+      final Future<Object> result = _outcome(
+        _withCut(
+          engine,
+          _cmd(PbleOpcode.deviceInfo, 5),
+          (_) => cuts++,
+          timeout: const Duration(milliseconds: 25),
+        ),
+      );
+      await pumpEventQueue();
+      final StreamSubscription<PbleFrame> events = engine.events.listen((_) {
+        t.deliverNow(statusRsp(PbleOpcode.deviceInfo, 5, PbleStatus.ok));
+        // The RSP has already arrived. Synchronous application work must not
+        // move that receive cut beyond the established request deadline.
+        final Stopwatch work = Stopwatch()..start();
+        while (work.elapsed < const Duration(milliseconds: 40)) {}
+      });
+      t.deliverNow(evt(PbleOpcode.runState, <int>[1]));
+      expect(await result, isA<PbleFrame>());
+      expect(cuts, 1);
+      await events.cancel();
+      await engine.dispose();
+      await t.dispose();
+    },
+  );
 }
 
 class _LoopbackTransport extends FakeByteTransport {
-  final StreamController<Uint8List> input =
-      StreamController<Uint8List>.broadcast(sync: true);
+  _LoopbackTransport({this.replyOnSend = true});
+  final bool replyOnSend;
+  final _ImmediatePackets input = _ImmediatePackets();
   @override
-  Stream<Uint8List> get inbound => input.stream;
+  Stream<Uint8List> get inbound => input;
   void deliverNow(PbleFrame f) {
     for (final Uint8List packet in PbleFragmenter(
       mtu: mtu,
@@ -563,7 +587,7 @@ class _LoopbackTransport extends FakeByteTransport {
   Future<void> send(Uint8List packet, {required bool acknowledged}) {
     final int before = sentFrames.length;
     final Future<void> sent = super.send(packet, acknowledged: acknowledged);
-    if (sentFrames.length > before) {
+    if (replyOnSend && sentFrames.length > before) {
       final PbleFrame cmd = sentFrames.last;
       deliverNow(rsp(PbleOpcode.deviceInfo, cmd.id, <int>[0]));
       deliverNow(evt(PbleOpcode.runState, <int>[2]));
@@ -576,4 +600,36 @@ class _LoopbackTransport extends FakeByteTransport {
     await input.close();
     await super.dispose();
   }
+}
+
+/// Direct nested callbacks exercise the engine, without StreamController.add's
+/// reentrancy restriction hiding its behavior. The separate controller only
+/// supplies subscription cancellation/close lifecycle for this one receiver.
+class _ImmediatePackets extends Stream<Uint8List> {
+  _ImmediatePackets() {
+    _lifecycle = StreamController<Uint8List>.broadcast(
+      onCancel: () => _receive = null,
+    );
+  }
+  late final StreamController<Uint8List> _lifecycle;
+  void Function(Uint8List)? _receive;
+
+  @override
+  StreamSubscription<Uint8List> listen(
+    void Function(Uint8List)? onData, {
+    Function? onError,
+    void Function()? onDone,
+    bool? cancelOnError,
+  }) {
+    _receive = onData;
+    return _lifecycle.stream.listen(
+      null,
+      onError: onError,
+      onDone: onDone,
+      cancelOnError: cancelOnError,
+    );
+  }
+
+  void add(Uint8List packet) => _receive?.call(packet);
+  Future<void> close() => _lifecycle.close();
 }

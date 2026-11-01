@@ -31,7 +31,9 @@ class PbleEngine {
   PbleReassembler _reassembler = PbleReassembler();
   final Map<int, _PendingRequest> _pending = <int, _PendingRequest>{};
   final StreamController<PbleFrame> _events =
-      StreamController<PbleFrame>.broadcast();
+      StreamController<PbleFrame>.broadcast(sync: true);
+  final ListQueue<_ReceivedFrame> _received = ListQueue<_ReceivedFrame>();
+  bool _dispatchingReceived = false;
 
   int _idCounter = 0;
   bool _disposed = false;
@@ -58,14 +60,22 @@ class PbleEngine {
   ///
   /// Throws [PbleTimeoutException] if no RSP arrives within [timeout]. The
   /// caller owns [cmd].id (typically from [nextId]).
+  /// [onResponseAccepted] runs once at the exact in-deadline response receive
+  /// cut, before later EVT dispatch, even while the final write is pending.
+  /// Validation errors fail this request without escaping the receive handler.
   Future<PbleFrame> request(
     PbleFrame cmd, {
     Duration timeout = const Duration(seconds: 5),
+    void Function(PbleFrame)? onResponseAccepted,
   }) async {
     if (_disposed) {
       throw StateError('PbleEngine used after dispose()');
     }
-    final _PendingRequest pending = _PendingRequest(cmd.opcode, timeout);
+    final _PendingRequest pending = _PendingRequest(
+      cmd.opcode,
+      timeout,
+      onResponseAccepted,
+    );
     _pending[cmd.id] = pending;
     // Disposal can reject this completion while an acknowledged write is
     // still pending. Observe errors now without replacing the original future
@@ -204,6 +214,7 @@ class PbleEngine {
   void _retireFrames(PbleException reason) {
     _linkGeneration++;
     _reassembler = PbleReassembler();
+    _received.clear();
     final _FrameRetired retired = _FrameRetired(reason);
     _activeOutgoing?.deadline?.cancel();
     _activeOutgoing?.fail(retired);
@@ -234,6 +245,34 @@ class PbleEngine {
       return;
     }
 
+    final _PendingRequest? candidate = _pending[frame.id];
+    // Capture response eligibility when the decoded frame arrives, before a
+    // reentrant listener can delay dispatch beyond this same absolute budget.
+    final _PendingRequest? response =
+        candidate != null &&
+            frame.type == Pble.typeRsp &&
+            frame.opcode == candidate.opcode &&
+            !candidate.completer.isCompleted &&
+            !candidate.expired
+        ? candidate
+        : null;
+    _received.add(_ReceivedFrame(frame, response));
+    if (_dispatchingReceived) return;
+    _dispatchingReceived = true;
+    try {
+      // An EVT listener may submit a command to a synchronous loopback pipe.
+      // Queue that nested receive until this dispatch returns, preserving wire
+      // order without reentering a synchronous broadcast controller's add().
+      while (!_disposed && _received.isNotEmpty) {
+        _dispatchFrame(_received.removeFirst());
+      }
+    } finally {
+      _dispatchingReceived = false;
+    }
+  }
+
+  void _dispatchFrame(_ReceivedFrame received) {
+    final PbleFrame frame = received.frame;
     // EVT (ID = 0) routes onto the event stream, keyed by opcode downstream.
     if (frame.type == Pble.typeEvt || frame.id == Pble.evtId) {
       if (!_events.isClosed) _events.add(frame);
@@ -241,13 +280,20 @@ class PbleEngine {
     }
 
     // Otherwise complete only the exact {TYPE=RSP, OPCODE, ID} request.
-    final _PendingRequest? pending = _pending[frame.id];
+    final _PendingRequest? pending = received.response;
     if (pending != null &&
-        frame.type == Pble.typeRsp &&
-        frame.opcode == pending.opcode &&
-        !pending.completer.isCompleted &&
-        !pending.expired) {
-      pending.completer.complete(frame);
+        identical(_pending[frame.id], pending) &&
+        !pending.completer.isCompleted) {
+      try {
+        pending.onResponseAccepted?.call(frame);
+        // A callback can synchronously retire the engine/link. Its retirement
+        // already completed this request, so never complete it a second time.
+        if (!pending.completer.isCompleted) pending.completer.complete(frame);
+      } catch (error, stack) {
+        if (!pending.completer.isCompleted) {
+          pending.completer.completeError(error, stack);
+        }
+      }
     }
   }
 
@@ -271,6 +317,12 @@ class PbleEngine {
       Error.throwWithStackTrace(cancelError, cancelStack!);
     }
   }
+}
+
+final class _ReceivedFrame {
+  _ReceivedFrame(this.frame, this.response);
+  final PbleFrame frame;
+  final _PendingRequest? response;
 }
 
 final class _OutgoingFrame {
@@ -303,10 +355,12 @@ final class _FrameRetired implements Exception {
 
 /// One monotonic deadline shared by every acknowledged write and the RSP wait.
 final class _PendingRequest {
-  _PendingRequest(this.opcode, this.timeout) : elapsed = (Stopwatch()..start());
+  _PendingRequest(this.opcode, this.timeout, this.onResponseAccepted)
+    : elapsed = (Stopwatch()..start());
 
   final int opcode;
   final Duration timeout;
+  final void Function(PbleFrame)? onResponseAccepted;
   final Stopwatch elapsed;
   final Completer<PbleFrame> completer = Completer<PbleFrame>();
 
