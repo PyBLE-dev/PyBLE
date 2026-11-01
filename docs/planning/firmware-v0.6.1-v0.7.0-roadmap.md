@@ -593,6 +593,8 @@ revise:
 - [ ] whether authenticated ownership starts as a separate PBLE/2 design
   milestone.
 
-Approval of this roadmap still does not approve opcode numbers, payload bytes,
-implementation, qualification, or publication. Those decisions follow the
-repository's specification-driven and test-driven process.
+For remaining proposed work, roadmap approval does not itself approve opcode
+numbers, payload bytes, implementation, qualification or publication. Those
+decisions follow the repository's specification-driven and test-driven process.
+The selected run-status contract and its separate implementation/evidence state
+are recorded in the dated November section above.
