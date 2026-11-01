@@ -104,6 +104,9 @@ class PbleConnection
   final ValueNotifier<RunSnapshot?> _runSnapshot = ValueNotifier<RunSnapshot?>(
     null,
   );
+  Future<RunSnapshot>? _runStatusQuery;
+  int? _runStatusQueryGeneration;
+  bool _runStatusRefreshAgain = false;
 
   // fromLink observation (null when constructed directly over a transport).
   BleLink? _observedLink;
@@ -124,6 +127,7 @@ class PbleConnection
           _state.value = ConnState.connecting;
           _hello = null;
           _runSnapshot.value = null;
+          _runStatusRefreshAgain = false;
         case BleLinkState.connected:
           // Re-negotiate HELLO on every (re)connect (TDD §7.3). A failed
           // handshake surfaces as ConnState.disconnected; the typed error is
@@ -134,6 +138,7 @@ class PbleConnection
           _hello = null;
           _state.value = ConnState.disconnected;
           _runSnapshot.value = null;
+          _runStatusRefreshAgain = false;
           // Abort any in-flight transfer NOW: a reconnect re-HELLOs and the
           // board clears its transfer context on disconnect, so an orphaned
           // download/ACK completer would otherwise await forever (the app
@@ -202,6 +207,7 @@ class PbleConnection
     _state.value = ConnState.connecting;
     _hello = null;
     _runSnapshot.value = null;
+    _runStatusRefreshAgain = false;
     try {
       final HelloResult hello = await _negotiator.negotiate();
       if (_disposed || generation != _handshakeGeneration) {
@@ -248,6 +254,23 @@ class PbleConnection
       throw const EUnsupported('board does not advertise run status');
     }
     final int generation = _handshakeGeneration;
+    final Future<RunSnapshot>? existing = _runStatusQuery;
+    if (existing != null && _runStatusQueryGeneration == generation) {
+      return existing;
+    }
+    final Future<RunSnapshot> query = _requestRunStatus(generation);
+    _runStatusQuery = query;
+    _runStatusQueryGeneration = generation;
+    unawaited(
+      query.then<void>(
+        (_) => _finishRunStatusQuery(query),
+        onError: (Object _, StackTrace _) => _finishRunStatusQuery(query),
+      ),
+    );
+    return query;
+  }
+
+  Future<RunSnapshot> _requestRunStatus(int generation) async {
     final PbleFrame response;
     try {
       response = await _engine.request(
@@ -281,6 +304,33 @@ class PbleConnection
     }
   }
 
+  void _finishRunStatusQuery(Future<RunSnapshot> query) {
+    if (!identical(_runStatusQuery, query)) return;
+    _runStatusQuery = null;
+    _runStatusQueryGeneration = null;
+    if (_runStatusRefreshAgain) {
+      _runStatusRefreshAgain = false;
+      _scheduleRunStatusRefresh();
+    }
+  }
+
+  void _scheduleRunStatusRefresh() {
+    if (_disposed || _hello?.caps.hasRunStatus != true) return;
+    if (_runStatusQuery != null &&
+        _runStatusQueryGeneration == _handshakeGeneration) {
+      _runStatusRefreshAgain = true;
+      return;
+    }
+    // A successful control response has already committed. Status failure may
+    // retire observation, but must never reclassify accepted user execution.
+    unawaited(
+      refreshRunStatus().then<void>(
+        (_) {},
+        onError: (Object _, StackTrace _) => _retireInvalidRunStatus(),
+      ),
+    );
+  }
+
   void _acceptRunSnapshot(RunSnapshot next) {
     final RunSnapshot? previous = _runSnapshot.value;
     if (previous != null) {
@@ -303,6 +353,7 @@ class PbleConnection
   }
 
   void _retireInvalidRunStatus() {
+    if (_disposed) return;
     _hello = null;
     _state.value = ConnState.disconnected;
     _runSnapshot.value = null;
@@ -335,6 +386,7 @@ class PbleConnection
       _cmd(PbleOpcode.run, <int>[mode & 0xff, ...data]),
     );
     _checkStatus(rsp);
+    _scheduleRunStatusRefresh();
   }
 
   @override
@@ -344,6 +396,7 @@ class PbleConnection
       _cmd(PbleOpcode.stop, const <int>[]),
     );
     _checkStatus(rsp);
+    _scheduleRunStatusRefresh();
   }
 
   @override
@@ -639,6 +692,7 @@ class PbleConnection
     _hello = null;
     _state.value = ConnState.disconnected;
     _runSnapshot.value = null;
+    _runStatusRefreshAgain = false;
     _abortTransfers(const NotConnectedException('connection disposed'));
     await attempt(() {
       if (_linkListener != null) {
@@ -677,7 +731,10 @@ class PbleConnection
         _retireInvalidRunStatus();
       }
     } else if (op == PbleOpcode.runState.code) {
-      if (_hello?.caps.hasRunStatus == true) return;
+      if (_hello?.caps.hasRunStatus == true) {
+        _scheduleRunStatusRefresh();
+        return;
+      }
       final RunState rs = _runStateFromByte(p.isEmpty ? 0 : p[0]);
       if (!_runStateController.isClosed) _runStateController.add(rs);
       _applyRunStateToConn(rs);
