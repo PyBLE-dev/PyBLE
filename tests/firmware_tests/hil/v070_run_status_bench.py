@@ -57,9 +57,24 @@ async def negotiate(address, expected_chip, expected_agent, mtu):
         raise
 
 
+async def stop_owned_run(query, stop, identity):
+    """Cleanup may stop only the same admitted run in the same VM epoch."""
+    try:
+        current = await query()
+        if (current['boot_id'], current['run_id']) != identity or current['state'] != 1:
+            return False
+        await stop()
+        return True
+    except Exception:
+        # Loss of authoritative ownership is a refusal, never permission to
+        # interrupt another program. The probe's original failure is retained.
+        return False
+
+
 async def probe(args):
     c = None
     owned_run = False
+    owned_identity = None
     seq = 1
     observations = []
 
@@ -98,6 +113,7 @@ async def probe(args):
         if rsp_status(rsp) != wire.ST_OK:
             raise ValueError('test RUN refused')
         owned_run = True
+        owned_identity = (before['boot_id'], before['run_id'] + 1)
         active = await snapshot()
         if active['state'] != 1 or active['origin'] != 2 or active['run_id'] != before['run_id'] + 1:
             raise ValueError('accepted RUN snapshot mismatch')
@@ -122,6 +138,7 @@ async def probe(args):
             if rsp_status(await command(wire.OP_RUN, b'\1' + source)) != wire.ST_OK:
                 raise ValueError('terminal probe RUN refused')
             owned_run = True
+            owned_identity = (previous['boot_id'], previous['run_id'] + 1)
             value = await terminal(previous['run_id'] + 1, expected_state, reason)
             owned_run = False
             if value['boot_id'] != boot or value['revision'] <= previous['revision']:
@@ -152,8 +169,11 @@ async def probe(args):
     finally:
         if c is not None:
             try:
-                if owned_run:
-                    await command(wire.OP_STOP)
+                if owned_run and owned_identity is not None:
+                    async def stop():
+                        if rsp_status(await command(wire.OP_STOP)) != wire.ST_OK:
+                            raise ValueError('cleanup STOP refused')
+                    await stop_owned_run(snapshot, stop, owned_identity)
             finally:
                 await c.disconnect()
 
@@ -166,20 +186,16 @@ def main():
     args = p.parse_args()
     path = Path(args.output)
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    try:
+    with os.fdopen(fd, 'w') as out:
         try:
             result = asyncio.run(probe(args))
         except Exception as e:
             result = dict(status='fail', profile=args.profile, error_type=type(e).__name__,
                           detail=str(e), source_commit=args.source_commit)
-        with os.fdopen(fd, 'w') as out:
-            json.dump(result, out, indent=2)
-            out.write('\n')
-        print(json.dumps({'profile':args.profile, 'status':result['status']}))
-        return 0 if result['status'] == 'pass' else 1
-    except BaseException:
-        os.close(fd)
-        raise
+        json.dump(result, out, indent=2)
+        out.write('\n')
+    print(json.dumps({'profile':args.profile, 'status':result['status']}))
+    return 0 if result['status'] == 'pass' else 1
 
 
 if __name__ == '__main__':
