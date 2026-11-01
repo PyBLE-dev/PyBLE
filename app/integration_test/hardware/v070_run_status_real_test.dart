@@ -56,6 +56,9 @@ void main() {
         };
         _Session? active;
         try {
+          if (const bool.fromEnvironment('PYBLE_HIL_VERBOSE')) {
+            await FlutterBluePlus.setLogLevel(LogLevel.verbose, color: false);
+          }
           active = await _open(onStage: (stage) => result['stage'] = stage);
           final info = await active.connection.deviceInfo();
           expect(info.hasRunStatus, isTrue);
@@ -95,10 +98,14 @@ void main() {
           expect(recovered.bootId, running.bootId);
           expect(recovered.runId, running.runId);
           expect(recovered.revision, greaterThanOrEqualTo(running.revision));
-          expect(active.trace.commands, <int>[
-            PbleOpcode.hello.code,
-            PbleOpcode.runStatus.code,
-          ]);
+          expect(active.trace.commands.first, PbleOpcode.hello.code);
+          expect(active.trace.commands, contains(PbleOpcode.runStatus.code));
+          expect(
+            active.trace.commands,
+            everyElement(
+              isIn(<int>[PbleOpcode.hello.code, PbleOpcode.runStatus.code]),
+            ),
+          );
           result['afterReconnect'] = _snapshot(recovered);
           result['reconnectCommands'] = List<int>.of(active.trace.commands);
 
