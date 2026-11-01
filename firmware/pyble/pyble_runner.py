@@ -49,6 +49,61 @@ ERANGE = 0x09
 MODE_FILE = 0
 MODE_SOURCE = 1
 
+# PBLE/1 §6.1 additive, bounded committed execution metadata.
+STATUS_QUEUED = 1
+STATUS_STOPPING = 2
+ORIGIN_FILE = 1
+ORIGIN_SOURCE = 2
+ORIGIN_AUTORUN = 3
+MAX_RUN_ID = 0xffffffff
+MAX_REVISION = 9007199254740991
+
+
+def _status_fields_valid(schema, boot_id, run_id, revision, state, origin,
+                         terminal_reason, flags):
+    if (schema != 1 or len(boot_id) != 8 or not any(boot_id) or
+            not 0 <= run_id <= MAX_RUN_ID or
+            not 0 <= revision <= MAX_REVISION or
+            state not in (IDLE, RUNNING, DONE, ERROR) or
+            origin not in (0, ORIGIN_FILE, ORIGIN_SOURCE, ORIGIN_AUTORUN) or
+            terminal_reason not in (0, 1, 2, 3) or flags & ~3):
+        raise ValueError("invalid run status")
+    if run_id == 0:
+        if (revision, state, origin, terminal_reason, flags) != (0, 0, 0, 0, 0):
+            raise ValueError("invalid initial run status")
+    elif origin == 0 or revision < run_id:
+        raise ValueError("invalid admitted run status")
+    if state == RUNNING:
+        if terminal_reason != 0:
+            raise ValueError("running status has a terminal reason")
+    elif flags != 0:
+        raise ValueError("terminal status has flags")
+    elif run_id != 0 and terminal_reason != (3, 0, 1, 2)[state]:
+        raise ValueError("terminal status reason mismatch")
+
+
+def encode_run_status(boot_id, run_id, revision, state, origin,
+                      terminal_reason, flags):
+    """Encode exactly the §6.1 snapshot, without its response status byte."""
+    boot_id = bytes(boot_id)
+    _status_fields_valid(1, boot_id, run_id, revision, state, origin,
+                         terminal_reason, flags)
+    return (b"\x01" + boot_id + run_id.to_bytes(4, "little") +
+            revision.to_bytes(8, "little") +
+            bytes((state, origin, terminal_reason, flags)))
+
+
+def decode_run_status(payload):
+    """Validate the bounded value also used for atomic metadata replacement."""
+    if len(payload) != 25:
+        raise ValueError("run status must have 25 bytes")
+    fields = (payload[0], bytes(payload[1:9]),
+              int.from_bytes(payload[9:13], "little"),
+              int.from_bytes(payload[13:21], "little"),
+              payload[21], payload[22], payload[23], payload[24])
+    _status_fields_valid(*fields)
+    return fields
+
 # ports/rpi-pico2-w.md P6 per-handler bounds (pble_runner.c PBLE_RUN_PATH_MAX /
 # PBLE_RUN_BUF_MAX twins) — module constants, never re-derived per call site.
 RUN_PATH_MAX = 128
@@ -93,7 +148,16 @@ class Runner:
     in supervisor context (see make_exec_fn)."""
 
     def __init__(self, emit_state, exec_fn, emit_terminal=None,
-                 end_input=None):
+                 end_input=None, boot_id=None):
+        if boot_id is None:
+            import os
+            boot_id = os.urandom(8)
+        # A single immutable value is the publication cut. A scheduled BLE
+        # callback never assembles a query from separately changing fields.
+        self._status = encode_run_status(boot_id, 0, 0, IDLE, 0, 0, 0)
+        self._pending_status_id = None
+        self._pending_status_origin = None
+        self._terminal_status_id = None
         self.rsm = RunStateMachine()
         self._emit_state = emit_state
         self._emit_terminal = (emit_terminal if emit_terminal is not None
@@ -114,6 +178,57 @@ class Runner:
         self._terminal_input_generation = None
         self._event_input_generation = None
         self._end_input = end_input
+
+    def run_status(self):
+        return self._status
+
+    def _status_transition(self, state, reason, flags, expected_id,
+                           clear_queued=False):
+        # This publication region has no Python conditional jumps, loops or
+        # Python helper calls. The pinned RP2 VM services scheduled callbacks
+        # at jump checkpoints; builtin operations on these exact bytes/ints
+        # cannot yield halfway through the read/modify/publish transaction.
+        # Selecting unchanged fields for an old owner prevents terminal retry
+        # from changing a successor run. Pickup preserves accepted STOP intent.
+        old = self._status
+        matches = int.from_bytes(old[9:13], "little") == expected_id
+        wanted_flags = (flags, old[24] & ~STATUS_QUEUED)[clear_queued]
+        selected = ((old[21], old[23], old[24]),
+                    (state, reason, wanted_flags))[matches]
+        changed = selected != (old[21], old[23], old[24])
+        revision = int.from_bytes(old[13:21], "little") + changed
+        self._status = (old[:13] + revision.to_bytes(8, "little") +
+                        bytes((selected[0], old[22], selected[1], selected[2])))
+        return changed
+
+    def _finish_status(self, ok, expected_id):
+        # Same branch-free publication rule as _status_transition. A STOP that
+        # arrived at the caller's final branch checkpoint wins over completion.
+        old = self._status
+        matches = int.from_bytes(old[9:13], "little") == expected_id
+        stopped = bool(old[24] & STATUS_STOPPING) | bool(self._stop_requested)
+        state = ((ERROR, DONE)[ok], IDLE)[stopped]
+        reason = ((2, 1)[ok], 3)[stopped]
+        selected = ((old[21], old[23], old[24]), (state, reason, 0))[matches]
+        changed = selected != (old[21], old[23], old[24])
+        revision = int.from_bytes(old[13:21], "little") + changed
+        self._stop_requested = (self._stop_requested, False)[matches]
+        self._status = (old[:13] + revision.to_bytes(8, "little") +
+                        bytes((selected[0], old[22], selected[1], selected[2])))
+        return selected[0]
+
+    def commit_reserved_run(self, origin=None):
+        """Commit only an accepted RUN response or an admitted autorun."""
+        if self._pending is None or self._pending_status_id is not None:
+            return False
+        _, boot, run_id, revision, _, _, _, _ = decode_run_status(self._status)
+        if run_id == MAX_RUN_ID:
+            return False
+        origin = self._pending_status_origin if origin is None else origin
+        self._status = encode_run_status(
+            boot, run_id + 1, revision + 1, RUNNING, origin, 0, STATUS_QUEUED)
+        self._pending_status_id = run_id + 1
+        return True
 
     def _default_emit_terminal(self, state, published):
         """Compatibility adapter for host users without a TX receipt seam."""
@@ -185,6 +300,8 @@ class Runner:
                 return ERANGE
         elif len(data) > RUN_SOURCE_MAX:
             return ERANGE
+        if int.from_bytes(self._status[9:13], "little") == MAX_RUN_ID:
+            return ERANGE
         prior_state = self.rsm.state
         status = self.rsm.on_run()
         if status != OK:
@@ -194,6 +311,9 @@ class Runner:
         self._reserved_prior_state = prior_state
         self._pending_owner = owner
         self._pending_input_generation = None
+        self._pending_status_id = None
+        self._pending_status_origin = (ORIGIN_FILE if mode == MODE_FILE
+                                       else ORIGIN_SOURCE)
         return OK                     # RSP only; RUN_STATE is supervisor work
 
     def cancel_reserved_run(self):
@@ -203,7 +323,8 @@ class Runner:
         predecessor matters because a new RUN may be reserved from DONE/ERROR,
         not just IDLE.
         """
-        if self._pending is None or self._executing:
+        if (self._pending is None or self._executing or
+                self._pending_status_id is not None):
             return False
         prior_state = self._reserved_prior_state
         if prior_state is None:
@@ -212,6 +333,7 @@ class Runner:
         self._reserved_prior_state = None
         self._pending_owner = None
         self._pending_input_generation = None
+        self._pending_status_origin = None
         self._stop_requested = False
         self._terminal_phase = _TERMINAL_NONE
         self._terminal_prepared = False
@@ -224,6 +346,11 @@ class Runner:
         # pending source can start, or uses it for the executing terminal cut.
         if self.rsm.state == RUNNING:
             self._stop_requested = True
+            status = self._status
+            if status[21] == RUNNING:
+                self._status_transition(
+                    RUNNING, 0, status[24] | STATUS_STOPPING,
+                    int.from_bytes(status[9:13], "little"))
         return OK
 
     def is_executing(self):
@@ -255,9 +382,14 @@ class Runner:
             # IDLE and therefore admits a successor RUN. A publication retry
             # must not touch a successor reservation or its STOP/input state.
             self._end_active_input()
+            self._status_transition(IDLE, 3, 0, self._terminal_status_id)
             self._terminal_prepared = True
+        # Test the reservation before its identity: if the old RSM is still
+        # RUNNING, no successor can enter before this transition; an already
+        # admitted successor carries another snapshot identity and is skipped.
         if self.rsm.state != IDLE:
-            self.rsm.on_stopped()
+            if int.from_bytes(self._status[9:13], "little") == self._terminal_status_id:
+                self.rsm.on_stopped()
         accepted = self._emit_owned_terminal(IDLE, self._terminal_published)
         if self._terminal_phase == _TERMINAL_PUBLISHED:
             self._terminal_phase = _TERMINAL_NONE
@@ -287,13 +419,24 @@ class Runner:
             if self._terminal_phase == _TERMINAL_UNPUBLISHED:
                 return self._terminalize_stopped()
             return False
+        if self._pending_status_id is None:
+            # Standalone users of Runner treat a returned OK as admission;
+            # Agent commits explicitly at the actual response receipt instead.
+            self.commit_reserved_run()
+            if self._stop_requested:
+                self._status_transition(
+                    RUNNING, 0, STATUS_QUEUED | STATUS_STOPPING,
+                    self._pending_status_id)
         mode, data = self._pending
         owner = self._pending_owner
         input_generation = self._pending_input_generation
+        self._terminal_status_id = self._pending_status_id
         self._pending = None
         self._reserved_prior_state = None
         self._pending_owner = None
         self._pending_input_generation = None
+        self._pending_status_id = None
+        self._pending_status_origin = None
         self._active_owner = owner
         self._active_input_generation = input_generation
         self._terminal_owner = owner
@@ -311,6 +454,8 @@ class Runner:
             return True
 
         try:
+            self._status_transition(RUNNING, 0, 0, self._terminal_status_id,
+                                    clear_queued=True)
             self.rsm.on_started()
             self._emit_owned_state(RUNNING, owner, input_generation)
             self._exec_fn(mode, bytes(data))
@@ -332,8 +477,11 @@ class Runner:
             # its input before exposing a terminal RSM state that a scheduled
             # BLE callback may immediately replace with a successor RUN.
             self._end_active_input()
-            terminal = self.rsm.on_finished(ok)
-            self._stop_requested = False
+            terminal = self._finish_status(ok, self._terminal_status_id)
+            if terminal == IDLE:
+                self.rsm.on_stopped()
+            else:
+                self.rsm.on_finished(terminal == DONE)
             self._emit_owned_state(
                 terminal, self._terminal_owner,
                 self._terminal_input_generation)
