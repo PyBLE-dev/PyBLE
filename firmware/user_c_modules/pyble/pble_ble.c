@@ -1445,9 +1445,13 @@ int pble_ble_notify_control_message_paced(const uint8_t *msg, size_t len,
         if (xSemaphoreTakeRecursive(pble_tx_mutex, ticks - elapsed) != pdTRUE) {
             return PBLE_TX_AGAIN;
         }
-        int rc = (pble_control_tx_boundary_pending() || pble_rsp_owner_active())
-                     ? PBLE_TX_AGAIN
-                     : pble_notify_message(msg, len, session);
+        int rc = PBLE_TX_AGAIN;
+        // A successful mutex acquisition may have consumed the final tick.
+        // Never begin a new fragment run after this attempt's absolute budget.
+        if (xTaskGetTickCount() - started < ticks &&
+            !pble_control_tx_boundary_pending() && !pble_rsp_owner_active()) {
+            rc = pble_notify_message(msg, len, session);
+        }
         xSemaphoreGiveRecursive(pble_tx_mutex);
         if (rc != PBLE_TX_AGAIN) {
             return rc;
