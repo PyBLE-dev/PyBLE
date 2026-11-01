@@ -44,7 +44,7 @@ size_t pble_info_device_info(uint8_t *out, size_t cap) {
 
     int n = snprintf((char *)out, cap,
         "proto=%d\nagent=%s\nchip=%s\nmpy=%s\nfs_root=/\nmtu=%u\nwindow=8\nchunk=%u\n"
-        "free_mem=%u\nhas_sd=0\nhas_identify=%d\nidentify_led=%d\nauto_run=%d\ndevice_id=%s\nlabel=%s\n",
+        "free_mem=%u\nhas_sd=0\nhas_identify=%d\nidentify_led=%d\nauto_run=%d\ndevice_id=%s\nlabel=%s\nrun_status=1\n",
         PBLE_PROTO_VERSION, PBLE_AGENT_VERSION, PBLE_TARGET_ID, MICROPY_VERSION_STRING,
         mtu, chunk, (unsigned)esp_get_free_heap_size(),
         has_id ? 1 : 0, has_id ? id_gpio : 0xFF, pble_boot_autorun_enabled() ? 1 : 0,

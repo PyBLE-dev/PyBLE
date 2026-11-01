@@ -229,6 +229,7 @@ static bool pble_wire_command_opcode(uint8_t opcode) {
         case 0x21u:  // STOP
         case 0x22u:  // SOFT_REBOOT
         case 0x23u:  // SET_AUTORUN
+        case 0x24u:  // RUN_STATUS
         case 0x31u:  // CONSOLE_INPUT
         case 0x50u:  // SET_LABEL
         case 0x51u:  // SET_IDENTIFY_LED
@@ -283,6 +284,8 @@ static bool pble_wire_payload_exact(uint8_t opcode,
             return pble_wire_path_end(payload, len, 0u, &first_end) &&
                    pble_wire_path_end(payload, len, first_end, &second_end) &&
                    second_end == len;
+        case 0x24u:  // RUN_STATUS
+            return len == 0u;
         case 0x23u:  // SET_AUTORUN
             return len == 1u;
         case 0x51u:  // SET_IDENTIFY_LED

@@ -904,6 +904,20 @@ int pble_proto_emit_control_paced(uint8_t opcode, const uint8_t *payload,
     return pble_ble_notify_control_paced(buf, (size_t)n, budget_ms, session);
 }
 
+int pble_proto_emit_control_message_paced(uint8_t opcode, const uint8_t *payload,
+                                          size_t len, uint32_t budget_ms,
+                                          const pble_session_token_t *session) {
+    if (len > PBLE_RSP_MAX) {
+        return -1;
+    }
+    uint8_t buf[PBLE_HDR_LEN + PBLE_RSP_MAX + PBLE_CRC_LEN];
+    int n = pble_proto_encode(PBLE_TYPE_EVT, opcode, 0, payload, len, buf, sizeof(buf));
+    if (n < 0) {
+        return -1;
+    }
+    return pble_ble_notify_control_message_paced(buf, (size_t)n, budget_ms, session);
+}
+
 // --- MicroPython module shim (host corpus: crc32 + encode) -------------------
 static mp_obj_t mod_pble_crc32(mp_obj_t buf_in) {
     mp_buffer_info_t b;

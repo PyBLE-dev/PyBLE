@@ -49,6 +49,8 @@ extern "C" {
 #define PBLE_OP_STOP             0x21
 #define PBLE_OP_SOFT_REBOOT      0x22
 #define PBLE_OP_SET_AUTORUN      0x23   // S6 F-12: opt-in /main.py auto-run (additive, §9)
+#define PBLE_OP_RUN_STATUS       0x24   // additive committed run/session snapshot
+#define PBLE_OP_RUN_STATUS_CHANGED 0x42 // opt-in tagged snapshot EVT
 #define PBLE_OP_CONSOLE_DATA     0x30   // EVT: stdout/stderr bytes
 #define PBLE_OP_CONSOLE_INPUT    0x31   // CMD, fire-and-forget (no RSP)
 #define PBLE_OP_RUN_STATE        0x40   // EVT: idle/running/done/error
@@ -170,6 +172,11 @@ int pble_proto_emit_paced_for_session(
 int  pble_proto_emit_control_paced(uint8_t opcode, const uint8_t *payload,
                                    size_t len, uint32_t budget_ms,
                                    const pble_session_token_t *session);
+
+// Worker-only bounded whole-message control sender (default-MTU snapshots).
+int pble_proto_emit_control_message_paced(uint8_t opcode, const uint8_t *payload,
+                                          size_t len, uint32_t budget_ms,
+                                          const pble_session_token_t *session);
 // Emit a caller-supplied non-RSP frame from a worker context. Generic RSPs are
 // deliberately refused here because they require a pre-reserved pool ticket;
 // events remain worker-safe and are serialized by pble_ble.
