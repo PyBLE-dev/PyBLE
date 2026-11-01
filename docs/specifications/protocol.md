@@ -152,6 +152,25 @@ A message larger than one packet is split across consecutive RX writes (or TX no
 
 `FRAG_HDR` bits: `bit7 = FIRST`, `bit6 = LAST`, `bits5..0 = index mod 64`. The receiver concatenates `FRAGMENT DATA` from the `FIRST` packet through the `LAST` packet (indices increasing mod 64) to reconstruct the §3.1 message, then validates the CRC. Receipt of `FIRST` always abandons any incomplete fragment run and starts a new one; a non-`FIRST` packet with no active run or with the wrong next index is dropped. This restart rule lets a sender restart an identical whole frame after its logical message ownership was preempted, without completing a stale prefix; ordinary transient pressure alone retries only the unaccepted fragment. A frame whose CRC fails is dropped and answered with `EVT ERROR(ECRC)` referencing the opcode if known.
 
+**Client complete-message ownership (clarified 2026-11-01).** All outbound
+client CMDs, including no-response commands, share one FIFO writer per engine.
+Fragments from different frames MUST NOT interleave. The writer is released
+after the whole frame's packet writes settle, before awaiting its response;
+independent requests remain correlated concurrently by opcode and request ID.
+An engine admits at most 255 live outbound frames, including the active frame.
+Local saturation raises a neutral typed transport-busy error; it is not a board
+`EBUSY` response and does not imply a running program.
+
+A response-bearing request's existing absolute timeout includes FIFO waiting,
+packet writes, and response waiting. Expired queued frames are removed without
+writing; expiry or retirement stops any further continuation submission. An
+already-submitted packet cannot be recalled, so its unsettled transport Future
+retains writer ownership even after its caller times out. An on-time exact
+response recorded while the final write is pending remains authoritative.
+Disconnect/dispose retires old queued work and continuation ownership; those
+jobs cannot resume into a successor link generation. This clarification changes
+no frame, opcode, response deadline, or wire status.
+
 **Inbound hardening (amended 2026-09-02).** Each `FIRST` starts one absolute
 **5000 ms** receive-reassembly deadline. Fragment progress never extends it.
 The receiver checks that deadline before accepting every continuation; an
