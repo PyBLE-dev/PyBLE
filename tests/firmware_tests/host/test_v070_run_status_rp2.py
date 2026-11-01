@@ -343,6 +343,23 @@ class AgentStatusTest(unittest.TestCase):
         self.assertEqual(b"\x09", self.send(RUN, b"\x01pass"))
         self.assertEqual(maximum, self.query())
 
+    def test_active_maximum_run_preserves_busy_precedence(self):
+        runner = self.agent._runner
+        runner._status = pyble_runner.encode_run_status(
+            BOOT, 0xfffffffe, 4 * 0xfffffffe, 2, 1, 1, 0)
+        self.assertEqual(b"\x00", self.send(RUN, b"\x01pass"))
+        admitted = self.query()
+        self.assertEqual(0xffffffff, unpack(admitted)[2])
+        self.assertEqual(b"\x01", self.send(RUN, b"\x07malformed"))
+        self.assertEqual(b"\x07", self.send(RUN, b"\x01pass"))
+        self.assertEqual(admitted, self.query())
+        self.send(STOP)
+        self.agent.poll()
+        terminal = self.query()
+        self.assertEqual((0, 2, 3, 0), unpack(terminal)[4:])
+        self.assertEqual(b"\x09", self.send(RUN, b"\x01pass"))
+        self.assertEqual(terminal, self.query())
+
     def test_soft_reboot_closing_precedes_status(self):
         self.query()
         self.send(SOFT)
