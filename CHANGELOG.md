@@ -5,12 +5,22 @@ are released independently from this monorepo.
 
 ## Unreleased
 
+Selected firmware `0.7.0-dev.1` / companion app `0.4.0+10` development work adds
+committed run/session snapshots after reconnect. The normative contract is
+PBLE/1 §6.1; [the execution record](docs/developments/2026-q4-reliable-workflow/firmware-v070/00_Execution_Record.md)
+records both-tablet/five-profile R5 normal workflow and actual Android ATT23/247
+results, four app regression fixes and the retained historical-client GET
+limitation. Pico autorun admission now preserves already accepted STOP in its
+first committed snapshot, with actual-VM old/new and affected-image evidence.
+Full resource/release admission and remaining roadmap work stay pending. Existing
+`0.3.0 (9)` store submissions and firmware `0.6.1` publication remain dated history.
+
 These app, website, and repository-source changes do not designate a new app
 or firmware release. Firmware v0.6.1 is published on the owner's confirmation;
 incomplete automated evidence remains pending. The qualified v0.6.0 release
 remains a separate historical baseline built from its annotated tag.
 
-The merged app source now targets `0.3.0+9`. Its local Android and iPad Preview
+The previous merged recovery candidate targets `0.3.0+9`. Its local Android and iPad Preview
 installations support scoped engineering acceptance for bounded recovery and
 the declared app-only matrix. Device closeout is complete. [PR #41](https://github.com/PyBLE-dev/PyBLE/pull/41)
 merged after all 36 checks on its final head passed. Internal-account TestFlight

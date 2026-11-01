@@ -37,6 +37,7 @@
 
 #include "esp_timer.h"
 #include "esp_system.h"
+#include "esp_random.h"
 
 #include "py/runtime.h"      // nlr, mp_call_function_0, mp_handle_pending, mp_sched_exception
 #include "py/obj.h"          // mp_obj_new_exception, mp_type_SystemExit, mp_obj_print_exception
@@ -47,6 +48,7 @@
 #include "py/compile.h"      // mp_compile
 
 #include "pble_runner.h"
+#include "pble_run_status.h"
 #include "pble_ble.h"        // PBLE_TX_OK for transactional RUN admission
 #include "pble_console.h"    // tee stdout/stderr, worker-origin gate
 #include "pble_fs.h"         // non-blocking SOFT_REBOOT quiescence gate
@@ -70,7 +72,11 @@ extern void mp_hal_wake_main_task(void);
 
 // --- Module state ------------------------------------------------------------
 static pble_rsm_t g_rsm;                 // the run-state machine (single owner)
-static portMUX_TYPE g_mux = portMUX_INITIALIZER_UNLOCKED;  // guards g_rsm
+static portMUX_TYPE g_mux = portMUX_INITIALIZER_UNLOCKED;  // guards runner metadata
+static pble_run_status_t g_run_status;
+static bool g_run_status_ready;
+static bool g_run_status_observing;
+static pble_session_token_t g_run_status_observer;
 static SemaphoreHandle_t g_run_sem;      // host-task -> worker hand-off
 static SemaphoreHandle_t g_control_resolution_sem;
 static volatile bool g_control_unresolved;
@@ -147,6 +153,31 @@ int pble_rsm_on_stopped(pble_rsm_t *m) {
 // instead, like the fs-worker's streaming path (pble_fs.c fs_emit_paced).
 #define PBLE_RUNSTATE_TX_BUDGET_MS 1000u
 
+// A worker publication checkpoint may coalesce intermediate metadata. Capture
+// the complete current snapshot and observer in the same lock cut; never join
+// an old terminal state with a successor's identity, or retarget an old event.
+static void runner_emit_status(void) {
+    pble_run_status_t snapshot;
+    pble_session_token_t observer;
+    taskENTER_CRITICAL(&g_mux);
+    bool observing = g_run_status_observing && g_run_status_ready;
+    snapshot = g_run_status;
+    observer = g_run_status_observer;
+    taskEXIT_CRITICAL(&g_mux);
+    if (!observing) {
+        return;
+    }
+    uint8_t bytes[PBLE_RUN_STATUS_BYTES];
+    pble_run_status_encode(&snapshot, bytes);
+    // A disconnected observer's immutable full token is rejected by transport.
+    // A new session receives no status event until its own successful query.
+    MP_THREAD_GIL_EXIT();
+    (void)pble_proto_emit_control_message_paced(PBLE_OP_RUN_STATUS_CHANGED, bytes,
+                                        sizeof(bytes), PBLE_RUNSTATE_TX_BUDGET_MS,
+                                        &observer);
+    MP_THREAD_GIL_ENTER();
+}
+
 static void runner_emit_state(int st) {
     uint8_t b = (uint8_t)st;
     pble_session_token_t event_session;
@@ -161,6 +192,7 @@ static void runner_emit_state(int st) {
                                         PBLE_RUNSTATE_TX_BUDGET_MS,
                                         &event_session);
     MP_THREAD_GIL_ENTER();
+    runner_emit_status();
 }
 
 // Mark a control response unresolved before leaving the runner domain for the
@@ -200,6 +232,7 @@ static void runner_control_attempt_resolve(bool accepted) {
     configASSERT(g_control_unresolved);
     if (accepted) {
         g_stop_requested = true;
+        pble_run_status_stop(&g_run_status);
         inject_worker_kbd_interrupt();
     }
     g_control_unresolved = false;
@@ -307,6 +340,7 @@ static int runner_terminal_transition(bool ok) {
             pble_console_stdin_end();
             term = stopped ? pble_rsm_on_stopped(&g_rsm)
                            : pble_rsm_on_finished(&g_rsm, ok);
+            pble_run_status_finish(&g_run_status, ok, stopped);
             if (g_worker_state != NULL) {
                 g_worker_state->mp_pending_exception = MP_OBJ_NULL;
             }
@@ -364,10 +398,16 @@ void pble_runner_worker(void) {
         // Resolve any STOP/SOFT_REBOOT whose response attempt began before
         // pickup. An accepted control owns this reservation before any RUN event
         // or user-code effect; a failed attempt releases pickup unchanged.
+        taskENTER_CRITICAL(&g_mux);
+        pble_run_status_pickup(&g_run_status);
+        taskEXIT_CRITICAL(&g_mux);
         bool stopped_before_start = pble_runner_stop_requested();
         bool ok = false;
         if (!stopped_before_start) {
-            runner_emit_state(pble_rsm_on_started(&g_rsm));
+            taskENTER_CRITICAL(&g_mux);
+            int started = pble_rsm_on_started(&g_rsm);
+            taskEXIT_CRITICAL(&g_mux);
+            runner_emit_state(started);
             // STOP may have been accepted while the paced RUN_STATE event was
             // in flight. Recheck through the same resolution gate before exec.
             if (!pble_runner_stop_requested()) {
@@ -421,7 +461,10 @@ uint8_t pble_runner_run(const pble_frame_t *req, uint8_t *rsp, size_t *rlen,
     int prior_state;
     taskENTER_CRITICAL(&g_mux);
     prior_state = g_rsm.state;
-    status = pble_rsm_on_run(&g_rsm);
+    status = !g_run_status_ready ? PBLE_EINTERNAL :
+             (g_rsm.state != PBLE_RUN_RUNNING &&
+              g_run_status.run_id == UINT32_MAX) ? PBLE_ERANGE :
+             pble_rsm_on_run(&g_rsm);
     if (status == PBLE_OK) {
         // Consume only STOP intent that predates this reservation. A later
         // accepted control writes both fields under this same mux and survives
@@ -457,6 +500,11 @@ uint8_t pble_runner_run(const pble_frame_t *req, uint8_t *rsp, size_t *rlen,
         return PBLE_NO_RSP;
     }
 
+    taskENTER_CRITICAL(&g_mux);
+    bool committed = pble_run_status_admit(&g_run_status, (uint8_t)(mode + 1));
+    configASSERT(committed);
+    (void)committed;
+    taskEXIT_CRITICAL(&g_mux);
     pble_console_stdin_begin();
     BaseType_t gave = xSemaphoreGive(g_run_sem);
     configASSERT(gave == pdTRUE);  // single reservation => binary sem was empty
@@ -608,7 +656,10 @@ uint8_t pble_runner_run_file(const char *path) {
     // the RUN handler — no spurious RUN_STATE on the EBUSY path.
     uint8_t status;
     taskENTER_CRITICAL(&g_mux);
-    status = pble_rsm_on_run(&g_rsm);
+    status = !g_run_status_ready ? PBLE_EINTERNAL :
+             (g_rsm.state != PBLE_RUN_RUNNING &&
+              g_run_status.run_id == UINT32_MAX) ? PBLE_ERANGE :
+             pble_rsm_on_run(&g_rsm);
     if (status == PBLE_OK) {
         g_stop_requested = false;
         if (g_worker_state != NULL) {
@@ -624,8 +675,40 @@ uint8_t pble_runner_run_file(const char *path) {
     g_run_mode = PBLE_RUN_MODE_FILE;
     g_run_len = plen;
     memcpy(g_run_buf, path, plen);
+    taskENTER_CRITICAL(&g_mux);
+    bool committed = pble_run_status_admit(&g_run_status, 3);
+    configASSERT(committed);
+    (void)committed;
+    taskEXIT_CRITICAL(&g_mux);
     pble_console_stdin_begin();
     xSemaphoreGive(g_run_sem);   // RUN_STATE(running) follows from the worker
+    return PBLE_OK;
+}
+
+uint8_t pble_runner_status(const pble_frame_t *req, uint8_t *rsp,
+                            size_t *rlen, const pble_session_token_t *session) {
+    if (rlen != NULL) {
+        *rlen = 0;
+    }
+    if (req == NULL || req->len != 0 || rsp == NULL || rlen == NULL ||
+        session == NULL) {
+        return PBLE_EBADREQ;
+    }
+    pble_run_status_t snapshot;
+    taskENTER_CRITICAL(&g_mux);
+    if (!g_run_status_ready) {
+        taskEXIT_CRITICAL(&g_mux);
+        return PBLE_EINTERNAL;
+    }
+    // Generic dispatch has reserved the exact session's whole response first.
+    // Observation precedes the snapshot so a concurrent worker cut is visible
+    // either here or through a higher-revision event on this same session.
+    g_run_status_observer = *session;
+    g_run_status_observing = true;
+    snapshot = g_run_status;
+    taskEXIT_CRITICAL(&g_mux);
+    pble_run_status_encode(&snapshot, rsp);
+    *rlen = PBLE_RUN_STATUS_BYTES;
     return PBLE_OK;
 }
 
@@ -662,7 +745,27 @@ void pble_runner_vm_detach(void) {
 }
 
 void pble_runner_vm_reset(void) {
+    // Epoch begin runs with dispatch closed and old workers drained. Generate
+    // ephemeral identity through the platform random provider, never identity
+    // metadata or clocks. Repeated registration does not rotate this token.
+    pble_run_status_t fresh;
+    uint8_t random_boot[8];
+    bool ready = false;
+    for (unsigned attempt = 0; attempt < 4 && !ready; ++attempt) {
+        esp_fill_random(random_boot, sizeof(random_boot));
+        ready = pble_run_status_init(&fresh, random_boot);
+        if (ready && g_run_status_ready &&
+            memcmp(fresh.boot_id, g_run_status.boot_id, 8) == 0) {
+            ready = false;
+        }
+    }
     taskENTER_CRITICAL(&g_mux);
+    g_run_status_ready = ready;
+    g_run_status_observing = false;
+    memset(&g_run_status_observer, 0, sizeof(g_run_status_observer));
+    if (ready) {
+        g_run_status = fresh;
+    }
     pble_rsm_init(&g_rsm);
     g_stop_requested = false;
     g_control_unresolved = false;
@@ -683,9 +786,16 @@ void pble_runner_vm_reset(void) {
         while (xSemaphoreTake(g_control_resolution_sem, 0) == pdTRUE) {
         }
     }
+    if (!ready) {
+        esp_restart();
+    }
 }
 
 void pble_runner_register(void) {
+    if (!g_run_status_ready) {
+        mp_raise_msg(&mp_type_RuntimeError,
+                     MP_ERROR_TEXT("run status random initialization failed"));
+    }
     if (g_run_sem == NULL) {
         g_run_sem = xSemaphoreCreateBinary();
     }
@@ -713,6 +823,7 @@ void pble_runner_register(void) {
     if (MP_STATE_VM(pble_runner_sysexit) == MP_OBJ_NULL) {
         MP_STATE_VM(pble_runner_sysexit) = mp_obj_new_exception(&mp_type_SystemExit);
     }
+    pble_proto_register(PBLE_OP_RUN_STATUS, pble_runner_status);
     pble_proto_register_special(PBLE_OP_RUN, pble_runner_run);
     pble_proto_register_special(PBLE_OP_STOP, pble_runner_stop);
     pble_proto_register_special(PBLE_OP_SOFT_REBOOT, pble_runner_soft_reboot);

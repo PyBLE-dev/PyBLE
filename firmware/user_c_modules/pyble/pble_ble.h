@@ -113,6 +113,12 @@ int pble_ble_notify_control_paced(const uint8_t *msg, size_t len,
                                   uint32_t budget_ms,
                                   const pble_session_token_t *session);
 
+// Bounded worker-only control message delivery, including multiple ATT
+// fragments. Whole attempts share the TX boundary; retries restart at FIRST.
+int pble_ble_notify_control_message_paced(const uint8_t *msg, size_t len,
+                                          uint32_t budget_ms,
+                                          const pble_session_token_t *session);
+
 // Retained-VM lifecycle integration.  All functions are allocation-free after
 // cold BLE initialization.
 void pble_ble_vm_rx_reset(void);

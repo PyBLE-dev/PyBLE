@@ -6,7 +6,7 @@
 | Control | Value |
 |---|---|
 | Product Goal | Make the existing tablet workflow trustworthy enough for useful repeat tasks by the selected primary audience |
-| Source | [Implementation strategy revision 1.8](../../planning/PyBLE_Implementation_Plan_and_Strategy_v1.0.md), initially derived 25 September; reconciled 31 October 2026 |
+| Source | [Implementation strategy revision 1.11](../../planning/PyBLE_Implementation_Plan_and_Strategy_v1.0.md), initially derived 25 September; reconciled 1 November 2026 |
 | Cycle | Proposed 28 September–20 December 2026; Asia/Bangkok |
 | Baseline | `23ed764b0ef88dce9720c66fbd1c0655268860cf`; completed publication work is evidence, not a new commitment |
 | Status | C1-S1: PYB-001.1/.2 and PYB-006.1 scoped work Done; pilot preparation awaits setup and observation work awaits evidence. PYB-006.2/M-02, scoped 008/009 and app-only M-04 pass engineering review; [PR #41](https://github.com/PyBLE-dev/PyBLE/pull/41) merged after all 36 checks on its final head passed. M-05 is partial: internal TestFlight delivery verified; external submission Waiting for Review; Google Play open-testing build 9 submitted, Changes in review; approval/delivery pending |
@@ -150,6 +150,13 @@ Acceptance criteria below remain the completion authority. The [C1-S1 execution 
 
 ### 3.6 Optional capacity: support, documentation and future design
 
+On 1 November implementation began with the recommended first
+PYB-017.1/PYB-018 run-status increment under the user's roadmap request.
+Its contract is specified and implementation/qualification is tracked in the
+[firmware execution record](firmware-v070/00_Execution_Record.md). Other expansion
+items remain proposed; this does not close participant or distribution work.
+
+
 | ID / type / role | Outcome | Testable acceptance criteria | Dependencies and verification |
 |---|---|---|---|
 | PYB-007.1 / User story / App + QA | As a user seeking help, I can preview a diagnostic export before sharing it | User explicitly initiates export; preview/redaction precedes sharing; observed, supplied and unknown identity fields stay distinct; omit source, file/console contents, secrets and persistent device identifiers by default; no automatic upload; current HELLO is not treated as an artifact hash | 003 and approved export contract; privacy/serialization/UI tests and relevant device checks. Manual template remains usable if this story is not selected |
@@ -160,12 +167,22 @@ Acceptance criteria below remain the completion authority. The [C1-S1 execution 
 
 ## 4. Conditional expansion backlog and complete parent traceability
 
-Parents PYB-001–016 map to the first-cycle table. PYB-017 has a design leaf above; PYB-018–032 remain proposed epics needing refinement, named ownership, sizing and admission. Future-stage P0 does not interrupt the current cycle automatically.
+Parents PYB-001–016 map to the first-cycle table. The selected PYB-017/PYB-018
+slice has the contract and delivery breakdown below; PYB-019–032 remain proposed
+epics needing refinement, named ownership, sizing and admission. Future-stage
+P0 does not interrupt the current cycle automatically.
+
+| Selected leaf | Outcome and verification | Tracking / current state |
+|---|---|---|
+| PYB-017.1 | Define the committed snapshot, capability, query/events, session ownership and cross-version vectors before implementation | [ADR-0049](../../decisions/0049-query-run-state-after-reconnect.md), PBLE/1 §6.1; normative commit `27811da` preceded implementation |
+| PYB-018.1 | Native and portable agents report coherent accepted execution, reconnect identity, STOP and terminal reason, including autorun | [#44](https://github.com/PyBLE-dev/PyBLE/issues/44); implementation and targeted five-profile status/autorun/load evidence complete, including atomic Pico autorun admission and real-VM red/green; PR review pending |
+| PYB-018.2 | The app synchronizes before readiness, caches status for late views and preserves legacy fallback | [#45](https://github.com/PyBLE-dev/PyBLE/issues/45); R5 implementation and both-tablet/five-profile normal UI evidence complete; PR review pending |
+| PYB-018.3 | Retain exact builds, workspace-preserving programming and physical cross-version, reconnect, autorun and actual ATT-MTU evidence | [#46](https://github.com/PyBLE-dev/PyBLE/issues/46); [execution record](firmware-v070/00_Execution_Record.md); targeted physical matrix recorded; historical iPad 0.3/Waveshare GET remains Partial after successful retry; full release admission, including [#48](https://github.com/PyBLE-dev/PyBLE/issues/48), pending |
 
 | Parent / source priority | Proposed outcome | Admission and dependencies | Refinement / evidence before claim |
 |---|---|---|---|
-| PYB-017 / P0 future | Select Reliable Projects scope | Cycle evidence; explicit scope/capacity decision | 017.1 above; no implementation by roadmap alone |
-| PYB-018 / P0 future | Query run/session state without stale reconnect assumptions | 017 approved contract | Split user/agent/app slices; reconnect/autorun and cross-version evidence |
+| PYB-017 / Selected slice in review | Select Reliable Projects scope | User implementation request and first-increment recommendation; remaining scope proposed | 017.1 above; no release admission by roadmap alone |
+| PYB-018 / Selected slice in review | Query run/session state without stale reconnect assumptions | Selected 017 contract | 018.1–018.3 above; targeted evidence recorded, legacy limitation and full release admission remain visible |
 | PYB-019 / P0 future | Inspect or abort a transfer while preserving the prior destination | 017 approved contract | Define idempotent abort and disconnect/resume semantics; fault and compatibility vectors |
 | PYB-020 / P0 future | Obtain complete directory enumeration | 017 approved contract | Define mutation behavior; unchanged directory returns every entry exactly once |
 | PYB-021 / P0 future | Execute files with consistent project semantics | 017 approved contract | Sibling imports, path restoration, module cleanup and fresh-run parity; preserve completed v0.6.1 hardening |

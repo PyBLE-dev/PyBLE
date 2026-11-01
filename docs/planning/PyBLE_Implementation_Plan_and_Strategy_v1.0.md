@@ -11,10 +11,10 @@
 
 | Field | Value |
 |---|---|
-| Document version | 1.8 — accepted bounded recovery and app-only qualification; channel/pilot continuation; original filename retained |
+| Document version | 1.11 — corrected Pico admission and active-image evidence; accepted bounded recovery and app-only qualification; channel/pilot continuation; original filename retained |
 | Prepared | 25 September 2026 |
-| Last reviewed | 31 October 2026; bounded M-02 and app-only M-04 engineering acceptance recorded with exact candidate, firmware and OEM test conditions; device closeout complete; [PR #41](https://github.com/PyBLE-dev/PyBLE/pull/41) merged after all 36 checks on its final head passed; internal TestFlight delivery verified; external submission Waiting for Review; Play open-testing build 9 submitted, Changes in review; delivery pending |
-| Status | C1-S1 has six tasks Done, two Prepared awaiting pilot setup and four Awaiting evidence; Sprint and SG0 remain unfinished. Bounded recovery and app-only qualification pass scoped engineering review; device closeout is complete. [PR #41](https://github.com/PyBLE-dev/PyBLE/pull/41) merged after all 36 checks on its final head passed. Internal-account TestFlight `0.3.0 (9)` installation and bounded smoke are verified; external build 9 is submitted and Waiting for Review; Google Play open-testing build 9 is submitted with Changes in review; approval and delivery remain pending. Human capacity and recruitment dates need replanning; no new protocol behavior approved |
+| Last reviewed | 1 November 2026; selected run-status implementation ready for review with targeted physical evidence and a historical-client GET limitation; prior 31 October acceptance: bounded M-02 and app-only M-04 engineering acceptance recorded with exact candidate, firmware and OEM test conditions; device closeout complete; [PR #41](https://github.com/PyBLE-dev/PyBLE/pull/41) merged after all 36 checks on its final head passed; internal TestFlight delivery verified; external submission Waiting for Review; Play open-testing build 9 submitted, Changes in review; delivery pending |
+| Status | C1-S1 has six tasks Done, two Prepared awaiting pilot setup and four Awaiting evidence; Sprint and SG0 remain unfinished. Bounded recovery and app-only qualification pass scoped engineering review; device closeout is complete. [PR #41](https://github.com/PyBLE-dev/PyBLE/pull/41) merged after all 36 checks on its final head passed. Internal-account TestFlight `0.3.0 (9)` installation and bounded smoke are verified; external build 9 is submitted and Waiting for Review; Google Play open-testing build 9 is submitted with Changes in review; approval and delivery remain pending. Human capacity and recruitment dates need replanning. The selected run-status contract is specified and implemented; remaining protocol features and full release admission stay pending |
 | Product | PyBLE — Python over Bluetooth Low Energy |
 | Organization | SciLabPro |
 | Planning horizon | Immediate 12-week delivery cycle, followed by conditional expansion through September 2028 |
@@ -28,10 +28,13 @@
 
 **Evidence boundary.** The baseline review inspected repository source, specifications, test entry points, publication records, and the GitHub state of PR #33 and issue #24 on 25 September. Revision 1.2 incorporates the subsequent strategy and PyBLE Ready feedback. The dated Android publication review establishes listing status only. Revision 1.3 records direct live-channel/website checks and the original unavailable/locked device attempts. Revision 1.4 adds the connected-device retry in the [C1-S1 ledger](../developments/2026-q4-reliable-workflow/c1-s1/01_Channel_and_Artifact_Ledger.md): existing Play `0.2.0 (8)` and TestFlight `0.2.0 (6)` installations and launches verified. Fresh enrollment/reinstallation was not performed. Android's code/asset comparison supports historical source mapping; iPad source mapping remains unknown. No participant outcome was measured in that baseline review. The subsequent [C1-S2 record](../developments/2026-q4-reliable-workflow/c1-s2/00_Execution_Record.md) adds candidate-specific native storage/restart and board-workflow observations, PR #40 merge evidence and successful integrated CI. Those engineering observations do not supply participant outcomes. Previously reported publicity and GitHub counts are not proof of product-market fit.[^android-review]
 
-**Continuation decision.** Carry forward the completed Android publication/copy correction. Concentrate weekly execution on three outcomes: verify what users install, preserve their work through interruptions, and observe useful repeat tasks in one primary audience. Reuse existing lifecycle handling, tutorials, conformance fixtures, and release tooling. A bounded PyBLE Ready rehearsal can reuse one existing profile's evidence work; new ports, broad badge promotion, classroom bundles, and new protocol behavior remain conditional.
+**Continuation decision.** Carry forward the completed Android publication/copy correction. Concentrate weekly execution on three outcomes: verify what users install, preserve their work through interruptions, and observe useful repeat tasks in one primary audience. Reuse existing lifecycle handling, tutorials, conformance fixtures, and release tooling. A bounded PyBLE Ready rehearsal can reuse one existing profile's evidence work; new ports, broad badge promotion, classroom bundles, and remaining new protocol behavior remain conditional.
 
 | Revision | Change |
 |---|---|
+| 1.11 | Corrected latched STOP at Pico autorun admission with specification/red/green, identical-program actual-VM red/green and six affected tablet cases; retained four exact ESP images, historical failures and the separate full-resource gap #48 |
+| 1.10 | Recorded five-profile/both-tablet R5 evidence, actual Android ATT23/247, source-bound artifacts and retained historical iPad 0.3/Waveshare GET limitation; implementation ready for review, full release admission pending |
+| 1.9 | Selected early PYB-017.1/PYB-018 run-status development with firmware 0.7.0-dev.1 and companion app 0.4.0+10; retained distribution/pilot and full-release boundaries |
 | 1.0 | Initial strategy and proposed 12-week program |
 | 1.1 | Updated baseline after PR #33; separated publication from installed-build evidence; mapped remaining work to current code; bounded the schedule and corrected release/pilot dependencies |
 | 1.2 | Focused pilot selection and useful second tasks; contextualized retention; defined one version-bound PyBLE Ready badge, installation labels, maintenance rules, and a staged existing-profile/partner pilot |
@@ -132,7 +135,7 @@ The inspected repository already contains the following capabilities and develop
 | Release profiles | Five exact hardware profiles, including four ESP profiles and Pico 2 W | Treat exact configurations—not chip-family names—as the support unit |
 | Architecture | Monorepo with app, firmware, protocol, tests, website, and documentation | Keep changes atomic across components |
 | Governance | Specification-first, red/green/refactor, DCO, clean-room and license gates | Integrate the plan with existing contribution rules |
-| Next firmware direction | v0.7.0 “Reliable Projects” is proposed, not approved | Select and approve scope before implementing new behavior |
+| Next firmware direction | The first run/session-status increment is implemented and ready for review with targeted evidence and a historical-client GET limitation; remaining v0.7.0 “Reliable Projects” scope is proposed | Review the selected evidence/limitation and plan full release admission before publication; define the next capability separately |
 
 The existing five profiles are `esp32-4mb`, `esp32-s3-n16r8`, `waveshare-esp32-s3-lcd-147b`, `esp32-c3-4mb`, and `rpi-pico2-w`. Preserve their documented flash, PSRAM, revision, and exact-board constraints. Board image identity is not physical-board detection or authorization.[^readme]
 
@@ -275,6 +278,31 @@ New filenames and formats proposed in this plan are not existing interfaces. Pre
 - App version, firmware version, protocol compatibility, and store build identity remain separate.
 - A valid hash proves integrity relative to a manifest, not that a publisher or nearby device is trustworthy.
 - Device labels and advertised identifiers help selection but do not authenticate ownership.
+
+## 1 November selected firmware continuation
+
+Implementation follows the preceding recommendation to deliver PYB-017.1 →
+PYB-018 run/session status first under the user's roadmap implementation request.
+[The execution record](../developments/2026-q4-reliable-workflow/firmware-v070/00_Execution_Record.md)
+tracks specification, red/green implementation, app integration, independent
+worktrees and actual candidate qualification. Firmware `0.7.0-dev.1` and companion
+app `0.4.0+10` are development identities, with remaining Reliable Projects scope
+and public release admission still pending. This early slice follows §6.3's
+scope-substitution path as an implementation assumption following the preceding
+recommendation and the user's roadmap request, not a separate explicit
+first-increment-versus-full-roadmap choice. Store reviews and participant work
+are separate; the full requested roadmap is not declared complete.
+The selected implementation is ready for review in [PR #47](https://github.com/PyBLE-dev/PyBLE/pull/47).
+Both tablets pass all five R5 normal workflow rows; Android actual ATT23/247
+passes across five profiles. Historical iPad 0.3/Waveshare is Partial: an initial
+empty-GET stall recovered on one normal Open retry. This does not become an
+unqualified old-client pass or a full firmware release. Final review corrected
+Pico autorun STOP admission; its new `f3ab210` image passes the actual-VM
+comparison and all six affected tablet cases. The four ESP `1093bab` images and
+`b07e24d` app binaries are unchanged. The baseline lifecycle-history resource
+gap remains open as [#48](https://github.com/PyBLE-dev/PyBLE/issues/48); no full
+resource/release pass is inferred. The prior app 0.3
+admission and source-bound hardware limits remain historical.
 
 ## 6. Release and protocol strategy
 
@@ -466,7 +494,7 @@ Current execution states and the newly identified residual `PYB-002.1` are maint
 
 | ID | Stage / owner | Deliverable and acceptance criterion | Dependency |
 |---|---|---|---|
-| PYB-017 | P0 / Protocol | Approved v0.7.0 scope, ADRs, capability registry, and cross-version test plan before implementation | Default after first-cycle review; earlier design only by explicit capacity/scope decision |
+| PYB-017 | P0 / Protocol | Approved v0.7.0 scope, ADRs, capability registry, and cross-version test plan before implementation | Run-status design/implementation selected on 1 November under the recorded first-increment scope assumption; remaining scope proposed. Original forecast after first-cycle review remains historical; no human capacity is inferred |
 | PYB-018 | P0 / Firmware + App | Queryable run/session state; reconnect and autorun tests show no stale-state assumption | 017 |
 | PYB-019 | P0 / Firmware + App | Transfer inspection/abort; old destination survives failure, abort is idempotent, ordinary disconnect still permits defined resume | 017 |
 | PYB-020 | P0 / Firmware + App | Complete directory enumeration with documented mutation behavior; every entry returned once for an unchanged test directory | 017 |

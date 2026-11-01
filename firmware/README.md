@@ -4,13 +4,20 @@ PyBLE firmware combines pinned upstream MicroPython with a portable PBLE/1 BLE
 agent and board overlays. Upstream source remains a Git submodule and is not
 edited in place.
 
-## Initial ports
+Current source selects development `0.7.0-dev.1` for the first capability-gated
+run/session-status increment. This is separate from published firmware and
+complete release admission; see the
+[execution record](../docs/developments/2026-q4-reliable-workflow/firmware-v070/00_Execution_Record.md).
 
-| PyBLE target | Upstream IDF target | Public browser profile |
+## Reference build variants
+
+| PyBLE target | Upstream target | Public installation profile |
 |---|---|---|
 | `esp32` | `esp32` | `esp32-4mb` |
 | `esp32-s3` | `esp32s3` | `esp32-s3-n16r8` |
-| `esp32-c3` | `esp32c3` | `esp32-c3-4mb` after HIL qualification |
+| `waveshare-esp32-s3-lcd-147b` | `esp32s3` | `waveshare-esp32-s3-lcd-147b` |
+| `esp32-c3` | `esp32c3` | `esp32-c3-4mb` |
+| `rpi-pico2-w` | RP2 / `RPI_PICO2_W` (ARM build plane) | `rpi-pico2-w` (UF2/manual BOOTSEL) |
 
 These targets are reference ports, not the permanent scope of the platform.
 
@@ -39,13 +46,23 @@ Build one target:
 ```sh
 firmware/scripts/build.sh esp32
 firmware/scripts/build.sh esp32-s3
+firmware/scripts/build.sh waveshare-esp32-s3-lcd-147b
 firmware/scripts/build.sh esp32-c3
+firmware/scripts/build_rp2.sh --plan rpi-pico2-w
 ```
 
-Or build the complete matrix:
+Or build the complete ESP matrix:
 
 ```sh
 firmware/scripts/build_all.sh
+```
+
+Build Pico 2 W through its separate pinned ARM toolchain and RP2 build plane:
+
+```sh
+firmware/scripts/install_arm_toolchain.sh
+firmware/scripts/install_picotool.sh
+firmware/scripts/build_rp2.sh rpi-pico2-w
 ```
 
 Build outputs are local and ignored. Release artifacts are published through

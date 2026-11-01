@@ -43,14 +43,24 @@ class FirmwareRoadmapLedgerTests(unittest.TestCase):
         self.assertNotIn("exact v0.4.2 bytes", roadmap)
         self.assertNotIn("before enabling the ESP32-C3 installer", roadmap)
 
-    def test_detailed_roadmap_records_only_approved_split_checkbox(self):
+    def test_detailed_roadmap_separates_completed_and_selected_scope_from_proposals(self):
         roadmap = _text(
             "docs/planning/firmware-v0.6.1-v0.7.0-roadmap.md")
         checked = re.findall(r"^- \[x\] (.+)$", roadmap, re.MULTILINE)
         self.assertEqual(
-            ["the v0.6.1 hardening / v0.7.0 feature-release split;"],
+            ["the v0.6.1 hardening / v0.7.0 feature-release split;",
+             "fresh per-run globals/stdin isolation, implemented in v0.6.1 (§4.2);",
+             "selected `RUN_STATUS` schema 1 run/boot fields and privacy bounds,"],
             checked,
         )
+        for proposed in (
+            "v0.7.0's P0 versus P1 scope;",
+            "project-local import cleanup and path-restoration semantics (§5.3);",
+            "transfer-abort and scratch-retention behavior;",
+            "loss-counter and acknowledged-input behavior;",
+        ):
+            self.assertIn("- [ ] " + proposed, roadmap)
+        self.assertIn("0049-query-run-state-after-reconnect.md", roadmap)
         self.assertIn("Resolved for v0.6.1", roadmap)
         self.assertIn("official images standardize on LFS2", roadmap)
 

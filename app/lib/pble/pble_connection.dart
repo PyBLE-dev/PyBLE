@@ -16,6 +16,7 @@ import 'engine.dart';
 import 'frame.dart';
 import 'hello.dart';
 import 'pble_constants.dart';
+import 'run_snapshot_codec.dart';
 import 'types.dart'; // re-exports pble_exception.dart (the neutral type family)
 
 /// The real, wire-backed [Connection] (FR-CONN-1, FR-PBLE-14).
@@ -38,7 +39,11 @@ import 'types.dart'; // re-exports pble_exception.dart (the neutral type family)
 /// table to a distinct typed exception (FR-PBLE-13). `lib/pble` is the ONLY layer
 /// that knows the wire; the UI binds to this via [Connection] and never sees a
 /// frame or opcode.
-class PbleConnection implements Connection, ConnectionDirectoryListingSource {
+class PbleConnection
+    implements
+        Connection,
+        ConnectionDirectoryListingSource,
+        ConnectionRunStatusSource {
   PbleConnection({
     required PbleEngine engine,
     required String appName,
@@ -96,6 +101,12 @@ class PbleConnection implements Connection, ConnectionDirectoryListingSource {
 
   late final StreamSubscription<PbleFrame> _eventsSub;
   HelloResult? _hello;
+  final ValueNotifier<RunSnapshot?> _runSnapshot = ValueNotifier<RunSnapshot?>(
+    null,
+  );
+  Future<RunSnapshot>? _runStatusQuery;
+  int? _runStatusQueryGeneration;
+  bool _runStatusRefreshAgain = false;
 
   // fromLink observation (null when constructed directly over a transport).
   BleLink? _observedLink;
@@ -114,6 +125,9 @@ class PbleConnection implements Connection, ConnectionDirectoryListingSource {
         case BleLinkState.reconnecting:
           _handshakeGeneration++;
           _state.value = ConnState.connecting;
+          _hello = null;
+          _runSnapshot.value = null;
+          _runStatusRefreshAgain = false;
         case BleLinkState.connected:
           // Re-negotiate HELLO on every (re)connect (TDD §7.3). A failed
           // handshake surfaces as ConnState.disconnected; the typed error is
@@ -123,6 +137,8 @@ class PbleConnection implements Connection, ConnectionDirectoryListingSource {
           _handshakeGeneration++;
           _hello = null;
           _state.value = ConnState.disconnected;
+          _runSnapshot.value = null;
+          _runStatusRefreshAgain = false;
           // Abort any in-flight transfer NOW: a reconnect re-HELLOs and the
           // board clears its transfer context on disconnect, so an orphaned
           // download/ACK completer would otherwise await forever (the app
@@ -179,6 +195,9 @@ class PbleConnection implements Connection, ConnectionDirectoryListingSource {
   @override
   Stream<ConsoleEvent> get console => _consoleController.stream;
 
+  @override
+  ValueListenable<RunSnapshot?> get runSnapshot => _runSnapshot;
+
   /// Runs HELLO and caches the negotiated result. On success the state moves to
   /// `ready`; on any failure it returns to `disconnected` and the typed error
   /// (e.g. [UnsupportedProtocolException], a §8 subtype) is rethrown.
@@ -186,16 +205,31 @@ class PbleConnection implements Connection, ConnectionDirectoryListingSource {
     _ensureActive();
     final int generation = ++_handshakeGeneration;
     _state.value = ConnState.connecting;
+    _hello = null;
+    _runSnapshot.value = null;
+    _runStatusRefreshAgain = false;
     try {
       final HelloResult hello = await _negotiator.negotiate();
       if (_disposed || generation != _handshakeGeneration) {
         throw const NotConnectedException('connection changed during HELLO');
       }
       _hello = hello;
-      _state.value = ConnState.ready;
+      if (hello.caps.hasRunStatus) {
+        await refreshRunStatus();
+        if (_disposed || generation != _handshakeGeneration) {
+          throw const NotConnectedException(
+            'connection changed during status synchronization',
+          );
+        }
+      }
+      _state.value = _runSnapshot.value?.state == RunState.running
+          ? ConnState.running
+          : ConnState.ready;
     } catch (_) {
       if (!_disposed && generation == _handshakeGeneration) {
         _state.value = ConnState.disconnected;
+        _hello = null;
+        _runSnapshot.value = null;
         if (_observedLink != null) {
           // An unusable owned session must not leave the radio connected.
           // Keep the negotiation error as this operation's original failure;
@@ -207,6 +241,132 @@ class PbleConnection implements Connection, ConnectionDirectoryListingSource {
       }
       rethrow;
     }
+  }
+
+  @override
+  Future<RunSnapshot> refreshRunStatus() async {
+    _ensureActive();
+    final HelloResult? hello = _hello;
+    if (hello == null) {
+      throw const NotConnectedException('status requires a negotiated session');
+    }
+    if (!hello.caps.hasRunStatus) {
+      throw const EUnsupported('board does not advertise run status');
+    }
+    final int generation = _handshakeGeneration;
+    final Future<RunSnapshot>? existing = _runStatusQuery;
+    if (existing != null && _runStatusQueryGeneration == generation) {
+      return existing;
+    }
+    final Future<RunSnapshot> query = _requestRunStatus(generation);
+    _runStatusQuery = query;
+    _runStatusQueryGeneration = generation;
+    unawaited(
+      query.then<void>(
+        (_) => _finishRunStatusQuery(query),
+        onError: (Object _, StackTrace _) => _finishRunStatusQuery(query),
+      ),
+    );
+    return query;
+  }
+
+  Future<RunSnapshot> _requestRunStatus(int generation) async {
+    final PbleFrame response;
+    try {
+      response = await _engine.request(
+        _cmd(PbleOpcode.runStatus, const <int>[]),
+      );
+    } on PbleTimeoutException {
+      if (!_disposed && generation == _handshakeGeneration) {
+        _retireInvalidRunStatus();
+      }
+      rethrow;
+    }
+    if (_disposed || generation != _handshakeGeneration) {
+      throw const NotConnectedException(
+        'connection changed during status query',
+      );
+    }
+    try {
+      if (response.payload.isEmpty ||
+          (response.payload[0] != PbleStatus.ok.code &&
+              response.payload.length != 1)) {
+        throw const PbleFormatException('invalid run status response');
+      }
+      _checkStatus(response);
+      _acceptRunSnapshot(
+        decodeRunSnapshot(Uint8List.sublistView(response.payload, 1)),
+      );
+      return _runSnapshot.value!;
+    } on PbleFormatException {
+      _retireInvalidRunStatus();
+      rethrow;
+    }
+  }
+
+  void _finishRunStatusQuery(Future<RunSnapshot> query) {
+    if (!identical(_runStatusQuery, query)) return;
+    _runStatusQuery = null;
+    _runStatusQueryGeneration = null;
+    if (_runStatusRefreshAgain) {
+      _runStatusRefreshAgain = false;
+      _scheduleRunStatusRefresh();
+    }
+  }
+
+  void _scheduleRunStatusRefresh() {
+    if (_disposed || _hello?.caps.hasRunStatus != true) return;
+    if (_runStatusQuery != null &&
+        _runStatusQueryGeneration == _handshakeGeneration) {
+      _runStatusRefreshAgain = true;
+      return;
+    }
+    // A successful control response has already committed. Status failure may
+    // retire observation, but must never reclassify accepted user execution.
+    final int generation = _handshakeGeneration;
+    unawaited(
+      refreshRunStatus().then<void>(
+        (_) {},
+        onError: (Object _, StackTrace _) {
+          // A delayed query belongs to the session that scheduled it. Its
+          // expected failure after reconnect cannot invalidate a newer HELLO.
+          if (!_disposed && generation == _handshakeGeneration) {
+            _retireInvalidRunStatus();
+          }
+        },
+      ),
+    );
+  }
+
+  void _acceptRunSnapshot(RunSnapshot next) {
+    final RunSnapshot? previous = _runSnapshot.value;
+    if (previous != null) {
+      if (previous.bootId != next.bootId) {
+        throw const PbleFormatException(
+          'run status boot changed in a live session',
+        );
+      }
+      if (next.revision < previous.revision) return;
+      if (next.revision == previous.revision) {
+        if (next != previous) {
+          throw const PbleFormatException('conflicting run status revision');
+        }
+        return;
+      }
+    }
+    _runSnapshot.value = next;
+    if (!_runStateController.isClosed) _runStateController.add(next.state);
+    _applyRunStateToConn(next.state);
+  }
+
+  void _retireInvalidRunStatus() {
+    if (_disposed) return;
+    _hello = null;
+    _state.value = ConnState.disconnected;
+    _runSnapshot.value = null;
+    // Observe asynchronous teardown errors here; the original disposal future
+    // remains available to the owner and is never replaced by this observer.
+    unawaited(dispose().catchError((Object _) {}));
   }
 
   @override
@@ -233,6 +393,7 @@ class PbleConnection implements Connection, ConnectionDirectoryListingSource {
       _cmd(PbleOpcode.run, <int>[mode & 0xff, ...data]),
     );
     _checkStatus(rsp);
+    _scheduleRunStatusRefresh();
   }
 
   @override
@@ -242,6 +403,7 @@ class PbleConnection implements Connection, ConnectionDirectoryListingSource {
       _cmd(PbleOpcode.stop, const <int>[]),
     );
     _checkStatus(rsp);
+    _scheduleRunStatusRefresh();
   }
 
   @override
@@ -298,32 +460,52 @@ class PbleConnection implements Connection, ConnectionDirectoryListingSource {
   @override
   Future<Uint8List> getFile(String path, {ProgressCb? onProgress}) async {
     _beginTransfer();
+    final int generation = _handshakeGeneration;
+    _Download? download;
     try {
       // FILE_GET_BEGIN 0x12 [offset:u32][plen][path] → RSP [status][total:u32].
-      final PbleFrame begin = await _engine.request(
+      await _engine.request(
         _cmd(PbleOpcode.fileGetBegin, <int>[..._u32(0), ..._pathField(path)]),
+        onResponseAccepted: (PbleFrame begin) {
+          _ensureActive();
+          if (generation != _handshakeGeneration) {
+            throw const NotConnectedException('download session retired');
+          }
+          _checkStatus(begin);
+          if (begin.payload.length != 5) {
+            throw const PbleFormatException('invalid download BEGIN size');
+          }
+          final int total = _readU32(begin.payload, 1);
+          final _Download accepted = _Download(
+            total: total,
+            onProgress: onProgress,
+          );
+          download = accepted;
+          _download = accepted;
+          _armDownloadStall(accepted);
+          onProgress?.call(TransferProgress(sent: 0, total: total));
+        },
       );
       _ensureActive();
-      _checkStatus(begin);
-      final int total = _readU32(begin.payload, 1);
-
-      final _Download download = _Download(
-        total: total,
-        onProgress: onProgress,
-      );
-      _download = download;
-      _armDownloadStall(download);
-      onProgress?.call(TransferProgress(sent: 0, total: total));
+      if (generation != _handshakeGeneration) {
+        throw const NotConnectedException('download session retired');
+      }
+      final _Download? accepted = download;
+      if (accepted == null) {
+        throw const PbleFormatException('download BEGIN not accepted');
+      }
 
       // GET_DATA events accumulate; GET_END verifies size + whole-file CRC
       // BEFORE completing (FR-PBLE-9) — a mismatch completes with [ECrc]. The
       // inactivity watchdog (re-armed per chunk) and the link-drop abort bound
       // this await: it can never hang past [dataTimeout] of silence.
-      return await download.completer.future;
+      return await accepted.completer.future;
     } finally {
-      _downloadStallTimer?.cancel();
-      _downloadStallTimer = null;
-      _download = null;
+      if (identical(_download, download)) {
+        _downloadStallTimer?.cancel();
+        _downloadStallTimer = null;
+        _download = null;
+      }
       _endTransfer();
     }
   }
@@ -536,6 +718,8 @@ class PbleConnection implements Connection, ConnectionDirectoryListingSource {
 
     _hello = null;
     _state.value = ConnState.disconnected;
+    _runSnapshot.value = null;
+    _runStatusRefreshAgain = false;
     _abortTransfers(const NotConnectedException('connection disposed'));
     await attempt(() {
       if (_linkListener != null) {
@@ -553,6 +737,7 @@ class PbleConnection implements Connection, ConnectionDirectoryListingSource {
     await attempt(_runStateController.close);
     await attempt(_consoleController.close);
     await attempt(_state.dispose);
+    await attempt(_runSnapshot.dispose);
     if (firstError != null) {
       Error.throwWithStackTrace(firstError!, firstStack!);
     }
@@ -565,7 +750,18 @@ class PbleConnection implements Connection, ConnectionDirectoryListingSource {
     final int op = frame.opcode;
     final Uint8List p = frame.payload;
 
-    if (op == PbleOpcode.runState.code) {
+    if (op == PbleOpcode.runStatusChanged.code) {
+      if (_hello?.caps.hasRunStatus != true) return;
+      try {
+        _acceptRunSnapshot(decodeRunSnapshot(p));
+      } on PbleFormatException {
+        _retireInvalidRunStatus();
+      }
+    } else if (op == PbleOpcode.runState.code) {
+      if (_hello?.caps.hasRunStatus == true) {
+        _scheduleRunStatusRefresh();
+        return;
+      }
       final RunState rs = _runStateFromByte(p.isEmpty ? 0 : p[0]);
       if (!_runStateController.isClosed) _runStateController.add(rs);
       _applyRunStateToConn(rs);
@@ -582,11 +778,20 @@ class PbleConnection implements Connection, ConnectionDirectoryListingSource {
       }
     } else if (op == PbleOpcode.fileGetData.code) {
       final _Download? d = _download;
-      if (d == null) return;
+      if (d == null || d.completer.isCompleted) return;
+      if (p.length < 4) {
+        _rejectDownload(d, const PbleFormatException('invalid download DATA'));
+        return;
+      }
       // [offset:u32][bytes] — bytes arrive in order for a single transfer.
+      final int offset = _readU32(p, 0);
       final Uint8List bytes = p.length > 4
           ? Uint8List.sublistView(p, 4)
           : Uint8List(0);
+      if (offset != d.received || bytes.length > d.total - d.received) {
+        _rejectDownload(d, const ECrc('download chunk offset/size mismatch'));
+        return;
+      }
       d.builder.add(bytes);
       d.received += bytes.length;
       _armDownloadStall(d); // data flowed: push the stall deadline out
@@ -594,14 +799,17 @@ class PbleConnection implements Connection, ConnectionDirectoryListingSource {
     } else if (op == PbleOpcode.fileGetEnd.code) {
       final _Download? d = _download;
       if (d == null || d.completer.isCompleted) return;
+      if (p.length != 4) {
+        _rejectDownload(d, const PbleFormatException('invalid download END'));
+        return;
+      }
       final int crc = _readU32(p, 0);
       final Uint8List assembled = d.builder.toBytes();
       if (assembled.length != d.total || pbleCrc32(assembled) != crc) {
         // Never report a bad whole-file transfer as success (FR-PBLE-9).
-        d.completer.completeError(
-          const ECrc('download whole-file size/CRC mismatch'),
-        );
+        _rejectDownload(d, const ECrc('download whole-file size/CRC mismatch'));
       } else {
+        _downloadStallTimer?.cancel();
         d.completer.complete(assembled);
       }
     } else if (op == PbleOpcode.filePutAck.code) {
@@ -631,6 +839,13 @@ class PbleConnection implements Connection, ConnectionDirectoryListingSource {
         u.nextOffset = u.watermark;
         _pumpWindow(u);
       }
+    }
+  }
+
+  void _rejectDownload(_Download download, PbleException error) {
+    _downloadStallTimer?.cancel();
+    if (!download.completer.isCompleted) {
+      download.completer.completeError(error);
     }
   }
 
@@ -729,7 +944,14 @@ class PbleConnection implements Connection, ConnectionDirectoryListingSource {
 /// In-progress download context (the only per-transfer state on [PbleConnection]
 /// beyond the active-writer flag).
 class _Download {
-  _Download({required this.total, required this.onProgress});
+  _Download({required this.total, required this.onProgress}) {
+    // DATA/END, watchdog expiry, or retirement can fail this completion before
+    // the final BEGIN write ACK lets getFile await it. Observe errors now while
+    // preserving the exact future and error for that eventual caller.
+    unawaited(
+      completer.future.then<void>((_) {}, onError: (Object _, StackTrace _) {}),
+    );
+  }
 
   final int total;
   final ProgressCb? onProgress;

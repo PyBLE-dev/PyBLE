@@ -7,7 +7,7 @@
 |---|---|
 | Status | C1-S1 remains partial; bounded S2 recovery and app-only qualification pass 31 October engineering review. S2 follow-up and M-05 delivery remain unfinished; original dates/hours remain baseline forecasts |
 | Cycle | `C1`, 28 September–20 December 2026, Asia/Bangkok |
-| Basis | [Strategy revision 1.8, §8](../../planning/PyBLE_Implementation_Plan_and_Strategy_v1.0.md#8-twelve-week-implementation-schedule) |
+| Basis | [Strategy revision 1.11, §8](../../planning/PyBLE_Implementation_Plan_and_Strategy_v1.0.md#8-twelve-week-implementation-schedule) |
 | Product Goal and quality rules | [Working agreement](01_Overview_and_Scrum_Framework.md) |
 | Acceptance criteria | [Product backlog and stories](05_Product_Backlog_and_Stories.md) |
 | Task-level proposal | [Sprint backlogs](06_Sprint_Backlogs.md) |
@@ -79,6 +79,24 @@ Do not subtract agent wall-clock time from human capacity or relabel elapsed
 calendar time as measured engineering effort. Maintain the original 22 November
 activation target alongside any later approved forecast; missed windows remain
 missing or late evidence.
+
+## 1 November selected continuation
+
+The [recorded first-increment scope assumption](01_Overview_and_Scrum_Framework.md#1-november-selected-continuation)
+adds PYB-017.1/PYB-018 run-status implementation and candidate qualification to
+the current engineering continuation under the user's roadmap request. The
+[selected leaves](05_Product_Backlog_and_Stories.md#4-conditional-expansion-backlog-and-complete-parent-traceability)
+and [firmware execution record](firmware-v070/00_Execution_Record.md) own that
+work's breakdown and actual results. The implementation and targeted five-profile
+evidence are ready for review; the historical iPad 0.3/Waveshare GET limitation
+remains explicit. This does not complete the remaining
+roadmap, participant work or distribution decisions.
+
+Preserve the original calendar, allowances and October acceptance records.
+They do not estimate this new firmware work or establish a staffed Sprint.
+Reconcile any scope substitution, displaced work and actual human capacity
+before adopting a new forecast; all applicable legacy and selected-increment
+qualification remains required.
 
 ## Capacity model
 

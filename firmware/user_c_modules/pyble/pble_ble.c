@@ -1416,6 +1416,56 @@ int pble_ble_notify_control_paced(const uint8_t *msg, size_t len,
     return pble_ble_notify_paced_with_reserve(msg, len, budget_ms, session, 0);
 }
 
+// Worker-only bounded control delivery for tagged run snapshots. The legacy
+// one-packet sender above retains its exact behavior. At MTU23 a snapshot needs
+// two packets; pble_notify_message keeps each complete attempt atomic. If local
+// pressure rejects a later fragment, a new attempt starts at FIRST as §3.2
+// specifies, without retaining an unbounded queue or holding TX while waiting.
+int pble_ble_notify_control_message_paced(const uint8_t *msg, size_t len,
+                                          uint32_t budget_ms,
+                                          const pble_session_token_t *session) {
+    if (len > PBLE_RSP_FRAME_MAX) {
+        return PBLE_TX_OVERSIZE;
+    }
+    if (pble_tx_mutex == NULL || pble_tx_drain_sem == NULL ||
+        !pble_ble_session_live(session)) {
+        return PBLE_TX_NO_CONN;
+    }
+    TickType_t ticks = pdMS_TO_TICKS(budget_ms);
+    if (ticks == 0) {
+        ticks = 1;
+    }
+    TickType_t started = xTaskGetTickCount();
+    const TickType_t max_slice = pdMS_TO_TICKS(15) ? pdMS_TO_TICKS(15) : 1;
+    for (;;) {
+        TickType_t elapsed = xTaskGetTickCount() - started;
+        if (elapsed >= ticks) {
+            return PBLE_TX_AGAIN;
+        }
+        if (xSemaphoreTakeRecursive(pble_tx_mutex, ticks - elapsed) != pdTRUE) {
+            return PBLE_TX_AGAIN;
+        }
+        int rc = PBLE_TX_AGAIN;
+        // A successful mutex acquisition may have consumed the final tick.
+        // Never begin a new fragment run after this attempt's absolute budget.
+        if (xTaskGetTickCount() - started < ticks &&
+            !pble_control_tx_boundary_pending() && !pble_rsp_owner_active()) {
+            rc = pble_notify_message(msg, len, session);
+        }
+        xSemaphoreGiveRecursive(pble_tx_mutex);
+        if (rc != PBLE_TX_AGAIN) {
+            return rc;
+        }
+        elapsed = xTaskGetTickCount() - started;
+        if (elapsed >= ticks) {
+            return PBLE_TX_AGAIN;
+        }
+        TickType_t remaining = ticks - elapsed;
+        xSemaphoreTake(pble_tx_drain_sem,
+                       remaining > max_slice ? max_slice : remaining);
+    }
+}
+
 // General TX path (FR-BLE-3/10): fragment already-encoded PBLE/1 bytes to
 // payload_size(mtu) and Notify each §3.2 packet on TX. Byte-identical to the
 // receiver's reassembly. Returns PBLE_TX_OK / PBLE_TX_NO_CONN / PBLE_TX_AGAIN.

@@ -22,6 +22,34 @@ Record optional follow-up consent and the prospective day-7–14 window at each 
 
 **31 October acceptance update:** scoped current-text recovery (PYB-006.2 / M-02) and the app-only M-04 candidate pass engineering review at `bef67bd`: 984 ordinary tests, 36 frozen-runtime CI checks, both-platform recovery/keyboard evidence and all ten declared app/profile rows. The [C1-S2 record](c1-s2/00_Execution_Record.md) preserves exact artifacts, firmware baselines, earlier-row impact assessments and the temporary Android qualifier battery-policy condition. Signed packages and the release packet are prepared; original device policy and normal board advertising are restored, and owned fixtures are cleaned. [PR #41](https://github.com/PyBLE-dev/PyBLE/pull/41) merged after all 36 checks on its final head passed. Internal-account TestFlight `0.3.0 (9)` offer/Open, production About and bounded device smoke are verified ([delivery record](c1-s2/06_Release_Readiness.md#31-october-testflight-delivery-and-published-metadata)); the update transaction was not observed. PYB-002.1 public-description correction is complete. M-05 remains partial: external build 9 is submitted and Waiting for Review; Google Play open-testing build 9 is submitted with Changes in review; approval and delivery remain pending. S1 remains six Done / two Prepared / four Awaiting evidence; S2 has ten engineering tasks Done and participant follow-up unfinished. Original dates/hours remain the baseline; the [continuation plan](04_Sprint_Plan.md#31-october-continuation-order-and-reforecast) records the next work and unresolved human capacity.
 
+## 1 November selected continuation
+
+The user's roadmap request is being implemented under the
+[recorded first-increment scope assumption](01_Overview_and_Scrum_Framework.md#1-november-selected-continuation).
+The [selected PYB-017.1/PYB-018 leaves](05_Product_Backlog_and_Stories.md#4-conditional-expansion-backlog-and-complete-parent-traceability)
+and [firmware execution record](firmware-v070/00_Execution_Record.md) supply the
+current delivery breakdown and evidence. The original task tables and hour
+totals below remain historical forecasts; they do not include or estimate this
+new work. No new Sprint commitment, measured capacity, participant outcome or
+full-roadmap completion is inferred. Reconcile scope substitution and displaced
+work during subsequent planning while preserving all applicable legacy and
+selected-increment qualification gates.
+
+The following records actual selected work without assigning a new Sprint or
+inventing hours. All rows refer to [PR #47](https://github.com/PyBLE-dev/PyBLE/pull/47)
+and the firmware execution record above.
+
+| Continuation task | Story | Actual result / remaining work |
+|---|---|---|
+| V07-T01 | PYB-017.1 | Contract, ADR and vectors committed before dependent implementation |
+| V07-T02 | PYB-018.1 | Native agent implemented; automated and five-profile targeted hardware evidence recorded |
+| V07-T03 | PYB-018.1 | Portable agent and atomic autorun admission implemented; parity/race tests, real-VM red/green and corrected-Pico physical evidence recorded |
+| V07-T04 | PYB-018.2 | App synchronization plus four regression fixes; 1,072 ordinary tests and ten R5 normal tablet/profile rows pass |
+| V07-T05 | PYB-018.3 | Five active exact-profile builds, verified backups/programming, mandatory C3 restoration and fresh-current-preserving corrected-Pico installation complete |
+| V07-T06 | PYB-018.3 | Five-profile Mac status/autorun/load and actual Android ATT23/247 evidence complete |
+| V07-T07 | PYB-018.3 | Cross-version evidence recorded; old iPad 0.3/Waveshare initial GET stalls, normal retry recovers; overall row remains Partial |
+| V07-T08 | PYB-018 | Ready for integration review; full firmware release admission and remaining Reliable Projects features are unfinished |
+
 ## C1-S1 — reproduce the current workflow and size recovery
 
 | Sprint control | Value |
@@ -204,7 +232,7 @@ These options are not extra committed tasks. Use only the stated headroom, a rea
 | PYB-007.1 previewable diagnostics | After privacy/export contract is accepted | Evidence that manual support records are insufficient | Manual template remains the base plan; no automatic upload |
 | PYB-010.1 reviewed localization | After current guide and reviewer are available | Actual language need and named reviewer | Separate estimate; no dependency on an unneeded onboarding fix |
 | PYB-015.1 release kit | Once corresponding claims have evidence | Qualified/verified facts; actual preparation need | Creation does not authorize outreach or claim publication |
-| PYB-016.1 research design or PYB-017.1 protocol design | Only explicitly assigned spare/contributor capacity | Relevant question/problem and responsible owner | No implementation, study result or new opcode by planning alone |
+| PYB-016.1 research design; remaining PYB-017 design | Only explicitly assigned spare/contributor capacity | Relevant question/problem and responsible owner; the selected 1 November run-status slice is tracked above | No study result, remaining implementation or new opcode by planning alone; the selected slice follows its approved normative contract |
 
 | Capacity reconciliation | Hours |
 |---|---:|

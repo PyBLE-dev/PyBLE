@@ -158,6 +158,7 @@ The client implements the PBLE/1 wire contract; it references [protocol.md](../p
 ### 4.6 Code Editor (`lib/editor/`) — FR-EDIT
 
 - **FR-EDIT-1** — The editor MUST provide Python/MicroPython syntax highlighting, line numbers, and auto-indentation (`flutter_code_editor`, with a WebView-hosted editor as the documented fallback per [PRD §16.1](../prd.md)/§23). MUST (*source: PRD §9.3, §16.1; verify: widget; story: A-20*)
+- **FR-EDIT-1A — Delimiter typing safety (2026-11-01).** Typing balanced ASCII parentheses, brackets, braces and quotes through the platform text-input path MUST NOT append extra closing characters to the document. The rich adapter MUST disable the pinned package's optional delimiter-insertion modifiers; auto-indentation, adapter-owned Tab handling and smart-punctuation protection remain. The same balanced source typed one character at a time or pasted as a whole MUST retain its delimiter bytes and caret position. MUST (*source: FR-EDIT-1, ADR-0012; verify: real editor widget/platform editing values and iPadOS/Android HIL*)
 - **FR-EDIT-2** — The editor MUST offer Save and Run actions and MUST support multiple open files via tabs. MUST (*source: PRD §9.3; verify: widget; story: A-20*)
 - **FR-EDIT-3** — The editor MUST provide find and SHOULD provide find/replace. MUST/SHOULD (*source: PRD §9.3; verify: widget; story: A-20*)
 - **FR-EDIT-4** — The editor SHOULD support an external keyboard with common shortcuts (Save, Run, Stop, comment/uncomment, find). SHOULD (*source: PRD §9.3, §13.7; verify: widget; story: A-20*)
@@ -1238,3 +1239,8 @@ The local Drift database ([PRD §12.1](../prd.md), `lib/data/`) MUST model exact
 - **OI-3 — PBLE/1 freeze dependency. RESOLVED (2026-07-01).** [protocol.md](../protocol.md) **§2–§10 are FROZEN for v1.0** (§2 GATT/UUIDs + §3 framing at G0; §4 opcodes + §8 status + §5/§6/§7/§9/§10 at G1, all `[docs]` 2026-07-01) — see the protocol.md per-section freeze ledger. The UUID base (`7079626c-…`), the frame/fragmentation bytes, and the opcode/status numbers are now **stable inputs**; the FR-PBLE-* client dependency on §2/§4 being frozen first (per SDD, [PRD §1B.1](../prd.md)) is **met**. (The residual label / identify **payload encodings** — `SET_LABEL` max byte-length, `SET_IDENTIFY_LED` GPIO+active-level, `IDENTIFY` blink bound — are tracked by protocol.md **OI-6** and freeze before their S3/S4 identity stories, not needed for S1/S2.)
 - **OI-4 — HIL-frozen performance ceilings.** Concrete console-latency and throughput ceilings (NFR-PERF-3, NFR-PERF-4) and time-to-connect targets MUST be measured on hardware and frozen alongside [PRD §10.13](../prd.md)/[§20](../prd.md).
 - **OI-5 — Plot parsing configuration.** The exact user-facing model for configuring how console output parses into plot series (FR-PLOTS-2) is to be detailed in [TDD.md](TDD.md).
+
+
+## Selected run-status increment — 2026-11-01
+
+App consumes [PBLE/1 §6.1](../protocol.md#61-additive-runsession-status--selected-v07-increment) as the single normative contract. Readiness for capable peers waits for synchronization; cached tagged state drives controls and late console subscribers. Absent capability retains legacy behavior.

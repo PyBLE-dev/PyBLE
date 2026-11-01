@@ -168,6 +168,7 @@ class NativeRunSourceBoundaryTest(unittest.TestCase):
                     str(NATIVE),
                     str(harness),
                     str(WIRE_PATH),
+                    str(NATIVE / "pble_run_status.c"),
                     linker_gc,
                     "-o",
                     str(executable),
@@ -271,6 +272,7 @@ HARNESS_PREAMBLE = r"""
 #include <stdlib.h>
 #include "py/mpstate.h"
 #include "pble_runner.h"
+#include "pble_run_status.h"
 
 #define PBLE_MSG_MAX __MESSAGE_MAX__
 #define PBLE_RX_REASSEMBLY_DEADLINE_US 5000000LL
@@ -289,6 +291,8 @@ static int64_t pble_rx_started_us;
 static bool pble_rx_discard_tail;
 
 static pble_rsm_t g_rsm;
+static pble_run_status_t g_run_status;
+static bool g_run_status_ready = true;
 static portMUX_TYPE g_mux = portMUX_INITIALIZER_UNLOCKED;
 static StaticSemaphore_t run_sem_storage;
 static SemaphoreHandle_t g_run_sem = &run_sem_storage;

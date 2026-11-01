@@ -14,6 +14,7 @@ target_sources(usermod_pyble INTERFACE
     ${CMAKE_CURRENT_LIST_DIR}/pble_ble.c
     ${CMAKE_CURRENT_LIST_DIR}/pble_info.c
     ${CMAKE_CURRENT_LIST_DIR}/pble_device_config.c
+    ${CMAKE_CURRENT_LIST_DIR}/pble_run_status.c
     ${CMAKE_CURRENT_LIST_DIR}/pble_runner.c
     ${CMAKE_CURRENT_LIST_DIR}/pble_console.c
     ${CMAKE_CURRENT_LIST_DIR}/pble_fs.c

@@ -5,8 +5,13 @@ promising dates; accepted work is tracked through GitHub issues and milestones.
 
 The detailed [firmware v0.6.1 and v0.7.0 proposal](planning/firmware-v0.6.1-v0.7.0-roadmap.md)
 records the post-v0.6.0 contract-hardening and Reliable Projects candidates.
-The v0.6.1 hardening implementation has been published on owner confirmation;
-v0.7.0 remains non-normative and requires separate maintainer approval.
+The v0.6.1 hardening implementation has been published on owner confirmation.
+The first v0.7 run/session-status increment is now specified in PBLE/1 §6.1
+and implemented with targeted five-profile/both-tablet evidence; its
+[execution record](developments/2026-q4-reliable-workflow/firmware-v070/00_Execution_Record.md)
+separates the unchanged ESP images, corrected Pico image and app artifacts
+from full resource/release admission. Remaining Reliable
+Projects operations are proposals requiring their own scope and contract decisions.
 
 ## Available now
 
@@ -58,7 +63,9 @@ v0.7.0 remains non-normative and requires separate maintainer approval.
   records TestFlight build 6 with source mapping unresolved; distribution-owner
   review is needed for conflicting minimum-OS metadata before making a support
   claim.
-- Review the proposed v0.7.0 Reliable Projects scope before implementation.
+- Review the implemented run/session-status increment and its retained
+  historical-client GET limitation, complete applicable release admission,
+  and define remaining v0.7.0 Reliable Projects scope before another capability.
 - Expand user-facing setup, recovery, and board-specific wiring guidance
 - Gather Android open-testing feedback and improve installation and recovery
   guidance

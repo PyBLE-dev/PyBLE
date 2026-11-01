@@ -13,7 +13,7 @@ import 'package:pyble/app/app_info.dart';
 import '../support/repo_paths.dart';
 
 void main() {
-  test('app 0.3.0 recovery candidate uses monotonic build 9', () {
+  test('app 0.4.0 firmware companion candidate uses monotonic build 10', () {
     final String pubspec = File(
       '${appPackageRoot().path}/pubspec.yaml',
     ).readAsStringSync();
@@ -29,8 +29,8 @@ void main() {
     );
     final RegExpMatch declaration = declarations.single;
 
-    expect(declaration.group(1), '0.3.0');
-    expect(declaration.group(2), '9');
+    expect(declaration.group(1), '0.4.0');
+    expect(declaration.group(2), '10');
     expect(
       kAppVersion,
       declaration.group(1),

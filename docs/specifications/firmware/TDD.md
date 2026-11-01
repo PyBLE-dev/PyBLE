@@ -3270,3 +3270,40 @@ Design element → satisfied requirement IDs. Each `FR-*` block has at least one
 - **R6 — PBLE/1 still DRAFT.** Opcode/UUID/status numbers are provisional until [protocol.md](../protocol.md) §2/§4 freeze (OI-4); the single constants mirror (D6) localizes the churn.
 - **R7 — Auto-run caps flag naming.** The opt-in `main.py` auto-run flag name/encoding is owned by [protocol.md §7](../protocol.md#7-hello--capabilities) and must be fixed before F-12 (OI-5).
 - **R8 — Identity/identify wire constants not frozen.** The label max-length, the `SET_IDENTIFY_LED` GPIO+active-level encoding, and the `IDENTIFY` blink-duration bound are owned by [protocol.md](../protocol.md) and must be frozen before FR-IDENT/FR-BLE-12 implementation (OI-6); the single constants mirror (D6) localizes the churn.
+
+## Selected run/session status — 1 November 2026
+
+The normative contract is [PBLE/1 §6.1](../protocol.md#61-additive-runsession-status--selected-v07-increment)
+and [ADR-0049](../../decisions/0049-query-run-state-after-reconnect.md).
+
+Native metadata and observer/body capture use the existing runner critical
+section. RUN_STATUS uses the reserved generic-response path. Status events use
+bounded whole-message worker control delivery, with an immutable session token
+revalidated at each fragment; the legacy short-control response path is retained.
+Queries do no filesystem work and do not wait for user execution.
+
+The portable agent exposes one immutable snapshot value. Its admission and
+transition publication regions follow the pinned RP2 pending-at-jumps model
+described in the [port contract](ports/rpi-pico2-w.md#selected-runsession-status--1-november-2026).
+Admission validates the candidate with the existing codec, then reads latched
+STOP inside `_admit_status` and stores the final bytes plus pending identity
+without a scheduler checkpoint between them. Computing flags before codec
+validation would leave a later-checkpoint race. Precommit queries retain the
+predecessor; queued and stopping may first appear together in one admission
+revision. Existing STOP cancellation and input-owner cleanup remain intact.
+
+Shared vectors and compiled native/portable tests cover wire grammar, admission,
+terminal/STOP/VM boundaries, revision/session ownership and default-MTU delivery.
+Real-Agent dispatcher tests inject STOP at both autorun reservation and final
+codec validation. A fixed bounded program on the actual Pico VM exercises the
+same scheduled callback in an isolated real Runner before and after the fix;
+its receipt explicitly distinguishes that seam from forcing the incoming BLE
+STOP micro-window in production. Separate physical autorun/reconnect/STOP,
+load, actual Android MTU and normal tablet cases cover the full agent paths.
+See the [source-bound execution record](../../developments/2026-q4-reliable-workflow/firmware-v070/00_Execution_Record.md)
+for exact images, retained failures and verification limits.
+
+This selected evidence does not satisfy the full resource/recovery/release
+gates. In particular, the baseline portable lifecycle history remains an
+unbounded production list until [#48](https://github.com/PyBLE-dev/PyBLE/issues/48)
+is specified, regression-tested, fixed and measured on the actual Pico.

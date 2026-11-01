@@ -75,7 +75,7 @@ fetches and validates the complete batch, shows the exact destination paths,
 and asks separately before overwriting existing files. Import never creates a
 remote folder hierarchy, opens an editor document, or runs downloaded code.
 
-The merged App source candidate is `0.3.0+9`; App and firmware versions are
+The development App source candidate is `0.4.0+10`; App and firmware versions are
 independent. The published Android version is `0.2.0`, available through
 [Google Play open testing](https://play.google.com/store/apps/details?id=dev.pyble.pyble).
 iPad testing continues through TestFlight. The
@@ -123,6 +123,13 @@ is held before submission while the saved child audience and Bluetooth
 implementation are reconciled. The existing open-testing review is unchanged.
 
 ### Firmware
+
+A selected `0.7.0-dev.1` development increment adds capability-gated execution
+status after reconnect, with companion app `0.4.0+10`. Its [execution record](docs/developments/2026-q4-reliable-workflow/firmware-v070/00_Execution_Record.md)
+records targeted checks on both tablets/all five boards, corrected Pico
+autorun admission and the retained
+historical-client GET limitation; the remaining Reliable Projects roadmap and a
+public firmware `0.7.0` release remain pending. Published firmware below is separate.
 
 The board-side agent is built with upstream MicroPython and exposes PBLE/1 as a
 BLE GATT peripheral. It supports:

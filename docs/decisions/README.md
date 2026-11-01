@@ -56,3 +56,5 @@ Each ADR captures one significant decision: its context, the choice, and the con
 Decided 2026-06-30 (0001–0005); 0006 accepted 2026-07-01; 0007, 0008, 0009 and 0010 accepted 2026-07-02; 0011 accepted 2026-07-03; 0012 accepted 2026-07-25; 0013 accepted 2026-07-27; 0014, 0015, 0016, and 0017 accepted 2026-07-28; 0018–0022 accepted 2026-07-29; 0023 and 0024 accepted 2026-08-01; 0025 and 0026 accepted 2026-08-02; 0027–0029 accepted 2026-08-03; 0030 accepted 2026-08-11; 0031–0033 accepted 2026-08-12; 0034 accepted 2026-08-13; 0035 and 0036 accepted 2026-08-16; 0037 and 0038 accepted 2026-08-20; 0039 accepted 2026-08-21; 0040 accepted 2026-08-22; 0041 accepted 2026-08-25; 0042–0045 accepted 2026-08-27; 0046 accepted 2026-08-28; 0047 accepted 2026-09-03.
 
 0048 specified for implementation on 2026-09-25 during C1-S1; this status does not claim delivered persistence or release acceptance.
+
+| [0049](0049-query-run-state-after-reconnect.md) | Query committed execution state after reconnect with bounded, capability-gated snapshots and session observation | Accepted |

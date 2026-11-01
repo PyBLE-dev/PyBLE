@@ -432,7 +432,8 @@ class NativeRunAdmissionContractTests(unittest.TestCase):
             self,
             worker,
             "xSemaphoreTake(g_run_sem, portMAX_DELAY)",
-            "runner_emit_state(pble_rsm_on_started(&g_rsm))",
+            "int started = pble_rsm_on_started(&g_rsm)",
+            "runner_emit_state(started)",
             "runner_exec(mode, local, len)",
         )
 

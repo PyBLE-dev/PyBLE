@@ -13,6 +13,7 @@ or raw INFO bytes.
 import argparse
 import asyncio
 import hashlib
+import importlib.util
 import inspect
 import json
 import math
@@ -39,6 +40,28 @@ from _pble_central import (
     status_name,
 )
 from target_smoke import expected_agent_from_lock
+
+
+def _canonical_semver_pattern():
+    """Use the release validator's canonical grammar for runtime identities."""
+    name = "_pyble_tft_canonical_release_semver"
+    if name not in sys.modules:
+        source = (Path(__file__).resolve().parents[3]
+                  / "firmware/scripts/release_bundle.py").resolve(strict=True)
+        spec = importlib.util.spec_from_file_location(name, source)
+        if spec is None or spec.loader is None:
+            raise RuntimeError("cannot load canonical firmware SemVer grammar")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        try:
+            spec.loader.exec_module(module)
+        except BaseException:
+            sys.modules.pop(name, None)
+            raise
+    return sys.modules[name].SEMVER_RE
+
+
+CANONICAL_SEMVER = _canonical_semver_pattern()
 
 
 SCHEMA_VERSION = 1
@@ -1833,11 +1856,10 @@ def _validate_redacted_stage(
         "agent": EXPECTED_AGENT_VERSION,
         "mpy": EXPECTED_MPY_VERSION,
     }
-    semantic_version = r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)"
     for key, expected in expected_versions.items():
         if (
             type(runtime[key]) is not str
-            or re.fullmatch(semantic_version, runtime[key]) is None
+            or CANONICAL_SEMVER.fullmatch(runtime[key]) is None
             or runtime[key] != expected
         ):
             raise BenchError("%s runtime %s is invalid" % (label, key))

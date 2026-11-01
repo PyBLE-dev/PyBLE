@@ -199,13 +199,12 @@ class _PybleCodeController extends CodeController {
     : super(
         text: text,
         language: python,
-        // Upstream's TabModifier normalizes every literal tab in the complete
-        // buffer to spaces. Literal tabs are valid source bytes and may arrive
-        // from a board or paste, so PyBLE retains the other editing modifiers
-        // while owning hardware-Tab insertion at the adapter boundary.
-        modifiers: CodeController.defaultCodeModifiers
-            .where((CodeModifier modifier) => modifier is! TabModifier)
-            .toList(growable: false),
+        // Keep indentation without the optional delimiter-insertion modifiers:
+        // those add closers but do not consume a manually typed closing key,
+        // leaving extra characters after ordinary balanced Python input.
+        // TabModifier also rewrites literal tabs throughout the buffer, so
+        // PyBLE continues to own hardware Tab at the adapter boundary.
+        modifiers: const <CodeModifier>[IndentModifier(), CloseBlockModifier()],
       ) {
     // The dormant upstream creates this lazily on first Undo, which would make
     // edits performed before that moment unavailable. Seed it with the initial

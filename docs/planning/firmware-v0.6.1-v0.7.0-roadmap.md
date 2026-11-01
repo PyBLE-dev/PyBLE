@@ -2,17 +2,45 @@
 
 # Firmware v0.6.1 and v0.7.0 roadmap
 
-Status: **v0.6.1 published on owner confirmation; v0.7.0 remains PROPOSED**
+Status: **v0.6.1 published on owner confirmation; selected v0.7 run-status increment implemented for review; historical-client limitation retained; remaining v0.7 scope PROPOSED**
 
 Baseline: **qualified firmware v0.6.0**
 
-Last reviewed: **2026-09-25**; the original implementation decision is dated 2026-09-03.
+Last reviewed: **2026-11-01**; the original implementation decision is dated 2026-09-03.
 
 Current publication is recorded in the [11 September evidence](../testing/firmware-v0.6.1-publication-2026-09-11.md).
 Issue #24 was closed as superseded on 13 September; its incomplete checklist
 was not marked passed. Publication on owner confirmation does not complete
 missing automated qualification. The [C1-S1 validation inventory](../developments/2026-q4-reliable-workflow/c1-s1/04_Validation_Inventory_and_Operator_Recipe.md)
 maps applicable gates for future work without waiving them.
+
+## 1 November selected implementation
+
+The user requested implementation after review of the firmware and product
+plans. The first selected delivery is PYB-017.1/PYB-018: committed run/session
+status, with native/portable parity and app synchronization. Its exact wire
+contract is now [PBLE/1 §6.1](../specifications/protocol.md#61-additive-runsession-status--selected-v07-increment),
+with [ADR-0049](../decisions/0049-query-run-state-after-reconnect.md). Names and
+numbers for that selected slice are no longer placeholders. Other §5 operations
+remain proposals. Source identity is development `0.7.0-dev.1`, not a published
+complete Reliable Projects release. See the [execution record](../developments/2026-q4-reliable-workflow/firmware-v070/00_Execution_Record.md)
+for tests, worktree integration, actual physical results and tracking-order deviation.
+R5 normal UI and actual Android ATT23/247 cover all five profiles; historical
+iPad 0.3/Waveshare retains a Partial GET row despite recovery by normal retry.
+The active image set retains four ESP `1093bab` images and uses corrected Pico
+`f3ab210` after atomic-admission actual-VM and affected-tablet requalification.
+This engineering result does not complete full firmware release admission;
+the baseline portable lifecycle-history resource gap is [#48](https://github.com/PyBLE-dev/PyBLE/issues/48).
+
+This first-increment scope is the implementation assumption following the
+preceding recommendation and the user's roadmap request. It is not a separate
+explicit choice between the first increment and the full roadmap, and does not
+declare the requested roadmap complete.
+
+Fresh globals/stdin isolation, session/grammar hardening, durable configuration
+and upload-space admission already exist in v0.6.1. Historical v0.6.0 gap prose
+below is not a new v0.7 implementation backlog. New project/import semantics
+remain separate from that completed isolation work.
 
 ## 1. Purpose and status
 
@@ -206,8 +234,9 @@ qualified v0.6.0 bytes.
 
 ## 5. Proposed v0.7.0 — Reliable Projects
 
-All wire names and opcode numbers in this section are placeholders for
-specification review. Each operation must be additive, explicitly advertised
+Except for the selected §5.2 contract now specified in PBLE/1 §6.1, wire names
+and opcode numbers in this section remain placeholders for specification
+review. Each operation must be additive, explicitly advertised
 by capability, ignored safely by old clients, and unavailable to a new client
 when the capability is absent.
 
@@ -245,17 +274,27 @@ position. The specification must define:
 
 ### 5.2 Queryable run/session snapshot
 
-Add a capability-gated `RUN_STATUS` or `RUN_INFO` request. Its response should
-contain only bounded diagnostic metadata:
+The first increment now specifies capability `run_status=1`, empty-payload
+`RUN_STATUS` (`0x24`) and opt-in `RUN_STATUS_CHANGED` (`0x42`) in
+[PBLE/1 §6.1](../specifications/protocol.md#61-additive-runsession-status--selected-v07-increment).
+The fixed 25-byte schema carries only bounded execution metadata:
 
-- a boot nonce or equivalent boot identity;
+- eight randomized, nonzero, ephemeral VM-correlation bytes from the platform
+  random provider, never a MAC, serial, label or clock;
 - a monotonically increasing run ID within that boot;
 - current state: idle, running, done, or error;
 - origin: file, inline source, or autorun;
-- last terminal reason/status;
-- relevant console/input loss counters;
-- active recovery or pending reboot state; and
-- elapsed monotonic time where the port can provide it safely.
+- committed-state revision, queued/stopping flags and terminal reason.
+
+Admission means accepted response handoff or autorun admission; provisional
+reservations and failed response transmission do not change the snapshot.
+The app synchronizes before Ready/Running, caches the result for late views,
+merges revisions and preserves the legacy workflow when the capability is absent.
+
+Console/input loss counters, recovery/pending-reboot diagnostics and elapsed
+monotonic time remain proposals for later design. They are not fields in the
+selected fixed schema and must not be appended without a separately specified
+compatible extension.
 
 Do not echo inline source, console contents, secrets, or unnecessary file
 contents. Existing `RUN_STATE` events remain unchanged.
@@ -309,7 +348,8 @@ Candidate additions are:
 
 - a cumulative, saturating console-lost byte/chunk counter;
 - a sequence or `CONSOLE_GAP` signal that cannot create an event storm;
-- counters included in the queryable run snapshot; and
+- loss counters exposed by a separately specified, capability-gated diagnostic
+  extension, while `RUN_STATUS` schema 1 remains exactly 25 bytes; and
 - a capability-gated `CONSOLE_INPUT_V2` carrying a run ID and returning the
   accepted byte count and remaining input credit.
 
@@ -370,6 +410,14 @@ firmware specifications must consume that one contract rather than redefine it.
 Every candidate must pass on the same five exact profiles listed in section 2.
 No result from one profile, agent implementation, board, build, filesystem, or
 provisioning method may fill another row.
+
+The groups below combine existing regressions with acceptance scenarios for
+the full proposed Reliable Projects scope. The selected run-status increment
+applies PBLE/1 §6.1 and every applicable existing compatibility, resource,
+recovery and release gate on all five profiles, with their normative counts
+and limits unchanged. Scenarios for unselected new operations remain future
+work; selecting this increment does not require implementing those operations
+or waive any existing legacy release gate.
 
 ### 7.1 Run isolation and project execution
 
@@ -538,8 +586,11 @@ revise:
 - [x] the v0.6.1 hardening / v0.7.0 feature-release split;
 - [ ] v0.7.0's P0 versus P1 scope;
 - [ ] streaming directory enumeration and mutation behavior;
-- [ ] fresh per-run globals and project-local import cleanup semantics;
-- [ ] run/boot identity fields and their privacy bounds;
+- [x] fresh per-run globals/stdin isolation, implemented in v0.6.1 (§4.2);
+- [ ] project-local import cleanup and path-restoration semantics (§5.3);
+- [x] selected `RUN_STATUS` schema 1 run/boot fields and privacy bounds,
+  specified 1 November in [PBLE/1 §6.1](../specifications/protocol.md#61-additive-runsession-status--selected-v07-increment)
+  and [ADR-0049](../decisions/0049-query-run-state-after-reconnect.md);
 - [ ] transfer-abort and scratch-retention behavior;
 - [ ] loss-counter and acknowledged-input behavior;
 - [ ] the STOP/SOFT_REBOOT/optional FORCE_RESET recovery ladder;
@@ -548,6 +599,8 @@ revise:
 - [ ] whether authenticated ownership starts as a separate PBLE/2 design
   milestone.
 
-Approval of this roadmap still does not approve opcode numbers, payload bytes,
-implementation, qualification, or publication. Those decisions follow the
-repository's specification-driven and test-driven process.
+For remaining proposed work, roadmap approval does not itself approve opcode
+numbers, payload bytes, implementation, qualification or publication. Those
+decisions follow the repository's specification-driven and test-driven process.
+The selected run-status contract and its separate implementation/evidence state
+are recorded in the dated November section above.

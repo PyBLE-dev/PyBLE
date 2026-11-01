@@ -139,5 +139,6 @@ DeviceInfo parseCaps(String capsText) {
     hasIdentify: boolOf('has_identify'),
     identifyLed: (ledRaw == null || ledRaw == 255) ? null : ledRaw,
     autoRun: boolOf('auto_run'),
+    hasRunStatus: boolOf('run_status'),
   );
 }

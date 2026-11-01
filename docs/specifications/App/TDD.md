@@ -1130,6 +1130,17 @@ those semantics early.
 
 **Working-loop increment — FROZEN (A-20 subset · `[docs]` 2026-07-02, amended 2026-08-22 by [ADR-0012](../../decisions/0012-flutter-code-editor-behind-editorsurface.md), [ADR-0010](../../decisions/0010-working-loop-in-memory-document.md)).** The editor keeps the **single shared in-memory current document**; the 31 October candidate adds the bounded durable checkpoint from [§9.3](#93-bounded-current-text-recovery-specified) ([§11.6](#116-working-loop-provider-contract-frozen)) while moving its presentation behind `EditorSurface`. The default rich adapter supplies Python highlighting and an always-visible, one-based, vertically synchronized line-number gutter; only line numbers are enabled in the gutter (package errors and folding handles stay off), package find/autocomplete UI stays off, and no network analyzer is reachable from `lib/editor`. The plain `TextField` remains executable as the R1 fallback. Both paths preserve the smart-punctuation invariant, and adapter-owned Tab handling must indent a multi-line selection without replacing it.
 
+The 1 November delimiter-safety amendment (FR-EDIT-1A) disables the pinned
+package's `InsertionCodeModifier` instances in the rich adapter. Those optional
+modifiers insert closing delimiters without consuming a subsequently typed
+closer: ordinary balanced Python input can accumulate trailing characters and
+become invalid source. Keep the package's indentation behavior and PyBLE's
+existing Tab and punctuation safeguards. Widget tests must submit each
+platform editing value against the actual current buffer and caret; replacing
+the buffer with an expected prefix would hide the defect. Exercise the same
+balanced source through both rich and plain surfaces, and preserve whole-text
+paste and external document replacement.
+
 The same bounded increment adds session-wide editor zoom: default 14 sp, inclusive 10–24 sp, one-point steps. Code and gutter share the selected family/size/height and update immediately; changing it preserves document bytes, selection, undo history, dirty state, and board path. Controls remain accessible at phone width and compose with the full platform text scaler. Durable display preference, syntax-editor tabs, app-owned localized find/replace, the remaining shortcuts, Save-to-project (FR-EDIT-7), and buffers-survive-restart (NFR-REL-3/FR-PROJ-6) remain carried to A-24 or later. The document and display providers are the hooks A-24 rebinds to the one Drift `SettingsStore`; no parallel preferences backend is admitted.
 
 ### 11.2 Blocks

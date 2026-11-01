@@ -105,6 +105,7 @@ def caps_payload(mtu, free_mem, device_id, label, auto_run):
         ("auto_run", "%d" % auto_run),
         ("device_id", device_id),
         ("label", label),
+        ("run_status", "1"),
     )
     out = ""
     for key, value in pairs:

@@ -197,6 +197,31 @@ class _RunStateIndicator extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final Connection connection = ref.watch(connectionProvider);
+    if (connection case final ConnectionRunStatusSource source) {
+      return ValueListenableBuilder<RunSnapshot?>(
+        valueListenable: source.runSnapshot,
+        builder: (context, snapshot, _) {
+          if (snapshot != null) return _RunStateBadge(snapshot.state);
+          return ValueListenableBuilder<ConnState>(
+            valueListenable: connection.state,
+            builder: (context, state, _) {
+              final AppLocalizations l10n = AppLocalizations.of(context);
+              if (state == ConnState.connecting) {
+                return Text(l10n.connStatusConnecting);
+              }
+              if (state == ConnState.disconnected) {
+                return Text(l10n.connStatusDisconnected);
+              }
+              return _legacyIndicator(connection);
+            },
+          );
+        },
+      );
+    }
+    return _legacyIndicator(connection);
+  }
+
+  Widget _legacyIndicator(Connection connection) {
     return StreamBuilder<RunState>(
       stream: connection.runState,
       builder: (BuildContext context, AsyncSnapshot<RunState> snapshot) {

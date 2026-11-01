@@ -14,7 +14,7 @@ publish_to: 'none'
 
 # SemVer app version. Pre-1.0 through milestones M0–M3; v1.0.0 ships at the
 # at-parity App Store + Play release (story X-11). Build number after '+'.
-version: 0.3.0+9
+version: 0.4.0+10
 
 environment:
   sdk: ^3.12.1
@@ -63,8 +63,9 @@ dependencies:
 
   # Rich Python editor surface (A-20, ADR-0012). License: Apache-2.0 with a
   # retained MIT grant for its code_field ancestry. Pinned exactly because the
-  # upstream is dormant and PyBLE's adapter owns the tested Tab/punctuation
-  # safeguards. Optional network/error/find/autocomplete UI stays disabled.
+  # upstream is dormant and PyBLE's adapter owns the tested Tab, punctuation
+  # and delimiter safeguards. Optional network/error/find/autocomplete UI stays
+  # disabled.
   flutter_code_editor: 0.3.5
 
   # Python grammar consumed directly by lib/editor's rich adapter. License:
