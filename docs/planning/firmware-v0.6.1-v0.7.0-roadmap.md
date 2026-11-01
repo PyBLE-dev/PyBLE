@@ -2,17 +2,34 @@
 
 # Firmware v0.6.1 and v0.7.0 roadmap
 
-Status: **v0.6.1 published on owner confirmation; v0.7.0 remains PROPOSED**
+Status: **v0.6.1 published on owner confirmation; selected v0.7 run-status increment in development; remaining v0.7 scope PROPOSED**
 
 Baseline: **qualified firmware v0.6.0**
 
-Last reviewed: **2026-09-25**; the original implementation decision is dated 2026-09-03.
+Last reviewed: **2026-11-01**; the original implementation decision is dated 2026-09-03.
 
 Current publication is recorded in the [11 September evidence](../testing/firmware-v0.6.1-publication-2026-09-11.md).
 Issue #24 was closed as superseded on 13 September; its incomplete checklist
 was not marked passed. Publication on owner confirmation does not complete
 missing automated qualification. The [C1-S1 validation inventory](../developments/2026-q4-reliable-workflow/c1-s1/04_Validation_Inventory_and_Operator_Recipe.md)
 maps applicable gates for future work without waiving them.
+
+## 1 November selected implementation
+
+The user requested implementation after review of the firmware and product
+plans. The first selected delivery is PYB-017.1/PYB-018: committed run/session
+status, with native/portable parity and app synchronization. Its exact wire
+contract is now [PBLE/1 §6.1](../specifications/protocol.md#61-additive-runsession-status--selected-v07-increment),
+with [ADR-0049](../decisions/0049-query-run-state-after-reconnect.md). Names and
+numbers for that selected slice are no longer placeholders. Other §5 operations
+remain proposals. Source identity is development `0.7.0-dev.1`, not a published
+complete Reliable Projects release. See the [execution record](../developments/2026-q4-reliable-workflow/firmware-v070/00_Execution_Record.md)
+for tests, worktree integration, actual physical results and tracking-order deviation.
+
+Fresh globals/stdin isolation, session/grammar hardening, durable configuration
+and upload-space admission already exist in v0.6.1. Historical v0.6.0 gap prose
+below is not a new v0.7 implementation backlog. New project/import semantics
+remain separate from that completed isolation work.
 
 ## 1. Purpose and status
 

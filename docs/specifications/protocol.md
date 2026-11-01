@@ -788,7 +788,8 @@ Inactive or duplicate STOP leaves the snapshot unchanged. Cancellation before
 pickup never executes code and commits its stopped terminal once. Refused,
 malformed or failed-TX admissions leave the previous snapshot unchanged.
 Terminal/stdin cleanup and successor admission cannot expose mixed generations.
-RUN when run_id is4294967295 returns ERANGE before admission; VM reset is needed
+After normal payload validation and active-run EBUSY precedence, RUN when run_id
+is4294967295 returns ERANGE before admission; VM reset is needed
 for another run. At most admission, pickup, STOP intent and terminal advance
 revision per run, so it stays within the specified exact-integer bound.
 
