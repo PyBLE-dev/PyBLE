@@ -95,10 +95,12 @@ enum PbleOpcode {
   stop(0x21),
   softReboot(0x22),
   setAutorun(0x23),
+  runStatus(0x24),
   consoleData(0x30),
   consoleInput(0x31),
   runState(0x40),
   filePutAck(0x41),
+  runStatusChanged(0x42),
   setLabel(0x50),
   setIdentifyLed(0x51),
   identify(0x52);

@@ -67,7 +67,7 @@ void main() {
     }
     for (final dynamic value in corpus['invalid'] as List<dynamic>) {
       final Map<String, dynamic> row = value as Map<String, dynamic>;
-      test('rejects ' + (row['name'] as String), () {
+      test('rejects ${row['name']}', () {
         expect(
           () => decodeRunSnapshot(hexToBytes(row['hex'] as String)),
           throwsA(isA<PbleFormatException>()),
@@ -78,6 +78,20 @@ void main() {
       expect(parseCaps('run_status=1').hasRunStatus, isTrue);
       expect(parseCaps('').hasRunStatus, isFalse);
       expect(parseCaps('run_status=2').hasRunStatus, isFalse);
+    });
+    test('revision retains the exact cross-language upper bound', () {
+      expect(
+        decodeRunSnapshot(body(revision: 9007199254740991)).revision,
+        9007199254740991,
+      );
+    });
+    test('revision cannot precede the accepted run generation', () {
+      final Uint8List data = body();
+      ByteData.sublistView(data).setUint32(9, 3, Endian.little);
+      expect(
+        () => decodeRunSnapshot(data),
+        throwsA(isA<PbleFormatException>()),
+      );
     });
   });
 
@@ -105,7 +119,7 @@ void main() {
         rsp(PbleOpcode.hello, hello.id, <int>[
           0,
           ...utf8.encode(
-            'proto=1\nagent=0.7.0\nrun_status=' + (capable ? '1' : '0'),
+            'proto=1\nagent=0.7.0\nrun_status=${capable ? '1' : '0'}',
           ),
         ]),
       );
@@ -228,5 +242,61 @@ void main() {
       await conn.dispose();
       expect(conn.runSnapshot.value, isNull);
     });
+
+    test('malformed tagged event retires the live connection', () async {
+      final Future<void> pending = conn.handshake();
+      await offer();
+      reply(body());
+      await pending;
+      transport.deliverFrame(evt(PbleOpcode.runStatusChanged, Uint8List(24)));
+      await pumpEventQueue();
+      expect(conn.state.value, ConnState.disconnected);
+      expect(conn.runSnapshot.value, isNull);
+    });
+
+    test(
+      'refresh queries only and returns the newest cached snapshot',
+      () async {
+        final Future<void> pending = conn.handshake();
+        await offer();
+        reply(body());
+        await pending;
+        final Future<RunSnapshot> refresh = conn.refreshRunStatus();
+        await pumpEventQueue();
+        transport.deliverFrame(
+          evt(
+            PbleOpcode.runStatusChanged,
+            body(revision: 3, state: 2, reason: 1),
+          ),
+        );
+        await pumpEventQueue();
+        reply(body());
+        expect((await refresh).state, RunState.done);
+        expect(transport.sentFrames.map((f) => f.opcode), <int>[1, 0x24, 0x24]);
+      },
+    );
+
+    test(
+      'retired handshake response cannot overwrite a successor session',
+      () async {
+        final Future<void> first = conn.handshake();
+        final Future<void> rejected = expectLater(
+          first,
+          throwsA(isA<NotConnectedException>()),
+        );
+        await offer();
+        final PbleFrame oldQuery = transport.sentFrames.last;
+        final Future<void> successor = conn.handshake();
+        await offer();
+        reply(body(boot: 2));
+        await successor;
+        transport.deliverFrame(
+          rsp(PbleOpcode.runStatus, oldQuery.id, <int>[0, ...body()]),
+        );
+        await rejected;
+        expect(conn.runSnapshot.value?.bootId, '0200000000000000');
+        expect(conn.state.value, ConnState.running);
+      },
+    );
   });
 }

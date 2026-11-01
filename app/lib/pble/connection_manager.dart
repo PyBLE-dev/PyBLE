@@ -396,7 +396,8 @@ class _StableFacade
     implements
         Connection,
         ConnectionSessionStampSource,
-        ConnectionDirectoryListingSource {
+        ConnectionDirectoryListingSource,
+        ConnectionRunStatusSource {
   final ValueNotifier<ConnState> _state = ValueNotifier<ConnState>(
     ConnState.disconnected,
   );
@@ -404,6 +405,9 @@ class _StableFacade
       StreamController<RunState>.broadcast();
   final StreamController<ConsoleEvent> _console =
       StreamController<ConsoleEvent>.broadcast();
+  final ValueNotifier<RunSnapshot?> _runSnapshot = ValueNotifier<RunSnapshot?>(
+    null,
+  );
 
   Connection? _live;
   Object _connectionSessionStamp = Object();
@@ -411,6 +415,7 @@ class _StableFacade
   VoidCallback? _liveStateListener;
   StreamSubscription<RunState>? _liveRunStateSub;
   StreamSubscription<ConsoleEvent>? _liveConsoleSub;
+  VoidCallback? _liveRunSnapshotListener;
 
   /// Attaches [live] as the active board: mirror its state now and on change,
   /// and forward its console/run-state streams.
@@ -419,6 +424,10 @@ class _StableFacade
     _live = live;
     _connectionSessionStamp = Object();
     _liveSessionEstablished = false;
+    final ConnectionRunStatusSource? statusSource =
+        live is ConnectionRunStatusSource
+        ? live as ConnectionRunStatusSource
+        : null;
     _liveStateListener = () {
       final ConnState next = live.state.value;
       final bool nextEstablished =
@@ -431,9 +440,20 @@ class _StableFacade
       }
       _liveSessionEstablished = nextEstablished;
       _state.value = next;
+      _runSnapshot.value = nextEstablished
+          ? statusSource?.runSnapshot.value
+          : null;
     };
     live.state.addListener(_liveStateListener!);
     _liveStateListener!(); // sync the facade to the board's current state
+    if (statusSource != null) {
+      _liveRunSnapshotListener = () {
+        if (identical(_live, live) && _liveSessionEstablished) {
+          _runSnapshot.value = statusSource.runSnapshot.value;
+        }
+      };
+      statusSource.runSnapshot.addListener(_liveRunSnapshotListener!);
+    }
     _liveRunStateSub = live.runState.listen((RunState rs) {
       if (!_runState.isClosed) _runState.add(rs);
     });
@@ -450,6 +470,13 @@ class _StableFacade
     if (live != null && listener != null) {
       live.state.removeListener(listener);
     }
+    final VoidCallback? statusListener = _liveRunSnapshotListener;
+    if (live is ConnectionRunStatusSource && statusListener != null) {
+      (live as ConnectionRunStatusSource).runSnapshot.removeListener(
+        statusListener,
+      );
+    }
+    _liveRunSnapshotListener = null;
     _liveStateListener = null;
     unawaited(_liveRunStateSub?.cancel());
     _liveRunStateSub = null;
@@ -459,6 +486,7 @@ class _StableFacade
     _connectionSessionStamp = Object();
     _liveSessionEstablished = false;
     _state.value = ConnState.disconnected;
+    _runSnapshot.value = null;
   }
 
   Connection get _required {
@@ -480,6 +508,26 @@ class _StableFacade
 
   @override
   Stream<ConsoleEvent> get console => _console.stream;
+
+  @override
+  ValueListenable<RunSnapshot?> get runSnapshot => _runSnapshot;
+
+  @override
+  Future<RunSnapshot> refreshRunStatus() async {
+    final Connection live = _required;
+    final Object stamp = _connectionSessionStamp;
+    if (live is! ConnectionRunStatusSource) {
+      throw const EUnsupported('run status is unavailable');
+    }
+    final RunSnapshot snapshot = await (live as ConnectionRunStatusSource)
+        .refreshRunStatus();
+    if (!identical(_live, live) || !identical(stamp, _connectionSessionStamp)) {
+      throw const NotConnectedException(
+        'connection changed during status query',
+      );
+    }
+    return snapshot;
+  }
 
   // Every verb is `async` so a `_required` throw while disconnected surfaces as
   // a REJECTED future (typed NotConnectedException), never a synchronous throw.
@@ -542,6 +590,7 @@ class _StableFacade
     await _runState.close();
     await _console.close();
     _state.dispose();
+    _runSnapshot.dispose();
   }
 }
 
