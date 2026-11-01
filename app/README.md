@@ -4,6 +4,13 @@ The PyBLE app is a Flutter, tablet-first MicroPython IDE for iPadOS and
 Android. It communicates with compatible boards through PBLE/1 over Bluetooth
 Low Energy.
 
+The selected development increment synchronizes committed execution state when
+the agent advertises `run_status=1`, including reconnect and late console views.
+It retains the legacy workflow when that capability is absent. Source identity,
+exact tablet artifacts and qualification limits are in the
+[execution record](../docs/developments/2026-q4-reliable-workflow/firmware-v070/00_Execution_Record.md);
+source changes do not establish store availability.
+
 ## Current capabilities
 
 - BLE discovery, connection, reconnect, and capability negotiation
@@ -50,8 +57,9 @@ Pixel goldens use reviewed macOS baselines. Run them separately on macOS:
 flutter test --tags golden
 ```
 
-Install a standalone development build on a connected device (the current
-source build is `0.2.0+5`):
+Install a standalone development build on a connected device. Read
+[`pubspec.yaml`](pubspec.yaml) for the source version; distribution identities
+are recorded separately in the root README:
 
 ```sh
 flutter run --release -d <device-id>
@@ -60,6 +68,9 @@ flutter run --release -d <device-id>
 Platform WebView integration tests live under `integration_test/`. CI runs
 unit, widget, and PBLE/1 conformance tests on Linux, exact pixel goldens on a
 pinned macOS runner, and the real Blockly WebView integration on Android.
+The separate [optional hardware central](integration_test/hardware/README.md)
+requires an explicitly reserved physical board and is not part of the default
+Android smoke-test bundle.
 
 ## Architecture and dependencies
 

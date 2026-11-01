@@ -17,7 +17,10 @@ maintainer guidance beside the source they govern.
 
 - [Firmware v0.6.1 and v0.7.0 roadmap](planning/firmware-v0.6.1-v0.7.0-roadmap.md)
   — v0.6.1 is published on owner confirmation; incomplete automated evidence
-  remains pending, and Reliable Projects v0.7.0 remains proposed
+  remains pending; the first run/session-status increment is specified and
+  being verified, while the remaining Reliable Projects scope stays proposed
+- [Selected firmware development execution](developments/2026-q4-reliable-workflow/firmware-v070/00_Execution_Record.md)
+  — exact development sources, builds, tablet/board evidence and remaining gates
 - [Implementation strategy](planning/PyBLE_Implementation_Plan_and_Strategy_v1.0.md)
   — current outcomes, evidence gates and conditional expansion
 - [Cycle 1 Scrum delivery package](developments/2026-q4-reliable-workflow/01_Overview_and_Scrum_Framework.md)
@@ -32,7 +35,8 @@ maintainer guidance beside the source they govern.
 - [`specifications/App/`](specifications/App/) — app requirements, test design,
   and the Signal visual system
 - [Bounded current-text recovery contract](specifications/App/current-draft-recovery.md)
-  — specified in C1-S1; implementation and acceptance evidence remain pending
+  — bounded current-text engineering acceptance is recorded in C1-S2;
+  broader A-24 and Blocks persistence remain separate obligations
 - [`specifications/firmware/`](specifications/firmware/) — firmware
   requirements, test design, browser flashing, release integrity, and HIL
   gates
