@@ -274,10 +274,15 @@ class CompareCliVersionRoutingTests(unittest.TestCase):
             left.mkdir()
             right.mkdir()
             (repo / "firmware").mkdir(parents=True)
-            shutil.copyfile(
-                REPO_ROOT / "firmware/versions.lock",
-                repo / "firmware/versions.lock",
+            # This is an immutable v0.6.1 candidate fixture, independently of
+            # the newer validator checkout's selected development version.
+            lock_text = (REPO_ROOT / "firmware/versions.lock").read_text()
+            lock_text, replacements = re.subn(
+                r'(?m)^agent_version\s*=\s*"[^"\n]+"',
+                'agent_version = "0.6.1"', lock_text,
             )
+            self.assertEqual(replacements, 1)
+            (repo / "firmware/versions.lock").write_text(lock_text)
 
             with mock.patch.object(
                 RELEASE,
