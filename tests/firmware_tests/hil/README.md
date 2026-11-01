@@ -36,6 +36,36 @@ tool checks do not replace actual candidate/board HIL evidence.
 | `target_smoke.py` | Target-neutral service/HELLO/DEVICE_INFO/INFO identity smoke. It requires an explicit expected chip, defaults the expected agent to `versions.lock`, and excludes BLE address, device ID, and label from its result line. |
 | `target_run_stop.py` | Target-neutral busy-loop and print-flood RUN/STOP lifecycle bench. It proves one matching `RSP{OK}` before one idle event in less than 500 ms, then runs a bounded same-link console nonce before file-mode cleanup. |
 | `v061_hardening_bench.py` | Exact-profile v0.6.1 physical hardening orchestrator. It executes the seven frozen scenarios in order, including exactly 50 sequential RUNs, validates both separately acquired sacrificial workspace receipts, and writes a candidate-bound canonical private result plus redacted raw log without replacement. |
+| `v070_load_status_bench.py` | Optional selected-v0.7 status-under-load probe. Two unique-marker inline programs run a tight loop and print flood for at most 15 seconds each; three authoritative queries per case must prove the same picked-up source run before owned STOP and its terminal proof. No files/configuration change. Host fake-peer tests validate orchestration only. |
+
+## Optional v0.7 status under load
+
+Hold the exact candidate board exclusively and ensure its existing program is
+inactive before invoking `v070_load_status_bench.py`. The probe refuses an
+active program, uses a fresh console marker for each bounded inline source,
+and stops only its acknowledged run in the same VM epoch. A lost RUN response
+does not establish ownership; the source expires through its `ticks_diff`
+15-second bound and the result retains unverified cleanup rather than sending
+an unproven STOP. No files, autorun setting, or reset commands are used.
+
+Run each desired command-fragment cap separately, using a fresh private output
+path each time. `--mtu 23` caps only outbound CMD fragments; the actual
+negotiated caps MTU must still be 247. Backend MTU is recorded separately and
+remains unknown if the backend does not expose it. For example:
+
+```sh
+python3 tests/firmware_tests/hil/v070_load_status_bench.py \
+  --address "$PBLE_BENCH_ADDRESS" --profile esp32-s3-n16r8 \
+  --expect-chip esp32-s3 --expect-agent 0.7.0-dev.1 \
+  --source-commit "$PBLE_FIRMWARE_COMMIT" --mtu 23 \
+  --output "$PBLE_PRIVATE_RESULT"
+```
+
+The receipt records firmware and bench commits, actual console observations,
+all six running snapshots, query latencies, and stopped terminal snapshots.
+Latency is measured without a new performance SLO. These selected functional
+observations do not establish full firmware qualification or any tablet row.
+The host-only guard is `bash tests/firmware_tests/test_v070_load_status_bench.sh`.
 
 ## Prerequisites (HIL runner only)
 
