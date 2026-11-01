@@ -56,7 +56,7 @@ INFO = _support.RedReason("pyble_info", owner="identity-engineer")
 FROZEN_TOKEN_ORDER = (
     "proto", "agent", "chip", "mpy", "fs_root", "mtu", "window", "chunk",
     "free_mem", "has_sd", "has_identify", "identify_led", "auto_run",
-    "device_id", "label",
+    "device_id", "label", "run_status",
 )
 
 # Deterministic injected values (host tests never read hardware).

@@ -88,7 +88,7 @@ class ConstantsTest(unittest.TestCase):
     def test_full_opcode_set_frozen(self):
         opcodes = PROTO.attr(self, "OPCODES", "F-02/FR-PROTO-1 full v1.0 opcode set")
         self.assertEqual(
-            dict(opcodes), FROZEN_OPCODES,
+            dict(opcodes), dict(FROZEN_OPCODES, RUN_STATUS=0x24, RUN_STATUS_CHANGED=0x42),
             "OPCODES must equal the FROZEN protocol.md §4 set exactly (numbers included)",
         )
 
