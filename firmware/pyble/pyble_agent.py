@@ -161,7 +161,7 @@ class Agent:
     `arm_reset(delay_ms)` the hard RP2 alarm admission seam (P4)."""
 
     def __init__(self, link, fs_root, unique_id=b"\x00\x00", reset=None,
-                 clock=None, notify=None, arm_reset=None):
+                 clock=None, notify=None, arm_reset=None, boot_id=None):
         self._link = link
         self._root = fs_root or "/"
         self._reset = reset
@@ -186,6 +186,8 @@ class Agent:
             clock=self._clock, stop_fail=self._reset)
         self._terminal_session = _NO_TERMINAL_SESSION
         self._dispatch_session = None
+        self._status_session = None
+        self._status_last_event = None
 
         # Filesystem bridge (F-08/F-09/F-17): EVT emission via emit().
         self._fs = pyble_fs.FsService(
@@ -203,7 +205,7 @@ class Agent:
             self._emit_run_state,
             pyble_runner.make_exec_fn(write_stderr=self._stderr),
             emit_terminal=self._emit_terminal_run_state,
-            end_input=self.console.end_input)
+            end_input=self.console.end_input, boot_id=boot_id)
 
         # Dispatcher: EVERY §4 CMD opcode gets a registered handler — none may
         # fall through to the EUNSUPPORTED default (that default is only for
@@ -221,6 +223,7 @@ class Agent:
         d.register(_OP["MKDIR"], self._h_mkdir)
         d.register(_OP["FILE_RENAME"], self._h_rename)
         d.register(_OP["RUN"], self._h_run)
+        d.register(_OP["RUN_STATUS"], self._h_run_status)
         d.register(_OP["STOP"], self._h_stop)
         d.register(_OP["SOFT_REBOOT"], self._h_soft_reboot)
         d.register(_OP["SET_AUTORUN"], self._config.handle_set_autorun)
@@ -263,6 +266,7 @@ class Agent:
         accepted = pyble_boot.maybe_autorun(
             self._config, self._runner, self._root)
         if accepted:
+            self._runner.commit_reserved_run(pyble_runner.ORIGIN_AUTORUN)
             generation = self.console.begin_input()
             self._runner.bind_reserved_input(generation)
         return accepted
@@ -295,6 +299,7 @@ class Agent:
         input_generation = self._runner.event_input_generation()
         self.console.set_run_active(
             state == _RUNNING, expected_generation=input_generation)
+        self._publish_run_status()
         self.emit(_OP["RUN_STATE"], bytes((state,)), expected_session)
 
     def _emit_terminal_run_state(self, state, published):
@@ -302,6 +307,7 @@ class Agent:
         input_generation = self._runner.event_input_generation()
         self.console.set_run_active(
             False, expected_generation=input_generation)
+        self._publish_run_status()
         if self._terminal_session is _NO_TERMINAL_SESSION:
             self._terminal_session = self._link.session_token()
         session = self._terminal_session
@@ -321,6 +327,19 @@ class Agent:
         if accepted is False:
             self._terminal_session = _NO_TERMINAL_SESSION
         return accepted
+
+    def _publish_run_status(self):
+        # Opt-in is owned by one negotiated connection. Capture an immutable
+        # metadata value and session before encoding; retries never retarget it.
+        session = self._link.session_token()
+        if session is None or session != self._status_session:
+            return
+        snapshot = self._runner.run_status()
+        if snapshot == self._status_last_event:
+            return
+        accepted = self.emit(_OP["RUN_STATUS_CHANGED"], snapshot, session)
+        if accepted is not False:
+            self._status_last_event = snapshot
 
     # -- portable PUT supervisor mailbox --------------------------------------
     def _enqueue_put(self, frame):
@@ -480,6 +499,7 @@ class Agent:
             self._dispatch_session = None
             if run_reserved_after_rsp:
                 if response_published[0]:
+                    self._runner.commit_reserved_run()
                     generation = self.console.begin_input()
                     self._runner.bind_reserved_input(generation)
                 else:
@@ -489,6 +509,8 @@ class Agent:
                 self._commit_control(control_after_rsp)
 
     def _on_connect(self):
+        self._status_session = None
+        self._status_last_event = None
         self._dispatcher.reset_session()
         if self._reboot_at is not None:
             # The reboot deadline is device-global. A successor connection
@@ -508,6 +530,8 @@ class Agent:
         self._clear_fs_mailbox()
         self._dispatcher.reset_session()
         self.console.clear_input()
+        self._status_session = None
+        self._status_last_event = None
 
     def _on_oversize(self, head):
         # P6: an oversize reassembled message was dropped — answer RSP ERANGE
@@ -617,6 +641,13 @@ class Agent:
         self._run_reserved_after_rsp = status == OK
         return bytes((status,))
 
+    def _h_run_status(self, frame):
+        # Dispatcher enforces HELLO and exact zero-byte request grammar before
+        # entering here. Subscribe before capture so a later transition cannot
+        # disappear between synchronization and observation.
+        self._status_session = self._dispatch_session
+        return bytes((OK,)) + self._runner.run_status()
+
     def _h_stop(self, frame):
         # §6/P3: OK is idempotent, but cancellation/interrupt is provisional
         # until _on_message successfully hands this response to BLE.
@@ -697,6 +728,8 @@ class Agent:
             # Covers cancellation/event/fs exceptions and the normal path. The
             # hard alarm remains authoritative if Python never reaches here.
             self._service_reboot()
+            if self._reboot_at is None:
+                self._publish_run_status()
 
 
 # -----------------------------------------------------------------------------

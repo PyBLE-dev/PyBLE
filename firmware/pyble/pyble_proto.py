@@ -47,10 +47,12 @@ OPCODES = {
     "STOP": 0x21,
     "SOFT_REBOOT": 0x22,
     "SET_AUTORUN": 0x23,  # additive §9 opcode (S6 F-12), auto_run-cap gated
+    "RUN_STATUS": 0x24,  # additive §6.1, run_status-cap gated
     "CONSOLE_DATA": 0x30,
     "CONSOLE_INPUT": 0x31,
     "RUN_STATE": 0x40,
     "FILE_PUT_ACK": 0x41,
+    "RUN_STATUS_CHANGED": 0x42,
     "SET_LABEL": 0x50,
     "SET_IDENTIFY_LED": 0x51,
     "IDENTIFY": 0x52,
@@ -176,7 +178,7 @@ def _payload_exact(opcode, payload):
     valid prefix cannot hide extension bytes from the handler.
     """
     length = len(payload)
-    if opcode in (OPCODES["DEVICE_INFO"], OPCODES["STOP"],
+    if opcode in (OPCODES["DEVICE_INFO"], OPCODES["RUN_STATUS"], OPCODES["STOP"],
                   OPCODES["SOFT_REBOOT"]):
         return length == 0
     if opcode in (OPCODES["FILE_LIST"], OPCODES["FILE_STAT"],
