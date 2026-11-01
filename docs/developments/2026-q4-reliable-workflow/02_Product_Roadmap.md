@@ -17,6 +17,13 @@
 
 ## Product Goal and decision principle
 
+**1 November selected continuation:** the [recorded scope assumption](01_Overview_and_Scrum_Framework.md#1-november-selected-continuation)
+brings the first PYB-017.1/PYB-018 run-status increment forward under the user's
+roadmap request. See the [selected leaves](05_Product_Backlog_and_Stories.md#4-conditional-expansion-backlog-and-complete-parent-traceability)
+and [firmware execution record](firmware-v070/00_Execution_Record.md).
+The remaining H2 scope stays proposed. The original horizon dates and capacity
+model below remain historical forecasts, not a new Sprint or release promise.
+
 **Proposed Product Goal:** tablet-owning makers can complete useful BLE board work,
 recover local work after interruption, and choose PyBLE again for another relevant
 task using accurately identified app and firmware.
@@ -68,7 +75,7 @@ bounded work inside H1 without declaring that whole horizon complete.
 |---|---|---|---|---|
 | H1 — Months 0–3; 28 Sep–20 Dec 2026 | Reliable mobile workflow: identify installations, protect work, and learn from useful tasks | PYB-001/003/004/006/008/009/011/013/014; conditional 005/012 and residual 002; M-01…M-06 | Named capacity and cohort; sized persistence scope and mandatory matrix; use existing release tooling | Qualified bounded maintenance increment, verified channel state, and honest activation/repeat-use assessment |
 | H1 supporting rehearsal — Within C1 only if funded | Make an existing profile's setup and recovery reproducible by a second operator | Bounded PYB-009 work; input to M-07 | One existing exact profile, operator availability, and an explicit allocation within PYB-009 or spare planned capacity | Procedure, assistance log, draft Ready record, and visible gaps; no badge or new-port promise |
-| H2 — Months 3–6; approximately Dec 2026–Mar 2027 | Reliable Projects addresses a demonstrated multi-file or recovery obstacle | PYB-017 then selected PYB-018…022; M-08 | Relevant pilot evidence; accepted scope, protocol/ADR changes, capability registry, and cross-version plan | One coherent selected capability, legacy fallback, and applicable exact-artifact qualification; complete v0.7.0 is not promised |
+| H2 — Original Months 3–6 forecast; first run-status slice selected 1 Nov 2026 | Reliable Projects addresses a demonstrated multi-file or recovery obstacle | Selected PYB-017.1/PYB-018; remaining 019…022 and M-08 scope proposed | Selected scope follows the recorded implementation assumption; remaining scope requires relevant evidence, accepted protocol/ADR changes, capability registry and cross-version plan | One coherent selected capability, legacy fallback and applicable exact-artifact qualification; remaining Dec 2026–Mar 2027 forecast is conditional and complete v0.7.0 is not promised |
 | H3 — Months 3–9; approximately Dec 2026–Jun 2027 | PyBLE Ready makes correct selection/setup easier and establishes maintainable outside ownership | PYB-024/025; M-07 | Existing-profile reproduction, reviewed criteria, complete public record, owner/reviewer, then one external maintainer | First eligible exact-configuration record; measured setup/support effort; SG4 before broader expansion |
 | H4 — Months 6–12; approximately Mar–Sep 2027 | A reusable supervised lesson helps learners complete safe board work | PYB-026/028; optional 027 only after bundle-contract approval; M-09 | Reliable core, classroom-specific safety/security review, consent arrangements, and multi-board selection evidence | Reviewed lesson and at least two measured sessions; sustainable instructor support and SG5 assessment |
 | H5 — Months 6–12; approximately Mar–Sep 2027 | Reproducible research explains measured technical or educational results | PYB-016/030; conditional research stream | Named investigator, suitable contribution, approved study/ethics decision where applicable, and qualified artifacts | Reproducible benchmark or submission-ready package if results justify it; no acceptance/publication promise |

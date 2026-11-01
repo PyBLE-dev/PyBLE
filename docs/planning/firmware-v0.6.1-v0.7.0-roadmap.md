@@ -26,6 +26,11 @@ remain proposals. Source identity is development `0.7.0-dev.1`, not a published
 complete Reliable Projects release. See the [execution record](../developments/2026-q4-reliable-workflow/firmware-v070/00_Execution_Record.md)
 for tests, worktree integration, actual physical results and tracking-order deviation.
 
+This first-increment scope is the implementation assumption following the
+preceding recommendation and the user's roadmap request. It is not a separate
+explicit choice between the first increment and the full roadmap, and does not
+declare the requested roadmap complete.
+
 Fresh globals/stdin isolation, session/grammar hardening, durable configuration
 and upload-space admission already exist in v0.6.1. Historical v0.6.0 gap prose
 below is not a new v0.7 implementation backlog. New project/import semantics
@@ -268,7 +273,8 @@ The first increment now specifies capability `run_status=1`, empty-payload
 [PBLE/1 §6.1](../specifications/protocol.md#61-additive-runsession-status--selected-v07-increment).
 The fixed 25-byte schema carries only bounded execution metadata:
 
-- a boot nonce or equivalent boot identity;
+- eight randomized, nonzero, ephemeral VM-correlation bytes from the platform
+  random provider, never a MAC, serial, label or clock;
 - a monotonically increasing run ID within that boot;
 - current state: idle, running, done, or error;
 - origin: file, inline source, or autorun;
@@ -336,7 +342,8 @@ Candidate additions are:
 
 - a cumulative, saturating console-lost byte/chunk counter;
 - a sequence or `CONSOLE_GAP` signal that cannot create an event storm;
-- counters included in the queryable run snapshot; and
+- loss counters exposed by a separately specified, capability-gated diagnostic
+  extension, while `RUN_STATUS` schema 1 remains exactly 25 bytes; and
 - a capability-gated `CONSOLE_INPUT_V2` carrying a run ID and returning the
   accepted byte count and remaining input credit.
 
@@ -397,6 +404,14 @@ firmware specifications must consume that one contract rather than redefine it.
 Every candidate must pass on the same five exact profiles listed in section 2.
 No result from one profile, agent implementation, board, build, filesystem, or
 provisioning method may fill another row.
+
+The groups below combine existing regressions with acceptance scenarios for
+the full proposed Reliable Projects scope. The selected run-status increment
+applies PBLE/1 §6.1 and every applicable existing compatibility, resource,
+recovery and release gate on all five profiles, with their normative counts
+and limits unchanged. Scenarios for unselected new operations remain future
+work; selecting this increment does not require implementing those operations
+or waive any existing legacy release gate.
 
 ### 7.1 Run isolation and project execution
 
@@ -565,8 +580,11 @@ revise:
 - [x] the v0.6.1 hardening / v0.7.0 feature-release split;
 - [ ] v0.7.0's P0 versus P1 scope;
 - [ ] streaming directory enumeration and mutation behavior;
-- [ ] fresh per-run globals and project-local import cleanup semantics;
-- [ ] run/boot identity fields and their privacy bounds;
+- [x] fresh per-run globals/stdin isolation, implemented in v0.6.1 (§4.2);
+- [ ] project-local import cleanup and path-restoration semantics (§5.3);
+- [x] selected `RUN_STATUS` schema 1 run/boot fields and privacy bounds,
+  specified 1 November in [PBLE/1 §6.1](../specifications/protocol.md#61-additive-runsession-status--selected-v07-increment)
+  and [ADR-0049](../decisions/0049-query-run-state-after-reconnect.md);
 - [ ] transfer-abort and scratch-retention behavior;
 - [ ] loss-counter and acknowledged-input behavior;
 - [ ] the STOP/SOFT_REBOOT/optional FORCE_RESET recovery ladder;

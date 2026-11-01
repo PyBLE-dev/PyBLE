@@ -80,6 +80,22 @@ calendar time as measured engineering effort. Maintain the original 22 November
 activation target alongside any later approved forecast; missed windows remain
 missing or late evidence.
 
+## 1 November selected continuation
+
+The [recorded first-increment scope assumption](01_Overview_and_Scrum_Framework.md#1-november-selected-continuation)
+adds PYB-017.1/PYB-018 run-status implementation and candidate qualification to
+the current engineering continuation under the user's roadmap request. The
+[selected leaves](05_Product_Backlog_and_Stories.md#4-conditional-expansion-backlog-and-complete-parent-traceability)
+and [firmware execution record](firmware-v070/00_Execution_Record.md) own that
+work's breakdown and actual results. This does not complete the remaining
+roadmap, participant work or distribution decisions.
+
+Preserve the original calendar, allowances and October acceptance records.
+They do not estimate this new firmware work or establish a staffed Sprint.
+Reconcile any scope substitution, displaced work and actual human capacity
+before adopting a new forecast; all applicable legacy and selected-increment
+qualification remains required.
+
 ## Capacity model
 
 The source assumes one primary maintainer at 20 hours/week. Confirm real availability and any contributor capacity at Planning; extra roles do not create extra hours.
