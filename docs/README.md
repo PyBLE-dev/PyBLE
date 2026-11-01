@@ -18,7 +18,7 @@ maintainer guidance beside the source they govern.
 - [Firmware v0.6.1 and v0.7.0 roadmap](planning/firmware-v0.6.1-v0.7.0-roadmap.md)
   — v0.6.1 is published on owner confirmation; incomplete automated evidence
   remains pending; the first run/session-status increment is specified and
-  implemented with targeted evidence and a retained historical-client GET
+  implemented with targeted evidence, corrected Pico admission and a retained historical-client GET
   limitation; full release admission is pending and remaining Reliable Projects
   scope stays proposed
 - [Selected firmware development execution](developments/2026-q4-reliable-workflow/firmware-v070/00_Execution_Record.md)

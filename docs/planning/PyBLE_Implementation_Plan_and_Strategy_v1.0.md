@@ -11,7 +11,7 @@
 
 | Field | Value |
 |---|---|
-| Document version | 1.10 — selected run-status implementation and targeted evidence; accepted bounded recovery and app-only qualification; channel/pilot continuation; original filename retained |
+| Document version | 1.11 — corrected Pico admission and active-image evidence; accepted bounded recovery and app-only qualification; channel/pilot continuation; original filename retained |
 | Prepared | 25 September 2026 |
 | Last reviewed | 1 November 2026; selected run-status implementation ready for review with targeted physical evidence and a historical-client GET limitation; prior 31 October acceptance: bounded M-02 and app-only M-04 engineering acceptance recorded with exact candidate, firmware and OEM test conditions; device closeout complete; [PR #41](https://github.com/PyBLE-dev/PyBLE/pull/41) merged after all 36 checks on its final head passed; internal TestFlight delivery verified; external submission Waiting for Review; Play open-testing build 9 submitted, Changes in review; delivery pending |
 | Status | C1-S1 has six tasks Done, two Prepared awaiting pilot setup and four Awaiting evidence; Sprint and SG0 remain unfinished. Bounded recovery and app-only qualification pass scoped engineering review; device closeout is complete. [PR #41](https://github.com/PyBLE-dev/PyBLE/pull/41) merged after all 36 checks on its final head passed. Internal-account TestFlight `0.3.0 (9)` installation and bounded smoke are verified; external build 9 is submitted and Waiting for Review; Google Play open-testing build 9 is submitted with Changes in review; approval and delivery remain pending. Human capacity and recruitment dates need replanning. The selected run-status contract is specified and implemented; remaining protocol features and full release admission stay pending |
@@ -32,6 +32,7 @@
 
 | Revision | Change |
 |---|---|
+| 1.11 | Corrected latched STOP at Pico autorun admission with specification/red/green, identical-program actual-VM red/green and six affected tablet cases; retained four exact ESP images, historical failures and the separate full-resource gap #48 |
 | 1.10 | Recorded five-profile/both-tablet R5 evidence, actual Android ATT23/247, source-bound artifacts and retained historical iPad 0.3/Waveshare GET limitation; implementation ready for review, full release admission pending |
 | 1.9 | Selected early PYB-017.1/PYB-018 run-status development with firmware 0.7.0-dev.1 and companion app 0.4.0+10; retained distribution/pilot and full-release boundaries |
 | 1.0 | Initial strategy and proposed 12-week program |
@@ -295,7 +296,12 @@ The selected implementation is ready for review in [PR #47](https://github.com/P
 Both tablets pass all five R5 normal workflow rows; Android actual ATT23/247
 passes across five profiles. Historical iPad 0.3/Waveshare is Partial: an initial
 empty-GET stall recovered on one normal Open retry. This does not become an
-unqualified old-client pass or a full firmware release. The prior app 0.3
+unqualified old-client pass or a full firmware release. Final review corrected
+Pico autorun STOP admission; its new `f3ab210` image passes the actual-VM
+comparison and all six affected tablet cases. The four ESP `1093bab` images and
+`b07e24d` app binaries are unchanged. The baseline lifecycle-history resource
+gap remains open as [#48](https://github.com/PyBLE-dev/PyBLE/issues/48); no full
+resource/release pass is inferred. The prior app 0.3
 admission and source-bound hardware limits remain historical.
 
 ## 6. Release and protocol strategy

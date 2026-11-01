@@ -9,7 +9,8 @@ The v0.6.1 hardening implementation has been published on owner confirmation.
 The first v0.7 run/session-status increment is now specified in PBLE/1 §6.1
 and implemented with targeted five-profile/both-tablet evidence; its
 [execution record](developments/2026-q4-reliable-workflow/firmware-v070/00_Execution_Record.md)
-separates development artifacts from release admission. Remaining Reliable
+separates the unchanged ESP images, corrected Pico image and app artifacts
+from full resource/release admission. Remaining Reliable
 Projects operations are proposals requiring their own scope and contract decisions.
 
 ## Available now

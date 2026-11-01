@@ -6,7 +6,7 @@
 | Control | Value |
 |---|---|
 | Product Goal | Make the existing tablet workflow trustworthy enough for useful repeat tasks by the selected primary audience |
-| Source | [Implementation strategy revision 1.10](../../planning/PyBLE_Implementation_Plan_and_Strategy_v1.0.md), initially derived 25 September; reconciled 1 November 2026 |
+| Source | [Implementation strategy revision 1.11](../../planning/PyBLE_Implementation_Plan_and_Strategy_v1.0.md), initially derived 25 September; reconciled 1 November 2026 |
 | Cycle | Proposed 28 September–20 December 2026; Asia/Bangkok |
 | Baseline | `23ed764b0ef88dce9720c66fbd1c0655268860cf`; completed publication work is evidence, not a new commitment |
 | Status | C1-S1: PYB-001.1/.2 and PYB-006.1 scoped work Done; pilot preparation awaits setup and observation work awaits evidence. PYB-006.2/M-02, scoped 008/009 and app-only M-04 pass engineering review; [PR #41](https://github.com/PyBLE-dev/PyBLE/pull/41) merged after all 36 checks on its final head passed. M-05 is partial: internal TestFlight delivery verified; external submission Waiting for Review; Google Play open-testing build 9 submitted, Changes in review; approval/delivery pending |
@@ -175,9 +175,9 @@ P0 does not interrupt the current cycle automatically.
 | Selected leaf | Outcome and verification | Tracking / current state |
 |---|---|---|
 | PYB-017.1 | Define the committed snapshot, capability, query/events, session ownership and cross-version vectors before implementation | [ADR-0049](../../decisions/0049-query-run-state-after-reconnect.md), PBLE/1 §6.1; normative commit `27811da` preceded implementation |
-| PYB-018.1 | Native and portable agents report coherent accepted execution, reconnect identity, STOP and terminal reason, including autorun | [#44](https://github.com/PyBLE-dev/PyBLE/issues/44); implementation and targeted five-profile status/autorun/load evidence complete; PR review pending |
+| PYB-018.1 | Native and portable agents report coherent accepted execution, reconnect identity, STOP and terminal reason, including autorun | [#44](https://github.com/PyBLE-dev/PyBLE/issues/44); implementation and targeted five-profile status/autorun/load evidence complete, including atomic Pico autorun admission and real-VM red/green; PR review pending |
 | PYB-018.2 | The app synchronizes before readiness, caches status for late views and preserves legacy fallback | [#45](https://github.com/PyBLE-dev/PyBLE/issues/45); R5 implementation and both-tablet/five-profile normal UI evidence complete; PR review pending |
-| PYB-018.3 | Retain exact builds, workspace-preserving programming and physical cross-version, reconnect, autorun and actual ATT-MTU evidence | [#46](https://github.com/PyBLE-dev/PyBLE/issues/46); [execution record](firmware-v070/00_Execution_Record.md); targeted physical matrix recorded; historical iPad 0.3/Waveshare GET remains Partial after successful retry; full release admission pending |
+| PYB-018.3 | Retain exact builds, workspace-preserving programming and physical cross-version, reconnect, autorun and actual ATT-MTU evidence | [#46](https://github.com/PyBLE-dev/PyBLE/issues/46); [execution record](firmware-v070/00_Execution_Record.md); targeted physical matrix recorded; historical iPad 0.3/Waveshare GET remains Partial after successful retry; full release admission, including [#48](https://github.com/PyBLE-dev/PyBLE/issues/48), pending |
 
 | Parent / source priority | Proposed outcome | Admission and dependencies | Refinement / evidence before claim |
 |---|---|---|---|

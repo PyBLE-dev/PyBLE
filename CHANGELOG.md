@@ -10,7 +10,9 @@ committed run/session snapshots after reconnect. The normative contract is
 PBLE/1 §6.1; [the execution record](docs/developments/2026-q4-reliable-workflow/firmware-v070/00_Execution_Record.md)
 records both-tablet/five-profile R5 normal workflow and actual Android ATT23/247
 results, four app regression fixes and the retained historical-client GET
-limitation. Full release admission and remaining roadmap work stay pending. Existing
+limitation. Pico autorun admission now preserves already accepted STOP in its
+first committed snapshot, with actual-VM old/new and affected-image evidence.
+Full resource/release admission and remaining roadmap work stay pending. Existing
 `0.3.0 (9)` store submissions and firmware `0.6.1` publication remain dated history.
 
 These app, website, and repository-source changes do not designate a new app

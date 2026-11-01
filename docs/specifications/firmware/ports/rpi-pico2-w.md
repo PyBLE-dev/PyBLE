@@ -403,3 +403,26 @@ board-agnostic (CON-7: the name is user-entered, never suggested).
   the final candidate.
 - **OI-P4** — NeoPixel claim withheld until the upstream package + `machine.bitstream` primitive are validated on rp2 (FR-LIB rule).
 - **OI-P5** — core1 fs-worker increment (restores transfer-during-run concurrency).
+
+## Selected run/session status — 1 November 2026
+
+[PBLE/1 §6.1](../../protocol.md#61-additive-runsession-status--selected-v07-increment)
+defines the additive query/event and immutable 25-byte committed snapshot.
+Scheduled BLE work runs at the pinned RP2 VM's pending checkpoints. The final
+publication regions in `_admit_status`, `_status_transition` and `_finish_status`
+therefore use exact bytes/integers and builtin operations without Python
+conditional jumps or Python helper calls. This is a pinned-port concurrency
+argument; a different VM/port must establish its own equivalent guarantee.
+
+Autorun reservation occurs on the supervisor and can encounter a scheduled STOP
+before explicit admission, including during codec validation. Validate the
+candidate first, then capture the current cancellation inside the final
+branch-free region and publish snapshot plus pending run ID together. The
+first committed flags are queued+stopping when cancellation already applies;
+precommit queries still return the predecessor snapshot.
+
+The [selected execution record](../../../developments/2026-q4-reliable-workflow/firmware-v070/00_Execution_Record.md)
+retains actual-VM old/red and corrected/green results, program-only current-flash
+preservation and affected Pico tablet/MTU evidence. It does not close historical
+GP2/full resource/recovery/release gates. The existing production lifecycle
+history list is separately tracked in [#48](https://github.com/PyBLE-dev/PyBLE/issues/48).

@@ -27,7 +27,10 @@ complete Reliable Projects release. See the [execution record](../developments/2
 for tests, worktree integration, actual physical results and tracking-order deviation.
 R5 normal UI and actual Android ATT23/247 cover all five profiles; historical
 iPad 0.3/Waveshare retains a Partial GET row despite recovery by normal retry.
-This engineering result does not complete full firmware release admission.
+The active image set retains four ESP `1093bab` images and uses corrected Pico
+`f3ab210` after atomic-admission actual-VM and affected-tablet requalification.
+This engineering result does not complete full firmware release admission;
+the baseline portable lifecycle-history resource gap is [#48](https://github.com/PyBLE-dev/PyBLE/issues/48).
 
 This first-increment scope is the implementation assumption following the
 preceding recommendation and the user's roadmap request. It is not a separate

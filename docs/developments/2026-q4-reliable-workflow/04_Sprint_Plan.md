@@ -7,7 +7,7 @@
 |---|---|
 | Status | C1-S1 remains partial; bounded S2 recovery and app-only qualification pass 31 October engineering review. S2 follow-up and M-05 delivery remain unfinished; original dates/hours remain baseline forecasts |
 | Cycle | `C1`, 28 September–20 December 2026, Asia/Bangkok |
-| Basis | [Strategy revision 1.10, §8](../../planning/PyBLE_Implementation_Plan_and_Strategy_v1.0.md#8-twelve-week-implementation-schedule) |
+| Basis | [Strategy revision 1.11, §8](../../planning/PyBLE_Implementation_Plan_and_Strategy_v1.0.md#8-twelve-week-implementation-schedule) |
 | Product Goal and quality rules | [Working agreement](01_Overview_and_Scrum_Framework.md) |
 | Acceptance criteria | [Product backlog and stories](05_Product_Backlog_and_Stories.md) |
 | Task-level proposal | [Sprint backlogs](06_Sprint_Backlogs.md) |

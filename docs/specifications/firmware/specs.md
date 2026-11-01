@@ -2494,3 +2494,12 @@ These are tracked, release-blocking where noted; they MUST be closed before the 
 ## Selected run-status increment — 2026-11-01
 
 Firmware consumes [PBLE/1 §6.1](../protocol.md#61-additive-runsession-status--selected-v07-increment) as the single normative contract. Both agents expose committed execution only and retire observation at disconnect/VM reset.
+
+Autorun admission preserves STOP already accepted for its reservation: queries
+before commit retain the predecessor, and admission publishes queued+stopping
+together in one revision. Codec-validation checkpoints cannot lose that intent.
+The [execution record](../../developments/2026-q4-reliable-workflow/firmware-v070/00_Execution_Record.md)
+binds the native/portable tests, corrected-Pico actual-VM evidence and exact
+per-profile images. Targeted status evidence does not close full resource or
+release admission, including the existing lifecycle-history gap in
+[#48](https://github.com/PyBLE-dev/PyBLE/issues/48).
