@@ -323,10 +323,17 @@ class PbleConnection
     }
     // A successful control response has already committed. Status failure may
     // retire observation, but must never reclassify accepted user execution.
+    final int generation = _handshakeGeneration;
     unawaited(
       refreshRunStatus().then<void>(
         (_) {},
-        onError: (Object _, StackTrace _) => _retireInvalidRunStatus(),
+        onError: (Object _, StackTrace _) {
+          // A delayed query belongs to the session that scheduled it. Its
+          // expected failure after reconnect cannot invalidate a newer HELLO.
+          if (!_disposed && generation == _handshakeGeneration) {
+            _retireInvalidRunStatus();
+          }
+        },
       ),
     );
   }
