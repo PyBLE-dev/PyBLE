@@ -43,9 +43,9 @@ and the firmware execution record above.
 |---|---|---|
 | V07-T01 | PYB-017.1 | Contract, ADR and vectors committed before dependent implementation |
 | V07-T02 | PYB-018.1 | Native agent implemented; automated and five-profile targeted hardware evidence recorded |
-| V07-T03 | PYB-018.1 | Portable agent implemented; parity/race tests and Pico physical evidence recorded |
+| V07-T03 | PYB-018.1 | Portable agent and atomic autorun admission implemented; parity/race tests, real-VM red/green and corrected-Pico physical evidence recorded |
 | V07-T04 | PYB-018.2 | App synchronization plus four regression fixes; 1,072 ordinary tests and ten R5 normal tablet/profile rows pass |
-| V07-T05 | PYB-018.3 | Five pinned builds, verified full backups, workspace-preserving installation and mandatory C3 restoration complete |
+| V07-T05 | PYB-018.3 | Five active exact-profile builds, verified backups/programming, mandatory C3 restoration and fresh-current-preserving corrected-Pico installation complete |
 | V07-T06 | PYB-018.3 | Five-profile Mac status/autorun/load and actual Android ATT23/247 evidence complete |
 | V07-T07 | PYB-018.3 | Cross-version evidence recorded; old iPad 0.3/Waveshare initial GET stalls, normal retry recovers; overall row remains Partial |
 | V07-T08 | PYB-018 | Ready for integration review; full firmware release admission and remaining Reliable Projects features are unfinished |

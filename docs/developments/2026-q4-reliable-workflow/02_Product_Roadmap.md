@@ -7,7 +7,7 @@
 |---|---|
 | Status | C1-S1 remains partial; bounded recovery and app-only qualification pass 31 October engineering review. [PR #41](https://github.com/PyBLE-dev/PyBLE/pull/41) merged after all 36 checks on its final head passed. External TestFlight/Google Play delivery and pilot/capacity inputs remain outstanding |
 | Planning date | 25 September 2026; dates use Asia/Bangkok |
-| Source | [Implementation strategy revision 1.10](../../planning/PyBLE_Implementation_Plan_and_Strategy_v1.0.md), particularly §§1, 6–9, 12, 14, and 19 |
+| Source | [Implementation strategy revision 1.11](../../planning/PyBLE_Implementation_Plan_and_Strategy_v1.0.md), particularly §§1, 6–9, 12, 14, and 19 |
 | Inspected baseline | `main` at `23ed764b0ef88dce9720c66fbd1c0655268860cf` |
 | First cycle | C1: 28 September–20 December 2026; later horizons conditional through September 2028 |
 | Planning authority | Product Owner orders the Product Backlog; Developers forecast feasible work during Sprint Planning; names and capacity remain unassigned |

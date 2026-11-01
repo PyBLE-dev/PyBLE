@@ -7,7 +7,7 @@
 |---|---|
 | Status | M-01/SG0 remains Blocked on 25 September by pilot ownership/cohort/setup and capacity decisions; existing channel installations verified on retry. M-02 and scoped app-only M-04 pass 31 October engineering review; device closeout is complete. [PR #41](https://github.com/PyBLE-dev/PyBLE/pull/41) merged after all 36 checks on its final head passed. M-05 is partial: internal TestFlight delivery verified; external submission Waiting for Review; Google Play open-testing build 9 submitted, Changes in review; approval/delivery pending; forecast windows need replanning |
 | Planning date | 25 September 2026; dates use Asia/Bangkok |
-| Source | [Implementation strategy revision 1.10](../../planning/PyBLE_Implementation_Plan_and_Strategy_v1.0.md), especially §§4, 8–10, 14, and 19 |
+| Source | [Implementation strategy revision 1.11](../../planning/PyBLE_Implementation_Plan_and_Strategy_v1.0.md), especially §§4, 8–10, 14, and 19 |
 | Inspected baseline | `main` at `23ed764b0ef88dce9720c66fbd1c0655268860cf` |
 | Related documents | [Framework](01_Overview_and_Scrum_Framework.md), [roadmap](02_Product_Roadmap.md), [Sprint Plan](04_Sprint_Plan.md), [stories](05_Product_Backlog_and_Stories.md), [Sprint Backlogs](06_Sprint_Backlogs.md) |
 | Meaning | Milestones describe inspectable outcomes and decision evidence; they are not additional Scrum events or promised releases |
