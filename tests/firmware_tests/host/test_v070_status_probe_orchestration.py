@@ -146,7 +146,8 @@ class ProbeOrchestrationTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(2, board.command_count(0x21))
                 self.assertEqual(1, board.command_count(0x22))
                 self.assertEqual([1, 1, 1], [s.disconnections for s in board.sessions])
-                self.assertEqual([mtu] * 3, [s.confirmed_mtu for s in board.sessions])
+                self.assertEqual([247] * 3, [s.confirmed_mtu for s in board.sessions])
+                self.assertEqual([mtu] * 3, [s.fragment_limit for s in board.sessions])
                 self.assertTrue(all(1 <= request_id <= 255
                                     for _, _, request_id, _ in board.calls))
 
