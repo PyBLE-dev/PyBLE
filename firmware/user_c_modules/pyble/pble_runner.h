@@ -81,6 +81,11 @@ uint8_t pble_runner_soft_reboot(const pble_frame_t *req, uint8_t *rsp,
                                 size_t *rlen,
                                 const pble_session_token_t *conn);
 
+// Capability-gated committed execution snapshot; empty request only. Generic
+// response reservation and session/closing validation precede this handler.
+uint8_t pble_runner_status(const pble_frame_t *req, uint8_t *rsp, size_t *rlen,
+                           const pble_session_token_t *session);
+
 // Auto-run hand-off (F-12): run a workspace file on the WORKER from a NON-dispatch
 // caller — pble_boot's opt-in /main.py auto-run. Reserves the single run (or refuses
 // EBUSY if one is active, ERANGE on a bad path length), captures the path, and wakes

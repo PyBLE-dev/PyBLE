@@ -425,6 +425,7 @@ class NativePrestartCancellationContractTests(unittest.TestCase):
             #include <stdbool.h>
             #include <stddef.h>
             #include <stdint.h>
+            #include "pble_run_status.h"
 
             #define PBLE_RUN_RUNNING 1
             #define PBLE_RUN_DONE 2
@@ -448,6 +449,7 @@ class NativePrestartCancellationContractTests(unittest.TestCase):
             static bool g_control_unresolved;
             static bool g_stop_requested;
             static pble_rsm_t g_rsm = {PBLE_RUN_RUNNING};
+            static pble_run_status_t g_run_status = {.run_id=1, .state=1};
             static mp_state_thread_t *g_worker_state;
             static bool stdin_active = true;
             static bool successor_reserved;
@@ -503,7 +505,10 @@ class NativePrestartCancellationContractTests(unittest.TestCase):
             )
             built = subprocess.run(
                 [compiler, "-std=c11", "-Wall", "-Wextra", "-Werror",
-                 str(source), "-o", str(binary)],
+                 "-I", str(ROOT / "firmware/user_c_modules/pyble"),
+                 str(source),
+                 str(ROOT / "firmware/user_c_modules/pyble/pble_run_status.c"),
+                 "-o", str(binary)],
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 text=True, check=False,
             )
@@ -702,7 +707,7 @@ class NativePrestartCancellationContractTests(unittest.TestCase):
         )
         self.assertIsNotNone(gate_assignment)
         gate_call = pickup + gate_assignment.start()
-        running_event = worker.find("runner_emit_state(pble_rsm_on_started", pickup)
+        running_event = worker.find("runner_emit_state(started)", pickup)
         execute = worker.find("runner_exec(", pickup)
         self.assertGreater(gate_call, pickup)
         self.assertLess(gate_call, running_event)
@@ -713,7 +718,8 @@ class NativePrestartCancellationContractTests(unittest.TestCase):
         )
         self.assertIsNotNone(guard)
         guarded = braced_statement(worker[pickup:], guard.start())
-        self.assertIn("runner_emit_state(pble_rsm_on_started", guarded)
+        self.assertIn("runner_emit_state(started)", guarded)
+        self.assertIn("int started = pble_rsm_on_started(&g_rsm)", guarded)
         self.assertIn("runner_exec(", guarded)
 
     def test_run_reservations_never_clear_an_unresolved_control(self):
