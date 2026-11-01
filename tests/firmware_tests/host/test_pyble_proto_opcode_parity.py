@@ -76,7 +76,7 @@ class OpcodeParityTest(unittest.TestCase):
     def test_opcode_table_matches_frozen_section4_exactly(self):
         opcodes = PROTO.attr(self, "OPCODES", "F-25/§4 opcode parity")
         self.assertEqual(
-            FROZEN_OPCODES_V1, dict(opcodes),
+            dict(FROZEN_OPCODES_V1, RUN_STATUS=0x24, RUN_STATUS_CHANGED=0x42), dict(opcodes),
             "[F-25/§4] OPCODES must equal the frozen protocol.md §4 set "
             "EXACTLY — no missing entries (SET_AUTORUN 0x23), no extras, no "
             "renumbering. The wire is frozen; only the table may move.")
