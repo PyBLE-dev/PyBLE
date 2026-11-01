@@ -14,6 +14,7 @@ import sys
 import tempfile
 import textwrap
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _support
@@ -73,11 +74,11 @@ class SnapshotVectorsTest(unittest.TestCase):
     def test_atomic_publication_regions_have_no_vm_pending_checkpoints(self):
         # The pinned RP2 VM calls mp_handle_pending at Python jump opcodes.
         # Enforce the concurrency assumption paired with the behavioral cases:
-        # these two metadata read/modify/publish regions cannot add a branch,
+        # these metadata read/modify/publish regions cannot add a branch,
         # loop, Python codec call or arbitrary callback that admits a writer.
         forbidden = (ast.If, ast.IfExp, ast.For, ast.While, ast.BoolOp,
                      ast.ListComp, ast.DictComp, ast.GeneratorExp)
-        for name in ("_status_transition", "_finish_status"):
+        for name in ("_status_transition", "_finish_status", "_admit_status"):
             with self.subTest(name=name):
                 tree = ast.parse(textwrap.dedent(inspect.getsource(
                     getattr(pyble_runner.Runner, name))))
@@ -87,6 +88,13 @@ class SnapshotVectorsTest(unittest.TestCase):
                          if isinstance(node, ast.Call)
                          and isinstance(node.func, ast.Name)]
                 self.assertTrue(set(names) <= {"bytes", "bool"})
+                if name == "_admit_status":
+                    # The STOP read belongs inside the final publication
+                    # region, after every caller/codec pending checkpoint.
+                    self.assertTrue(any(
+                        isinstance(node, ast.Attribute) and
+                        node.attr == "_stop_requested"
+                        for node in ast.walk(tree)))
 
 
 class AgentStatusTest(unittest.TestCase):
@@ -334,6 +342,86 @@ class AgentStatusTest(unittest.TestCase):
         self.assertEqual((1, 1, 1, 3, 0, 1), metadata(self.query()))
         self.agent.poll()
         self.assertEqual((1, 3, 2, 3, 1, 0), metadata(self.query()))
+
+    def test_autorun_admission_preserves_stop_at_reservation_checkpoint(self):
+        Path(self.tmp.name, "main.py").write_text("pass\n")
+        self.agent._config.auto_run = 1
+        before = self.query()
+        reserve = pyble_agent.pyble_boot.maybe_autorun
+
+        def reserve_then_stop(*args):
+            accepted = reserve(*args)
+            self.assertTrue(accepted)
+            self.assertEqual(pyble_runner.RUNNING, self.agent._runner.rsm.state)
+            # Models the pending checkpoint at Agent.autorun's `if accepted`:
+            # the real dispatcher ACKs STOP while the reservation exists,
+            # before committed metadata is allowed to replace its predecessor.
+            self.assertEqual(b"\0", self.send(STOP, request_id=70))
+            self.assertEqual(before, self.query())
+            return accepted
+
+        with patch.object(pyble_agent.pyble_boot, "maybe_autorun",
+                          side_effect=reserve_then_stop):
+            self.assertTrue(self.agent.autorun())
+        admitted = self.query()
+        self.assertEqual((1, 1, 1, 3, 0, 3), metadata(admitted))
+        self.send(STOP, request_id=71)
+        self.assertEqual(admitted, self.query(), "Duplicate STOP is idempotent")
+        executed = []
+        self.agent._runner._exec_fn = lambda *_: executed.append(True)
+        self.agent.poll()
+        stopped = self.query()
+        self.assertEqual((1, 2, 0, 3, 3, 0), metadata(stopped))
+        self.assertEqual([], executed)
+        self.agent.poll()
+        self.send(STOP, request_id=72)
+        self.assertEqual(stopped, self.query())
+        self.assertFalse(self.agent.console._input_active)
+
+    def test_autorun_stop_at_final_codec_checkpoint_is_not_lost(self):
+        Path(self.tmp.name, "main.py").write_text("pass\n")
+        self.agent._config.auto_run = 1
+        before = self.query()
+        validate = pyble_runner._status_fields_valid
+        injected = []
+
+        def validate_then_stop(*fields):
+            validate(*fields)
+            if (fields[2] == 1 and fields[4] == pyble_runner.RUNNING and
+                    fields[5] == pyble_runner.ORIGIN_AUTORUN and not injected):
+                # The real validator's conditional jumps can service STOP
+                # after codec arguments were evaluated. Computing flags in
+                # the caller would therefore still lose this cancellation.
+                injected.append(True)
+                self.assertEqual(b"\0", self.send(STOP, request_id=73))
+                self.assertEqual(before, self.query())
+
+        with patch.object(pyble_runner, "_status_fields_valid",
+                          side_effect=validate_then_stop):
+            self.assertTrue(self.agent.autorun())
+        self.assertEqual([True], injected)
+        self.assertEqual((1, 1, 1, 3, 0, 3), metadata(self.query()))
+        executed = []
+        self.agent._runner._exec_fn = lambda *_: executed.append(True)
+        self.agent.poll()
+        self.assertEqual((1, 2, 0, 3, 3, 0), metadata(self.query()))
+        self.assertEqual([], executed)
+
+    def test_admission_keeps_origin_validation_and_default_mode_origin(self):
+        runner = self.agent._runner
+        before = runner.run_status()
+        self.assertEqual(0, runner.handle_run(b"\x01pass"))
+        for invalid in (0, 4, "source"):
+            with self.subTest(origin=invalid):
+                with self.assertRaises(ValueError):
+                    runner.commit_reserved_run(invalid)
+                self.assertEqual(before, runner.run_status())
+                self.assertIsNone(runner._pending_status_id)
+        self.assertTrue(runner.commit_reserved_run())
+        admitted = runner.run_status()
+        self.assertEqual((1, 1, 1, 2, 0, 1), metadata(admitted))
+        self.assertFalse(runner.commit_reserved_run())
+        self.assertEqual(admitted, runner.run_status())
 
     def test_counter_exhaustion_refuses_without_reusing_identity(self):
         runner = self.agent._runner
