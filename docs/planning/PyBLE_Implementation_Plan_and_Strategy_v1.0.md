@@ -133,7 +133,7 @@ The inspected repository already contains the following capabilities and develop
 | Release profiles | Five exact hardware profiles, including four ESP profiles and Pico 2 W | Treat exact configurations—not chip-family names—as the support unit |
 | Architecture | Monorepo with app, firmware, protocol, tests, website, and documentation | Keep changes atomic across components |
 | Governance | Specification-first, red/green/refactor, DCO, clean-room and license gates | Integrate the plan with existing contribution rules |
-| Next firmware direction | v0.7.0 “Reliable Projects” is proposed, not approved | Select and approve scope before implementing new behavior |
+| Next firmware direction | The first run/session-status increment is in development; the remaining v0.7.0 “Reliable Projects” scope is proposed | Complete its native/portable, app and hardware evidence before admitting another capability |
 
 The existing five profiles are `esp32-4mb`, `esp32-s3-n16r8`, `waveshare-esp32-s3-lcd-147b`, `esp32-c3-4mb`, and `rpi-pico2-w`. Preserve their documented flash, PSRAM, revision, and exact-board constraints. Board image identity is not physical-board detection or authorization.[^readme]
 
@@ -279,11 +279,12 @@ New filenames and formats proposed in this plan are not existing interfaces. Pre
 
 ## 1 November selected firmware continuation
 
-The user's roadmap implementation request selects the first PYB-017.1 →
-PYB-018 run/session-status increment. [The execution record](../developments/2026-q4-reliable-workflow/firmware-v070/00_Execution_Record.md)
+Implementation follows the preceding recommendation to deliver PYB-017.1 →
+PYB-018 run/session status first under the user's roadmap implementation request.
+[The execution record](../developments/2026-q4-reliable-workflow/firmware-v070/00_Execution_Record.md)
 tracks specification, red/green implementation, app integration, independent
-worktrees and actual candidate qualification. Firmware0.7.0-dev.1 and companion
-app0.4.0+10 are development identities, with remaining Reliable Projects scope
+worktrees and actual candidate qualification. Firmware `0.7.0-dev.1` and companion
+app `0.4.0+10` are development identities, with remaining Reliable Projects scope
 and public release admission still pending. This early slice follows §6.3's
 explicit scope substitution; store reviews and participant work are separate.
 The prior app0.3 admission and source-bound hardware limits remain historical.

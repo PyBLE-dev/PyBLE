@@ -150,7 +150,8 @@ Acceptance criteria below remain the completion authority. The [C1-S1 execution 
 
 ### 3.6 Optional capacity: support, documentation and future design
 
-On 1 November the user selected the first PYB-017.1/PYB-018 run-status increment.
+On 1 November implementation began with the recommended first
+PYB-017.1/PYB-018 run-status increment under the user's roadmap request.
 Its contract is specified and implementation/qualification is tracked in the
 [firmware execution record](firmware-v070/00_Execution_Record.md). Other expansion
 items remain proposed; this does not close participant or distribution work.
@@ -166,12 +167,22 @@ items remain proposed; this does not close participant or distribution work.
 
 ## 4. Conditional expansion backlog and complete parent traceability
 
-Parents PYB-001–016 map to the first-cycle table. PYB-017 has a design leaf above; PYB-018–032 remain proposed epics needing refinement, named ownership, sizing and admission. Future-stage P0 does not interrupt the current cycle automatically.
+Parents PYB-001–016 map to the first-cycle table. The selected PYB-017/PYB-018
+slice has the contract and delivery breakdown below; PYB-019–032 remain proposed
+epics needing refinement, named ownership, sizing and admission. Future-stage
+P0 does not interrupt the current cycle automatically.
+
+| Selected leaf | Outcome and verification | Tracking / current state |
+|---|---|---|
+| PYB-017.1 | Define the committed snapshot, capability, query/events, session ownership and cross-version vectors before implementation | [ADR-0049](../../decisions/0049-query-run-state-after-reconnect.md), PBLE/1 §6.1; normative commit `27811da` preceded implementation |
+| PYB-018.1 | Native and portable agents report coherent accepted execution, reconnect identity, STOP and terminal reason, including autorun | [#44](https://github.com/PyBLE-dev/PyBLE/issues/44); integrated automated implementation; exact-profile evidence in progress |
+| PYB-018.2 | The app synchronizes before readiness, caches status for late views and preserves legacy fallback | [#45](https://github.com/PyBLE-dev/PyBLE/issues/45); automated implementation integrated; reconnect review and tablet validation in progress |
+| PYB-018.3 | Retain exact builds, workspace-preserving programming and physical cross-version, reconnect, autorun and actual ATT-MTU evidence | [#46](https://github.com/PyBLE-dev/PyBLE/issues/46); [execution record](firmware-v070/00_Execution_Record.md); not complete by host tests alone |
 
 | Parent / source priority | Proposed outcome | Admission and dependencies | Refinement / evidence before claim |
 |---|---|---|---|
-| PYB-017 / P0 future | Select Reliable Projects scope | Cycle evidence; explicit scope/capacity decision | 017.1 above; no implementation by roadmap alone |
-| PYB-018 / P0 future | Query run/session state without stale reconnect assumptions | 017 approved contract | Split user/agent/app slices; reconnect/autorun and cross-version evidence |
+| PYB-017 / Selected slice in progress | Select Reliable Projects scope | User implementation request and first-increment recommendation; remaining scope proposed | 017.1 above; no release admission by roadmap alone |
+| PYB-018 / Selected slice in progress | Query run/session state without stale reconnect assumptions | Selected 017 contract | 018.1–018.3 above; reconnect/autorun and cross-version evidence still required |
 | PYB-019 / P0 future | Inspect or abort a transfer while preserving the prior destination | 017 approved contract | Define idempotent abort and disconnect/resume semantics; fault and compatibility vectors |
 | PYB-020 / P0 future | Obtain complete directory enumeration | 017 approved contract | Define mutation behavior; unchanged directory returns every entry exactly once |
 | PYB-021 / P0 future | Execute files with consistent project semantics | 017 approved contract | Sibling imports, path restoration, module cleanup and fresh-run parity; preserve completed v0.6.1 hardening |
