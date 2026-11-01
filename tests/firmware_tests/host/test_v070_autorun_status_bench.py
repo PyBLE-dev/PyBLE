@@ -39,6 +39,7 @@ class Board:
         self.get_fails_once = False
         self.status_fails_once_after_boot = False
         self.successor_on_reconnect = False
+        self.complete_before_stop = False
 
     def payload(self):
         return struct.pack('<B8sIQBBBB', 1, self.boot, self.run_id, self.revision,
@@ -95,6 +96,8 @@ class Session:
             else:
                 result += struct.pack('<II', len(b.main), zlib.crc32(b.main) & 0xffffffff)
         elif opcode == 0x24:
+            if b.complete_before_stop and b.count(0x24) == 4:
+                b.state, b.reason, b.revision = 2, 1, b.revision + 1
             if b.status_fails_once_after_boot and b.boot_count > 1:
                 b.status_fails_once_after_boot = False
                 result = b'\x05'
@@ -166,6 +169,14 @@ class AutorunProbeTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(3, snapshots['stopped']['terminal_reason'])
         self.assertNotEqual(snapshots['initial']['boot_id'], snapshots['running']['boot_id'])
         self.assertNotEqual(snapshots['running']['boot_id'], snapshots['restored']['boot_id'])
+
+    async def test_natural_completion_cannot_be_reported_as_stop_success(self):
+        b = Board(); b.complete_before_stop = True
+        result = await self.run_probe(b)
+        self.assertEqual('fail', result['status'])
+        self.assertTrue(result['cleanup']['verified'])
+        self.assertNotIn('autorun-stopped-terminal', result['observations'])
+        self.assertEqual(0, b.count(0x21))
 
     async def test_preexisting_main_refuses_without_any_mutation(self):
         b = Board(); original = b.main = b'owner code'
