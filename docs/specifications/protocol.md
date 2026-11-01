@@ -818,7 +818,13 @@ flags0. An all-zero boot token is invalid.
 The snapshot tracks **committed** execution. Manual admission occurs only after
 the exact successful RUN response handoff; autorun has an equivalent accepted
 admission. Admission increments run_id/revision and publishes running, queued,
-its origin and no terminal reason. Pickup clears queued and advances revision.
+its origin and no terminal reason. A query before that commit retains the
+predecessor's snapshot, even while an autorun reservation awaits admission.
+If STOP has already been accepted for that reservation, admission preserves
+the latched cancellation and publishes queued and stopping together. Those
+flags may first appear in the same admission commit and advance revision only
+once; there is no exposed queued-without-stopping repair interval. Pickup
+clears queued and advances revision.
 Accepted STOP of an active run sets stopping once; terminal cleanup publishes
 idle/stopped, flags0. Ordinary completion is done/completed; an uncaught
 exception is error/exception. Origin and run_id remain through terminal state.
