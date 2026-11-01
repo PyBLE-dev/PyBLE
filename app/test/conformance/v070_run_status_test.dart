@@ -339,6 +339,41 @@ void main() {
       expect(conn.state.value, ConnState.disconnected);
     });
 
+    test(
+      'old automatic refresh cannot retire a synchronized new session',
+      () async {
+        final Future<void> initial = conn.handshake();
+        await offer();
+        reply(body());
+        await initial;
+        transport.deliverFrame(evt(PbleOpcode.runState, <int>[1]));
+        await pumpEventQueue();
+        final PbleFrame oldQuery = transport.sentFrames.last;
+        expect(oldQuery.opcode, PbleOpcode.runStatus.code);
+
+        final Future<void> reconnected = conn.handshake();
+        await offer();
+        reply(body(boot: 2, revision: 5));
+        await reconnected;
+        final RunSnapshot recovered = conn.runSnapshot.value!;
+        expect(recovered.bootId, decodeRunSnapshot(body(boot: 2)).bootId);
+        expect(conn.state.value, ConnState.running);
+
+        // The old operation finishes after a fully synchronized new HELLO.
+        // Its generation mismatch is expected and must not fault the new peer.
+        transport.deliverFrame(
+          rsp(PbleOpcode.runStatus, oldQuery.id, <int>[
+            0,
+            ...body(revision: 3, state: 2, reason: 1),
+          ]),
+        );
+        await pumpEventQueue();
+        expect(conn.state.value, ConnState.running);
+        expect(conn.runSnapshot.value, recovered);
+        expect((await conn.deviceInfo()).hasRunStatus, isTrue);
+      },
+    );
+
     test('disposal invalidates cached status', () async {
       final Future<void> pending = conn.handshake();
       await offer();
