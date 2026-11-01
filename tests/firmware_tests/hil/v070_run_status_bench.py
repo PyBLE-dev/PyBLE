@@ -50,7 +50,8 @@ async def negotiate(address, expected_chip, expected_agent, mtu):
         caps = dict(line.split('=', 1) for line in rsp.payload[1:].decode().splitlines() if '=' in line)
         if caps.get('chip') != expected_chip or caps.get('agent') != expected_agent or caps.get('run_status') != '1':
             raise ValueError('candidate chip/version/capability mismatch')
-        c.confirm_caps_mtu(mtu)
+        c.confirm_caps_mtu(int(caps['mtu']))
+        c.limit_write_fragmentation(mtu)
         return c, caps
     except BaseException:
         await c.disconnect()
@@ -164,7 +165,7 @@ async def probe(args):
         return dict(status='pass', observed_utc=datetime.datetime.now(datetime.timezone.utc).isoformat(),
                     source_commit=args.source_commit, profile=args.profile,
                     expected_agent=args.expect_agent, command_fragment_mtu=args.mtu,
-                    backend_mtu=c.backend_mtu, observations=observations,
+                    backend_mtu=c.backend_mtu, negotiated_caps_mtu=int(caps['mtu']), observations=observations,
                     scope='Selected run-status functional BLE bench only; no full release qualification or tablet-row claim')
     finally:
         if c is not None:
