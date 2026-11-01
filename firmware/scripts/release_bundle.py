@@ -758,6 +758,7 @@ _AUDIT_PYBLE_C_SOURCES = (
     "pble_ble.c",
     "pble_info.c",
     "pble_device_config.c",
+    "pble_run_status.c",
     "pble_runner.c",
     "pble_console.c",
     "pble_fs.c",
