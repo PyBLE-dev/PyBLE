@@ -8,7 +8,9 @@ are released independently from this monorepo.
 Selected firmware `0.7.0-dev.1` / companion app `0.4.0+10` development work adds
 committed run/session snapshots after reconnect. The normative contract is
 PBLE/1 §6.1; [the execution record](docs/developments/2026-q4-reliable-workflow/firmware-v070/00_Execution_Record.md)
-tracks physical verification and the remaining roadmap/release gates. Existing
+records both-tablet/five-profile R5 normal workflow and actual Android ATT23/247
+results, four app regression fixes and the retained historical-client GET
+limitation. Full release admission and remaining roadmap work stay pending. Existing
 `0.3.0 (9)` store submissions and firmware `0.6.1` publication remain dated history.
 
 These app, website, and repository-source changes do not designate a new app

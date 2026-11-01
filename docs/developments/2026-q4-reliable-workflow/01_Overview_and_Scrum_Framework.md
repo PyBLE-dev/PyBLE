@@ -9,7 +9,7 @@
 |---|---|
 | Package | PyBLE 2026 Q4 reliable workflow, Cycle 1 (`C1`) |
 | Prepared | 25 September 2026; Asia/Bangkok |
-| Strategy | [Implementation Plan, revision 1.8](../../planning/PyBLE_Implementation_Plan_and_Strategy_v1.0.md) |
+| Strategy | [Implementation Plan, revision 1.10](../../planning/PyBLE_Implementation_Plan_and_Strategy_v1.0.md) |
 | Repository baseline | `23ed764b0ef88dce9720c66fbd1c0655268860cf` |
 | Proposed cycle | 28 September–20 December 2026; six two-week Sprints |
 | Status | C1-S1: six Done, two Prepared and four Awaiting evidence. The 31 October continuation accepts M-02 and app-only M-04; S2 has ten Done tasks and T11 awaiting participants. External TestFlight/Google Play delivery and human capacity remain unresolved; no staffed-team ceremony is inferred |
@@ -30,6 +30,11 @@ roadmap. The [selected backlog leaves](05_Product_Backlog_and_Stories.md#4-condi
 own the breakdown; the [firmware execution record](firmware-v070/00_Execution_Record.md)
 owns source and physical evidence. Remaining Reliable Projects features stay
 proposed, and October's app-only acceptance does not qualify new firmware.
+The selected implementation is ready for review in [PR #47](https://github.com/PyBLE-dev/PyBLE/pull/47):
+R5 normal UI passes on both tablets across all five profiles, and Android actual
+ATT23/247 passes for each. Historical iPad 0.3/Waveshare remains Partial after an
+initial empty-GET stall and successful normal retry; full release admission
+remains pending.
 
 The original calendar and hour allowances remain the planning baseline.
 This continuation adds no claimed staffed Sprint, measured human effort or
@@ -51,7 +56,7 @@ any displaced work without reducing required qualification.
 
 ```mermaid
 flowchart LR
-    Strategy["Strategy revision 1.8"] --> Goal["One Product Goal"]
+    Strategy["Strategy revision 1.10"] --> Goal["One Product Goal"]
     Goal --> Roadmap["Outcome roadmap and milestones"]
     Roadmap --> Product["Ordered Product Backlog"]
     Product --> Planning["Sprint Planning"]
@@ -156,7 +161,7 @@ When facts or priority change, update the canonical file above and its dependent
 
 | Source | Use and precedence |
 |---|---|
-| [Strategy revision 1.8](../../planning/PyBLE_Implementation_Plan_and_Strategy_v1.0.md) | Scope, targets, six-Sprint capacity, three outcomes, Ready program and conditional horizons |
+| [Strategy revision 1.10](../../planning/PyBLE_Implementation_Plan_and_Strategy_v1.0.md) | Scope, targets, six-Sprint capacity, three outcomes, Ready program and conditional horizons |
 | [Public roadmap](../../ROADMAP.md), [README](../../../README.md) | Current capability and distribution baseline |
 | [App specification](../../specifications/App/specs.md), [App TDD](../../specifications/App/TDD.md), [ADR-0010](../../decisions/0010-working-loop-in-memory-document.md) | Persistence contract and recorded implementation deviation; consult frozen working-loop scope |
 | [Firmware roadmap](../../planning/firmware-v0.6.1-v0.7.0-roadmap.md), [PBLE/1](../../specifications/protocol.md) | v0.7 proposals versus frozen wire behavior; old v0.6.1 publication/#24 wording is historical |

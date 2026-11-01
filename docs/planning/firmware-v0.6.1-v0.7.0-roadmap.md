@@ -2,7 +2,7 @@
 
 # Firmware v0.6.1 and v0.7.0 roadmap
 
-Status: **v0.6.1 published on owner confirmation; selected v0.7 run-status increment in development; remaining v0.7 scope PROPOSED**
+Status: **v0.6.1 published on owner confirmation; selected v0.7 run-status increment implemented for review; historical-client limitation retained; remaining v0.7 scope PROPOSED**
 
 Baseline: **qualified firmware v0.6.0**
 
@@ -25,6 +25,9 @@ numbers for that selected slice are no longer placeholders. Other §5 operations
 remain proposals. Source identity is development `0.7.0-dev.1`, not a published
 complete Reliable Projects release. See the [execution record](../developments/2026-q4-reliable-workflow/firmware-v070/00_Execution_Record.md)
 for tests, worktree integration, actual physical results and tracking-order deviation.
+R5 normal UI and actual Android ATT23/247 cover all five profiles; historical
+iPad 0.3/Waveshare retains a Partial GET row despite recovery by normal retry.
+This engineering result does not complete full firmware release admission.
 
 This first-increment scope is the implementation assumption following the
 preceding recommendation and the user's roadmap request. It is not a separate
