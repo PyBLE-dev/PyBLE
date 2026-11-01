@@ -2489,3 +2489,8 @@ These are tracked, release-blocking where noted; they MUST be closed before the 
 - **OI-6 — Label/identify wire encodings. ✅ FULLY CLOSED 2026-07-01 (`[docs]`).** Label half (S3): label max = **24 bytes UTF-8** (over-length → `ERANGE`), frozen in [protocol.md §7](../protocol.md#7-hello--capabilities). Identify remainder (S4): `SET_IDENTIFY_LED` = `[gpio:u8][active_level:u8]` (empty clears; `ERANGE`/`EBADREQ`), `IDENTIFY` = optional `[duration_ds:u8]` (1–50 ds, default 20, 5 Hz), and caps `has_identify`/`identify_led` (gpio byte or `0xFF`), frozen in [protocol.md §4](../protocol.md#4-opcodes)/[§7](../protocol.md#7-hello--capabilities). FR-IDENT-1..6 / FR-BLE-12 DoR met (F-22/F-23). — *(verify: conformance)*
 
 <!-- SPDX-License-Identifier: MIT -->
+
+
+## Selected run-status increment — 2026-11-01
+
+Firmware consumes [PBLE/1 §6.1](../protocol.md#61-additive-runsession-status--selected-v07-increment) as the single normative contract. Both agents expose committed execution only and retire observation at disconnect/VM reset.

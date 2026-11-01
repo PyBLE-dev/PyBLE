@@ -45,6 +45,10 @@ capability key, payload field, UUID, or other PBLE/1 wire byte.
 
 The §2 GATT UUID base (`7079626c-…`), the §3 frame + fragmentation bytes, the §4 opcode set + numbers, and the §8 status set + numbers are now **stable inputs** to the firmware M1 stories (F-01, F-02) and the app `pble` client. The §4/§8 freeze **closes OI-4**: opcode and status numbers no longer change within v1.0. No wire bytes changed at this freeze — it flips status only. **Note:** freezing §4 fixes the *opcode set and its numbers*; the label / identify **payload encodings** (`SET_LABEL` max byte-length, `SET_IDENTIFY_LED` GPIO+active-level encoding, `IDENTIFY` blink-duration bound) remain **OI-6** — owned by §4/§7 and frozen before their S3/S4 stories (F-22, F-23), not at this freeze.
 
+The 2026-11-01 selected v0.7 run-status increment adds `RUN_STATUS` (0x24),
+`RUN_STATUS_CHANGED` (0x42), and optional `run_status=1` under §9. The 24 legacy
+operations retain their bytes. The selected additive contract is §6.1.
+
 ## 1. Goals
 
 - Run, stop, and stream the console of a MicroPython program over BLE.
@@ -481,10 +485,12 @@ execution, interrupt, or reset side effect.
 | `0x21` | STOP | CMD/RSP | Interrupt the running program (KeyboardInterrupt). |
 | `0x22` | SOFT_REBOOT | CMD/RSP | Soft-reset the MicroPython VM. |
 | `0x23` | SET_AUTORUN | CMD/RSP | Enable/disable auto-run of `/main.py` at boot: `[enable:u8]` (0=off default, 1=on), persisted. **Additive opcode** (§9), gated by the `auto_run` cap — older clients ignore it. |
+| `0x24` | RUN_STATUS | CMD/RSP | Empty request, committed execution snapshot and session observation (§6.1), gated by `run_status=1`. |
 | `0x30` | CONSOLE_DATA | EVT | `stdout`/`stderr` bytes from the running program. |
 | `0x31` | CONSOLE_INPUT | CMD | Feed bytes to the program's `stdin`. |
 | `0x40` | RUN_STATE | EVT | State transition: `idle` / `running` / `done` / `error`. |
 | `0x41` | FILE_PUT_ACK | EVT | Cumulative-offset acknowledgement for uploads (§5). |
+| `0x42` | RUN_STATUS_CHANGED | EVT | Versioned execution snapshot (§6.1), only after this session queries RUN_STATUS. |
 | `0x50` | SET_LABEL | CMD/RSP | Set the persisted device label (UTF-8, bounded length); it becomes the advertised name and `DEVICE_INFO.label`. Empty clears it back to `PyBLE-XXXX`. |
 | `0x51` | SET_IDENTIFY_LED | CMD/RSP | Configure the **single** optional identify status-LED: payload is **exactly** `[gpio:u8][active_level:u8]` (`active_level` 0=active-low, 1=active-high), persisted; **exactly empty** payload clears it. Every other length, including trailing bytes, is `EBADREQ`; `ERANGE` if `gpio` is out of range, `EBADREQ` if `active_level`∉{0,1}. Device config only — **not** a routing/pin profile, never exposed to user code. |
 | `0x52` | IDENTIFY | CMD/RSP | Blink the configured identify LED (5 Hz) for an optional `[duration_ds:u8]` (1–50 deciseconds; absent/0 → default 20 = 2 s; >50 clamped). Non-blocking — `RSP{OK}` returns immediately. `EUNSUPPORTED` if no identify LED is configured. |
@@ -738,6 +744,85 @@ become reservable until its predecessor's stdin is empty and inactive;
 terminal cleanup from the predecessor cannot later erase bytes admitted for
 the successor. The clear/deactivate operation is allocation-free, including
 under memory pressure.
+
+### 6.1 Additive run/session status — selected v0.7 increment
+
+Selected 2026-11-01 for PYB-017.1/PYB-018. This is an additive PBLE/1 extension;
+all legacy operations, payloads, status codes, and capability meanings remain.
+Append `run_status=1` to the reference capability payload in HELLO, DEVICE_INFO
+and INFO. Absent/zero means unsupported; clients gate by capability, never by
+SemVer, chip, profile or device identity. The remaining v0.7 roadmap is outside
+this selected increment.
+
+RUN_STATUS (0x24 CMD) has **exactly zero payload bytes**. RSP uses the ordinary
+status prefix and, on OK, exactly the following **25-byte** snapshot. Non-OK
+responses have no snapshot. RUN_STATUS_CHANGED (0x42 EVT, id0) carries the same
+25 bytes without the status prefix. Multibyte integers are little-endian.
+
+| Offset | Field | Encoding and meaning |
+|---|---|---|
+| 0 | schema | u8, exactly1 |
+| 1 | boot_id | 8 opaque nonzero bytes, randomized per agent/VM initialization |
+| 9 | run_id | u32, 0 before any accepted run; advances once per admitted run |
+| 13 | revision | u64, 0…9007199254740991; advances only when committed metadata changes |
+| 21 | state | u8: idle0, running1, done2, error3 (legacy values) |
+| 22 | origin | u8: none0, file1, source2, autorun3 |
+| 23 | terminal_reason | u8: none0, completed1, exception2, stopped3 |
+| 24 | flags | bit0 queued (admitted, not picked up); bit1 stopping (STOP accepted, not terminal); other bits zero |
+
+Boot identity is ephemeral correlation metadata, not authorization, a persistent
+identifier or physical-board detection. Obtain it independently from the
+platform random provider, never a MAC, serial number, label, clock or source
+text. Initialization failure fails closed. Reconnect preserves the token; VM
+reset replaces it. The initial snapshot has run_id=revision=0, idle/none/none,
+flags0. An all-zero boot token is invalid.
+
+The snapshot tracks **committed** execution. Manual admission occurs only after
+the exact successful RUN response handoff; autorun has an equivalent accepted
+admission. Admission increments run_id/revision and publishes running, queued,
+its origin and no terminal reason. Pickup clears queued and advances revision.
+Accepted STOP of an active run sets stopping once; terminal cleanup publishes
+idle/stopped, flags0. Ordinary completion is done/completed; an uncaught
+exception is error/exception. Origin and run_id remain through terminal state.
+Inactive or duplicate STOP leaves the snapshot unchanged. Cancellation before
+pickup never executes code and commits its stopped terminal once. Refused,
+malformed or failed-TX admissions leave the previous snapshot unchanged.
+Terminal/stdin cleanup and successor admission cannot expose mixed generations.
+RUN when run_id is4294967295 returns ERANGE before admission; VM reset is needed
+for another run. At most admission, pickup, STOP intent and terminal advance
+revision per run, so it stays within the specified exact-integer bound.
+
+Reject other lengths/schema/enums, reserved flags, revisions above the bound,
+flags outside running, reason other than none for running, initial run_id0 with
+noninitial metadata, or nonzero run_id with origin none. For a nonzero run_id,
+idle requires stopped, done requires completed, and error requires exception;
+terminal snapshots have flags0. Nonzero run_id requires revision at least run_id. Advertised malformed status is a protocol fault,
+never an idle fallback.
+
+A query enables status observation for **that negotiated connection/VM session**
+before capturing its snapshot. Repeated queries are safe and do not execute code
+or change files/configuration. Disconnect retires observation; a successor must
+query again. Event bytes and transport token are captured coherently; an old
+terminal event cannot acquire a successor run's identity, and an event cannot
+retarget another session. Events may coalesce intermediate queued/stopping
+states and use the existing bounded control-delivery path. No unbounded history,
+user-code execution, filesystem work or wait for a user program occurs in a
+query/BLE callback. Queries work during active execution, autorun and console
+load. Intermediate-event delivery has no deadline: a stalled worker may delay a
+stopping event until its next publication checkpoint. Explicit queries remain
+authoritative; no dedicated publisher task is required. Existing session validation, generic-response reservation and closing
+precedence apply; SOFT_REBOOT closing returns EBUSY rather than recycled state.
+
+Clients attach observation before querying, cache the latest valid snapshot for
+late subscribers, and publish Ready/Running only after initial synchronization.
+For one boot_id, higher revisions replace prior state; lower revisions are
+ignored, equal identical data is idempotent, equal conflicting data is a protocol
+fault. A new boot_id on a still-live connection requires reconnect. Connection
+retirement invalidates its cache. Tagged status is authoritative for capable
+peers; legacy RUN_STATE cannot overwrite it. A legacy event may prompt a bounded
+refresh. Absent capability retains the legacy workflow and unknown-key/event
+tolerance. No console retention, run history, projects or new reset behavior is
+promised by this increment.
 
 ## 7. HELLO & capabilities
 
