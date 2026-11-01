@@ -56,7 +56,7 @@ void main() {
         };
         _Session? active;
         try {
-          active = await _open();
+          active = await _open(onStage: (stage) => result['stage'] = stage);
           final info = await active.connection.deviceInfo();
           expect(info.hasRunStatus, isTrue);
           expect(info.mtu, _requestedMtu);
@@ -88,7 +88,7 @@ void main() {
 
           // Fresh production connection performs HELLO/status only. No RUN,
           // upload, STOP, or other board write is used to discover execution.
-          active = await _open();
+          active = await _open(onStage: (stage) => result['stage'] = stage);
           final recovered = active.connection.runSnapshot.value!;
           expect(active.connection.state.value, ConnState.running);
           expect(recovered.state, RunState.running);
@@ -188,14 +188,15 @@ Map<String, Object?> _snapshot(RunSnapshot value) => <String, Object?>{
   'stopping': value.stopping,
 };
 
-Future<_Session> _open() async {
+Future<_Session> _open({required void Function(String) onStage}) async {
+  onStage('stopping-scan');
   await FlutterBluePlus.stopScan();
   final BluetoothDevice device;
   if (_boardId.isNotEmpty) {
     device = BluetoothDevice.fromId(_boardId);
   } else {
     final found = Completer<BluetoothDevice>();
-    final subscription = FlutterBluePlus.scanResults.listen((hits) {
+    final subscription = FlutterBluePlus.onScanResults.listen((hits) {
       for (final hit in hits) {
         if (hit.advertisementData.advName == _boardName && !found.isCompleted) {
           found.complete(hit.device);
@@ -206,14 +207,18 @@ Future<_Session> _open() async {
       await FlutterBluePlus.startScan(
         withServices: <Guid>[Guid(Pble.serviceUuid)],
       );
-      device = await found.future.timeout(const Duration(seconds: 20));
+      final hit = await found.future.timeout(const Duration(seconds: 20));
+      device = BluetoothDevice.fromId(hit.remoteId.str);
+      onStage('service-filtered-selected-board-observed');
     } finally {
       await FlutterBluePlus.stopScan();
       await subscription.cancel();
     }
   }
-  await device.connect(mtu: null, timeout: const Duration(seconds: 20));
   try {
+    onStage('connecting');
+    await device.connect(mtu: null, timeout: const Duration(seconds: 20));
+    onStage('requesting-att-mtu');
     final observed = await device.requestMtu(_requestedMtu);
     expect(observed, _requestedMtu);
     expect(
@@ -221,6 +226,7 @@ Future<_Session> _open() async {
       _requestedMtu,
       reason: 'Command fragmentation alone does not prove ATT MTU.',
     );
+    onStage('discovering-service');
     final services = await device.discoverServices();
     final service = services.singleWhere(
       (s) => s.uuid == Guid(Pble.serviceUuid),
@@ -247,6 +253,7 @@ Future<_Session> _open() async {
             connection.state.value == ConnState.running,
       );
       expect((await connection.deviceInfo()).mtu, _requestedMtu);
+      onStage('synchronized');
       return session;
     } catch (_) {
       await session.close();
