@@ -3,6 +3,15 @@
 
 # Firmware v0.7 development — committed run/session status
 
+**Final-review correction in progress:** a legal scheduled STOP between Pico
+autorun reservation and admission safely cancels execution, but the initial
+candidate's first committed snapshot omits stopping intent. Specification and
+red/green regressions now cover that window; corrected Pico source is
+`f3ab210df8b253a59b2c81db17d1aa639da78f53`. Its new build and affected physical
+rows are pending. The matrix below retains initial-candidate evidence rather
+than relabeling it as a corrected-Pico pass. Actual frozen ESP inputs exclude
+the changed portable runner; the four ESP artifacts and app `b07e24d` are unchanged.
+
 Started 1 November 2026 under the user's firmware-roadmap request and preceding
 recommendation to deliver PYB-017.1 → PYB-018 first. The user supplied Lenovo,
 iPad and all five boards. This record owns the selected increment's engineering
