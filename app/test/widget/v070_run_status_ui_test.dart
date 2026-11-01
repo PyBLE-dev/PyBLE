@@ -13,9 +13,8 @@ class _StatusConnection extends FakeConnection
     implements ConnectionRunStatusSource {
   _StatusConnection({
     required RunSnapshot? snapshot,
-    ConnState initial = ConnState.ready,
-  }) : runSnapshot = ValueNotifier<RunSnapshot?>(snapshot),
-       super(initial: initial);
+    super.initial = ConnState.ready,
+  }) : runSnapshot = ValueNotifier<RunSnapshot?>(snapshot);
 
   @override
   final ValueNotifier<RunSnapshot?> runSnapshot;

@@ -122,6 +122,16 @@ abstract interface class ConnectionDirectoryListingSource {
   Future<DirectoryListing> listDirWithMetadata(String path);
 }
 
+/// Optional cached execution metadata. Widgets can attach after negotiation
+/// without losing the synchronized state to an earlier broadcast event.
+///
+/// A null value means no synchronized snapshot is available for this session.
+/// Old firmware retains the ordinary [Connection.runState] workflow.
+abstract interface class ConnectionRunStatusSource {
+  ValueListenable<RunSnapshot?> get runSnapshot;
+  Future<RunSnapshot> refreshRunStatus();
+}
+
 /// Returns the current local session stamp for [connection].
 ///
 /// Ordinary injected/fake [Connection] implementations need not implement

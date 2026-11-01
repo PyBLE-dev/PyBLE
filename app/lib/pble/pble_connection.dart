@@ -16,6 +16,7 @@ import 'engine.dart';
 import 'frame.dart';
 import 'hello.dart';
 import 'pble_constants.dart';
+import 'run_snapshot_codec.dart';
 import 'types.dart'; // re-exports pble_exception.dart (the neutral type family)
 
 /// The real, wire-backed [Connection] (FR-CONN-1, FR-PBLE-14).
@@ -38,7 +39,11 @@ import 'types.dart'; // re-exports pble_exception.dart (the neutral type family)
 /// table to a distinct typed exception (FR-PBLE-13). `lib/pble` is the ONLY layer
 /// that knows the wire; the UI binds to this via [Connection] and never sees a
 /// frame or opcode.
-class PbleConnection implements Connection, ConnectionDirectoryListingSource {
+class PbleConnection
+    implements
+        Connection,
+        ConnectionDirectoryListingSource,
+        ConnectionRunStatusSource {
   PbleConnection({
     required PbleEngine engine,
     required String appName,
@@ -96,6 +101,9 @@ class PbleConnection implements Connection, ConnectionDirectoryListingSource {
 
   late final StreamSubscription<PbleFrame> _eventsSub;
   HelloResult? _hello;
+  final ValueNotifier<RunSnapshot?> _runSnapshot = ValueNotifier<RunSnapshot?>(
+    null,
+  );
 
   // fromLink observation (null when constructed directly over a transport).
   BleLink? _observedLink;
@@ -114,6 +122,8 @@ class PbleConnection implements Connection, ConnectionDirectoryListingSource {
         case BleLinkState.reconnecting:
           _handshakeGeneration++;
           _state.value = ConnState.connecting;
+          _hello = null;
+          _runSnapshot.value = null;
         case BleLinkState.connected:
           // Re-negotiate HELLO on every (re)connect (TDD §7.3). A failed
           // handshake surfaces as ConnState.disconnected; the typed error is
@@ -123,6 +133,7 @@ class PbleConnection implements Connection, ConnectionDirectoryListingSource {
           _handshakeGeneration++;
           _hello = null;
           _state.value = ConnState.disconnected;
+          _runSnapshot.value = null;
           // Abort any in-flight transfer NOW: a reconnect re-HELLOs and the
           // board clears its transfer context on disconnect, so an orphaned
           // download/ACK completer would otherwise await forever (the app
@@ -179,6 +190,9 @@ class PbleConnection implements Connection, ConnectionDirectoryListingSource {
   @override
   Stream<ConsoleEvent> get console => _consoleController.stream;
 
+  @override
+  ValueListenable<RunSnapshot?> get runSnapshot => _runSnapshot;
+
   /// Runs HELLO and caches the negotiated result. On success the state moves to
   /// `ready`; on any failure it returns to `disconnected` and the typed error
   /// (e.g. [UnsupportedProtocolException], a §8 subtype) is rethrown.
@@ -186,16 +200,30 @@ class PbleConnection implements Connection, ConnectionDirectoryListingSource {
     _ensureActive();
     final int generation = ++_handshakeGeneration;
     _state.value = ConnState.connecting;
+    _hello = null;
+    _runSnapshot.value = null;
     try {
       final HelloResult hello = await _negotiator.negotiate();
       if (_disposed || generation != _handshakeGeneration) {
         throw const NotConnectedException('connection changed during HELLO');
       }
       _hello = hello;
-      _state.value = ConnState.ready;
+      if (hello.caps.hasRunStatus) {
+        await refreshRunStatus();
+        if (_disposed || generation != _handshakeGeneration) {
+          throw const NotConnectedException(
+            'connection changed during status synchronization',
+          );
+        }
+      }
+      _state.value = _runSnapshot.value?.state == RunState.running
+          ? ConnState.running
+          : ConnState.ready;
     } catch (_) {
       if (!_disposed && generation == _handshakeGeneration) {
         _state.value = ConnState.disconnected;
+        _hello = null;
+        _runSnapshot.value = null;
         if (_observedLink != null) {
           // An unusable owned session must not leave the radio connected.
           // Keep the negotiation error as this operation's original failure;
@@ -207,6 +235,80 @@ class PbleConnection implements Connection, ConnectionDirectoryListingSource {
       }
       rethrow;
     }
+  }
+
+  @override
+  Future<RunSnapshot> refreshRunStatus() async {
+    _ensureActive();
+    final HelloResult? hello = _hello;
+    if (hello == null) {
+      throw const NotConnectedException('status requires a negotiated session');
+    }
+    if (!hello.caps.hasRunStatus) {
+      throw const EUnsupported('board does not advertise run status');
+    }
+    final int generation = _handshakeGeneration;
+    final PbleFrame response;
+    try {
+      response = await _engine.request(
+        _cmd(PbleOpcode.runStatus, const <int>[]),
+      );
+    } on PbleTimeoutException {
+      if (!_disposed && generation == _handshakeGeneration) {
+        _retireInvalidRunStatus();
+      }
+      rethrow;
+    }
+    if (_disposed || generation != _handshakeGeneration) {
+      throw const NotConnectedException(
+        'connection changed during status query',
+      );
+    }
+    try {
+      if (response.payload.isEmpty ||
+          (response.payload[0] != PbleStatus.ok.code &&
+              response.payload.length != 1)) {
+        throw const PbleFormatException('invalid run status response');
+      }
+      _checkStatus(response);
+      _acceptRunSnapshot(
+        decodeRunSnapshot(Uint8List.sublistView(response.payload, 1)),
+      );
+      return _runSnapshot.value!;
+    } on PbleFormatException {
+      _retireInvalidRunStatus();
+      rethrow;
+    }
+  }
+
+  void _acceptRunSnapshot(RunSnapshot next) {
+    final RunSnapshot? previous = _runSnapshot.value;
+    if (previous != null) {
+      if (previous.bootId != next.bootId) {
+        throw const PbleFormatException(
+          'run status boot changed in a live session',
+        );
+      }
+      if (next.revision < previous.revision) return;
+      if (next.revision == previous.revision) {
+        if (next != previous) {
+          throw const PbleFormatException('conflicting run status revision');
+        }
+        return;
+      }
+    }
+    _runSnapshot.value = next;
+    if (!_runStateController.isClosed) _runStateController.add(next.state);
+    _applyRunStateToConn(next.state);
+  }
+
+  void _retireInvalidRunStatus() {
+    _hello = null;
+    _state.value = ConnState.disconnected;
+    _runSnapshot.value = null;
+    // Observe asynchronous teardown errors here; the original disposal future
+    // remains available to the owner and is never replaced by this observer.
+    unawaited(dispose().catchError((Object _) {}));
   }
 
   @override
@@ -536,6 +638,7 @@ class PbleConnection implements Connection, ConnectionDirectoryListingSource {
 
     _hello = null;
     _state.value = ConnState.disconnected;
+    _runSnapshot.value = null;
     _abortTransfers(const NotConnectedException('connection disposed'));
     await attempt(() {
       if (_linkListener != null) {
@@ -553,6 +656,7 @@ class PbleConnection implements Connection, ConnectionDirectoryListingSource {
     await attempt(_runStateController.close);
     await attempt(_consoleController.close);
     await attempt(_state.dispose);
+    await attempt(_runSnapshot.dispose);
     if (firstError != null) {
       Error.throwWithStackTrace(firstError!, firstStack!);
     }
@@ -565,7 +669,15 @@ class PbleConnection implements Connection, ConnectionDirectoryListingSource {
     final int op = frame.opcode;
     final Uint8List p = frame.payload;
 
-    if (op == PbleOpcode.runState.code) {
+    if (op == PbleOpcode.runStatusChanged.code) {
+      if (_hello?.caps.hasRunStatus != true) return;
+      try {
+        _acceptRunSnapshot(decodeRunSnapshot(p));
+      } on PbleFormatException {
+        _retireInvalidRunStatus();
+      }
+    } else if (op == PbleOpcode.runState.code) {
+      if (_hello?.caps.hasRunStatus == true) return;
       final RunState rs = _runStateFromByte(p.isEmpty ? 0 : p[0]);
       if (!_runStateController.isClosed) _runStateController.add(rs);
       _applyRunStateToConn(rs);

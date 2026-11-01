@@ -51,6 +51,7 @@ class DeviceInfo {
     this.hasIdentify = false,
     this.identifyLed,
     this.autoRun = false,
+    this.hasRunStatus = false,
   });
 
   /// Opaque, port-defined chip target identifier.
@@ -101,6 +102,9 @@ class DeviceInfo {
 
   /// Whether `/main.py` auto-runs at boot (§4 `SET_AUTORUN`).
   final bool autoRun;
+
+  /// Whether the board supports synchronized, versioned execution snapshots.
+  final bool hasRunStatus;
 }
 
 /// The execution state of user code on the board (protocol.md §6, `RUN_STATE`
@@ -122,6 +126,62 @@ enum RunState {
 
   /// The last run ended with an uncaught error / traceback.
   error,
+}
+
+/// Where the current or last accepted run originated.
+enum RunOrigin { none, file, source, autorun }
+
+/// Why the current generation reached its terminal state.
+enum RunTerminalReason { none, completed, exception, stopped }
+
+/// One coherent, committed execution snapshot from the connected board.
+///
+/// [bootId] is an ephemeral opaque correlation value. It is not an identity,
+/// authorization token, or persistent board registry key.
+final class RunSnapshot {
+  const RunSnapshot({
+    required this.bootId,
+    required this.runId,
+    required this.revision,
+    required this.state,
+    required this.origin,
+    required this.terminalReason,
+    this.queued = false,
+    this.stopping = false,
+  });
+
+  final String bootId;
+  final int runId;
+  final int revision;
+  final RunState state;
+  final RunOrigin origin;
+  final RunTerminalReason terminalReason;
+  final bool queued;
+  final bool stopping;
+
+  @override
+  bool operator ==(Object other) =>
+      other is RunSnapshot &&
+      bootId == other.bootId &&
+      runId == other.runId &&
+      revision == other.revision &&
+      state == other.state &&
+      origin == other.origin &&
+      terminalReason == other.terminalReason &&
+      queued == other.queued &&
+      stopping == other.stopping;
+
+  @override
+  int get hashCode => Object.hash(
+    bootId,
+    runId,
+    revision,
+    state,
+    origin,
+    terminalReason,
+    queued,
+    stopping,
+  );
 }
 
 /// Which console stream a [ConsoleEvent] belongs to (protocol.md §6,
