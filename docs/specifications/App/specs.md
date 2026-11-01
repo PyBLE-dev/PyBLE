@@ -158,6 +158,7 @@ The client implements the PBLE/1 wire contract; it references [protocol.md](../p
 ### 4.6 Code Editor (`lib/editor/`) — FR-EDIT
 
 - **FR-EDIT-1** — The editor MUST provide Python/MicroPython syntax highlighting, line numbers, and auto-indentation (`flutter_code_editor`, with a WebView-hosted editor as the documented fallback per [PRD §16.1](../prd.md)/§23). MUST (*source: PRD §9.3, §16.1; verify: widget; story: A-20*)
+- **FR-EDIT-1A — Delimiter typing safety (2026-11-01).** Typing balanced ASCII parentheses, brackets, braces and quotes through the platform text-input path MUST NOT append extra closing characters to the document. The rich adapter MUST disable the pinned package's optional delimiter-insertion modifiers; auto-indentation, adapter-owned Tab handling and smart-punctuation protection remain. The same balanced source typed one character at a time or pasted as a whole MUST retain its delimiter bytes and caret position. MUST (*source: FR-EDIT-1, ADR-0012; verify: real editor widget/platform editing values and iPadOS/Android HIL*)
 - **FR-EDIT-2** — The editor MUST offer Save and Run actions and MUST support multiple open files via tabs. MUST (*source: PRD §9.3; verify: widget; story: A-20*)
 - **FR-EDIT-3** — The editor MUST provide find and SHOULD provide find/replace. MUST/SHOULD (*source: PRD §9.3; verify: widget; story: A-20*)
 - **FR-EDIT-4** — The editor SHOULD support an external keyboard with common shortcuts (Save, Run, Stop, comment/uncomment, find). SHOULD (*source: PRD §9.3, §13.7; verify: widget; story: A-20*)
