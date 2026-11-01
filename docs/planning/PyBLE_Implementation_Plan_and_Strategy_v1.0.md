@@ -11,9 +11,9 @@
 
 | Field | Value |
 |---|---|
-| Document version | 1.8 — accepted bounded recovery and app-only qualification; channel/pilot continuation; original filename retained |
+| Document version | 1.9 — selected early run-status increment; accepted bounded recovery and app-only qualification; channel/pilot continuation; original filename retained |
 | Prepared | 25 September 2026 |
-| Last reviewed | 31 October 2026; bounded M-02 and app-only M-04 engineering acceptance recorded with exact candidate, firmware and OEM test conditions; device closeout complete; [PR #41](https://github.com/PyBLE-dev/PyBLE/pull/41) merged after all 36 checks on its final head passed; internal TestFlight delivery verified; external submission Waiting for Review; Play open-testing build 9 submitted, Changes in review; delivery pending |
+| Last reviewed | 1 November 2026; selected run-status development increment; prior 31 October acceptance: bounded M-02 and app-only M-04 engineering acceptance recorded with exact candidate, firmware and OEM test conditions; device closeout complete; [PR #41](https://github.com/PyBLE-dev/PyBLE/pull/41) merged after all 36 checks on its final head passed; internal TestFlight delivery verified; external submission Waiting for Review; Play open-testing build 9 submitted, Changes in review; delivery pending |
 | Status | C1-S1 has six tasks Done, two Prepared awaiting pilot setup and four Awaiting evidence; Sprint and SG0 remain unfinished. Bounded recovery and app-only qualification pass scoped engineering review; device closeout is complete. [PR #41](https://github.com/PyBLE-dev/PyBLE/pull/41) merged after all 36 checks on its final head passed. Internal-account TestFlight `0.3.0 (9)` installation and bounded smoke are verified; external build 9 is submitted and Waiting for Review; Google Play open-testing build 9 is submitted with Changes in review; approval and delivery remain pending. Human capacity and recruitment dates need replanning; no new protocol behavior approved |
 | Product | PyBLE — Python over Bluetooth Low Energy |
 | Organization | SciLabPro |
@@ -32,6 +32,7 @@
 
 | Revision | Change |
 |---|---|
+| 1.9 | Selected early PYB-017.1/PYB-018 run-status development with firmware0.7.0-dev.1 and companion app0.4.0+10; retained distribution/pilot and full-release boundaries |
 | 1.0 | Initial strategy and proposed 12-week program |
 | 1.1 | Updated baseline after PR #33; separated publication from installed-build evidence; mapped remaining work to current code; bounded the schedule and corrected release/pilot dependencies |
 | 1.2 | Focused pilot selection and useful second tasks; contextualized retention; defined one version-bound PyBLE Ready badge, installation labels, maintenance rules, and a staged existing-profile/partner pilot |
@@ -275,6 +276,17 @@ New filenames and formats proposed in this plan are not existing interfaces. Pre
 - App version, firmware version, protocol compatibility, and store build identity remain separate.
 - A valid hash proves integrity relative to a manifest, not that a publisher or nearby device is trustworthy.
 - Device labels and advertised identifiers help selection but do not authenticate ownership.
+
+## 1 November selected firmware continuation
+
+The user's roadmap implementation request selects the first PYB-017.1 →
+PYB-018 run/session-status increment. [The execution record](../developments/2026-q4-reliable-workflow/firmware-v070/00_Execution_Record.md)
+tracks specification, red/green implementation, app integration, independent
+worktrees and actual candidate qualification. Firmware0.7.0-dev.1 and companion
+app0.4.0+10 are development identities, with remaining Reliable Projects scope
+and public release admission still pending. This early slice follows §6.3's
+explicit scope substitution; store reviews and participant work are separate.
+The prior app0.3 admission and source-bound hardware limits remain historical.
 
 ## 6. Release and protocol strategy
 

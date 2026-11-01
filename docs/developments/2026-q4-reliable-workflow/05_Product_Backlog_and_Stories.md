@@ -150,6 +150,12 @@ Acceptance criteria below remain the completion authority. The [C1-S1 execution 
 
 ### 3.6 Optional capacity: support, documentation and future design
 
+On 1 November the user selected the first PYB-017.1/PYB-018 run-status increment.
+Its contract is specified and implementation/qualification is tracked in the
+[firmware execution record](firmware-v070/00_Execution_Record.md). Other expansion
+items remain proposed; this does not close participant or distribution work.
+
+
 | ID / type / role | Outcome | Testable acceptance criteria | Dependencies and verification |
 |---|---|---|---|
 | PYB-007.1 / User story / App + QA | As a user seeking help, I can preview a diagnostic export before sharing it | User explicitly initiates export; preview/redaction precedes sharing; observed, supplied and unknown identity fields stay distinct; omit source, file/console contents, secrets and persistent device identifiers by default; no automatic upload; current HELLO is not treated as an artifact hash | 003 and approved export contract; privacy/serialization/UI tests and relevant device checks. Manual template remains usable if this story is not selected |
