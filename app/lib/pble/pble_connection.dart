@@ -460,32 +460,52 @@ class PbleConnection
   @override
   Future<Uint8List> getFile(String path, {ProgressCb? onProgress}) async {
     _beginTransfer();
+    final int generation = _handshakeGeneration;
+    _Download? download;
     try {
       // FILE_GET_BEGIN 0x12 [offset:u32][plen][path] → RSP [status][total:u32].
-      final PbleFrame begin = await _engine.request(
+      await _engine.request(
         _cmd(PbleOpcode.fileGetBegin, <int>[..._u32(0), ..._pathField(path)]),
+        onResponseAccepted: (PbleFrame begin) {
+          _ensureActive();
+          if (generation != _handshakeGeneration) {
+            throw const NotConnectedException('download session retired');
+          }
+          _checkStatus(begin);
+          if (begin.payload.length != 5) {
+            throw const PbleFormatException('invalid download BEGIN size');
+          }
+          final int total = _readU32(begin.payload, 1);
+          final _Download accepted = _Download(
+            total: total,
+            onProgress: onProgress,
+          );
+          download = accepted;
+          _download = accepted;
+          _armDownloadStall(accepted);
+          onProgress?.call(TransferProgress(sent: 0, total: total));
+        },
       );
       _ensureActive();
-      _checkStatus(begin);
-      final int total = _readU32(begin.payload, 1);
-
-      final _Download download = _Download(
-        total: total,
-        onProgress: onProgress,
-      );
-      _download = download;
-      _armDownloadStall(download);
-      onProgress?.call(TransferProgress(sent: 0, total: total));
+      if (generation != _handshakeGeneration) {
+        throw const NotConnectedException('download session retired');
+      }
+      final _Download? accepted = download;
+      if (accepted == null) {
+        throw const PbleFormatException('download BEGIN not accepted');
+      }
 
       // GET_DATA events accumulate; GET_END verifies size + whole-file CRC
       // BEFORE completing (FR-PBLE-9) — a mismatch completes with [ECrc]. The
       // inactivity watchdog (re-armed per chunk) and the link-drop abort bound
       // this await: it can never hang past [dataTimeout] of silence.
-      return await download.completer.future;
+      return await accepted.completer.future;
     } finally {
-      _downloadStallTimer?.cancel();
-      _downloadStallTimer = null;
-      _download = null;
+      if (identical(_download, download)) {
+        _downloadStallTimer?.cancel();
+        _downloadStallTimer = null;
+        _download = null;
+      }
       _endTransfer();
     }
   }
@@ -758,11 +778,20 @@ class PbleConnection
       }
     } else if (op == PbleOpcode.fileGetData.code) {
       final _Download? d = _download;
-      if (d == null) return;
+      if (d == null || d.completer.isCompleted) return;
+      if (p.length < 4) {
+        _rejectDownload(d, const PbleFormatException('invalid download DATA'));
+        return;
+      }
       // [offset:u32][bytes] — bytes arrive in order for a single transfer.
+      final int offset = _readU32(p, 0);
       final Uint8List bytes = p.length > 4
           ? Uint8List.sublistView(p, 4)
           : Uint8List(0);
+      if (offset != d.received || bytes.length > d.total - d.received) {
+        _rejectDownload(d, const ECrc('download chunk offset/size mismatch'));
+        return;
+      }
       d.builder.add(bytes);
       d.received += bytes.length;
       _armDownloadStall(d); // data flowed: push the stall deadline out
@@ -770,14 +799,17 @@ class PbleConnection
     } else if (op == PbleOpcode.fileGetEnd.code) {
       final _Download? d = _download;
       if (d == null || d.completer.isCompleted) return;
+      if (p.length != 4) {
+        _rejectDownload(d, const PbleFormatException('invalid download END'));
+        return;
+      }
       final int crc = _readU32(p, 0);
       final Uint8List assembled = d.builder.toBytes();
       if (assembled.length != d.total || pbleCrc32(assembled) != crc) {
         // Never report a bad whole-file transfer as success (FR-PBLE-9).
-        d.completer.completeError(
-          const ECrc('download whole-file size/CRC mismatch'),
-        );
+        _rejectDownload(d, const ECrc('download whole-file size/CRC mismatch'));
       } else {
+        _downloadStallTimer?.cancel();
         d.completer.complete(assembled);
       }
     } else if (op == PbleOpcode.filePutAck.code) {
@@ -807,6 +839,13 @@ class PbleConnection
         u.nextOffset = u.watermark;
         _pumpWindow(u);
       }
+    }
+  }
+
+  void _rejectDownload(_Download download, PbleException error) {
+    _downloadStallTimer?.cancel();
+    if (!download.completer.isCompleted) {
+      download.completer.completeError(error);
     }
   }
 
@@ -905,7 +944,14 @@ class PbleConnection
 /// In-progress download context (the only per-transfer state on [PbleConnection]
 /// beyond the active-writer flag).
 class _Download {
-  _Download({required this.total, required this.onProgress});
+  _Download({required this.total, required this.onProgress}) {
+    // DATA/END, watchdog expiry, or retirement can fail this completion before
+    // the final BEGIN write ACK lets getFile await it. Observe errors now while
+    // preserving the exact future and error for that eventual caller.
+    unawaited(
+      completer.future.then<void>((_) {}, onError: (Object _, StackTrace _) {}),
+    );
+  }
 
   final int total;
   final ProgressCb? onProgress;
