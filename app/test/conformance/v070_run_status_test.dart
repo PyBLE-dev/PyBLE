@@ -234,6 +234,111 @@ void main() {
       expect(conn.state.value, ConnState.running);
     });
 
+    test('accepted Run returns before its automatic status refresh', () async {
+      final Future<void> initial = conn.handshake();
+      await offer();
+      reply(body(revision: 3, state: 2, reason: 1));
+      await initial;
+      final Future<void> run = conn.runSource('print(1)');
+      await pumpEventQueue();
+      final PbleFrame command = transport.sentFrames.last;
+      transport.deliverFrame(
+        statusRsp(PbleOpcode.run, command.id, PbleStatus.ok),
+      );
+      await run;
+      await pumpEventQueue();
+      expect(transport.sentFrames.last.opcode, PbleOpcode.runStatus.code);
+      expect(
+        transport.sentFrames.where(
+          (f) => f.opcode == PbleOpcode.runStatus.code,
+        ),
+        hasLength(2),
+      );
+      final Uint8List next = body(revision: 4);
+      ByteData.sublistView(next).setUint32(9, 2, Endian.little);
+      reply(next);
+      await pumpEventQueue();
+      expect(conn.runSnapshot.value?.runId, 2);
+      expect(conn.state.value, ConnState.running);
+    });
+
+    test(
+      'accepted Stop refreshes state even when tagged events were lost',
+      () async {
+        final Future<void> initial = conn.handshake();
+        await offer();
+        reply(body());
+        await initial;
+        final Future<void> stopped = conn.stop();
+        await pumpEventQueue();
+        final PbleFrame command = transport.sentFrames.last;
+        transport.deliverFrame(
+          statusRsp(PbleOpcode.stop, command.id, PbleStatus.ok),
+        );
+        await stopped;
+        await pumpEventQueue();
+        expect(transport.sentFrames.last.opcode, PbleOpcode.runStatus.code);
+        reply(body(revision: 4, state: 0, reason: 3));
+        await pumpEventQueue();
+        expect(
+          conn.runSnapshot.value?.terminalReason,
+          RunTerminalReason.stopped,
+        );
+        expect(conn.state.value, ConnState.ready);
+      },
+    );
+
+    test(
+      'legacy hints coalesce to one pending query and one follow-up',
+      () async {
+        final Future<void> initial = conn.handshake();
+        await offer();
+        reply(body());
+        await initial;
+        for (int i = 0; i < 20; i++) {
+          transport.deliverFrame(evt(PbleOpcode.runState, <int>[2]));
+        }
+        await pumpEventQueue();
+        expect(
+          transport.sentFrames.where(
+            (f) => f.opcode == PbleOpcode.runStatus.code,
+          ),
+          hasLength(2),
+        );
+        expect(conn.state.value, ConnState.running);
+        reply(body());
+        await pumpEventQueue();
+        expect(
+          transport.sentFrames.where(
+            (f) => f.opcode == PbleOpcode.runStatus.code,
+          ),
+          hasLength(3),
+        );
+        reply(body(revision: 3, state: 2, reason: 1));
+        await pumpEventQueue();
+        expect(transport.sentFrames, hasLength(4));
+        expect(conn.state.value, ConnState.ready);
+      },
+    );
+
+    test('later refresh timeout does not reclassify an accepted Run', () async {
+      final Future<void> initial = conn.handshake();
+      await offer();
+      reply(body(revision: 3, state: 2, reason: 1));
+      await initial;
+      final Future<void> run = conn.runSource('print(1)');
+      await pumpEventQueue();
+      final PbleFrame command = transport.sentFrames.last;
+      transport.deliverFrame(
+        statusRsp(PbleOpcode.run, command.id, PbleStatus.ok),
+      );
+      await run;
+      await pumpEventQueue();
+      expect(transport.sentFrames.last.opcode, PbleOpcode.runStatus.code);
+      await Future<void>.delayed(const Duration(milliseconds: 5100));
+      expect(conn.state.value, ConnState.disconnected);
+    });
+
     test('disposal invalidates cached status', () async {
       final Future<void> pending = conn.handshake();
       await offer();
