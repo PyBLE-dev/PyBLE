@@ -127,7 +127,7 @@ implementation are reconciled. The existing open-testing review is unchanged.
 A selected `0.7.0-dev.1` development increment adds capability-gated execution
 status after reconnect, with companion app `0.4.0+10`. Its [execution record](docs/developments/2026-q4-reliable-workflow/firmware-v070/00_Execution_Record.md)
 tracks actual qualification; the remaining Reliable Projects roadmap and a
-public firmware0.7.0 release remain pending. Published firmware below is separate.
+public firmware `0.7.0` release remain pending. Published firmware below is separate.
 
 The board-side agent is built with upstream MicroPython and exposes PBLE/1 as a
 BLE GATT peripheral. It supports:

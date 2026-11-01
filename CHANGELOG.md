@@ -9,7 +9,7 @@ Selected firmware `0.7.0-dev.1` / companion app `0.4.0+10` development work adds
 committed run/session snapshots after reconnect. The normative contract is
 PBLE/1 §6.1; [the execution record](docs/developments/2026-q4-reliable-workflow/firmware-v070/00_Execution_Record.md)
 tracks physical verification and the remaining roadmap/release gates. Existing
-0.3.0(9) store submissions and firmware0.6.1 publication remain dated history.
+`0.3.0 (9)` store submissions and firmware `0.6.1` publication remain dated history.
 
 These app, website, and repository-source changes do not designate a new app
 or firmware release. Firmware v0.6.1 is published on the owner's confirmation;
