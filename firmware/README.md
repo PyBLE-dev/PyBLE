@@ -11,7 +11,7 @@ complete release admission; see the
 
 ## Reference build variants
 
-| PyBLE target | Upstream IDF target | Public browser profile |
+| PyBLE target | Upstream target | Public installation profile |
 |---|---|---|
 | `esp32` | `esp32` | `esp32-4mb` |
 | `esp32-s3` | `esp32s3` | `esp32-s3-n16r8` |
@@ -51,10 +51,18 @@ firmware/scripts/build.sh esp32-c3
 firmware/scripts/build_rp2.sh --plan rpi-pico2-w
 ```
 
-Or build the complete matrix:
+Or build the complete ESP matrix:
 
 ```sh
 firmware/scripts/build_all.sh
+```
+
+Build Pico 2 W through its separate pinned ARM toolchain and RP2 build plane:
+
+```sh
+firmware/scripts/install_arm_toolchain.sh
+firmware/scripts/install_picotool.sh
+firmware/scripts/build_rp2.sh rpi-pico2-w
 ```
 
 Build outputs are local and ignored. Release artifacts are published through
