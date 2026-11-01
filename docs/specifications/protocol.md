@@ -564,6 +564,25 @@ before wrap, so the quiescence seam cannot reintroduce ABA.
 - **`FILE_GET_DATA` (0x13, EVT, id 0)** `[offset:u32][bytes]` — one BLE packet each.
 - **`FILE_GET_END` (0x14, EVT, id 0)** `[crc32:u32]` — whole-file CRC over `[0,total_size)` (the worker CRCs a skipped prefix on a resume-download too).
 
+**Client download acceptance cut (clarified 2026-11-01).** A valid correlated
+`FILE_GET_BEGIN RSP{OK,total_size}` can be followed immediately by DATA/END,
+including an empty file's END with CRC0. These notifications may arrive before
+the client's final acknowledged command-write Future settles. The client
+installs its validated download context at the exact in-deadline BEGIN-response
+receive cut, before dispatching subsequent events; it does not wait for that
+write Future to finish before accepting stream events. Decoded response/event
+receive order is preserved, so events received before the matching accepted
+BEGIN, after a failed BEGIN, or for a retired connection are not adopted into
+the download. No untagged pre-BEGIN event buffer is introduced.
+
+The response acceptance callback runs at most once for the exact opcode/ID RSP
+within the existing request deadline. A validation error fails that request
+without escaping the notification handler or consuming another request's
+response. Normal complete-frame physical-write ownership and error/deadline
+rules still govern the command Future. A download, including an empty one,
+finishes only after END verifies both the announced size and whole-file CRC;
+retirement and the DATA inactivity watchdog still fail uncompleted downloads.
+
 ### Windowed upload (F-09) — sliding window, cumulative ACK, Go-Back-N
 
 - **`FILE_PUT_BEGIN` (0x15)** `[total_size:u32][crc32:u32][plen][path]` → `RSP [status]`; on `OK`, then `[resume_offset:u32]`. It prepares the jailed sibling `<dest>.pbltmp`, verifies any resumable prefix, applies the admission rule below, and sets the watermark to `resume_offset`.
