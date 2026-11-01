@@ -17,6 +17,6 @@ library;
 const String kAppName = 'PyBLE';
 
 /// The client version sent in HELLO (ASCII semver). Kept in step with the
-/// `version:` field in `app/pubspec.yaml` (currently `0.3.0+9`); the build-
-/// metadata suffix (`+9`) is dropped so the wire value is a clean semver.
-const String kAppVersion = '0.3.0';
+/// `version:` field in `app/pubspec.yaml` (currently `0.4.0+10`); the build-
+/// metadata suffix (`+10`) is dropped so the wire value is a clean semver.
+const String kAppVersion = '0.4.0';
