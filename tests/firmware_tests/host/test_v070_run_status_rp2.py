@@ -4,12 +4,15 @@
 
 """PBLE/1 §6.1 portable committed-run snapshots through the real dispatcher."""
 
+import ast
+import inspect
 import json
 import os
 from pathlib import Path
 import struct
 import sys
 import tempfile
+import textwrap
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -66,6 +69,24 @@ class SnapshotVectorsTest(unittest.TestCase):
         self.assertNotEqual(unpack(a)[1], unpack(b)[1])
         self.assertNotEqual(bytes(8), unpack(a)[1])
         self.assertEqual((0, 0, 0, 0, 0, 0), metadata(a))
+
+    def test_atomic_publication_regions_have_no_vm_pending_checkpoints(self):
+        # The pinned RP2 VM calls mp_handle_pending at Python jump opcodes.
+        # Enforce the concurrency assumption paired with the behavioral cases:
+        # these two metadata read/modify/publish regions cannot add a branch,
+        # loop, Python codec call or arbitrary callback that admits a writer.
+        forbidden = (ast.If, ast.IfExp, ast.For, ast.While, ast.BoolOp,
+                     ast.ListComp, ast.DictComp, ast.GeneratorExp)
+        for name in ("_status_transition", "_finish_status"):
+            with self.subTest(name=name):
+                tree = ast.parse(textwrap.dedent(inspect.getsource(
+                    getattr(pyble_runner.Runner, name))))
+                self.assertFalse(any(isinstance(node, forbidden)
+                                     for node in ast.walk(tree)))
+                names = [node.func.id for node in ast.walk(tree)
+                         if isinstance(node, ast.Call)
+                         and isinstance(node.func, ast.Name)]
+                self.assertTrue(set(names) <= {"bytes", "bool"})
 
 
 class AgentStatusTest(unittest.TestCase):
@@ -193,6 +214,62 @@ class AgentStatusTest(unittest.TestCase):
         self.link.send_message = send
         self.assertEqual(before, self.query())
 
+    def test_failed_stop_response_does_not_publish_stopping(self):
+        self.send(RUN, b"\x01pass")
+        before = self.query()
+        send = self.link.send_message
+        def reject(msg, **kwargs):
+            f = pyble_proto.decode(msg)
+            if f.type == pyble_proto.RSP and f.opcode == STOP:
+                return False
+            return send(msg, **kwargs)
+        self.link.send_message = reject
+        self.send(STOP)
+        self.link.send_message = send
+        self.assertEqual(before, self.query())
+
+    def test_predecessor_completion_cannot_erase_successor_stop(self):
+        calls = []
+        self.agent._runner._exec_fn = lambda *_: calls.append(1)
+        finish = self.agent._runner.rsm.on_finished
+        injected = [False]
+        def finish_then_admit(ok):
+            terminal = finish(ok)
+            if not injected[0]:
+                injected[0] = True
+                self.send(RUN, b"\x01pass", request_id=40)
+                self.send(STOP, request_id=41)
+            return terminal
+        self.agent._runner.rsm.on_finished = finish_then_admit
+        self.send(RUN, b"\x01pass")
+        self.agent.poll()
+        self.assertEqual((2, 5, 1, 2, 0, 3), metadata(self.query()))
+        self.agent.poll()
+        self.assertEqual((2, 6, 0, 2, 3, 0), metadata(self.query()))
+        self.assertEqual([1], calls)
+
+    def test_stale_stopped_publication_retry_cannot_mutate_successor(self):
+        self.send(RUN, b"\x01pass")
+        self.send(STOP)
+        stopped = self.agent._runner.rsm.on_stopped
+        injected = [False]
+        def stopped_then_admit():
+            terminal = stopped()
+            if not injected[0]:
+                injected[0] = True
+                self.send(RUN, b"\x01pass", request_id=42)
+                self.send(STOP, request_id=43)
+            return terminal
+        self.agent._runner.rsm.on_stopped = stopped_then_admit
+        self.link.interrupt_terminal_before_publish = True
+        self.agent.poll()
+        self.assertEqual((2, 5, 1, 2, 0, 3), metadata(self.query()))
+        calls = []
+        self.agent._runner._exec_fn = lambda *_: calls.append(1)
+        self.agent.poll()
+        self.assertEqual((2, 6, 0, 2, 3, 0), metadata(self.query()))
+        self.assertEqual([], calls)
+
     def test_stop_before_pickup_commits_once_without_running_code(self):
         seen = []
         self.agent._runner._exec_fn = lambda *_: seen.append(1)
@@ -270,6 +347,19 @@ class AgentStatusTest(unittest.TestCase):
         self.query()
         self.send(SOFT)
         self.assertEqual(b"\x07", self.send(QUERY))
+
+    def test_response_and_events_fragment_at_default_mtu(self):
+        self.query()
+        self.send(RUN, b"\x01pass")
+        self.agent._runner._exec_fn = lambda *_: None
+        self.agent.poll()
+        self.query()
+        for raw in self.link.sent:
+            frame = pyble_proto.decode(raw)
+            if frame.opcode in (QUERY, CHANGED):
+                packets = pyble_proto.fragment(raw, 23)
+                self.assertTrue(all(len(p) <= 20 for p in packets))
+                self.assertEqual(raw, pyble_proto.reassemble(packets))
 
 
 if __name__ == "__main__":
