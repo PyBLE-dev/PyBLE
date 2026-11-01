@@ -53,6 +53,18 @@ The question OI-1 actually poses, then, is not "is this package good?" but **"wh
 
 7. **The licence and dependency facts are recorded, not glossed.** The MPL-2.0 `autotrie` link, the Apache-2.0 + retained-MIT chain, the 24-package closure, `mocktail`-in-runtime-deps and the `url_launcher`/`hive` transitives all go into the pubspec dependency ledger and Flutter's generated `NOTICES.Z`/`LicenseRegistry` payload (the app's `THIRD_PARTY_LICENSES` bundle under BLD-6), with the in-app open-source notices screen surfacing them. The MPL-2.0 carve-out against CLAUDE.md's "every file is MIT" is an **owner ratification**, called out explicitly because it is a policy change, not an implementation detail.
 
+8. **Delimiter insertion is disabled (2026-11-01 correctness amendment).**
+   Paced iPadOS typing of `print(7024)` and `time.sleep(30)` left two extra
+   closing parentheses at the end of the document. The actual rich-editor
+   widget reproduces the exact result from ordinary platform editing values;
+   the plain surface preserves the input. The pinned package's optional
+   `InsertionCodeModifier` adds a closer on each opener but does not consume a
+   manually typed closer. PyBLE disables these modifiers at its adapter,
+   retaining auto-indentation, owned Tab handling and punctuation protection.
+   Balanced delimiters and quotes must survive both paced typing and paste
+   without additional characters (FR-EDIT-1A). Future automatic pairing needs
+   its own specified, tested input/composition behavior before activation.
+
 Unchanged: the `Connection` seam (D1), neutral types (D2), `UI → lib/pble → lib/ble` layering, the offline-first mandate, the clean-room rule, and every §1A.3 rejection. Nothing in this ADR is derived from any closed-source sibling product: the package is public, and its evaluation was performed against its own source.
 
 ## Alternatives considered
