@@ -58,6 +58,12 @@ final class PbleTimeoutException extends PbleException {
   const PbleTimeoutException([super.message]);
 }
 
+/// The client's bounded complete-frame writer is full. This local admission
+/// refusal is independent of board EBUSY and carries no program-state meaning.
+final class PbleTransportBusyException extends PbleException {
+  const PbleTransportBusyException([super.message]);
+}
+
 /// The BLE link dropped, or reconnect backoff was exhausted (FR-BLE-4). A
 /// neutral, transport-agnostic failure: no `flutter_blue_plus` type crosses the
 /// seam (CON-8). The pble layer re-exposes lib/ble link loss as this type.

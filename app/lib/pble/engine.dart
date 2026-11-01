@@ -2,6 +2,7 @@
 // Part of PyBLE (https://pyble.dev) — see /LICENSE.
 
 import 'dart:async';
+import 'dart:collection';
 import 'dart:typed_data';
 
 import 'byte_transport.dart';
@@ -16,22 +17,29 @@ import 'pble_exception.dart';
 /// reassembles inbound packets, verifies each frame's CRC (a CRC-failed frame
 /// is DROPPED, never surfaced — FR-PBLE-3), correlates each CMD only to the RSP
 /// with its exact opcode and ID, and routes EVT frames (ID = 0) onto [events].
-/// The only mutable state is the ID counter and the pending-request table.
+/// One bounded FIFO owns complete outbound frames; response waits remain
+/// concurrent after their frame's writes finish.
 class PbleEngine {
   PbleEngine(this._transport) {
     _inboundSub = _transport.inbound.listen(_onPacket);
+    _transport.connected.addListener(_onConnectionChanged);
   }
 
   final ByteTransport _transport;
   late final StreamSubscription<Uint8List> _inboundSub;
 
-  final PbleReassembler _reassembler = PbleReassembler();
+  PbleReassembler _reassembler = PbleReassembler();
   final Map<int, _PendingRequest> _pending = <int, _PendingRequest>{};
   final StreamController<PbleFrame> _events =
       StreamController<PbleFrame>.broadcast();
 
   int _idCounter = 0;
   bool _disposed = false;
+  int _linkGeneration = 0;
+  static const int _maxOutgoingFrames = 255;
+  final ListQueue<_OutgoingFrame> _outgoing = ListQueue<_OutgoingFrame>();
+  _OutgoingFrame? _activeOutgoing;
+  bool _writerRunning = false;
 
   /// Allocates the next request ID (1–255, never `0`), skipping any ID that is
   /// currently in flight (protocol.md §3.1). Rolls over after 255.
@@ -69,24 +77,7 @@ class PbleEngine {
       ),
     );
     try {
-      final List<Uint8List> packets = PbleFragmenter(
-        mtu: _transport.mtu,
-      ).fragment(encodeFrame(cmd));
-      for (final Uint8List packet in packets) {
-        final Duration remaining = pending.remaining;
-        await _transport
-            .send(packet, acknowledged: true)
-            .timeout(
-              remaining,
-              onTimeout: () => throw const _RequestDeadlineExpired(),
-            );
-        if (_disposed) {
-          if (pending.completer.isCompleted) {
-            return await pending.completer.future;
-          }
-          throw const PbleTimeoutException('engine disposed');
-        }
-      }
+      await _queueFrame(cmd, acknowledged: true, request: pending);
       if (pending.completer.isCompleted) {
         return await pending.completer.future;
       }
@@ -102,6 +93,11 @@ class PbleEngine {
         return await pending.completer.future;
       }
       throw const PbleTimeoutException('no RSP within timeout');
+    } on _FrameRetired catch (retired) {
+      if (pending.completer.isCompleted) {
+        return await pending.completer.future;
+      }
+      throw retired.reason;
     } finally {
       if (identical(_pending[cmd.id], pending)) {
         _pending.remove(cmd.id);
@@ -119,16 +115,113 @@ class PbleEngine {
     if (_disposed) {
       throw StateError('PbleEngine used after dispose()');
     }
-    final List<Uint8List> packets = PbleFragmenter(
-      mtu: _transport.mtu,
-    ).fragment(encodeFrame(cmd));
-    for (final Uint8List packet in packets) {
-      await _transport.send(packet, acknowledged: false);
-      if (_disposed) throw const PbleTimeoutException('engine disposed');
+    try {
+      await _queueFrame(cmd, acknowledged: false);
+    } on _FrameRetired catch (retired) {
+      throw retired.reason;
     }
   }
 
+  Future<void> _queueFrame(
+    PbleFrame command, {
+    required bool acknowledged,
+    _PendingRequest? request,
+  }) {
+    if (!_transport.connected.value) {
+      throw const BleLinkException('link disconnected');
+    }
+    if (_outgoing.length + (_activeOutgoing == null ? 0 : 1) >=
+        _maxOutgoingFrames) {
+      throw const PbleTransportBusyException('outbound frame queue full');
+    }
+    final _OutgoingFrame frame = _OutgoingFrame(
+      encodeFrame(command),
+      acknowledged,
+      _linkGeneration,
+      request,
+    );
+    if (request != null) {
+      frame.deadline = Timer(request.remaining, () {
+        // Remove expired waiting frames immediately. An active physical write
+        // retains ownership until it settles, even though its caller can finish.
+        _outgoing.remove(frame);
+        frame.fail(const _RequestDeadlineExpired());
+      });
+    }
+    _outgoing.add(frame);
+    if (!_writerRunning) {
+      _writerRunning = true;
+      unawaited(_drainOutgoing());
+    }
+    return frame.done.future;
+  }
+
+  Future<void> _drainOutgoing() async {
+    try {
+      while (_outgoing.isNotEmpty) {
+        final _OutgoingFrame frame = _outgoing.removeFirst();
+        _activeOutgoing = frame;
+        try {
+          final List<Uint8List> packets = PbleFragmenter(
+            mtu: _transport.mtu,
+          ).fragment(frame.message);
+          for (final Uint8List packet in packets) {
+            if (frame.done.isCompleted) break;
+            if (frame.request?.expired ?? false) {
+              throw const _RequestDeadlineExpired();
+            }
+            if (_disposed || frame.generation != _linkGeneration) {
+              frame.fail(
+                const _FrameRetired(PbleTimeoutException('engine retired')),
+              );
+              break;
+            }
+            // Do not race this Future against the caller deadline: an SDK
+            // write can still be in flight after timeout/disconnect/dispose.
+            // The same physical owner waits for it, then checks cancellation
+            // before any continuation or successor frame is submitted.
+            await _transport.send(packet, acknowledged: frame.acknowledged);
+          }
+          frame.succeed();
+        } catch (error, stack) {
+          frame.fail(error, stack);
+        } finally {
+          frame.deadline?.cancel();
+          _activeOutgoing = null;
+        }
+      }
+    } finally {
+      _writerRunning = false;
+    }
+  }
+
+  void _onConnectionChanged() {
+    if (!_disposed && !_transport.connected.value) {
+      _retireFrames(const BleLinkException('link disconnected'));
+    }
+  }
+
+  void _retireFrames(PbleException reason) {
+    _linkGeneration++;
+    _reassembler = PbleReassembler();
+    final _FrameRetired retired = _FrameRetired(reason);
+    _activeOutgoing?.deadline?.cancel();
+    _activeOutgoing?.fail(retired);
+    for (final _OutgoingFrame frame in _outgoing) {
+      frame.deadline?.cancel();
+      frame.fail(retired);
+    }
+    _outgoing.clear();
+    for (final _PendingRequest pending in _pending.values) {
+      if (!pending.completer.isCompleted) {
+        pending.completer.completeError(reason);
+      }
+    }
+    _pending.clear();
+  }
+
   void _onPacket(Uint8List packet) {
+    if (_disposed || !_transport.connected.value) return;
     final Uint8List? message = _reassembler.offer(packet);
     if (message == null) return;
 
@@ -163,6 +256,8 @@ class PbleEngine {
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;
+    _transport.connected.removeListener(_onConnectionChanged);
+    _retireFrames(const PbleTimeoutException('engine disposed'));
     Object? cancelError;
     StackTrace? cancelStack;
     try {
@@ -171,19 +266,39 @@ class PbleEngine {
       cancelError = error;
       cancelStack = stack;
     }
-    for (final _PendingRequest pending in _pending.values) {
-      if (!pending.completer.isCompleted) {
-        pending.completer.completeError(
-          const PbleTimeoutException('engine disposed'),
-        );
-      }
-    }
-    _pending.clear();
     await _events.close();
     if (cancelError != null) {
       Error.throwWithStackTrace(cancelError, cancelStack!);
     }
   }
+}
+
+final class _OutgoingFrame {
+  _OutgoingFrame(
+    this.message,
+    this.acknowledged,
+    this.generation,
+    this.request,
+  );
+  final Uint8List message;
+  final bool acknowledged;
+  final int generation;
+  final _PendingRequest? request;
+  final Completer<void> done = Completer<void>();
+  Timer? deadline;
+
+  void succeed() {
+    if (!done.isCompleted) done.complete();
+  }
+
+  void fail(Object error, [StackTrace? stack]) {
+    if (!done.isCompleted) done.completeError(error, stack);
+  }
+}
+
+final class _FrameRetired implements Exception {
+  const _FrameRetired(this.reason);
+  final PbleException reason;
 }
 
 /// One monotonic deadline shared by every acknowledged write and the RSP wait.
