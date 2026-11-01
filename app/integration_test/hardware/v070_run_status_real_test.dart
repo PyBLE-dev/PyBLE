@@ -55,11 +55,13 @@ void main() {
           'startedUtc': DateTime.now().toUtc().toIso8601String(),
         };
         _Session? active;
+        final traces = <_Trace>[];
         try {
           if (const bool.fromEnvironment('PYBLE_HIL_VERBOSE')) {
             await FlutterBluePlus.setLogLevel(LogLevel.verbose, color: false);
           }
           active = await _open(onStage: (stage) => result['stage'] = stage);
+          traces.add(active.trace);
           final info = await active.connection.deviceInfo();
           expect(info.hasRunStatus, isTrue);
           expect(info.mtu, _requestedMtu);
@@ -88,10 +90,14 @@ void main() {
           final firstTrace = active.trace;
           await active.close();
           active = null;
+          // Allow this Android controller to finish its physical GATT teardown.
+          // This is HIL setup, not polling or a firmware event deadline.
+          await Future<void>.delayed(const Duration(seconds: 2));
 
           // Fresh production connection performs HELLO/status only. No RUN,
           // upload, STOP, or other board write is used to discover execution.
           active = await _open(onStage: (stage) => result['stage'] = stage);
+          traces.add(active.trace);
           final recovered = active.connection.runSnapshot.value!;
           expect(active.connection.state.value, ConnState.running);
           expect(recovered.state, RunState.running);
@@ -163,6 +169,13 @@ void main() {
           rethrow;
         } finally {
           await active?.close();
+          result['traceSessions'] = <Map<String, Object?>>[
+            for (final trace in traces)
+              <String, Object?>{
+                'commands': trace.commands,
+                'taggedEvents': trace.taggedEvents,
+              },
+          ];
           result['finishedUtc'] = DateTime.now().toUtc().toIso8601String();
           await receipt.writeAsString(
             const JsonEncoder.withIndent('  ').convert(result),
