@@ -37,6 +37,7 @@ class FakeBoard:
         self.flood_copies = 3
         self.split_marker = False
         self.reject_run = False
+        self.lose_run_response = False
         self.reject_stop = False
         self.reject_queries = set()
         self.agent = '0.7.0-dev.1'
@@ -101,6 +102,8 @@ class FakeBoard:
                     self.stdout(output[7:])
                 else:
                     self.stdout(output)
+            if self.lose_run_response:
+                raise OSError('RUN response lost after possible admission')
             return SimpleNamespace(payload=b'\0')
         if opcode == 0x21:
             if self.reject_stop:
@@ -183,7 +186,10 @@ class LoadProbeTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_queued_snapshot_cannot_claim_execution_under_load(self):
         board = FakeBoard()
-        board.flags = 1
+        def queue_active(b):
+            if b.state == 1:
+                b.flags = 1
+        board.on_query = queue_active
         result = await self.run_probe(board)
         self.assertEqual('fail', result['status'])
         self.assertIn('running picked-up', result['failure']['detail'])
@@ -232,6 +238,40 @@ class LoadProbeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual('fail', result['status'])
         self.assertFalse(result['cleanup']['verified'])
         self.assertEqual(0, board.count(0x21))
+
+    async def test_successor_immediately_before_stop_is_preserved(self):
+        board = FakeBoard()
+        def successor(b):
+            if b.query_count == 6:
+                b.run += 1
+                b.rev += 2
+        board.on_query = successor
+        result = await self.run_probe(board)
+        self.assertEqual('fail', result['status'])
+        self.assertFalse(result['cleanup']['verified'])
+        self.assertEqual(0, board.count(0x21))
+
+    async def test_successor_after_owned_stop_is_never_stopped_again(self):
+        board = FakeBoard()
+        def successor(b):
+            if b.query_count == 7:
+                b.run += 1
+                b.rev += 2
+                b.state, b.reason = 1, 0
+        board.on_query = successor
+        result = await self.run_probe(board)
+        self.assertEqual('fail', result['status'])
+        self.assertFalse(result['cleanup']['verified'])
+        self.assertEqual(1, board.count(0x21))
+
+    async def test_lost_run_response_does_not_adopt_an_unproven_run(self):
+        board = FakeBoard()
+        board.lose_run_response = True
+        result = await self.run_probe(board)
+        self.assertEqual('fail', result['status'])
+        self.assertFalse(result['cleanup']['verified'])
+        self.assertEqual(0, board.count(0x21))
+        self.assertIn('RUN response lost', result['cleanup']['errors'][0])
 
     async def test_failed_probe_query_still_cleans_up_proven_owned_run(self):
         board = FakeBoard()
