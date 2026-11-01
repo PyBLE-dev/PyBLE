@@ -38,12 +38,15 @@ class Board:
         self.replace_main_on_boot = False
         self.get_fails_once = False
         self.status_fails_once_after_boot = False
+        self.successor_on_reconnect = False
 
     def payload(self):
         return struct.pack('<B8sIQBBBB', 1, self.boot, self.run_id, self.revision,
                            self.state, self.origin, self.reason, 0)
 
     async def connect(self, _address):
+        if self.successor_on_reconnect and len(self.sessions) == 2:
+            self.run_id, self.revision, self.state, self.origin = 2, 4, 1, 3
         session = Session(self)
         self.sessions.append(session)
         return session
@@ -157,6 +160,12 @@ class AutorunProbeTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(1, b.count(0x18))
         self.assertTrue(all(s.closed for s in b.sessions))
         self.assertIn('autorun-origin3-reconnect', result['observations'])
+        snapshots = result['snapshots']
+        self.assertEqual(3, snapshots['running']['origin'])
+        self.assertEqual(snapshots['running'], snapshots['reconnected'])
+        self.assertEqual(3, snapshots['stopped']['terminal_reason'])
+        self.assertNotEqual(snapshots['initial']['boot_id'], snapshots['running']['boot_id'])
+        self.assertNotEqual(snapshots['running']['boot_id'], snapshots['restored']['boot_id'])
 
     async def test_preexisting_main_refuses_without_any_mutation(self):
         b = Board(); original = b.main = b'owner code'
@@ -191,6 +200,19 @@ class AutorunProbeTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(0, b.auto)
         self.assertEqual(0, b.count(0x18))
         self.assertEqual(0, b.count(0x21))
+        self.assertEqual(1, b.count(0x22))
+
+    async def test_successor_autorun_is_not_adopted_during_cleanup(self):
+        b = Board(); b.successor_on_reconnect = True
+        result = await self.run_probe(b)
+        self.assertEqual('fail', result['status'])
+        self.assertFalse(result['cleanup']['verified'])
+        self.assertEqual(2, b.run_id)
+        self.assertEqual(1, b.state)
+        self.assertIsNotNone(b.main)
+        self.assertEqual(0, b.auto)
+        self.assertEqual(0, b.count(0x21))
+        self.assertEqual(0, b.count(0x18))
         self.assertEqual(1, b.count(0x22))
 
     async def test_restore_flag_failure_cannot_produce_a_pass(self):
