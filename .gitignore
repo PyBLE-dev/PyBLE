@@ -111,6 +111,7 @@ coverage/
 # ─── Node.js / Next.js public site (tools/web/) ─────────────────────────────
 tools/web/node_modules/
 tools/web/.next/
+tools/web/.vinext/
 tools/web/out/
 tools/web/next-env.d.ts
 tools/web/.open-next/

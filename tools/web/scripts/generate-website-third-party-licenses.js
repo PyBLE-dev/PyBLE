@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Part of PyBLE (https://pyble.dev) — see /LICENSE.
 
+import { createHash } from "node:crypto";
 import { readFile, readdir, writeFile } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -93,25 +94,38 @@ const reviewedLicenseSources = {
     path: "node_modules/lit/LICENSE",
   },
   "node_modules/@resvg/resvg-wasm": {
-    version: "2.4.0",
-    path: "node_modules/lightningcss/LICENSE",
+    version: "2.4.1",
+    path: "licenses/resvg-wasm-2.4.1-MPL-2.0.txt",
+    source:
+      "https://raw.githubusercontent.com/thx/resvg-js/2347b417e1955a6954223f1c17b815e177a01765/LICENSE",
+    sha256: "4b89d4518bd135ab4ee154a7bce722246b57a98c3d7efc1a09409898160c2bd1",
   },
 };
 const bundledProductionDependencies = [
   {
     ownerPath: "node_modules/vinext",
-    ownerVersion: "1.0.0-beta.8",
+    ownerVersion: "1.4.0",
     name: "image-size",
-    version: "2.0.2",
+    version: "2.0.4",
     bundledPath:
-      "node_modules/vinext/dist/deps/.pnpm/image-size@2.0.2/deps/image-size/dist/index.js",
+      "node_modules/vinext/dist/deps/.pnpm/image-size@2.0.4/deps/image-size/dist/esm/index.js",
     license: "MIT",
-    source: "https://registry.npmjs.org/image-size/-/image-size-2.0.2.tgz",
-    licenseName: "reviewed image-size@2.0.2 package LICENSE",
-    licenseText: mitLicense(
-      "Copyright © 2013-Present Aditya Yadav, http://netroy.in",
-      "The MIT License (MIT)",
-    ),
+    source: "https://registry.npmjs.org/image-size/-/image-size-2.0.4.tgz",
+    licenseName: "reviewed image-size@2.0.4 package LICENSE",
+    licensePath: "licenses/image-size-2.0.4-MIT.txt",
+  },
+  {
+    ownerPath: "node_modules/@vercel/og",
+    ownerVersion: "1.0.3",
+    name: "fflate",
+    version: "0.7.3",
+    bundledPath: "node_modules/@vercel/og/dist/index.node.js",
+    additionalBundledPaths: ["node_modules/@vercel/og/dist/index.edge.js"],
+    license: "MIT",
+    source: "https://registry.npmjs.org/fflate/-/fflate-0.7.3.tgz",
+    licenseName:
+      "reviewed fflate@0.7.3 package LICENSE (inflate-only bundle subset)",
+    licensePath: "licenses/fflate-0.7.3-MIT.txt",
   },
 ];
 
@@ -251,11 +265,19 @@ async function readLicense(packagePath, packageVersion) {
           `Reviewed license source is stale for ${packagePath}@${packageVersion}`,
         );
       }
+      const text = await readFile(join(packageRoot, reviewedSource.path));
+      if (
+        reviewedSource.sha256 &&
+        createHash("sha256").update(text).digest("hex") !==
+          reviewedSource.sha256
+      ) {
+        throw new Error(
+          `Reviewed license source digest differs for ${packagePath}`,
+        );
+      }
       primary = {
-        name: `reviewed upstream text from ${reviewedSource.path}`,
-        text: normalizeLicenseText(
-          await readFile(join(packageRoot, reviewedSource.path), "utf8"),
-        ),
+        name: `reviewed upstream text from ${reviewedSource.path}${reviewedSource.source ? ` (${reviewedSource.source}; SHA-256 ${reviewedSource.sha256})` : ""}`,
+        text: normalizeLicenseText(text.toString("utf8")),
       };
     } else {
       throw new Error(`No complete license text found for ${packagePath}`);
@@ -327,17 +349,25 @@ export async function generateWebsiteThirdPartyLicenses() {
         `Reviewed bundled dependency record is stale for ${bundled.ownerPath}@${owner?.version ?? "missing"}`,
       );
     }
-    await readFile(join(packageRoot, bundled.bundledPath), "utf8");
+    const bundledPaths = [
+      bundled.bundledPath,
+      ...(bundled.additionalBundledPaths ?? []),
+    ];
+    for (const path of bundledPaths) {
+      await readFile(join(packageRoot, path), "utf8");
+    }
     records.push(
       [
         "================================================================================",
-        `${bundled.name} ${bundled.version} (bundled by vinext ${bundled.ownerVersion})`,
-        `Bundled path: ${bundled.bundledPath}`,
+        `${bundled.name} ${bundled.version} (bundled by ${packageNameFromPath(bundled.ownerPath)} ${bundled.ownerVersion})`,
+        `Bundled path: ${bundledPaths.join(", ")}`,
         `SPDX license: ${bundled.license}`,
         `Source: ${bundled.source}`,
         `License file: ${bundled.licenseName}`,
         "",
-        bundled.licenseText,
+        normalizeLicenseText(
+          await readFile(join(packageRoot, bundled.licensePath), "utf8"),
+        ),
         "",
       ].join("\n"),
     );

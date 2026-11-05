@@ -101,12 +101,36 @@ its build tooling. React, React DOM and the server renderer are pinned together
 to `19.3.1`, and `@vitejs/plugin-rsc` to `0.5.37`, matching the adapter's peer
 requirements. Normal `npm ci` resolves the exact lockfile; peer checks are not
 bypassed. The obsolete bundled-2.0.2 post-install patch is retired.
+The explicit `vite.config.ts` enables the adapter and prerenders every route,
+as required by Vinext 1.4.0; both output builds retain the existing route gates.
 
 Timeout-bounded malformed ICNS, HEIF and JXL inputs still exercise the actual
 bundled parser, alongside a valid-image control. The generated notice records
 its exact bundled path/version and reviewed MIT attribution. The lock contract
 rejects reintroduction of the affected parser package, and `npm audit
 --audit-level=high` continues to reject high or critical package advisories.
+
+Satori 0.33.5 fixes GHSA-wx4j-mvgx-mqwp but pins vulnerable fflate 0.7.3.
+The scoped `satori.fflate` override selects the compatible patched 0.7.5
+release for that closure, addressing [GHSA-px8p-9vwx-vf98](https://github.com/advisories/GHSA-px8p-9vwx-vf98)
+within the installed npm closure. The published `@vercel/og` 1.0.3 bundles
+an older fflate 0.7.3 inflate-only subset independently of npm overrides; both
+its Node and edge bundles omit the advisory's ZIP extraction path
+(`unzipSync`/ZIP64). Its exact bundled version and MIT notice are retained.
+A local-font PNG render through the actual Vinext RSC module runner verifies
+adapter integration, alongside both production builds.
+
+Exact offline license sources and their
+provenance are recorded in [licenses/README.md](licenses/README.md), including
+the complete MPL-2.0 text omitted by `@resvg/resvg-wasm` 2.4.1.
+
+As reviewed on 2026-11-05, the remaining moderate advisory is the existing
+[GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249) in the
+ESLint build-tool closure. Its fix starts at minimatch 11.0.1, outside ESLint
+10.8.0's supported `^10.2.5` range and `@eslint/config-array` 0.23.5's
+`^10.2.4` range; the lock resolves 10.2.6. A supported upstream upgrade or a
+separately reviewed compatibility change is required. The high/critical audit
+gate remains enabled at its existing threshold. Follow-up: [issue #49](https://github.com/PyBLE-dev/PyBLE/issues/49).
 
 The build contract also forbids static image module imports and filesystem
 metadata image routes; authored images remain static `public/` URLs with
