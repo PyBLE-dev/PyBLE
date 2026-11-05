@@ -724,11 +724,15 @@ contract with `npm audit --audit-level=high`. The Sites adapter MUST be pinned
 to a compatible vinext release whose installed npm package dependency closure
 does not contain `image-size` 2.0.2, the package described by
 GHSA-w3rx-r6r6-pgpr and GHSA-5p2g-fcmc-qvqq; a deterministic lockfile contract
-MUST reject its reintroduction. While vinext publishes the same parser inside
-its build tooling, installation MUST deterministically add fail-closed guards
-for zero-length ICNS entries and HEIF/JXL boxes, MUST fail if the reviewed
-upstream source no longer matches, and MUST retain the parser's MIT attribution
-in the generated website notice. Authored source MUST continue to use URL paths
+MUST reject its reintroduction. The reviewed Vinext 1.4.0 toolchain bundles
+upstream-fixed `image-size` 2.0.4; its React and RSC-plugin peers MUST be installed
+at compatible exact pins without bypassing npm peer resolution. The obsolete
+2.0.2 source-patching hook is retired with that upgrade. Timeout-bounded
+malformed ICNS, HEIF and JXL regression inputs MUST still exercise the actual
+bundled parser, and a valid-image control MUST remain functional. The generated
+website notice MUST retain the exact bundled version and MIT attribution.
+Any later bundled parser change requires the same source, regression and notice
+review. Authored source MUST continue to use URL paths
 to static files in `public/`, with explicit dimensions where required, instead
 of static image module imports or filesystem metadata image routes named
 `favicon`, `icon`, `apple-icon`, `opengraph-image`, or `twitter-image`; the

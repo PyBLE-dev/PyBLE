@@ -96,21 +96,23 @@ needed. A normal build needs no runtime or build-time environment variables.
 
 ### Build-dependency security boundary
 
-Vinext `1.0.0-beta.8` removes `image-size` from the installed npm dependency
-graph, so the exact lockfile passes `npm audit --audit-level=high`. Its
-published build tooling still embeds the affected `image-size` 2.0.2 parser,
-however. PyBLE's post-install step therefore adds reviewed fail-closed guards
-for the zero-length ICNS, HEIF, and JXL loops; installation fails if the pinned
-upstream source drifts. Timeout-bounded regression inputs exercise all three
-paths, and the generated notice explicitly retains the embedded parser's MIT
-attribution.
+Vinext `1.4.0` uses a reviewed upstream-fixed `image-size` 2.0.4 parser in
+its build tooling. React, React DOM and the server renderer are pinned together
+to `19.3.1`, and `@vitejs/plugin-rsc` to `0.5.37`, matching the adapter's peer
+requirements. Normal `npm ci` resolves the exact lockfile; peer checks are not
+bypassed. The obsolete bundled-2.0.2 post-install patch is retired.
+
+Timeout-bounded malformed ICNS, HEIF and JXL inputs still exercise the actual
+bundled parser, alongside a valid-image control. The generated notice records
+its exact bundled path/version and reviewed MIT attribution. The lock contract
+rejects reintroduction of the affected parser package, and `npm audit
+--audit-level=high` continues to reject high or critical package advisories.
 
 The build contract also forbids static image module imports and filesystem
 metadata image routes; authored images remain static `public/` URLs with
 explicit dimensions. Production deploys only the checked `out/` tree and runs
-no Node.js website process. Keep these defenses until vinext publishes tooling
-with a patched parser, then remove the local hardening only alongside its
-contracts and notice review.
+no Node.js website process. Future adapter/parser upgrades require renewed
+regression and license-notice review.
 
 ## Production deployment
 
