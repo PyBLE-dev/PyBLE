@@ -2,6 +2,7 @@
 # Part of PyBLE (https://pyble.dev) — see /LICENSE.
 
 .next/
+.vinext/
 node_modules/
 out/
 coverage/
@@ -11,3 +12,6 @@ package-lock.json
 # Byte-for-byte source snapshots; their provenance depends on unchanged bytes.
 public/reference/firmware-v0.6.1/protocol.md
 public/AGENTS.md
+
+# Exact upstream third-party license bytes; see licenses/README.md.
+licenses/*.txt
