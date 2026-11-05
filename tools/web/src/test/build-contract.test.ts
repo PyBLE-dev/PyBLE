@@ -2,6 +2,7 @@
 // Part of PyBLE (https://pyble.dev) — see /LICENSE.
 
 import { execFile as execFileCallback } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
@@ -138,19 +139,31 @@ describe("production build contract", () => {
       ],
     );
 
-    expect(packageJson.dependencies?.vinext).toBe("1.0.0-beta.8");
-    expect(packageJson.devDependencies?.["@vitejs/plugin-rsc"]).toBe("0.5.34");
+    expect(packageJson.dependencies?.vinext).toBe("1.4.0");
+    expect(packageJson.devDependencies?.["@vitejs/plugin-rsc"]).toBe("0.5.37");
+    for (const name of ["react", "react-dom", "react-server-dom-webpack"]) {
+      expect(packageJson.dependencies?.[name]).toBe("19.3.1");
+      expect(packageLock.packages?.[`node_modules/${name}`]?.version).toBe(
+        "19.3.1",
+      );
+    }
     expect(packageJson.scripts?.["audit:dependencies"]).toBe(
       "npm audit --audit-level=high",
     );
     expect(packageJson.scripts?.check).toContain("npm run audit:dependencies");
     expect(packageJson.overrides?.next?.postcss).toBe("8.5.26");
+    expect(packageJson.overrides?.satori?.fflate).toBe("0.7.5");
+    for (const [path, entry] of Object.entries(packageLock.packages ?? {})) {
+      if (path.endsWith("node_modules/fflate")) {
+        expect((entry as { version: string }).version).toBe("0.7.5");
+      }
+    }
     expect(packageLock.packages?.["node_modules/vinext"]?.version).toBe(
-      "1.0.0-beta.8",
+      "1.4.0",
     );
     expect(
       packageLock.packages?.["node_modules/@vitejs/plugin-rsc"]?.version,
-    ).toBe("0.5.34");
+    ).toBe("0.5.37");
     expect(packageLock.packages?.["node_modules/postcss"]?.version).toBe(
       "8.5.26",
     );
@@ -200,81 +213,39 @@ describe("production build contract", () => {
     expect(sourceImageImports).toEqual([]);
   });
 
-  it("hardens and attributes the image parser bundled inside vinext", async () => {
-    const bundledParserPath = join(
-      process.cwd(),
-      "node_modules",
-      "vinext",
-      "dist",
-      "deps",
-      ".pnpm",
-      "image-size@2.0.2",
-      "deps",
-      "image-size",
-      "dist",
-      "index.js",
-    );
-    const [packageJson, parserSource, notice] = await Promise.all([
+  it("uses and attributes the upstream-fixed bundled parser without a source patch", async () => {
+    const [packageJson, notice] = await Promise.all([
       readFile(join(process.cwd(), "package.json"), "utf8").then(JSON.parse),
-      readFile(bundledParserPath, "utf8"),
       readFile(
         join(process.cwd(), "public", "WEBSITE_THIRD_PARTY_LICENSES.txt"),
         "utf8",
       ),
     ]);
-
-    expect(packageJson.scripts?.postinstall).toBe(
-      "node scripts/patch-vinext-image-size.js",
-    );
-    expect(parserSource).toContain(
-      'if (imageHeader[1] <= 0) throw new TypeError("Invalid ICNS, zero-length image entry");',
-    );
-    expect(parserSource).toContain(
-      'if (ispeBox.size <= 0) throw new TypeError("Invalid HEIF, zero-length ispe box");',
-    );
-    expect(parserSource).toContain(
-      'if (jxlpBox.size <= 0) throw new TypeError("Invalid JXL, zero-length jxlp box");',
-    );
-    expect(notice).toContain("image-size 2.0.2");
+    expect(packageJson.scripts?.postinstall).toBeUndefined();
+    await expect(
+      readFile(join(process.cwd(), "scripts", "patch-vinext-image-size.js")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+    expect(notice).toContain("image-size 2.0.4 (bundled by vinext 1.4.0)");
+    expect(notice).toContain("fflate 0.7.3 (bundled by @vercel/og 1.0.3)");
     expect(notice).toContain(
       "Copyright © 2013-Present Aditya Yadav, http://netroy.in",
     );
   });
 
-  it("applies all bundled parser guards idempotently and rejects upstream drift", async () => {
-    const vulnerableFragments = [
-      "\t\t\tconst imageHeader = readImageHeader(input, imageOffset);\n\t\t\tconst imageSize2 = getImageSize2(imageHeader[0]);",
-      '\t\t\tconst ispeBox = findBox(input, "ispe", currentOffset);\n\t\t\tif (!ispeBox) break;\n\t\t\tconst rawWidth = readUInt32BE(input, ispeBox.offset + 12);',
-      '\t\tconst jxlpBox = findBox(input, "jxlp", offset);\n\t\tif (!jxlpBox) break;\n\t\tpartialStreams.push(input.slice(jxlpBox.offset + 12, jxlpBox.offset + jxlpBox.size));',
-    ].join("\n");
-
-    const patcherUrl = pathToFileURL(
-      join(process.cwd(), "scripts", "patch-vinext-image-size.js"),
+  it("retains valid ICNS parsing in the upstream-fixed bundle", async () => {
+    const bundledParserUrl = pathToFileURL(
+      join(
+        process.cwd(),
+        "node_modules/vinext/dist/deps/.pnpm/image-size@2.0.4/deps/image-size/dist/esm/index.js",
+      ),
     ).href;
     const childSource = `
-      import { hardenBundledImageSize } from ${JSON.stringify(patcherUrl)};
-      const vulnerable = ${JSON.stringify(vulnerableFragments)};
-      const hardened = hardenBundledImageSize(vulnerable);
-      for (const marker of [
-        "Invalid ICNS, zero-length image entry",
-        "Invalid HEIF, zero-length ispe box",
-        "Invalid JXL, zero-length jxlp box",
-      ]) {
-        if (!hardened.includes(marker)) throw new Error(\`missing \${marker}\`);
-      }
-      if (hardenBundledImageSize(hardened) !== hardened) {
-        throw new Error("hardening is not idempotent");
-      }
-      let driftRejected = false;
-      try {
-        hardenBundledImageSize("upstream source drift");
-      } catch (error) {
-        driftRejected = String(error).includes(
-          "Cannot apply GHSA-w3rx-r6r6-pgpr hardening",
-        );
-      }
-      if (!driftRejected) throw new Error("upstream drift was not rejected");
-      console.log("ok");
+      import { imageSize } from ${JSON.stringify(bundledParserUrl)};
+      const size = imageSize(Uint8Array.from([
+        0x69, 0x63, 0x6e, 0x73, 0, 0, 0, 16,
+        0x69, 0x73, 0x33, 0x32, 0, 0, 0, 8,
+      ]));
+      console.log(JSON.stringify({width: size.width, height: size.height}));
     `;
     const result = await execFile(
       process.execPath,
@@ -282,20 +253,20 @@ describe("production build contract", () => {
       { timeout: 2_000 },
     );
     expect(result.stderr).toBe("");
-    expect(result.stdout).toBe("ok\n");
+    expect(JSON.parse(result.stdout)).toEqual({ width: 16, height: 16 });
   });
 
   it("terminates safely for all three bundled parser advisory inputs", async () => {
     const bundledParserUrl = pathToFileURL(
       join(
         process.cwd(),
-        "node_modules/vinext/dist/deps/.pnpm/image-size@2.0.2/deps/image-size/dist/index.js",
+        "node_modules/vinext/dist/deps/.pnpm/image-size@2.0.4/deps/image-size/dist/esm/index.js",
       ),
     ).href;
     const parserPocs = [
       {
         name: "ICNS",
-        expected: "Invalid ICNS, zero-length image entry",
+        expected: "Invalid ICNS",
         bytes: [
           0x69, 0x63, 0x6e, 0x73, 0x00, 0x00, 0x00, 0x10, 0x69, 0x73, 0x33,
           0x32, 0x00, 0x00, 0x00, 0x00,
@@ -303,7 +274,7 @@ describe("production build contract", () => {
       },
       {
         name: "HEIF/AVIF",
-        expected: "Invalid HEIF, zero-length ispe box",
+        expected: "Invalid HEIF",
         bytes: [
           0, 0, 0, 16, 0x66, 0x74, 0x79, 0x70, 0x61, 0x76, 0x69, 0x66, 0, 0, 0,
           0, 0, 0, 0, 36, 0x6d, 0x65, 0x74, 0x61, 0, 0, 0, 0, 0, 0, 0, 8, 0x69,
@@ -313,7 +284,7 @@ describe("production build contract", () => {
       },
       {
         name: "JXL",
-        expected: "Invalid JXL, zero-length jxlp box",
+        expected: "Invalid JXL",
         bytes: [
           0, 0, 0, 12, 0x4a, 0x58, 0x4c, 0x20, 0x0d, 0x0a, 0x87, 0x0a, 0, 0, 0,
           12, 0x66, 0x74, 0x79, 0x70, 0x6a, 0x78, 0x6c, 0x20, 0, 0, 0, 0, 0x6a,
@@ -340,7 +311,9 @@ describe("production build contract", () => {
         { timeout: 2_000 },
       );
       expect(result.stderr, poc.name).toBe("");
-      expect(result.stdout.trim(), poc.name).toBe(poc.expected);
+      expect(result.stdout.trim(), poc.name).toMatch(
+        new RegExp(`^${poc.expected}(?:,|$)`),
+      );
     }
   });
 
@@ -395,6 +368,32 @@ describe("production build contract", () => {
     expect
       .soft(pako)
       .toContain("This software is provided 'as-is', without any express");
+  });
+
+  it("publishes the reviewed complete MPL text for resvg without a substituted MIT license", async () => {
+    const [notice, license, provenance] = await Promise.all([
+      readFile(
+        join(process.cwd(), "public", "WEBSITE_THIRD_PARTY_LICENSES.txt"),
+        "utf8",
+      ),
+      readFile(join(process.cwd(), "licenses", "resvg-wasm-2.4.1-MPL-2.0.txt")),
+      readFile(join(process.cwd(), "licenses", "README.md"), "utf8"),
+    ]);
+    const expectedHash =
+      "4b89d4518bd135ab4ee154a7bce722246b57a98c3d7efc1a09409898160c2bd1";
+    const resvg = noticeSection(notice, "node_modules/@resvg/resvg-wasm");
+    expect(createHash("sha256").update(license).digest("hex")).toBe(
+      expectedHash,
+    );
+    expect(provenance).toContain(expectedHash);
+    expect(provenance).toContain(
+      "2347b417e1955a6954223f1c17b815e177a01765/LICENSE",
+    );
+    expect(resvg).toContain("@resvg/resvg-wasm 2.4.1");
+    expect(resvg).toContain("SPDX license: MPL-2.0");
+    expect(resvg).toContain(license.toString("utf8").trimEnd());
+    expect(resvg).not.toContain("MIT License");
+    expect(resvg).not.toContain("Devin Govett");
   });
 
   it("keeps the checked-in public selection unavailable and stages no firmware by default", async () => {
